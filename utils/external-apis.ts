@@ -252,17 +252,22 @@ export async function createGrokVideoTask({
 /**
  * 2. Facebook Posting (Supports both Photos and Videos)
  */
-export async function postToFacebook(accessToken: string, mediaUrl: string, caption: string, type: string = 'image'): Promise<any> {
-    const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/') || mediaUrl.includes('generated');
+export async function postToFacebook(accessToken: string, mediaUrl: string, caption: string, type: string = 'image', pageId?: string): Promise<any> {
+    const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/');
+    const targetNode = pageId || 'me';
+    let cleanMediaUrl = mediaUrl;
+    if (cleanMediaUrl.includes('.r2.dev/') && !cleanMediaUrl.includes('/adrolls-storage/')) {
+        cleanMediaUrl = cleanMediaUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    }
 
     if (isVideo) {
-        console.log(`[Facebook API] Posting video to Facebook page via /me/videos...`);
-        const response = await fetch(`${FACEBOOK_GRAPH_URL}/me/videos`, {
+        console.log(`[Facebook API] Posting video to Facebook page via /${targetNode}/videos...`);
+        const response = await fetch(`${FACEBOOK_GRAPH_URL}/${targetNode}/videos`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 access_token: accessToken,
-                file_url: mediaUrl,
+                file_url: cleanMediaUrl,
                 description: caption,
             }),
         });
@@ -272,13 +277,14 @@ export async function postToFacebook(accessToken: string, mediaUrl: string, capt
         }
         return data;
     } else {
-        console.log(`[Facebook API] Posting photo to Facebook page via /me/photos...`);
-        const response = await fetch(`${FACEBOOK_GRAPH_URL}/me/photos`, {
+        console.log(`[Facebook API] Posting photo to Facebook page via /${targetNode}/photos...`);
+        const response = await fetch(`${FACEBOOK_GRAPH_URL}/${targetNode}/photos`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 access_token: accessToken,
-                url: mediaUrl,
+                url: cleanMediaUrl,
+                caption: caption,
                 message: caption,
                 published: true,
             }),
@@ -310,17 +316,22 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
 
     // 2. Detect Media Type
-    const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/') || mediaUrl.includes('generated');
+    const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/');
+    let cleanMediaUrl = mediaUrl;
+    if (cleanMediaUrl.includes('.r2.dev/') && !cleanMediaUrl.includes('/adrolls-storage/')) {
+        cleanMediaUrl = cleanMediaUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    }
+
     const mediaPayload: any = {
         caption: safeCaption,
         access_token: accessToken,
     };
 
     if (isVideo) {
-        mediaPayload.video_url = mediaUrl;
+        mediaPayload.video_url = cleanMediaUrl;
         mediaPayload.media_type = 'REELS'; // Meta Graph API require REELS for video posts
     } else {
-        mediaPayload.image_url = mediaUrl;
+        mediaPayload.image_url = cleanMediaUrl;
     }
 
     // 3. Create Media Container
