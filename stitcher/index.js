@@ -177,7 +177,7 @@ app.post('/stitch', async (req, res) => {
             ContentType: 'video/mp4'
         }));
         
-        const persistedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
+        const persistedUrl = `${R2_PUBLIC_URL}/${finalFileName.replace(/^adrolls-storage\//, '')}`;
         console.log(`[Stitcher] Stitched video successfully uploaded: ${persistedUrl}`);
 
         // Update placeholder asset in Supabase
@@ -222,8 +222,8 @@ async function postToFacebook(accessToken, mediaUrl, caption, type = 'image', pa
     const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/');
     const targetNode = pageId || 'me';
     let cleanMediaUrl = mediaUrl;
-    if (cleanMediaUrl.includes('.r2.dev/') && !cleanMediaUrl.includes('/adrolls-storage/')) {
-        cleanMediaUrl = cleanMediaUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    if (cleanMediaUrl.includes('r2.dev/adrolls-storage/')) {
+        cleanMediaUrl = cleanMediaUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
     }
 
     const endpoint = isVideo 
@@ -257,8 +257,8 @@ async function postToInstagram(accessToken, pageId, mediaUrl, caption, type = 'i
 
     const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/');
     let cleanMediaUrl = mediaUrl;
-    if (cleanMediaUrl.includes('.r2.dev/') && !cleanMediaUrl.includes('/adrolls-storage/')) {
-        cleanMediaUrl = cleanMediaUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    if (cleanMediaUrl.includes('r2.dev/adrolls-storage/')) {
+        cleanMediaUrl = cleanMediaUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
     }
 
     const mediaPayload = {

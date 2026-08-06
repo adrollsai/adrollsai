@@ -384,11 +384,52 @@ export async function POST(request: Request) {
                                 .eq('id', task.asset_id)
                                 .maybeSingle();
                             
-                            const rawAudio = assetData?.metadata?.audioUrl;
+                            let rawAudio = assetData?.metadata?.audioUrl;
+
+                            // 1. If audioUrl is an async TTS task ID, poll and resolve it to HTTP R2 URL
+                            if (rawAudio && typeof rawAudio === 'string' && rawAudio.startsWith('tts:')) {
+                                const ttsTaskId = rawAudio.replace(/^tts:/, '');
+                                console.log(`[Sync Endpoint] Resolving async Gemini TTS task ${ttsTaskId}...`);
+                                try {
+                                    const { queryKieTask } = await import('@/utils/external-apis');
+                                    for (let t = 0; t < 15; t++) {
+                                        const ttsStatus = await queryKieTask(ttsTaskId);
+                                        if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
+                                            try {
+                                                const audioRes = await fetch(ttsStatus.resultUrl);
+                                                if (audioRes.ok) {
+                                                    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                                    const r2Key = `voiceover/${Date.now()}_${ttsTaskId}.mp3`;
+                                                    await r2.send(new PutObjectCommand({
+                                                        Bucket: R2_BUCKET,
+                                                        Key: r2Key,
+                                                        Body: audioBuffer,
+                                                        ContentType: 'audio/mpeg'
+                                                    }));
+                                                    rawAudio = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
+                                                    await supabaseAdmin.from('assets').update({
+                                                        metadata: { ...assetData?.metadata, audioUrl: rawAudio }
+                                                    }).eq('id', task.asset_id);
+                                                    console.log(`[Sync Endpoint] Gemini TTS resolved & persisted to R2: ${rawAudio}`);
+                                                } else {
+                                                    rawAudio = ttsStatus.resultUrl;
+                                                }
+                                            } catch (r2Err) {
+                                                rawAudio = ttsStatus.resultUrl;
+                                            }
+                                            break;
+                                        }
+                                        if (ttsStatus.state === 'fail') break;
+                                        await new Promise(r => setTimeout(r, 2000));
+                                    }
+                                } catch (e: any) {
+                                    console.warn(`[Sync Endpoint] TTS resolution error:`, e.message);
+                                }
+                            }
+
+                            // 2. Sanitize R2 URL (ensure r2.dev domain does NOT have redundant /adrolls-storage/ path segment)
                             if (rawAudio && typeof rawAudio === 'string' && rawAudio.startsWith('http')) {
-                                voiceoverAudioUrl = rawAudio.includes('.r2.dev/') && !rawAudio.includes('/adrolls-storage/')
-                                    ? rawAudio.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
-                                    : rawAudio;
+                                voiceoverAudioUrl = rawAudio.replace('r2.dev/adrolls-storage/', 'r2.dev/');
                             }
                         }
 

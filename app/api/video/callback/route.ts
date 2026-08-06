@@ -737,7 +737,7 @@ export async function POST(request: Request) {
 
                 const outputPath = path.join(tempStitchDir, 'final_stitched.mp4');
                 const ffmpegCmd = localAudioPath
-                    ? `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -ar 48000 -ac 2 -shortest -movflags +faststart "${outputPath}"`
+                    ? `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -ar 48000 -ac 2 -movflags +faststart "${outputPath}"`
                     : `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
 
                 console.log(`[Video Callback] Executing fast FFmpeg command: ${ffmpegCmd}`);
