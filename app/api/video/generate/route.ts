@@ -575,7 +575,7 @@ export async function POST(request: Request) {
 
         const refImages = rawImages
             .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
-            .slice(0, 8);
+            .slice(0, 24);
 
         // Prepare physical image descriptions (will be built dynamically below based on final image array mapping)
 
@@ -837,8 +837,8 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
             // Generate 9:16 collages if reference images are provided
             let generatedCollages: string[] = [];
             if (convertedRefImages.length > 0) {
-                console.log(`[Grok Pipeline] Creating 9:16 collages for ${convertedRefImages.length} input image(s)...`);
-                generatedCollages = await createCollageImages(convertedRefImages, targetUserId);
+                console.log(`[Grok Pipeline] Creating 9:16 collages for ${convertedRefImages.length} input image(s) distributed across ${requiredClips} clip(s)...`);
+                generatedCollages = await createCollageImages(convertedRefImages, targetUserId, requiredClips);
                 console.log(`[Grok Pipeline] Created ${generatedCollages.length} collages:`, generatedCollages);
             }
 

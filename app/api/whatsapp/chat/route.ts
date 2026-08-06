@@ -109,7 +109,7 @@ export async function POST(req: Request) {
         const url = new URL(req.url)
         const impersonateId = url.searchParams.get('impersonate')
 
-        const { chatId, messageText, templateName, language } = await req.json()
+        const { chatId, messageText, templateName, language, headerMediaUrl, mediaUrl, parameters, variableValues } = await req.json()
         if (!chatId || (!messageText && !templateName)) {
             return NextResponse.json({ error: 'Missing required parameters (chatId, and either messageText or templateName)' }, { status: 400 })
         }
@@ -213,20 +213,23 @@ export async function POST(req: Request) {
                         const templateDef = tData.data?.[0]
                         if (templateDef && templateDef.components) {
                             const components: any[] = []
-                            
+                            const providedMedia = headerMediaUrl || mediaUrl || null
+
                             // Check for HEADER component (IMAGE, VIDEO, DOCUMENT)
                             const headerComp = templateDef.components.find((c: any) => c.type === 'HEADER')
                             if (headerComp && headerComp.format) {
                                 const fmt = headerComp.format.toUpperCase()
                                 if (fmt === 'VIDEO') {
-                                    let videoUrl = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
-                                    const { data: flow } = await supabaseAdmin
-                                        .from('whatsapp_flows')
-                                        .select('header_media_url')
-                                        .eq('user_id', ownerUserId)
-                                        .eq('template_name', templateName)
-                                        .maybeSingle()
-                                    if (flow?.header_media_url) videoUrl = flow.header_media_url
+                                    let videoUrl = providedMedia || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
+                                    if (!providedMedia) {
+                                        const { data: flow } = await supabaseAdmin
+                                            .from('whatsapp_flows')
+                                            .select('header_media_url')
+                                            .eq('user_id', ownerUserId)
+                                            .eq('template_name', templateName)
+                                            .maybeSingle()
+                                        if (flow?.header_media_url) videoUrl = flow.header_media_url
+                                    }
 
                                     components.push({
                                         type: 'header',
@@ -238,7 +241,7 @@ export async function POST(req: Request) {
                                         ]
                                     })
                                 } else if (fmt === 'IMAGE') {
-                                    let imgUrl = ownerProfile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+                                    let imgUrl = providedMedia || ownerProfile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
                                     if (imgUrl.includes('/api/fetch-image?url=')) {
                                         try { imgUrl = decodeURIComponent(imgUrl.split('/api/fetch-image?url=')[1]) } catch (e) {}
                                     }
@@ -252,12 +255,13 @@ export async function POST(req: Request) {
                                         ]
                                     })
                                 } else if (fmt === 'DOCUMENT') {
+                                    const docUrl = providedMedia || 'https://adrolls.in/sample-doc.pdf'
                                     components.push({
                                         type: 'header',
                                         parameters: [
                                             {
                                                 type: 'document',
-                                                document: { link: 'https://adrolls.in/sample-doc.pdf', filename: 'Document.pdf' }
+                                                document: { link: docUrl, filename: 'Document.pdf' }
                                             }
                                         ]
                                     })
@@ -270,18 +274,23 @@ export async function POST(req: Request) {
                                 const varCount = (bodyComp.text.match(/\{\{\d+\}\}/g) || []).length
                                 const bodyParams = []
                                 const paramValues: string[] = []
-                                for (let i = 1; i <= varCount; i++) {
-                                    if (i === 1) {
-                                        bodyParams.push({ type: 'text', text: chat.recipient_name || 'Valued Lead' })
-                                        paramValues.push(chat.recipient_name || 'Valued Lead')
-                                    } else if (i === 2) {
-                                        bodyParams.push({ type: 'text', text: ownerProfile?.business_name || 'Partner' })
-                                        paramValues.push(ownerProfile?.business_name || 'Partner')
-                                    } else {
-                                        bodyParams.push({ type: 'text', text: 'details' })
-                                        paramValues.push('details')
+                                const rawProvided = Array.isArray(parameters) && parameters.length > 0
+                                    ? parameters
+                                    : (Array.isArray(variableValues) ? variableValues : []);
+
+                                for (let i = 0; i < varCount; i++) {
+                                    const p = rawProvided[i]
+                                    let textVal = typeof p === 'string' ? p : (p?.text || '')
+                                    textVal = textVal.trim()
+                                    if (!textVal) {
+                                        if (i === 0) textVal = chat.recipient_name || 'Valued Lead'
+                                        else if (i === 1) textVal = ownerProfile?.business_name || 'Partner'
+                                        else textVal = 'details'
                                     }
+                                    bodyParams.push({ type: 'text', text: textVal })
+                                    paramValues.push(textVal)
                                 }
+
                                 if (varCount > 0) {
                                     components.push({
                                         type: 'body',

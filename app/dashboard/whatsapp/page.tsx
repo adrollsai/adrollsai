@@ -5,6 +5,7 @@ import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inb
 import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { toast } from 'sonner'
+import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
 
 // Map String names to Actual Icons
 const iconMap: Record<string, LucideIcon> = {
@@ -302,6 +303,9 @@ export default function AutomationPage() {
   }
   const [templates, setTemplates] = useState<MetaTemplate[]>([])
   const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [selectedHeaderFormat, setSelectedHeaderFormat] = useState<'IMAGE' | 'VIDEO' | 'DOCUMENT' | null>(null)
+  const [selectedHeaderMediaUrl, setSelectedHeaderMediaUrl] = useState('')
+  const [templateVarValues, setTemplateVarValues] = useState<Record<string, string>>({})
 
   // Admin & Billing Check states
   const [isAdmin, setIsAdmin] = useState(false)
@@ -821,7 +825,9 @@ export default function AutomationPage() {
         body: JSON.stringify({
           chatId: selectedChatId,
           templateName,
-          language
+          language,
+          headerMediaUrl: selectedHeaderMediaUrl,
+          variableValues: Object.values(templateVarValues)
         })
       })
       const data = await res.json()
@@ -1567,7 +1573,19 @@ export default function AutomationPage() {
                           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Select Template</label>
                           <select 
                             value={selectedTemplate}
-                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                            onChange={(e) => {
+                              const name = e.target.value;
+                              setSelectedTemplate(name);
+                              const t = templates.find(x => x.name === name);
+                              const headerComp = t?.components?.find((c: any) => c.type === 'HEADER' || c.type === 'header');
+                              const fmt = headerComp?.format || headerComp?.type;
+                              if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(fmt)) {
+                                setSelectedHeaderFormat(fmt as any);
+                              } else {
+                                setSelectedHeaderFormat(null);
+                              }
+                              setSelectedHeaderMediaUrl('');
+                            }}
                             className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 cursor-pointer"
                           >
                             <option value="hello_world">Welcome (hello_world)</option>
@@ -1577,6 +1595,13 @@ export default function AutomationPage() {
                             <option value="custom">Custom Template...</option>
                           </select>
                         </div>
+                        {selectedHeaderFormat && (
+                          <WhatsAppTemplateMediaPicker
+                            headerType={selectedHeaderFormat}
+                            mediaUrl={selectedHeaderMediaUrl}
+                            onMediaSelect={(url: string) => setSelectedHeaderMediaUrl(url)}
+                          />
+                        )}
                         {selectedTemplate === 'custom' && (
                           <>
                             <div className="flex-1">

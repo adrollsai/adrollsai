@@ -11,6 +11,7 @@ import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
 import { toast } from 'sonner'
+import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
@@ -152,6 +153,8 @@ export default function CRMPage() {
   const [selectedTemplateName, setSelectedTemplateName] = useState('')
   const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
   const [selectedTemplateLanguage, setSelectedTemplateLanguage] = useState('en_US')
+  const [selectedHeaderFormat, setSelectedHeaderFormat] = useState<'IMAGE' | 'VIDEO' | 'DOCUMENT' | null>(null)
+  const [selectedHeaderMediaUrl, setSelectedHeaderMediaUrl] = useState('')
   const [isSendingTemplates, setIsSendingTemplates] = useState(false)
   const [isCallingCampaign, setIsCallingCampaign] = useState(false)
   const [templateVarMappings, setTemplateVarMappings] = useState<Record<string, { field: string; customVal: string }>>({})
@@ -232,6 +235,7 @@ export default function CRMPage() {
             templateName: selectedTemplateName,
             isSandboxTest: selectedTemplateName === 'hello_world',
             parameters,
+            headerMediaUrl: selectedHeaderMediaUrl,
             language: selectedTemplateLanguage
           })
         })
@@ -2033,6 +2037,14 @@ END:VCARD\n`
                                       const t = approvedTemplates.find(x => x.name === name);
                                       setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')?.text || '');
                                       setSelectedTemplateLanguage(t?.language || 'en_US');
+                                      const headerComp = t?.components?.find((c: any) => c.type === 'HEADER' || c.type === 'header');
+                                      const fmt = headerComp?.format || headerComp?.type;
+                                      if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(fmt)) {
+                                          setSelectedHeaderFormat(fmt);
+                                      } else {
+                                          setSelectedHeaderFormat(null);
+                                      }
+                                      setSelectedHeaderMediaUrl('');
                                   }}
                                   className="w-full appearance-none bg-slate-50 border border-slate-100 py-3.5 px-5 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-blue-500/10 outline-none cursor-pointer"
                               >
@@ -2055,6 +2067,14 @@ END:VCARD\n`
                                           {selectedTemplateBody}
                                       </div>
                                   </div>
+
+                                  {selectedHeaderFormat && (
+                                      <WhatsAppTemplateMediaPicker
+                                          headerType={selectedHeaderFormat}
+                                          mediaUrl={selectedHeaderMediaUrl}
+                                          onMediaSelect={(url: string) => setSelectedHeaderMediaUrl(url)}
+                                      />
+                                  )}
 
                                   {detectedVars.length > 0 ? (
                                       <div className="bg-blue-50/60 border border-blue-100 p-4 rounded-2xl space-y-3">

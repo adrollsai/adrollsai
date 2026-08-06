@@ -375,10 +375,8 @@ export default function AdsPage() {
   // Helper: Fix R2 URL structure if bucket name is missing
   const fixR2Url = (url: string) => {
     if (!url) return ''
-    if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
-        return url.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
-    }
-    return url
+    if (url.startsWith('/api/fetch-image')) return url
+    return `/api/fetch-image?url=${encodeURIComponent(url)}`
   }
 
   const isVideoFile = (file: File) => file.type.startsWith('video/');

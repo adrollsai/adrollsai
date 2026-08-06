@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight, Target } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
+import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
 
 const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
@@ -85,6 +86,8 @@ export default function LeadProfilePage() {
     const [selectedTemplateName, setSelectedTemplateName] = useState('')
     const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
     const [selectedTemplateLanguage, setSelectedTemplateLanguage] = useState('en_US')
+    const [selectedHeaderFormat, setSelectedHeaderFormat] = useState<'IMAGE' | 'VIDEO' | 'DOCUMENT' | null>(null)
+    const [selectedHeaderMediaUrl, setSelectedHeaderMediaUrl] = useState('')
     const [isSendingTemplate, setIsSendingTemplate] = useState(false)
 
     const fixR2Url = (url: string) => {
@@ -179,6 +182,7 @@ export default function LeadProfilePage() {
                     templateName: selectedTemplateName,
                     isSandboxTest: selectedTemplateName === 'hello_world',
                     parameters,
+                    headerMediaUrl: selectedHeaderMediaUrl,
                     language: selectedTemplateLanguage
                 })
             })
@@ -1757,6 +1761,14 @@ END:VCARD`
                                             const t = approvedTemplates.find(x => x.name === name);
                                             setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')?.text || '');
                                             setSelectedTemplateLanguage(t?.language || 'en_US');
+                                            const headerComp = t?.components?.find((c: any) => c.type === 'HEADER' || c.type === 'header');
+                                            const fmt = headerComp?.format || headerComp?.type;
+                                            if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(fmt)) {
+                                                setSelectedHeaderFormat(fmt);
+                                            } else {
+                                                setSelectedHeaderFormat(null);
+                                            }
+                                            setSelectedHeaderMediaUrl('');
                                         }}
                                         className="w-full appearance-none bg-slate-50 border border-slate-100 py-3.5 px-5 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-blue-500/10 outline-none cursor-pointer"
                                     >
@@ -1779,6 +1791,14 @@ END:VCARD`
                                                                                 {selectedTemplateBody}
                                                                             </div>
                                                                         </div>
+
+                                                                        {selectedHeaderFormat && (
+                                                                            <WhatsAppTemplateMediaPicker
+                                                                                headerType={selectedHeaderFormat}
+                                                                                mediaUrl={selectedHeaderMediaUrl}
+                                                                                onMediaSelect={(url: string) => setSelectedHeaderMediaUrl(url)}
+                                                                            />
+                                                                        )}
 
                                                                         {detectedVars.length > 0 ? (
                                                                             <div className="bg-blue-50/60 border border-blue-100 p-4 rounded-2xl space-y-3">
