@@ -56,8 +56,8 @@ export async function GET(request: Request) {
 
         // 2. Format source video URL (handling R2 path variations)
         let targetVideoUrl = videoUrl;
-        if (targetVideoUrl.includes('.r2.dev/') && !targetVideoUrl.includes('/adrolls-storage/')) {
-            targetVideoUrl = targetVideoUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+        if (targetVideoUrl.includes('r2.dev/adrolls-storage/')) {
+            targetVideoUrl = targetVideoUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
         }
 
         console.log(`[VideoThumbnail API] Extracting frame from video URL: ${targetVideoUrl}`);
@@ -123,14 +123,8 @@ export async function GET(request: Request) {
             Body: thumbBuffer,
             ContentType: 'image/jpeg'
         }));
-        await r2.send(new PutObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: `adrolls-storage/${r2Key}`,
-            Body: thumbBuffer,
-            ContentType: 'image/jpeg'
-        }));
 
-        const finalThumbUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
+        const finalThumbUrl = `${R2_PUBLIC_URL}/${r2Key}`;
 
         // 5. Persist thumbnail URL to asset metadata in database for CDN caching
         if (assetId) {

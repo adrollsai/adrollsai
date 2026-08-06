@@ -35,7 +35,9 @@ export default function WhatsAppTemplateMediaPicker({
       const res = await fetch('/api/assets')
       if (res.ok) {
         const data = await res.json()
-        setLocalAssets(data.assets || data || [])
+        const rawList = Array.isArray(data) ? data : (data.assets || [])
+        // Filter out failed assets
+        setLocalAssets(rawList.filter((a: any) => a.status !== 'Failed'))
       }
     } catch (e) {
       console.error('Failed to load user assets:', e)
@@ -52,11 +54,11 @@ export default function WhatsAppTemplateMediaPicker({
   const acceptedMime = headerType === 'IMAGE' ? 'image/*' : headerType === 'VIDEO' ? 'video/*' : 'application/pdf,.pdf'
 
   const filteredAssets = localAssets.filter(a => {
-    if (!a.url) return false
+    if (!a.url && a.status !== 'Processing') return false
     const fileType = (a.type || '').toLowerCase()
-    if (headerType === 'IMAGE') return fileType === 'image' || a.url.match(/\.(png|jpg|jpeg|webp)$/i)
-    if (headerType === 'VIDEO') return fileType === 'video' || a.url.match(/\.(mp4|mov|webm)$/i)
-    if (headerType === 'DOCUMENT') return fileType === 'pdf' || fileType === 'document' || a.url.match(/\.(pdf)$/i)
+    if (headerType === 'IMAGE') return fileType === 'image' || !a.url || a.url.match(/\.(png|jpg|jpeg|webp)$/i)
+    if (headerType === 'VIDEO') return fileType === 'video' || (a.url && a.url.match(/\.(mp4|mov|webm)$/i))
+    if (headerType === 'DOCUMENT') return fileType === 'pdf' || fileType === 'document' || (a.url && a.url.match(/\.(pdf)$/i))
     return true
   })
 
@@ -87,6 +89,9 @@ export default function WhatsAppTemplateMediaPicker({
       if (!uploadRes.ok) throw new Error('Failed to upload media file')
 
       onMediaSelect(publicUrl)
+      // Add newly uploaded file to local library list
+      setLocalAssets(prev => [{ id: Date.now(), url: publicUrl, type: headerType.toLowerCase(), status: 'Completed' }, ...prev])
+      setTab('library')
     } catch (err: any) {
       console.error('Media upload error:', err)
       alert(err.message || 'Failed to upload header media file')
@@ -135,18 +140,25 @@ export default function WhatsAppTemplateMediaPicker({
               <Loader2 size={16} className="animate-spin" /> Loading assets...
             </div>
           ) : filteredAssets.length > 0 ? (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-40 overflow-y-auto custom-scrollbar p-1">
-              {filteredAssets.slice(0, 12).map(a => {
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
+              {filteredAssets.slice(0, 16).map(a => {
                 const isSelected = mediaUrl === a.url
+                const isProcessing = a.status === 'Processing' || a.status === 'Rendering'
+
                 return (
                   <div
                     key={a.id || a.url}
-                    onClick={() => onMediaSelect(a.url)}
-                    className={`relative aspect-square rounded-xl overflow-hidden border-2 cursor-pointer transition-all bg-white ${
+                    onClick={() => { if (!isProcessing && a.url) onMediaSelect(a.url) }}
+                    className={`relative aspect-square rounded-xl overflow-hidden border-2 cursor-pointer transition-all bg-slate-100 ${
                       isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/30' : 'border-slate-200 hover:border-emerald-300'
                     }`}
                   >
-                    {headerType === 'VIDEO' ? (
+                    {isProcessing ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center bg-slate-100 text-emerald-600">
+                        <Loader2 size={16} className="animate-spin mb-1" />
+                        <span className="text-[9px] font-bold text-slate-500">Generating...</span>
+                      </div>
+                    ) : headerType === 'VIDEO' ? (
                       <video src={`${a.url}#t=0.1`} className="w-full h-full object-cover" muted />
                     ) : headerType === 'DOCUMENT' ? (
                       <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center bg-slate-50">
@@ -154,7 +166,17 @@ export default function WhatsAppTemplateMediaPicker({
                         <span className="text-[9px] font-bold text-slate-700 truncate w-full">{a.caption || 'PDF'}</span>
                       </div>
                     ) : (
-                      <img src={a.url} alt="Asset" className="w-full h-full object-cover" />
+                      <img 
+                        src={a.url} 
+                        alt={a.title || 'Asset'} 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          // Clean fallback image if asset URL fails to load
+                          const target = e.currentTarget;
+                          target.onerror = null;
+                          target.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80';
+                        }} 
+                      />
                     )}
                     {isSelected && (
                       <div className="absolute top-1 right-1 bg-emerald-500 text-white p-0.5 rounded-full shadow-sm">

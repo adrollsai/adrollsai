@@ -202,7 +202,7 @@ async function buildSharpCollageFallback(chunk: string[], chunkIdx: number, user
             ContentType: 'image/jpeg'
         }));
 
-        return `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
+        return `${R2_PUBLIC_URL}/${r2Key}`;
     } catch (err) {
         console.error(`[Collage Generator] Sharp fallback failed:`, err);
         return null;

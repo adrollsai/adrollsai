@@ -256,8 +256,8 @@ export async function postToFacebook(accessToken: string, mediaUrl: string, capt
     const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/');
     const targetNode = pageId || 'me';
     let cleanMediaUrl = mediaUrl;
-    if (cleanMediaUrl.includes('.r2.dev/') && !cleanMediaUrl.includes('/adrolls-storage/')) {
-        cleanMediaUrl = cleanMediaUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    if (cleanMediaUrl.includes('r2.dev/adrolls-storage/')) {
+        cleanMediaUrl = cleanMediaUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
     }
 
     if (isVideo) {
@@ -318,8 +318,8 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     // 2. Detect Media Type
     const isVideo = type === 'video' || !!mediaUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || mediaUrl.includes('/video/');
     let cleanMediaUrl = mediaUrl;
-    if (cleanMediaUrl.includes('.r2.dev/') && !cleanMediaUrl.includes('/adrolls-storage/')) {
-        cleanMediaUrl = cleanMediaUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    if (cleanMediaUrl.includes('r2.dev/adrolls-storage/')) {
+        cleanMediaUrl = cleanMediaUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
     }
 
     const mediaPayload: any = {

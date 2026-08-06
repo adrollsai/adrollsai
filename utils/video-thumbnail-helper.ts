@@ -46,7 +46,7 @@ export async function generateAndUploadVideoThumbnail(
                 ContentType: 'image/jpeg'
             }));
             
-            const thumbUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
+            const thumbUrl = `${R2_PUBLIC_URL}/${r2Key}`;
             console.log(`[Thumbnail Helper] Thumbnail upload complete. URL: ${thumbUrl}`);
             return thumbUrl;
         }

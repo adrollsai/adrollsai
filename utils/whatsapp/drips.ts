@@ -46,7 +46,7 @@ export async function triggerWelcomeDrip(
             flow = {
                 title: 'Instant Lead Welcome',
                 template_name: 'nobogent_vsl_system_welcome_v3',
-                header_media_url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
+                header_media_url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
             };
         }
 
@@ -78,7 +78,7 @@ export async function triggerWelcomeDrip(
         }
         if (!cleanPhone) return;
 
-        const mediaUrl = flow.header_media_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4';
+        const mediaUrl = flow.header_media_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4';
         const leadDisplayName = leadName || 'Valued Lead';
 
         const captionText = `Hey ${leadDisplayName}! 👋\n\nThank you for reaching out to ${profile.business_name || 'Nobogent AI'}! 🚀\n\nWatch the breakdown video above to see how our system automates client acquisition, lead qualification, and 24/7 sales engine for your business. 🎥✨\n\nBook a 1-on-1 strategy call with our team: https://app.nobogent.com/book/${ownerId}`;

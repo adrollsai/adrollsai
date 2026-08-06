@@ -220,7 +220,7 @@ export async function POST(req: Request) {
                             if (headerComp && headerComp.format) {
                                 const fmt = headerComp.format.toUpperCase()
                                 if (fmt === 'VIDEO') {
-                                    let videoUrl = providedMedia || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
+                                    let videoUrl = providedMedia || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
                                     if (!providedMedia) {
                                         const { data: flow } = await supabaseAdmin
                                             .from('whatsapp_flows')
@@ -241,7 +241,7 @@ export async function POST(req: Request) {
                                         ]
                                     })
                                 } else if (fmt === 'IMAGE') {
-                                    let imgUrl = providedMedia || ownerProfile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+                                    let imgUrl = providedMedia || ownerProfile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
                                     if (imgUrl.includes('/api/fetch-image?url=')) {
                                         try { imgUrl = decodeURIComponent(imgUrl.split('/api/fetch-image?url=')[1]) } catch (e) {}
                                     }

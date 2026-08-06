@@ -32,10 +32,7 @@ export default function VideoEditorPage() {
 
     const fixR2Url = (url: string) => {
         if (!url) return ''
-        if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
-            return url.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
-        }
-        return url
+        return url.replace('r2.dev/adrolls-storage/', 'r2.dev/')
     }
 
     const getBrowserMediaUrl = (url: string) => {

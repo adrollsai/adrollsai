@@ -6,6 +6,7 @@ import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, 
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
+import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
 
 const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
 
@@ -92,10 +93,7 @@ export default function LeadProfilePage() {
 
     const fixR2Url = (url: string) => {
         if (!url) return ''
-        if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
-            return url.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
-        }
-        return url
+        return url.replace('r2.dev/adrolls-storage/', 'r2.dev/')
     }
  
     // Editing schedule states
@@ -188,8 +186,21 @@ export default function LeadProfilePage() {
             })
 
             if (res.ok) {
-                const desc = `💬 WhatsApp template sent: "${selectedTemplateName}"`
-                const newHist = { id: Date.now(), action_type: 'REMARK', description: desc, created_at: new Date().toISOString() }
+                // Build rich substituted body text for activity timeline context
+                let substitutedBody = selectedTemplateBody
+                parameters.forEach((param: any, idx: number) => {
+                    substitutedBody = substitutedBody.replace(new RegExp(`\\\\{\\\\{${idx + 1}\\\\\}\\}`, 'g'), param.text || '')
+                })
+
+                const descPayload = {
+                    template_name: selectedTemplateName,
+                    body_text: substitutedBody,
+                    header_media_url: selectedHeaderMediaUrl || null,
+                    header_format: selectedHeaderFormat || null
+                }
+                const desc = `💬 WA_TEMPLATE:${JSON.stringify(descPayload)}`
+
+                const newHist = { id: Date.now(), action_type: 'WHATSAPP_CHAT', description: desc, created_at: new Date().toISOString() }
                 setLeadHistory([newHist, ...leadHistory])
                 updateLocalCRMCacheWithHistory(newHist)
 
@@ -198,7 +209,7 @@ export default function LeadProfilePage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         leadId: id,
-                        actionType: 'REMARK',
+                        actionType: 'WHATSAPP_CHAT',
                         description: desc
                     })
                 })
@@ -206,7 +217,8 @@ export default function LeadProfilePage() {
                 setIsSendTemplateOpen(false)
                 setSelectedTemplateName('')
                 setSelectedTemplateBody('')
-                alert("WhatsApp template sent successfully!")
+                setSelectedHeaderMediaUrl('')
+                toast.success("WhatsApp template sent successfully! 🚀")
             } else {
                 let errMsg = "Failed to send WhatsApp template."
                 try {
@@ -1683,6 +1695,63 @@ END:VCARD`
                                         }
                                     }
 
+                                    if (isWhatsApp && item.description?.startsWith('💬 WA_TEMPLATE:')) {
+                                        try {
+                                            const parsed = JSON.parse(item.description.replace('💬 WA_TEMPLATE:', ''))
+                                            const renderFormattedBody = (txt: string) => {
+                                                if (!txt) return null;
+                                                let clean = txt.replace(/\*{2,3}/g, '*');
+                                                const lines = clean.split('\n');
+                                                return lines.map((line, lIdx) => {
+                                                    const parts = line.split(/(\*[^*]+\*)/g);
+                                                    return (
+                                                        <div key={lIdx} className="min-h-[16px]">
+                                                            {parts.map((p, pIdx) => {
+                                                                if (p.startsWith('*') && p.endsWith('*') && p.length > 2) {
+                                                                    return <strong key={pIdx} className="font-bold text-slate-900">{p.slice(1, -1)}</strong>;
+                                                                }
+                                                                return <span key={pIdx}>{p}</span>;
+                                                            })}
+                                                        </div>
+                                                    );
+                                                });
+                                            };
+
+                                            return (
+                                                <div key={item.id} className="relative flex items-start gap-3 sm:gap-4">
+                                                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm bg-emerald-100 text-emerald-600">
+                                                        <MessageCircle size={15} />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0 bg-emerald-50/70 p-3.5 sm:p-4 rounded-2xl border border-emerald-200/80 mt-0.5 space-y-2.5">
+                                                        <div className="flex flex-wrap items-center justify-between gap-1 pb-1.5 border-b border-emerald-200/60">
+                                                            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                                                <span className="text-[11px] font-bold text-emerald-800">💬 Template:</span>
+                                                                <span className="font-mono bg-emerald-100 text-emerald-950 px-2 py-0.5 rounded-md text-[10px] font-black break-all">{parsed.template_name}</span>
+                                                            </div>
+                                                            <time className="text-[9.5px] font-bold text-emerald-600 bg-white px-1.5 py-0.5 rounded-md border border-emerald-100 shrink-0">
+                                                                {new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+                                                            </time>
+                                                        </div>
+
+                                                        {parsed.header_media_url && (
+                                                            <div className="rounded-xl overflow-hidden border border-emerald-200/80 bg-slate-950 w-full flex items-center justify-center relative shadow-sm">
+                                                                {parsed.header_format === 'VIDEO' || parsed.header_media_url.match(/\.(mp4|mov|webm)$/i) ? (
+                                                                    <video src={parsed.header_media_url} controls className="w-full max-h-80 object-contain" />
+                                                                ) : (
+                                                                    <img src={parsed.header_media_url} alt="Template Header" className="w-full max-h-80 object-contain bg-slate-900" />
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        <div className="bg-white p-3 rounded-xl border border-slate-200/80 text-xs font-medium text-slate-800 leading-relaxed whitespace-pre-wrap shadow-2xs space-y-1">
+                                                            {renderFormattedBody(parsed.body_text)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )
+                                        } catch (e) {}
+                                    }
+
                                     return (
                                         <div key={item.id} className="relative flex items-start gap-4">
                                             <div className={`flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm ${isRemark ? 'bg-blue-100 text-blue-600' : isReminder ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
@@ -1745,17 +1814,17 @@ END:VCARD`
 
             {/* SEND WHATSAPP TEMPLATE MODAL */}
             {isSendTemplateOpen && (
-                <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
-                    <div className="bg-white w-full max-w-md rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
-                        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white">
-                            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-lg max-h-[85vh] sm:max-h-[80vh] rounded-t-[1.75rem] xs:rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 flex flex-col overflow-hidden">
+                        <div className="flex justify-between items-center p-5 sm:p-6 border-b border-slate-100 bg-white shrink-0">
+                            <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
                                 <MessageCircle size={22} className="text-[#25D366]" />
                                 Send WhatsApp Template
                             </h2>
                             <button onClick={() => setIsSendTemplateOpen(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={18} /></button>
                         </div>
 
-                        <div className="p-6 space-y-4">
+                        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Select WhatsApp Template</label>
                                 <div className="relative">
@@ -1880,6 +1949,20 @@ END:VCARD`
                                                                     </div>
                                                                 )
                                                             })()}
+
+                                                            {selectedTemplateName && (
+                                                                <div className="space-y-1.5 pt-3 border-t border-slate-200/80">
+                                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block text-center">Live Message Preview</span>
+                                                                    <WhatsAppLivePreview
+                                                                        headerType={selectedHeaderFormat}
+                                                                        headerMediaUrl={selectedHeaderMediaUrl}
+                                                                        bodyText={selectedTemplateBody}
+                                                                        sampleLeadName={lead?.name || 'Valued Customer'}
+                                                                        samplePropertyTitle={lead?.custom_fields?.property_title || 'Premium Property'}
+                                                                        sampleBusinessName={userBusinessName}
+                                                                    />
+                                                                </div>
+                                                            )}
 
 
                             <button

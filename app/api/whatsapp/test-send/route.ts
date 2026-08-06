@@ -9,7 +9,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { recipient, templateName, isSandboxTest, parameters, variableValues, language } = await req.json();
+        const { recipient, templateName, isSandboxTest, parameters, variableValues, language, headerMediaUrl } = await req.json();
         if (!recipient) {
             return NextResponse.json({ error: 'Recipient phone number is required' }, { status: 400 });
         }
@@ -63,9 +63,11 @@ export async function POST(req: Request) {
                         if (Array.isArray(templateDef.components)) {
                             // 1. HEADER component check (IMAGE, VIDEO, DOCUMENT, TEXT with parameters)
                             const headerComp = templateDef.components.find((c: any) => c.type === 'HEADER');
-                            const defaultVideo = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4';
-                            const defaultImage = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png';
-                            const providedMedia = (req as any).headerMediaUrl || (req as any).mediaUrl || null;
+                            const defaultVideo = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4';
+                            const defaultImage = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png';
+                            
+                            const sanitizeMediaUrl = (u: string | null) => u ? u.replace('r2.dev/adrolls-storage/', 'r2.dev/') : null;
+                            const providedMedia = sanitizeMediaUrl(headerMediaUrl || null);
 
                             if (headerComp) {
                                 if (headerComp.format === 'VIDEO') {
@@ -159,7 +161,7 @@ export async function POST(req: Request) {
                         {
                             type: 'video',
                             video: {
-                                link: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
+                                link: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
                             }
                         }
                     ]
@@ -199,6 +201,15 @@ export async function POST(req: Request) {
             messagePayload.template.components = components;
         }
 
+        // LOG FULL PAYLOAD for debugging delivery issues
+        console.log('[WHATSAPP TEST SEND] ===== FULL META API REQUEST =====');
+        console.log('[WHATSAPP TEST SEND] URL:', `https://graph.facebook.com/v20.0/${whatsappPhoneId}/messages`);
+        console.log('[WHATSAPP TEST SEND] Recipient:', cleanRecipient);
+        console.log('[WHATSAPP TEST SEND] Template:', payloadTemplateName);
+        console.log('[WHATSAPP TEST SEND] Language:', targetLanguage);
+        console.log('[WHATSAPP TEST SEND] Components:', JSON.stringify(components, null, 2));
+        console.log('[WHATSAPP TEST SEND] Full Payload:', JSON.stringify(messagePayload, null, 2));
+
         const metaUrl = `https://graph.facebook.com/v20.0/${whatsappPhoneId}/messages`;
         const metaRes = await fetch(metaUrl, {
             method: 'POST',
@@ -211,15 +222,45 @@ export async function POST(req: Request) {
 
         const metaData = await metaRes.json();
 
+        // LOG FULL RESPONSE for debugging delivery issues
+        console.log('[WHATSAPP TEST SEND] ===== META API RESPONSE =====');
+        console.log('[WHATSAPP TEST SEND] HTTP Status:', metaRes.status);
+        console.log('[WHATSAPP TEST SEND] Response Body:', JSON.stringify(metaData, null, 2));
+
         if (metaData.error) {
-            console.error('[WHATSAPP TEST SEND] Meta API Error:', metaData.error);
+            console.error('[WHATSAPP TEST SEND] Meta API Error:', JSON.stringify(metaData.error, null, 2));
             return NextResponse.json({ 
                 error: metaData.error.message || 'Meta API returned an error.',
-                details: metaData.error
+                details: metaData.error,
+                debug: {
+                    httpStatus: metaRes.status,
+                    recipient: cleanRecipient,
+                    template: payloadTemplateName,
+                    language: targetLanguage,
+                    componentCount: components.length,
+                    phoneId: whatsappPhoneId,
+                }
             }, { status: 400 });
         }
 
-        return NextResponse.json({ success: true, messageId: metaData.messages?.[0]?.id });
+        const messageId = metaData.messages?.[0]?.id;
+        const messageStatus = metaData.messages?.[0]?.message_status;
+        
+        console.log('[WHATSAPP TEST SEND] ✅ Message accepted by Meta. ID:', messageId, 'Status:', messageStatus || 'accepted');
+
+        return NextResponse.json({ 
+            success: true, 
+            messageId,
+            debug: {
+                httpStatus: metaRes.status,
+                recipient: cleanRecipient,
+                template: payloadTemplateName,
+                language: targetLanguage,
+                componentCount: components.length,
+                messageStatus: messageStatus || 'accepted',
+                headerMediaUrl: headerMediaUrl || null,
+            }
+        });
     } catch (err: any) {
         console.error('[WHATSAPP TEST SEND] Unexpected Error:', err);
         return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });

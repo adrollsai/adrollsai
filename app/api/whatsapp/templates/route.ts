@@ -49,49 +49,24 @@ export async function GET(req: Request) {
         const whatsappWabaId = profile?.whatsapp_waba_id || (isMasterDefaultUser ? process.env.DEV_WHATSAPP_WABA_ID : null)
 
         if (!whatsappToken || !whatsappWabaId) {
-            // No credentials = return standard templates so setup wizard works
-            return NextResponse.json({ success: true, templates: FALLBACK_TEMPLATES, source: 'mock_unconfigured' })
+            return NextResponse.json({ success: true, templates: FALLBACK_TEMPLATES, source: 'fallback_unconfigured' })
         }
 
+        // Query Meta Graph API for official WABA templates
         const metaUrl = `https://graph.facebook.com/v20.0/${whatsappWabaId}/message_templates?limit=100`
-        
         try {
             const metaRes = await fetch(metaUrl, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${whatsappToken}`
-                }
+                headers: { 'Authorization': `Bearer ${whatsappToken}` },
+                next: { revalidate: 10 }
             })
-
             const metaData = await metaRes.json()
 
             if (metaData.error) {
-                console.warn('[TEMPLATES API] Meta fetch failed (likely token expired), returning fallbacks:', metaData.error)
-                return NextResponse.json({ 
-                    success: true, 
-                    templates: FALLBACK_TEMPLATES, 
-                    source: 'fallback_meta_error',
-                    warning: 'Using offline templates fallback: ' + (metaData.error.message || 'Token expired.')
-                })
+                console.warn('[TEMPLATES API] Meta Error:', metaData.error)
+                return NextResponse.json({ success: true, templates: FALLBACK_TEMPLATES, source: 'fallback_meta_error' })
             }
 
-            // Successfully fetched from Meta, return mapped list
-            const templates = (metaData.data || []).map((t: any) => ({
-                name: t.name,
-                status: t.status || 'PENDING',
-                category: t.category,
-                language: t.language,
-                components: t.components || []
-            }))
-
-            // Merge local default ones if not present in Meta list (for sandbox testing compatibility)
-            const wabaNames = new Set(templates.map((t: any) => t.name))
-            FALLBACK_TEMPLATES.forEach(ft => {
-                if (!wabaNames.has(ft.name)) {
-                    templates.push(ft)
-                }
-            })
-
+            const templates = metaData.data || []
             return NextResponse.json({ success: true, templates, source: 'meta' })
         } catch (fetchErr: any) {
             console.error('[TEMPLATES API] Unexpected fetch exception:', fetchErr)
@@ -99,6 +74,55 @@ export async function GET(req: Request) {
         }
     } catch (e: any) {
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
+    }
+}
+
+// Upload sample media to Meta Resumable Upload session to obtain valid header_handle h
+async function getMetaHeaderHandle(whatsappToken: string, mediaUrl: string, mimeType: string): Promise<string | null> {
+    try {
+        const debugRes = await fetch(`https://graph.facebook.com/v20.0/debug_token?input_token=${whatsappToken}&access_token=${whatsappToken}`)
+        const debugData = await debugRes.json()
+        const appId = debugData?.data?.app_id
+
+        if (!appId) {
+            console.warn('[META UPLOAD] Could not resolve app_id from token:', debugData)
+            return null
+        }
+
+        const fileRes = await fetch(mediaUrl)
+        if (!fileRes.ok) return null
+        const arrayBuffer = await fileRes.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
+
+        const createSessionUrl = `https://graph.facebook.com/v20.0/${appId}/uploads?file_length=${buffer.length}&file_type=${mimeType}&access_token=${whatsappToken}`
+        const sessionRes = await fetch(createSessionUrl, { method: 'POST' })
+        const sessionData = await sessionRes.json()
+
+        if (!sessionData.id) {
+            console.warn('[META UPLOAD] Session creation failed:', sessionData)
+            return null
+        }
+
+        const uploadUrl = `https://graph.facebook.com/v20.0/${sessionData.id}`
+        const uploadRes = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `OAuth ${whatsappToken}`,
+                'file_offset': '0'
+            },
+            body: buffer
+        })
+
+        const uploadData = await uploadRes.json()
+        if (uploadData.h) {
+            console.log('[META UPLOAD] Successfully obtained header_handle:', uploadData.h)
+            return uploadData.h
+        }
+        console.warn('[META UPLOAD] Upload response missing handle h:', uploadData)
+        return null
+    } catch (e) {
+        console.warn('[META UPLOAD] Exception acquiring header handle:', e)
+        return null
     }
 }
 
@@ -167,14 +191,18 @@ export async function POST(req: Request) {
                     type: 'HEADER',
                     format: hType
                 }
-                // Attach sample example URL required by Meta for media headers
-                if (hType === 'IMAGE') {
+                
+                const mimeType = hType === 'IMAGE' ? 'image/png' : hType === 'VIDEO' ? 'video/mp4' : 'application/pdf'
+                const sampleUrl = hType === 'IMAGE' 
+                    ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+                    : hType === 'VIDEO'
+                    ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4'
+                    : 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/sample.pdf'
+
+                const headerHandle = await getMetaHeaderHandle(whatsappToken, sampleUrl, mimeType)
+                if (headerHandle) {
                     headerComp.example = {
-                        header_handle: ['https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png']
-                    }
-                } else if (hType === 'VIDEO') {
-                    headerComp.example = {
-                        header_handle: ['https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4']
+                        header_handle: [headerHandle]
                     }
                 }
                 components.push(headerComp)
@@ -259,7 +287,6 @@ export async function POST(req: Request) {
             components
         }
 
-
         const metaUrl = `https://graph.facebook.com/v20.0/${whatsappWabaId}/message_templates`
         const metaRes = await fetch(metaUrl, {
             method: 'POST',
@@ -274,8 +301,12 @@ export async function POST(req: Request) {
 
         if (metaData.error) {
             console.error('[TEMPLATES API] Meta Submit Error:', metaData.error)
+            const errorMsg = metaData.error.error_user_msg 
+                || metaData.error.message 
+                || (typeof metaData.error === 'string' ? metaData.error : 'Meta API rejected the template submission.')
+
             return NextResponse.json({ 
-                error: metaData.error.message || 'Meta API rejected the template submission.',
+                error: errorMsg,
                 details: metaData.error
             }, { status: 400 })
         }

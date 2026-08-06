@@ -205,7 +205,7 @@ export async function POST(request: Request) {
                     try {
                         const videoRes = await fetch(videoUrl);
                         const buffer = Buffer.from(await videoRes.arrayBuffer());
-                        const fileName = `adrolls-storage/generated/${task.user_id}/scene_${task.current_index}_${Date.now()}.mp4`;
+                        const fileName = `generated/${task.user_id}/scene_${task.current_index}_${Date.now()}.mp4`;
                         
                         await r2.send(new PutObjectCommand({
                             Bucket: R2_BUCKET,

@@ -337,7 +337,7 @@ export async function POST(request: Request) {
         try {
             const videoRes = await fetch(resultUrl);
             const buffer = Buffer.from(await videoRes.arrayBuffer());
-            const fileName = `adrolls-storage/generated/${videoTask.user_id}/scene_${videoTask.current_index}_${Date.now()}.mp4`;
+            const fileName = `generated/${videoTask.user_id}/scene_${videoTask.current_index}_${Date.now()}.mp4`;
             
             await r2.send(new PutObjectCommand({
                 Bucket: R2_BUCKET,
@@ -426,7 +426,7 @@ export async function POST(request: Request) {
                 
                 // Upload faststart file to R2
                 const faststartBuffer = fs.readFileSync(outputPath);
-                const finalFileName = `adrolls-storage/generated/${videoTask.user_id}/faststart_${Date.now()}.mp4`;
+                const finalFileName = `generated/${videoTask.user_id}/faststart_${Date.now()}.mp4`;
                 await r2.send(new PutObjectCommand({
                     Bucket: R2_BUCKET,
                     Key: finalFileName,
@@ -588,11 +588,11 @@ export async function POST(request: Request) {
                                     const r2Key = `voiceover/${Date.now()}_grok_async_tts.mp3`;
                                     await r2.send(new PutObjectCommand({
                                         Bucket: R2_BUCKET,
-                                        Key: `adrolls-storage/${r2Key}`,
+                                        Key: r2Key,
                                         Body: audioBuffer,
                                         ContentType: 'audio/mpeg'
                                     }));
-                                    finalAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key.replace(/^\//, '')}`;
+                                    finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
                                     console.log(`[Video Callback] Async Gemini TTS voiceover resolved and persisted to R2: ${finalAudioUrl}`);
                                 } else {
                                     finalAudioUrl = ttsStatus.resultUrl;
@@ -667,11 +667,11 @@ export async function POST(request: Request) {
                                                 const r2Key = `voiceover/${Date.now()}_grok_stitch.mp3`;
                                                 await r2.send(new PutObjectCommand({
                                                     Bucket: R2_BUCKET,
-                                                    Key: `adrolls-storage/${r2Key}`,
+                                                    Key: r2Key,
                                                     Body: audioBuffer,
                                                     ContentType: 'audio/mpeg'
                                                 }));
-                                                finalAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key.replace(/^\//, '')}`;
+                                                finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
                                                 console.log(`[Video Callback] Grok voiceover generated and persisted: ${finalAudioUrl}`);
                                             }
                                         } catch (r2VoiceErr) {

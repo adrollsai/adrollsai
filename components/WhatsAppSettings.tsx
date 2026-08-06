@@ -1730,7 +1730,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               </div>
 
               {isCreateTemplateOpen && (
-                <form onSubmit={handleCreateTemplate} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                <form onSubmit={handleCreateTemplate} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 sm:p-6 space-y-6 max-h-[85vh] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-widest">Register New WhatsApp Template</span>
                     <button type="button" onClick={() => setIsCreateTemplateOpen(false)} className="text-xs text-red-500 font-bold hover:underline">Cancel</button>
@@ -1738,7 +1738,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
 
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                     {/* Left Column: Form Configuration */}
-                    <div className="lg:col-span-7 space-y-4">
+                    <div className="lg:col-span-6 space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Template Name</label>
@@ -1951,7 +1951,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     </div>
 
                     {/* Right Column: Live Real-Time WhatsApp Preview */}
-                    <div className="lg:col-span-5 sticky top-4 space-y-2">
+                    <div className="lg:col-span-6 sticky top-4 space-y-2.5 flex flex-col items-center justify-start w-full">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block text-center">Live WhatsApp Message Preview</span>
                       <WhatsAppLivePreview
                         headerType={newTemplate.headerType}
@@ -2022,7 +2022,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               </div>
 
               {isCreateBroadcastOpen && (
-                <form onSubmit={handleCreateBroadcast} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <form onSubmit={handleCreateBroadcast} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 sm:p-6 space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-widest">New Broadcast Configuration</span>
                     <button type="button" onClick={() => setIsCreateBroadcastOpen(false)} className="text-xs text-red-500 font-bold hover:underline">Cancel</button>
