@@ -149,8 +149,8 @@ export async function POST(request: Request) {
             }
 
             // Strip redundant /adrolls-storage/ prefix from R2 public domain URLs (r2.dev mounts bucket root directly)
-            if (cleanVideoUrl.includes('.r2.dev/') && !cleanVideoUrl.includes('/adrolls-storage/')) {
-                cleanVideoUrl = cleanVideoUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+            if (cleanVideoUrl.includes('r2.dev/adrolls-storage/')) {
+                cleanVideoUrl = cleanVideoUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
             }
 
             console.log(`[Render Route] Dispatching render for video URL: ${cleanVideoUrl}`);

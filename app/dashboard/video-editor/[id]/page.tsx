@@ -262,7 +262,7 @@ export default function VideoEditorPage() {
                         controls
                         style={{ width: '100%', height: '100%' }}
                         inputProps={{
-                            videoUrl: getBrowserMediaUrl(asset.url),
+                            videoUrl: fixR2Url(asset.url),
                             captions: captions,
                             effects: effects,
                             theme: SUBTITLE_THEMES[selectedTheme],

@@ -289,6 +289,9 @@ export const UploadProvider = ({ children }: { children: React.ReactNode }) => {
             console.error(`[UploadContext] Task ${id} failed:`, err)
             updateTask(id, { status: 'failed', error: err.message || 'Unknown upload error.' })
             toast.error(`Upload failed: ${file.name}`)
+            setTimeout(() => {
+                removeTask(id)
+            }, 10000)
         } finally {
             activeUploadsCount.current--
             processQueue()
