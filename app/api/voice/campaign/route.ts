@@ -184,3 +184,52 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
     }
 }
+
+export async function DELETE(req: Request) {
+    try {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+        const url = new URL(req.url)
+        const campaignId = url.searchParams.get('id')
+        let impersonateId = url.searchParams.get('impersonate')
+
+        if (!campaignId) {
+            return NextResponse.json({ error: 'Missing campaign id' }, { status: 400 })
+        }
+
+        let targetId = user.id
+        if (impersonateId) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single()
+            if (['super_admin', 'agency', 'admin'].includes(authProfile?.role || '')) {
+                targetId = impersonateId
+            }
+        }
+
+        // 1. Unassign leads tagged for this campaign
+        await supabaseAdmin
+            .from('leads')
+            .update({ voice_campaign_id: null, voice_call_status: null })
+            .eq('voice_campaign_id', campaignId)
+
+        // 2. Delete campaign row from database
+        const { error } = await supabaseAdmin
+            .from('voice_campaigns')
+            .delete()
+            .eq('id', campaignId)
+            .eq('user_id', targetId)
+
+        if (error) {
+            return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        return NextResponse.json({ success: true, deletedId: campaignId })
+    } catch (e: any) {
+        return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
+    }
+}

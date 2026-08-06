@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
 import { uploadToR2 } from '@/utils/upload-helper'
+import { getVideoPosterUrl } from '@/utils/get-video-poster'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string; metadata?: any }
@@ -374,10 +375,8 @@ export default function AdsPage() {
   // Helper: Fix R2 URL structure if bucket name is missing
   const fixR2Url = (url: string) => {
     if (!url) return ''
-    if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
-        return url.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
-    }
-    return url
+    if (url.startsWith('/api/fetch-image')) return url
+    return `/api/fetch-image?url=${encodeURIComponent(url)}`
   }
 
   const isVideoFile = (file: File) => file.type.startsWith('video/');
@@ -1331,11 +1330,11 @@ export default function AdsPage() {
               });
               const data = await res.json();
               if (data.success) {
-                  // Persist final edits to library
+                  // Persist final edits and update master_creative_id to link with campaign
                   for (const v of selectedAssets) {
-                      if (v.asset_id) {
-                          // Fetch existing metadata to merge
-                          const { data: assetData } = await supabase.from('assets').select('metadata').eq('id', v.asset_id).single();
+                      const targetId = v.asset_id || v.id;
+                      if (targetId) {
+                          const { data: assetData } = await supabase.from('assets').select('metadata').eq('id', targetId).single();
                           const existingMetadata = assetData?.metadata || {};
                           const updatedMetadata = {
                               ...existingMetadata,
@@ -1345,17 +1344,20 @@ export default function AdsPage() {
                           };
 
                           await supabase.from('assets').update({ 
+                              master_creative_id: orchestrator.campaign.id,
+                              status: 'Active',
                               caption: v.caption || v.primary_text || null,
                               metadata: updatedMetadata 
-                          }).eq('id', v.asset_id);
-
-                          setAssets(curr => curr.map(asset => asset.id === v.asset_id ? { 
-                              ...asset, 
-                              caption: v.caption || v.primary_text || null,
-                              metadata: updatedMetadata 
-                          } : asset));
+                          }).eq('id', targetId);
                       }
                   }
+
+                  // Refetch assets from Supabase DB so new video ads show up under campaign immediately
+                  const { data: refetchedAssets } = await supabase.from('assets').select('*').order('created_at', { ascending: false });
+                  if (refetchedAssets && refetchedAssets.length > 0) {
+                      setAssets(refetchedAssets);
+                  }
+
                   setOrchestrator(prev => ({ ...prev, status: 'success', step: 4, logs: [...prev.logs, { id: Date.now(), text: `Successfully pushed ${data.pushedCount} ads!`, type: 'system' }] }));
               } else {
                   setOrchestrator(prev => ({...prev, status: 'error', logs: [...prev.logs, { id: Date.now(), text: data.error || "Push failed.", type: 'system' }]}));
@@ -2382,7 +2384,7 @@ export default function AdsPage() {
                                                         {a.type === 'video' ? (
                                                             <LazyVideo
                                                                 src={fixR2Url(a.url)}
-                                                                poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined}
+                                                                poster={getVideoPosterUrl(a)}
                                                                 className="w-full h-full object-cover"
                                                             />
                                                         ) : (
@@ -2501,7 +2503,7 @@ export default function AdsPage() {
                                                     {v.type === 'video' ? (
                                                         <LazyVideo 
                                                             src={fixR2Url(v.image_url)} 
-                                                            poster={(v as any).thumbnailUrl ? fixR2Url((v as any).thumbnailUrl) : undefined} 
+                                                            poster={getVideoPosterUrl({ url: v.image_url, metadata: { thumbnailUrl: (v as any).thumbnailUrl } })} 
                                                             className="w-full h-full object-cover" 
                                                         />
                                                     ) : (
@@ -2788,11 +2790,15 @@ export default function AdsPage() {
                   </div>
                   {(() => {
                     const c = explorerData.campaign as any;
-                    const isWA = c?.objective === 'WHATSAPP' || 
-                                 c?.objective === 'OUTCOME_ENGAGEMENT' || 
-                                 c?.campaign_type === 'whatsapp_chat' || 
-                                 c?.destination_type === 'WHATSAPP' ||
-                                 explorerData.adsets?.some((as: any) => as.destination_type === 'WHATSAPP' || as.promoted_object?.whatsapp_phone_number || as.ads?.some((ad: any) => (ad.creative?.linkUrl || '').includes('whatsapp') || (ad.creative?.linkUrl || '').includes('wa.me')));
+                    const isLeadCamp = c?.objective === 'OUTCOME_LEADS' || 
+                                       c?.objective === 'LEAD_GENERATION' || 
+                                       c?.objective === 'LEADS' ||
+                                       explorerData.adsets?.some((as: any) => as.optimization_goal === 'LEAD_GENERATION' || as.billing_event === 'LEAD_GENERATION' || (as.name || '').toLowerCase().includes('lead'));
+                    const isWA = !isLeadCamp && (
+                      c?.objective === 'WHATSAPP' || 
+                      c?.campaign_type === 'whatsapp_chat' || 
+                      c?.destination_type === 'WHATSAPP'
+                    );
                     return (
                       <div className="bg-blue-50 p-4 rounded-[1.5rem] border border-blue-100 shadow-sm flex flex-col justify-between">
                         <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14} className="text-blue-400" /> {isWA ? 'WhatsApp Conversations' : 'Leads'}</span>
@@ -3949,7 +3955,8 @@ export default function AdsPage() {
                                       {/* Results (Leads / WhatsApp Conversations) */}
                                       {(() => {
                                           const camp = statsModal.campaign as any;
-                                          const isWAStats = camp?.objective === 'WHATSAPP' || camp?.objective === 'OUTCOME_ENGAGEMENT' || camp?.campaign_type === 'whatsapp_chat' || camp?.destination_type === 'WHATSAPP';
+                                          const isLeadCampStats = camp?.objective === 'OUTCOME_LEADS' || camp?.objective === 'LEAD_GENERATION' || camp?.objective === 'LEADS' || (camp?.name || '').toLowerCase().includes('lead') || (camp?.name || '').toLowerCase().includes('villa');
+                                          const isWAStats = !isLeadCampStats && (camp?.objective === 'WHATSAPP' || camp?.campaign_type === 'whatsapp_chat' || camp?.destination_type === 'WHATSAPP');
                                           return (
                                               <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm hover:border-blue-200 transition-colors">
                                                   <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14}/> {isWAStats ? 'WhatsApp Conversations' : 'Results (Leads)'}</div>
@@ -4401,7 +4408,7 @@ export default function AdsPage() {
                             {isVideo ? (
                               <LazyVideo 
                                   src={fixR2Url(c.previewUrl)} 
-                                  poster={c.thumbnailUrl ? fixR2Url(c.thumbnailUrl) : undefined} 
+                                  poster={getVideoPosterUrl({ url: c.previewUrl, metadata: { thumbnailUrl: c.thumbnailUrl } })} 
                                   className="w-full h-full object-cover" 
                               />
                             ) : (
@@ -4924,7 +4931,7 @@ export default function AdsPage() {
                                                 <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
                                                     <LazyVideo 
                                                         src={fixR2Url(a.url)} 
-                                                        poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined} 
+                                                        poster={getVideoPosterUrl(a)} 
                                                         className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" 
                                                     />
                                                     <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">
@@ -4979,7 +4986,7 @@ export default function AdsPage() {
                                                             <div className="w-full h-full bg-slate-900 flex items-center justify-center relative">
                                                                 <LazyVideo 
                                                                     src={fixR2Url(a.url)} 
-                                                                    poster={a.metadata?.thumbnailUrl ? fixR2Url(a.metadata.thumbnailUrl) : undefined} 
+                                                                    poster={getVideoPosterUrl(a)} 
                                                                     className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" 
                                                                 />
                                                                 <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">

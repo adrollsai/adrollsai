@@ -17,12 +17,10 @@ export async function middleware(request: NextRequest) {
                            hostname.includes('vercel.app') || 
                            hostname.includes('ngrok-free.dev');
 
+  const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|css|js|webmanifest|json|txt|xml|mp4|webm)$/i.test(url.pathname);
+
   // If it's a custom domain...
   if (!isPlatformDomain) {
-    // Match common static assets (images, icons, fonts, stylesheets, documents, audio/video files) to let them fall through.
-    // This prevents them from being rewritten to /shared/... and throwing 404s.
-    const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|css|js|webmanifest|json|txt|xml|mp4|webm)$/i.test(url.pathname);
-    
     if (url.pathname.startsWith('/api/') || isStaticAsset) {
         // Do nothing, let it fall through
     } else {
@@ -31,11 +29,31 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 3. AUTHENTICATION & REDIRECT LOGIC
   let response = NextResponse.next({
     request: { headers: request.headers },
   })
 
+  // 3. FAST PATH FOR STATIC ASSETS & PUBLIC APIS (Bypasses remote auth network calls)
+  const isPublicApi = url.pathname.startsWith('/api/fetch-image') || 
+                      url.pathname.startsWith('/api/webhooks') || 
+                      url.pathname.startsWith('/api/manifest') ||
+                      url.pathname.startsWith('/api/landing-page/read') ||
+                      url.pathname.startsWith('/api/force-sync');
+
+  if (isStaticAsset || isPublicApi) {
+    return response;
+  }
+
+  // Determine if authentication check is necessary
+  const isDashboardRoute = url.pathname.startsWith('/dashboard');
+  const isRootRoute = url.pathname === '/';
+  const isApiRoute = url.pathname.startsWith('/api/');
+
+  if (!isDashboardRoute && !isRootRoute && !isApiRoute) {
+    return response;
+  }
+
+  // 4. AUTHENTICATION & REDIRECT LOGIC
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -64,7 +82,7 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // AI Operations Protection for Demo Account
-  if (user && user.email === 'adrolls-realty-demo@adrolls.in') {
+  if (user && user.email === 'adrolls-realty-demo@adrolls.in' && isApiRoute) {
     const isAiOperation = 
       request.nextUrl.pathname.startsWith('/api/chat') ||
       request.nextUrl.pathname.startsWith('/api/background-worker') ||
@@ -90,20 +108,19 @@ export async function middleware(request: NextRequest) {
   // --- REDIRECT RULES ---
 
   // Rule A: If user is logged in and hits root (/), send to dashboard
-  if (user && request.nextUrl.pathname === '/') {
+  if (user && isRootRoute) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   // Rule B: Redirect to login ONLY if it's the APP subdomain (starts with 'app.')
-  // This prevents the main landing page from redirecting on localhost or primary domains
   const isAppSubdomain = hostname.startsWith('app.');
   
-  if (!user && request.nextUrl.pathname === '/' && isAppSubdomain) {
+  if (!user && isRootRoute && isAppSubdomain) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
   // Rule C: Standard protection for dashboard routes
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+  if (!user && isDashboardRoute) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
@@ -113,7 +130,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
+     * Match all request paths except for:
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)

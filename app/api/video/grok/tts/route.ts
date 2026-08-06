@@ -71,12 +71,6 @@ export async function POST(request: Request) {
                             Body: audioBuffer,
                             ContentType: 'audio/mpeg'
                         }));
-                        await r2.send(new PutObjectCommand({
-                            Bucket: R2_BUCKET,
-                            Key: `adrolls-storage/${r2Key}`,
-                            Body: audioBuffer,
-                            ContentType: 'audio/mpeg'
-                        }));
                         audioUrl = `${R2_PUBLIC_URL}/${r2Key}`;
                         console.log(`[Grok TTS API] Voiceover persisted to Cloudflare R2: ${audioUrl}`);
                     } else {

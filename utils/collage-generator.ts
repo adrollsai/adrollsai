@@ -12,7 +12,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
  * @param userId User ID for folder organization
  * @returns Array of 9:16 collage image URLs
  */
-export async function createCollageImages(imageUrls: string[], userId: string = 'system'): Promise<string[]> {
+export async function createCollageImages(imageUrls: string[], userId: string = 'system', requiredClips: number = 1): Promise<string[]> {
     if (!imageUrls || imageUrls.length === 0) {
         return [];
     }
@@ -27,11 +27,23 @@ export async function createCollageImages(imageUrls: string[], userId: string = 
         return [];
     }
 
-    // Split into chunks of max 6 images
-    const CHUNK_SIZE = 6;
     const chunks: string[][] = [];
-    for (let i = 0; i < validUrls.length; i += CHUNK_SIZE) {
-        chunks.push(validUrls.slice(i, i + CHUNK_SIZE));
+    if (requiredClips > 1 && validUrls.length >= requiredClips) {
+        // Distribute images evenly across the required scene clips
+        const imagesPerClip = Math.ceil(validUrls.length / requiredClips);
+        for (let c = 0; c < requiredClips; c++) {
+            const start = c * imagesPerClip;
+            const chunk = validUrls.slice(start, start + imagesPerClip);
+            if (chunk.length > 0) {
+                chunks.push(chunk.slice(0, 6)); // max 6 images per GPT 2.0 grid
+            }
+        }
+    } else {
+        // Split into chunks of max 6 images
+        const CHUNK_SIZE = 6;
+        for (let i = 0; i < validUrls.length; i += CHUNK_SIZE) {
+            chunks.push(validUrls.slice(i, i + CHUNK_SIZE));
+        }
     }
 
     const collageUrls: string[] = [];
@@ -190,7 +202,7 @@ async function buildSharpCollageFallback(chunk: string[], chunkIdx: number, user
             ContentType: 'image/jpeg'
         }));
 
-        return `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
+        return `${R2_PUBLIC_URL}/${r2Key}`;
     } catch (err) {
         console.error(`[Collage Generator] Sharp fallback failed:`, err);
         return null;

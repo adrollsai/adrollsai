@@ -30,6 +30,8 @@ export async function analyzeMediaAction(url?: string, file?: File) {
             
             if (url.includes('/adrolls-storage/')) {
                 tempKey = url.split('/adrolls-storage/')[1];
+            } else if (url.includes('.r2.dev/')) {
+                tempKey = url.split('.r2.dev/')[1];
             }
         } else if (file) {
             buffer = Buffer.from(await file.arrayBuffer());
@@ -70,8 +72,8 @@ RULES:
         const result = await generateContentWithFallback(
             genAI,
             [prompt, part],
-            "gemini-3-flash-preview",
-            null
+            "gemini-3.5-flash",
+            "gemini-3.5-flash"
         );
         const text = result.response.text();
 

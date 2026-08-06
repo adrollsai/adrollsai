@@ -119,6 +119,7 @@ export default function BottomNav() {
               <Link
                 key={item.name}
                 href={href}
+                prefetch={true}
                 className="flex flex-col items-center gap-1.5 min-w-[64px] xs:min-w-[72px] sm:min-w-[84px] group pt-2 pb-1 shrink-0"
               >
                 <div className={`

@@ -12,10 +12,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    let targetUrl = imageUrl;
-    if (targetUrl.includes('.r2.dev/') && !targetUrl.includes('/adrolls-storage/')) {
-        targetUrl = targetUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+    // Generate both URL forms (with adrolls-storage and without adrolls-storage)
+    let urlWithAdrolls = imageUrl;
+    let urlWithoutAdrolls = imageUrl;
+
+    if (imageUrl.includes('.r2.dev/')) {
+      if (imageUrl.includes('/adrolls-storage/')) {
+        urlWithoutAdrolls = imageUrl.replace('/adrolls-storage/', '/');
+      } else {
+        urlWithAdrolls = imageUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+      }
     }
+
+    const candidateUrls = Array.from(new Set([imageUrl, urlWithoutAdrolls, urlWithAdrolls]));
 
     const range = request.headers.get('range');
     const fetchHeaders: Record<string, string> = {};
@@ -23,20 +32,42 @@ export async function GET(request: Request) {
       fetchHeaders['range'] = range;
     }
 
-    // Fetch the image/video on the server side (bypasses browser CORS while preserving Range requests)
-    let response = await fetch(targetUrl, { headers: fetchHeaders });
+    let response: Response | null = null;
 
-    // Fallback attempt if original URL failed
-    if (!response.ok && targetUrl !== imageUrl) {
-      response = await fetch(imageUrl, { headers: fetchHeaders });
+    for (const urlCandidate of candidateUrls) {
+      try {
+        const res = await fetch(urlCandidate, { headers: fetchHeaders });
+        if (res.ok || res.status === 206) {
+          response = res;
+          break;
+        }
+      } catch (err) {}
     }
-    
-    if (!response.ok && response.status !== 206) {
-      throw new Error(`Failed to fetch media from source: ${response.status}`);
+
+    if (!response || (!response.ok && response.status !== 206)) {
+      console.error(`[fetch-image] All candidate URLs failed for: ${imageUrl}`);
+      return new NextResponse('Error fetching media', { status: 404 });
     }
+
+    let mimeType = response.headers.get('Content-Type');
+    const lowerUrl = imageUrl.toLowerCase();
     
-    const mimeType = response.headers.get('Content-Type') || 'application/octet-stream';
-    
+    if (!mimeType || mimeType === 'application/octet-stream' || mimeType === 'binary/octet-stream' || mimeType === 'text/plain') {
+      if (lowerUrl.match(/\.mp4(\?|$)/i)) {
+        mimeType = 'video/mp4';
+      } else if (lowerUrl.match(/\.webm(\?|$)/i)) {
+        mimeType = 'video/webm';
+      } else if (lowerUrl.match(/\.png(\?|$)/i)) {
+        mimeType = 'image/png';
+      } else if (lowerUrl.match(/\.(jpg|jpeg)(\?|$)/i)) {
+        mimeType = 'image/jpeg';
+      } else if (lowerUrl.match(/\.webp(\?|$)/i)) {
+        mimeType = 'image/webp';
+      } else {
+        mimeType = 'video/mp4';
+      }
+    }
+
     const headers: Record<string, string> = {
       'Content-Type': mimeType,
       'Access-Control-Allow-Origin': '*',
@@ -54,11 +85,9 @@ export async function GET(request: Request) {
     }
 
     if (triggerDownload) {
-      // Direct browser download attachment header
       headers['Content-Disposition'] = `attachment; filename="${customName}"`;
     }
 
-    // Return response with original status (206 for Range/Partial Content or 200)
     return new NextResponse(response.body, {
       status: response.status,
       headers,

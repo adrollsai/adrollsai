@@ -140,3 +140,751 @@
   "leadgenTosAccepted": true
 }
 ------------------------------------------------
+[2026-08-01T10:05:43.698Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:43.702Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:43.717Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:43.718Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:43.824Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:05:44.475Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:05:45.364Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:45.368Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:45.791Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:05:46.116Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:05:46.194Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:05:50.250Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:50.251Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:50.362Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:50.363Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:50.485Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:05:51.015Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:05:51.296Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:05:51.976Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:51.978Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:53.247Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:05:54.843Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:05:54.844Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:05:56.047Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:30:18.474Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:30:18.475Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:30:18.489Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:30:18.491Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:30:18.505Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:30:18.506Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:30:18.509Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:30:18.510Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:30:18.620Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:30:18.645Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:30:18.646Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:30:18.673Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:30:19.109Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:30:19.139Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:30:19.938Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:30:20.021Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82104",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:30:20.972Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "82392",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:46:25.451Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:25.459Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:25.496Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:25.497Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:25.613Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:46:26.162Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:46:26.862Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "83200",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:46:26.879Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:26.880Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:27.011Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:46:27.412Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:46:27.481Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:27.482Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:28.610Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "83200",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:46:29.229Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:29.230Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:30.216Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "83200",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:46:42.240Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:42.241Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:42.264Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:42.265Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:42.356Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:46:42.808Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:46:43.403Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:43.405Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:43.531Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-01T10:46:43.926Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-01T10:46:44.938Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "83200",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:46:45.511Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:45.512Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:46.630Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "83200",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-01T10:46:47.198Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-01T10:46:47.199Z] [Check-Account API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-01T10:46:48.313Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "83200",
+  "prepaid_balance": null,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-03T05:06:52.026Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:06:52.029Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:06:52.135Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:06:52.637Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:06:56.689Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-03T05:06:56.786Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:06:56.787Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:06:56.891Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:06:57.484Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:06:58.115Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-03T05:06:58.234Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:06:58.235Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:06:58.345Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:06:58.837Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:06:59.593Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:06:59.594Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:06:59.707Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:07:00.127Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:09:20.205Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:20.207Z] [Campaigns API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:20.214Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:20.216Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:20.318Z] [Campaigns API] Token Exists: true, Ad Account: act_431233473660683
+------------------------------------------------
+[2026-08-03T05:09:20.883Z] [Campaigns API] Successfully fetched 14 campaigns
+------------------------------------------------
+[2026-08-03T05:09:23.580Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 0,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-03T05:09:24.221Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:24.222Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:24.257Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:24.258Z] [Campaigns API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:24.368Z] [Campaigns API] Token Exists: true, Ad Account: act_431233473660683
+------------------------------------------------
+[2026-08-03T05:09:24.966Z] [Campaigns API] Successfully fetched 14 campaigns
+------------------------------------------------
+[2026-08-03T05:09:26.543Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 0,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-03T05:09:27.082Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:27.083Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-03T05:09:28.023Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 0,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-03T05:39:24.346Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:39:24.347Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:39:24.455Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:39:24.942Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:39:25.563Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:39:25.563Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:39:25.710Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:39:26.147Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:39:29.591Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-03T05:39:29.805Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:39:29.806Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:39:29.911Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:39:30.346Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:39:38.470Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-03T05:39:38.578Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:39:38.579Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:39:38.872Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:39:39.585Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:40:15.180Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:40:15.182Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:40:15.287Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:40:15.808Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:40:16.296Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-03T05:40:16.355Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:40:16.356Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:40:16.463Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:40:16.884Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:40:17.436Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:40:17.437Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:40:17.555Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:40:17.956Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:40:18.516Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:40:18.517Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:40:18.628Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:40:19.051Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-03T05:40:19.487Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-03T05:40:28.426Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-03T05:40:28.427Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-03T05:40:28.530Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-03T05:40:28.984Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T05:11:54.540Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:11:54.544Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:11:54.550Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:11:54.552Z] [Check-Account API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:11:54.673Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-08-04T05:11:55.672Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------
+[2026-08-04T05:11:56.458Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:11:56.460Z] [Campaigns API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:11:56.611Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 0,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-04T05:11:56.676Z] [Campaigns API] Token Exists: true, Ad Account: act_676048632457702
+------------------------------------------------
+[2026-08-04T05:11:57.186Z] [Campaigns API] Successfully fetched 21 campaigns
+------------------------------------------------
+[2026-08-04T05:12:18.365Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:12:18.370Z] [Check-Account API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:12:19.198Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:12:19.200Z] [Check-Account API] targetUserId resolved to: d838c956-1761-4bce-9d91-32f3abecc222
+------------------------------------------------
+[2026-08-04T05:12:20.059Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 0,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-04T05:12:20.346Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 0,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-04T05:44:44.599Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T05:44:44.603Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T05:44:44.906Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T05:44:45.468Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T05:44:46.435Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T05:44:46.437Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T05:44:46.587Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T05:44:47.037Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T05:44:51.026Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-04T05:44:51.205Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T05:44:51.206Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T05:44:51.330Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T05:44:52.997Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T05:44:54.281Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T05:44:54.283Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T05:44:54.369Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-04T05:44:54.397Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T05:44:54.828Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T05:45:00.823Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T05:45:00.824Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T05:45:00.945Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T05:45:01.665Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T07:03:33.296Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T07:03:33.320Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T07:03:33.500Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T07:03:34.275Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T07:03:34.964Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T07:03:34.965Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T07:03:35.171Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T07:03:35.680Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T07:03:42.238Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-04T07:03:42.284Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T07:03:42.285Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T07:03:42.431Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T07:03:42.931Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T07:03:43.525Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T07:03:43.526Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T07:03:43.631Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T07:03:44.076Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-04T07:03:44.567Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-04T07:03:44.677Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-04T07:03:44.677Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-04T07:03:44.789Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-04T07:03:45.218Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-05T08:25:03.107Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:03.110Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:03.129Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:03.130Z] [Campaigns API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:03.459Z] [Campaigns API] Token Exists: true, Ad Account: act_431233473660683
+------------------------------------------------
+[2026-08-05T08:25:04.095Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-05T08:25:05.127Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:05.128Z] [Campaigns API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:05.237Z] [Campaigns API] Token Exists: true, Ad Account: act_431233473660683
+------------------------------------------------
+[2026-08-05T08:25:05.768Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-05T08:25:06.086Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 2999.98,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-05T08:25:14.384Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:14.385Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:14.390Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:14.391Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:15.735Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 2999.98,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-05T08:25:17.305Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 2999.98,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-05T08:25:35.262Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:35.264Z] [Campaigns API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:35.517Z] [Campaigns API] Token Exists: true, Ad Account: act_431233473660683
+------------------------------------------------
+[2026-08-05T08:25:35.531Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:35.532Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:25:36.053Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-05T08:25:39.346Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 2999.98,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-05T08:46:15.771Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:15.789Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:15.895Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:15.904Z] [Campaigns API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:16.151Z] [Campaigns API] Token Exists: true, Ad Account: act_431233473660683
+------------------------------------------------
+[2026-08-05T08:46:16.194Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:16.197Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:16.306Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:16.309Z] [Campaigns API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:16.519Z] [Check-Account API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:16.524Z] [Check-Account API] targetUserId resolved to: 42d2e0c5-4fe6-4738-8a9f-63f09be01f12
+------------------------------------------------
+[2026-08-05T08:46:16.552Z] [Campaigns API] Token Exists: true, Ad Account: act_431233473660683
+------------------------------------------------
+[2026-08-05T08:46:17.366Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-05T08:46:17.510Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-05T08:46:17.785Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 2999.98,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-05T08:46:17.881Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 2999.98,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-05T08:46:18.945Z] [Check-Account API] Success check results
+{
+  "account_status": 1,
+  "has_payment_method": true,
+  "balance": "0",
+  "prepaid_balance": 2999.98,
+  "currency": "INR",
+  "leadgenTosAccepted": true
+}
+------------------------------------------------
+[2026-08-06T07:30:50.532Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-06T07:30:50.536Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-06T07:30:50.651Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-06T07:30:51.156Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-06T07:30:51.784Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-06T07:30:51.785Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-06T07:30:51.922Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-06T07:30:52.441Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-06T07:30:52.706Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-06T07:30:53.101Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-06T07:30:53.102Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-06T07:30:53.270Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-06T07:30:53.940Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------
+[2026-08-06T07:30:58.949Z] [Campaigns API] Request by User: bc63c065-9bcc-4793-bedc-f0960406425b (super_admin), Impersonating: null
+------------------------------------------------
+[2026-08-06T07:30:58.950Z] [Campaigns API] targetUserId resolved to: bc63c065-9bcc-4793-bedc-f0960406425b
+------------------------------------------------
+[2026-08-06T07:30:58.969Z] --- CRM SYNC START ---
+------------------------------------------------
+[2026-08-06T07:30:59.064Z] [Campaigns API] Token Exists: true, Ad Account: act_1532845147843203
+------------------------------------------------
+[2026-08-06T07:30:59.543Z] [Campaigns API] Successfully fetched 10 campaigns
+------------------------------------------------

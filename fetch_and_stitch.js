@@ -258,6 +258,22 @@ async function run() {
                 const concatTxtPath = path.join(tempDir, 'concat.txt');
                 fs.writeFileSync(concatTxtPath, concatContent);
 
+                const audioUrl = tasks[0]?.audio_url;
+                let audioPath = null;
+
+                if (audioUrl) {
+                    try {
+                        console.log(`Downloading voiceover audio from ${audioUrl}...`);
+                        const audioRes = await global.fetch(audioUrl);
+                        if (audioRes.ok) {
+                            audioPath = path.join(tempDir, 'audio.mp3');
+                            fs.writeFileSync(audioPath, Buffer.from(await audioRes.arrayBuffer()));
+                        }
+                    } catch (audioErr) {
+                        console.error(`Failed to download audioUrl for stitching:`, audioErr);
+                    }
+                }
+
                 const outputPath = path.join(tempDir, 'stitched.mp4');
                 const ffmpegBinary = path.join(
                     process.cwd(), 
@@ -265,7 +281,10 @@ async function run() {
                     process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                 );
 
-                const cmd = `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+                const cmd = audioPath
+                    ? `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${audioPath}" -c:v copy -c:a aac -shortest -movflags +faststart "${outputPath}"`
+                    : `"${ffmpegBinary}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+                
                 console.log(`Executing FFmpeg: ${cmd}`);
 
                 await new Promise((resolve, reject) => {

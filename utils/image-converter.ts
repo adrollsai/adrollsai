@@ -38,7 +38,7 @@ export async function ensureJpegImage(imageUrl: string, userId: string): Promise
     }
 
     const cacheKey = `generated/${userId}/converted_img_${hash}.jpg`;
-    const cachedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${cacheKey}`;
+    const cachedUrl = `${R2_PUBLIC_URL}/${cacheKey}`;
 
     try {
         await r2.send(new HeadObjectCommand({

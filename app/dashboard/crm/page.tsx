@@ -11,6 +11,7 @@ import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
 import TestNotificationBtn from '@/components/TestNotificationBtn'
 import { toast } from 'sonner'
+import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
@@ -26,6 +27,24 @@ function urlBase64ToUint8Array(base64String: string) {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
+}
+
+function formatCallPhone(phoneRaw: string | null | undefined): string {
+  if (!phoneRaw) return '';
+  let clean = phoneRaw.trim();
+  if (clean.startsWith('+')) return clean;
+  let digits = clean.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 11 && digits.startsWith('0')) {
+    digits = digits.substring(1);
+  }
+  if (digits.length === 10) {
+    return `+91${digits}`;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return `+${digits}`;
+  }
+  return `+${digits}`;
 }
 
 export default function CRMPage() {
@@ -133,6 +152,9 @@ export default function CRMPage() {
   const [approvedTemplates, setApprovedTemplates] = useState<any[]>([])
   const [selectedTemplateName, setSelectedTemplateName] = useState('')
   const [selectedTemplateBody, setSelectedTemplateBody] = useState('')
+  const [selectedTemplateLanguage, setSelectedTemplateLanguage] = useState('en_US')
+  const [selectedHeaderFormat, setSelectedHeaderFormat] = useState<'IMAGE' | 'VIDEO' | 'DOCUMENT' | null>(null)
+  const [selectedHeaderMediaUrl, setSelectedHeaderMediaUrl] = useState('')
   const [isSendingTemplates, setIsSendingTemplates] = useState(false)
   const [isCallingCampaign, setIsCallingCampaign] = useState(false)
   const [templateVarMappings, setTemplateVarMappings] = useState<Record<string, { field: string; customVal: string }>>({})
@@ -212,7 +234,9 @@ export default function CRMPage() {
             recipient: displayPhone,
             templateName: selectedTemplateName,
             isSandboxTest: selectedTemplateName === 'hello_world',
-            parameters
+            parameters,
+            headerMediaUrl: selectedHeaderMediaUrl,
+            language: selectedTemplateLanguage
           })
         })
 
@@ -541,6 +565,46 @@ export default function CRMPage() {
     }
   }
 
+  // --- BULLETPROOF MOBILE & SWIPE GESTURE SCROLL RESTORATION ---
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    // Enforce manual scroll restoration so iOS Safari & Android Chrome don't force reset viewport to top (0,0)
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual'
+    }
+
+    const saveScrollPosition = () => {
+      if (window.scrollY > 0) {
+        sessionStorage.setItem('crm_scroll_position', window.scrollY.toString())
+      }
+    }
+
+    const restoreScroll = () => {
+      const savedPos = sessionStorage.getItem('crm_scroll_position')
+      if (savedPos && parseInt(savedPos, 10) > 0) {
+        const targetY = parseInt(savedPos, 10)
+        window.scrollTo({ top: targetY, behavior: 'instant' as any })
+        requestAnimationFrame(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }))
+        setTimeout(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }), 50)
+        setTimeout(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }), 150)
+        setTimeout(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }), 300)
+        setTimeout(() => window.scrollTo({ top: targetY, behavior: 'instant' as any }), 500)
+      }
+    }
+
+    window.addEventListener('scroll', saveScrollPosition, { passive: true })
+    window.addEventListener('pageshow', restoreScroll)
+    window.addEventListener('popstate', restoreScroll)
+
+    return () => {
+      saveScrollPosition()
+      window.removeEventListener('scroll', saveScrollPosition)
+      window.removeEventListener('pageshow', restoreScroll)
+      window.removeEventListener('popstate', restoreScroll)
+    }
+  }, [])
+
   // Fetch leads when page or active filters change
   useEffect(() => {
     if (isFirstRender.current) {
@@ -548,9 +612,24 @@ export default function CRMPage() {
       return;
     }
     setLoading(true)
-    setLeads([])
     fetchLeads(true)
   }, [currentPage, activeStage, selectedCampaign, selectedForm, selectedCsvAudience])
+
+  // Restore scroll position after leads finish rendering in DOM
+  useEffect(() => {
+    if (!loading && leads.length > 0 && typeof window !== 'undefined') {
+      const savedPos = sessionStorage.getItem('crm_scroll_position')
+      if (savedPos && parseInt(savedPos, 10) > 0) {
+        const targetY = parseInt(savedPos, 10)
+        const restore = () => window.scrollTo({ top: targetY, behavior: 'instant' as any })
+        restore()
+        requestAnimationFrame(restore)
+        setTimeout(restore, 50)
+        setTimeout(restore, 150)
+        setTimeout(restore, 300)
+      }
+    }
+  }, [loading, leads.length])
 
   // Trigger initial fetch & silent background auto-sync of Facebook leads
   useEffect(() => { 
@@ -1429,8 +1508,8 @@ END:VCARD\n`
                     <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
                         
                         {/* ROW 1: Name, Checkbox and Actions */}
-                        <div className="flex justify-between items-start mb-3">
-                            <div className="flex items-start gap-3 flex-1 min-w-0 pr-4 mt-1">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-3">
+                            <div className="flex items-start gap-3 flex-1 min-w-0 w-full sm:w-auto">
                                 <input 
                                     type="checkbox"
                                     checked={selectedLeadIds.includes(lead.id)}
@@ -1442,10 +1521,10 @@ END:VCARD\n`
                                             setSelectedLeadIds(prev => [...prev, lead.id])
                                         }
                                     }}
-                                    className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer"
+                                    className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer shrink-0"
                                 />
                                 <div className="min-w-0 flex-1">
-                                    <h3 className="font-extrabold text-slate-900 text-lg pr-2 break-words whitespace-normal group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
+                                    <h3 className="font-extrabold text-slate-900 text-base sm:text-lg break-words leading-snug group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
                                     <p className="text-[11px] font-bold text-slate-500 mt-0.5">{displayPhone || 'No phone number'}</p>
                                     {(getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name) && (
                                         <p className="text-[10px] font-extrabold text-slate-400/80 mt-1 break-words whitespace-normal bg-slate-50 border border-slate-100 rounded-lg px-2 py-0.5 inline-block max-w-full" title={getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}>
@@ -1454,7 +1533,7 @@ END:VCARD\n`
                                     )}
                                 </div>
                             </div>
-                            <div className="flex gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap sm:flex-nowrap pt-1 sm:pt-0">
                                 {displayPhone && (
                                     <>
                                         <button 
@@ -1507,12 +1586,13 @@ END:VCARD\n`
                                             <Send size={16} />
                                         </a>
                                         <a 
-                                            href={`tel:${displayPhone}`} 
+                                            href={`tel:${formatCallPhone(displayPhone)}`} 
                                             onClick={e => { 
                                                 e.stopPropagation(); 
                                                 sessionStorage.setItem('crm_scroll', window.scrollY.toString()); 
                                             }} 
                                             className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-600 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                            title="Call Lead"
                                         >
                                             <Phone size={16} />
                                         </a>
@@ -1521,6 +1601,7 @@ END:VCARD\n`
                                 <button 
                                     onClick={(e) => handleDeleteLead(lead.id, e)} 
                                     className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                    title="Delete Lead"
                                 >
                                     <Trash2 size={16} />
                                 </button>
@@ -2009,7 +2090,16 @@ END:VCARD\n`
                                       const name = e.target.value;
                                       setSelectedTemplateName(name);
                                       const t = approvedTemplates.find(x => x.name === name);
-                                      setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY')?.text || '');
+                                      setSelectedTemplateBody(t?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')?.text || '');
+                                      setSelectedTemplateLanguage(t?.language || 'en_US');
+                                      const headerComp = t?.components?.find((c: any) => c.type === 'HEADER' || c.type === 'header');
+                                      const fmt = headerComp?.format || headerComp?.type;
+                                      if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(fmt)) {
+                                          setSelectedHeaderFormat(fmt);
+                                      } else {
+                                          setSelectedHeaderFormat(null);
+                                      }
+                                      setSelectedHeaderMediaUrl('');
                                   }}
                                   className="w-full appearance-none bg-slate-50 border border-slate-100 py-3.5 px-5 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-blue-500/10 outline-none cursor-pointer"
                               >
@@ -2032,6 +2122,14 @@ END:VCARD\n`
                                           {selectedTemplateBody}
                                       </div>
                                   </div>
+
+                                  {selectedHeaderFormat && (
+                                      <WhatsAppTemplateMediaPicker
+                                          headerType={selectedHeaderFormat}
+                                          mediaUrl={selectedHeaderMediaUrl}
+                                          onMediaSelect={(url: string) => setSelectedHeaderMediaUrl(url)}
+                                      />
+                                  )}
 
                                   {detectedVars.length > 0 ? (
                                       <div className="bg-blue-50/60 border border-blue-100 p-4 rounded-2xl space-y-3">

@@ -33,6 +33,8 @@ import {
 import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { toast } from 'sonner'
+import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
+import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
 
 // Map template icon names to actual Lucide Icon components
 const iconMap: Record<string, any> = {
@@ -320,7 +322,15 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     category: 'MARKETING',
+    headerType: 'NONE' as 'NONE' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT',
+    headerText: '',
     bodyText: '',
+    buttonsType: 'NONE' as 'NONE' | 'QUICK_REPLY' | 'CALL_TO_ACTION',
+    quickReplyButtons: ['', '', ''],
+    ctaUrlText: 'Visit Website',
+    ctaUrl: '',
+    ctaPhoneText: 'Call Us Now',
+    ctaPhone: '',
     buttons: ['', '']
   })
   const [submittingTemplate, setSubmittingTemplate] = useState(false)
@@ -338,6 +348,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [newBroadcast, setNewBroadcast] = useState({
     title: '',
     templateName: '',
+    headerMediaUrl: '',
     recipientStage: 'All',
     recipientPropertyId: '',
     recipientCsvAudience: '',
@@ -346,10 +357,28 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   })
   const [submittingBroadcast, setSubmittingBroadcast] = useState(false)
 
+  const getTemplateHeaderType = (templateName: string): 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'TEXT' | null => {
+    const tpl = templates.find(t => t.name === templateName)
+    if (tpl) {
+      const headerObj = tpl.components?.find((c: any) => c.type === 'HEADER' || c.type === 'header')
+      if (headerObj) {
+        const fmt = (headerObj.format || headerObj.type || '').toUpperCase()
+        if (['IMAGE', 'VIDEO', 'DOCUMENT', 'TEXT'].includes(fmt)) {
+          return fmt as any
+        }
+      }
+    }
+    const lower = templateName.toLowerCase()
+    if (lower.includes('video') || lower.includes('reel')) return 'VIDEO'
+    if (lower.includes('pdf') || lower.includes('doc') || lower.includes('brochure')) return 'DOCUMENT'
+    if (lower.includes('offer') || lower.includes('promo') || lower.includes('image') || lower.includes('photo') || lower.includes('banner')) return 'IMAGE'
+    return null
+  }
+
   const getDetectedTemplateVars = (tplName: string): number[] => {
     const tpl = templates.find(t => t.name === tplName)
     if (!tpl) return []
-    const bodyObj = tpl.components?.find((c: any) => c.type === 'BODY')
+    const bodyObj = tpl.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')
     const bodyText = bodyObj?.text || ''
     const matches = bodyText.match(/\{\{(\d+)\}\}/g) || []
     const parsed = matches.map((m: string) => parseInt(m.replace(/\D/g, '')))
@@ -795,7 +824,20 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       if (data.success) {
         toast.success("Template submitted to Meta successfully! 🎉")
         setIsCreateTemplateOpen(false)
-        setNewTemplate({ name: '', category: 'MARKETING', bodyText: '', buttons: ['', ''] })
+        setNewTemplate({
+          name: '',
+          category: 'MARKETING',
+          headerType: 'NONE',
+          headerText: '',
+          bodyText: '',
+          buttonsType: 'NONE',
+          quickReplyButtons: ['', '', ''],
+          ctaUrlText: 'Visit Website',
+          ctaUrl: '',
+          ctaPhoneText: 'Call Us Now',
+          ctaPhone: '',
+          buttons: ['', '']
+        })
         await fetchTemplates()
       } else {
         toast.error(data.error || "Submission failed.")
@@ -836,7 +878,16 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       if (data.success) {
         toast.success(data.message || "Broadcast campaign scheduled successfully!")
         setIsCreateBroadcastOpen(false)
-        setNewBroadcast({ title: '', templateName: '', recipientStage: 'All', recipientPropertyId: '', recipientCsvAudience: '', scheduledAt: '', variableMappings: {} })
+        setNewBroadcast({
+          title: '',
+          templateName: '',
+          headerMediaUrl: '',
+          recipientStage: 'All',
+          recipientPropertyId: '',
+          recipientCsvAudience: '',
+          scheduledAt: '',
+          variableMappings: {}
+        })
         setBroadcastTargetAudienceType('all')
         setSelectedBroadcastSources([])
         setSelectedBroadcastMetaCampaigns([])
@@ -1679,84 +1730,242 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               </div>
 
               {isCreateTemplateOpen && (
-                <form onSubmit={handleCreateTemplate} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <form onSubmit={handleCreateTemplate} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 sm:p-6 space-y-6 max-h-[85vh] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-widest">Register New WhatsApp Template</span>
                     <button type="button" onClick={() => setIsCreateTemplateOpen(false)} className="text-xs text-red-500 font-bold hover:underline">Cancel</button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Template Name</label>
-                      <input 
-                        type="text" 
-                        value={newTemplate.name}
-                        onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
-                        placeholder="e.g. project_visit_invite" 
-                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-mono outline-none focus:border-blue-400"
-                        required
-                      />
-                      <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">Use lowercase letters, numbers, and underscores only.</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Template Category</label>
-                      <select 
-                        value={newTemplate.category}
-                        onChange={(e) => setNewTemplate({ ...newTemplate, category: e.target.value })}
-                        className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
-                      >
-                        <option value="MARKETING">Marketing Campaign</option>
-                        <option value="UTILITY">Utility / Reminders</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Body Text Content</label>
-                    <textarea 
-                      value={newTemplate.bodyText}
-                      onChange={(e) => setNewTemplate({ ...newTemplate, bodyText: e.target.value })}
-                      placeholder="Hi {{1}}, thanks for booking a site visit to {{2}} tomorrow at {{3}}." 
-                      rows={4}
-                      className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all resize-none"
-                      required
-                    />
-                    <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">{"Include placeholders like {{1}} for variables. Values are mapped dynamically on send."}</span>
-                  </div>
 
-                  {/* Quick Reply Buttons Section */}
-                  <div className="space-y-2 pt-2 border-t border-slate-200">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block ml-1">
-                      Quick Reply Buttons (Optional - Max 2 Buttons)
-                    </label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {(newTemplate.buttons || ['', '']).map((btnText, bIdx) => (
-                        <div key={bIdx} className="space-y-1">
-                          <label className="text-[9px] font-bold text-slate-400 block ml-1">Button {bIdx + 1} Text:</label>
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    {/* Left Column: Form Configuration */}
+                    <div className="lg:col-span-6 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Template Name</label>
                           <input 
                             type="text" 
-                            value={btnText}
-                            onChange={(e) => {
-                              const updated = [...(newTemplate.buttons || ['', ''])]
-                              updated[bIdx] = e.target.value
-                              setNewTemplate({ ...newTemplate, buttons: updated })
-                            }}
-                            placeholder={bIdx === 0 ? "e.g. Yes, Interested" : "e.g. Not Right Now"}
-                            className="w-full bg-white border border-slate-200 py-2 px-3 rounded-xl text-xs font-bold outline-none focus:border-blue-400"
-                            maxLength={25}
+                            value={newTemplate.name}
+                            onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                            placeholder="e.g. project_visit_invite" 
+                            className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-mono outline-none focus:border-blue-400"
+                            required
                           />
+                          <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">Use lowercase letters, numbers, and underscores only.</span>
                         </div>
-                      ))}
-                    </div>
-                    <span className="text-[9px] text-slate-400 block ml-1 font-medium">Quick reply buttons allow leads to respond in 1 click.</span>
-                  </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Template Category</label>
+                          <select 
+                            value={newTemplate.category}
+                            onChange={(e) => setNewTemplate({ ...newTemplate, category: e.target.value })}
+                            className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                          >
+                            <option value="MARKETING">Marketing Campaign</option>
+                            <option value="UTILITY">Utility / Reminders</option>
+                          </select>
+                        </div>
+                      </div>
 
-                  <button 
-                    type="submit"
-                    disabled={submittingTemplate}
-                    className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {submittingTemplate && <Loader2 size={12} className="animate-spin" />}
-                    Submit for Approval
-                  </button>
+                      {/* Header Format Selection */}
+                      <div className="space-y-1.5 pt-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block ml-1">Header Media / Format (Optional)</label>
+                        <div className="grid grid-cols-5 gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200">
+                          {(['NONE', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'] as const).map(fmt => (
+                            <button
+                              key={fmt}
+                              type="button"
+                              onClick={() => setNewTemplate({ ...newTemplate, headerType: fmt })}
+                              className={`py-2 px-1 text-[10px] font-black rounded-xl transition-all uppercase truncate ${
+                                newTemplate.headerType === fmt 
+                                  ? 'bg-slate-900 text-white shadow-sm' 
+                                  : 'text-slate-500 hover:bg-slate-100'
+                              }`}
+                            >
+                              {fmt === 'NONE' ? 'None' : fmt === 'DOCUMENT' ? 'PDF' : fmt}
+                            </button>
+                          ))}
+                        </div>
+
+                        {newTemplate.headerType === 'TEXT' && (
+                          <div className="pt-1">
+                            <input
+                              type="text"
+                              value={newTemplate.headerText}
+                              onChange={(e) => setNewTemplate({ ...newTemplate, headerText: e.target.value })}
+                              placeholder="e.g. 🎉 Special Launch Offer"
+                              className="w-full bg-white border border-slate-200 py-2 px-3 rounded-xl text-xs font-bold outline-none focus:border-blue-400"
+                              maxLength={60}
+                            />
+                          </div>
+                        )}
+
+                        {['IMAGE', 'VIDEO', 'DOCUMENT'].includes(newTemplate.headerType) && (
+                          <div className="bg-emerald-50 border border-emerald-200/80 p-2.5 rounded-xl text-[10px] text-emerald-800 font-medium">
+                            📌 <strong>Meta Requirement:</strong> You are registering an approved <strong>{newTemplate.headerType}</strong> header template. When sending this template in CRM or Broadcasts, you will select or upload your specific {newTemplate.headerType === 'IMAGE' ? 'Image' : newTemplate.headerType === 'VIDEO' ? 'Video' : 'PDF Document'} asset.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Body Text Content */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Body Text Content</label>
+                          <div className="flex gap-1 text-[9px] font-bold">
+                            <button type="button" onClick={() => setNewTemplate(prev => ({ ...prev, bodyText: prev.bodyText + ' {{1}}' }))} className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded border border-blue-200 hover:bg-blue-100">+ {"{{1}}"} Name</button>
+                            <button type="button" onClick={() => setNewTemplate(prev => ({ ...prev, bodyText: prev.bodyText + ' {{2}}' }))} className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded border border-blue-200 hover:bg-blue-100">+ {"{{2}}"} Property</button>
+                            <button type="button" onClick={() => setNewTemplate(prev => ({ ...prev, bodyText: prev.bodyText + ' {{3}}' }))} className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded border border-blue-200 hover:bg-blue-100">+ {"{{3}}"} Business</button>
+                          </div>
+                        </div>
+                        <textarea 
+                          value={newTemplate.bodyText}
+                          onChange={(e) => setNewTemplate({ ...newTemplate, bodyText: e.target.value })}
+                          placeholder="Hi {{1}}, thanks for booking a site visit to {{2}} tomorrow with {{3}}." 
+                          rows={4}
+                          className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all resize-none"
+                          required
+                        />
+                        <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">{"Use {{1}}, {{2}} for variables. Dynamic values are assigned when triggering sends."}</span>
+                      </div>
+
+                      {/* Buttons Type Selector */}
+                      <div className="space-y-3 pt-2 border-t border-slate-200">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block ml-1">
+                          Interactive Buttons (Optional)
+                        </label>
+                        <div className="grid grid-cols-3 gap-2 bg-white p-1.5 rounded-2xl border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => setNewTemplate({ ...newTemplate, buttonsType: 'NONE' })}
+                            className={`py-2 px-2 text-[10px] font-black rounded-xl transition-all uppercase ${
+                              newTemplate.buttonsType === 'NONE' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'
+                            }`}
+                          >
+                            No Buttons
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewTemplate({ ...newTemplate, buttonsType: 'QUICK_REPLY' })}
+                            className={`py-2 px-2 text-[10px] font-black rounded-xl transition-all uppercase ${
+                              newTemplate.buttonsType === 'QUICK_REPLY' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'
+                            }`}
+                          >
+                            Quick Reply (1-3)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewTemplate({ ...newTemplate, buttonsType: 'CALL_TO_ACTION' })}
+                            className={`py-2 px-2 text-[10px] font-black rounded-xl transition-all uppercase ${
+                              newTemplate.buttonsType === 'CALL_TO_ACTION' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'
+                            }`}
+                          >
+                            Call To Action
+                          </button>
+                        </div>
+
+                        {/* Quick Reply Form Inputs */}
+                        {newTemplate.buttonsType === 'QUICK_REPLY' && (
+                          <div className="space-y-2 bg-white p-3.5 rounded-2xl border border-slate-200 animate-in fade-in duration-200">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                              Quick Reply Button Texts (Max 25 chars each)
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              {[0, 1, 2].map((bIdx) => (
+                                <div key={bIdx} className="space-y-1">
+                                  <label className="text-[9px] font-bold text-slate-400 block ml-1">Button {bIdx + 1}:</label>
+                                  <input 
+                                    type="text" 
+                                    value={newTemplate.quickReplyButtons[bIdx] || ''}
+                                    onChange={(e) => {
+                                      const updated = [...(newTemplate.quickReplyButtons || ['', '', ''])]
+                                      updated[bIdx] = e.target.value
+                                      setNewTemplate({ ...newTemplate, quickReplyButtons: updated })
+                                    }}
+                                    placeholder={bIdx === 0 ? "Yes, Interested" : bIdx === 1 ? "Book Call" : "Not Now"}
+                                    className="w-full bg-slate-50 border border-slate-200 py-1.5 px-2.5 rounded-xl text-xs font-bold outline-none focus:border-blue-400"
+                                    maxLength={25}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Call To Action Form Inputs */}
+                        {newTemplate.buttonsType === 'CALL_TO_ACTION' && (
+                          <div className="space-y-3 bg-white p-3.5 rounded-2xl border border-slate-200 animate-in fade-in duration-200">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                              Call To Action Buttons (Website Link & Phone Number)
+                            </span>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {/* Website URL Button */}
+                              <div className="space-y-1.5 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                                <span className="text-[10px] font-black text-blue-600 uppercase tracking-wider block">🌐 Link Button (URL)</span>
+                                <input 
+                                  type="text" 
+                                  value={newTemplate.ctaUrlText}
+                                  onChange={(e) => setNewTemplate({ ...newTemplate, ctaUrlText: e.target.value })}
+                                  placeholder="Button Text (e.g. Visit Website)"
+                                  className="w-full bg-white border border-slate-200 py-1.5 px-2.5 rounded-lg text-xs font-bold outline-none"
+                                  maxLength={25}
+                                />
+                                <input 
+                                  type="text" 
+                                  value={newTemplate.ctaUrl}
+                                  onChange={(e) => setNewTemplate({ ...newTemplate, ctaUrl: e.target.value })}
+                                  placeholder="https://yourwebsite.com/offer"
+                                  className="w-full bg-white border border-slate-200 py-1.5 px-2.5 rounded-lg text-xs font-medium outline-none"
+                                />
+                              </div>
+
+                              {/* Phone Call Button */}
+                              <div className="space-y-1.5 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider block">📞 Phone Call Button</span>
+                                <input 
+                                  type="text" 
+                                  value={newTemplate.ctaPhoneText}
+                                  onChange={(e) => setNewTemplate({ ...newTemplate, ctaPhoneText: e.target.value })}
+                                  placeholder="Button Text (e.g. Call Us Now)"
+                                  className="w-full bg-white border border-slate-200 py-1.5 px-2.5 rounded-lg text-xs font-bold outline-none"
+                                  maxLength={25}
+                                />
+                                <input 
+                                  type="text" 
+                                  value={newTemplate.ctaPhone}
+                                  onChange={(e) => setNewTemplate({ ...newTemplate, ctaPhone: e.target.value })}
+                                  placeholder="+919877161216"
+                                  className="w-full bg-white border border-slate-200 py-1.5 px-2.5 rounded-lg text-xs font-mono outline-none"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <button 
+                        type="submit"
+                        disabled={submittingTemplate}
+                        className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {submittingTemplate && <Loader2 size={12} className="animate-spin" />}
+                        Submit for Approval
+                      </button>
+                    </div>
+
+                    {/* Right Column: Live Real-Time WhatsApp Preview */}
+                    <div className="lg:col-span-6 sticky top-4 space-y-2.5 flex flex-col items-center justify-start w-full">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block text-center">Live WhatsApp Message Preview</span>
+                      <WhatsAppLivePreview
+                        headerType={newTemplate.headerType}
+                        headerText={newTemplate.headerText}
+                        bodyText={newTemplate.bodyText}
+                        buttonsType={newTemplate.buttonsType}
+                        quickReplyButtons={newTemplate.quickReplyButtons}
+                        ctaUrlText={newTemplate.ctaUrlText}
+                        ctaUrl={newTemplate.ctaUrl}
+                        ctaPhoneText={newTemplate.ctaPhoneText}
+                        ctaPhone={newTemplate.ctaPhone}
+                      />
+                    </div>
+                  </div>
                 </form>
               )}
 
@@ -1813,7 +2022,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               </div>
 
               {isCreateBroadcastOpen && (
-                <form onSubmit={handleCreateBroadcast} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <form onSubmit={handleCreateBroadcast} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 sm:p-6 space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-widest">New Broadcast Configuration</span>
                     <button type="button" onClick={() => setIsCreateBroadcastOpen(false)} className="text-xs text-red-500 font-bold hover:underline">Cancel</button>
@@ -1836,7 +2045,10 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Target Template</label>
                       <select 
                         value={newBroadcast.templateName}
-                        onChange={(e) => setNewBroadcast({ ...newBroadcast, templateName: e.target.value })}
+                        onChange={(e) => {
+                          const tName = e.target.value;
+                          setNewBroadcast({ ...newBroadcast, templateName: tName, headerMediaUrl: '' })
+                        }}
                         className="w-full bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
                         required
                       >
@@ -1857,6 +2069,27 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                       />
                     </div>
                   </div>
+
+                  {/* Header Media Picker for Broadcasts */}
+                  {newBroadcast.templateName && (() => {
+                    const headerType = getTemplateHeaderType(newBroadcast.templateName);
+                    if (!headerType || headerType === 'TEXT') return null;
+                    return (
+                      <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
+                            🖼️ Select Header Media ({headerType})
+                          </span>
+                          <span className="text-[9px] text-emerald-700 font-extrabold uppercase">Required by Meta Template</span>
+                        </div>
+                        <WhatsAppTemplateMediaPicker
+                          headerType={headerType as any}
+                          mediaUrl={newBroadcast.headerMediaUrl}
+                          onMediaSelect={(url) => setNewBroadcast(prev => ({ ...prev, headerMediaUrl: url }))}
+                        />
+                      </div>
+                    )
+                  })()}
 
                   {/* Dynamic Variable Mapping Section */}
                   {newBroadcast.templateName && (() => {
@@ -2101,6 +2334,27 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                   </div>
 
 
+
+                  {newBroadcast.templateName && (() => {
+                    const selectedTpl = templates.find(t => t.name === newBroadcast.templateName)
+                    const headerType = getTemplateHeaderType(newBroadcast.templateName)
+                    const bodyObj = selectedTpl?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')
+                    const bodyText = bodyObj?.text || 'Hello {{1}}, here is an exclusive update regarding {{2}} from {{3}}.'
+                    
+                    return (
+                      <div className="space-y-2 pt-2 border-t border-slate-200">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block text-center">Broadcast Message Preview</span>
+                        <WhatsAppLivePreview
+                          headerType={headerType}
+                          headerMediaUrl={newBroadcast.headerMediaUrl}
+                          bodyText={bodyText}
+                          sampleLeadName="Rahul Sharma"
+                          samplePropertyTitle="Green Valley Luxury Villas"
+                          sampleBusinessName="Nobogent AI"
+                        />
+                      </div>
+                    )
+                  })()}
 
                   <button 
                     type="submit"

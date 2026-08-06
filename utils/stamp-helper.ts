@@ -4,13 +4,10 @@ import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import path from 'path'
 import process from 'process'
 
-// --- HELPER: Fix R2 URL ---
+// --- HELPER: Sanitize R2 URL (strip accidental /adrolls-storage/ prefix) ---
 function fixR2Url(url: string) {
   if (!url) return ''
-  if (url.includes('.r2.dev') && !url.includes('/adrolls-storage/')) {
-    return url.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
-  }
-  return url
+  return url.replace('r2.dev/adrolls-storage/', 'r2.dev/')
 }
 
 // --- HELPER: Phone Formatter ---
@@ -192,5 +189,5 @@ export async function generateStampedImage(params: any) {
       ContentType: 'image/jpeg'
   }))
 
-  return `${R2_PUBLIC_URL}/adrolls-storage/${fileName}`
+  return `${R2_PUBLIC_URL}/${fileName}`
 }

@@ -47,7 +47,7 @@ export async function POST(req: Request) {
         // Fetch all leads of the user using admin client to bypass RLS select policy
         const { data: leads, error: leadsErr } = await supabaseAdmin
             .from('leads')
-            .select('id, phone, source, pipeline_stage, campaign_id, ad_name, csv_audience, created_at')
+            .select('id, phone, source, pipeline_stage, campaign_id, ad_name, csv_audience, custom_fields, created_at')
             .eq('user_id', targetId)
             .order('created_at', { ascending: false })
 
@@ -83,13 +83,30 @@ export async function POST(req: Request) {
                     match = true
                 }
                 if (hasMeta) {
-                    if (lead.ad_name && filter.meta_campaigns.includes(lead.ad_name)) {
-                        match = true
-                    }
-                    if (lead.campaign_id) {
-                        const campName = dbCampaigns?.find(c => c.id === lead.campaign_id)?.name
-                        if (campName && filter.meta_campaigns.includes(campName)) {
-                            match = true
+                    for (const targetMeta of filter.meta_campaigns) {
+                        if (!targetMeta) continue;
+                        const targetId = targetMeta.includes('|') ? targetMeta.split('|')[0].trim() : targetMeta.trim();
+                        const targetName = targetMeta.includes('|') ? targetMeta.split('|')[1].trim() : targetMeta.trim();
+
+                        // 1. Exact campaign_id match
+                        if (lead.campaign_id && (lead.campaign_id === targetId || lead.campaign_id === targetMeta)) {
+                            match = true;
+                            break;
+                        }
+
+                        // 2. Exact ad_name match
+                        if (lead.ad_name && (lead.ad_name === targetName || lead.ad_name === targetMeta)) {
+                            match = true;
+                            break;
+                        }
+
+                        // 3. Custom fields origin match
+                        if (lead.custom_fields) {
+                            const cfStr = typeof lead.custom_fields === 'string' ? lead.custom_fields : JSON.stringify(lead.custom_fields);
+                            if (cfStr.includes(`"campaign_id":"${targetId}"`) || cfStr.includes(`"campaign_id": "${targetId}"`) || cfStr.includes(targetId)) {
+                                match = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -102,9 +119,20 @@ export async function POST(req: Request) {
             return true
         })
 
-        const targetLeads = filteredLeads.filter(l => l.phone)
+        // Deduplicate leads by normalized 10-digit phone number (keep only the most recent lead per phone number)
+        const uniquePhoneMap = new Map<string, any>()
+        for (const lead of filteredLeads) {
+            if (!lead.phone) continue;
+            const normPhone = lead.phone.replace(/\D/g, '').slice(-10);
+            if (!normPhone || normPhone.length < 10 || /^0+$/.test(normPhone)) continue; // skip invalid numbers
+            if (!uniquePhoneMap.has(normPhone)) {
+                uniquePhoneMap.set(normPhone, lead);
+            }
+        }
+
+        const targetLeads = Array.from(uniquePhoneMap.values());
         if (targetLeads.length === 0) {
-            return NextResponse.json({ error: 'No contacts found matching the target audience filters.' }, { status: 400 })
+            return NextResponse.json({ error: 'No valid unique contacts found matching the target audience filters.' }, { status: 400 })
         }
 
         // Set campaign status to running using admin client
@@ -113,13 +141,23 @@ export async function POST(req: Request) {
             .update({ status: 'running' })
             .eq('id', campaignId)
 
-        // Assign voice_campaign_id in bulk using admin client (in batches of 100 to avoid URI too long gateway issues)
+        // Clear previous campaign assignment for this campaign ID first to remove any stale duplicate records
+        await supabaseAdmin
+            .from('leads')
+            .update({ voice_campaign_id: null })
+            .eq('voice_campaign_id', campaignId)
+
+        // Assign voice_campaign_id and reset call status in bulk for unique target leads (in batches of 100)
         const batchSize = 100
         for (let i = 0; i < targetLeads.length; i += batchSize) {
             const batchIds = targetLeads.slice(i, i + batchSize).map(l => l.id)
             const { error: updateErr } = await supabaseAdmin
                 .from('leads')
-                .update({ voice_campaign_id: campaignId })
+                .update({ 
+                    voice_campaign_id: campaignId,
+                    voice_call_status: null,
+                    voice_call_retry_count: 0
+                })
                 .in('id', batchIds)
             
             if (updateErr) {

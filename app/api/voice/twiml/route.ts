@@ -165,7 +165,7 @@ export async function POST(req: Request) {
 
         const { data: lead } = await supabaseAdmin
             .from('leads')
-            .select('id, user_id, name, phone, email, source, custom_fields, voice_call_summary, voice_call_transcript, property_id, notes')
+            .select('id, user_id, name, phone, email, source, custom_fields, voice_call_summary, voice_call_transcript, property_id, notes, voice_campaign_id')
             .eq('id', leadId)
             .single()
 
@@ -185,14 +185,15 @@ export async function POST(req: Request) {
             .eq('id', effectiveProfileId)
             .single()
 
-        // Fetch campaign if campaignId is present
+        // Fetch campaign if campaignId or lead.voice_campaign_id is present
+        const effectiveCampaignId = searchParams.get('campaignId') || lead.voice_campaign_id
         let campaign = null
-        if (campaignId) {
+        if (effectiveCampaignId) {
             try {
                 const { data: camp } = await supabaseAdmin
                     .from('voice_campaigns')
                     .select('*')
-                    .eq('id', campaignId)
+                    .eq('id', effectiveCampaignId)
                     .single()
                 if (camp) {
                     campaign = camp
@@ -210,7 +211,7 @@ export async function POST(req: Request) {
             console.log(`[TWIML BRIDGE] Redirecting Twilio Media Stream to Gemini Live Bridge: ${streamUrl}`)
             
             // Fire session pre-warming in background to pre-connect Gemini WS & pre-load DB context
-            warmupVoiceBridge(leadId, effectiveProfileId, campaignId || undefined).catch(e => console.warn('[TWIML BRIDGE] Prewarm trigger error:', e));
+            warmupVoiceBridge(leadId, effectiveProfileId, effectiveCampaignId || undefined).catch(e => console.warn('[TWIML BRIDGE] Prewarm trigger error:', e));
 
             const voiceName = campaign?.audience_filter?.voice_name || profile?.voice_name || 'Aoede'
 
@@ -230,7 +231,7 @@ export async function POST(req: Request) {
         <Stream url="${streamUrl}">
             <Parameter name="leadId" value="${leadId}" />
             <Parameter name="profileId" value="${effectiveProfileId}" />
-            ${campaignId ? `<Parameter name="campaignId" value="${campaignId}" />` : ''}
+            ${effectiveCampaignId ? `<Parameter name="campaignId" value="${effectiveCampaignId}" />` : ''}
             <Parameter name="voiceName" value="${voiceName}" />
         </Stream>
     </Connect>
@@ -282,18 +283,34 @@ Configurations: ${JSON.stringify(prop.configurations || {})}`
         try {
             const { data: props } = await supabaseAdmin
                 .from('properties')
-                .select('title, description, price, address, property_type')
+                .select('title, description, price, address, property_type, configurations')
                 .eq('user_id', profileId)
                 .limit(10)
 
             if (props && props.length > 0) {
                 catalogContext = props
-                    .map((p, idx) => `[PROJECT ITEM ${idx + 1}: "${p.title || 'Untitled Project'}"]
+                    .map((p, idx) => {
+                        let tagList: string[] = []
+                        if (p.title) tagList.push(p.title)
+                        if (p.configurations) {
+                            try {
+                                const parsed = typeof p.configurations === 'string' ? JSON.parse(p.configurations) : p.configurations
+                                if (Array.isArray(parsed.tags)) tagList.push(...parsed.tags)
+                                if (Array.isArray(parsed.internal_tags)) tagList.push(...parsed.internal_tags)
+                                if (parsed.project_name) tagList.push(parsed.project_name)
+                                if (parsed.brand_name) tagList.push(parsed.brand_name)
+                            } catch (e) {}
+                        }
+                        const cleanTags = Array.from(new Set(tagList.filter(Boolean))).join(', ')
+
+                        return `[PROJECT ITEM ${idx + 1}: "${p.title || 'Untitled Project'}"]
+Tags/Brand Aliases: ${cleanTags || 'N/A'}
 Type: ${p.property_type || 'Real Estate'}
 Price: ${p.price || 'Contact Developer'}
 Location: ${p.address || 'N/A'}
 Details: ${p.description || 'N/A'}
----`)
+---`
+                    })
                     .join('\n\n')
             }
         } catch (catErr) {
@@ -466,6 +483,13 @@ Guidelines for qualification:
 `.trim()
         }
 
+        const effectiveGreeting = campaign?.audience_filter?.greeting
+            ? campaign.audience_filter.greeting
+                .replace(/\{name\}/gi, firstName)
+                .replace(/\{firstname\}/gi, firstName)
+                .replace(/\{leadname\}/gi, leadName)
+            : `Namaste ${firstName} ji! Kaise ho aap?`
+
         const customPrompt = `
 You are a professional, helpful outbound AI calling assistant calling on behalf of ${companyName}.
 Your name is a booking representative.
@@ -478,7 +502,7 @@ CRITICAL RULES:
 2. DO NOT make up, assume, or hallucinate any details. Under no circumstances mention unrelated businesses (such as cafes, unrelated locations like "Sarah's Cafe in Mohali", etc.). If asked a question about the business profile or catalog that you don't have details for, say: "That is a great question. I don't have that detail on hand, but let's book a quick consultation call so our representative can answer that for you."
 3. Be polite, friendly, and brief in your responses. Keep all answers extremely short (under 50 words) and direct. Never speak long paragraphs, as shorter responses improve audio streaming speed and prevent robotic stutter.
 4. Your single goal is to find a suitable date and time slot for a meeting.
-5. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user, as this is the preferred style of communication in India. If the lead speaks in pure English, you may respond in English, but default to Hinglish or match the lead's preferred language.
+5. LANGUAGE STYLE: MANDATORY: You MUST speak in natural, friendly, warm Hindi / Hinglish. Never speak in pure English unless the prospect explicitly speaks English first.
 6. PAST CALLS AND SCHEDULES: If the lead asks about when they requested a callback, how much time they asked to be called back in, or what you talked about in the last call, read the '--- LEAD CRM NOTES & SCHEDULE HISTORY ---' and 'Previous Call History' sections to answer them accurately in Hinglish (e.g. 'Aapne mujhe 1 minute baad call karne ko bola tha').
 7. ENDING THE CALL: Once the call objective is met (e.g. appointment is booked, callback is scheduled) or the lead wants to end the conversation, say a brief polite goodbye and immediately trigger your "End conversation" tool to hang up the call. Do not wait for the user to respond after your goodbye.
 8. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting, answering machine message, or any automated message (such as "please leave a message", "after the beep", or an automated robot voice), you must immediately trigger your "End conversation" tool to hang up the call. Do NOT speak, say hello, or say goodbye; just trigger the hangup tool instantly.
@@ -486,7 +510,7 @@ CRITICAL RULES:
 10. PRIMARY INTEREST PRIORITY: If the lead inquired about a specific project (shown under 'PRIMARY INTEREST PRODUCT'), focus strictly on that specific project. Only discuss details, amenities, and location of THAT project. Do NOT introduce or describe features of other catalog projects unless the prospect explicitly asks to explore other inventory options.
 
 CONVERSATION FLOW:
-1. Your first greeting is already spoken: "Hi ${firstName} ji, kaise ho aap?".
+1. Your opening greeting is: "${effectiveGreeting}". Speak this exact greeting.
 2. Once the lead responds to your greeting, your NEXT response must proactively establish context and recognition:
 ${contextInstruction}
 3. After establishing context, proceed with the conversation (guide them to schedule a consultation/appointment with ${companyName}).

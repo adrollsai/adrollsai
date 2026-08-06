@@ -205,7 +205,7 @@ export async function POST(request: Request) {
                     try {
                         const videoRes = await fetch(videoUrl);
                         const buffer = Buffer.from(await videoRes.arrayBuffer());
-                        const fileName = `adrolls-storage/generated/${task.user_id}/scene_${task.current_index}_${Date.now()}.mp4`;
+                        const fileName = `generated/${task.user_id}/scene_${task.current_index}_${Date.now()}.mp4`;
                         
                         await r2.send(new PutObjectCommand({
                             Bucket: R2_BUCKET,
@@ -368,12 +368,29 @@ export async function POST(request: Request) {
                         const siteName = process.env.REMOTION_AWS_SITE_NAME || 'nobogent-site';
                         const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
-                        // Dynamically calculate framesPerLambda to stay below the AWS account concurrency limit (10)
+                        // Use 250+ frames per Lambda (max 3 Lambdas total) to prevent Chromium remote video seeking stalls at chunk boundaries
                         const totalFrames = siblings.length * 15 * 30;
-                        const maxLambdas = 4;
-                        const framesPerLambda = Math.max(200, Math.ceil(totalFrames / maxLambdas));
+                        const maxLambdas = 3;
+                        const framesPerLambda = Math.max(250, Math.ceil(totalFrames / maxLambdas));
 
                         console.log(`[Sync Endpoint] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
+
+                        // Fetch placeholder asset metadata to extract voiceover audioUrl if available
+                        let voiceoverAudioUrl: string | undefined = undefined;
+                        if (task.asset_id) {
+                            const { data: assetData } = await supabaseAdmin
+                                .from('assets')
+                                .select('metadata')
+                                .eq('id', task.asset_id)
+                                .maybeSingle();
+                            
+                            const rawAudio = assetData?.metadata?.audioUrl;
+                            if (rawAudio && typeof rawAudio === 'string' && rawAudio.startsWith('http')) {
+                                voiceoverAudioUrl = rawAudio.includes('.r2.dev/') && !rawAudio.includes('/adrolls-storage/')
+                                    ? rawAudio.replace('.r2.dev/', '.r2.dev/adrolls-storage/')
+                                    : rawAudio;
+                            }
+                        }
 
                         const renderResult = await renderMediaOnLambda({
                             region,
@@ -381,7 +398,8 @@ export async function POST(request: Request) {
                             serveUrl: `https://${bucketName}.s3.${region}.amazonaws.com/sites/${siteName}/index.html`,
                             composition: 'StitchComposition',
                             inputProps: {
-                                videoUrls: siblings.map(s => s.last_successful_task_id)
+                                videoUrls: siblings.map(s => s.last_successful_task_id),
+                                ...(voiceoverAudioUrl ? { audioUrl: voiceoverAudioUrl } : {})
                             },
                             codec: 'h264',
                             imageFormat: 'jpeg',

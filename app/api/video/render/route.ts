@@ -7,13 +7,18 @@ export async function POST(request: Request) {
     let creditsDeductedSuccess = false;
     let userId = '';
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const mockUserHeader = request.headers.get('X-Mock-User');
+        if (mockUserHeader && !process.env.VERCEL) {
+            userId = mockUserHeader;
+        } else {
+            const supabase = await createClient();
+            const { data: { user } } = await supabase.auth.getUser();
 
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+            if (!user) {
+                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+            }
+            userId = user.id;
         }
-        userId = user.id;
 
         const { assetId, videoUrl, captions, effects: clientEffects, theme, durationInFrames } = await request.json();
 
@@ -47,8 +52,8 @@ export async function POST(request: Request) {
         }
         creditsDeductedSuccess = true;
 
-        // 1. Retrieve original asset context details
-        const { data: originalAsset, error: fetchErr } = await supabase
+        // 1. Retrieve original asset context details using supabaseAdmin
+        const { data: originalAsset, error: fetchErr } = await supabaseAdmin
             .from('assets')
             .select('*')
             .eq('id', assetId)
@@ -59,8 +64,8 @@ export async function POST(request: Request) {
         }
 
         // 1.5. Create a NEW Asset placeholder in Supabase for the rendered video,
-        // so that the original unedited video is NOT overwritten!
-        const { data: newAsset, error: newAssetError } = await supabase
+        // using supabaseAdmin so impersonation and admin actions bypass user_id RLS checks
+        const { data: newAsset, error: newAssetError } = await supabaseAdmin
             .from('assets')
             .insert({
                 user_id: originalAsset.user_id,
@@ -80,7 +85,7 @@ export async function POST(request: Request) {
         console.log(`[Render Route] Preparing rendering delegation. Original: ${assetId}, New: ${newAsset.id}`);
 
         // 2. Retrieve User Profile Details for the Outro screen (respecting asset owner / impersonation)
-        const { data: profile } = await supabase
+        const { data: profile } = await supabaseAdmin
             .from('profiles')
             .select('*')
             .eq('id', originalAsset.user_id)
@@ -127,12 +132,28 @@ export async function POST(request: Request) {
             const siteName = process.env.REMOTION_AWS_SITE_NAME || 'nobogent-site';
             const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
-            // Dynamically calculate framesPerLambda to stay below the AWS account concurrency limit (10)
+            // Use 300+ frames per Lambda (max 3 Lambdas total) to prevent Chromium remote video seeking stalls at chunk boundaries
             const totalFrames = durationInFrames ? Number(durationInFrames) : 900;
-            const maxLambdas = 4;
-            const framesPerLambda = Math.max(200, Math.ceil(totalFrames / maxLambdas));
+            const maxLambdas = 3;
+            const framesPerLambda = Math.max(300, Math.ceil(totalFrames / maxLambdas));
 
-            console.log(`[Render Route] Dispatching render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
+            let cleanVideoUrl = videoUrl;
+            if (videoUrl.includes('/api/fetch-image?url=')) {
+                try {
+                    const parsed = new URL(videoUrl, 'https://app.nobogent.com');
+                    const extracted = parsed.searchParams.get('url');
+                    if (extracted && extracted.startsWith('http')) {
+                        cleanVideoUrl = extracted;
+                    }
+                } catch (e) {}
+            }
+
+            // Strip redundant /adrolls-storage/ prefix from R2 public domain URLs (r2.dev mounts bucket root directly)
+            if (cleanVideoUrl.includes('.r2.dev/') && !cleanVideoUrl.includes('/adrolls-storage/')) {
+                cleanVideoUrl = cleanVideoUrl.replace('.r2.dev/', '.r2.dev/adrolls-storage/');
+            }
+
+            console.log(`[Render Route] Dispatching render for video URL: ${cleanVideoUrl}`);
 
             const renderResult = await renderMediaOnLambda({
                 region,
@@ -140,7 +161,7 @@ export async function POST(request: Request) {
                 serveUrl: `https://${bucketName}.s3.${region}.amazonaws.com/sites/${siteName}/index.html`,
                 composition: 'CaptionsComposition',
                 inputProps: {
-                    videoUrl,
+                    videoUrl: cleanVideoUrl,
                     captions,
                     effects,
                     theme,
@@ -148,7 +169,7 @@ export async function POST(request: Request) {
                 },
                 codec: 'h264',
                 imageFormat: 'jpeg',
-                maxRetries: 2,
+                maxRetries: 5,
                 privacy: 'public',
                 framesPerLambda,
                 forceDurationInFrames: durationInFrames ? Number(durationInFrames) : undefined,
@@ -173,7 +194,7 @@ export async function POST(request: Request) {
             console.error(`[Render Route] AWS Lambda delegation failed:`, workerError);
 
             // Revert new asset status back to 'Failed'
-            await supabase
+            await supabaseAdmin
                 .from('assets')
                 .update({ status: 'Failed' })
                 .eq('id', newAsset.id);

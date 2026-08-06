@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { PutObjectCommand, DeleteObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3'
+import { PutObjectCommand, DeleteObjectCommand, CopyObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import { createClient } from '@/utils/supabase/server'
 import fs from 'fs'
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'No temporary video URL provided' }, { status: 400 })
         }
 
-        console.log(`[VideoCompress API] Debug R2 - Bucket: ${R2_BUCKET}, tempUrl: ${tempUrl}, Endpoint: ${process.env.R2_ENDPOINT}, AccessKeyId: ${process.env.R2_ACCESS_KEY_ID?.substring(0, 6)}...`)
+        console.log(`[VideoCompress API] Debug R2 - Bucket: ${R2_BUCKET}, tempUrl: ${tempUrl}`)
 
         // Resolve current profile and target user
         const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
@@ -62,35 +62,70 @@ export async function POST(request: Request) {
         let inputCreated = false
         let outputCreated = false
 
-        const tempKey = tempUrl.includes('/adrolls-storage/') 
+        const cleanTempKey = tempUrl.includes('/adrolls-storage/') 
             ? tempUrl.split('/adrolls-storage/')[1] 
-            : tempUrl.replace(`${R2_PUBLIC_URL}/`, '')
+            : tempUrl.replace(`${R2_PUBLIC_URL}/`, '').replace(/^\//, '')
 
         const permanentKey = `library/${targetUserId}/${Date.now()}-${cleanName}`
-        const finalPublicUrl = `${R2_PUBLIC_URL}/adrolls-storage/${permanentKey}`
+        const finalPublicUrl = `${R2_PUBLIC_URL}/${permanentKey}`
 
         let shouldCompress = true
 
         if (shouldCompress) {
             try {
-                // 1. Download raw video from temporary R2 storage (with retry for R2 propagation)
-                console.log(`[VideoCompress API] Downloading raw video from: ${tempUrl}`)
-                let response: Response | null = null;
-                for (let attempt = 1; attempt <= 3; attempt++) {
+                // 1. Download raw video using S3 SDK GetObject (with fallback to public HTTP fetch)
+                console.log(`[VideoCompress API] Downloading raw video. Key: ${cleanTempKey}`)
+                let downloaded = false
+
+                try {
+                    const getObjRes = await r2.send(new GetObjectCommand({
+                        Bucket: R2_BUCKET,
+                        Key: cleanTempKey
+                    }))
+                    if (getObjRes.Body) {
+                        const byteArray = await getObjRes.Body.transformToByteArray()
+                        fs.writeFileSync(inputPath, Buffer.from(byteArray))
+                        inputCreated = true
+                        downloaded = true
+                        console.log(`[VideoCompress API] S3 GetObject download successful (${(byteArray.length / (1024 * 1024)).toFixed(2)} MB)`)
+                    }
+                } catch (s3GetErr) {
+                    console.warn(`[VideoCompress API] S3 GetObject failed for ${cleanTempKey}, trying prefix candidate...`)
                     try {
-                        response = await fetch(tempUrl);
-                        if (response && response.ok) break;
-                    } catch (e) {}
-                    if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+                        const getObjRes2 = await r2.send(new GetObjectCommand({
+                            Bucket: R2_BUCKET,
+                            Key: `adrolls-storage/${cleanTempKey}`
+                        }))
+                        if (getObjRes2.Body) {
+                            const byteArray = await getObjRes2.Body.transformToByteArray()
+                            fs.writeFileSync(inputPath, Buffer.from(byteArray))
+                            inputCreated = true
+                            downloaded = true
+                            console.log(`[VideoCompress API] S3 GetObject download successful with prefix candidate`)
+                        }
+                    } catch (s3GetErr2) {
+                        console.warn(`[VideoCompress API] S3 GetObject failed with prefix too, trying HTTP fetch...`)
+                    }
                 }
-                if (!response || !response.ok) {
-                    throw new Error(`Failed to download raw video from temp storage: HTTP ${response?.status || 'network_error'}`)
+
+                if (!downloaded) {
+                    let response: Response | null = null
+                    for (let attempt = 1; attempt <= 3; attempt++) {
+                        try {
+                            response = await fetch(tempUrl)
+                            if (response && response.ok) break
+                        } catch (e) {}
+                        if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt))
+                    }
+                    if (!response || !response.ok) {
+                        throw new Error(`Failed to download raw video from temp storage: HTTP ${response?.status || 'network_error'}`)
+                    }
+                    const arrayBuffer = await response.arrayBuffer()
+                    const buffer = Buffer.from(arrayBuffer)
+                    fs.writeFileSync(inputPath, buffer)
+                    inputCreated = true
+                    downloaded = true
                 }
-                
-                const arrayBuffer = await response.arrayBuffer()
-                const buffer = Buffer.from(arrayBuffer)
-                fs.writeFileSync(inputPath, buffer)
-                inputCreated = true
 
                 // 2. Compress the video using FFmpeg
                 const nodeModulesFfmpeg = path.join(
@@ -107,9 +142,9 @@ export async function POST(request: Request) {
                 outputCreated = true
 
                 const compressedBuffer = fs.readFileSync(outputPath)
-                console.log(`[VideoCompress API] Compression finished. Original: ${(buffer.length / (1024 * 1024)).toFixed(2)} MB, Compressed: ${(compressedBuffer.length / (1024 * 1024)).toFixed(2)} MB`)
+                console.log(`[VideoCompress API] Compression finished. Compressed size: ${(compressedBuffer.length / (1024 * 1024)).toFixed(2)} MB`)
 
-                // 3. Upload highly-compressed video to permanent R2 folder
+                // 3. Upload compressed video to permanent R2 folder
                 const uploadParams = {
                     Bucket: R2_BUCKET,
                     Key: permanentKey,
@@ -148,13 +183,9 @@ export async function POST(request: Request) {
                 if (insertError) throw insertError
 
                 // 5. Delete raw video from temporary R2 folder to keep R2 clean
-                console.log(`[VideoCompress API] Cleaning up raw video from temp R2: ${tempKey}`)
-                await r2.send(new DeleteObjectCommand({
-                    Bucket: R2_BUCKET,
-                    Key: tempKey
-                })).catch(deleteErr => {
-                    console.error(`[VideoCompress API] Failed to delete temp raw video:`, deleteErr)
-                })
+                console.log(`[VideoCompress API] Cleaning up raw video from temp R2: ${cleanTempKey}`)
+                await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: cleanTempKey })).catch(() => {})
+                await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: `adrolls-storage/${cleanTempKey}` })).catch(() => {})
 
                 return NextResponse.json({ success: true, asset: insertedAsset })
 
@@ -172,21 +203,40 @@ export async function POST(request: Request) {
             }
         }
 
-        // FALLBACK: Copy raw file directly from temp to permanent library and register it
+        // FALLBACK: Copy raw file directly from temp to permanent library with dual key candidate check
         if (!shouldCompress) {
             try {
-                console.log(`[VideoCompress API] Executing direct copy fallback. Source: ${tempKey}, Target: ${permanentKey}`)
+                console.log(`[VideoCompress API] Executing direct copy fallback. Clean tempKey: ${cleanTempKey}, Target: ${permanentKey}`)
                 
-                // Since the base S3 client endpoint has /adrolls-storage suffix, the key in R2 is prepended with "adrolls-storage/".
-                // CopySource format: "bucket/encodedKey"
-                const copySourceEncoded = `${R2_BUCKET}/${encodeURIComponent(`adrolls-storage/${tempKey}`)}`
-                console.log(`[VideoCompress API] Encoded CopySource: ${copySourceEncoded}`)
+                let copySuccess = false
+                let lastCopyError: any = null
 
-                await r2.send(new CopyObjectCommand({
-                    Bucket: R2_BUCKET,
-                    CopySource: copySourceEncoded,
-                    Key: permanentKey
-                }))
+                const keyCandidates = [
+                    cleanTempKey,
+                    `adrolls-storage/${cleanTempKey}`
+                ]
+
+                for (const candKey of keyCandidates) {
+                    try {
+                        const copySourceEncoded = `${R2_BUCKET}/${encodeURIComponent(candKey)}`
+                        console.log(`[VideoCompress API] Attempting CopyObjectCommand with CopySource: ${copySourceEncoded}`)
+                        await r2.send(new CopyObjectCommand({
+                            Bucket: R2_BUCKET,
+                            CopySource: copySourceEncoded,
+                            Key: permanentKey
+                        }))
+                        copySuccess = true
+                        console.log(`[VideoCompress API] CopyObjectCommand succeeded for candidate: ${candKey}`)
+                        break
+                    } catch (copyErr: any) {
+                        lastCopyError = copyErr
+                        console.warn(`[VideoCompress API] CopyObjectCommand failed for candidate ${candKey}:`, copyErr?.message || copyErr)
+                    }
+                }
+
+                if (!copySuccess) {
+                    throw new Error(`R2 storage copy failed: ${lastCopyError?.message || 'The specified key does not exist.'}`)
+                }
 
                 let thumbnailUrl = null
                 if (inputCreated && fs.existsSync(inputPath)) {
@@ -218,12 +268,8 @@ export async function POST(request: Request) {
                 if (insertError) throw insertError
 
                 // Clean up temp raw video
-                await r2.send(new DeleteObjectCommand({
-                    Bucket: R2_BUCKET,
-                    Key: tempKey
-                })).catch(deleteErr => {
-                    console.error(`[VideoCompress API] Failed to delete temp raw video:`, deleteErr)
-                })
+                await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: cleanTempKey })).catch(() => {})
+                await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: `adrolls-storage/${cleanTempKey}` })).catch(() => {})
 
                 return NextResponse.json({ success: true, fallback: true, asset: insertedAsset })
 

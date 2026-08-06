@@ -9,7 +9,7 @@ export async function generateContentWithFallback(
     genAI: GoogleGenerativeAI,
     contents: any,
     primaryModel = "gemini-3.5-flash",
-    fallbackModel: string | null = null,
+    fallbackModel: string | null = "gemini-3.5-flash",
     maxRetries = 4,
     initialDelay = 2000,
     generationConfig?: any
@@ -48,6 +48,7 @@ export async function generateContentWithFallback(
 
             const status = error.status || error.statusCode;
             const message = error.message || "";
+            const isNotFoundOrInvalid = status === 404 || status === 400 || message.includes("not found") || message.includes("404") || message.includes("invalid model");
             const isTransient = 
                 status === 503 || 
                 status === 429 || 
@@ -59,15 +60,14 @@ export async function generateContentWithFallback(
                 message.includes("demand") ||
                 message.includes("busy");
 
-            // Check if we have exhausted retries or if it is a non-transient error
-            if (!isTransient || attempt === maxRetries) {
-                // If we were on the primary model, try switching to the fallback model immediately
-                if (currentModelName === primaryModel && fallbackModel) {
-                    console.warn(`[Gemini Helper] Switching from primary model ${primaryModel} to fallback model ${fallbackModel} due to error/exhausted retries.`);
+            // If model is not found/invalid or retries exhausted, switch to fallback model if available
+            if (isNotFoundOrInvalid || !isTransient || attempt === maxRetries) {
+                if (currentModelName !== fallbackModel && fallbackModel) {
+                    console.warn(`[Gemini Helper] Switching from model ${currentModelName} to fallback model ${fallbackModel} due to error.`);
                     currentModelName = fallbackModel;
-                    attempt = 0; // Next iteration will be attempt 1
+                    attempt = 0; // Reset attempt for fallback model
                     delay = initialDelay;
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                    await new Promise((resolve) => setTimeout(resolve, 500));
                     continue;
                 }
                 throw error;

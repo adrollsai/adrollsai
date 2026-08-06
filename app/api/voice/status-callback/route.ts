@@ -161,7 +161,7 @@ export async function POST(req: Request) {
             // Fetch lead details and owner profile credentials
             const { data: lead } = await supabaseAdmin
                 .from('leads')
-                .select('id, name, phone, email, source, custom_fields, notes, pipeline_stage, user_id, voice_call_retry_count')
+                .select('id, name, phone, email, source, campaign_id, custom_fields, notes, pipeline_stage, user_id, voice_call_retry_count')
                 .eq('id', leadId)
                 .single()
 
@@ -836,6 +836,116 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                         publicRecordingUrl,
                         isExpertRequested
                     });
+                }
+
+                // 8. Trigger Automated Post-Call Brochure Dispatch if lead requested brochure / details / WhatsApp
+                const isBrochureRequested = Boolean(
+                    transcriptText.includes('brochure') || 
+                    transcriptText.includes('pdf') || 
+                    transcriptText.includes('detail') || 
+                    transcriptText.includes('whatsapp') || 
+                    transcriptText.includes('send info') || 
+                    transcriptText.includes('jaankari') || 
+                    (summary && /brochure|pdf|whatsapp|details/i.test(summary))
+                );
+
+                // Check if call specifically belongs to Farmhouse bulk campaign or transcript mentions Farmhouse
+                let isFarmhouseCampaignCall = false;
+                if (lead?.campaign_id) {
+                    const { data: cJob } = await supabaseAdmin
+                        .from('campaign_jobs')
+                        .select('name, custom_instructions, business_info')
+                        .eq('id', lead.campaign_id)
+                        .single();
+                    if (cJob) {
+                        const cText = `${cJob.name || ''} ${cJob.custom_instructions || ''} ${cJob.business_info || ''}`.toLowerCase();
+                        if (cText.includes('farmhouse') || cText.includes('farm house') || cText.includes('bio-climatic') || cText.includes('khushi ram')) {
+                            isFarmhouseCampaignCall = true;
+                        }
+                    }
+                }
+
+                const isFarmhouseTopic = isFarmhouseCampaignCall || Boolean(
+                    transcriptText.includes('farmhouse') || 
+                    transcriptText.includes('farm house') || 
+                    transcriptText.includes('bio-climatic') || 
+                    transcriptText.includes('1 acre') || 
+                    transcriptText.includes('1-acre') || 
+                    transcriptText.includes('luxury villa')
+                );
+
+                if (isBrochureRequested && isFarmhouseTopic && lead?.phone) {
+                    console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} requested brochure for Farmhouse Campaign. Dispatching native PDF document card...`);
+                    try {
+                        const { data: ownerProf } = await supabaseAdmin
+                            .from('profiles')
+                            .select('whatsapp_phone_number_id, whatsapp_access_token, facebook_token')
+                            .eq('id', lead.user_id)
+                            .single();
+
+                        const token = ownerProf?.whatsapp_access_token || ownerProf?.facebook_token || process.env.WHATSAPP_ACCESS_TOKEN;
+                        const phoneId = ownerProf?.whatsapp_phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+                        if (token && phoneId) {
+                            let cleanPhone = lead.phone.replace(/\D/g, '');
+                            if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+
+                            const pdfUrl = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/d838c956-1761-4bce-9d91-32f3abecc222/1785820062907-FarmHouse-FunctionalDevelopment290324.pdf';
+
+                            const bodyText = `Namaste ${lead.name || 'ji'}! 🙏\n\nDhanyawad Khushi Ram Realtors & Developers ke 1-Acre Bio-Climatic Luxury Farmhouse project mein interest dikhane ke liye.\n\n✨ Key Highlights:\n• 30-Acre Approved Bio-Climatic Township (Only 19 Farmhouses)\n• 6,000-7,000 sq ft Built-up Villa + Private Pool & Landscaping\n• 58% Open Area, 80 ft Wide Road & Art of Living Ashram\n• Direct Price Advantage: ₹12.5 Crore (Around ₹25,000/gaj built-up)\n\nKya aap is weekend par One-to-One Site Visit plan karna chahenge?`;
+
+                            const payload = {
+                                messaging_product: 'whatsapp',
+                                recipient_type: 'individual',
+                                to: cleanPhone,
+                                type: 'interactive',
+                                interactive: {
+                                    type: 'button',
+                                    header: {
+                                        type: 'document',
+                                        document: {
+                                            link: pdfUrl,
+                                            filename: '1-Acre Luxury Farmhouse Brochure.pdf'
+                                        }
+                                    },
+                                    body: {
+                                        text: bodyText
+                                    },
+                                    action: {
+                                        buttons: [
+                                            {
+                                                type: 'reply',
+                                                reply: {
+                                                    id: 'book_site_visit',
+                                                    title: 'Book Site Visit'
+                                                }
+                                            },
+                                            {
+                                                type: 'reply',
+                                                reply: {
+                                                    id: 'request_call_back',
+                                                    title: 'Request Call Back'
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            };
+
+                            const bRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(payload)
+                            });
+                            const bData = await bRes.json();
+                            console.log(`[TWILIO STATUS CALLBACK] Post-call brochure template dispatch status: ${bRes.status}`, bData);
+                        }
+                    } catch (brochureErr: any) {
+                        console.error('[TWILIO STATUS CALLBACK] Failed to send post-call brochure template:', brochureErr.message);
+                    }
                 }
             } catch (escalateErr: any) {
                 console.error('[TWILIO STATUS CALLBACK] Expert escalation notification error:', escalateErr.message);

@@ -40,7 +40,7 @@ RULES:
 - Output ONLY a JSON object: {"primary_text": "...", "headline": "..."}`;
 
         const { text } = await generateText({
-            model: google('gemini-3-flash-preview'),
+            model: google('gemini-3.5-flash'),
             messages: [
                 {
                     role: 'user',

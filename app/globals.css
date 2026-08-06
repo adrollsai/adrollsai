@@ -6,7 +6,20 @@
   html, body {
     @apply antialiased;
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    text-rendering: optimizeLegibility;
   }
+
+  button, a, select, input, textarea, [role="button"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Active tap feel for instant tactile responsiveness */
+button:active, a:active, [role="button"]:active {
+  transform: scale(0.98);
+  transition: transform 0.05s ease;
 }
 
 /* Custom Scrollbar for better PWA look */

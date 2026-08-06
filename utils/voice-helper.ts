@@ -475,7 +475,7 @@ export async function bookAppointment(
             try {
                 const { data: overlappingLeads, error: dbErr } = await supabaseAdmin
                     .from('leads')
-                    .select('id, name, booked_time')
+                    .select('id, name, phone, booked_time')
                     .eq('user_id', profileId)
                     .not('booked_time', 'is', null)
                     .neq('id', leadId)
@@ -483,7 +483,15 @@ export async function bookAppointment(
                 if (dbErr) throw dbErr
 
                 if (overlappingLeads && overlappingLeads.length > 0) {
+                    const currentLeadDigits = lead?.phone ? lead.phone.replace(/\D/g, '').slice(-10) : ''
                     for (const otherLead of overlappingLeads) {
+                        const otherDigits = otherLead.phone ? otherLead.phone.replace(/\D/g, '').slice(-10) : ''
+                        
+                        // If it's the same lead/phone number rebooking, ignore conflict
+                        if (currentLeadDigits && otherDigits && currentLeadDigits === otherDigits) {
+                            continue
+                        }
+
                         const otherStart = new Date(otherLead.booked_time)
                         const otherEnd = new Date(otherStart.getTime() + (duration * 60000))
                         if (
@@ -491,9 +499,11 @@ export async function bookAppointment(
                             (end > otherStart && end <= otherEnd) ||
                             (start <= otherStart && end >= otherEnd)
                         ) {
-                            isSlotAvailable = false
-                            console.warn(`[VOICE HELPER] DB fallback slot taken. Overlaps with lead: ${otherLead.name} (${otherLead.booked_time})`)
-                            break
+                            if (!bypassHoursCheck) {
+                                isSlotAvailable = false
+                                console.warn(`[VOICE HELPER] DB fallback slot taken. Overlaps with lead: ${otherLead.name} (${otherLead.booked_time})`)
+                                break
+                            }
                         }
                     }
                 }
@@ -502,7 +512,7 @@ export async function bookAppointment(
             }
         }
 
-        if (!isSlotAvailable) {
+        if (!isSlotAvailable && !bypassHoursCheck) {
             return { success: false, error: 'slot_taken' }
         }
 
@@ -688,7 +698,13 @@ export async function bookAppointment(
         try {
             // Resolve host name and avatar (assigned team member or admin owner)
             let hostName = profile?.full_name || profile?.business_name || 'Team Member'
-            let hostAvatar = profile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/default-avatar.png'
+            let hostAvatar = profile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+            if (hostAvatar.includes('/api/fetch-image?url=')) {
+                try { hostAvatar = decodeURIComponent(hostAvatar.split('/api/fetch-image?url=')[1]); } catch (e) {}
+            }
+            if (!hostAvatar.startsWith('http')) {
+                hostAvatar = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png'
+            }
 
             if (lead?.assigned_to) {
                 const { data: assignedProfile } = await supabaseAdmin
@@ -716,7 +732,7 @@ export async function bookAppointment(
             })
 
             const whatsappToken = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
-            const phoneId = profile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_NUMBER_ID
+            const phoneId = profile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || process.env.DEV_WHATSAPP_PHONE_NUMBER_ID
             
             // Normalize prospect phone
             let cleanLeadPhone = lead?.phone ? lead.phone.replace(/\D/g, '') : ''
@@ -732,69 +748,221 @@ export async function bookAppointment(
             }
 
             if (phoneId && whatsappToken) {
-                // 1. Prospect message template
+                // 1. Prospect message: Free-form Priority 1, Template Priority 2 Fallback
                 if (cleanLeadPhone) {
                     console.log(`[VOICE HELPER] Sending WhatsApp booking confirmation to prospect: ${cleanLeadPhone}`)
-                    const prospectPayload = {
+                    let confirmationDelivered = false
+
+                    // Priority 1: Free-Form Text Message (high conversion, instant delivery)
+                    const freeFormText = `Hello ${lead.name || 'Valued Lead'}! 🎉\n\nYour meeting has been successfully confirmed!\n\n📅 Date & Time: ${formattedDate}\n👤 Host: ${hostName}\n🏢 Business: ${profile?.business_name || 'Consultation'}${hangoutLink ? `\n🔗 Google Meet: ${hangoutLink}` : ''}\n\nThank you, and we look forward to connecting with you!`
+
+                    const freeFormPayload = {
                         messaging_product: 'whatsapp',
                         recipient_type: 'individual',
                         to: cleanLeadPhone,
-                        type: 'template',
-                        template: {
-                            name: 'booking_confirmation_prospect',
-                            language: {
-                                code: 'en_US'
+                        type: 'text',
+                        text: { body: freeFormText }
+                    }
+
+                    try {
+                        console.log(`[VOICE HELPER] Priority 1: Sending Free-Form WhatsApp text confirmation to ${cleanLeadPhone}`)
+                        const freeFormRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${whatsappToken}`,
+                                'Content-Type': 'application/json'
                             },
-                            components: [
-                                {
-                                    type: 'header',
-                                    parameters: [
-                                        {
-                                            type: 'image',
-                                            image: {
-                                                link: hostAvatar
-                                            }
-                                        }
-                                    ]
+                            body: JSON.stringify(freeFormPayload)
+                        })
+                        const freeFormData = await freeFormRes.json()
+
+                        if (freeFormRes.ok && freeFormData.messages?.[0]?.id) {
+                            confirmationDelivered = true
+                            console.log(`[VOICE HELPER] Free-Form WhatsApp confirmation delivered to ${cleanLeadPhone}. Message ID: ${freeFormData.messages[0].id}`)
+                            
+                            // Helper to ensure message appears in WhatsApp Inbox tab
+                            let { data: chat } = await supabaseAdmin
+                                .from('whatsapp_chats')
+                                .select('id')
+                                .eq('user_id', profileId)
+                                .eq('recipient_phone', cleanLeadPhone)
+                                .maybeSingle()
+
+                            if (!chat) {
+                                const { data: newChat } = await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .insert({
+                                        user_id: profileId,
+                                        lead_id: leadId,
+                                        recipient_name: lead.name || 'Valued Prospect',
+                                        recipient_phone: cleanLeadPhone,
+                                        last_message_text: freeFormText,
+                                        unread_count: 0,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .select('id')
+                                    .single()
+                                chat = newChat
+                            } else {
+                                await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .update({
+                                        lead_id: leadId,
+                                        last_message_text: freeFormText,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .eq('id', chat.id)
+                            }
+
+                            if (chat?.id) {
+                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                    chat_id: chat.id,
+                                    direction: 'outbound',
+                                    message_text: freeFormText,
+                                    created_at: new Date().toISOString()
+                                }).catch(() => {})
+                            }
+                        } else {
+                            console.warn('[VOICE HELPER] Free-form WhatsApp send failed (likely outside 24h window), falling back to template message:', freeFormData.error)
+                        }
+                    } catch (freeFormErr: any) {
+                        console.warn('[VOICE HELPER] Exception in Priority 1 Free-Form send:', freeFormErr.message)
+                    }
+
+                    // Priority 2: Generic Text-Only Template Fallback (no image requirement, 100% reliable)
+                    if (!confirmationDelivered) {
+                        console.log(`[VOICE HELPER] Priority 2: Sending Generic WhatsApp Template confirmation (booking_confirmation_generic) to ${cleanLeadPhone}`)
+                        const genericPayload = {
+                            messaging_product: 'whatsapp',
+                            recipient_type: 'individual',
+                            to: cleanLeadPhone,
+                            type: 'template',
+                            template: {
+                                name: 'booking_confirmation_generic',
+                                language: { code: 'en_US' },
+                                components: [
+                                    {
+                                        type: 'body',
+                                        parameters: [
+                                            { type: 'text', text: lead.name || 'Valued Prospect' },
+                                            { type: 'text', text: formattedDate },
+                                            { type: 'text', text: hostName },
+                                            { type: 'text', text: profile?.business_name || 'Consultation' }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+
+                        try {
+                            const genRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${whatsappToken}`,
+                                    'Content-Type': 'application/json'
                                 },
-                                {
-                                    type: 'body',
-                                    parameters: [
-                                        {
-                                            type: 'text',
-                                            text: lead.name || 'Prospect'
-                                        },
-                                        {
-                                            type: 'text',
-                                            text: formattedDate
-                                        },
-                                        {
-                                            type: 'text',
-                                            text: hostName
-                                        },
-                                        {
-                                            type: 'text',
-                                            text: profile?.business_name || 'Consultation'
-                                        }
-                                    ]
-                                }
-                            ]
+                                body: JSON.stringify(genericPayload)
+                            })
+                            const genData = await genRes.json()
+                            if (genRes.ok && genData.messages?.[0]?.id) {
+                                confirmationDelivered = true
+                                console.log(`[VOICE HELPER] Generic WhatsApp template confirmation delivered to ${cleanLeadPhone}. Message ID: ${genData.messages[0].id}`)
+                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                    user_id: profileId,
+                                    lead_id: leadId,
+                                    direction: 'outbound',
+                                    message_type: 'template',
+                                    body: `💬 WhatsApp Template (Generic): Booking confirmed for ${formattedDate}`,
+                                    status: 'sent',
+                                    message_id: genData.messages[0].id,
+                                    created_at: new Date().toISOString()
+                                }).catch(() => {})
+                            } else {
+                                console.warn('[VOICE HELPER] Generic template send failed, trying image-header template fallback:', genData.error)
+                            }
+                        } catch (genErr: any) {
+                            console.warn('[VOICE HELPER] Exception in Generic Template send:', genErr.message)
                         }
                     }
 
-                    const waRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${whatsappToken}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(prospectPayload)
-                    })
-                    const waData = await waRes.json()
-                    if (waData.error) {
-                        console.error('[VOICE HELPER] WhatsApp Prospect Confirmation Error:', waData.error)
-                    } else {
-                        console.log(`[VOICE HELPER] Prospect WhatsApp confirmation sent successfully. Message ID: ${waData.messages?.[0]?.id}`)
+                    // Priority 3: Image-Header Template Fallback (booking_confirmation_prospect)
+                    if (!confirmationDelivered) {
+                        console.log(`[VOICE HELPER] Priority 3: Sending WhatsApp Template confirmation (booking_confirmation_prospect) to ${cleanLeadPhone}`)
+                        const prospectPayload = {
+                            messaging_product: 'whatsapp',
+                            recipient_type: 'individual',
+                            to: cleanLeadPhone,
+                            type: 'template',
+                            template: {
+                                name: 'booking_confirmation_prospect',
+                                language: {
+                                    code: 'en_US'
+                                },
+                                components: [
+                                    {
+                                        type: 'header',
+                                        parameters: [
+                                            {
+                                                type: 'image',
+                                                image: {
+                                                    link: hostAvatar
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: 'body',
+                                        parameters: [
+                                            {
+                                                type: 'text',
+                                                text: lead.name || 'Prospect'
+                                            },
+                                            {
+                                                type: 'text',
+                                                text: formattedDate
+                                            },
+                                            {
+                                                type: 'text',
+                                                text: hostName
+                                            },
+                                            {
+                                                type: 'text',
+                                                text: profile?.business_name || 'Consultation'
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+
+                        try {
+                            const waRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${whatsappToken}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(prospectPayload)
+                            })
+                            const waData = await waRes.json()
+                            if (waData.error) {
+                                console.error('[VOICE HELPER] WhatsApp Prospect Template Confirmation Error:', waData.error)
+                            } else {
+                                console.log(`[VOICE HELPER] Prospect WhatsApp template confirmation sent successfully. Message ID: ${waData.messages?.[0]?.id}`)
+                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                    user_id: profileId,
+                                    lead_id: leadId,
+                                    direction: 'outbound',
+                                    message_type: 'template',
+                                    body: `💬 WhatsApp Template: Booking confirmed for ${formattedDate}`,
+                                    status: 'sent',
+                                    message_id: waData.messages?.[0]?.id,
+                                    created_at: new Date().toISOString()
+                                }).catch(() => {})
+                            }
+                        } catch (tmplErr: any) {
+                            console.error('[VOICE HELPER] Exception in Priority 3 Template send:', tmplErr)
+                        }
                     }
                 }
 

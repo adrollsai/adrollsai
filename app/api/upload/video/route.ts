@@ -85,10 +85,17 @@ export async function POST(request: Request) {
         ContentType: file.type || 'video/mp4'
       };
 
-      await r2.send(new PutObjectCommand(uploadParams));
-      const publicUrl = `${R2_PUBLIC_URL}/adrolls-storage/${key}`;
+      const publicUrl = `${R2_PUBLIC_URL}/${key}`;
 
-      return NextResponse.json({ success: true, publicUrl });
+      let thumbnailUrl: string | null = null;
+      try {
+        const { generateAndUploadVideoThumbnail } = await import('@/utils/video-thumbnail-helper');
+        thumbnailUrl = await generateAndUploadVideoThumbnail(outputPath, targetUserId, cleanName);
+      } catch (thumbErr) {
+        console.error("[VideoUpload API] Failed to generate thumbnail:", thumbErr);
+      }
+
+      return NextResponse.json({ success: true, publicUrl, thumbnailUrl });
     } catch (transcodeErr: any) {
       console.error("[VideoUpload API] Error in video compression / upload stream:", transcodeErr);
       return NextResponse.json({ error: transcodeErr.message }, { status: 500 });

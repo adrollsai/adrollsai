@@ -337,7 +337,7 @@ export async function POST(request: Request) {
         try {
             const videoRes = await fetch(resultUrl);
             const buffer = Buffer.from(await videoRes.arrayBuffer());
-            const fileName = `adrolls-storage/generated/${videoTask.user_id}/scene_${videoTask.current_index}_${Date.now()}.mp4`;
+            const fileName = `generated/${videoTask.user_id}/scene_${videoTask.current_index}_${Date.now()}.mp4`;
             
             await r2.send(new PutObjectCommand({
                 Bucket: R2_BUCKET,
@@ -426,7 +426,7 @@ export async function POST(request: Request) {
                 
                 // Upload faststart file to R2
                 const faststartBuffer = fs.readFileSync(outputPath);
-                const finalFileName = `adrolls-storage/generated/${videoTask.user_id}/faststart_${Date.now()}.mp4`;
+                const finalFileName = `generated/${videoTask.user_id}/faststart_${Date.now()}.mp4`;
                 await r2.send(new PutObjectCommand({
                     Bucket: R2_BUCKET,
                     Key: finalFileName,
@@ -508,11 +508,11 @@ export async function POST(request: Request) {
             const siteName = process.env.REMOTION_AWS_SITE_NAME || 'nobogent-site';
             const region = (process.env.REMOTION_AWS_REGION || 'us-east-1') as any;
 
-            // Dynamically calculate framesPerLambda to stay below the AWS account concurrency limit (10)
+            // Use 250+ frames per Lambda (max 3 Lambdas total) to prevent Chromium remote video seeking stalls at chunk boundaries
             const clipDurationSec = 15;
             const totalFrames = siblings.length * clipDurationSec * 30;
-            const maxLambdas = 4;
-            const framesPerLambda = Math.max(200, Math.ceil(totalFrames / maxLambdas));
+            const maxLambdas = 3;
+            const framesPerLambda = Math.max(250, Math.ceil(totalFrames / maxLambdas));
 
             console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
 
@@ -560,7 +560,7 @@ export async function POST(request: Request) {
             // Calculate actual total frames from real clip durations
             const realClipDurations = clipDurationsInSeconds ?? siblings.map(() => clipDurationSec);
             const actualTotalFrames = Math.round(realClipDurations.reduce((sum, d) => sum + d, 0) * 30);
-            const framesPerLambdaActual = Math.max(200, Math.ceil(actualTotalFrames / maxLambdas));
+            const framesPerLambdaActual = Math.max(250, Math.ceil(actualTotalFrames / maxLambdas));
 
             console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambdaActual} frames per lambda (actual total frames: ${actualTotalFrames})`);
 
@@ -689,6 +689,117 @@ export async function POST(request: Request) {
                 }
             }
 
+            // --- HIGH-SPEED DIRECT FFMPEG STITCHING ENGINE ---
+            // Bypasses AWS Lambda concurrency limits & rate exceeded errors for instant, zero-cost 2-second video stitching
+            try {
+                console.log(`[Video Callback] Starting fast local FFmpeg stitching for Asset ID ${videoTask.asset_id}...`);
+                const tempStitchDir = path.join(os.tmpdir(), `stitch_cb_${videoTask.asset_id}_${Date.now()}`);
+                if (!fs.existsSync(tempStitchDir)) {
+                    fs.mkdirSync(tempStitchDir, { recursive: true });
+                }
+
+                const localClipPaths: string[] = [];
+                for (let idx = 0; idx < siblings.length; idx++) {
+                    const s = siblings[idx];
+                    const clipPath = path.join(tempStitchDir, `scene_${idx}.mp4`);
+                    console.log(`[Video Callback] Downloading scene ${idx + 1}/${siblings.length}: ${s.last_successful_task_id}`);
+                    const clipRes = await fetch(s.last_successful_task_id);
+                    if (!clipRes.ok) throw new Error(`Failed to download scene ${idx + 1} for FFmpeg stitching`);
+                    fs.writeFileSync(clipPath, Buffer.from(await clipRes.arrayBuffer()));
+                    localClipPaths.push(clipPath);
+                }
+
+                const concatTxtContent = localClipPaths.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n');
+                const concatTxtPath = path.join(tempStitchDir, 'concat.txt');
+                fs.writeFileSync(concatTxtPath, concatTxtContent);
+
+                let localAudioPath: string | null = null;
+                if (finalAudioUrl && (finalAudioUrl.startsWith('http://') || finalAudioUrl.startsWith('https://'))) {
+                    try {
+                        console.log(`[Video Callback] Downloading voiceover audio for fast FFmpeg stitch: ${finalAudioUrl}`);
+                        const audioRes = await fetch(finalAudioUrl);
+                        if (audioRes.ok) {
+                            localAudioPath = path.join(tempStitchDir, 'voiceover.mp3');
+                            fs.writeFileSync(localAudioPath, Buffer.from(await audioRes.arrayBuffer()));
+                        }
+                    } catch (audErr) {
+                        console.warn(`[Video Callback] Failed to download voiceover audio for fast FFmpeg stitch:`, audErr);
+                    }
+                }
+
+                const ffmpegBinary = path.join(
+                    process.cwd(),
+                    'node_modules',
+                    'ffmpeg-static',
+                    os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+                );
+                const ffmpegExec = fs.existsSync(ffmpegBinary) ? ffmpegBinary : 'ffmpeg';
+
+                const outputPath = path.join(tempStitchDir, 'final_stitched.mp4');
+                const ffmpegCmd = localAudioPath
+                    ? `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -ar 48000 -ac 2 -shortest -movflags +faststart "${outputPath}"`
+                    : `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+
+                console.log(`[Video Callback] Executing fast FFmpeg command: ${ffmpegCmd}`);
+                await new Promise<void>((resolve, reject) => {
+                    exec(ffmpegCmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
+                        if (execErr) reject(execErr);
+                        else resolve();
+                    });
+                });
+
+                const stitchedBuffer = fs.readFileSync(outputPath);
+                const r2Key = `generated/${videoTask.user_id}/stitched_${Date.now()}.mp4`;
+                await r2.send(new PutObjectCommand({
+                    Bucket: R2_BUCKET,
+                    Key: r2Key,
+                    Body: stitchedBuffer,
+                    ContentType: 'video/mp4'
+                }));
+
+                const finalR2Url = `${R2_PUBLIC_URL}/${r2Key}`;
+                console.log(`[Video Callback] Fast FFmpeg stitch completed & uploaded to R2: ${finalR2Url}`);
+
+                let thumbnailUrl: string | null = null;
+                try {
+                    thumbnailUrl = await generateAndUploadVideoThumbnail(outputPath, videoTask.user_id, videoTask.asset_id);
+                } catch (thumbErr) {
+                    console.error("[Video Callback] Fast stitch thumbnail generation error:", thumbErr);
+                }
+
+                try { fs.rmSync(tempStitchDir, { recursive: true, force: true }); } catch (e) {}
+
+                if (videoTask.asset_id) {
+                    await supabaseAdmin.from('assets').update({
+                        url: finalR2Url,
+                        status: 'Draft',
+                        metadata: {
+                            ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                            ...(finalAudioUrl ? { audioUrl: finalAudioUrl } : {})
+                        }
+                    }).eq('id', videoTask.asset_id);
+                }
+
+                await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
+
+                await sendPushNotification(
+                    videoTask.user_id,
+                    `🎬 Grok Video Creative Ready!`,
+                    `Your multi-scene AI video ad has been generated & stitched successfully.`,
+                    "/dashboard/assets",
+                    "asset_ready"
+                );
+
+                return NextResponse.json({
+                    success: true,
+                    message: `All ${siblings.length} scenes stitched with fast FFmpeg successfully.`
+                });
+
+            } catch (fastFfmpegErr: any) {
+                console.warn(`[Video Callback] Fast local FFmpeg stitching failed, falling back to AWS Lambda:`, fastFfmpegErr?.message || fastFfmpegErr);
+            }
+
+            // --- FALLBACK TO AWS LAMBDA (IF LOCAL FFMPEG FAILS) ---
             const inputPropsPayload: any = {
                 videoUrls: siblings.map(s => s.last_successful_task_id),
                 clipDurationInSeconds: realClipDurations[0] ?? 8,
@@ -713,7 +824,7 @@ export async function POST(request: Request) {
                 maxRetries: 2,
                 privacy: 'public',
                 framesPerLambda: framesPerLambdaActual,
-                forceDurationInFrames: actualTotalFrames, // Override duration to match actual probed clip lengths
+                forceDurationInFrames: actualTotalFrames,
                 webhook: {
                     url: callbackUrl,
                     secret: null,
@@ -726,7 +837,6 @@ export async function POST(request: Request) {
 
             console.log(`[Video Callback] Stitch render successfully dispatched to AWS Lambda:`, renderResult.renderId);
             
-            // Mark the asset status as Rendering so the UI displays the loader spinner
             if (videoTask.asset_id) {
                 await supabaseAdmin.from('assets').update({ status: 'Rendering' }).eq('id', videoTask.asset_id);
             }

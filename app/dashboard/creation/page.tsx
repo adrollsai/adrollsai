@@ -268,7 +268,7 @@ export default function CreationPage() {
   
   // NEW: Creation Mode Toggle
   const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
-  const [videoModel, setVideoModel] = useState<'seedance' | 'grok'>('seedance')
+  const [videoModel, setVideoModel] = useState<'seedance' | 'grok'>('grok')
   const [grokVoice, setGrokVoice] = useState<string>('Aoede')
   
   // Presenter settings mode: 'video' (reference video), 'avatar' (avatar photo), or 'none'
@@ -1497,25 +1497,7 @@ export default function CreationPage() {
                 </div>
             )}
 
-            {/* Video Model Toggle (Seedance vs Grok) */}
-            {creationMode === 'video' && (
-                <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full animate-in fade-in duration-200">
-                    <button 
-                        type="button"
-                        onClick={() => setVideoModel('seedance')}
-                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${videoModel === 'seedance' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Zap size={12} className="hidden sm:block text-amber-500" /> Seedance
-                    </button>
-                    <button 
-                        type="button"
-                        onClick={() => setVideoModel('grok')}
-                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${videoModel === 'grok' ? 'bg-gradient-to-r from-purple-600 to-indigo-600 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Sparkles size={12} className="hidden sm:block text-purple-200" /> Grok
-                    </button>
-                </div>
-            )}
+
 
             {/* Product Selector Pill (Full width on mobile, 1/3 on desktop) */}
             <div className="relative w-full">

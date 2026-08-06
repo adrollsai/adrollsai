@@ -159,20 +159,8 @@ export async function POST(request: Request) {
                 }
             }
 
-            if (recipientEmails.length > 0) {
-                const { sendLandingPageLeadEmail } = await import('@/utils/email-helper');
-                console.log(`[Lead API] Sending lead notification emails to: ${recipientEmails.join(', ')}`);
-                await sendLandingPageLeadEmail(recipientEmails, {
-                    name,
-                    email,
-                    phone,
-                    city,
-                    source: slug ? `Landing Page - ${slug}` : 'Landing Page',
-                    customQuestions: customFields
-                });
-            } else {
-                console.warn("[Lead API] No recipient emails resolved for user:", user_id);
-            }
+            // Routine raw landing page lead emails suppressed (Email notifications limited to high-priority events: Meeting Booked, Connect with Expert)
+            console.log(`[Lead API] Raw landing page lead email skipped for ${name} (${recipientEmails.join(', ')}). Email notifications restricted to high-priority events.`);
         } catch (emailErr) {
             console.error("[Lead API] Failed to send lead notification emails:", emailErr);
         }

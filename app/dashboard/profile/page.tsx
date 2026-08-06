@@ -1002,12 +1002,10 @@ export default function ProfilePage() {
           }
         })
       } else {
-        console.error("Failed to load flagged questions API error:", resData.error)
         setFlaggedQuestions([])
         setFlaggedCount(0)
       }
-    } catch (err) {
-      console.error("Failed to load flagged questions:", err)
+    } catch {
       setFlaggedQuestions([])
       setFlaggedCount(0)
     } finally {

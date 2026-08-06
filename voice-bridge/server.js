@@ -7,16 +7,11 @@ const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
 require('dotenv').config(); // Fallback for container system variables
 
-const PORT = process.env.PORT || 5050;
+const PORT = process.env.PORT || 8080;
 
 // Initialize Supabase Admin Client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('[BRIDGE SERVER] Missing Supabase credentials in environment.');
-    process.exit(1);
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://hpssqssdewmkmafxlfud.supabase.co';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhwc3Nxc3NkZXdta21hZnhsZnVkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjgxMTkyMSwiZXhwIjoyMDk4Mzg3OTIxfQ.HgzsU10Lft2bpkOe5SMx-MyW_kmx0ld7txyqe8grlAA';
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     auth: { persistSession: false },
@@ -491,7 +486,7 @@ wss.on('connection', (wsConnection) => {
 
                 // 1. Fetch details from Supabase and connect to Gemini in parallel
                 let systemInstruction = 'You are a helpful representative. Focus on booking an appointment.';
-                let greetingMessage = 'Hello, how are you?';
+                let greetingMessage = 'Hi, kaise ho aap?';
 
                 // Clear old voice call fields immediately to prevent status callback race conditions
                 try {
@@ -511,7 +506,7 @@ wss.on('connection', (wsConnection) => {
 
                 let dbPromise;
                 let tempSocket;
-                const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+                const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
 
                 const prewarmed = prewarmedPool.get(leadId);
                 if (prewarmed && !prewarmed.used) {
@@ -596,17 +591,31 @@ wss.on('connection', (wsConnection) => {
                             }
                         }
 
-                        // Build Catalog Context with complete property details & location
+                        // Build Catalog Context with complete property details, internal tags & location
                         let catalogContext = '';
                         if (props && props.length > 0) {
                             catalogContext = props.map((p) => {
+                                let tagList = [];
+                                if (p.title) tagList.push(p.title);
+                                if (p.configurations) {
+                                    try {
+                                        const parsed = typeof p.configurations === 'string' ? JSON.parse(p.configurations) : p.configurations;
+                                        if (Array.isArray(parsed.tags)) tagList.push(...parsed.tags);
+                                        if (Array.isArray(parsed.internal_tags)) tagList.push(...parsed.internal_tags);
+                                        if (parsed.project_name) tagList.push(parsed.project_name);
+                                        if (parsed.brand_name) tagList.push(parsed.brand_name);
+                                        if (parsed.keywords) tagList.push(parsed.keywords);
+                                    } catch (e) {}
+                                }
+                                const cleanTags = Array.from(new Set(tagList.filter(Boolean))).join(', ');
+
                                 return `<property>
   <id>${p.id}</id>
   <title>${p.title || 'N/A'}</title>
+  <project_name_tags>${cleanTags || 'N/A'}</project_name_tags>
   <type>${p.property_type || 'N/A'}</type>
   <price>${p.price || 'N/A'}</price>
   <location_address>${p.address || p.location || 'N/A'}</location_address>
-  <configurations>${p.configurations || 'N/A'}</configurations>
   <description>${p.description || 'N/A'}</description>
   ${p.rera_number ? `<rera_number>${p.rera_number}</rera_number>` : ''}
 </property>`;
@@ -697,7 +706,27 @@ wss.on('connection', (wsConnection) => {
                             }
                         }
 
-                        const targetProduct = adProductName || interestedPropertyTitle || adHeadline || adName || null;
+                        const cleanTargetProductName = (rawName) => {
+                            if (!rawName || typeof rawName !== 'string') return null;
+                            let clean = rawName.trim();
+                            const lower = clean.toLowerCase();
+                            if (lower.includes('ai optimized') || lower.includes('ad video') || lower.includes('form the') || lower.includes('name, email') || lower.includes('what is your budget') || /\b\d{8,}\b/.test(clean)) {
+                                clean = clean.replace(/AI\s*optimized\s*ad\s*video\s*\d*/gi, '');
+                                clean = clean.replace(/form\s+the\s+.*/gi, '');
+                                clean = clean.replace(/Name,\s*Email,\s*Phone.*/gi, '');
+                                clean = clean.replace(/What\s+is\s+your\s+budget.*/gi, '');
+                                clean = clean.replace(/\b\d{8,}\b/g, '');
+                                clean = clean.replace(/[-_]+/g, ' ');
+                                clean = clean.trim();
+                            }
+                            if (!clean || clean.length < 3 || /^(ad|video|campaign|lead|form|test|creative|offer|project)$/i.test(clean)) {
+                                return null;
+                            }
+                            return clean;
+                        };
+
+                        const rawTargetProduct = adProductName || interestedPropertyTitle || adHeadline || adName || null;
+                        const targetProduct = cleanTargetProductName(rawTargetProduct);
 
                         // Build proactive context instruction for the agent's second turn (after greeting response)
                         let sourceInstructions = "";
@@ -745,8 +774,33 @@ The prospect recently asked the following questions which we have now resolved. 
 
 
                         
+                        // Parse campaign greeting if available, otherwise default to warm Hindi greeting
+                        let rawGreeting = campaign?.audience_filter?.greeting || null;
+                        greetingMessage = '';
+
+                        if (rawGreeting) {
+                            greetingMessage = rawGreeting
+                                .replace(/\{name\}/gi, firstName)
+                                .replace(/\{firstname\}/gi, firstName)
+                                .replace(/\{leadname\}/gi, leadName);
+                        } else if (resolvedQuestions.length > 0) {
+                            greetingMessage = `Hi ${firstName} ji! Main assistant baat kar rahi hoon. Aapne pichli call mein jo sawal pucha tha, uska answer humare paas aa gaya hai. Main aapke doubts clear karne ke liye call kar rahi hoon. Kaise hain aap?`;
+                        } else {
+                            greetingMessage = `Hi ${firstName} ji, kaise ho aap?`;
+                        }
+
+                        const languageDirective = `
+MANDATORY LANGUAGE & GREETING RULES:
+1. You MUST speak in natural, warm, polite Hindi / Hinglish.
+2. Default to Hindi / Hinglish for all responses. NEVER speak in pure English unless the user explicitly speaks to you in pure English first.
+3. Your ONLY opening greeting is: "${greetingMessage}". Speak this exact greeting clearly and warmly.
+4. DO NOT say "Hi", "Hello", "Good morning", or any extra greetings before or after "${greetingMessage}". NEVER repeat greetings or say multiple greetings in one turn.
+`.trim();
+
                         if (campaign && campaign.custom_prompt) {
                             systemInstruction = `
+${languageDirective}
+
 ${campaign.custom_prompt}
 
 ${sourceInstructions}
@@ -762,24 +816,17 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
 ${previousCallsHistory ? `--- PREVIOUS CALL HISTORY ---\n${previousCallsHistory}\n` : ''}
 ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : ''}
 `.trim();
-
-                            const promptLower = campaign.custom_prompt.toLowerCase();
-                            const isHinglish = promptLower.includes('hinglish') || promptLower.includes('hindi') || promptLower.includes('india');
-                            if (resolvedQuestions.length > 0) {
-                                greetingMessage = `Hi ${firstName} ji! Main assistant baat kar rahi hoon. Aapne pichli call mein jo sawal pucha tha, uska answer humare paas aa gaya hai. Main aapke doubts clear karne ke liye call kar rahi hoon. Kaise hain aap?`;
-                            } else if (isHinglish) {
-                                greetingMessage = `Hi ${firstName} ji! Main assistant baat kar raha hoon aapki query ke regarding. Kaise hain aap?`;
-                            } else {
-                                greetingMessage = `Hi ${firstName}! I'm calling to follow up on your recent request. How are you doing today?`;
-                            }
                         } else {
+                            greetingMessage = rawGreeting 
+                                ? rawGreeting.replace(/\{name\}/gi, firstName).replace(/\{firstname\}/gi, firstName).replace(/\{leadname\}/gi, leadName)
+                                : `Hi ${firstName} ji, kaise ho aap?`;
+
                             systemInstruction = `
-You are a helpful AI Voice calling assistant for "${companyName}".
-Your name is a booking representative.
-Your primary objective is to make the lead, ${leadName}, book an appointment/consultation with the business.
+You are a professional, helpful AI representative calling on behalf of "${companyName}".
+Your primary objective is to make the lead, ${leadName}, book an appointment/consultation for ${targetProduct || 'their requirement / property inquiry'}.
 
 CONVERSATION FLOW:
-1. Your first greeting is: "Hi ${firstName} ji, kaise ho aap?". (This is already spoken initially).
+1. Your opening greeting is: "${greetingMessage}".
 2. Once the lead responds to your greeting, your NEXT response must proactively establish context:
 ${contextInstruction}
 3. After establishing context, act as a helpful advisor. Focus on answering their queries about ${targetProduct || 'their requirement / property inquiry'} first.
@@ -792,7 +839,7 @@ CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
 5. Be polite, friendly, warm, and concise. Keep responses under 40 words.
 6. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user.
 7. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
-8. GENDER & PRONOUNS: You are a female assistant. Always use female grammar and pronouns in Hinglish (e.g. "karti hoon", "karungi", "baat kar rahi hoon", "de sakti hoon").
+8. GENDER & PRONOUNS: You are a female representative calling on behalf of ${companyName}. Always use female grammar and pronouns in Hinglish (e.g. "kar rahi hoon", "karti hoon", "baat kar rahi hoon", "bata sakti hoon"). NEVER say "raha" or refer to yourself as a generic assistant.
 9. APPLE LIVE VOICEMAIL & CALL SCREENING PROTOCOL: If you detect that an automated screening robot is speaking (such as iOS Live Voicemail saying "State your name and reason for calling" or Android Call Screen asking "who is calling"):
    - Do NOT hang up.
    - State your name & reason clearly once: "Hi, I am calling from ${companyName} regarding ${targetProduct || 'your property inquiry'} for ${firstName}. Please connect the call."
@@ -817,12 +864,6 @@ ${catalogContext ? `--- PROPERTIES CATALOG ---\n${catalogContext}\n` : ''}
 ${previousCallsHistory ? `--- PREVIOUS CALL HISTORY ---\n${previousCallsHistory}\n` : ''}
 ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : ''}
 `.trim();
-
-                            if (resolvedQuestions.length > 0) {
-                                greetingMessage = `Hi ${firstName} ji! Main assistant baat kar rahi hoon. Aapne pichli call mein jo sawal pucha tha, uska answer humare paas aa gaya hai. Main aapke doubts clear karne ke liye call kar rahi hoon. Kaise hain aap?`;
-                            } else {
-                                greetingMessage = `Hi ${firstName} ji, kaise ho aap?`;
-                            }
                         }
                     }
                 } catch (dbErr) {
@@ -905,7 +946,7 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                              
                              const textPrompt = greetingPlayed
                                  ? `The call has connected. We have already played the initial welcome greeting to the user: "${greetingMessage}". Do NOT repeat this greeting. Please wait silently for the user to respond first, and then reply naturally in Hinglish.`
-                                 : `Hello! Call has connected. Please speak this exact greeting message now in a warm, welcoming tone: "${greetingMessage}"`;
+                                 : `The call has just connected. Speak EXACTLY this greeting message now and nothing else: "${greetingMessage}"`;
 
                              const initialTurn = {
                                  clientContent: {

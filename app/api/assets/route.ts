@@ -57,6 +57,20 @@ export async function GET(request: Request) {
             }
         }
 
+        const singleAssetId = url.searchParams.get('id');
+        if (singleAssetId) {
+            const { data: singleAsset, error: singleError } = await supabaseAdmin
+                .from('assets')
+                .select('*')
+                .eq('id', singleAssetId)
+                .single();
+
+            if (singleError || !singleAsset) {
+                return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+            }
+            return NextResponse.json(singleAsset);
+        }
+
         let since = url.searchParams.get('since');
         if (since && since.includes(' ') && !since.includes('+')) {
             const parts = since.split(' ');
@@ -181,16 +195,42 @@ export async function GET(request: Request) {
                         asset.status = 'Failed';
                         asset.caption = `Error: ${failMsg}`;
                     }
-                } catch (err) {
-                    console.error(`[Assets API] Sync failed for asset ${asset.id}:`, err);
+                } catch (syncErr) {
+                    console.error(`[Assets API] Task ${asset.kie_task_id} status sync error:`, syncErr);
                 }
             }
         }
 
-        return NextResponse.json(assetData || []);
+        return NextResponse.json(assetData);
 
     } catch (error: any) {
-        console.error("[Assets API] Fetch error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        console.error('[Assets API] GET Error:', error);
+        return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    }
+}
+
+export async function DELETE(request: Request) {
+    try {
+        const clientSupabase = await createClient();
+        const { data: { user } } = await clientSupabase.auth.getUser();
+
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const url = new URL(request.url);
+        const assetId = url.searchParams.get('id');
+
+        if (!assetId) {
+            return NextResponse.json({ error: 'Missing asset id' }, { status: 400 });
+        }
+
+        const { error } = await supabaseAdmin.from('assets').delete().eq('id', assetId);
+        if (error) throw error;
+
+        return NextResponse.json({ success: true, message: 'Asset deleted successfully' });
+    } catch (error: any) {
+        console.error('[Assets API] DELETE Error:', error);
+        return NextResponse.json({ error: error.message || 'Failed to delete asset' }, { status: 500 });
     }
 }
