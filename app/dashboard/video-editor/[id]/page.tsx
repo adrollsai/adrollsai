@@ -101,16 +101,20 @@ export default function VideoEditorPage() {
                 setProfile(profileData)
             }
 
-            // 3. Load Video Duration dynamically in browser via CORS proxy
+            // 3. Load Video Duration dynamically in browser
             if (assetData.url) {
                 const proxyUrl = getBrowserMediaUrl(assetData.url)
+                const directUrl = fixR2Url(assetData.url)
                 const video = document.createElement('video')
                 video.crossOrigin = 'anonymous'
-                video.preload = 'auto'
+                video.preload = 'metadata'
 
+                let readyTriggered = false
                 const handleDuration = () => {
+                    if (readyTriggered) return
                     const videoDuration = video.duration
                     if (videoDuration && !isNaN(videoDuration) && isFinite(videoDuration) && videoDuration > 0) {
+                        readyTriggered = true
                         const calculatedFrames = Math.ceil(videoDuration * 30) + 120
                         setDurationInFrames(calculatedFrames)
                         setVideoReady(true)
@@ -120,7 +124,17 @@ export default function VideoEditorPage() {
                 video.onloadedmetadata = handleDuration
                 video.onloadeddata = handleDuration
                 video.oncanplay = handleDuration
-                video.src = proxyUrl
+                video.src = directUrl
+
+                // Fallback timeout after 3s so editor never gets stuck
+                setTimeout(() => {
+                    if (!readyTriggered) {
+                        readyTriggered = true
+                        setVideoReady(true)
+                    }
+                }, 3000)
+            } else {
+                setVideoReady(true)
             }
 
             setLoading(false)
@@ -227,11 +241,15 @@ export default function VideoEditorPage() {
                 </button>
 
                 <div className="w-full max-w-[400px] aspect-[9/16] bg-black rounded-[2rem] overflow-hidden shadow-2xl shadow-blue-500/10 border border-white/10 relative group">
-                    {!videoReady && (
-                        <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center z-30 space-y-3">
-                            <Loader2 size={36} className="text-blue-500 animate-spin" />
-                            <p className="font-extrabold text-sm text-white">Loading & Pre-buffering Video...</p>
-                            <p className="text-xs text-slate-400 font-medium">Extracting video metadata and timeline</p>
+                    {(!videoReady || isGenerating) && (
+                        <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-30 space-y-3">
+                            <Loader2 size={40} className="text-blue-500 animate-spin" />
+                            <p className="font-extrabold text-sm text-white">
+                                {isGenerating ? 'AI Editing & Transcribing Video...' : 'Loading & Pre-buffering Video...'}
+                            </p>
+                            <p className="text-xs text-slate-400 font-medium">
+                                {isGenerating ? 'Extracting audio & generating AI subtitles' : 'Preparing video player timeline'}
+                            </p>
                         </div>
                     )}
                     <Player
@@ -259,11 +277,11 @@ export default function VideoEditorPage() {
                     </button>
                     <button
                         onClick={generateCaptions}
-                        disabled={isGenerating}
-                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 px-8 py-4 rounded-2xl font-black flex items-center gap-2 transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 active:scale-95"
+                        disabled={isGenerating || !videoReady || loading}
+                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 px-8 py-4 rounded-2xl font-black flex items-center gap-2 transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 active:scale-95 disabled:cursor-not-allowed"
                     >
-                        {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                        {captions.length > 0 ? 'Re-run AI Edit' : 'AI EDIT'}
+                        {(!videoReady || isGenerating) ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                        {!videoReady ? 'Loading Video...' : (isGenerating ? 'AI Editing...' : (captions.length > 0 ? 'Re-run AI Edit' : 'AI EDIT'))}
                     </button>
                 </div>
 
