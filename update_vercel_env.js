@@ -10,8 +10,13 @@ function runCmd(cmd) {
 }
 
 async function updateVercel() {
-  const newKie = "748a2ca6b7c6135d0c3a45eb36b6bd54";
-  const newGemini = "AQ.Ab8RN6IRU4rnpret6yevWqnKul86FV_Aacczyqsi2J0NfxJbqw";
+  const newKie = process.env.KIE_API_KEY;
+  const newGemini = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+  if (!newKie || !newGemini) {
+    console.error("Missing KIE_API_KEY or GEMINI_API_KEY in environment variables.");
+    return;
+  }
 
   console.log("Updating Vercel Environment Variables...");
 

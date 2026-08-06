@@ -1,6 +1,6 @@
 const https = require('https');
 
-const newKey = "AQ.Ab8RN6IRU4rnpret6yevWqnKul86FV_Aacczyqsi2J0NfxJbqw";
+const newKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || "";
 
 async function testKey() {
   console.log("Testing new key...");

@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { createBrowserClient } from '@supabase/ssr'
 import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, CheckCircle2, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -11,9 +10,9 @@ type AuthMode = 'login' | 'signup' | 'forgot_password'
 
 export default function LoginPage() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   
-  const [mode, setMode] = useState<AuthMode>('login')
+  const [mode, setModeState] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,6 +20,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [agreed, setAgreed] = useState(false)
+
+  const switchMode = (newMode: AuthMode) => {
+    setModeState(newMode)
+    setError(null)
+    setSuccessMessage('')
+    setAgreed(false)
+  }
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,24 +36,43 @@ export default function LoginPage() {
 
     try {
       if (mode === 'signup') {
+        if (password.length < 6) {
+          throw new Error('Password must be at least 6 characters long.')
+        }
+
         const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard/profile`,
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+            data: {
+              accepted_terms: true,
+            }
           },
         })
         if (error) throw error
         
-        if (signUpData?.user) {
-          await supabase
-            .from('profiles')
-            .update({ accepted_terms: true })
-            .eq('id', signUpData.user.id)
+        if (signUpData?.user?.identities?.length === 0) {
+          throw new Error('An account with this email address already exists. Please sign in instead.')
         }
         
-        setSuccessMessage('Account created! Please check your email to verify your account.')
-        toast.success("Verification email sent!")
+        if (signUpData?.user) {
+          try {
+            await supabase
+              .from('profiles')
+              .upsert({ id: signUpData.user.id, accepted_terms: true }, { onConflict: 'id' })
+          } catch (pErr) {
+            console.warn('Profile terms update non-fatal error:', pErr)
+          }
+        }
+        
+        if (signUpData?.session) {
+          toast.success("Account created successfully!")
+          router.push('/dashboard')
+        } else {
+          setSuccessMessage('Account created! Please check your email to verify your account.')
+          toast.success("Verification email sent!")
+        }
         
       } else if (mode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({
@@ -59,15 +84,10 @@ export default function LoginPage() {
         router.push('/dashboard')
         
       } else if (mode === 'forgot_password') {
-        const res = await fetch('/api/auth/forgot-password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email })
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/callback?next=/update-password`,
         })
-        const data = await res.json()
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Failed to send password reset email.')
-        }
+        if (error) throw error
         setSuccessMessage('Password reset instructions have been sent to your email.')
         toast.success("Reset link sent!")
       }
@@ -81,15 +101,19 @@ export default function LoginPage() {
   }
 
   const handleGoogleAuth = async () => {
+    setLoading(true)
+    setError(null)
+    setSuccessMessage('')
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard/profile`,
+          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
         }
       })
       if (error) throw error
     } catch (error: any) {
+      setLoading(false)
       toast.error(error.message || 'Failed to authenticate with Google.')
     }
   }
@@ -97,12 +121,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4">
       
-      {/* Decorative Background Elements */}
       <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-50 to-[#F8FAFC] -z-10" />
       
       <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-8 duration-500">
         
-        {/* Branding */}
         <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto mb-5 relative drop-shadow-xl hover:scale-105 transition-transform duration-300">
                 <img 
@@ -119,7 +141,6 @@ export default function LoginPage() {
             </p>
         </div>
 
-        {/* Main Auth Card */}
         <div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-slate-100">
             
             {successMessage ? (
@@ -130,7 +151,8 @@ export default function LoginPage() {
                    <h3 className="text-lg font-bold text-slate-800 mb-2">Check your email</h3>
                    <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">{successMessage}</p>
                    <button 
-                      onClick={() => { setMode('login'); setSuccessMessage(''); setPassword(''); }}
+                      type="button"
+                      onClick={() => { switchMode('login'); setPassword(''); }}
                       className="text-sm font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-6 py-3 rounded-full transition-colors"
                    >
                        Back to Login
@@ -139,20 +161,21 @@ export default function LoginPage() {
             ) : (
                 <form onSubmit={handleEmailAuth} className="space-y-5">
                     
-                    {/* Error Message */}
                     {error && (
                         <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-2xl text-xs font-bold animate-in fade-in slide-in-from-top-2 duration-300">
                             {error === 'Invalid login credentials' ? 'Invalid email or password. Please try again.' : error}
                         </div>
                     )}
                     
-                    {/* Email Field */}
                     <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2 block">Email Address</label>
+                        <label htmlFor="auth-email" className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2 block">Email Address</label>
                         <div className="relative">
                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                             <input 
+                                id="auth-email"
+                                name="email"
                                 type="email" 
+                                autoComplete="email"
                                 required
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
@@ -162,15 +185,14 @@ export default function LoginPage() {
                         </div>
                     </div>
 
-                    {/* Password Field with Toggle[cite: 1, 2, 4] */}
                     {mode !== 'forgot_password' && (
                         <div>
                             <div className="flex justify-between items-center mb-2">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 block">Password</label>
+                                <label htmlFor="auth-password" className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 block">Password</label>
                                 {mode === 'login' && (
                                     <button 
                                         type="button"
-                                        onClick={() => setMode('forgot_password')} 
+                                        onClick={() => switchMode('forgot_password')} 
                                         className="text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors"
                                     >
                                         Forgot?
@@ -180,16 +202,19 @@ export default function LoginPage() {
                             <div className="relative group">
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input 
-                                    type={showPassword ? "text" : "password"} // Dynamic type switching[cite: 1]
+                                    id="auth-password"
+                                    name="password"
+                                    type={showPassword ? "text" : "password"} 
+                                    autoComplete={mode === 'signup' ? "new-password" : "current-password"}
+                                    minLength={mode === 'signup' ? 6 : undefined}
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-4 pl-12 pr-12 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none border border-slate-200/60 transition-all" 
                                     placeholder="••••••••" 
                                 />
-                                {/* Visibility Toggle Button[cite: 1, 2] */}
                                 <button
-                                  type="button" // Critical: prevents form submission on click[cite: 1]
+                                  type="button" 
                                   onClick={() => setShowPassword(!showPassword)}
                                   className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 active:scale-90 transition-all p-1"
                                   aria-label={showPassword ? "Hide password" : "Show password"}
@@ -200,7 +225,6 @@ export default function LoginPage() {
                         </div>
                     )}
 
-                    {/* Legal Agreement Checkbox for Sign Up */}
                     {mode === 'signup' && (
                         <label className="flex items-start gap-3 mt-4 text-xs text-slate-500 cursor-pointer select-none animate-in fade-in slide-in-from-top-2 duration-300">
                             <input 
@@ -211,12 +235,30 @@ export default function LoginPage() {
                                 className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
                             />
                             <span className="font-semibold leading-relaxed text-slate-600">
-                                I agree to the <a href="/terms-and-conditions" target="_blank" className="text-blue-600 font-bold hover:underline">Terms & Conditions</a> and <a href="/privacy-policy" target="_blank" className="text-blue-600 font-bold hover:underline">Privacy Policy</a>.
+                                I agree to the{' '}
+                                <a 
+                                  href="/terms-and-conditions" 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()} 
+                                  className="text-blue-600 font-bold hover:underline"
+                                >
+                                  Terms & Conditions
+                                </a>{' '}
+                                and{' '}
+                                <a 
+                                  href="/privacy-policy" 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()} 
+                                  className="text-blue-600 font-bold hover:underline"
+                                >
+                                  Privacy Policy
+                                </a>.
                             </span>
                         </label>
                     )}
 
-                    {/* Submit Button */}
                     <button 
                         type="submit" 
                         disabled={loading || !email || (mode !== 'forgot_password' && !password) || (mode === 'signup' && !agreed)}
@@ -229,7 +271,6 @@ export default function LoginPage() {
                         {!loading && <ArrowRight size={16} />}
                     </button>
 
-                    {/* Google OAuth Button */}
                     {mode !== 'forgot_password' && (
                         <>
                             <div className="relative py-2 flex items-center">
@@ -240,8 +281,9 @@ export default function LoginPage() {
                             
                             <button 
                                 type="button"
+                                disabled={loading}
                                 onClick={handleGoogleAuth} 
-                                className="w-full bg-white hover:bg-slate-50 text-slate-700 py-4 rounded-[1.5rem] text-sm font-bold flex items-center justify-center gap-3 border border-slate-200/60 shadow-sm active:scale-[0.98] transition-all"
+                                className="w-full bg-white hover:bg-slate-50 text-slate-700 py-4 rounded-[1.5rem] text-sm font-bold flex items-center justify-center gap-3 border border-slate-200/60 shadow-sm active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -256,17 +298,17 @@ export default function LoginPage() {
                 </form>
             )}
 
-            {/* Toggle Modes Footer */}
             {!successMessage && (
                 <div className="mt-8 text-center border-t border-slate-100 pt-6">
                     {mode === 'login' ? (
                         <p className="text-sm text-slate-500 font-medium">
                             Don't have an account?{' '}
-                            <button onClick={() => setMode('signup')} className="text-blue-600 font-bold hover:underline">Sign up</button>
+                            <button type="button" onClick={() => switchMode('signup')} className="text-blue-600 font-bold hover:underline">Sign up</button>
                         </p>
                     ) : (
                         <button 
-                            onClick={() => setMode('login')} 
+                            type="button"
+                            onClick={() => switchMode('login')} 
                             className="text-sm text-slate-500 font-bold hover:text-slate-800 flex items-center justify-center gap-1 mx-auto transition-colors"
                         >
                             <ChevronLeft size={16} /> Back to Sign In

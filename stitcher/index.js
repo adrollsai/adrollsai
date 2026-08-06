@@ -502,7 +502,7 @@ app.post('/process-background-image', async (req, res) => {
                 await new Promise(r => setTimeout(r, 8000));
                 
                 const checkRes = await fetch(`https://api.kie.ai/v1/jobs/${taskId}`, {
-                    headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY || '748a2ca6b7c6135d0c3a45eb36b6bd54'}` }
+                    headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY || ''}` }
                 }).catch(() => null);
 
                 if (!checkRes) continue;

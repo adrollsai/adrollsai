@@ -119,6 +119,7 @@ export default function CRMPage() {
   const [selectedDnpFilter, setSelectedDnpFilter] = useState<'ALL' | 'DNP_ONLY' | 'DNP_1' | 'DNP_2' | 'DNP_3PLUS' | 'NO_DNP'>('ALL')
   const [selectedAgentFilter, setSelectedAgentFilter] = useState<string>('ALL')
   const [selectedDateRange, setSelectedDateRange] = useState<string>('ALL')
+  const [selectedCsvAudience, setSelectedCsvAudience] = useState<string>('')
   const [callFeedbackLead, setCallFeedbackLead] = useState<any>(null)
   
   const [currentPage, setCurrentPageState] = useState(() => {
@@ -1435,7 +1436,6 @@ END:VCARD\n`
                         className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all ${
                             viewMode === 'cards'
                                 ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
-                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
                                 : 'text-slate-500 hover:text-slate-800'
                         }`}
                         title="Cards View"
@@ -2134,6 +2134,7 @@ END:VCARD\n`
                     )
                 })}
             </div>
+            )}
 
             {renderPagination('bottom')}
             </>
