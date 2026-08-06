@@ -43,33 +43,57 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No social platforms selected' }, { status: 400 })
     }
 
-    // 2. DISPATCH TO DEDICATED CLOUD RUN BACKGROUND WORKER (Scale-ready, 0 Vercel limits)
+    const workerPayload = { targetUserId, imageUrl, caption, type, platforms };
+
+    // 2. OPTION A: QUEUE VIA UPSTASH QSTASH (Guaranteed queue, rate limiting & automatic retries)
+    const qstashToken = process.env.QSTASH_TOKEN;
+    if (qstashToken) {
+      try {
+        console.log(`[Post Universal] Queueing social post via Upstash QStash for user: ${targetUserId}`);
+        const qstashPublishUrl = `https://qstash.upstash.io/v2/publish/${CLOUD_RUN_WORKER_URL}`;
+        const qstashRes = await fetch(qstashPublishUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${qstashToken}`,
+            'Content-Type': 'application/json',
+            'Upstash-Retries': '3'
+          },
+          body: JSON.stringify(workerPayload)
+        });
+
+        if (qstashRes.ok) {
+          return NextResponse.json({
+            success: true,
+            status: 'queued',
+            message: 'Social broadcast queued in QStash message queue! Your posts are publishing asynchronously in the background.'
+          }, { status: 202 });
+        }
+      } catch (qstashErr: any) {
+        console.warn("[Post Universal] QStash publishing error, falling back to direct Cloud Run worker:", qstashErr?.message);
+      }
+    }
+
+    // 3. OPTION B: DIRECT DISPATCH TO CLOUD RUN WORKER (Scale-ready, 0 Vercel limits)
     try {
-      console.log(`[Post Universal] Dispatching async social post payload to Cloud Run worker for user: ${targetUserId}`);
+      console.log(`[Post Universal] Dispatching async social post payload directly to Cloud Run worker for user: ${targetUserId}`);
       const workerRes = await fetch(CLOUD_RUN_WORKER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetUserId,
-          imageUrl,
-          caption,
-          type,
-          platforms
-        })
+        body: JSON.stringify(workerPayload)
       });
 
       if (workerRes.status === 202 || workerRes.ok) {
         return NextResponse.json({
           success: true,
           status: 'queued',
-          message: 'Social broadcast dispatched to background Cloud Run worker! Your posts are publishing asynchronously in the background.'
+          message: 'Social broadcast dispatched to Cloud Run background worker! Your posts are publishing asynchronously.'
         }, { status: 202 });
       }
     } catch (workerError: any) {
       console.warn("[Post Universal] Cloud Run worker dispatch warning, continuing with fallback execution:", workerError?.message);
     }
 
-    // 3. FALLBACK: Synchronous Serverless Execution
+    // 4. FALLBACK: Synchronous Serverless Execution
     const { data: profile } = await supabase
       .from('profiles')
       .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id, linkedin_urn')
