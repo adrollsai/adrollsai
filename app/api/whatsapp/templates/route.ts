@@ -109,7 +109,20 @@ export async function POST(req: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const body = await req.json()
-        const { name, category, bodyText, buttons } = body
+        const { 
+            name, 
+            category, 
+            bodyText, 
+            headerType, 
+            headerText,
+            buttonsType,
+            quickReplyButtons,
+            ctaUrlText,
+            ctaUrl,
+            ctaPhoneText,
+            ctaPhone,
+            buttons 
+        } = body
 
         if (!name || !category || !bodyText) {
             return NextResponse.json({ error: 'Missing required template configurations (name, category, bodyText)' }, { status: 400 })
@@ -138,41 +151,112 @@ export async function POST(req: Request) {
             }, { status: 400 })
         }
 
-        // Structure standard Meta message template creation payload
-        const templatePayload: any = {
-            name: cleanName,
-            category: category.toUpperCase(), // 'MARKETING' or 'UTILITY'
-            language: 'en_US',
-            components: [
-                {
-                    type: 'BODY',
-                    text: bodyText
+        const components: any[] = []
+
+        // 1. HEADER COMPONENT
+        if (headerType && headerType !== 'NONE') {
+            const hType = headerType.toUpperCase()
+            if (hType === 'TEXT' && headerText) {
+                components.push({
+                    type: 'HEADER',
+                    format: 'TEXT',
+                    text: headerText.trim()
+                })
+            } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(hType)) {
+                const headerComp: any = {
+                    type: 'HEADER',
+                    format: hType
                 }
-            ]
+                // Attach sample example URL required by Meta for media headers
+                if (hType === 'IMAGE') {
+                    headerComp.example = {
+                        header_handle: ['https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/2f62a259-f23b-48ee-a920-c436f36eaa4b/1778143153926.png']
+                    }
+                } else if (hType === 'VIDEO') {
+                    headerComp.example = {
+                        header_handle: ['https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785562776349-reelvideo.mp4']
+                    }
+                }
+                components.push(headerComp)
+            }
+        }
+
+        // 2. BODY COMPONENT
+        const bodyComp: any = {
+            type: 'BODY',
+            text: bodyText
         }
 
         // If bodyText contains variables like {{1}}, {{2}}, extract and inject required Meta examples
         const matches = bodyText.match(/\{\{(\d+)\}\}/g)
         if (matches && matches.length > 0) {
-            // Deduplicate matching indices to construct correct order list
             const uniqueIndices = Array.from<number>(new Set(matches.map((m: string) => parseInt(m.replace(/\D/g, '')))))
                 .sort((a, b) => a - b)
-            
             const examplesList = uniqueIndices.map(index => `Sample ${index}`)
-            templatePayload.components[0].example = {
+            bodyComp.example = {
                 body_text: [examplesList]
             }
         }
+        components.push(bodyComp)
 
-        // If Quick Reply buttons are specified, format and attach BUTTONS component
-        if (Array.isArray(buttons) && buttons.length > 0) {
-            templatePayload.components.push({
-                type: 'BUTTONS',
-                buttons: buttons.map((btnText: string) => ({
-                    type: 'QUICK_REPLY',
-                    text: typeof btnText === 'string' ? btnText.trim() : (btnText as any).text || 'Click Here'
-                }))
-            })
+        // 3. BUTTONS COMPONENT
+        const effectiveBtnType = buttonsType || (Array.isArray(buttons) && buttons.length > 0 ? 'QUICK_REPLY' : 'NONE')
+        
+        if (effectiveBtnType === 'QUICK_REPLY') {
+            const replyList = Array.isArray(quickReplyButtons) && quickReplyButtons.length > 0
+                ? quickReplyButtons
+                : buttons
+            
+            const validReplies = (replyList || [])
+                .map((b: any) => typeof b === 'string' ? b.trim() : b.text?.trim())
+                .filter((b: string) => !!b)
+
+            if (validReplies.length > 0) {
+                components.push({
+                    type: 'BUTTONS',
+                    buttons: validReplies.slice(0, 3).map((txt: string) => ({
+                        type: 'QUICK_REPLY',
+                        text: txt
+                    }))
+                })
+            }
+        } else if (effectiveBtnType === 'CALL_TO_ACTION') {
+            const ctaButtonsList: any[] = []
+            
+            if (ctaUrlText && ctaUrl) {
+                let cleanUrl = ctaUrl.trim()
+                if (!cleanUrl.startsWith('http')) cleanUrl = `https://${cleanUrl}`
+                ctaButtonsList.push({
+                    type: 'URL',
+                    text: ctaUrlText.trim(),
+                    url: cleanUrl
+                })
+            }
+
+            if (ctaPhoneText && ctaPhone) {
+                let cleanPhone = ctaPhone.trim().replace(/[^\d+]/g, '')
+                if (!cleanPhone.startsWith('+')) cleanPhone = `+${cleanPhone}`
+                ctaButtonsList.push({
+                    type: 'PHONE_NUMBER',
+                    text: ctaPhoneText.trim(),
+                    phone_number: cleanPhone
+                })
+            }
+
+            if (ctaButtonsList.length > 0) {
+                components.push({
+                    type: 'BUTTONS',
+                    buttons: ctaButtonsList
+                })
+            }
+        }
+
+        // Structure standard Meta message template creation payload
+        const templatePayload: any = {
+            name: cleanName,
+            category: category.toUpperCase(), // 'MARKETING' or 'UTILITY'
+            language: 'en_US',
+            components
         }
 
 

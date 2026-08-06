@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
+import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
 
 // Map String names to Actual Icons
 const iconMap: Record<string, LucideIcon> = {
@@ -1627,6 +1628,27 @@ export default function AutomationPage() {
                           </>
                         )}
                       </div>
+
+                      {selectedTemplate && (() => {
+                        const tObj = templates.find(t => t.name === selectedTemplate)
+                        const bodyObj = tObj?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')
+                        const bodyText = bodyObj?.text || 'Hello {{1}}, here is an update regarding {{2}}.'
+                        
+                        return (
+                          <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block text-center">Live Message Preview</span>
+                            <WhatsAppLivePreview
+                              headerType={selectedHeaderFormat}
+                              headerMediaUrl={selectedHeaderMediaUrl}
+                              bodyText={bodyText}
+                              sampleLeadName="Valued Client"
+                              samplePropertyTitle="Green Valley Villas"
+                              sampleBusinessName="Nobogent AI"
+                            />
+                          </div>
+                        )
+                      })()}
+
                       <button
                         onClick={handleSendTemplate}
                         disabled={sendingMessage || (selectedTemplate === 'custom' && !customTemplateName.trim())}
