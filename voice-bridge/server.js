@@ -1204,49 +1204,88 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                 
                 console.log('[BRIDGE] Conversation Transcript Compiled:\n', fullTranscript);
 
-                // Use Gemini Flash API (REST) to generate summary of this call
+                // Use Gemini Flash API (REST) to generate summary & extract appointment booking slot
                 let summary = 'Conversation took place via Gemini Voice AI.';
-                try {
-                    const summaryPrompt = `
-You are analyzing a phone call transcript. Write a concise, professional 2-3 sentence summary of the call.
-Do NOT use markdown headers, bold, bullets, or lists. Output only a single clean paragraph.
+                let bookingTime = null;
+                let callbackTime = null;
+                let isQualified = false;
 
-Transcript:
+                try {
+                    const analysisPrompt = `
+You are analyzing a phone call transcript between an AI voice agent and a prospect.
+Here is the transcript:
 ${fullTranscript}
+
+Extract the following details as a valid JSON object ONLY. Do NOT use markdown tags, ticks, or backticks:
+{
+  "summary": "A concise, clean 2-3 sentence paragraph summarizing the call. Do NOT use markdown headers, bold, bullets, or lists.",
+  "callback_time": "ISO-8601 string of requested callback date/time if requested/agreed (including 'call me tomorrow', 'connect Saturday', etc.). Current system UTC time is: ${new Date().toISOString()}",
+  "booking_time": "ISO-8601 string of confirmed appointment/meeting/consultation/site visit date/time if the prospect agreed to, confirmed, requested, or accepted a meeting/appointment/visit slot (including 'tomorrow', 'Saturday', 'yes', 'okay', or confirming a proposed time), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
+  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a visit/callback, or expressed interest)
+}
 `.trim();
+
                     const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
                     const summaryRes = await fetch(restUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            contents: [{ parts: [{ text: summaryPrompt }] }]
+                            contents: [{ parts: [{ text: analysisPrompt }] }]
                         })
                     });
                     const summaryData = await summaryRes.json();
-                    const text = summaryData.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (text) {
-                        summary = text.trim();
+                    const rawText = summaryData.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (rawText) {
+                        const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                        try {
+                            const parsed = JSON.parse(cleanJson);
+                            if (parsed.summary) summary = parsed.summary.trim();
+                            if (parsed.booking_time) bookingTime = parsed.booking_time;
+                            if (parsed.callback_time) callbackTime = parsed.callback_time;
+                            if (parsed.is_qualified) isQualified = true;
+                        } catch (e) {
+                            summary = rawText.trim();
+                        }
                     }
                 } catch (sumErr) {
-                    console.error('[BRIDGE] Auto-summarization failed:', sumErr);
+                    console.error('[BRIDGE] Auto-analysis failed:', sumErr);
                 }
 
-                // Update leads table with summary, transcript, and completed status
-                // Note: voice_call_retry_count is intentionally NOT reset here.
-                // The Twilio status-callback handles retry count logic correctly,
-                // and resetting it here would cause a race condition.
+                // Update leads table with summary, transcript, and stage transition
+                const updatePayload = {
+                    voice_call_status: 'completed',
+                    voice_call_summary: summary,
+                    voice_call_transcript: mergedTurns
+                };
+
+                if (bookingTime) {
+                    console.log(`[BRIDGE] Detected booking slot from Gemini call: ${bookingTime}. Updating stage to Visit Planned!`);
+                    updatePayload.status = 'Visit Planned';
+                    updatePayload.pipeline_stage = 'Visit Planned';
+                    updatePayload.booked_time = bookingTime;
+                } else if (isQualified) {
+                    updatePayload.status = 'Negotiation';
+                    updatePayload.pipeline_stage = 'Negotiation';
+                }
+
                 try {
                     await supabaseAdmin
                         .from('leads')
-                        .update({
-                            voice_call_status: 'completed',
-                            voice_call_summary: summary,
-                            voice_call_transcript: mergedTurns
-                        })
+                        .update(updatePayload)
                         .eq('id', leadId);
-                    console.log('[BRIDGE] Leads table summary and transcript updated successfully!');
+                    console.log('[BRIDGE] Leads table summary, transcript, and pipeline stage updated successfully!');
                 } catch (leadErr) {
                     console.error('[BRIDGE] Failed to save transcript/summary to lead:', leadErr);
+                }
+
+                if (bookingTime && profileData) {
+                    try {
+                        const { bookAppointment } = require('../utils/voice-helper');
+                        await bookAppointment(supabaseAdmin, leadId, bookingTime, profileData.id, true);
+                        console.log('[BRIDGE] bookAppointment helper executed successfully!');
+                    } catch (bErr) {
+                        console.error('[BRIDGE] bookAppointment error:', bErr);
+                    }
                 }
 
                 // Insert into Supabase lead_history

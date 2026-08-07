@@ -498,11 +498,15 @@ Generate a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks
                 }
             }
 
-            // 2. Perform Agentic Analysis using Gemini on the transcript if ElevenLabs transcript was found
-            if (voiceProvider !== 'gemini' && conversationId && transcript.length > 0) {
+            // 2. Perform Agentic Analysis using Gemini on transcript
+            const activeTranscript = (transcript && transcript.length > 0)
+                ? transcript
+                : ((lead as any)?.voice_call_transcript || []);
+
+            if (activeTranscript.length > 0) {
                 try {
-                    const formattedTranscript = transcript
-                        .map((t: any) => `${t.role === 'agent' ? 'Agent' : 'Lead'}: ${t.message}`)
+                    const formattedTranscript = activeTranscript
+                        .map((t: any) => `${(t.role === 'agent' || t.role === 'assistant') ? 'Agent' : 'Lead'}: ${t.message || t.text || ''}`)
                         .join('\n')
 
                     const geminiPrompt = `
