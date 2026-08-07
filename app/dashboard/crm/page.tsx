@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
-  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText, Send, HelpCircle, Target,
-  LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw
+  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText, Send, HelpCircle, Target, Calendar,
+  LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw, History
 } from 'lucide-react'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
@@ -14,10 +14,21 @@ import TestNotificationBtn from '@/components/TestNotificationBtn'
 import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
 import CallFeedbackModal from '@/components/CallFeedbackModal'
+import UpdateFollowupModal from '@/components/UpdateFollowupModal'
+import LeadHistoryModal from '@/components/LeadHistoryModal'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
-const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
+const STAGES = [
+  'New Lead',
+  'Requirement Taken',
+  'Visit Planned',
+  'Visit Done',
+  'Revisit Done',
+  'Negotiation',
+  'Deal/Token',
+  'Lost/NI'
+]
 
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -121,6 +132,8 @@ export default function CRMPage() {
   const [selectedDateRange, setSelectedDateRange] = useState<string>('ALL')
   const [selectedCsvAudience, setSelectedCsvAudience] = useState<string>('')
   const [callFeedbackLead, setCallFeedbackLead] = useState<any>(null)
+  const [updateFollowupLead, setUpdateFollowupLead] = useState<any>(null)
+  const [historyLead, setHistoryLead] = useState<any>(null)
   
   const [currentPage, setCurrentPageState] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -495,6 +508,33 @@ export default function CRMPage() {
     }
   }
 
+  const updateStage = async (leadId: string, newStage: string, e?: any) => {
+    if (e) e.stopPropagation();
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ status: newStage, pipeline_stage: newStage })
+        .eq('id', leadId);
+
+      if (error) throw error;
+
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: newStage, pipeline_stage: newStage } : l));
+      toast.success(`Pipeline stage updated to ${newStage}`);
+
+      fetch('/api/crm/lead-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          actionType: 'STATUS_CHANGE',
+          description: `Stage updated to ${newStage}`
+        })
+      }).catch(err => console.error("Failed to log stage change:", err));
+    } catch (err: any) {
+      toast.error("Failed to update stage: " + (err.message || String(err)));
+    }
+  };
+
   const handleAssignProduct = async (leadId: string, propertyId: string | null) => {
     try {
       const selectedProp = properties.find(p => p.id === propertyId);
@@ -653,27 +693,37 @@ export default function CRMPage() {
     }
   }, [loading, leads.length])
 
-  // Trigger initial fetch & silent background auto-sync of Facebook leads
+  // Trigger initial fetch & silent background auto-sync of WhatsApp & Facebook leads
   useEffect(() => { 
     const initCRM = async () => {
       await fetchLeads()
       checkPushSubscription()
       
-      // Auto-sync leads from Facebook in the background silently
+      // Auto-backfill WhatsApp leads & auto-sync Facebook leads in background silently
       try {
         const urlParams = new URLSearchParams(window.location.search)
         const impersonateId = urlParams.get('impersonate')
+
+        fetch('/api/crm/backfill-whatsapp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ impersonateId })
+        }).then(res => res.json()).then(data => {
+          if (data.updatedCount > 0) {
+            fetchLeads(true);
+          }
+        }).catch(err => console.error("WhatsApp lead auto-backfill error:", err));
+
         const syncRes = await fetch(`/api/crm/sync${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         })
         const syncData = await syncRes.json()
         if (syncData.success && syncData.count > 0) {
-          // Silent refresh since new leads were imported & distributed
           fetchLeads(true)
         }
-      } catch (err) {
-        console.error("[CRM] Background auto-sync failed:", err)
+      } catch (e) {
+        console.error("Auto background CRM sync error:", e)
       }
     }
     
@@ -1140,9 +1190,31 @@ END:VCARD\n`
   const getLeadCampaignName = useCallback((lead: any) => {
     if (lead.campaign_id) {
       const camp = campaigns.find(c => c.id === lead.campaign_id);
-      if (camp) return camp.name;
+      if (camp?.name) return camp.name;
     }
-    return lead.ad_name || lead.campaign_name || '';
+    let cf = lead.custom_fields;
+    if (cf && typeof cf === 'string') {
+      try {
+        while (typeof cf === 'string') cf = JSON.parse(cf);
+      } catch (e) {}
+    }
+    const origin = cf?.meta_ad_origin;
+    if (origin) {
+      const originName = origin.ad_name || origin.headline || origin.campaign_name || origin.product_name;
+      if (originName) return originName;
+    }
+    if (lead.ad_name) return lead.ad_name;
+    if (lead.campaign_name) return lead.campaign_name;
+    if (cf?.ad_name) return cf.ad_name;
+    if (cf?.campaign_name) return cf.campaign_name;
+    if (cf?.source_detail) return cf.source_detail;
+    if (cf?.referral_ad_title) return cf.referral_ad_title;
+    if (lead.form_name) return lead.form_name;
+
+    if (lead.source && lead.source.toLowerCase().includes('whatsapp')) {
+      return 'WhatsApp Direct Message';
+    }
+    return '';
   }, [campaigns])
 
   // --- DYNAMIC FILTER EXTRACTION ---
@@ -1664,9 +1736,13 @@ END:VCARD\n`
                                                 </div>
                                             </td>
                                             <td className="p-4" onClick={e => e.stopPropagation()}>
-                                                <span className="inline-block text-xs font-bold px-2.5 py-1 rounded-xl bg-blue-50 text-blue-700 border border-blue-200/60">
-                                                    {lead.pipeline_stage || 'New'}
-                                                </span>
+                                                <select
+                                                    value={lead.pipeline_stage || 'New'}
+                                                    onChange={(e) => updateStage(lead.id, e.target.value, e)}
+                                                    className="appearance-none bg-blue-50 text-blue-700 text-xs font-bold rounded-xl py-1.5 px-2.5 border border-blue-200/80 outline-none cursor-pointer hover:bg-blue-100 transition-all"
+                                                >
+                                                    {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                                                </select>
                                             </td>
                                             <td className="p-4" onClick={e => e.stopPropagation()}>
                                                 {isAdminLike ? (
@@ -1694,12 +1770,34 @@ END:VCARD\n`
                                                 </div>
                                             </td>
                                             <td className="p-4 whitespace-nowrap">
-                                                <span className="text-xs text-slate-500 font-semibold">
+                                                <span className="text-xs text-slate-500 font-bold block">
                                                     {new Date(lead.facebook_created_at || lead.created_at).toLocaleDateString([], {day: '2-digit', month: 'short', year: 'numeric'})}
                                                 </span>
                                             </td>
                                             <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
-                                                <div className="flex items-center justify-end gap-1.5">
+                                                <div className="flex items-center justify-end gap-1.5 shrink-0">
+                                                    <button 
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setHistoryLead(lead);
+                                                        }}
+                                                        className="px-2.5 py-1.5 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-purple-200 flex items-center gap-1 shrink-0"
+                                                        title="View Lead History Timeline"
+                                                    >
+                                                        <History size={13} /> History
+                                                    </button>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setUpdateFollowupLead(lead);
+                                                        }}
+                                                        className="px-2.5 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-blue-200 flex items-center gap-1 shrink-0"
+                                                        title="Update Followup & Log Outcome"
+                                                    >
+                                                        <PhoneCall size={13} /> Followup
+                                                    </button>
                                                     {displayPhone && (
                                                         <>
                                                             <button 
@@ -1708,7 +1806,7 @@ END:VCARD\n`
                                                                     e.stopPropagation();
                                                                     const telUri = `tel:${formatCallPhone(displayPhone)}`;
                                                                     window.open(telUri, '_self');
-                                                                    setCallFeedbackLead(lead);
+                                                                    setUpdateFollowupLead(lead);
                                                                 }} 
                                                                 className="p-2 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all border border-emerald-500/20"
                                                                 title="Call Lead & Log Outcome"
@@ -1722,7 +1820,7 @@ END:VCARD\n`
                                                                 className="p-2 bg-emerald-50 text-emerald-600 hover:bg-[#25D366] hover:text-white rounded-xl transition-all border border-emerald-200"
                                                                 title="Chat on WhatsApp"
                                                             >
-                                                                <Send size={14} />
+                                                                <MessageCircle size={14} />
                                                             </a>
                                                         </>
                                                     )}
@@ -1750,42 +1848,75 @@ END:VCARD\n`
                         return (
                         <div key={lead.id} onClick={() => handleLeadClick(lead)} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-200/60 cursor-pointer hover:border-blue-300 hover:shadow-md active:scale-[0.98] transition-all duration-300 flex flex-col h-full group">
                             
-                            {/* ROW 1: Name, Checkbox and Actions */}
-                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-3">
-                                <div className="flex items-start gap-3 flex-1 min-w-0 w-full sm:w-auto">
-                                    <input 
-                                        type="checkbox"
-                                        checked={selectedLeadIds.includes(lead.id)}
-                                        onChange={(e) => {
-                                            e.stopPropagation();
-                                            if (selectedLeadIds.includes(lead.id)) {
-                                                setSelectedLeadIds(prev => prev.filter(id => id !== lead.id))
-                                            } else {
-                                                setSelectedLeadIds(prev => [...prev, lead.id])
-                                            }
-                                        }}
-                                        className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer shrink-0"
-                                    />
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <h3 className="font-extrabold text-slate-900 text-base sm:text-lg break-words leading-snug group-hover:text-blue-600">{lead.name || 'Unknown Lead'}</h3>
-                                            {dnpCount > 0 && (
-                                                <span className="px-2 py-0.5 text-[9px] font-black rounded-md bg-rose-500/10 text-rose-600 border border-rose-500/20 inline-flex items-center gap-1">
-                                                    <PhoneOff size={10} /> DNP x{dnpCount}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <p className="text-[11px] font-bold text-slate-500 mt-0.5">{displayPhone || 'No phone number'}</p>
-                                        {(getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name) && (
-                                            <p className="text-[10px] font-extrabold text-slate-400/80 mt-1 break-words whitespace-normal bg-slate-50 border border-slate-100 rounded-lg px-2 py-0.5 inline-block max-w-full" title={getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}>
-                                                📢 {getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name}
-                                            </p>
+                            {/* ROW 1: Lead Name, Checkbox, Phone & Reopened Badge */}
+                            <div className="flex items-start gap-2.5 mb-2 pb-2 border-b border-slate-100">
+                                <input 
+                                    type="checkbox"
+                                    checked={selectedLeadIds.includes(lead.id)}
+                                    onChange={(e) => {
+                                        e.stopPropagation();
+                                        if (selectedLeadIds.includes(lead.id)) {
+                                            setSelectedLeadIds(prev => prev.filter(id => id !== lead.id))
+                                        } else {
+                                            setSelectedLeadIds(prev => [...prev, lead.id])
+                                        }
+                                    }}
+                                    className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer shrink-0"
+                                />
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <h3 className="font-extrabold text-slate-900 text-base sm:text-lg leading-snug group-hover:text-blue-600 break-words" title={lead.name || 'Unknown Lead'}>
+                                            {lead.name || 'Unknown Lead'}
+                                        </h3>
+                                        {(lead.reopened_count > 0 || lead.custom_fields?.reopened_count > 0) && (
+                                            <span 
+                                                onClick={(e) => { e.stopPropagation(); setHistoryLead(lead); }}
+                                                className="px-1.5 py-0.5 text-[10px] font-black rounded-md bg-amber-50 text-amber-700 border border-amber-300 shrink-0 inline-flex items-center gap-0.5 cursor-pointer hover:bg-amber-100 transition-all shadow-xs" 
+                                                title={`Reopened ${(lead.reopened_count || lead.custom_fields?.reopened_count)} times from ad submissions`}
+                                            >
+                                                ⏰<span className="w-4 h-4 rounded-full bg-rose-500 text-white font-extrabold text-[9px] flex items-center justify-center -ml-0.5">{(lead.reopened_count || lead.custom_fields?.reopened_count)}</span>
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                        <span className="text-[11px] font-bold text-slate-500">{displayPhone || 'No phone number'}</span>
+                                        {dnpCount > 0 && (
+                                            <span className="px-1.5 py-0.5 text-[9px] font-black rounded bg-rose-50 text-rose-600 border border-rose-200 shrink-0 flex items-center gap-1">
+                                                <PhoneOff size={10} /> DNP x{dnpCount}
+                                            </span>
                                         )}
                                     </div>
                                 </div>
-                            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap sm:flex-nowrap pt-1 sm:pt-0">
+                            </div>
+
+                            {/* ROW 2: Dedicated Quick Action Button Row */}
+                            <div className="flex items-center justify-between gap-1.5 mb-3 pt-0.5 flex-wrap" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setHistoryLead(lead);
+                                        }}
+                                        className="px-2.5 py-1.5 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-purple-200 flex items-center gap-1 shadow-xs"
+                                        title="View Lead History Timeline"
+                                    >
+                                        <History size={13} /> History
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setUpdateFollowupLead(lead);
+                                        }}
+                                        className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-blue-200 flex items-center gap-1 shadow-xs"
+                                        title="Update Followup & Log Outcome"
+                                    >
+                                        <PhoneCall size={13} /> Followup
+                                    </button>
+                                </div>
                                 {displayPhone && (
-                                    <>
+                                    <div className="flex items-center gap-1.5">
                                         <button 
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -1802,10 +1933,10 @@ END:VCARD\n`
                                                 document.body.removeChild(link);
                                                 window.URL.revokeObjectURL(url);
                                             }} 
-                                            className="p-2.5 bg-slate-50 text-slate-600 hover:bg-blue-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
+                                            className="p-2 bg-slate-50 text-slate-600 hover:bg-blue-500 hover:text-white rounded-xl transition-colors border border-slate-200/60 shadow-xs"
                                             title="Save to Contacts"
                                         >
-                                            <UserPlus size={16} />
+                                            <UserPlus size={14} />
                                         </button>
                                         <button
                                             type="button"
@@ -1813,56 +1944,63 @@ END:VCARD\n`
                                                 e.stopPropagation();
                                                 handleToggleWhatsAppEnabled(lead.id, lead.whatsapp_enabled === false);
                                             }}
-                                            className={`p-2.5 rounded-full transition-all border shadow-sm ${
+                                            className={`p-2 rounded-xl transition-all border shadow-xs ${
                                                 lead.whatsapp_enabled !== false 
                                                     ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100' 
                                                     : 'bg-red-50 text-red-500 border-red-200 hover:bg-red-100'
                                             }`}
-                                            title={lead.whatsapp_enabled !== false ? 'WhatsApp Auto-Messaging: Active (Click to Pause)' : 'WhatsApp Auto-Messaging: Stopped (Click to Resume)'}
+                                            title={lead.whatsapp_enabled !== false ? 'WhatsApp Auto: Active' : 'WhatsApp Auto: Paused'}
                                         >
-                                            <MessageCircle size={16} className={lead.whatsapp_enabled === false ? 'line-through opacity-70' : ''} />
+                                            <MessageCircle size={14} className={lead.whatsapp_enabled === false ? 'line-through opacity-70' : ''} />
                                         </button>
-                                        <a 
-                                            href={`https://wa.me/${displayPhone.replace(/[^0-9]/g, '')}`} 
-                                            onClick={e => { 
-                                                e.stopPropagation(); 
-                                                sessionStorage.setItem('crm_scroll', window.scrollY.toString()); 
-                                            }} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
-                                            className="p-2.5 bg-slate-50 text-slate-600 hover:bg-[#25D366] hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
-                                            title="Chat on WhatsApp"
-                                        >
-                                            <Send size={16} />
-                                        </a>
                                         <a 
                                             href={`tel:${formatCallPhone(displayPhone)}`} 
                                             onClick={e => { 
                                                 e.stopPropagation(); 
-                                                sessionStorage.setItem('crm_scroll', window.scrollY.toString()); 
-                                                setCallFeedbackLead(lead);
+                                                setUpdateFollowupLead(lead);
                                             }} 
-                                            className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-full transition-colors border border-emerald-200/80 shadow-sm"
+                                            className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-colors border border-emerald-200 shadow-xs"
                                             title="Call Lead & Log Outcome"
                                         >
-                                            <Phone size={16} />
+                                            <Phone size={14} />
                                         </a>
-                                    </>
+                                        <button 
+                                            onClick={(e) => handleDeleteLead(lead.id, e)} 
+                                            className="p-2 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-colors border border-slate-200/60 shadow-xs"
+                                            title="Delete Lead"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
                                 )}
-                                <button 
-                                    onClick={(e) => handleDeleteLead(lead.id, e)} 
-                                    className="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-full transition-colors border border-slate-200/60 shadow-sm"
-                                    title="Delete Lead"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
                             </div>
-                        </div>
 
-                        {/* ROW 2: Status & Date */}
+                            {/* Campaign Badge - Truncated, No Vertical Break */}
+                            {(() => {
+                                const campName = getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name;
+                                if (!campName) return null;
+                                return (
+                                    <div className="mb-2">
+                                        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md truncate max-w-full inline-block" title={campName}>
+                                            📢 {campName}
+                                        </span>
+                                    </div>
+                                );
+                            })()}
+
+                        {/* ROW 2: Status Dropdown & Date */}
                         <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100 border-dashed gap-2">
                             <div className="flex flex-col gap-1 items-start">
-                                <span className="text-sm font-bold text-blue-600">{lead.pipeline_stage || 'New Lead'}</span>
+                                <div onClick={e => e.stopPropagation()} className="relative">
+                                    <select
+                                        value={lead.pipeline_stage || 'New'}
+                                        onChange={(e) => updateStage(lead.id, e.target.value, e)}
+                                        className="appearance-none bg-blue-50 text-blue-700 text-xs font-bold rounded-xl py-1 px-3 pr-7 border border-blue-200 outline-none cursor-pointer hover:bg-blue-100 transition-all"
+                                    >
+                                        {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                    <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
+                                </div>
                                 {lead.booked_time && (
                                     <span className="text-xs font-black bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-300/80 flex items-center gap-1.5 shadow-sm shrink-0 mt-1">
                                         📆 Booked: {new Date(lead.booked_time).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
@@ -1893,14 +2031,14 @@ END:VCARD\n`
                             </div>
                             
                             {/* Right Column */}
-                            <div className="flex flex-col gap-1 justify-center">
+                            <div className="flex flex-col gap-1 justify-center min-w-0">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lead Source</span>
-                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">{lead.source || '--'}</span>
+                                <span className="text-xs font-bold text-slate-700 truncate block">{lead.source || '--'}</span>
                             </div>
 
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-1 min-w-0">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Source Detail</span>
-                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal" title={getLeadCampaignName(lead) || lead.form_name || lead.ad_name}>{getLeadCampaignName(lead) || lead.form_name || lead.ad_name || '--'}</span>
+                                <span className="text-xs font-bold text-slate-700 truncate block" title={getLeadCampaignName(lead) || lead.form_name || lead.ad_name}>{getLeadCampaignName(lead) || lead.form_name || lead.ad_name || '--'}</span>
                             </div>
 
                             {/* Qualification Details dynamically from custom_fields */}
@@ -1928,14 +2066,23 @@ END:VCARD\n`
                                  const previewImageUrl = origin?.image_url || matchedProp?.image_url || (matchedProp?.images && matchedProp.images[0]) || null;
                                  const previewVideoUrl = origin?.video_url || null;
 
-                                 const displayOrigin = origin || (lead.ad_name ? {
-                                     ad_name: lead.ad_name.includes(' | ') ? lead.ad_name.split(' | ')[0] : lead.ad_name,
-                                     campaign_name: lead.ad_name.includes(' | ') ? lead.ad_name.split(' | ')[1] : (lead.source || 'Meta Ad'),
-                                     headline: matchedProp?.title || lead.ad_name,
+                                 const adOrCampaignName = getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name;
+
+                                 const displayOrigin = origin || (adOrCampaignName && adOrCampaignName !== 'WhatsApp Direct Message' ? {
+                                     ad_name: adOrCampaignName.includes(' | ') ? adOrCampaignName.split(' | ')[0] : adOrCampaignName,
+                                     campaign_name: adOrCampaignName.includes(' | ') ? adOrCampaignName.split(' | ')[1] : (lead.source || 'Meta Ad'),
+                                     headline: matchedProp?.title || adOrCampaignName,
                                      image_url: previewImageUrl,
                                      video_url: previewVideoUrl,
                                      source_url: 'https://www.facebook.com/ads/library/'
-                                 } : null);
+                                 } : (matchedProp ? {
+                                     ad_name: `${matchedProp.title} Meta Campaign`,
+                                     campaign_name: 'WhatsApp CTWA Ad',
+                                     headline: matchedProp.title,
+                                     image_url: previewImageUrl,
+                                     video_url: previewVideoUrl,
+                                     source_url: 'https://www.facebook.com/ads/library/'
+                                 } : null));
 
                                  const getLiveAdUrl = () => {
                                       if (!displayOrigin) return 'https://www.facebook.com/ads/library/';
@@ -2012,36 +2159,35 @@ END:VCARD\n`
                                                     {displayOrigin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.campaign_name}</span></div>}
                                                     {displayOrigin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.headline}</span></div>}
                                                 </div>
-
-                                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-[10px]" onClick={(e) => e.stopPropagation()}>
-                                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                        <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0">📦</span>
-                                                        <div className="min-w-0 flex-1">
-                                                            <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
-                                                            <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'Unmapped Product'}</span>
-                                                        </div>
-                                                    </div>
-                                                    {properties.length > 0 && (
-                                                        <select
-                                                            value={lead.property_id || matchedProp?.id || ''}
-                                                            onChange={(e) => handleAssignProduct(lead.id, e.target.value || null)}
-                                                            className="w-full sm:w-auto bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 text-xs font-bold shrink-0 outline-none hover:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 transition-all cursor-pointer shadow-xs"
-                                                        >
-                                                            <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
-                                                            {properties.map((p: any) => (
-                                                                <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
-                                                            ))}
-                                                            {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
-                                                        </select>
-                                                    )}
-                                                </div>
+                                                <div className="bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-[10px] space-y-2" onClick={(e) => e.stopPropagation()}>
+                                                     <div className="flex items-center gap-2">
+                                                         <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0 text-xs">📦</span>
+                                                         <div className="min-w-0 flex-1">
+                                                             <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
+                                                             <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'Unmapped Product'}</span>
+                                                         </div>
+                                                     </div>
+                                                     {properties.length > 0 && (
+                                                         <select
+                                                             value={lead.property_id || matchedProp?.id || ''}
+                                                             onChange={(e) => handleAssignProduct(lead.id, e.target.value || null)}
+                                                             className="w-full bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none hover:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 transition-all cursor-pointer shadow-xs"
+                                                         >
+                                                             <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
+                                                             {properties.map((p: any) => (
+                                                                 <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
+                                                             ))}
+                                                             {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
+                                                         </select>
+                                                     )}
+                                                 </div>
                                             </div>
                                         )}
 
                                         {!origin && properties.length > 0 && (
-                                            <div className="col-span-2 mt-1 flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 p-2 rounded-xl text-[10px]" onClick={(e) => e.stopPropagation()}>
-                                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                    <span className="p-1 bg-slate-400 text-white rounded font-black shrink-0">📦</span>
+                                            <div className="col-span-2 mt-1 bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-[10px] space-y-2" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="p-1.5 bg-slate-400 text-white rounded-lg font-black shrink-0 text-xs">📦</span>
                                                     <div className="min-w-0 flex-1">
                                                         <span className="text-[8px] font-bold text-slate-500 uppercase block tracking-wider">Inventory Product</span>
                                                         <span className="font-bold text-slate-800 text-xs truncate block">{productName ? getPropertyDisplayLabel(matchedProp || properties.find((p: any) => p.id === lead.property_id)) : 'Unmapped Product'}</span>
@@ -2050,7 +2196,7 @@ END:VCARD\n`
                                                 <select
                                                     value={lead.property_id || matchedProp?.id || ''}
                                                     onChange={(e) => handleAssignProduct(lead.id, e.target.value || null)}
-                                                    className="text-[10px] font-extrabold bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-slate-400 shrink-0 shadow-xs"
+                                                    className="w-full text-xs font-bold bg-white border border-slate-300 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer hover:border-slate-400 shadow-xs"
                                                 >
                                                     <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
                                                     {properties.map((p: any) => (
@@ -2062,11 +2208,11 @@ END:VCARD\n`
                                         )}
 
                                         {customFields && typeof customFields === 'object' && Object.entries(customFields).filter(([k]) => k !== 'meta_ad_origin').map(([key, value]) => (
-                                            <div key={key} className="flex flex-col gap-1">
-                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider break-words">{key.replace(/_/g, ' ')}</span>
-                                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">{String(value || '--')}</span>
-                                            </div>
-                                        ))}
+                                             <div key={key} className="flex flex-col gap-1 min-w-0">
+                                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate block">{key.replace(/_/g, ' ')}</span>
+                                                 <span className="text-xs font-bold text-slate-700 truncate block" title={String(value || '--')}>{String(value || '--')}</span>
+                                             </div>
+                                         ))}
                                     </>
                                 );
                             })()}
@@ -2095,8 +2241,32 @@ END:VCARD\n`
 
                         <div className="flex-grow"></div>
 
-                        {/* ROW 4: Footer Sections (Followup, Opening Comments) */}
+                        {/* ROW 4: Footer Sections (Followup, Appointment, Opening Comments) */}
                         <div className="mt-auto flex flex-col gap-3">
+                            {lead.booked_time && (
+                                <div className="pt-3 border-t border-emerald-100 flex items-start gap-3 bg-emerald-50/80 p-2.5 rounded-xl border border-emerald-200 shadow-xs">
+                                    <div className="mt-0.5 w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                                        <Calendar size={13} />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                                            📅 Site Visit / Appointment Booked
+                                        </span>
+                                        <span className="text-xs font-extrabold text-emerald-700 mt-0.5">
+                                            {new Date(lead.booked_time).toLocaleString('en-IN', {
+                                                weekday: 'short',
+                                                day: '2-digit',
+                                                month: 'short',
+                                                year: 'numeric',
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                hour12: true
+                                            })}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
                             {lead.next_followup && new Date(lead.next_followup) > new Date() && (
                                 <div className="pt-3 border-t border-slate-100 flex items-start gap-3">
                                     <div className="mt-0.5 w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
@@ -2548,6 +2718,23 @@ END:VCARD\n`
          onClose={() => setCallFeedbackLead(null)} 
          onSuccess={() => fetchLeads(true)} 
          currentUserId={userId} 
+       />
+
+       {/* UPDATE FOLLOWUP MODAL */}
+       <UpdateFollowupModal
+         isOpen={!!updateFollowupLead}
+         lead={updateFollowupLead}
+         onClose={() => setUpdateFollowupLead(null)}
+         onSuccess={() => fetchLeads(true)}
+         properties={properties}
+         teamMembers={team}
+       />
+
+       {/* LEAD HISTORY TIMELINE MODAL */}
+       <LeadHistoryModal
+         isOpen={!!historyLead}
+         lead={historyLead}
+         onClose={() => setHistoryLead(null)}
        />
        </div>
      </div>

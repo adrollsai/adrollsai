@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck } from 'lucide-react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck, Eye } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { toast } from 'sonner'
@@ -294,6 +294,7 @@ export default function AutomationPage() {
   const [showProductDropdown, setShowProductDropdown] = useState(false)
   const [loadingProperties, setLoadingProperties] = useState(false)
   const [activeMediaModal, setActiveMediaModal] = useState<any>(null)
+  const [showTemplatePreviewModal, setShowTemplatePreviewModal] = useState(false)
 
   type MetaTemplate = {
     name: string
@@ -1629,34 +1630,26 @@ export default function AutomationPage() {
                         )}
                       </div>
 
-                      {selectedTemplate && (() => {
-                        const tObj = templates.find(t => t.name === selectedTemplate)
-                        const bodyObj = tObj?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')
-                        const bodyText = bodyObj?.text || 'Hello {{1}}, here is an update regarding {{2}}.'
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => setShowTemplatePreviewModal(true)}
+                          className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Eye size={14} className="text-blue-600" />
+                          <span>Preview Template</span>
+                        </button>
                         
-                        return (
-                          <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block text-center">Live Message Preview</span>
-                            <WhatsAppLivePreview
-                              headerType={selectedHeaderFormat}
-                              headerMediaUrl={selectedHeaderMediaUrl}
-                              bodyText={bodyText}
-                              sampleLeadName="Valued Client"
-                              samplePropertyTitle="Green Valley Villas"
-                              sampleBusinessName="Nobogent AI"
-                            />
-                          </div>
-                        )
-                      })()}
-
-                      <button
-                        onClick={handleSendTemplate}
-                        disabled={sendingMessage || (selectedTemplate === 'custom' && !customTemplateName.trim())}
-                        className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5"
-                      >
-                        {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={14} />}
-                        Send WhatsApp Template Message
-                      </button>
+                        <button
+                          type="button"
+                          onClick={handleSendTemplate}
+                          disabled={sendingMessage || (selectedTemplate === 'custom' && !customTemplateName.trim())}
+                          className="flex-[2] py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                        >
+                          {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={14} />}
+                          <span>Send WhatsApp Template Message</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1749,7 +1742,69 @@ export default function AutomationPage() {
           </div>
         </div>
       )}
+      {/* DEDICATED WHATSAPP TEMPLATE PREVIEW MODAL */}
+      {showTemplatePreviewModal && (
+        <div className="fixed inset-0 z-[99999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden flex flex-col my-auto">
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 font-bold text-xs">📋</span>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">WhatsApp Template Message Preview</h3>
+                  <p className="text-xs text-slate-500 font-medium">{selectedTemplate}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTemplatePreviewModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
+            {/* Modal Content Preview Body */}
+            <div className="p-6 bg-[#efeae2] bg-[radial-gradient(#cbd5e1_0.75px,transparent_0.75px)] [background-size:16px_16px] max-h-[70vh] overflow-y-auto">
+              {(() => {
+                const tObj = templates.find(t => t.name === selectedTemplate)
+                const bodyObj = tObj?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')
+                const bodyText = bodyObj?.text || 'Hello {{1}}, here is an update regarding {{2}}.'
+                return (
+                  <WhatsAppLivePreview
+                    headerType={selectedHeaderFormat}
+                    headerMediaUrl={selectedHeaderMediaUrl}
+                    bodyText={bodyText}
+                    sampleLeadName={leadInfo?.name || selectedChat?.recipient_phone || "Valued Prospect"}
+                    samplePropertyTitle="Green Valley Villas"
+                    sampleBusinessName={profile?.business_name || 'Nobogent AI'}
+                  />
+                )
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
+              <button
+                onClick={() => setShowTemplatePreviewModal(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200 cursor-pointer"
+              >
+                Close Preview
+              </button>
+              <button
+                onClick={() => {
+                  setShowTemplatePreviewModal(false)
+                  handleSendTemplate()
+                }}
+                disabled={sendingMessage}
+                className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700 shadow-md flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                {sendingMessage ? <Loader2 className="animate-spin" size={14} /> : <Send size={13} />}
+                <span>Send Template Now</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

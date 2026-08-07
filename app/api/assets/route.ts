@@ -80,10 +80,21 @@ export async function GET(request: Request) {
             }
         }
 
+        // Include Super Admin profile IDs so Super Admin reference images are available in all users' libraries
+        const { data: superAdminProfiles } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .or('role.eq.super_admin,email.ilike.%rchopra489@gmail.com%,email.ilike.%infobluesquareinfra@gmail.com%');
+
+        const superAdminIds = superAdminProfiles ? superAdminProfiles.map(p => p.id) : [];
+
         const { data: targetProfile } = await supabaseAdmin.from('profiles').select('parent_id, agency_id').eq('id', targetUserId).single();
-        const effectiveUserIds: string[] = [targetUserId];
-        if (targetProfile?.parent_id) effectiveUserIds.push(targetProfile.parent_id);
-        if (targetProfile?.agency_id) effectiveUserIds.push(targetProfile.agency_id);
+        const effectiveUserIds: string[] = Array.from(new Set([
+            targetUserId,
+            ...(targetProfile?.parent_id ? [targetProfile.parent_id] : []),
+            ...(targetProfile?.agency_id ? [targetProfile.agency_id] : []),
+            ...superAdminIds
+        ]));
 
         let query = supabaseAdmin
             .from('assets')
@@ -148,37 +159,35 @@ export async function GET(request: Request) {
                                     const imgRes = await fetch(imageUrl);
                                     if (imgRes.ok) {
                                         const buffer = Buffer.from(await imgRes.arrayBuffer());
-                                        const ext = imageUrl.split('.').pop()?.split('?')[0] || 'png';
-                                        const r2Key = `generated/${asset.user_id}/creative_${Date.now()}_${asset.id}.${ext}`;
+                                        const fileExt = imageUrl.split('.').pop()?.split('?')[0] || 'png';
+                                        const fileName = `kie_gen_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+                                        const key = `user_assets/${asset.user_id}/${fileName}`;
 
                                         await r2.send(new PutObjectCommand({
                                             Bucket: R2_BUCKET,
-                                            Key: r2Key,
+                                            Key: key,
                                             Body: buffer,
-                                            ContentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`
+                                            ContentType: `image/${fileExt}`
                                         }));
 
-                                        const r2Url = `${R2_PUBLIC_URL}/adrolls-storage/${r2Key}`;
-                                        
-                                        // Update database record
+                                        const permanentUrl = `${R2_PUBLIC_URL}/${key}`;
+
                                         await supabaseAdmin
                                             .from('assets')
                                             .update({
-                                                url: r2Url,
-                                                status: 'Draft',
-                                                created_at: new Date().toISOString()
+                                                status: 'Ready',
+                                                url: permanentUrl,
+                                                kie_task_id: null
                                             })
                                             .eq('id', asset.id);
-                                        
-                                        // Update local variable so it returns updated draft state to frontend
-                                        asset.url = r2Url;
-                                        asset.status = 'Draft';
-                                        asset.created_at = new Date().toISOString();
+
+                                        asset.status = 'Ready';
+                                        asset.url = permanentUrl;
                                     }
                                 }
-                            } else if (state === 'failed' || state === 'error' || state === 'fail') {
+                            } else if (state === 'fail' || state === 'failed') {
                                 markAsFailed = true;
-                                failMsg = checkData.data?.failMsg || "Kie.ai generation error";
+                                failMsg = checkData.data?.failReason || "Design generation failed";
                             }
                         }
                     }
@@ -188,49 +197,21 @@ export async function GET(request: Request) {
                             .from('assets')
                             .update({
                                 status: 'Failed',
-                                caption: `Error: ${failMsg}`
+                                metadata: { ...(asset.metadata || {}), error: failMsg }
                             })
                             .eq('id', asset.id);
-                        
+
                         asset.status = 'Failed';
-                        asset.caption = `Error: ${failMsg}`;
                     }
-                } catch (syncErr) {
-                    console.error(`[Assets API] Task ${asset.kie_task_id} status sync error:`, syncErr);
+                } catch (err) {
+                    console.error(`[Assets API] Error syncing asset ${asset.id}:`, err);
                 }
             }
         }
 
         return NextResponse.json(assetData);
-
-    } catch (error: any) {
-        console.error('[Assets API] GET Error:', error);
-        return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
-    }
-}
-
-export async function DELETE(request: Request) {
-    try {
-        const clientSupabase = await createClient();
-        const { data: { user } } = await clientSupabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
-        const url = new URL(request.url);
-        const assetId = url.searchParams.get('id');
-
-        if (!assetId) {
-            return NextResponse.json({ error: 'Missing asset id' }, { status: 400 });
-        }
-
-        const { error } = await supabaseAdmin.from('assets').delete().eq('id', assetId);
-        if (error) throw error;
-
-        return NextResponse.json({ success: true, message: 'Asset deleted successfully' });
-    } catch (error: any) {
-        console.error('[Assets API] DELETE Error:', error);
-        return NextResponse.json({ error: error.message || 'Failed to delete asset' }, { status: 500 });
+    } catch (err: any) {
+        console.error("GET Assets error:", err);
+        return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
     }
 }

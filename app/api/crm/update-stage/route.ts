@@ -82,6 +82,7 @@ export async function POST(request: Request) {
     const { data: lead, error } = await supabaseAdmin
         .from('leads')
         .update({ 
+            status: newStage,
             pipeline_stage: newStage, 
             notes: notes || undefined 
         })

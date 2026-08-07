@@ -24,8 +24,26 @@ import {
   Sliders,
   DollarSign,
   Phone,
-  PhoneOff
+  PhoneOff,
+  Filter,
+  CheckSquare,
+  Building2,
+  UserCheck,
+  Calendar,
+  Search,
+  ArrowUpDown,
+  ExternalLink,
+  X,
+  History,
+  Send,
+  MessageSquare,
+  Trophy,
+  Medal,
+  Award,
+  Flame
 } from 'lucide-react'
+import LeadHistoryModal from '@/components/LeadHistoryModal'
+import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 
 // Render simple markdown headers, bolding, and lists into JSX
 function MarkdownRenderer({ text }: { text: string }) {
@@ -35,7 +53,6 @@ function MarkdownRenderer({ text }: { text: string }) {
   return (
     <div className="space-y-4 text-slate-300 leading-relaxed text-sm">
       {lines.map((line, idx) => {
-        // Headers (e.g. ### Header or **Header**)
         if (line.startsWith('###') || line.startsWith('##') || line.startsWith('#')) {
           const title = line.replace(/^#+\s*/, '')
           return (
@@ -46,10 +63,8 @@ function MarkdownRenderer({ text }: { text: string }) {
           )
         }
         
-        // Bullet list item
         if (line.trim().startsWith('-') || line.trim().startsWith('*')) {
           const content = line.trim().replace(/^[-\*]\s*/, '')
-          // Bold matches
           const parts = content.split('**')
           return (
             <div key={idx} className="flex items-start gap-2.5 ml-4 my-1.5">
@@ -61,7 +76,6 @@ function MarkdownRenderer({ text }: { text: string }) {
           )
         }
 
-        // Ordered list item
         if (/^\d+\.\s/.test(line.trim())) {
           const content = line.trim().replace(/^\d+\.\s*/, '')
           const parts = content.split('**')
@@ -76,9 +90,8 @@ function MarkdownRenderer({ text }: { text: string }) {
           )
         }
 
-        // Quote blocks
         if (line.trim().startsWith('>')) {
-          const content = line.trim().replace(/^>\s*/, '').replace(/^\[!.*?\]\s*/, '') // Strip alerts
+          const content = line.trim().replace(/^>\s*/, '').replace(/^\[!.*?\]\s*/, '')
           return (
             <blockquote key={idx} className="border-l-4 border-blue-500 bg-white/5 py-2.5 px-4 rounded-r-xl my-3 text-slate-300 italic">
               {content}
@@ -88,7 +101,6 @@ function MarkdownRenderer({ text }: { text: string }) {
 
         if (line.trim() === '') return null
 
-        // Plain line with potential bold tags
         const parts = line.split('**')
         return (
           <p key={idx}>
@@ -111,6 +123,14 @@ export default function AnalyticsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [duration, setDuration] = useState<'7d' | '30d' | 'this_month' | 'last_month' | 'all'>('30d')
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Table Sorting State
+  const [sortField, setSortField] = useState<string>('total')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+
+  // WorkVeu Sub-Tab Navigation (Project Mgr & Action Mgr removed)
+  const [activeTab, setActiveTab] = useState<'analytics' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>('analytics')
 
   // Data State
   const [leads, setLeads] = useState<any[]>([])
@@ -118,17 +138,24 @@ export default function AnalyticsPage() {
   const [messages, setMessages] = useState<any[]>([])
   const [team, setTeam] = useState<any[]>([])
   const [profile, setProfile] = useState<any>(null)
-  const [role, setRole] = useState<'admin' | 'agent' | 'agency' | 'super_admin' | 'client'>('admin')
 
-  // AI Analyst State
-  const [analyzing, setAnalyzing] = useState(false)
-  const [showConfirmModal, setShowConfirmModal] = useState(false)
-  const [cachedAnalysis, setCachedAnalysis] = useState<any>(null)
+  // Modals & Interactive Drilldown State
+  const [historyLead, setHistoryLead] = useState<any>(null)
+  const [followupLead, setFollowupLead] = useState<any>(null)
 
-  const isUnlimited = useMemo(() => {
-    const email = profile?.email?.toLowerCase() || ''
-    return ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(email)
-  }, [profile])
+  const [drilldownModal, setDrilldownModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    subtitle: string;
+    leads: any[];
+    searchFilter: string;
+  }>({
+    isOpen: false,
+    title: '',
+    subtitle: '',
+    leads: [],
+    searchFilter: ''
+  })
 
   // Fetch Analytics & User Info
   const fetchAnalytics = async (forceRefresh = false) => {
@@ -136,7 +163,6 @@ export default function AnalyticsPage() {
     else setLoading(true)
 
     try {
-      // 1. Fetch current profile for role check
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         router.push('/login')
@@ -152,13 +178,8 @@ export default function AnalyticsPage() {
 
       if (userProfile) {
         setProfile(userProfile)
-        setRole(userProfile.role || 'admin')
-        if (userProfile.last_ai_analysis) {
-          setCachedAnalysis(userProfile.last_ai_analysis)
-        }
       }
 
-      // 2. Fetch metrics
       const queryParams = new URLSearchParams()
       queryParams.set('duration', duration)
       if (selectedAgentId) queryParams.set('agentId', selectedAgentId)
@@ -167,17 +188,17 @@ export default function AnalyticsPage() {
       const res = await fetch(`/api/analytics?${queryParams.toString()}`)
       const data = await res.json()
 
-      if (data.success) {
+      if (data.success || data.leads) {
         setLeads(data.leads || [])
         setChats(data.chats || [])
         setMessages(data.messages || [])
         setTeam(data.team || [])
       } else {
-        toast.error('Failed to sync metrics')
+        toast.error('Failed to sync metrics', { description: data.error || 'Server error' })
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e)
-      toast.error('Connection timed out')
+      toast.error('Connection timed out: ' + (e.message || String(e)))
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -188,64 +209,62 @@ export default function AnalyticsPage() {
     fetchAnalytics()
   }, [duration, selectedAgentId])
 
-  // Trigger AI analysis POST request
-  const handleRunAIAnalysis = async () => {
-    setShowConfirmModal(false)
-    setAnalyzing(true)
+  // All sales reps resolved from team profiles AND assigned lead records
+  const allSalesReps = useMemo(() => {
+    const repIdsFromLeads = Array.from(new Set(leads.map(l => l.assigned_to).filter(Boolean)))
 
-    try {
-      const res = await fetch(`/api/analytics/ai${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ duration })
-      })
+    const list = [
+      ...team.map(member => ({
+        id: member.id,
+        name: member.business_name || member.full_name || member.email || 'Sales Rep',
+        email: member.email,
+        role: member.role || 'agent'
+      })),
+      ...repIdsFromLeads
+        .filter(id => !team.some(t => t.id === id))
+        .map(id => ({ id, name: `Agent (${id.slice(0, 6)})`, email: '', role: 'agent' }))
+    ]
 
-      const data = await res.json()
-      if (res.ok && data.success) {
-        toast.success('AI recommendations generated successfully!')
-        setCachedAnalysis(data.analysis)
-        // Refresh profile stats (especially credits)
-        await fetchAnalytics()
-      } else {
-        toast.error('Analysis Failed', { description: data.error || 'Check credit balance' })
-      }
-    } catch (e: any) {
-      toast.error('AI Analyst unavailable: ' + e.message)
-    } finally {
-      setAnalyzing(false)
-    }
-  }
+    return list
+  }, [leads, team])
+
+  // Filter leads based on selectedAgentId for dashboard cards
+  const filteredLeads = useMemo(() => {
+    if (!selectedAgentId) return leads
+    if (selectedAgentId === 'unassigned') return leads.filter(l => !l.assigned_to)
+    return leads.filter(l => l.assigned_to === selectedAgentId)
+  }, [leads, selectedAgentId])
 
   // --- STATS PRE-COMPUTATIONS ---
   const stats = useMemo(() => {
-    const totalLeads = leads.length
-    const wonLeads = leads.filter(l => l.pipeline_stage === 'Won' || l.pipeline_stage === 'Closed').length
-    const lostLeads = leads.filter(l => l.pipeline_stage === 'Lost' || l.pipeline_stage === 'Unqualified').length
+    const totalLeads = filteredLeads.length
+    const wonLeads = filteredLeads.filter(l => l.pipeline_stage === 'Won' || l.pipeline_stage === 'Closed').length
+    const lostLeads = filteredLeads.filter(l => l.pipeline_stage === 'Lost' || l.pipeline_stage === 'Unqualified').length
     const inProgress = totalLeads - wonLeads - lostLeads
     const conversionRate = totalLeads > 0 ? ((wonLeads / totalLeads) * 100).toFixed(1) : '0.0'
 
-    // Calls & DNP breakdown
-    const totalCalls = Math.max(
-      leads.filter(l => l.last_call_at || l.last_call_status).length,
-      team.reduce((acc, t) => acc + (t.metrics?.callsCount || 0), 0)
-    )
-    const totalDnp = Math.max(
-      leads.reduce((acc, l) => acc + (l.dnp_count || l.custom_fields?.dnp_count || 0), 0),
-      team.reduce((acc, t) => acc + (t.metrics?.dnpCount || 0), 0)
-    )
+    const totalCalls = filteredLeads.filter(l => l.last_call_at || l.last_call_status).length
+    const totalDnp = filteredLeads.reduce((acc, l) => acc + (l.dnp_count || l.custom_fields?.dnp_count || 0), 0)
 
-    // WhatsApp breakdown
-    const waInbound = messages.filter(m => m.direction === 'inbound').length
-    const waOutbound = messages.filter(m => m.direction === 'outbound').length
-    const waTotal = waInbound + waOutbound
-    const responseRatio = waOutbound > 0 ? (waInbound / waOutbound).toFixed(2) : '0'
-
-    // Leads by stage counts
-    const stagesList = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
-    const stageBreakdown = stagesList.map(stage => {
-      const count = leads.filter(l => (l.pipeline_stage || 'New') === stage).length
-      return { stage, count }
+    const reopenedLeadsList = filteredLeads.filter(l => l.reopened_count > 0 || l.custom_fields?.reopened_count > 0)
+    const unassignedLeadsList = filteredLeads.filter(l => !l.assigned_to)
+    const followUpLeadsList = filteredLeads.filter(l => l.next_action_date || l.custom_fields?.next_action_date)
+    const freshLeadsList = filteredLeads.filter(l => (l.pipeline_stage || 'New') === 'New')
+    const recentLeadsList = filteredLeads.filter(l => {
+      const d = new Date(l.created_at)
+      return (Date.now() - d.getTime()) <= 86400000
     })
+
+    // Duplicate phone check
+    const phoneMap: Record<string, any[]> = {}
+    filteredLeads.forEach(l => {
+      const p = l.phone ? l.phone.replace(/\D/g, '').slice(-10) : ''
+      if (p) {
+        if (!phoneMap[p]) phoneMap[p] = []
+        phoneMap[p].push(l)
+      }
+    })
+    const duplicateLeadsList = Object.values(phoneMap).filter(list => list.length > 1).flat()
 
     return {
       totalLeads,
@@ -255,733 +274,1340 @@ export default function AnalyticsPage() {
       conversionRate,
       totalCalls,
       totalDnp,
-      waInbound,
-      waOutbound,
-      waTotal,
-      responseRatio,
-      stageBreakdown
+      reopenedCount: reopenedLeadsList.length,
+      unassignedCount: unassignedLeadsList.length,
+      duplicateCount: duplicateLeadsList.length,
+      followUpCount: followUpLeadsList.length,
+      reopenedLeadsList,
+      unassignedLeadsList,
+      duplicateLeadsList,
+      followUpLeadsList,
+      freshLeadsList,
+      recentLeadsList
     }
-  }, [leads, messages, team])
+  }, [filteredLeads])
 
-  // --- CHART DATA GENERATION ---
-  // A. Leads Timeline Chart
-  const leadsChartData = useMemo(() => {
-    // Generate dates based on duration
-    const numPoints = duration === '7d' ? 7 : duration === '30d' ? 10 : 6
-    const points: { label: string; count: number }[] = []
-    
-    const now = new Date()
-    for (let i = numPoints - 1; i >= 0; i--) {
-      let label = ''
-      let startRange: Date
-      let endRange: Date
-
-      if (duration === '7d') {
-        const d = new Date()
-        d.setDate(now.getDate() - i)
-        label = d.toLocaleDateString(undefined, { weekday: 'short' })
-        startRange = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
-        endRange = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
-      } else if (duration === '30d') {
-        const d = new Date()
-        d.setDate(now.getDate() - i * 3)
-        label = `${d.getDate()} ${d.toLocaleDateString(undefined, { month: 'short' })}`
-        startRange = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 2, 0, 0, 0, 0)
-        endRange = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
-      } else {
-        const d = new Date()
-        d.setMonth(now.getMonth() - i)
-        label = d.toLocaleDateString(undefined, { month: 'short' })
-        startRange = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0)
-        endRange = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)
-      }
-
-      const matchLeads = leads.filter(l => {
-        const cDate = new Date(l.created_at)
-        return cDate >= startRange && cDate <= endRange
-      }).length
-
-      points.push({ label, count: matchLeads })
-    }
-
-    return points
-  }, [leads, duration])
-
-  // Compute SVG Points for Leads Chart
-  const svgLeadsCoords = useMemo(() => {
-    if (leadsChartData.length === 0) {
-      return {
-        linePath: '',
-        areaPath: '',
-        points: [] as { x: number; y: number }[],
-        maxVal: 5,
-        height: 180,
-        width: 500,
-        padding: 20
-      }
-    }
-    const width = 500
-    const height = 180
-    const padding = 20
-    const maxVal = Math.max(...leadsChartData.map(d => d.count), 5)
-
-    const xStep = (width - padding * 2) / (leadsChartData.length - 1)
-    const points = leadsChartData.map((d, index) => {
-      const x = padding + index * xStep
-      const y = height - padding - (d.count / maxVal) * (height - padding * 2)
-      return { x, y }
-    })
-
-    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-    const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`
-
-    return { linePath, areaPath, points, maxVal, height, width, padding }
-  }, [leadsChartData])
-
-  // B. WhatsApp Messages Day-wise grouped (Bar Chart)
-  const messageChartData = useMemo(() => {
-    const numBars = 5
-    const data: { label: string; inbound: number; outbound: number }[] = []
-    const now = new Date()
-
-    for (let i = numBars - 1; i >= 0; i--) {
-      const d = new Date()
-      d.setDate(now.getDate() - i * (duration === '7d' ? 1 : 5))
-      const label = duration === '7d' 
-        ? d.toLocaleDateString(undefined, { weekday: 'short' })
-        : `${d.getDate()} ${d.toLocaleDateString(undefined, { month: 'short' })}`
-
-      const startRange = new Date(d.getFullYear(), d.getMonth(), d.getDate() - (duration === '7d' ? 0 : 4), 0, 0, 0, 0)
-      const endRange = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
-
-      const inCount = messages.filter(m => {
-        const cDate = new Date(m.created_at)
-        return m.direction === 'inbound' && cDate >= startRange && cDate <= endRange
-      }).length
-
-      const outCount = messages.filter(m => {
-        const cDate = new Date(m.created_at)
-        return m.direction === 'outbound' && cDate >= startRange && cDate <= endRange
-      }).length
-
-      data.push({ label, inbound: inCount, outbound: outCount })
-    }
-    return data
-  }, [messages, duration])
-
-  // C. Pipeline Stage Distribution (Doughnut Chart coords)
-  const doughnutAngles = useMemo(() => {
-    let total = stats.totalLeads
-    if (total === 0) return []
-    let currentAngle = 0
-
-    const colors = [
-      '#3B82F6', // Blue (New)
-      '#6366F1', // Indigo (Contacted)
-      '#8B5CF6', // Purple (Qualified)
-      '#EC4899', // Pink (Appt booked)
-      '#F43F5E', // Rose (Appt done)
-      '#10B981', // Emerald (Closed)
-      '#EF4444'  // Red (Unqualified)
+  // --- EMPLOYEE-WISE LEAD MANAGER MATRIX (WorkVeu Screenshot 2) ---
+  const leadManagerMatrix = useMemo(() => {
+    const salesReps = [
+      ...allSalesReps,
+      { id: 'unassigned', name: 'Unassigned', email: '', role: 'system' }
     ]
 
-    return stats.stageBreakdown.map((item, idx) => {
-      const percentage = (item.count / total) * 100
-      const strokeDasharray = `${percentage} ${100 - percentage}`
-      const strokeDashoffset = 100 - currentAngle + 25 // +25 start top center
-      currentAngle += percentage
+    const stagesList = [
+      { key: 'new', label: 'New Lead' },
+      { key: 'contacted', label: 'Requirement Taken' },
+      { key: 'booked', label: 'Visit Planned' },
+      { key: 'done', label: 'Visit Done' },
+      { key: 'revisit', label: 'Revisit Done' },
+      { key: 'qualified', label: 'Negotiation' },
+      { key: 'unqualified', label: 'Lost/NI' },
+      { key: 'meeting_planned', label: 'Meeting Planned' },
+      { key: 'meeting_done', label: 'Meeting Done' },
+      { key: 'dnp', label: 'Never Picked' }
+    ]
+
+    let rows = salesReps.map(rep => {
+      const repLeads = leads.filter(l => rep.id === 'unassigned' ? !l.assigned_to : l.assigned_to === rep.id)
+      
+      const categoryLeads: Record<string, any[]> = {
+        new: repLeads.filter(l => l.status === 'New Lead' || (l.pipeline_stage || 'New') === 'New'),
+        contacted: repLeads.filter(l => l.status === 'Requirement Taken' || l.pipeline_stage === 'Contacted'),
+        booked: repLeads.filter(l => l.status === 'Visit Planned' || l.pipeline_stage === 'Appointment booked'),
+        done: repLeads.filter(l => l.status === 'Visit Done' || l.pipeline_stage === 'Appointment done'),
+        revisit: repLeads.filter(l => l.status === 'Revisit Done' || l.pipeline_stage === 'Revisit Done' || l.custom_fields?.revisit === true),
+        qualified: repLeads.filter(l => l.status === 'Negotiation' || l.status === 'Deal/Token' || l.pipeline_stage === 'Qualified'),
+        unqualified: repLeads.filter(l => l.status === 'Lost/NI' || l.pipeline_stage === 'Unqualified' || l.pipeline_stage === 'Closed'),
+        meeting_planned: repLeads.filter(l => l.status === 'Meeting Planned' || l.pipeline_stage === 'Meeting Planned'),
+        meeting_done: repLeads.filter(l => l.status === 'Meeting Done' || l.pipeline_stage === 'Meeting Done'),
+        dnp: repLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)),
+        total: repLeads
+      }
+
+      const counts: Record<string, number> = {}
+      Object.keys(categoryLeads).forEach(k => {
+        counts[k] = categoryLeads[k].length
+      })
+
+      return { rep, counts, categoryLeads }
+    }).filter(r => r.rep.id !== 'unassigned' || r.counts.total > 0)
+
+    // Filter by search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim()
+      rows = rows.filter(r => r.rep.name.toLowerCase().includes(q))
+    }
+
+    // Sort rows dynamically
+    rows.sort((a, b) => {
+      let valA = sortField === 'name' ? a.rep.name : (a.counts[sortField] || 0)
+      let valB = sortField === 'name' ? b.rep.name : (b.counts[sortField] || 0)
+      
+      if (typeof valA === 'string') {
+        return sortOrder === 'asc' ? valA.localeCompare(valB as string) : (valB as string).localeCompare(valA)
+      }
+      return sortOrder === 'asc' ? (valA as number) - (valB as number) : (valB as number) - (valA as number)
+    })
+
+    const totals: Record<string, number> = { total: 0 }
+    stagesList.forEach(s => totals[s.key] = 0)
+    rows.forEach(r => {
+      totals.total += r.counts.total
+      stagesList.forEach(s => {
+        totals[s.key] += r.counts[s.key] || 0
+      })
+    })
+
+    return { rows, totals, stagesList }
+  }, [leads, allSalesReps, searchQuery, sortField, sortOrder])
+
+  // --- EMPLOYEE-WISE DNP MANAGER MATRIX (WorkVeu Screenshot 1) ---
+  const dnpManagerMatrix = useMemo(() => {
+    const salesReps = [
+      ...allSalesReps,
+      { id: 'unassigned', name: 'Unassigned', email: '' }
+    ]
+
+    const todayStr = new Date().toISOString().split('T')[0]
+
+    let rows = salesReps.map(rep => {
+      const repLeads = leads.filter(l => rep.id === 'unassigned' ? !l.assigned_to : l.assigned_to === rep.id)
+      
+      const todayDnpLeads = repLeads.filter(l => {
+        const dnpCnt = l.dnp_count || l.custom_fields?.dnp_count || 0
+        const isToday = l.updated_at && l.updated_at.startsWith(todayStr)
+        return dnpCnt > 0 && isToday
+      })
+
+      const todayUntouchedLeads = repLeads.filter(l => {
+        const isToday = l.created_at && l.created_at.startsWith(todayStr)
+        const noCalls = !l.last_call_at && (!l.dnp_count || l.dnp_count === 0)
+        return isToday && noCalls
+      })
+
+      const pendingOldDnpLeads = repLeads.filter(l => {
+        const dnpCnt = l.dnp_count || l.custom_fields?.dnp_count || 0
+        const isOld = !l.created_at || !l.created_at.startsWith(todayStr)
+        return dnpCnt > 0 && isOld
+      })
+
+      const pendingUntouchedLeads = repLeads.filter(l => {
+        const isOld = !l.created_at || !l.created_at.startsWith(todayStr)
+        const noCalls = !l.last_call_at && (!l.dnp_count || l.dnp_count === 0)
+        return isOld && noCalls
+      })
+
+      const totalLeadsList = repLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0 || !l.last_call_at))
 
       return {
-        ...item,
-        percentage: percentage.toFixed(1),
-        strokeDasharray,
-        strokeDashoffset,
-        color: colors[idx % colors.length]
+        rep,
+        todayDnpLeads,
+        todayUntouchedLeads,
+        pendingOldDnpLeads,
+        pendingUntouchedLeads,
+        totalLeadsList,
+        todayDnp: todayDnpLeads.length,
+        todayUntouched: todayUntouchedLeads.length,
+        pendingOldDnp: pendingOldDnpLeads.length,
+        pendingUntouched: pendingUntouchedLeads.length,
+        total: totalLeadsList.length
       }
-    }).filter(item => item.count > 0)
-  }, [stats])
+    }).filter(r => r.rep.id !== 'unassigned' || r.total > 0)
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim()
+      rows = rows.filter(r => r.rep.name.toLowerCase().includes(q))
+    }
+
+    const totals = {
+      todayDnp: rows.reduce((a, b) => a + b.todayDnp, 0),
+      todayUntouched: rows.reduce((a, b) => a + b.todayUntouched, 0),
+      pendingOldDnp: rows.reduce((a, b) => a + b.pendingOldDnp, 0),
+      pendingUntouched: rows.reduce((a, b) => a + b.pendingUntouched, 0),
+      total: rows.reduce((a, b) => a + b.total, 0)
+    }
+
+    const totalUntouchedLeads = leads.filter(l => !l.last_call_at && (!l.dnp_count || l.dnp_count === 0))
+    const totalDnpLeads = leads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0))
+
+    return { 
+      rows, 
+      totals, 
+      totalUntouchedLeads, 
+      totalDnpLeads, 
+      totalUntouched: totalUntouchedLeads.length, 
+      totalDnp: totalDnpLeads.length 
+    }
+  }, [leads, allSalesReps, searchQuery])
+
+  // --- LEADERBOARD COMPUTATIONS (WorkVeu Screenshot 3) ---
+  const followupBoardRows = useMemo(() => {
+    return allSalesReps.map(rep => {
+      const repLeads = leads.filter(l => l.assigned_to === rep.id)
+      const totalFollowups = repLeads.filter(l => l.last_followup_at || l.last_call_at || l.notes).length
+      const closingMeetings = repLeads.filter(l => l.status === 'Negotiation' || l.pipeline_stage === 'Qualified').length
+      const visits = repLeads.filter(l => l.status === 'Visit Done' || l.status === 'Revisit Done' || l.pipeline_stage === 'Appointment done').length
+      const dnp = repLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)).length
+      const won = repLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
+      const conversionRate = repLeads.length > 0 ? ((won / repLeads.length) * 100).toFixed(1) : '0.0'
+
+      return {
+        rep,
+        repLeads,
+        totalFollowups,
+        closingMeetings,
+        visits,
+        dnp,
+        conversionRate
+      }
+    }).sort((a, b) => b.totalFollowups - a.totalFollowups)
+  }, [allSalesReps, leads])
+
+  const statusBoardRows = useMemo(() => {
+    return allSalesReps.map(rep => {
+      const repLeads = leads.filter(l => l.assigned_to === rep.id)
+      const reqTaken = repLeads.filter(l => l.status === 'Requirement Taken' || l.pipeline_stage === 'Contacted').length
+      const visitPlanned = repLeads.filter(l => l.status === 'Visit Planned' || l.pipeline_stage === 'Appointment booked').length
+      const visitDone = repLeads.filter(l => l.status === 'Visit Done' || l.pipeline_stage === 'Appointment done').length
+      const revisitDone = repLeads.filter(l => l.status === 'Revisit Done').length
+      const negotiation = repLeads.filter(l => l.status === 'Negotiation' || l.pipeline_stage === 'Qualified').length
+      const dealToken = repLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
+
+      return {
+        rep,
+        repLeads,
+        reqTaken,
+        visitPlanned,
+        visitDone,
+        revisitDone,
+        negotiation,
+        dealToken
+      }
+    }).sort((a, b) => b.dealToken - a.dealToken || b.negotiation - a.negotiation)
+  }, [allSalesReps, leads])
+
+  const sourceBoardRows = useMemo(() => {
+    const map: Record<string, any[]> = {}
+    leads.forEach(l => {
+      let src = l.source || l.channel || 'Direct / Organic'
+      if (src.toLowerCase().includes('whatsapp')) src = 'WhatsApp Ad'
+      else if (src.toLowerCase().includes('facebook') || src.toLowerCase().includes('meta')) src = 'Facebook Ad'
+      else if (src.toLowerCase().includes('reference')) src = 'Reference'
+      
+      if (!map[src]) map[src] = []
+      map[src].push(l)
+    })
+
+    return Object.keys(map).map(src => {
+      const sourceLeads = map[src]
+      const totalLeads = sourceLeads.length
+      const won = sourceLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
+      const lost = sourceLeads.filter(l => l.status === 'Lost/NI' || l.pipeline_stage === 'Unqualified' || l.pipeline_stage === 'Lost').length
+      const ongoing = totalLeads - won - lost
+
+      return {
+        source: src,
+        sourceLeads,
+        totalLeads,
+        ongoing,
+        won,
+        lost
+      }
+    }).sort((a, b) => b.totalLeads - a.totalLeads)
+  }, [leads])
+
+  const campaignBoardRows = useMemo(() => {
+    const map: Record<string, any[]> = {}
+    leads.forEach(l => {
+      const camp = l.campaign_name || l.ad_name || l.property?.title || l.property?.name || 'Direct Campaign'
+      if (!map[camp]) map[camp] = []
+      map[camp].push(l)
+    })
+
+    return Object.keys(map).map(camp => {
+      const campaignLeads = map[camp]
+      const totalLeads = campaignLeads.length
+      const won = campaignLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
+      const lost = campaignLeads.filter(l => l.status === 'Lost/NI' || l.pipeline_stage === 'Unqualified' || l.pipeline_stage === 'Lost').length
+      const ongoing = totalLeads - won - lost
+
+      return {
+        campaign: camp,
+        campaignLeads,
+        totalLeads,
+        ongoing,
+        won,
+        lost
+      }
+    }).sort((a, b) => b.totalLeads - a.totalLeads)
+  }, [leads])
+
+  // Open interactive drilldown drawer for leads
+  const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[]) => {
+    setDrilldownModal({
+      isOpen: true,
+      title,
+      subtitle,
+      leads: leadList,
+      searchFilter: ''
+    })
+  }
+
+  // Handle Header Table Sorting Toggle
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortOrder('desc')
+    }
+  }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-32">
+    <div className="max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 pt-6 pb-32">
       
       {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-[10px] font-black uppercase tracking-wider">WORKSPACE</span>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="px-3 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-black uppercase tracking-wider">SALES ANALYTICS</span>
             {selectedAgentId && (
-              <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-                <User size={10} /> Agent view: {team.find(t => t.id === selectedAgentId)?.name}
+              <span className="px-3 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                <User size={10} /> Rep: {allSalesReps.find(t => t.id === selectedAgentId)?.name || 'Filtered'}
               </span>
             )}
           </div>
-          <h1 className="text-3xl font-black text-[#001D35] tracking-tight">Interactive CRM Analytics</h1>
-          <p className="text-slate-500 text-sm mt-1">Full performance and growth insights for {profile?.business_name || 'your business'}.</p>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+            <span>Hi, {profile?.business_name || profile?.full_name || 'Sales Director'}</span>
+          </h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">Filter, sort, and drilldown into live sales metrics & employee matrices.</p>
         </div>
 
-        {/* CONTROLS */}
-        <div className="flex items-center flex-wrap gap-3">
+        {/* CONTROLS & EMPLOYEE FILTER DROPDOWN */}
+        <div className="flex items-center flex-wrap gap-2.5">
+          
+          {/* Employee Filter Select */}
+          <div className="relative">
+            <select
+              value={selectedAgentId || ''}
+              onChange={(e) => setSelectedAgentId(e.target.value || null)}
+              className="appearance-none bg-white border border-slate-300 text-slate-900 text-xs font-black rounded-2xl pl-9 pr-8 py-2 hover:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-xs cursor-pointer"
+            >
+              <option value="">👥 All Sales Reps ({allSalesReps.length})</option>
+              <option value="unassigned">⚠️ Unassigned Leads ({leads.filter(l => !l.assigned_to).length})</option>
+              {allSalesReps.map(rep => (
+                <option key={rep.id} value={rep.id}>
+                  👤 {rep.name} ({leads.filter(l => l.assigned_to === rep.id).length} leads)
+                </option>
+              ))}
+            </select>
+            <User size={14} className="absolute left-3 top-2.5 text-blue-600 pointer-events-none" />
+          </div>
+
           {/* Duration Selector */}
-          <div className="bg-slate-100 border border-slate-200/60 p-1 rounded-2xl flex items-center shadow-inner">
+          <div className="bg-slate-100 border border-slate-200 p-1 rounded-2xl flex items-center shadow-inner">
             {(['7d', '30d', 'this_month', 'last_month', 'all'] as const).map((d) => (
               <button
                 key={d}
                 onClick={() => setDuration(d)}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${duration === d ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${duration === d ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 {d === '7d' ? '7 Days' : d === '30d' ? '30 Days' : d === 'this_month' ? 'This Month' : d === 'last_month' ? 'Last Month' : 'All Time'}
               </button>
             ))}
           </div>
 
-          {/* Reset agent filter */}
-          {selectedAgentId && (
-            <button
-              onClick={() => setSelectedAgentId(null)}
-              className="px-4 py-2 border border-slate-200 bg-white text-slate-600 rounded-2xl hover:bg-slate-50 text-xs font-black shadow-sm flex items-center gap-2"
-            >
-              Reset Filter
-            </button>
-          )}
-
-          {/* Sync status */}
+          {/* Sync / Refresh Button */}
           <button 
             onClick={() => fetchAnalytics(true)} 
             disabled={refreshing}
-            className="p-3 bg-white text-slate-600 rounded-2xl border border-slate-200/60 hover:bg-slate-50 shadow-sm flex items-center justify-center transition-all disabled:opacity-50"
+            className="p-2.5 bg-white text-slate-700 rounded-2xl border border-slate-200 hover:bg-slate-50 shadow-xs flex items-center justify-center transition-all disabled:opacity-50"
+            title="Refresh Analytics Data"
           >
-            <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+            <RefreshCw size={16} className={refreshing ? 'animate-spin text-blue-600' : ''} />
           </button>
         </div>
       </div>
 
+      {/* SUB-NAVIGATION TAB BAR (Project Mgr & Action Mgr removed) */}
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-3 mb-6 flex-wrap">
+        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold shrink-0 transition-all ${
+              activeTab === 'analytics' 
+                ? 'bg-blue-600 text-white shadow-sm' 
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <BarChart2 size={16} />
+            <span>Analytics Dashboard</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('lead_mgr')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold shrink-0 transition-all ${
+              activeTab === 'lead_mgr' 
+                ? 'bg-blue-600 text-white shadow-sm' 
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Users size={16} />
+            <span>Lead Mgr</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('dnp_mgr')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold shrink-0 transition-all ${
+              activeTab === 'dnp_mgr' 
+                ? 'bg-blue-600 text-white shadow-sm' 
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <PhoneOff size={16} />
+            <span>DNP Mgr</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('team_mgr')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold shrink-0 transition-all ${
+              activeTab === 'team_mgr' 
+                ? 'bg-blue-600 text-white shadow-sm' 
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <UserCheck size={16} />
+            <span>Team Roster ({allSalesReps.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('leaderboard')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold shrink-0 transition-all ${
+              activeTab === 'leaderboard' 
+                ? 'bg-blue-600 text-white shadow-sm' 
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Trophy size={16} className={activeTab === 'leaderboard' ? 'text-amber-300' : 'text-amber-500'} />
+            <span>Leaderboard</span>
+          </button>
+        </div>
+
+        {/* Search Input for Matrix Tables */}
+        {(activeTab === 'lead_mgr' || activeTab === 'dnp_mgr') && (
+          <div className="relative shrink-0 w-full sm:w-64">
+            <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search rep name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-white border border-slate-200 text-xs text-slate-900 font-bold rounded-xl pl-9 pr-3 py-1.5 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+        )}
+      </div>
+
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-32 text-slate-400 gap-4">
-          <Loader2 />
+        <div className="flex flex-col items-center justify-center py-24 text-slate-400 gap-3">
+          <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="text-xs font-extrabold">Loading interactive metrics...</span>
         </div>
       ) : (
-        <div className="space-y-8">
-          
-          {/* OVERVIEW KEY CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
-            
-            {/* Total Leads Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
-              <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">CRM Leads</span>
-                <span className="text-2xl font-black text-[#001D35] tracking-tight">{stats.totalLeads}</span>
-                <span className="text-[11px] text-emerald-600 font-extrabold flex items-center gap-1 mt-1.5">
-                  <ArrowUpRight size={13} /> Active
-                </span>
-              </div>
-              <div className="bg-blue-50 p-3.5 rounded-2xl text-blue-600 group-hover:scale-110 transition-transform shrink-0">
-                <Users size={20} />
-              </div>
-            </div>
-
-            {/* Total Calls Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
-              <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Calls Initiated</span>
-                <span className="text-2xl font-black text-emerald-600 tracking-tight">{stats.totalCalls}</span>
-                <span className="text-[11px] text-slate-400 font-extrabold block mt-1.5">
-                  Manual & Voice
-                </span>
-              </div>
-              <div className="bg-emerald-50 p-3.5 rounded-2xl text-emerald-600 group-hover:scale-110 transition-transform shrink-0">
-                <Phone size={20} />
-              </div>
-            </div>
-
-            {/* Total DNP Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
-              <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">DNP Count</span>
-                <span className="text-2xl font-black text-rose-600 tracking-tight">{stats.totalDnp}</span>
-                <span className="text-[11px] text-rose-500 font-extrabold block mt-1.5">
-                  Did Not Pick
-                </span>
-              </div>
-              <div className="bg-rose-50 p-3.5 rounded-2xl text-rose-600 group-hover:scale-110 transition-transform shrink-0">
-                <PhoneOff size={20} />
-              </div>
-            </div>
-
-            {/* Won Conversions Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
-              <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Won Deals</span>
-                <span className="text-2xl font-black text-[#001D35] tracking-tight">{stats.wonLeads}</span>
-                <span className="text-[11px] text-indigo-600 font-extrabold flex items-center gap-1 mt-1.5">
-                  Active: {stats.inProgress}
-                </span>
-              </div>
-              <div className="bg-emerald-50 p-3.5 rounded-2xl text-emerald-600 group-hover:scale-110 transition-transform shrink-0">
-                <CheckCircle2 size={20} />
-              </div>
-            </div>
-
-            {/* Conversion Rate Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
-              <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Conversion %</span>
-                <span className="text-2xl font-black text-[#001D35] tracking-tight">{stats.conversionRate}%</span>
-                <span className="text-[11px] text-indigo-500 font-extrabold block mt-1.5">
-                  Won / Total
-                </span>
-              </div>
-              <div className="bg-indigo-50 p-3.5 rounded-2xl text-indigo-600 group-hover:scale-110 transition-transform shrink-0">
-                <TrendingUp size={20} />
-              </div>
-            </div>
-
-            {/* WhatsApp Messages Card */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-5 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
-              <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">WhatsApp</span>
-                <span className="text-2xl font-black text-[#001D35] tracking-tight">{stats.waTotal}</span>
-                <span className="text-[11px] text-blue-600 font-extrabold flex items-center gap-1 mt-1.5">
-                  In: {stats.waInbound} | Out: {stats.waOutbound}
-                </span>
-              </div>
-              <div className="bg-teal-50 p-3.5 rounded-2xl text-teal-600 group-hover:scale-110 transition-transform shrink-0">
-                <MessageCircle size={20} />
-              </div>
-            </div>
-
-          </div>
-
-          {/* MAIN CHARTS SECTION */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            {/* Leads Over Time Chart */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-6 shadow-sm lg:col-span-2">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-base font-black text-[#001D35]">Lead Acquisition Trend</h3>
-                  <p className="text-xs text-slate-400">Chronological summary of inbound CRM leads</p>
-                </div>
-                <div className="flex items-center gap-1 text-[10px] font-black text-slate-500 uppercase bg-slate-50 border border-slate-100 rounded-xl px-2.5 py-1">
-                  <TrendingUp size={12} className="text-blue-500" /> Lead volume
-                </div>
-              </div>
-
-              {leadsChartData.length === 0 || stats.totalLeads === 0 ? (
-                <div className="h-[180px] flex items-center justify-center text-slate-400 text-xs italic">
-                  No leads recorded in this period.
-                </div>
-              ) : (
-                <div className="w-full">
-                  <svg viewBox={`0 0 ${svgLeadsCoords.width} ${svgLeadsCoords.height}`} className="w-full h-[180px] overflow-visible">
-                    <defs>
-                      <linearGradient id="leadsGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#2563EB" stopOpacity="0.25" />
-                        <stop offset="100%" stopColor="#2563EB" stopOpacity="0.00" />
-                      </linearGradient>
-                    </defs>
-
-                    {/* Grid lines */}
-                    <line x1={svgLeadsCoords.padding} y1={svgLeadsCoords.padding} x2={svgLeadsCoords.width - svgLeadsCoords.padding} y2={svgLeadsCoords.padding} stroke="#F1F5F9" strokeWidth="1" strokeDasharray="4 4" />
-                    <line x1={svgLeadsCoords.padding} y1={svgLeadsCoords.height / 2} x2={svgLeadsCoords.width - svgLeadsCoords.padding} y2={svgLeadsCoords.height / 2} stroke="#F1F5F9" strokeWidth="1" strokeDasharray="4 4" />
-                    <line x1={svgLeadsCoords.padding} y1={svgLeadsCoords.height - svgLeadsCoords.padding} x2={svgLeadsCoords.width - svgLeadsCoords.padding} y2={svgLeadsCoords.height - svgLeadsCoords.padding} stroke="#E2E8F0" strokeWidth="1.5" />
-
-                    {/* Gradient Area */}
-                    <path d={svgLeadsCoords.areaPath} fill="url(#leadsGradient)" />
-
-                    {/* Line path */}
-                    <path d={svgLeadsCoords.linePath} fill="none" stroke="#2563EB" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="animate-in fade-in duration-1000" />
-
-                    {/* Glowing Data Dots */}
-                    {svgLeadsCoords.points.map((p: { x: number; y: number }, idx: number) => (
-                      <g key={idx} className="group/dot cursor-pointer">
-                        <circle cx={p.x} cy={p.y} r="6" fill="#FFFFFF" stroke="#2563EB" strokeWidth="3" />
-                        <circle cx={p.x} cy={p.y} r="10" fill="#2563EB" fillOpacity="0" className="hover:fill-opacity-15 transition-all" />
-                        
-                        {/* Hover Tooltip */}
-                        <title>{leadsChartData[idx].label}: {leadsChartData[idx].count} leads</title>
-                      </g>
-                    ))}
-                  </svg>
-
-                  {/* X Axis Labels */}
-                  <div className="flex justify-between px-5 mt-2">
-                    {leadsChartData.map((d, i) => (
-                      <span key={i} className="text-[10px] font-bold text-slate-400 uppercase w-12 text-center truncate">{d.label}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Pipeline Stage Distribution Doughnut */}
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-6 shadow-sm flex flex-col justify-between">
-              <div>
-                <h3 className="text-base font-black text-[#001D35] mb-1">Pipeline Distribution</h3>
-                <p className="text-xs text-slate-400 mb-4">Percentage allocation across stages</p>
-              </div>
-
-              {stats.totalLeads === 0 ? (
-                <div className="h-[140px] flex items-center justify-center text-slate-400 text-xs italic">
-                  No active pipeline segments.
-                </div>
-              ) : (
-                <div className="flex items-center gap-4 py-4">
-                  {/* Doughnut SVG */}
-                  <div className="relative w-32 h-32 shrink-0">
-                    <svg viewBox="0 0 42 42" className="w-full h-full transform -rotate-90">
-                      <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#F1F5F9" strokeWidth="4.5" />
-                      {doughnutAngles.map((item, idx) => (
-                        <circle
-                          key={idx}
-                          cx="21"
-                          cy="21"
-                          r="15.915"
-                          fill="transparent"
-                          stroke={item.color}
-                          strokeWidth="4.5"
-                          strokeDasharray={item.strokeDasharray}
-                          strokeDashoffset={item.strokeDashoffset}
-                          strokeLinecap="round"
-                          className="transition-all duration-500 hover:stroke-[5.5]"
-                        />
-                      ))}
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white rounded-full m-3 shadow-inner">
-                      <span className="text-lg font-black text-[#001D35]">{stats.totalLeads}</span>
-                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Leads</span>
+        <>
+          {/* TAB 1: ANALYTICS DASHBOARD */}
+          {activeTab === 'analytics' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              
+              {/* TOP INTERACTIVE KPI CARDS */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+                
+                {/* Total Leads */}
+                <div 
+                  onClick={() => openLeadsDrilldown('Total Leads', `All ${stats.totalLeads} active leads`, filteredLeads)}
+                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all group"
+                >
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Total Leads</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-black text-slate-900 group-hover:text-blue-600">{stats.totalLeads}</span>
+                    <div className="p-2 rounded-xl bg-blue-50 text-blue-600 group-hover:scale-110 transition-transform">
+                      <Users size={16} />
                     </div>
                   </div>
+                  <span className="text-[10px] font-bold text-blue-600 flex items-center gap-1">Click to view list &rarr;</span>
+                </div>
 
-                  {/* Legend list */}
-                  <div className="flex-1 space-y-1.5 overflow-y-auto max-h-36 pr-1 scrollbar-hide">
-                    {doughnutAngles.map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-[10px] font-bold text-slate-500">
-                        <div className="flex items-center gap-1.5 truncate">
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }}></span>
-                          <span className="truncate max-w-[80px]">{item.stage}</span>
+                {/* Reopened */}
+                <div 
+                  onClick={() => openLeadsDrilldown('Reopened Leads', `Leads reopened >2 times`, stats.reopenedLeadsList)}
+                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1 cursor-pointer hover:border-rose-500 hover:shadow-md transition-all group"
+                >
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Reopened (⏰³)</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-black text-rose-600">{stats.reopenedCount}</span>
+                    <div className="p-2 rounded-xl bg-rose-50 text-rose-600 group-hover:scale-110 transition-transform">
+                      <Clock size={16} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-rose-600 flex items-center gap-1">Click to view list &rarr;</span>
+                </div>
+
+                {/* Follow-up */}
+                <div 
+                  onClick={() => openLeadsDrilldown('Follow-up Scheduled', `Leads with next action dates`, stats.followUpLeadsList)}
+                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1 cursor-pointer hover:border-amber-500 hover:shadow-md transition-all group"
+                >
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Follow-up</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-black text-amber-600">{stats.followUpCount}</span>
+                    <div className="p-2 rounded-xl bg-amber-50 text-amber-600 group-hover:scale-110 transition-transform">
+                      <RefreshCw size={16} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1">Click to view list &rarr;</span>
+                </div>
+
+                {/* Duplicate */}
+                <div 
+                  onClick={() => openLeadsDrilldown('Duplicate Contacts', `Leads sharing duplicate phone numbers`, stats.duplicateLeadsList)}
+                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1 cursor-pointer hover:border-purple-500 hover:shadow-md transition-all group"
+                >
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Duplicate</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-black text-purple-600">{stats.duplicateCount}</span>
+                    <div className="p-2 rounded-xl bg-purple-50 text-purple-600 group-hover:scale-110 transition-transform">
+                      <AlertCircle size={16} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-purple-600 flex items-center gap-1">Click to view list &rarr;</span>
+                </div>
+
+                {/* Unassigned Leads */}
+                <div 
+                  onClick={() => openLeadsDrilldown('Unassigned Leads', `Leads waiting for sales rep assignment`, stats.unassignedLeadsList)}
+                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1 cursor-pointer hover:border-slate-500 hover:shadow-md transition-all group"
+                >
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Unassigned</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-black text-slate-900">{stats.unassignedCount}</span>
+                    <div className="p-2 rounded-xl bg-slate-100 text-slate-600 group-hover:scale-110 transition-transform">
+                      <Users size={16} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">Click to view list &rarr;</span>
+                </div>
+
+                {/* DNP Count */}
+                <div 
+                  onClick={() => openLeadsDrilldown('DNP / Didn\'t Pick', `Leads with DNP count > 0`, filteredLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)))}
+                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1 cursor-pointer hover:border-rose-500 hover:shadow-md transition-all group"
+                >
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">DNP Count</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-black text-rose-600">{stats.totalDnp}</span>
+                    <div className="p-2 rounded-xl bg-rose-50 text-rose-600 group-hover:scale-110 transition-transform">
+                      <PhoneOff size={16} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-rose-600 flex items-center gap-1">Click to view list &rarr;</span>
+                </div>
+
+              </div>
+
+              {/* TASKS BREAKDOWN & FRESH LEADS SECTION */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* Stage Distribution Panel */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+                  <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                    <h3 className="font-extrabold text-base text-slate-900">Pipeline Stage Distribution</h3>
+                    <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">Click to filter</span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {[
+                      { label: 'New Lead', stage: 'New Lead', color: 'bg-blue-500' },
+                      { label: 'Requirement Taken', stage: 'Requirement Taken', color: 'bg-indigo-500' },
+                      { label: 'Visit Planned', stage: 'Visit Planned', color: 'bg-amber-500' },
+                      { label: 'Visit Done', stage: 'Visit Done', color: 'bg-emerald-500' },
+                      { label: 'Revisit Done', stage: 'Revisit Done', color: 'bg-teal-500' },
+                      { label: 'Negotiation', stage: 'Negotiation', color: 'bg-purple-500' },
+                      { label: 'Deal/Token', stage: 'Deal/Token', color: 'bg-emerald-600' },
+                      { label: 'Lost/NI', stage: 'Lost/NI', color: 'bg-rose-500' }
+                    ].map((item) => {
+                      const stageLeads = filteredLeads.filter(l => l.pipeline_stage === item.stage || l.status === item.stage || (item.stage === 'New Lead' && (l.pipeline_stage === 'New' || !l.pipeline_stage)))
+                      return (
+                        <div 
+                          key={item.stage}
+                          onClick={() => openLeadsDrilldown(item.label, `${stageLeads.length} leads in stage: ${item.stage}`, stageLeads)}
+                          className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl text-xs font-bold text-slate-700 hover:bg-blue-50 cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className={`w-2.5 h-2.5 rounded-full ${item.color}`}></span>
+                            <span>{item.label}</span>
+                          </div>
+                          <span className="font-black text-slate-900 bg-white px-3 py-1 rounded-xl border border-slate-200">{stageLeads.length}</span>
                         </div>
-                        <span>{item.percentage}% ({item.count})</span>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
-              )}
+
+                {/* Fresh & Recent Inflow Panel */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+                  <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                    <h3 className="font-extrabold text-base text-slate-900">Fresh & Ongoing Inflow</h3>
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">Interactive</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div 
+                      onClick={() => openLeadsDrilldown('Newly Created Fresh Leads', 'Untouched fresh incoming leads', stats.freshLeadsList)}
+                      className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-1 cursor-pointer hover:bg-emerald-100/60 transition-colors"
+                    >
+                      <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Newly Created</span>
+                      <span className="text-2xl font-black text-emerald-950">{stats.freshLeadsList.length}</span>
+                      <span className="text-[11px] font-bold text-emerald-700 block mt-1">Click to view &rarr;</span>
+                    </div>
+
+                    <div 
+                      onClick={() => openLeadsDrilldown('Recent Leads (<= 1 Day)', 'Leads created within last 24 hours', stats.recentLeadsList)}
+                      className="p-4 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-1 cursor-pointer hover:bg-amber-100/60 transition-colors"
+                    >
+                      <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">Created &lt;= 1 Day</span>
+                      <span className="text-2xl font-black text-amber-950">{stats.recentLeadsList.length}</span>
+                      <span className="text-[11px] font-bold text-amber-700 block mt-1">Click to view &rarr;</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
             </div>
+          )}
 
-          </div>
-
-          {/* SECONDARY GRAPH: WHATSAPP COMMUNICATIONS */}
-          <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-              <div>
-                <h3 className="text-base font-black text-[#001D35]">WhatsApp Engagement Activity</h3>
-                <p className="text-xs text-slate-400">Comparison of Outbound broadcasts vs Inbound response interactions</p>
-              </div>
-              <div className="flex items-center gap-4 text-xs font-black">
-                <div className="flex items-center gap-1.5 text-blue-600">
-                  <span className="w-3 h-3 bg-blue-600 rounded-md"></span>
-                  Outbound messages
+          {/* TAB 2: LEAD MGR (WorkVeu Screenshot 2 Interactive Employee Matrix) */}
+          {activeTab === 'lead_mgr' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              
+              {/* Filter Bar & Sort Info */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-500">Matrix Filter:</span>
+                  <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-extrabold">
+                    {selectedAgentId ? `Rep: ${allSalesReps.find(r => r.id === selectedAgentId)?.name}` : 'All Sales Reps'}
+                  </span>
+                  <span className="px-3 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold">Created On: {duration}</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-indigo-500">
-                  <span className="w-3 h-3 bg-indigo-500 rounded-md"></span>
-                  Inbound answers
-                </div>
-                <div className="border-l border-slate-200 pl-4 text-slate-500">
-                  Response Ratio: {stats.responseRatio} in/out
+                <div className="text-xs text-slate-500 font-medium">
+                  Click any table header to <strong>sort</strong> • Click any number cell to <strong>drilldown leads</strong>
                 </div>
               </div>
-            </div>
 
-            {stats.waTotal === 0 ? (
-              <div className="py-16 text-center text-slate-400 text-xs italic border border-dashed border-slate-100 rounded-3xl">
-                No WhatsApp conversations recorded in this duration.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Horizontal custom bar representation */}
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-6 pt-4">
-                  {messageChartData.map((bar, idx) => {
-                    const maxCount = Math.max(...messageChartData.map(b => b.inbound + b.outbound), 1)
-                    const outPercent = (bar.outbound / maxCount) * 100
-                    const inPercent = (bar.inbound / maxCount) * 100
-
-                    return (
-                      <div key={idx} className="flex flex-col items-center gap-3">
-                        {/* Vertical stacked progress container */}
-                        <div className="h-40 w-8 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-end overflow-hidden relative shadow-inner">
-                          <div 
-                            style={{ height: `${outPercent}%` }} 
-                            className="bg-blue-600 w-full transition-all duration-700 hover:brightness-95 cursor-pointer"
-                            title={`Outbound: ${bar.outbound}`}
-                          />
-                          <div 
-                            style={{ height: `${inPercent}%` }} 
-                            className="bg-indigo-500 w-full transition-all duration-700 hover:brightness-95 border-t border-white cursor-pointer"
-                            title={`Inbound: ${bar.inbound}`}
-                          />
-                        </div>
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center truncate w-full">{bar.label}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* TEAM PERFORMANCE DRILL-DOWN SECTION */}
-          {role !== 'agent' && (
-            <div className="bg-white border border-slate-200/60 rounded-[2.5rem] p-6 shadow-sm">
-              <div className="mb-6">
-                <h3 className="text-base font-black text-[#001D35]">Team Performance Overview</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Assigned lead counts, conversion performance, and WhatsApp activities of team members.</p>
-              </div>
-
-              {team.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs italic border border-dashed border-slate-100 rounded-3xl">
-                  No other active team members found in this workspace. Set them up in the <span className="font-bold cursor-pointer text-blue-600 hover:underline" onClick={() => router.push('/dashboard/team')}>Team tab</span>.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
+              {/* EMPLOYEE-WISE LEAD MATRIX TABLE */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="overflow-x-auto custom-scrollbar">
+                  <table className="w-full text-left border-collapse min-w-[1000px]">
                     <thead>
-                      <tr className="border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        <th className="py-3 pr-4">Team Member</th>
-                        <th className="py-3 px-4">Assigned Leads</th>
-                        <th className="py-3 px-4">Won Conversions</th>
-                        <th className="py-3 px-4">Conversations</th>
-                        <th className="py-3 px-4">Messages Processed</th>
-                        <th className="py-3 pl-4 text-right">Actions</th>
+                      <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-extrabold text-slate-600 uppercase tracking-wider select-none">
+                        <th 
+                          onClick={() => handleSort('name')}
+                          className="p-3.5 pl-6 cursor-pointer hover:text-blue-600"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Name</span>
+                            <ArrowUpDown size={12} />
+                          </div>
+                        </th>
+                        {leadManagerMatrix.stagesList.map(s => (
+                          <th 
+                            key={s.key} 
+                            onClick={() => handleSort(s.key)}
+                            className="p-3.5 text-center cursor-pointer hover:text-blue-600"
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <span>{s.label}</span>
+                              <ArrowUpDown size={12} />
+                            </div>
+                          </th>
+                        ))}
+                        <th 
+                          onClick={() => handleSort('total')}
+                          className="p-3.5 text-center bg-emerald-100/60 text-emerald-950 pr-6 cursor-pointer hover:text-blue-600"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Total</span>
+                            <ArrowUpDown size={12} />
+                          </div>
+                        </th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {team.map((member) => (
-                        <tr key={member.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors group">
-                          <td className="py-4 pr-4 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-black text-sm shrink-0 border border-slate-200/50">
-                              {member.name.substring(0, 2).toUpperCase()}
+                    <tbody className="divide-y divide-slate-100 text-xs font-bold">
+                      {leadManagerMatrix.rows.map(({ rep, counts, categoryLeads }) => (
+                        <tr key={rep.id} className="hover:bg-blue-50/40 transition-colors">
+                          <td className="p-3.5 pl-6 font-extrabold text-slate-900 flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-black flex items-center justify-center border border-blue-300 shrink-0">
+                              {rep.name.charAt(0).toUpperCase()}
                             </div>
-                            <div className="truncate">
-                              <p className="text-sm font-black text-slate-700 group-hover:text-blue-700 transition-colors">{member.name}</p>
-                              <p className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mt-0.5">{member.role}</p>
-                            </div>
+                            <span className="truncate max-w-[140px]">{rep.name}</span>
                           </td>
-                          <td className="py-4 px-4">
-                            <span className="text-sm font-extrabold text-[#001D35]">{member.metrics.leadsCount}</span>
-                          </td>
-                          <td className="py-4 px-4">
-                            <span className="text-sm font-extrabold text-emerald-600">{member.metrics.wonCount}</span>
-                            <span className="text-xs text-slate-400 font-medium"> / {member.metrics.lostCount} lost</span>
-                          </td>
-                          <td className="py-4 px-4 text-slate-600 font-medium text-sm">{member.metrics.chatsCount} chats</td>
-                          <td className="py-4 px-4 text-slate-600 font-medium text-sm">
-                            {member.metrics.messagesCount} <span className="text-xs text-slate-400">({member.metrics.inboundCount} in / {member.metrics.outboundCount} out)</span>
-                          </td>
-                          <td className="py-4 pl-4 text-right">
-                            <button
-                              onClick={() => setSelectedAgentId(member.id)}
-                              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${selectedAgentId === member.id ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}
-                            >
-                              {selectedAgentId === member.id ? 'Drilling' : 'Dig Deeper'}
-                            </button>
+                          {leadManagerMatrix.stagesList.map(s => {
+                            const cnt = counts[s.key] || 0
+                            const cellLeads = categoryLeads[s.key] || []
+                            return (
+                              <td 
+                                key={s.key} 
+                                onClick={() => {
+                                  if (cnt > 0) {
+                                    openLeadsDrilldown(
+                                      `${rep.name} - ${s.label}`,
+                                      `${cnt} leads assigned to ${rep.name} in stage: ${s.label}`,
+                                      cellLeads
+                                    )
+                                  }
+                                }}
+                                className={`p-3.5 text-center transition-colors ${
+                                  cnt > 0 
+                                    ? 'text-blue-600 font-extrabold cursor-pointer hover:bg-blue-100 hover:scale-105' 
+                                    : 'text-slate-400 font-normal cursor-default'
+                                }`}
+                              >
+                                {cnt}
+                              </td>
+                            )
+                          })}
+                          <td 
+                            onClick={() => {
+                              if (counts.total > 0) {
+                                openLeadsDrilldown(
+                                  `${rep.name} - Total Assigned Leads`,
+                                  `All ${counts.total} leads assigned to ${rep.name}`,
+                                  categoryLeads.total || []
+                                )
+                              }
+                            }}
+                            className="p-3.5 text-center font-black text-slate-900 bg-emerald-50/50 pr-6 text-sm cursor-pointer hover:bg-emerald-100 transition-colors"
+                          >
+                            {counts.total}
                           </td>
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="bg-emerald-100/80 border-t-2 border-emerald-300 text-xs font-black text-emerald-950">
+                        <td className="p-3.5 pl-6 uppercase tracking-wider">TOTAL</td>
+                        {leadManagerMatrix.stagesList.map(s => (
+                          <td 
+                            key={s.key} 
+                            onClick={() => {
+                              const totalStageLeads = leads.filter(l => {
+                                if (s.key === 'new') return (l.pipeline_stage || 'New') === 'New'
+                                if (s.key === 'contacted') return l.pipeline_stage === 'Contacted'
+                                if (s.key === 'booked') return l.pipeline_stage === 'Appointment booked'
+                                if (s.key === 'done') return l.pipeline_stage === 'Appointment done'
+                                if (s.key === 'revisit') return l.pipeline_stage === 'Revisit Done' || l.custom_fields?.revisit === true
+                                if (s.key === 'qualified') return l.pipeline_stage === 'Qualified'
+                                if (s.key === 'unqualified') return l.pipeline_stage === 'Unqualified' || l.pipeline_stage === 'Closed'
+                                if (s.key === 'meeting_planned') return l.pipeline_stage === 'Meeting Planned'
+                                if (s.key === 'meeting_done') return l.pipeline_stage === 'Meeting Done'
+                                if (s.key === 'dnp') return l.dnp_count > 0 || l.custom_fields?.dnp_count > 0
+                                return false
+                              })
+                              openLeadsDrilldown(`All Sales Reps - ${s.label}`, `Total ${totalStageLeads.length} leads across all reps`, totalStageLeads)
+                            }}
+                            className="p-3.5 text-center cursor-pointer hover:bg-emerald-200"
+                          >
+                            {leadManagerMatrix.totals[s.key]}
+                          </td>
+                        ))}
+                        <td 
+                          onClick={() => openLeadsDrilldown('All Workspace Leads', `Total ${leadManagerMatrix.totals.total} workspace leads`, leads)}
+                          className="p-3.5 text-center pr-6 text-base cursor-pointer hover:bg-emerald-200"
+                        >
+                          {leadManagerMatrix.totals.total}
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
-              )}
+              </div>
+
             </div>
           )}
 
-          {/* AI BUSINESS RECOMMENDATIONS PANEL */}
-          <div className="bg-slate-900 border border-slate-950 rounded-[2.5rem] p-6 sm:p-8 shadow-2xl relative overflow-hidden text-white group">
-            
-            {/* Visual background flares */}
-            <div className="absolute top-0 right-0 w-80 h-80 bg-blue-600/10 rounded-full blur-[100px] pointer-events-none transform translate-x-10 -translate-y-10 group-hover:bg-blue-600/15 transition-all duration-1000"></div>
-            <div className="absolute bottom-0 left-0 w-80 h-80 bg-purple-600/10 rounded-full blur-[100px] pointer-events-none transform -translate-x-10 translate-y-10 group-hover:bg-purple-600/15 transition-all duration-1000"></div>
-
-            <div className="relative z-10">
+          {/* TAB 3: DNP MGR (WorkVeu Screenshot 1 Interactive DNP Matrix) */}
+          {activeTab === 'dnp_mgr' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
               
-              {/* Header */}
-              <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8 border-b border-white/10 pb-6">
+              {/* TOP SUMMARY CARDS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Total Never Contacted / Untouched */}
+                <div 
+                  onClick={() => openLeadsDrilldown('Total Never Contacted / Untouched', 'Leads with 0 calls logged', dnpManagerMatrix.totalUntouchedLeads)}
+                  className="bg-emerald-50/80 border border-emerald-200 p-6 rounded-3xl shadow-xs flex items-center justify-between cursor-pointer hover:border-emerald-500 hover:shadow-md transition-all group"
+                >
+                  <div>
+                    <span className="text-xs font-black text-emerald-800 uppercase tracking-wider block mb-1">Total Never Contacted</span>
+                    <span className="text-xs font-bold text-slate-500 block mb-2">Untouched leads</span>
+                    <span className="text-3xl font-black text-emerald-950 group-hover:text-emerald-600">{dnpManagerMatrix.totalUntouched}</span>
+                  </div>
+                  <div className="p-4 bg-emerald-100 text-emerald-700 rounded-2xl border border-emerald-300 group-hover:scale-110 transition-transform">
+                    <User size={28} />
+                  </div>
+                </div>
+
+                {/* Total DNP */}
+                <div 
+                  onClick={() => openLeadsDrilldown('Total DNP / Do Not Contact', 'Leads marked DNP (Did Not Pick)', dnpManagerMatrix.totalDnpLeads)}
+                  className="bg-amber-50/80 border border-amber-200 p-6 rounded-3xl shadow-xs flex items-center justify-between cursor-pointer hover:border-amber-500 hover:shadow-md transition-all group"
+                >
+                  <div>
+                    <span className="text-xs font-black text-amber-800 uppercase tracking-wider block mb-1">Total DNP</span>
+                    <span className="text-xs font-bold text-slate-500 block mb-2">Do not contact / Didn't pick</span>
+                    <span className="text-3xl font-black text-amber-950 group-hover:text-amber-600">{dnpManagerMatrix.totalDnp}</span>
+                  </div>
+                  <div className="p-4 bg-amber-100 text-amber-700 rounded-2xl border border-amber-300 group-hover:scale-110 transition-transform">
+                    <PhoneOff size={28} />
+                  </div>
+                </div>
+
+              </div>
+
+              {/* EMPLOYEE-WISE DNP MATRIX TABLE */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                  <h3 className="font-extrabold text-base text-slate-900">DNP Manager Matrix</h3>
+                  <span className="text-xs font-bold text-slate-500">Click any cell to drilldown exact DNP leads</span>
+                </div>
+                <div className="overflow-x-auto custom-scrollbar">
+                  <table className="w-full text-left border-collapse min-w-[800px]">
+                    <thead>
+                      <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">
+                        <th className="p-4 pl-6">Name</th>
+                        <th className="p-4 text-center">Today's DNP</th>
+                        <th className="p-4 text-center">Today's Untouched</th>
+                        <th className="p-4 text-center">Pending OLD DNP</th>
+                        <th className="p-4 text-center">Pending Untouched</th>
+                        <th className="p-4 text-center bg-emerald-100/60 text-emerald-950 pr-6">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs font-bold">
+                      {dnpManagerMatrix.rows.map(({ rep, todayDnp, todayUntouched, pendingOldDnp, pendingUntouched, todayDnpLeads, todayUntouchedLeads, pendingOldDnpLeads, pendingUntouchedLeads, totalLeadsList, total }) => (
+                        <tr key={rep.id} className="hover:bg-blue-50/40 transition-colors">
+                          <td className="p-4 pl-6 font-extrabold text-slate-900 flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black flex items-center justify-center border border-amber-300 shrink-0">
+                              {rep.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="truncate max-w-[140px]">{rep.name}</span>
+                          </td>
+                          
+                          <td 
+                            onClick={() => todayDnp > 0 && openLeadsDrilldown(`${rep.name} - Today's DNP`, 'DNP calls logged today', todayDnpLeads)}
+                            className={`p-4 text-center ${todayDnp > 0 ? 'text-blue-600 font-extrabold cursor-pointer hover:bg-blue-100' : 'text-slate-400'}`}
+                          >
+                            {todayDnp}
+                          </td>
+
+                          <td 
+                            onClick={() => todayUntouched > 0 && openLeadsDrilldown(`${rep.name} - Today's Untouched`, 'Leads created today with 0 calls', todayUntouchedLeads)}
+                            className={`p-4 text-center ${todayUntouched > 0 ? 'text-emerald-600 font-extrabold cursor-pointer hover:bg-emerald-100' : 'text-slate-400'}`}
+                          >
+                            {todayUntouched}
+                          </td>
+
+                          <td 
+                            onClick={() => pendingOldDnp > 0 && openLeadsDrilldown(`${rep.name} - Pending OLD DNP`, 'Accumulated DNP leads from past days', pendingOldDnpLeads)}
+                            className={`p-4 text-center ${pendingOldDnp > 0 ? 'text-amber-600 font-extrabold cursor-pointer hover:bg-amber-100' : 'text-slate-400'}`}
+                          >
+                            {pendingOldDnp}
+                          </td>
+
+                          <td 
+                            onClick={() => pendingUntouched > 0 && openLeadsDrilldown(`${rep.name} - Pending Untouched`, 'Accumulated untouched leads from past days', pendingUntouchedLeads)}
+                            className={`p-4 text-center ${pendingUntouched > 0 ? 'text-slate-700 font-extrabold cursor-pointer hover:bg-slate-100' : 'text-slate-400'}`}
+                          >
+                            {pendingUntouched}
+                          </td>
+
+                          <td 
+                            onClick={() => total > 0 && openLeadsDrilldown(`${rep.name} - Total DNP / Untouched`, 'All DNP and untouched leads', totalLeadsList)}
+                            className="p-4 text-center font-black text-slate-900 bg-emerald-50/50 pr-6 text-sm cursor-pointer hover:bg-emerald-100"
+                          >
+                            {total}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-emerald-100/80 border-t-2 border-emerald-300 text-xs font-black text-emerald-950">
+                        <td className="p-4 pl-6 uppercase tracking-wider">TOTAL</td>
+                        <td className="p-4 text-center">{dnpManagerMatrix.totals.todayDnp}</td>
+                        <td className="p-4 text-center">{dnpManagerMatrix.totals.todayUntouched}</td>
+                        <td className="p-4 text-center">{dnpManagerMatrix.totals.pendingOldDnp}</td>
+                        <td className="p-4 text-center">{dnpManagerMatrix.totals.pendingUntouched}</td>
+                        <td className="p-4 text-center pr-6 text-base">{dnpManagerMatrix.totals.total}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 4: TEAM ROSTER */}
+          {activeTab === 'team_mgr' && (
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-6 animate-in fade-in duration-200">
+              <div className="flex justify-between items-center pb-4 border-b border-slate-200">
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 border border-blue-500/30">
-                      <Sparkles size={12} className="animate-pulse" /> AI Business Analyst
-                    </span>
-                    {profile && (
-                      <span className="px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-300 text-[10px] font-black uppercase tracking-wider border border-yellow-500/30">
-                        Credits: {isUnlimited ? 'Unlimited' : (profile.credits ?? 0)}
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-2xl font-black tracking-tight text-white">AI Revenue Growth Analyst</h3>
-                  <p className="text-slate-400 text-xs mt-1">Deep analysis of pipeline stage leaks and automated recommendation engine</p>
+                  <h3 className="text-lg font-extrabold text-slate-900">Sales Representatives Roster</h3>
+                  <p className="text-xs text-slate-500">Manage and monitor sales team members & performance metrics.</p>
                 </div>
-
-                <div className="shrink-0 flex items-center gap-3">
-                  {cachedAnalysis && (
-                    <div className="text-right hidden sm:block">
-                      <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Last Run Analysis</span>
-                      <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5 mt-0.5 justify-end">
-                        <Clock size={12} /> {new Date(cachedAnalysis.timestamp).toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setShowConfirmModal(true)}
-                    disabled={analyzing}
-                    className="bg-blue-600 text-white font-black hover:bg-blue-500 transition-colors shadow-lg px-5 py-3 rounded-2xl flex items-center gap-2 text-xs uppercase tracking-wider disabled:opacity-50"
-                  >
-                    {analyzing ? (
-                      <>
-                        <RefreshCw size={14} className="animate-spin" /> Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={14} /> Run Growth Analysis
-                      </>
-                    )}
-                  </button>
-                </div>
+                <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-extrabold border border-blue-200">
+                  {allSalesReps.length} Team Members
+                </span>
               </div>
 
-              {/* Recommendations Content Panel */}
-              {analyzing ? (
-                <div className="py-20 flex flex-col items-center justify-center text-center gap-4 text-slate-400">
-                  <div className="relative w-16 h-16">
-                    <span className="absolute inset-0 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin"></span>
-                    <Sparkles size={24} className="absolute inset-0 m-auto text-blue-400 animate-bounce" />
-                  </div>
-                  <div className="max-w-md">
-                    <p className="text-white font-extrabold text-sm animate-pulse">Scanning pipeline drop-offs & WhatsApp ratios...</p>
-                    <p className="text-xs mt-1.5 text-slate-500">Gemini is analyzing team efficiency and mapping revenue growth opportunities. Please wait.</p>
-                  </div>
-                </div>
-              ) : cachedAnalysis ? (
-                <div className="bg-white/5 border border-white/10 rounded-3xl p-6 sm:p-8 backdrop-blur-md">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {allSalesReps.map(rep => {
+                  const repLeadsList = leads.filter(l => l.assigned_to === rep.id)
+                  const repDnpList = repLeadsList.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0))
+                  const repQualifiedList = repLeadsList.filter(l => ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won'].includes(l.pipeline_stage))
                   
-                  {/* Snapshot of stats at analysis run */}
-                  {cachedAnalysis.metricsSnapshot && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 border-b border-white/5 pb-6">
-                      <div>
-                        <span className="text-[10px] font-black text-slate-500 block uppercase">Snapshotted Leads</span>
-                        <span className="text-lg font-black text-white">{cachedAnalysis.metricsSnapshot.totalLeads}</span>
+                  return (
+                    <div key={rep.id} className="p-5 bg-slate-50/80 border border-slate-200 rounded-2xl space-y-3 hover:border-blue-300 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-black flex items-center justify-center text-sm shadow-xs">
+                            {rep.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <h4 className="font-extrabold text-sm text-slate-900">{rep.name}</h4>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{rep.role}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setSelectedAgentId(rep.id)}
+                          className="px-2.5 py-1 text-[11px] font-extrabold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100"
+                        >
+                          Filter Dashboard
+                        </button>
                       </div>
-                      <div>
-                        <span className="text-[10px] font-black text-slate-500 block uppercase">Conversion Rate</span>
-                        <span className="text-lg font-black text-emerald-400">{cachedAnalysis.metricsSnapshot.conversionRate}%</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black text-slate-500 block uppercase">WhatsApp Chats</span>
-                        <span className="text-lg font-black text-white">{cachedAnalysis.metricsSnapshot.chatsCount}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black text-slate-500 block uppercase">Total Messages</span>
-                        <span className="text-lg font-black text-blue-400">{cachedAnalysis.metricsSnapshot.messagesCount}</span>
+
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200 text-center text-xs">
+                        <div 
+                          onClick={() => openLeadsDrilldown(`${rep.name} - Total Assigned`, 'All assigned leads', repLeadsList)}
+                          className="p-2 bg-white rounded-xl border border-slate-200/60 cursor-pointer hover:bg-blue-50"
+                        >
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Leads</span>
+                          <span className="font-black text-slate-900">{repLeadsList.length}</span>
+                        </div>
+                        
+                        <div 
+                          onClick={() => openLeadsDrilldown(`${rep.name} - Qualified`, 'Qualified and booked leads', repQualifiedList)}
+                          className="p-2 bg-white rounded-xl border border-slate-200/60 cursor-pointer hover:bg-emerald-50"
+                        >
+                          <span className="text-[9px] font-bold text-emerald-600 uppercase block">Qualified</span>
+                          <span className="font-black text-emerald-700">{repQualifiedList.length}</span>
+                        </div>
+
+                        <div 
+                          onClick={() => openLeadsDrilldown(`${rep.name} - DNP`, 'DNP leads count', repDnpList)}
+                          className="p-2 bg-white rounded-xl border border-slate-200/60 cursor-pointer hover:bg-rose-50"
+                        >
+                          <span className="text-[9px] font-bold text-rose-600 uppercase block">DNP</span>
+                          <span className="font-black text-rose-700">{repDnpList.length}</span>
+                        </div>
                       </div>
                     </div>
-                  )}
-
-                  {/* Generated Analysis Text */}
-                  <div className="prose-invert prose-blue max-w-none">
-                    <MarkdownRenderer text={cachedAnalysis.recommendations} />
-                  </div>
-
-                  {/* Warning disclaimer */}
-                  <div className="mt-8 pt-6 border-t border-white/5 flex items-center gap-3 text-slate-500 text-[10px] font-bold">
-                    <AlertCircle size={14} className="shrink-0" />
-                    Disclaimer: Recommendations are AI-generated based on current trends. Execute responsibly to drive conversions.
-                  </div>
-
-                </div>
-              ) : (
-                <div className="py-16 text-center bg-white/5 border border-white/10 border-dashed rounded-3xl flex flex-col items-center justify-center gap-3">
-                  <HelpCircle size={40} className="text-slate-500" />
-                  <p className="text-sm font-extrabold text-white">No analysis available for this period.</p>
-                  <p className="text-xs text-slate-400 max-w-sm">Deduct 50 credits to run a deep AI analysis and reveal recommendations for maximizing business revenues.</p>
-                </div>
-              )}
-
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* CONFIRMATION / CREDIT DEDUCTION MODAL */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-[2.5rem] max-w-md w-full border border-slate-100 p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-200">
-            <button 
-              onClick={() => setShowConfirmModal(false)}
-              className="absolute top-6 right-6 p-2 rounded-full hover:bg-slate-50 text-slate-400 transition-colors"
-            >
-              <XCircle size={20} />
-            </button>
-
-            <div className="text-center pt-2">
-              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Sparkles size={28} className="animate-pulse" />
+                  )
+                })}
               </div>
-              <h4 className="text-xl font-black text-[#001D35] tracking-tight">Run Growth Analysis?</h4>
+            </div>
+          )}
+
+          {/* TAB 5: LEADERBOARD TAB (WorkVeu Screenshot 3) */}
+          {activeTab === 'leaderboard' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
               
-              <p className="text-slate-500 text-xs my-6 leading-relaxed">
-                Running this analysis will pull your active CRM pipeline dropoffs and WhatsApp ratios to formulate actionable suggestions and recommendations to maximize business revenue.
-              </p>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setShowConfirmModal(false)}
-                  className="flex-1 py-3 px-4 rounded-2xl border border-slate-200 hover:bg-slate-50 text-slate-500 text-xs font-black uppercase tracking-wider transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleRunAIAnalysis}
-                  className="flex-1 py-3 px-4 rounded-2xl bg-blue-600 text-white font-black hover:bg-blue-500 text-xs font-black uppercase tracking-wider transition-colors shadow-lg"
-                >
-                  Confirm & Run
-                </button>
+              {/* Header Banner */}
+              <div className="p-6 bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 rounded-3xl text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Trophy className="w-6 h-6 text-amber-400" />
+                    <h2 className="text-xl font-black text-white">Sales & Lead Performance Leaderboard</h2>
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    Real-time rankings across sales representatives, lead action stages, traffic acquisition channels, and ad campaigns.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 text-xs font-bold shrink-0">
+                  <Flame className="w-4 h-4 text-amber-400" />
+                  <span>Ranked by Activity & Conversion</span>
+                </div>
               </div>
+
+              {/* Grid Layout: Top 2 Boards (Followup Board & Lead Status Board) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* 1. Followup Board (Blue Header) */}
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                  <div className="bg-sky-500 px-6 py-3.5 flex items-center justify-between text-white font-black text-sm">
+                    <div className="flex items-center gap-2">
+                      <Trophy size={16} className="text-amber-300" />
+                      <span>Followup Board</span>
+                    </div>
+                    <button onClick={() => fetchAnalytics(true)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                      <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 font-extrabold text-slate-600 uppercase text-[10px]">
+                        <tr>
+                          <th className="py-3 px-4 w-12 text-center">Rank</th>
+                          <th className="py-3 px-4">User Name</th>
+                          <th className="py-3 px-4 text-center">Total Followups</th>
+                          <th className="py-3 px-4 text-center">Closing Meetings</th>
+                          <th className="py-3 px-4 text-center">Visits+Revisits</th>
+                          <th className="py-3 px-4 text-center">DNP</th>
+                          <th className="py-3 px-4 text-center">Conv. %</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-bold text-slate-800">
+                        {followupBoardRows.map((row, idx) => (
+                          <tr 
+                            key={row.rep.id} 
+                            onClick={() => openLeadsDrilldown(`${row.rep.name} - Followup Activity`, 'Assigned followup leads', row.repLeads)}
+                            className="hover:bg-blue-50/50 cursor-pointer transition-colors"
+                          >
+                            <td className="py-3 px-4 text-center font-black">
+                              {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
+                            </td>
+                            <td className="py-3 px-4 font-black text-blue-600">{row.rep.name}</td>
+                            <td className="py-3 px-4 text-center font-extrabold text-slate-900">{row.totalFollowups}</td>
+                            <td className="py-3 px-4 text-center">{row.closingMeetings}</td>
+                            <td className="py-3 px-4 text-center">{row.visits}</td>
+                            <td className="py-3 px-4 text-center text-rose-600">{row.dnp}</td>
+                            <td className="py-3 px-4 text-center font-black text-emerald-600">{row.conversionRate}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 2. Lead Status Board (Green Header) */}
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                  <div className="bg-emerald-500 px-6 py-3.5 flex items-center justify-between text-white font-black text-sm">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-emerald-100" />
+                      <span>Lead Status Board</span>
+                    </div>
+                    <button onClick={() => fetchAnalytics(true)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                      <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 font-extrabold text-slate-600 uppercase text-[10px]">
+                        <tr>
+                          <th className="py-3 px-4 w-12 text-center">Rank</th>
+                          <th className="py-3 px-4">User Name</th>
+                          <th className="py-3 px-4 text-center">Req Taken</th>
+                          <th className="py-3 px-4 text-center">Visit Planned</th>
+                          <th className="py-3 px-4 text-center">Visit Done</th>
+                          <th className="py-3 px-4 text-center">Negotiation</th>
+                          <th className="py-3 px-4 text-center">Deal/Token</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-bold text-slate-800">
+                        {statusBoardRows.map((row, idx) => (
+                          <tr 
+                            key={row.rep.id} 
+                            onClick={() => openLeadsDrilldown(`${row.rep.name} - Stage Progression`, 'Leads by status stage', row.repLeads)}
+                            className="hover:bg-emerald-50/50 cursor-pointer transition-colors"
+                          >
+                            <td className="py-3 px-4 text-center font-black">
+                              {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
+                            </td>
+                            <td className="py-3 px-4 font-black text-emerald-700">{row.rep.name}</td>
+                            <td className="py-3 px-4 text-center">{row.reqTaken}</td>
+                            <td className="py-3 px-4 text-center text-amber-600">{row.visitPlanned}</td>
+                            <td className="py-3 px-4 text-center font-bold text-blue-600">{row.visitDone}</td>
+                            <td className="py-3 px-4 text-center text-purple-600">{row.negotiation}</td>
+                            <td className="py-3 px-4 text-center font-black text-emerald-600">{row.dealToken}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Grid Layout: Bottom 2 Boards (Source Board & Source Detail Board) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* 3. Source Board (Pink Header) */}
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                  <div className="bg-rose-500 px-6 py-3.5 flex items-center justify-between text-white font-black text-sm">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp size={16} className="text-rose-100" />
+                      <span>Source Board</span>
+                    </div>
+                    <button onClick={() => fetchAnalytics(true)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                      <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 font-extrabold text-slate-600 uppercase text-[10px]">
+                        <tr>
+                          <th className="py-3 px-4 w-12 text-center">Rank</th>
+                          <th className="py-3 px-4">Source</th>
+                          <th className="py-3 px-4 text-center">Total Leads</th>
+                          <th className="py-3 px-4 text-center">Ongoing</th>
+                          <th className="py-3 px-4 text-center">Deal/Token</th>
+                          <th className="py-3 px-4 text-center">Lost/NI</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-bold text-slate-800">
+                        {sourceBoardRows.map((row, idx) => (
+                          <tr 
+                            key={row.source} 
+                            onClick={() => openLeadsDrilldown(`Source: ${row.source}`, 'Leads from source', row.sourceLeads)}
+                            className="hover:bg-rose-50/50 cursor-pointer transition-colors"
+                          >
+                            <td className="py-3 px-4 text-center font-black">
+                              {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
+                            </td>
+                            <td className="py-3 px-4 font-black text-rose-600">{row.source}</td>
+                            <td className="py-3 px-4 text-center font-black text-slate-900">{row.totalLeads}</td>
+                            <td className="py-3 px-4 text-center text-blue-600">{row.ongoing}</td>
+                            <td className="py-3 px-4 text-center font-black text-emerald-600">{row.won}</td>
+                            <td className="py-3 px-4 text-center text-slate-400">{row.lost}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 4. Source Detail (Campaign / Project Board) (Pink Header) */}
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                  <div className="bg-rose-500 px-6 py-3.5 flex items-center justify-between text-white font-black text-sm">
+                    <div className="flex items-center gap-2">
+                      <Building2 size={16} className="text-rose-100" />
+                      <span>Source Detail (Campaign / Project)</span>
+                    </div>
+                    <button onClick={() => fetchAnalytics(true)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                      <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 font-extrabold text-slate-600 uppercase text-[10px]">
+                        <tr>
+                          <th className="py-3 px-4 w-12 text-center">Rank</th>
+                          <th className="py-3 px-4">Campaign / Project</th>
+                          <th className="py-3 px-4 text-center">Total Leads</th>
+                          <th className="py-3 px-4 text-center">Ongoing</th>
+                          <th className="py-3 px-4 text-center">Deal/Token</th>
+                          <th className="py-3 px-4 text-center">Lost/NI</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-bold text-slate-800">
+                        {campaignBoardRows.map((row, idx) => (
+                          <tr 
+                            key={row.campaign} 
+                            onClick={() => openLeadsDrilldown(`Campaign: ${row.campaign}`, 'Leads from campaign', row.campaignLeads)}
+                            className="hover:bg-rose-50/50 cursor-pointer transition-colors"
+                          >
+                            <td className="py-3 px-4 text-center font-black">
+                              {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
+                            </td>
+                            <td className="py-3 px-4 font-black text-slate-900 truncate max-w-[180px]" title={row.campaign}>{row.campaign}</td>
+                            <td className="py-3 px-4 text-center font-black text-slate-900">{row.totalLeads}</td>
+                            <td className="py-3 px-4 text-center text-blue-600">{row.ongoing}</td>
+                            <td className="py-3 px-4 text-center font-black text-emerald-600">{row.won}</td>
+                            <td className="py-3 px-4 text-center text-slate-400">{row.lost}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+
             </div>
+          )}
+
+        </>
+      )}
+
+      {/* CLICK-TO-DRILLDOWN LEADS DRAWER MODAL */}
+      {drilldownModal.isOpen && (
+        <div className="fixed inset-0 z-[99999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+              <div>
+                <h3 className="text-lg sm:text-xl font-extrabold text-slate-900">{drilldownModal.title}</h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">{drilldownModal.subtitle}</p>
+              </div>
+              <button
+                onClick={() => setDrilldownModal(prev => ({ ...prev, isOpen: false }))}
+                className="p-2 rounded-xl bg-slate-200/60 text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Search Bar */}
+            <div className="p-4 border-b border-slate-100 bg-white flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Filter leads by name, phone, stage..."
+                  value={drilldownModal.searchFilter}
+                  onChange={(e) => setDrilldownModal(prev => ({ ...prev, searchFilter: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 rounded-xl pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+              <span className="text-xs font-black text-slate-500 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 shrink-0">
+                {drilldownModal.leads.filter(l => {
+                  if (!drilldownModal.searchFilter.trim()) return true
+                  const q = drilldownModal.searchFilter.toLowerCase().trim()
+                  return (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q) || (l.pipeline_stage || '').toLowerCase().includes(q)
+                }).length} leads
+              </span>
+            </div>
+
+            {/* Modal Leads List */}
+            <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-3">
+              {(() => {
+                const filtered = drilldownModal.leads.filter(l => {
+                  if (!drilldownModal.searchFilter.trim()) return true
+                  const q = drilldownModal.searchFilter.toLowerCase().trim()
+                  return (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q) || (l.pipeline_stage || '').toLowerCase().includes(q)
+                })
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-slate-400">
+                      <Users size={32} className="mx-auto mb-2 opacity-50" />
+                      <p className="text-xs font-extrabold">No matching leads found for this view.</p>
+                    </div>
+                  )
+                }
+
+                return filtered.map((lead: any) => {
+                  const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
+                  return (
+                    <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-blue-50/30 transition-colors">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-extrabold text-sm text-slate-900">{lead.name || 'Unknown Prospect'}</h4>
+                          <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-extrabold text-[10px]">
+                            {lead.pipeline_stage || 'New'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 font-bold text-[10px]">
+                            Rep: {assignedRep}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-600 flex items-center gap-2">
+                          <span>📞 {lead.phone || 'No phone'}</span>
+                          {lead.ad_name && <span className="text-slate-400">• 📢 {lead.ad_name}</span>}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                        {/* History Button */}
+                        <button
+                          onClick={() => setHistoryLead(lead)}
+                          className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-black hover:bg-slate-100 shadow-xs flex items-center gap-1"
+                        >
+                          <History size={13} className="text-blue-600" />
+                          <span>History</span>
+                        </button>
+
+                        {/* Followup Button */}
+                        <button
+                          onClick={() => setFollowupLead(lead)}
+                          className="px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 shadow-xs flex items-center gap-1"
+                        >
+                          <RefreshCw size={13} />
+                          <span>Followup</span>
+                        </button>
+
+                        {/* WhatsApp Auto */}
+                        <a
+                          href={`https://wa.me/${(lead.phone || '').replace(/\D/g, '')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors"
+                          title="WhatsApp Chat"
+                        >
+                          <MessageSquare size={14} />
+                        </a>
+
+                        {/* Call */}
+                        <a
+                          href={`tel:${lead.phone}`}
+                          className="p-1.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-colors"
+                          title="Direct Call"
+                        >
+                          <Phone size={14} />
+                        </a>
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">Click any lead to view full history or record follow-up.</span>
+              <button
+                onClick={() => setDrilldownModal(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800"
+              >
+                Close Drawer
+              </button>
+            </div>
+
           </div>
         </div>
       )}
 
-      {/* LOADER COMPONENT HELPER */}
-      <style jsx global>{`
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-        }
-        .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-      `}</style>
+      {/* LEAD HISTORY TIMELINE MODAL */}
+      <LeadHistoryModal
+        isOpen={!!historyLead}
+        lead={historyLead}
+        onClose={() => setHistoryLead(null)}
+      />
 
-    </div>
-  )
-}
+      {/* UPDATE FOLLOWUP MODAL */}
+      <UpdateFollowupModal
+        isOpen={!!followupLead}
+        lead={followupLead}
+        onClose={() => setFollowupLead(null)}
+        onSuccess={() => {
+          setFollowupLead(null)
+          fetchAnalytics(true)
+        }}
+      />
 
-function Loader2({ className = '', size = 28 }) {
-  return (
-    <div className={`flex flex-col items-center justify-center gap-3 text-slate-400 ${className}`}>
-      <svg
-        width={size}
-        height={size}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="animate-spin text-blue-600"
-      >
-        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-      </svg>
-      <span className="text-xs font-black tracking-wider uppercase text-slate-400 animate-pulse">Synchronizing Analytics...</span>
     </div>
   )
 }

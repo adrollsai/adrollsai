@@ -1636,6 +1636,31 @@ IMPORTANT RULES:
                                             })
                                             .eq('id', chat.id);
                                         chat.flow_answers = { ...currentFlowAnswers, meta_ad_origin: metaAdOrigin };
+
+                                        // Sync to CRM Lead record if lead already exists
+                                        if (chat.lead_id && metaAdOrigin) {
+                                            try {
+                                                const adName = metaAdOrigin.ad_name || metaAdOrigin.headline || metaAdOrigin.campaign_name || metaAdOrigin.product_name;
+                                                const { data: existingLeadData } = await supabaseAdmin.from('leads').select('custom_fields').eq('id', chat.lead_id).single();
+                                                let cf = existingLeadData?.custom_fields || {};
+                                                if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
+                                                cf = { ...cf, meta_ad_origin: metaAdOrigin };
+
+                                                await supabaseAdmin
+                                                    .from('leads')
+                                                    .update({
+                                                        source: 'WhatsApp Ad',
+                                                        ad_name: adName || 'Meta CTWA Ad',
+                                                        campaign_id: metaAdOrigin.campaign_id || null,
+                                                        property_id: metaAdOrigin.property_id || null,
+                                                        custom_fields: cf
+                                                    })
+                                                    .eq('id', chat.lead_id);
+                                                console.log(`[Referral] Updated lead ${chat.lead_id} with Meta Ad Origin: ${adName}`);
+                                            } catch (leadSyncErr) {
+                                                console.error("[Referral] Lead sync error:", leadSyncErr);
+                                            }
+                                        }
                                     }
 
                                     // STEP A: Name not yet provided — ask for name (unless responding to a button click)
@@ -1796,10 +1821,11 @@ Clean Name:`;
                                                     user_id: ownerUserId,
                                                     name: parsedName,
                                                     phone: cleanFrom,
-                                                    source: 'WhatsApp Ad',
+                                                    source: metaAdOrigin ? 'WhatsApp Ad' : 'WhatsApp',
                                                     pipeline_stage: 'New',
                                                     campaign_id: metaAdOrigin?.campaign_id || campaignSourceId,
-                                                    ad_name: metaAdOrigin?.ad_name || metaAdOrigin?.headline || null,
+                                                    ad_name: metaAdOrigin?.ad_name || metaAdOrigin?.headline || metaAdOrigin?.campaign_name || metaAdOrigin?.product_name || null,
+                                                    property_id: metaAdOrigin?.property_id || null,
                                                     custom_fields: leadCustomFields,
                                                     created_at: new Date().toISOString()
                                                  })
@@ -2671,13 +2697,47 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
           if (cleanPhoneDigits && cleanPhoneDigits.length >= 7) {
             const { data: existingByPhone } = await supabaseAdmin
               .from('leads')
-              .select('id')
+              .select('*')
               .eq('user_id', profile.id)
               .or(`phone.eq.${phone},phone.ilike.%${cleanPhoneDigits}`)
               .limit(1);
 
             if (existingByPhone && existingByPhone.length > 0) {
-              console.log(`[Facebook Webhook] Lead with phone ${phone} / ${cleanPhoneDigits} already exists for user ${profile.id}. Skipping duplicate.`);
+              const existingLead = existingByPhone[0];
+              const reopenedCount = (existingLead.reopened_count || existingLead.custom_fields?.reopened_count || 0) + 1;
+              let cf = existingLead.custom_fields || {};
+              if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
+              cf = { ...cf, reopened_count: reopenedCount, last_reopened_at: new Date().toISOString() };
+
+              await supabaseAdmin
+                .from('leads')
+                .update({
+                  reopened_count: reopenedCount,
+                  custom_fields: cf,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existingLead.id);
+
+              const reopenDesc = `The lead was reopened from Facebook\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${adCampaignString || formName || 'Meta Ad'}\nLead Status : ${existingLead.pipeline_stage || 'New'}`;
+
+              await supabaseAdmin.from('lead_history').insert({
+                lead_id: existingLead.id,
+                action_type: 'REOPENED',
+                performed_by: 'System / Facebook',
+                actor_name: 'Facebook Ads',
+                description: reopenDesc,
+                details: {
+                  source: 'Facebook Ads',
+                  ad_name: adCampaignString,
+                  form_name: formName,
+                  campaign_id: campaignId,
+                  reopened_count: reopenedCount,
+                  timestamp: new Date().toISOString()
+                },
+                created_at: new Date().toISOString()
+              });
+
+              console.log(`[Facebook Webhook] Lead ${existingLead.id} reopened (${reopenedCount} times) from ad ${adCampaignString}`);
               continue;
             }
           }

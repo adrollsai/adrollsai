@@ -743,7 +743,8 @@ wss.on('connection', (wsConnection) => {
                             } else {
                                 // Manual, Direct, CSV Import, or non-Ad lead: NEVER say "Aapne ad dekhi thi"!
                                 if (lead.notes) {
-                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. Refer naturally to their requirement noted in CRM notes: "${lead.notes}". Say something like: "Main ${companyName} se baat kar rahi hoon, aapki requirement (${lead.notes}) ke regarding call kar rahi hoon." Then naturally ask how you can assist them.`;
+                                    const cleanNotes = lead.notes.replace(/\[.*?\]/g, '').replace(/he needs|she needs|user needs|client needs|looking for|interested in/gi, 'requirement for').trim();
+                                    contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. Politely refer to their property requirement (${cleanNotes || 'property requirement'}). CRITICAL RULE: NEVER repeat raw CRM log notes or third-person phrases verbatim (e.g. NEVER say "mai 'he needs a flat' ke regarding call kar rahi hoon"). Say something natural like: "Main ${companyName} se baat kar rahi hoon, aapki property requirement ke regarding call kar rahi hoon." Then naturally ask how you can assist them.`;
                                 } else if (targetProduct) {
                                     contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. Say something like: "Main ${companyName} se ${targetProduct} ke regarding call kar rahi hoon, aapki requirement/inquiry ke regarding." Then naturally ask how you can assist them.`;
                                 } else {

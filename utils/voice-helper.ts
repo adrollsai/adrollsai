@@ -611,7 +611,8 @@ export async function bookAppointment(
             .from('leads')
             .update({
                 booked_time: formattedSlot,
-                pipeline_stage: 'Appointment booked',
+                status: 'Visit Planned',
+                pipeline_stage: 'Visit Planned',
                 meet_link: hangoutLink || null,
                 google_calendar_event_id: calendarEventId || null,
                 reminder_24h_sent: false,

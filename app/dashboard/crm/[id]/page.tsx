@@ -8,9 +8,19 @@ import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
 import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
 import CallFeedbackModal from '@/components/CallFeedbackModal'
-import { PhoneOff } from 'lucide-react'
+import UpdateFollowupModal from '@/components/UpdateFollowupModal'
+import { PhoneOff, PhoneCall } from 'lucide-react'
 
-const STAGES = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
+const STAGES = [
+  'New Lead',
+  'Requirement Taken',
+  'Visit Planned',
+  'Visit Done',
+  'Revisit Done',
+  'Negotiation',
+  'Deal/Token',
+  'Lost/NI'
+]
 
 function formatCallPhone(phoneRaw: string | null | undefined): string {
     if (!phoneRaw) return '';
@@ -79,6 +89,7 @@ export default function LeadProfilePage() {
 
     // Call feedback & history states
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
+    const [isUpdateFollowupOpen, setIsUpdateFollowupOpen] = useState(false)
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
     const [selectedHistoryCall, setSelectedHistoryCall] = useState<any>(null)
     const [isAllHistoryModalOpen, setIsAllHistoryModalOpen] = useState(false)
@@ -959,11 +970,31 @@ END:VCARD`
                     </button>
                     <div className="min-w-0 flex-1">
                         <h2 className="text-xl font-bold text-slate-900 break-words sm:truncate leading-tight">{lead.name}</h2>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mt-1">
                             <p className="text-xs font-medium text-slate-500 break-all">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
-                            <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md border border-blue-200 shrink-0">
-                                {lead.pipeline_stage || 'New'}
-                            </span>
+                            
+                            {/* Interactive Stage Selector */}
+                            <div className="relative shrink-0">
+                                <select
+                                    value={lead.pipeline_stage || 'New'}
+                                    onChange={(e) => updateStage(e.target.value)}
+                                    className="appearance-none bg-blue-50 text-blue-700 text-xs font-extrabold rounded-lg py-1 px-3 pr-7 border border-blue-200 outline-none cursor-pointer hover:bg-blue-100 transition-all shadow-xs"
+                                >
+                                    {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
+                            </div>
+
+                            {/* Quick Reminder / Next Action Button */}
+                            <button
+                                onClick={() => setIsUpdateFollowupOpen(true)}
+                                className="text-xs font-extrabold bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1 hover:bg-amber-100 transition-all shadow-xs shrink-0 cursor-pointer"
+                                title="Schedule Next Followup / Reminder"
+                            >
+                                <Clock size={12} />
+                                <span>{lead.next_action_date ? `Next: ${new Date(lead.next_action_date).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}` : 'Set Followup / Reminder'}</span>
+                            </button>
+
                             {(lead.dnp_count > 0 || lead.custom_fields?.dnp_count > 0) && (
                                 <span className="text-[10px] font-black bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-200 shrink-0 flex items-center gap-1">
                                     <PhoneOff size={10} /> DNP x{lead.dnp_count || lead.custom_fields?.dnp_count}
@@ -1008,22 +1039,43 @@ END:VCARD`
                         )}
                         {lead.phone && (
                             <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-end ml-auto sm:ml-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsUpdateFollowupOpen(true)}
+                                    className="p-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-sm transition-all flex items-center gap-1.5 px-4 font-extrabold text-xs shrink-0 active:scale-95"
+                                    title="Update Followup & Log Outcome"
+                                >
+                                    <PhoneCall size={15} />
+                                    <span>Update Followup</span>
+                                </button>
                                 <button onClick={downloadVCard} className="p-2.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full shadow-sm transition-colors shrink-0" title="Save to Contacts">
                                     <UserPlus size={16} />
                                 </button>
-                                <button onClick={() => setIsSendTemplateOpen(true)} className="p-2.5 bg-[#25D366] text-white hover:bg-[#22c35e] rounded-full shadow-sm transition-colors flex items-center gap-1.5 px-3.5 font-bold text-[11px] sm:text-xs animate-pulse shrink-0" title="Send WhatsApp Template">
+                                <button onClick={() => setIsSendTemplateOpen(true)} className="p-2.5 bg-[#25D366] text-white hover:bg-[#22c35e] rounded-full shadow-sm transition-colors flex items-center gap-1.5 px-3.5 font-bold text-[11px] sm:text-xs shrink-0" title="Send WhatsApp Template">
                                     <MessageCircle size={16} />
                                     <span>Send Template</span>
                                 </button>
                                 <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors shrink-0" title="Direct WhatsApp Chat"><MessageCircle size={16} /></a>
-                                <a 
-                                    href={`tel:${formatCallPhone(lead.phone)}`} 
-                                    onClick={() => setIsFeedbackOpen(true)}
+                                <button 
+                                    onClick={async () => {
+                                        const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
+                                        if (displayPhone) {
+                                            window.open(`tel:${formatCallPhone(displayPhone)}`, '_self');
+                                            try {
+                                                await fetch('/api/crm/followup', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ action: 'log_call', leadId: lead.id })
+                                                });
+                                            } catch (e) {}
+                                        }
+                                        setIsUpdateFollowupOpen(true);
+                                    }}
                                     className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-full shadow-sm transition-colors shrink-0" 
-                                    title="Call Lead & Log Feedback"
+                                    title="Call Lead & Log Outcome"
                                 >
                                     <Phone size={16} />
-                                </a>
+                                </button>
                             </div>
                         )}
                     </div>
@@ -2165,6 +2217,15 @@ END:VCARD`
                 onClose={() => setIsFeedbackOpen(false)}
                 onSuccess={() => { fetchLeadData(); fetchLeadHistory(); }}
                 currentUserId={impersonateId || undefined}
+            />
+
+            {/* UPDATE FOLLOWUP MODAL */}
+            <UpdateFollowupModal
+                isOpen={isUpdateFollowupOpen}
+                lead={lead}
+                onClose={() => setIsUpdateFollowupOpen(false)}
+                onSuccess={() => { fetchLeadData(); fetchLeadHistory(); }}
+                properties={properties}
             />
         </div>
     )

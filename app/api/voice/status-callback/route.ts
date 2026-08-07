@@ -288,6 +288,7 @@ export async function POST(req: Request) {
                             .map((t: any) => `${t.role === 'agent' ? 'Agent' : 'Lead'}: ${t.message}`)
                             .join('\n')
 
+                        const nowIst = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'full' })
                         const geminiPrompt = `
 You are analyzing a phone call transcript between our AI voice assistant and a lead.
 Here is the transcript:
@@ -296,9 +297,9 @@ ${formattedTranscript}
 Extract the following details as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
 {
   "summary": "A concise, clean 2-3 sentence paragraph summarizing the call. Do NOT use markdown headers, bold, bullets, or lists.",
-  "callback_time": "ISO-8601 string of requested callback date/time. If the lead asked or agreed to a callback/meeting (including tentative agreement like 'call me Saturday', 'connect tomorrow', or 'call later') but no specific hour was finalized, generate a fallback time for that day at 10:00 AM local time (or 24 hours from now if no day was specified) so a follow-up reminder call is scheduled. Current system UTC time is: ${new Date().toISOString()}",
-  "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot if the lead agreed to, confirmed, or accepted a proposed meeting slot (including saying 'okay', 'thank you', 'theek hai', or saying goodbye/thank you after a meeting slot is proposed/confirmed by the agent), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
-  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified),
+  "callback_time": "ISO-8601 UTC string of requested callback date/time. If the lead asked or agreed to a callback but no specific hour was finalized, generate a fallback time for that day at 10:00 AM IST converted to UTC ISO string. Current system time in IST (Asia/Kolkata) is: ${nowIst} (UTC: ${new Date().toISOString()})",
+  "booking_time": "ISO-8601 UTC string of the agreed appointment/meeting/consultation slot if the lead requested, agreed to, confirmed, or accepted a meeting time (e.g. '7 PM', '7 baje', 'tomorrow 7 PM', 'evening 7 PM'). If the lead requested a time like '7 PM' without specifying a date, compute the exact UTC ISO string for 7 PM IST today (or 7 PM IST tomorrow if 7 PM today has already passed in IST). If no meeting was agreed, return null. Current system time in IST is: ${nowIst} (UTC: ${new Date().toISOString()})",
+  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a callback, or is qualified/booked a meeting),
   "allow_after_hours": true/false (true if the prospect explicitly requested, suggested, agreed, or said it is okay to call them back after 7 PM local time, late, at night, or at any time in general, otherwise false),
   "calling_enabled": true/false (false if the lead explicitly requested to never be called again, asked to stop calling, or requested to opt out/be removed from the calling list, otherwise true),
   "unanswered_questions": ["array of raw question strings that the AI assistant was unable to answer because it lacked info in context, or empty array if none"]
@@ -725,9 +726,14 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                     }
                 }
 
-                // Transition pipeline stage if qualified
-                if (isQualified && lead.pipeline_stage !== 'Won' && !bookingTime) {
-                    updateData.pipeline_stage = 'Qualified'
+                // Transition pipeline stage if booked or qualified
+                if (bookingTime && lead.pipeline_stage !== 'Deal/Token' && lead.pipeline_stage !== 'Closed') {
+                    updateData.status = 'Visit Planned'
+                    updateData.pipeline_stage = 'Visit Planned'
+                    updateData.booked_time = bookingTime
+                } else if (isQualified && lead.pipeline_stage !== 'Deal/Token' && lead.pipeline_stage !== 'Visit Planned') {
+                    updateData.status = 'Negotiation'
+                    updateData.pipeline_stage = 'Negotiation'
                 }
             }
 
@@ -737,8 +743,12 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                 .eq('id', leadId)
 
             if (!updateErr && bookingTime) {
-                console.log(`[TWILIO STATUS CALLBACK] Call led to booking slot ${bookingTime}. Triggering bookAppointment...`)
-                await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id, true)
+                console.log(`[TWILIO STATUS CALLBACK] Call led to booking slot ${bookingTime}. Triggering bookAppointment helper...`)
+                try {
+                    await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id, true)
+                } catch (bErr) {
+                    console.error('[TWILIO STATUS CALLBACK] bookAppointment exception:', bErr)
+                }
             }
 
             if (updateErr) {
