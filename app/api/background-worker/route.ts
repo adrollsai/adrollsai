@@ -160,7 +160,7 @@ export async function POST(req: Request) {
                         await refundLimit(userId, 'images');
                         try {
                             const { addCredits } = await import('@/utils/credits');
-                            await addCredits(supabaseAdmin, userId, 30, 'ai_generation', 'Refund: AI Image Generation failed (Design server error)');
+                            await addCredits(supabaseAdmin, userId, 10, 'ai_generation', 'Refund: AI Image Generation failed (Design server error)');
                         } catch (refundErr) {
                             console.error("Failed to refund credits in background worker:", refundErr);
                         }
@@ -181,7 +181,7 @@ export async function POST(req: Request) {
                      await refundLimit(userId, 'images');
                      try {
                          const { addCredits } = await import('@/utils/credits');
-                         await addCredits(supabaseAdmin, userId, 30, 'ai_generation', 'Refund: AI Image Generation failed (Timeout)');
+                         await addCredits(supabaseAdmin, userId, 10, 'ai_generation', 'Refund: AI Image Generation failed (Timeout)');
                      } catch (refundErr) {
                          console.error("Failed to refund credits on timeout in background worker:", refundErr);
                      }

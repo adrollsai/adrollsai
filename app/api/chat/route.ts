@@ -108,14 +108,14 @@ export async function POST(request: Request) {
         isEdit = false
     } = body;
 
-    const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, 30);
+    const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, 10);
     if (!hasCredits) {
       logToFile(`CREDIT ERROR: Insufficient credits for image generation.`);
       await refundLimit(targetUserId, 'images');
-      return NextResponse.json({ error: 'Insufficient credits. You need at least 30 Nobo Credits to generate an AI image.' }, { status: 402 });
+      return NextResponse.json({ error: 'Insufficient credits. You need at least 10 Nobo Credits to generate an AI image.' }, { status: 402 });
     }
 
-    const creditDeducted = await deductCredits(supabaseAdmin, targetUserId, 30, 'ai_generation', `AI Image Generation - ${propertyTitle || 'Ad'}`);
+    const creditDeducted = await deductCredits(supabaseAdmin, targetUserId, 10, 'ai_generation', `AI Image Generation - ${propertyTitle || 'Ad'}`);
     if (!creditDeducted) {
       await refundLimit(targetUserId, 'images');
       return NextResponse.json({ error: 'Failed to process credit deduction.' }, { status: 500 });
@@ -577,7 +577,7 @@ Make the edits clean, professional, and blend seamlessly with the original conte
       
       // REFUND: Give back the credit and limit
       await refundLimit(targetUserId, 'images');
-      await addCredits(supabaseAdmin, targetUserId, 30, 'ai_generation', `Refund: AI Image Generation failed - ${propertyTitle || 'Ad'}`);
+      await addCredits(supabaseAdmin, targetUserId, 10, 'ai_generation', `Refund: AI Image Generation failed - ${propertyTitle || 'Ad'}`);
       creditDeductedSuccess = false;
       
       throw new Error(`Design server error: ${finalError}`);
@@ -633,7 +633,7 @@ RULES:
       try {
         await refundLimit(targetUserId, 'images');
         const { addCredits } = await import('@/utils/credits');
-        await addCredits(supabaseAdmin, targetUserId, 30, 'ai_generation', `Refund: AI Image Generation failed`);
+        await addCredits(supabaseAdmin, targetUserId, 10, 'ai_generation', `Refund: AI Image Generation failed`);
       } catch (refundErr) {
         console.error("Failed to refund credit/limit in catch block:", refundErr);
       }

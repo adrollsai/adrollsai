@@ -723,9 +723,9 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
         }
 
         // --- CREDITS CHECK & DEDUCTION ---
-        const totalDurationForCredits = videoModel === 'grok' ? (body.duration || 30) : (prompts.length * 15);
-        const requiredClipCount = Math.max(1, Math.round(totalDurationForCredits / 15));
-        totalCreditsRequired = requiredClipCount * 250;
+        const totalDurationForCredits = videoModel === 'grok' ? (body.duration || 15) : (prompts.length * 15);
+        const requiredClipCount = Math.max(1, Math.ceil(totalDurationForCredits / 15));
+        totalCreditsRequired = requiredClipCount * 50; // 50 credits per 15 sec video (e.g., 45s = 150 credits)
         const { hasEnoughCredits, deductCredits, addCredits } = await import('@/utils/credits');
         const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, totalCreditsRequired);
         if (!hasCredits) {

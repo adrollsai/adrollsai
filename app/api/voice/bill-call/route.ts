@@ -109,14 +109,14 @@ export async function POST(req: Request) {
 
     console.log(`[BILL-CALL] Call Billing Summary: Duration=${durationMinutes} min(s), Total INR Cost=${finalCostInr.toFixed(4)}, Method: ${billingMethod}`);
 
-    // 4. Deduct the credits
-    const creditsToDeduct = durationMinutes * 10
+    // 4. Deduct the credits (7 credits / minute, rounded up to nearest minute)
+    const creditsToDeduct = durationMinutes * 7
     const success = await deductCredits(
       supabaseAdmin,
       userId,
       creditsToDeduct,
       'calling',
-      `Outbound call to ${leadName} (${leadPhone}) - Duration: ${durationMinutes} min(s) (Rs. 10.00/min) [Carrier Cost: Rs. ${finalCostInr.toFixed(2)}]`
+      `Outbound AI call to ${leadName} (${leadPhone}) - Duration: ${durationMinutes} min(s) (7 credits/min) [Carrier Cost: Rs. ${finalCostInr.toFixed(2)}]`
     )
 
     return NextResponse.json({ success, finalCostInr, durationMinutes, billingMethod })
