@@ -49,6 +49,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import PushManager from '@/components/PushManager'
 import { uploadToR2 } from '@/utils/upload-helper'
+import { getCallTrackingSettings, saveCallTrackingSettings, syncAndroidCallLogs, CallTrackingSettings } from '@/utils/callTracking'
 
 type FBPage = {
   id: string
@@ -307,6 +308,8 @@ export default function ProfilePage() {
   const [enableEodReport, setEnableEodReport] = useState(true)
   const [credits, setCredits] = useState<number>(0)
   const [selectedTextLlm, setSelectedTextLlm] = useState('gemini')
+  const [callTrackingSettings, setCallTrackingSettings] = useState<CallTrackingSettings>(() => getCallTrackingSettings())
+  const [isSyncingCallLogs, setIsSyncingCallLogs] = useState(false)
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(authRole || role)
 
@@ -2655,6 +2658,120 @@ export default function ProfilePage() {
           </div>
 
           <div className="lg:col-span-5 space-y-6">
+            {/* Android Call Tracking & Recording Settings Card */}
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+              <div className="p-6 sm:p-7 space-y-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl shadow-md shadow-blue-500/5">
+                      <Phone size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-slate-900">Android Call & Recording Settings</h4>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        Configure local phone call logs & audio recording folder sync
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 space-y-4">
+                  {/* Auto Sync Toggle */}
+                  <div className="flex items-center justify-between">
+                    <div className="pr-4">
+                      <span className="text-xs font-bold text-slate-700 block">Auto-Sync Call Logs & Recordings</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Track call duration, connected status & audio files.</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input 
+                        type="checkbox" 
+                        checked={callTrackingSettings.autoSync} 
+                        onChange={(e) => {
+                          const updated = { ...callTrackingSettings, autoSync: e.target.checked }
+                          setCallTrackingSettings(updated)
+                          saveCallTrackingSettings(updated)
+                          toast.success(e.target.checked ? "Auto-sync enabled" : "Auto-sync disabled")
+                        }}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Folder Path Input */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 font-black">
+                      Call Recordings Folder Directory Path
+                    </label>
+                    <input
+                      type="text"
+                      value={callTrackingSettings.recordingFolderPath}
+                      onChange={(e) => {
+                        const updated = { ...callTrackingSettings, recordingFolderPath: e.target.value }
+                        setCallTrackingSettings(updated)
+                        saveCallTrackingSettings(updated)
+                      }}
+                      placeholder="e.g. /Recordings/Call"
+                      className="w-full bg-slate-50 border border-slate-200 py-2.5 px-3.5 rounded-xl text-xs font-bold outline-none text-slate-800 focus:border-blue-500 transition-all"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Default paths: `/Recordings/Call`, `/CallRecord`, `/MIUI/sound_recorder/call_rec`</p>
+                  </div>
+
+                  {/* Sync Frequency */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5 font-black">
+                      Sync Frequency
+                    </label>
+                    <select
+                      value={callTrackingSettings.syncFrequency}
+                      onChange={(e) => {
+                        const updated = { ...callTrackingSettings, syncFrequency: e.target.value as any }
+                        setCallTrackingSettings(updated)
+                        saveCallTrackingSettings(updated)
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 py-2.5 px-3.5 rounded-xl text-xs font-bold outline-none text-slate-800 focus:border-blue-500 transition-all cursor-pointer"
+                    >
+                      <option value="realtime">Realtime (After every call)</option>
+                      <option value="15m">Every 15 Minutes</option>
+                      <option value="30m">Every 30 Minutes</option>
+                      <option value="manual">Manual Only</option>
+                    </select>
+                  </div>
+
+                  {/* Sync Now Button */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsSyncingCallLogs(true)
+                      try {
+                        const res = await syncAndroidCallLogs()
+                        if (res.success) {
+                          toast.success(`Synced ${res.syncedCount} calls and matched ${res.matchedLeadsCount} leads!`)
+                        } else {
+                          toast.error(res.error || 'Failed to sync call logs')
+                        }
+                      } catch (e: any) {
+                        toast.error('Sync error: ' + e.message)
+                      } finally {
+                        setIsSyncingCallLogs(false)
+                      }
+                    }}
+                    disabled={isSyncingCallLogs}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 px-4 rounded-xl text-xs shadow-xs transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 mt-2"
+                  >
+                    <RefreshCw size={14} className={isSyncingCallLogs ? 'animate-spin' : ''} />
+                    <span>{isSyncingCallLogs ? 'Syncing Calls & Recordings...' : 'Sync Call Logs & Recordings Now'}</span>
+                  </button>
+
+                  {callTrackingSettings.lastSyncedAt && (
+                    <p className="text-[10px] text-slate-400 text-center font-medium">
+                      Last synced: {new Date(callTrackingSettings.lastSyncedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-[2rem] overflow-hidden shadow-sm hover:shadow-md transition-shadow">
               <PushManager variant="inline" ownerId={targetUserId || userId || undefined} />
             </div>
