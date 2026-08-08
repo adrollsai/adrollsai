@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
+import { PutObjectCommand } from '@aws-sdk/client-s3'
 
 export async function POST(request: Request) {
   try {
@@ -43,40 +45,64 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No audio recording file provided' }, { status: 400 })
     }
 
-    // 1. Storage bucket upload
     const fileExt = file.name.split('.').pop() || 'mp3'
     const fileName = `call-recordings/${user.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
     const buffer = Buffer.from(await file.arrayBuffer())
 
-    let storageBucket = 'call-recordings'
-    let { error: uploadErr } = await adminSupabase.storage
-      .from(storageBucket)
-      .upload(fileName, buffer, {
-        contentType: file.type || 'audio/mpeg',
-        upsert: true
-      })
+    let recordingUrl = ''
 
-    if (uploadErr) {
-      storageBucket = 'public-assets'
-      const fallbackRes = await adminSupabase.storage
+    // Primary: Upload directly to Cloudflare R2 storage
+    if (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
+      try {
+        const bucket = R2_BUCKET || process.env.R2_BUCKET_NAME || 'adrolls-storage'
+        const publicBase = (R2_PUBLIC_URL || process.env.R2_PUBLIC_URL || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev').replace(/\/$/, '')
+
+        await r2.send(new PutObjectCommand({
+          Bucket: bucket,
+          Key: fileName,
+          Body: buffer,
+          ContentType: file.type || 'audio/mpeg'
+        }))
+
+        recordingUrl = `${publicBase}/${fileName}`
+        console.log(`[Call Recording Upload] Uploaded recording to Cloudflare R2: ${recordingUrl}`)
+      } catch (r2Err) {
+        console.error('[Call Recording Upload] R2 upload error, falling back to Supabase:', r2Err)
+      }
+    }
+
+    // Secondary Fallback: Supabase Storage if R2 is unconfigured or errors
+    if (!recordingUrl) {
+      let storageBucket = 'call-recordings'
+      let { error: uploadErr } = await adminSupabase.storage
         .from(storageBucket)
         .upload(fileName, buffer, {
           contentType: file.type || 'audio/mpeg',
           upsert: true
         })
-      uploadErr = fallbackRes.error
+
+      if (uploadErr) {
+        storageBucket = 'public-assets'
+        const fallbackRes = await adminSupabase.storage
+          .from(storageBucket)
+          .upload(fileName, buffer, {
+            contentType: file.type || 'audio/mpeg',
+            upsert: true
+          })
+        uploadErr = fallbackRes.error
+      }
+
+      if (uploadErr) {
+        console.error('[Call Recording Upload] Supabase Storage Error:', uploadErr)
+        return NextResponse.json({ error: 'Failed to upload call recording file' }, { status: 500 })
+      }
+
+      const { data: publicUrlData } = adminSupabase.storage
+        .from(storageBucket)
+        .getPublicUrl(fileName)
+
+      recordingUrl = publicUrlData.publicUrl
     }
-
-    if (uploadErr) {
-      console.error('[Call Recording Upload] Storage Error:', uploadErr)
-      return NextResponse.json({ error: 'Failed to upload call recording file' }, { status: 500 })
-    }
-
-    const { data: publicUrlData } = adminSupabase.storage
-      .from(storageBucket)
-      .getPublicUrl(fileName)
-
-    const recordingUrl = publicUrlData.publicUrl
 
     // 2. Link recordingUrl to call_logs
     if (callLogId) {
