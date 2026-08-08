@@ -428,7 +428,7 @@ public class CallLogPlugin extends Plugin {
                     bestTimeDiff = timeDiff;
                 }
             } else if (fTime >= windowStartMs && fTime <= windowEndMs) {
-                if (bestMatch == null || timeDiff < bestMatchTimeDiff) {
+                if (bestMatch == null || timeDiff < bestTimeDiff) {
                     bestMatch = f;
                     bestTimeDiff = timeDiff;
                 }
