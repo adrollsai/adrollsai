@@ -56,6 +56,7 @@ export async function syncAndroidCallLogs(manualLogs?: CallLogEntry[]): Promise<
   success: boolean
   syncedCount: number
   matchedLeadsCount: number
+  totalLogsInDb?: number
   error?: string
 }> {
   try {
