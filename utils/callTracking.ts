@@ -127,7 +127,8 @@ export async function syncAndroidCallLogs(manualLogs?: CallLogEntry[]): Promise<
     return {
       success: true,
       syncedCount: data.syncedCount || 0,
-      matchedLeadsCount: data.matchedLeadsCount || 0
+      matchedLeadsCount: data.matchedLeadsCount || 0,
+      totalLogsInDb: data.totalLogsInDb || 0
     }
   } catch (err: any) {
     console.error('[CallTracking] Sync error:', err)

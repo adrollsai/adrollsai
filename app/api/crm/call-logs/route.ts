@@ -130,10 +130,16 @@ export async function POST(request: Request) {
       }
     }
 
+    const { count: totalLogsInDb } = await supabase
+      .from('call_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+
     return NextResponse.json({
       success: true,
       syncedCount,
-      matchedLeadsCount
+      matchedLeadsCount,
+      totalLogsInDb: totalLogsInDb || 0
     })
 
   } catch (error: any) {

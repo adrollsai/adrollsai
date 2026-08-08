@@ -1851,7 +1851,11 @@ export default function ProfilePage() {
                     try {
                       const res = await syncAndroidCallLogs()
                       if (res.success) {
-                        toast.success(`Synced ${res.syncedCount} calls and matched ${res.matchedLeadsCount} leads!`)
+                        if (res.syncedCount > 0) {
+                          toast.success(`Synced ${res.syncedCount} new calls (${res.matchedLeadsCount} matched to CRM leads)!`)
+                        } else {
+                          toast.info(`No new calls to add. All ${res.totalLogsInDb || 50} recent call logs are already saved in CRM!`)
+                        }
                       } else {
                         toast.error(res.error || 'Failed to sync call logs')
                       }
