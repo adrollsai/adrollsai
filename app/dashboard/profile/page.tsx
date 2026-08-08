@@ -311,6 +311,7 @@ export default function ProfilePage() {
   const [selectedTextLlm, setSelectedTextLlm] = useState('gemini')
   const [callTrackingSettings, setCallTrackingSettings] = useState<CallTrackingSettings>(() => getCallTrackingSettings())
   const [isSyncingCallLogs, setIsSyncingCallLogs] = useState(false)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   const [testCallPhone, setTestCallPhone] = useState('')
   const [testCallDuration, setTestCallDuration] = useState('30')
   const [isLoggingTestCall, setIsLoggingTestCall] = useState(false)
