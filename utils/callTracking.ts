@@ -104,6 +104,7 @@ export async function syncAndroidCallLogs(manualLogs?: CallLogEntry[]): Promise<
             if (!perm?.hasPermission && typeof CallLogPlugin.requestPermission === 'function') {
               await CallLogPlugin.requestPermission().catch(() => {})
             }
+          }
           const settings = getCallTrackingSettings()
           const folderPath = settings.recordingFolderPath || '/MIUI/sound_recorder/call_rec'
           const result = await CallLogPlugin.getCallLog({ limit: 50, recordingFolderPath: folderPath }).catch(() => null)
