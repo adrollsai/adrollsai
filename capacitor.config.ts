@@ -5,8 +5,8 @@ const config: CapacitorConfig = {
   appName: 'Nobogent AI',
   webDir: 'public',
   server: {
-    androidScheme: 'https',
-    iosScheme: 'https',
+    url: 'https://app.nobogent.com',
+    cleartext: true,
   },
   plugins: {
     SplashScreen: {
