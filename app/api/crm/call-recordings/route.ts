@@ -81,22 +81,35 @@ export async function POST(request: Request) {
           .update({ recording_url: recordingUrl })
           .eq('id', recentLog.id)
       }
-    }
 
-    // 3. Link recordingUrl to lead_history timeline if leadId provided
-    if (leadId) {
-      await supabase
-        .from('lead_history')
-        .insert({
-          lead_id: leadId,
-          action_type: 'CALL_RECORDING',
-          title: 'Human Call Recording Added',
-          description: `Call recording uploaded (${file.name || 'audio'}).`,
-          metadata: {
-            recording_url: recordingUrl,
-            uploader_id: user.id
-          }
-        })
+      // Also find the matching lead and add timeline entry
+      const normalizedPhone = phoneNumber.replace(/[^0-9]/g, '')
+      const last10 = normalizedPhone.length >= 10 ? normalizedPhone.slice(-10) : normalizedPhone
+      
+      const { data: matchedLead } = await supabase
+        .from('leads')
+        .select('id, name')
+        .eq('user_id', user.id)
+        .or(`phone.ilike.%${last10},phone_raw.ilike.%${last10},whatsapp_number.ilike.%${last10}`)
+        .limit(1)
+        .maybeSingle()
+
+      if (matchedLead) {
+        await supabase
+          .from('lead_history')
+          .insert({
+            lead_id: matchedLead.id,
+            action_type: 'CALL_RECORDING',
+            title: 'Call Recording Auto-Synced',
+            description: `Call recording automatically attached from device (${file.name || 'audio'}).`,
+            metadata: {
+              recording_url: recordingUrl,
+              uploader_id: user.id,
+              call_log_id: recentLog?.id || null,
+              auto_synced: true
+            }
+          })
+      }
     }
 
     return NextResponse.json({

@@ -1857,10 +1857,11 @@ export default function ProfilePage() {
                     try {
                       const res = await syncAndroidCallLogs()
                       if (res.success) {
+                        const recText = res.recordingsUploaded ? ` | ${res.recordingsUploaded} recordings uploaded` : ''
                         if (res.syncedCount > 0) {
-                          toast.success(`Synced ${res.syncedCount} new calls (${res.matchedLeadsCount} matched to CRM leads)!`)
+                          toast.success(`Synced ${res.syncedCount} new calls (${res.matchedLeadsCount} matched to CRM leads)${recText}!`)
                         } else {
-                          toast.info(`No new calls to add. All ${res.totalLogsInDb || 50} recent call logs are already saved in CRM!`)
+                          toast.info(`All ${res.totalLogsInDb || 50} recent calls already synced${recText}!`)
                         }
                       } else {
                         toast.error(res.error || 'Failed to sync call logs')
