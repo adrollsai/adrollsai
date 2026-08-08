@@ -85,13 +85,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           subscriptionStatus = 'expired'
       }
 
-      const isPaid = subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro'
+      const isPaid = subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro' || subscriptionStatus === 'enterprise'
       const isBillingPage = pathname === '/dashboard/billing'
-      const isOnboardingPage = pathname === '/dashboard/onboarding'
+      const isProfilePage = pathname === '/dashboard/profile'
       const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(userProfile?.role || '')
 
-      // If they haven't paid, and they aren't already on the billing page, trap them!
-      if (!isPaid && !isBillingPage && isAdminLike) {
+      // Allow unpaid/expired users to view billing and profile pages so they can access settings & Sign Out anytime!
+      if (!isPaid && !isBillingPage && !isProfilePage && isAdminLike) {
         router.push('/dashboard/billing')
         return
       }

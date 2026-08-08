@@ -14,7 +14,8 @@ import {
     CheckCircle,
     ShoppingBag,
     Coins,
-    Percent
+    Percent,
+    LogOut
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -136,13 +137,24 @@ export default function BillingPage() {
                         <h1 className="text-lg font-black text-slate-900 tracking-tight">SaaS Membership Subscription</h1>
                     </div>
 
-                    <button
-                        onClick={() => router.push('/dashboard/profile')}
-                        className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
-                        title="Close"
-                    >
-                        <X size={20} />
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => router.push('/dashboard/profile')}
+                            className="text-slate-600 hover:text-slate-900 font-extrabold text-xs px-3 py-1.5 rounded-xl hover:bg-slate-100 transition-all cursor-pointer"
+                        >
+                            Profile / Settings
+                        </button>
+                        <button
+                            onClick={async () => {
+                                await supabase.auth.signOut()
+                                router.push('/login')
+                            }}
+                            className="bg-red-50 hover:bg-red-100 text-red-600 font-extrabold text-xs px-3 py-1.5 rounded-xl border border-red-200 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                        >
+                            <LogOut size={14} />
+                            <span>Sign Out</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 

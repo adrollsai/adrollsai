@@ -80,20 +80,11 @@ export async function GET(request: Request) {
             }
         }
 
-        // Include Super Admin profile IDs so Super Admin reference images are available in all users' libraries
-        const { data: superAdminProfiles } = await supabaseAdmin
-            .from('profiles')
-            .select('id')
-            .or('role.eq.super_admin,email.ilike.%rchopra489@gmail.com%,email.ilike.%infobluesquareinfra@gmail.com%');
-
-        const superAdminIds = superAdminProfiles ? superAdminProfiles.map(p => p.id) : [];
-
         const { data: targetProfile } = await supabaseAdmin.from('profiles').select('parent_id, agency_id').eq('id', targetUserId).single();
         const effectiveUserIds: string[] = Array.from(new Set([
             targetUserId,
             ...(targetProfile?.parent_id ? [targetProfile.parent_id] : []),
-            ...(targetProfile?.agency_id ? [targetProfile.agency_id] : []),
-            ...superAdminIds
+            ...(targetProfile?.agency_id ? [targetProfile.agency_id] : [])
         ]));
 
         let query = supabaseAdmin
