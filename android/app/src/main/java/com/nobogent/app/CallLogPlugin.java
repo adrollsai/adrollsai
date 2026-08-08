@@ -88,11 +88,12 @@ public class CallLogPlugin extends Plugin {
                 projection,
                 null,
                 null,
-                CallLog.Calls.DATE + " DESC LIMIT " + limit
+                CallLog.Calls.DATE + " DESC"
             );
 
             if (cursor != null) {
-                while (cursor.moveToNext()) {
+                int count = 0;
+                while (cursor.moveToNext() && count < limit) {
                     String number = cursor.getString(cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER));
                     int type = cursor.getInt(cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE));
                     long duration = cursor.getLong(cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION));
@@ -107,6 +108,7 @@ public class CallLogPlugin extends Plugin {
                     log.put("name", name != null ? name : "");
 
                     callLogArray.put(log);
+                    count++;
                 }
                 cursor.close();
             }
