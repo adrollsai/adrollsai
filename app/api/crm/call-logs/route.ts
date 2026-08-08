@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
-// Helper to normalize phone numbers for fuzzy matching
+// Helper to normalize phone numbers for fuzzy matching (returns last 10 digits)
 function normalizePhone(phone: string | null | undefined): string {
   if (!phone) return ''
-  // Remove non-digit characters except +
   const cleaned = phone.replace(/[^\d]/g, '')
-  // Return last 10 digits for Indian/Standard phone matching
   return cleaned.length >= 10 ? cleaned.slice(-10) : cleaned
 }
 
@@ -20,19 +18,19 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { callLogs } = body // Array of call log objects or single call log
+    const { callLogs } = body
 
     const logsToProcess = Array.isArray(callLogs) ? callLogs : [body]
 
-    if (!logsToProcess.length || !logsToProcess[0]?.phoneNumber) {
+    if (!logsToProcess.length || (!logsToProcess[0]?.phoneNumber && !logsToProcess[0]?.phone)) {
       return NextResponse.json({ error: 'No valid call log entries provided' }, { status: 400 })
     }
 
     // 1. Fetch user's leads to match by phone number
     const { data: userLeads } = await supabase
       .from('leads')
-      .select('id, phone, name, business_name')
-      .or(`user_id.eq.${user.id}`)
+      .select('id, phone, name')
+      .eq('user_id', user.id)
 
     const leadPhoneMap = new Map<string, any>()
     if (userLeads) {
@@ -46,14 +44,13 @@ export async function POST(request: Request) {
     let matchedLeadsCount = 0
 
     for (const log of logsToProcess) {
-      const rawPhone = log.phoneNumber || log.phone
+      const rawPhone = log.phoneNumber || log.phone || ''
       const norm = normalizePhone(rawPhone)
       const matchedLead = norm ? leadPhoneMap.get(norm) : null
 
       const durationSec = parseInt(log.duration || 0, 10)
       const callType = (log.callType || 'OUTGOING').toUpperCase()
       
-      // Determine connected status: duration > 0 or explicit status
       let status = log.status ? log.status.toUpperCase() : 'CONNECTED'
       if (durationSec === 0 && (status === 'CONNECTED' || !log.status)) {
         status = callType === 'MISSED' || callType === 'REJECTED' ? 'MISSED' : 'NOT_CONNECTED'
@@ -61,47 +58,23 @@ export async function POST(request: Request) {
 
       const startedAt = log.startedAt ? new Date(log.startedAt).toISOString() : new Date().toISOString()
 
-      // Avoid duplicates: check existing log with same user, phone, and startedAt within 5s
-      const { data: existing } = await supabase
-        .from('call_logs')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('phone_number', rawPhone)
-        .gte('started_at', new Date(new Date(startedAt).getTime() - 5000).toISOString())
-        .lte('started_at', new Date(new Date(startedAt).getTime() + 5000).toISOString())
-        .maybeSingle()
+      // Avoid duplicates: check existing log with same user & last10 digits within 2 minute window
+      let existing = null
+      if (norm) {
+        const { data: exData } = await supabase
+          .from('call_logs')
+          .select('id, recording_url')
+          .eq('user_id', user.id)
+          .ilike('phone_number', `%${norm}%`)
+          .gte('started_at', new Date(new Date(startedAt).getTime() - 120000).toISOString())
+          .lte('started_at', new Date(new Date(startedAt).getTime() + 120000).toISOString())
+          .limit(1)
+          .maybeSingle()
+
+        existing = exData
+      }
 
       let finalRecordingUrl = log.recordingUrl || null
-      if (!finalRecordingUrl && log.recordingBase64) {
-        try {
-          const parts = log.recordingBase64.split(';base64,')
-          const mime = parts[0]?.replace('data:', '') || 'audio/m4a'
-          const base64Str = parts[1] || parts[0]
-          const buffer = Buffer.from(base64Str, 'base64')
-          const ext = mime.split('/')[1] || 'm4a'
-          const fileName = `call-recordings/${user.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`
-
-          let storageBucket = 'call-recordings'
-          let { error: uploadErr } = await supabase.storage
-            .from(storageBucket)
-            .upload(fileName, buffer, { contentType: mime, upsert: true })
-
-          if (uploadErr) {
-            storageBucket = 'public-assets'
-            const fallbackRes = await supabase.storage
-              .from(storageBucket)
-              .upload(fileName, buffer, { contentType: mime, upsert: true })
-            uploadErr = fallbackRes.error
-          }
-
-          if (!uploadErr) {
-            const { data: publicUrlData } = supabase.storage.from(storageBucket).getPublicUrl(fileName)
-            finalRecordingUrl = publicUrlData?.publicUrl || null
-          }
-        } catch (uploadErr) {
-          console.error('[Call Logs API] Base64 upload failed:', uploadErr)
-        }
-      }
 
       if (!existing) {
         // Insert into call_logs
@@ -124,7 +97,7 @@ export async function POST(request: Request) {
         if (!insertErr && insertedCall) {
           syncedCount++
 
-          // If matched lead, update lead's last_call_at & add timeline history
+          // If matched lead, update lead's last_call_at & insert timeline history entry
           if (matchedLead) {
             matchedLeadsCount++
             
@@ -146,7 +119,7 @@ export async function POST(request: Request) {
               .insert({
                 lead_id: matchedLead.id,
                 action_type: 'CALL',
-                title: `Call (${callType.toLowerCase()}): ${status}`,
+                title: `📞 Phone Call Logged (${callType.toLowerCase()}): ${status}`,
                 description: `Duration: ${durationText}.${log.notes ? ` Notes: ${log.notes}` : ''}`,
                 metadata: {
                   call_log_id: insertedCall.id,
@@ -159,8 +132,7 @@ export async function POST(request: Request) {
               })
           }
         }
-      } else if (finalRecordingUrl) {
-        // Automatically attach recording URL to existing call log entry
+      } else if (finalRecordingUrl && !existing.recording_url) {
         await supabase
           .from('call_logs')
           .update({ recording_url: finalRecordingUrl })
@@ -172,7 +144,7 @@ export async function POST(request: Request) {
             .insert({
               lead_id: matchedLead.id,
               action_type: 'CALL_RECORDING',
-              title: 'Call Recording Synced',
+              title: '🎙️ Call Recording Synced',
               description: `Call recording automatically attached.`,
               metadata: {
                 call_log_id: existing.id,
@@ -216,7 +188,6 @@ export async function GET(request: Request) {
     const endDate = searchParams.get('endDate')
     const filterUserId = searchParams.get('userId')
 
-    // Fetch team members if user is agency or team lead
     const { data: profile } = await supabase
       .from('profiles')
       .select('id, agency_id, role, full_name, business_name')
@@ -262,24 +233,13 @@ export async function GET(request: Request) {
 
     const logs = callLogs || []
 
-    // Calculate aggregated stats
     const totalCalls = logs.length
     const connectedCalls = logs.filter(l => l.status === 'CONNECTED' || (l.duration && l.duration > 0)).length
     const notConnectedCalls = totalCalls - connectedCalls
     const totalDuration = logs.reduce((sum, l) => sum + (l.duration || 0), 0)
     const avgDuration = totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0
 
-    // Calculate team member breakdown
-    const teamMap = new Map<string, {
-      userId: string,
-      userName: string,
-      totalCalls: number,
-      connectedCalls: number,
-      notConnectedCalls: number,
-      totalDuration: number,
-      avgDuration: number,
-      connectedRate: number
-    }>()
+    const teamMap = new Map<string, any>()
 
     logs.forEach(log => {
       const uid = log.user_id
@@ -323,7 +283,7 @@ export async function GET(request: Request) {
         connectedRate: totalCalls > 0 ? Math.round((connectedCalls / totalCalls) * 100) : 0
       },
       teamStats,
-      logs: logs.slice(0, 100) // Return top 100 recent logs
+      logs: logs.slice(0, 100)
     })
 
   } catch (error: any) {
