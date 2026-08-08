@@ -88,6 +88,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const isPaid = subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro' || subscriptionStatus === 'enterprise'
       const isBillingPage = pathname === '/dashboard/billing'
       const isProfilePage = pathname === '/dashboard/profile'
+      const isOnboardingPage = pathname === '/dashboard/onboarding'
       const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(userProfile?.role || '')
 
       // Allow unpaid/expired users to view billing and profile pages so they can access settings & Sign Out anytime!
