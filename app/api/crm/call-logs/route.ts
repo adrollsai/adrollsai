@@ -71,6 +71,38 @@ export async function POST(request: Request) {
         .lte('started_at', new Date(new Date(startedAt).getTime() + 5000).toISOString())
         .maybeSingle()
 
+      let finalRecordingUrl = log.recordingUrl || null
+      if (!finalRecordingUrl && log.recordingBase64) {
+        try {
+          const parts = log.recordingBase64.split(';base64,')
+          const mime = parts[0]?.replace('data:', '') || 'audio/m4a'
+          const base64Str = parts[1] || parts[0]
+          const buffer = Buffer.from(base64Str, 'base64')
+          const ext = mime.split('/')[1] || 'm4a'
+          const fileName = `call-recordings/${user.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`
+
+          let storageBucket = 'call-recordings'
+          let { error: uploadErr } = await supabase.storage
+            .from(storageBucket)
+            .upload(fileName, buffer, { contentType: mime, upsert: true })
+
+          if (uploadErr) {
+            storageBucket = 'public-assets'
+            const fallbackRes = await supabase.storage
+              .from(storageBucket)
+              .upload(fileName, buffer, { contentType: mime, upsert: true })
+            uploadErr = fallbackRes.error
+          }
+
+          if (!uploadErr) {
+            const { data: publicUrlData } = supabase.storage.from(storageBucket).getPublicUrl(fileName)
+            finalRecordingUrl = publicUrlData?.publicUrl || null
+          }
+        } catch (uploadErr) {
+          console.error('[Call Logs API] Base64 upload failed:', uploadErr)
+        }
+      }
+
       if (!existing) {
         // Insert into call_logs
         const { data: insertedCall, error: insertErr } = await supabase
@@ -82,7 +114,7 @@ export async function POST(request: Request) {
             call_type: callType,
             duration: durationSec,
             status: status,
-            recording_url: log.recordingUrl || null,
+            recording_url: finalRecordingUrl,
             notes: log.notes || null,
             started_at: startedAt
           })
@@ -121,11 +153,33 @@ export async function POST(request: Request) {
                   duration: durationSec,
                   status: status,
                   call_type: callType,
-                  recording_url: log.recordingUrl || null,
+                  recording_url: finalRecordingUrl,
                   caller_user_id: user.id
                 }
               })
           }
+        }
+      } else if (finalRecordingUrl) {
+        // Automatically attach recording URL to existing call log entry
+        await supabase
+          .from('call_logs')
+          .update({ recording_url: finalRecordingUrl })
+          .eq('id', existing.id)
+
+        if (matchedLead) {
+          await supabase
+            .from('lead_history')
+            .insert({
+              lead_id: matchedLead.id,
+              action_type: 'CALL_RECORDING',
+              title: 'Call Recording Synced',
+              description: `Call recording automatically attached.`,
+              metadata: {
+                call_log_id: existing.id,
+                recording_url: finalRecordingUrl,
+                caller_user_id: user.id
+              }
+            })
         }
       }
     }

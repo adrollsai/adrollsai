@@ -5,6 +5,8 @@ import android.content.ContentResolver;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.CallLog;
+import android.provider.MediaStore;
+import android.util.Base64;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -13,13 +15,19 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import java.io.File;
+import java.io.FileInputStream;
 
 @CapacitorPlugin(
     name = "CallLog",
     permissions = {
         @Permission(
             alias = "callLog",
-            strings = { Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_PHONE_STATE }
+            strings = {
+                Manifest.permission.READ_CALL_LOG,
+                Manifest.permission.READ_PHONE_STATE,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            }
         )
     }
 )
@@ -107,6 +115,14 @@ public class CallLogPlugin extends Plugin {
                     log.put("date", date);
                     log.put("name", name != null ? name : "");
 
+                    // Automatically scan device storage for matching call recording file
+                    if (number != null && duration > 0) {
+                        String recordingBase64 = findMatchingAudioRecording(cr, number, date);
+                        if (recordingBase64 != null) {
+                            log.put("recordingBase64", recordingBase64);
+                        }
+                    }
+
                     callLogArray.put(log);
                     count++;
                 }
@@ -119,6 +135,92 @@ public class CallLogPlugin extends Plugin {
 
         } catch (Exception e) {
             call.reject("Failed to query call logs: " + e.getMessage(), e);
+        }
+    }
+
+    private String findMatchingAudioRecording(ContentResolver cr, String rawNumber, long callDate) {
+        if (rawNumber == null || rawNumber.length() < 7) return null;
+        String digitsOnly = rawNumber.replaceAll("[^0-9]", "");
+        if (digitsOnly.length() < 7) return null;
+        String last10 = digitsOnly.length() >= 10 ? digitsOnly.substring(digitsOnly.length() - 10) : digitsOnly;
+
+        Uri audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        String[] projection = new String[] {
+            MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.DATE_ADDED,
+            MediaStore.Audio.Media.SIZE
+        };
+
+        // Window: 5 minutes before call date to 10 minutes after
+        long windowStartSec = (callDate / 1000) - 300;
+        long windowEndSec = (callDate / 1000) + 600;
+
+        String selection = MediaStore.Audio.Media.DATE_ADDED + " >= ? AND " + MediaStore.Audio.Media.DATE_ADDED + " <= ?";
+        String[] selectionArgs = new String[] { String.valueOf(windowStartSec), String.valueOf(windowEndSec) };
+
+        Cursor cursor = null;
+        try {
+            cursor = cr.query(audioUri, projection, selection, selectionArgs, MediaStore.Audio.Media.DATE_ADDED + " DESC");
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    String filePath = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA));
+                    String fileName = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME));
+                    long fileSize = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE));
+
+                    if (fileSize <= 0 || fileSize > 25 * 1024 * 1024) continue; // max 25MB
+
+                    boolean isCallRecFolder = filePath != null && (
+                        filePath.toLowerCase().contains("record") ||
+                        filePath.toLowerCase().contains("call") ||
+                        filePath.toLowerCase().contains("sound_recorder")
+                    );
+
+                    boolean containsNumber = (fileName != null && fileName.contains(last10)) ||
+                                             (filePath != null && filePath.contains(last10));
+
+                    if (containsNumber || isCallRecFolder) {
+                        File audioFile = new File(filePath);
+                        if (audioFile.exists() && audioFile.canRead()) {
+                            byte[] bytes = readFileToByteArray(audioFile);
+                            if (bytes != null && bytes.length > 0) {
+                                String ext = (fileName != null && fileName.contains(".")) 
+                                    ? fileName.substring(fileName.lastIndexOf(".") + 1) 
+                                    : "m4a";
+                                String mime = "audio/" + ext;
+                                cursor.close();
+                                return "data:" + mime + ";base64," + Base64.encodeToString(bytes, Base64.NO_WRAP);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore error
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+        return null;
+    }
+
+    private byte[] readFileToByteArray(File file) {
+        FileInputStream fis = null;
+        try {
+            byte[] data = new byte[(int) file.length()];
+            fis = new FileInputStream(file);
+            int bytesRead = 0;
+            while (bytesRead < data.length) {
+                int read = fis.read(data, bytesRead, data.length - bytesRead);
+                if (read == -1) break;
+                bytesRead += read;
+            }
+            return data;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (fis != null) {
+                try { fis.close(); } catch (Exception e) {}
+            }
         }
     }
 }

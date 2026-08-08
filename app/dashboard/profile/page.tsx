@@ -349,8 +349,10 @@ export default function ProfilePage() {
     }
   }
 
+  const [showFolderModal, setShowFolderModal] = useState(false)
+
   const pickDirectoryNative = async () => {
-    if ('showDirectoryPicker' in window) {
+    if ('showDirectoryPicker' in window && !(window as any).Capacitor?.isNativePlatform()) {
       try {
         const handle = await (window as any).showDirectoryPicker()
         if (handle && handle.name) {
@@ -365,8 +367,7 @@ export default function ProfilePage() {
         if (e.name === 'AbortError') return
       }
     }
-    // Fallback on mobile: click file input to choose file/folder
-    folderInputRef.current?.click()
+    setShowFolderModal(true)
   }
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(authRole || role)
@@ -3733,6 +3734,81 @@ export default function ProfilePage() {
               <p className="text-slate-500 text-sm leading-relaxed">
                 We are uploading your avatar photo and analyzing its physical characteristics using AI. Please don't close this tab.
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFolderModal && (
+        <div className="fixed inset-0 z-[20000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-white max-w-lg w-full rounded-[2.5rem] p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-6">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
+                  <Building2 size={22} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Select Call Recording Folder</h3>
+                  <p className="text-xs text-slate-500 font-medium">Choose your phone manufacturer recording directory</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFolderModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-bold">One-Tap Manufacturer Presets</span>
+              {[
+                { label: 'Samsung Galaxy', path: '/Recordings/Call', desc: 'Standard Samsung recorder folder' },
+                { label: 'Xiaomi / Poco / Redmi', path: '/MIUI/sound_recorder/call_rec', desc: 'MIUI system recorder' },
+                { label: 'OnePlus / Realme', path: '/CallRecord', desc: 'OxygenOS call recorder' },
+                { label: 'Google Pixel / Stock', path: '/Recordings', desc: 'Android Phone app recorder' },
+                { label: 'Vivo / Oppo / iQOO', path: '/Recordings/Call', desc: 'Funtouch / ColorOS recorder' }
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    const updated = { ...callTrackingSettings, recordingFolderPath: item.path }
+                    setCallTrackingSettings(updated)
+                    saveCallTrackingSettings(updated)
+                    toast.success(`Selected ${item.label} path: ${item.path}`)
+                    setShowFolderModal(false)
+                  }}
+                  className="w-full text-left p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/60 border border-slate-200/80 hover:border-blue-300 transition-all flex items-center justify-between cursor-pointer group"
+                >
+                  <div>
+                    <div className="text-xs font-black text-slate-900 group-hover:text-blue-600">{item.label}</div>
+                    <div className="text-[11px] font-mono text-slate-500 mt-0.5">{item.path}</div>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400 group-hover:text-blue-600" />
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFolderModal(false)
+                  folderInputRef.current?.click()
+                }}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-3.5 px-4 rounded-2xl text-xs transition-all cursor-pointer text-center"
+              >
+                Browse Storage Picker
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFolderModal(false)}
+                className="bg-slate-900 text-white font-extrabold py-3.5 px-6 rounded-2xl text-xs transition-all cursor-pointer"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>

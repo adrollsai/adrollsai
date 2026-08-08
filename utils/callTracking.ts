@@ -9,6 +9,7 @@ export interface CallLogEntry {
   status: 'CONNECTED' | 'NOT_CONNECTED' | 'MISSED' | 'DNP' | 'BUSY'
   startedAt: string
   recordingUrl?: string
+  recordingBase64?: string
   notes?: string
 }
 
@@ -94,7 +95,8 @@ export async function syncAndroidCallLogs(manualLogs?: CallLogEntry[]): Promise<
                 callType,
                 duration: dur,
                 status: isConnected ? 'CONNECTED' : (callType === 'MISSED' ? 'MISSED' : 'NOT_CONNECTED'),
-                startedAt: new Date(parseInt(log.date || Date.now().toString(), 10)).toISOString()
+                startedAt: new Date(parseInt(log.date || Date.now().toString(), 10)).toISOString(),
+                recordingBase64: log.recordingBase64 || undefined
               }
             })
           }
