@@ -40,7 +40,8 @@ import {
   Zap,
   Mail,
   ExternalLink,
-  Coins
+  Coins,
+  Folder
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import WhatsAppSettings from '@/components/WhatsAppSettings'
@@ -310,6 +311,63 @@ export default function ProfilePage() {
   const [selectedTextLlm, setSelectedTextLlm] = useState('gemini')
   const [callTrackingSettings, setCallTrackingSettings] = useState<CallTrackingSettings>(() => getCallTrackingSettings())
   const [isSyncingCallLogs, setIsSyncingCallLogs] = useState(false)
+  const folderInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFolderSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const files = event.target.files
+      if (!files || files.length === 0) return
+
+      const firstFile = files[0]
+      let path = ''
+
+      if (firstFile.webkitRelativePath) {
+        const parts = firstFile.webkitRelativePath.split('/')
+        if (parts.length > 1) {
+          parts.pop()
+          path = '/' + parts.join('/')
+        }
+      }
+
+      if (!path && (firstFile as any).path) {
+        const fullPath = (firstFile as any).path
+        const lastSlash = fullPath.lastIndexOf('/')
+        if (lastSlash > 0) {
+          path = fullPath.substring(0, lastSlash)
+        }
+      }
+
+      if (!path) {
+        path = '/Recordings/Call'
+      }
+
+      const updated = { ...callTrackingSettings, recordingFolderPath: path }
+      setCallTrackingSettings(updated)
+      saveCallTrackingSettings(updated)
+      toast.success(`Selected folder path: ${path}`)
+    } catch (e: any) {
+      console.error("Folder selection error:", e)
+    }
+  }
+
+  const pickDirectoryNative = async () => {
+    if ('showDirectoryPicker' in window) {
+      try {
+        const handle = await (window as any).showDirectoryPicker()
+        if (handle && handle.name) {
+          const path = `/Recordings/${handle.name}`
+          const updated = { ...callTrackingSettings, recordingFolderPath: path }
+          setCallTrackingSettings(updated)
+          saveCallTrackingSettings(updated)
+          toast.success(`Selected folder: ${path}`)
+          return
+        }
+      } catch (e: any) {
+        if (e.name === 'AbortError') return
+      }
+    }
+    folderInputRef.current?.click()
+  }
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(authRole || role)
 
@@ -1693,25 +1751,78 @@ export default function ProfilePage() {
                 </label>
               </div>
 
-              {/* Folder Path Input */}
+              {/* Folder Path Input & Explorer Trigger */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 block mb-2 font-black">
                   Call Recordings Folder Directory Path (Internal Storage)
                 </label>
+                
+                <div className="flex gap-2.5">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={callTrackingSettings.recordingFolderPath}
+                      onChange={(e) => {
+                        const updated = { ...callTrackingSettings, recordingFolderPath: e.target.value }
+                        setCallTrackingSettings(updated)
+                        saveCallTrackingSettings(updated)
+                      }}
+                      onClick={pickDirectoryNative}
+                      placeholder="e.g. /Recordings/Call or /MIUI/sound_recorder/call_rec"
+                      className="w-full bg-slate-50 border border-slate-200 py-3.5 px-4 rounded-2xl text-xs font-bold outline-none text-slate-800 focus:border-blue-500 transition-all cursor-pointer hover:bg-slate-100/70"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={pickDirectoryNative}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-4 py-3.5 rounded-2xl text-xs shadow-sm transition-all active:scale-95 flex items-center gap-2 shrink-0 cursor-pointer"
+                  >
+                    <Folder size={16} />
+                    <span>Select Folder</span>
+                  </button>
+                </div>
+
                 <input
-                  type="text"
-                  value={callTrackingSettings.recordingFolderPath}
-                  onChange={(e) => {
-                    const updated = { ...callTrackingSettings, recordingFolderPath: e.target.value }
-                    setCallTrackingSettings(updated)
-                    saveCallTrackingSettings(updated)
-                  }}
-                  placeholder="e.g. /Recordings/Call or /MIUI/sound_recorder/call_rec"
-                  className="w-full bg-slate-50 border border-slate-200 py-3.5 px-4 rounded-2xl text-xs font-bold outline-none text-slate-800 focus:border-blue-500 transition-all"
+                  type="file"
+                  ref={folderInputRef}
+                  onChange={handleFolderSelect}
+                  {...({ webkitdirectory: '', directory: '' } as any)}
+                  className="hidden"
                 />
-                <p className="text-[11px] text-slate-400 mt-1.5 ml-2 font-medium">
-                  Default paths: `/Recordings/Call`, `/CallRecord`, `/MIUI/sound_recorder/call_rec`
-                </p>
+
+                {/* Common Presets Pills */}
+                <div className="mt-3 ml-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 font-black">
+                    Quick Phone Manufacturer Presets:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: 'Samsung', path: '/Recordings/Call' },
+                      { label: 'Xiaomi / Poco', path: '/MIUI/sound_recorder/call_rec' },
+                      { label: 'OnePlus / Realme', path: '/CallRecord' },
+                      { label: 'Google Pixel', path: '/Recordings' }
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          const updated = { ...callTrackingSettings, recordingFolderPath: preset.path }
+                          setCallTrackingSettings(updated)
+                          saveCallTrackingSettings(updated)
+                          toast.success(`Set folder path to ${preset.path}`)
+                        }}
+                        className={`text-[10px] font-extrabold px-3 py-1.5 rounded-xl border transition-all active:scale-95 cursor-pointer ${
+                          callTrackingSettings.recordingFolderPath === preset.path
+                            ? 'bg-slate-900 border-slate-900 text-white shadow-xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {preset.label}: <span className="font-mono">{preset.path}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Sync Frequency */}
