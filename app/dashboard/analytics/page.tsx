@@ -296,7 +296,8 @@ export default function AnalyticsPage() {
 
     const stagesList = [
       { key: 'new', label: 'New Lead' },
-      { key: 'contacted', label: 'Requirement Taken' },
+      { key: 'contacted', label: 'Contacted' },
+      { key: 'appointment', label: 'Appointment Booked' },
       { key: 'booked', label: 'Visit Planned' },
       { key: 'done', label: 'Visit Done' },
       { key: 'revisit', label: 'Revisit Done' },
@@ -311,13 +312,14 @@ export default function AnalyticsPage() {
       const repLeads = leads.filter(l => rep.id === 'unassigned' ? !l.assigned_to : l.assigned_to === rep.id)
       
       const categoryLeads: Record<string, any[]> = {
-        new: repLeads.filter(l => l.status === 'New Lead' || (l.pipeline_stage || 'New') === 'New'),
-        contacted: repLeads.filter(l => l.status === 'Requirement Taken' || l.pipeline_stage === 'Contacted'),
-        booked: repLeads.filter(l => l.status === 'Visit Planned' || l.pipeline_stage === 'Appointment booked'),
-        done: repLeads.filter(l => l.status === 'Visit Done' || l.pipeline_stage === 'Appointment done'),
-        revisit: repLeads.filter(l => l.status === 'Revisit Done' || l.pipeline_stage === 'Revisit Done' || l.custom_fields?.revisit === true),
-        qualified: repLeads.filter(l => l.status === 'Negotiation' || l.status === 'Deal/Token' || l.pipeline_stage === 'Qualified'),
-        unqualified: repLeads.filter(l => l.status === 'Lost/NI' || l.pipeline_stage === 'Unqualified' || l.pipeline_stage === 'Closed'),
+        new: repLeads.filter(l => l.pipeline_stage === 'New Lead' || l.pipeline_stage === 'New' || l.status === 'New Lead' || l.status === 'New'),
+        contacted: repLeads.filter(l => l.pipeline_stage === 'Contacted' || l.pipeline_stage === 'Requirement Taken' || l.status === 'Contacted'),
+        appointment: repLeads.filter(l => l.pipeline_stage === 'Appointment Booked' || l.pipeline_stage === 'Appointment booked'),
+        booked: repLeads.filter(l => l.pipeline_stage === 'Visit Planned' || l.status === 'Visit Planned'),
+        done: repLeads.filter(l => l.pipeline_stage === 'Visit Done' || l.pipeline_stage === 'Appointment done' || l.status === 'Visit Done'),
+        revisit: repLeads.filter(l => l.pipeline_stage === 'Revisit Done' || l.custom_fields?.revisit === true),
+        qualified: repLeads.filter(l => l.pipeline_stage === 'Negotiation' || l.pipeline_stage === 'Deal/Token'),
+        unqualified: repLeads.filter(l => l.pipeline_stage === 'Lost/NI' || l.pipeline_stage === 'Closed'),
         meeting_planned: repLeads.filter(l => l.status === 'Meeting Planned' || l.pipeline_stage === 'Meeting Planned'),
         meeting_done: repLeads.filter(l => l.status === 'Meeting Done' || l.pipeline_stage === 'Meeting Done'),
         dnp: repLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)),

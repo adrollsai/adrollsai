@@ -104,10 +104,10 @@ export async function POST(request: Request) {
 
     if (accessToken && pixelId) {
         let eventName = '';
-        if (newStage === 'Qualified') eventName = 'Lead';
-        if (newStage === 'Appointment booked') eventName = 'Schedule';
-        if (newStage === 'Appointment done') eventName = 'Other';
-        if (newStage === 'Closed') eventName = 'Purchase';
+        if (newStage === 'Contacted' || newStage === 'Qualified') eventName = 'Lead';
+        if (newStage === 'Appointment Booked' || newStage === 'Appointment booked') eventName = 'Schedule';
+        if (newStage === 'Visit Done' || newStage === 'Appointment done') eventName = 'Other';
+        if (newStage === 'Deal/Token' || newStage === 'Closed') eventName = 'Purchase';
 
         if (eventName) {
             // Split name if possible

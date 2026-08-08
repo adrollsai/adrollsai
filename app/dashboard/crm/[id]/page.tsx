@@ -13,7 +13,8 @@ import { PhoneOff, PhoneCall } from 'lucide-react'
 
 const STAGES = [
   'New Lead',
-  'Requirement Taken',
+  'Contacted',
+  'Appointment Booked',
   'Visit Planned',
   'Visit Done',
   'Revisit Done',
@@ -976,7 +977,7 @@ END:VCARD`
                             {/* Interactive Stage Selector */}
                             <div className="relative shrink-0">
                                 <select
-                                    value={lead.pipeline_stage || 'New'}
+                                    value={lead.pipeline_stage || 'New Lead'}
                                     onChange={(e) => updateStage(e.target.value)}
                                     className="appearance-none bg-blue-50 text-blue-700 text-xs font-extrabold rounded-lg py-1 px-3 pr-7 border border-blue-200 outline-none cursor-pointer hover:bg-blue-100 transition-all shadow-xs"
                                 >

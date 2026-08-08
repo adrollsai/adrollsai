@@ -225,7 +225,7 @@ export default function CallFeedbackModal({
               onChange={(e) => setStageOverride(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 dark:text-white outline-none"
             >
-              {['New Lead', 'Requirement Taken', 'Visit Planned', 'Visit Done', 'Revisit Done', 'Negotiation', 'Deal/Token', 'Lost/NI'].map(s => (
+              {['New Lead', 'Contacted', 'Appointment Booked', 'Visit Planned', 'Visit Done', 'Revisit Done', 'Negotiation', 'Deal/Token', 'Lost/NI'].map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>

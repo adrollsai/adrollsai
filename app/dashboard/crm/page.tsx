@@ -22,7 +22,8 @@ import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@
 
 const STAGES = [
   'New Lead',
-  'Requirement Taken',
+  'Contacted',
+  'Appointment Booked',
   'Visit Planned',
   'Visit Done',
   'Revisit Done',
@@ -94,9 +95,14 @@ export default function CRMPage() {
   // --- FILTER STATE ---
   const [activeStage, setActiveStageState] = useState(() => {
     if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('crm_stage') || 'New'
+      const saved = sessionStorage.getItem('crm_stage')
+      if (saved === 'New') return 'New Lead'
+      if (saved === 'Requirement Taken') return 'Contacted'
+      if (saved === 'Appointment booked') return 'Appointment Booked'
+      if (saved === 'Appointment done') return 'Visit Done'
+      return saved || 'New Lead'
     }
-    return 'New'
+    return 'New Lead'
   })
   
   const setActiveStage = (stage: string) => {
@@ -450,7 +456,19 @@ export default function CRMPage() {
               const term = `%${searchQuery.trim()}%`;
               q = q.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
           } else if (activeStage) {
-              q = q.eq('pipeline_stage', activeStage);
+              if (activeStage === 'New Lead') {
+                q = q.in('pipeline_stage', ['New Lead', 'New']);
+              } else if (activeStage === 'Contacted') {
+                q = q.in('pipeline_stage', ['Contacted', 'Requirement Taken', 'Qualified', 'Unqualified']);
+              } else if (activeStage === 'Appointment Booked') {
+                q = q.in('pipeline_stage', ['Appointment Booked', 'Appointment booked']);
+              } else if (activeStage === 'Visit Done') {
+                q = q.in('pipeline_stage', ['Visit Done', 'Appointment done']);
+              } else if (activeStage === 'Deal/Token') {
+                q = q.in('pipeline_stage', ['Deal/Token', 'Closed']);
+              } else {
+                q = q.eq('pipeline_stage', activeStage);
+              }
           }
 
           if (selectedCampaign.trim() !== '') {
