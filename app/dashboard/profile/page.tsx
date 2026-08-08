@@ -3787,11 +3787,11 @@ export default function ProfilePage() {
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block font-bold">One-Tap Manufacturer Presets</span>
               {[
+                { label: 'Xiaomi / Poco / Redmi (MIUI)', path: '/MIUI/sound_recorder/call_rec', desc: 'MIUI system call recorder' },
                 { label: 'Samsung Galaxy', path: '/Recordings/Call', desc: 'Standard Samsung recorder folder' },
-                { label: 'Xiaomi / Poco / Redmi', path: '/MIUI/sound_recorder/call_rec', desc: 'MIUI system recorder' },
                 { label: 'OnePlus / Realme', path: '/CallRecord', desc: 'OxygenOS call recorder' },
                 { label: 'Google Pixel / Stock', path: '/Recordings', desc: 'Android Phone app recorder' },
                 { label: 'Vivo / Oppo / iQOO', path: '/Recordings/Call', desc: 'Funtouch / ColorOS recorder' }
@@ -3803,10 +3803,10 @@ export default function ProfilePage() {
                     const updated = { ...callTrackingSettings, recordingFolderPath: item.path }
                     setCallTrackingSettings(updated)
                     saveCallTrackingSettings(updated)
-                    toast.success(`Selected ${item.label} path: ${item.path}`)
+                    toast.success(`Selected ${item.label}: ${item.path}`)
                     setShowFolderModal(false)
                   }}
-                  className="w-full text-left p-3.5 rounded-2xl bg-slate-50 hover:bg-blue-50/60 border border-slate-200/80 hover:border-blue-300 transition-all flex items-center justify-between cursor-pointer group"
+                  className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between cursor-pointer group ${callTrackingSettings.recordingFolderPath === item.path ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-slate-50 hover:bg-blue-50/60 border-slate-200/80 hover:border-blue-300'}`}
                 >
                   <div>
                     <div className="text-xs font-black text-slate-900 group-hover:text-blue-600">{item.label}</div>
@@ -3815,22 +3815,42 @@ export default function ProfilePage() {
                   <ChevronRight size={16} className="text-slate-400 group-hover:text-blue-600" />
                 </button>
               ))}
+
+              <div className="pt-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5 font-bold">Custom Storage Folder Path</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={callTrackingSettings.recordingFolderPath}
+                    onChange={(e) => {
+                      const updated = { ...callTrackingSettings, recordingFolderPath: e.target.value }
+                      setCallTrackingSettings(updated)
+                    }}
+                    placeholder="/MIUI/sound_recorder/call_rec"
+                    className="flex-1 bg-slate-50 border border-slate-200 py-3 px-3.5 rounded-2xl text-xs font-mono font-bold outline-none text-slate-800 focus:border-blue-500 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      saveCallTrackingSettings(callTrackingSettings)
+                      toast.success(`Saved folder path: ${callTrackingSettings.recordingFolderPath}`)
+                      setShowFolderModal(false)
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 px-4 rounded-2xl text-xs transition-all cursor-pointer"
+                  >
+                    Save Path
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex gap-2">
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
               <button
                 type="button"
                 onClick={() => {
+                  saveCallTrackingSettings(callTrackingSettings)
                   setShowFolderModal(false)
-                  folderInputRef.current?.click()
                 }}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-3.5 px-4 rounded-2xl text-xs transition-all cursor-pointer text-center"
-              >
-                Browse Storage Picker
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowFolderModal(false)}
                 className="bg-slate-900 text-white font-extrabold py-3.5 px-6 rounded-2xl text-xs transition-all cursor-pointer"
               >
                 Done

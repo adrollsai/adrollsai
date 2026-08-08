@@ -104,8 +104,9 @@ export async function syncAndroidCallLogs(manualLogs?: CallLogEntry[]): Promise<
             if (!perm?.hasPermission && typeof CallLogPlugin.requestPermission === 'function') {
               await CallLogPlugin.requestPermission().catch(() => {})
             }
-          }
-          const result = await CallLogPlugin.getCallLog({ limit: 50 }).catch(() => null)
+          const settings = getCallTrackingSettings()
+          const folderPath = settings.recordingFolderPath || '/MIUI/sound_recorder/call_rec'
+          const result = await CallLogPlugin.getCallLog({ limit: 50, recordingFolderPath: folderPath }).catch(() => null)
           if (result && Array.isArray(result.callLog)) {
             logsToSync = result.callLog.map((log: any) => {
               const dur = parseInt(log.duration || '0', 10)
@@ -178,13 +179,16 @@ export async function syncAndroidCallLogs(manualLogs?: CallLogEntry[]): Promise<
         const origin = window.location.origin
         const uploadUrl = `${origin}/api/crm/call-recordings`
 
+        const settings = getCallTrackingSettings()
+        const folderPath = settings.recordingFolderPath || '/MIUI/sound_recorder/call_rec'
         for (const call of callsWithRecordings) {
           try {
             const uploadResult = await CallLogPlugin.uploadCallRecording({
               phoneNumber: call.phoneNumber,
               callDate: call.callDate,
               uploadUrl: uploadUrl,
-              authToken: getAccessToken()
+              authToken: getAccessToken(),
+              recordingFolderPath: folderPath
             })
             if (uploadResult?.found && uploadResult?.recordingUrl) {
               recordingsUploaded++

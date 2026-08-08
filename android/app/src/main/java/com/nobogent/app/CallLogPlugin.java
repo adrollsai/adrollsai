@@ -101,6 +101,7 @@ public class CallLogPlugin extends Plugin {
 
     @PluginMethod
     public void debugScanRecordings(PluginCall call) {
+        String recordingFolderPath = call.getString("recordingFolderPath", "/MIUI/sound_recorder/call_rec");
         JSObject result = new JSObject();
         result.put("sdkVersion", Build.VERSION.SDK_INT);
         result.put("hasCallLogPermission", getPermissionState("callLog") == com.getcapacitor.PermissionState.GRANTED);
@@ -113,6 +114,36 @@ public class CallLogPlugin extends Plugin {
         JSArray samples = new JSArray();
         int totalAudioCount = 0;
 
+        // 1. Direct filesystem scan of configured folder & known folders
+        String[] folderList = {
+            recordingFolderPath,
+            "/MIUI/sound_recorder/call_rec",
+            "/Recordings/Call",
+            "/Recordings",
+            "/CallRecord"
+        };
+
+        for (String fPath : folderList) {
+            if (fPath == null || fPath.isEmpty()) continue;
+            File dir1 = new File(Environment.getExternalStorageDirectory(), fPath);
+            File dir2 = new File("/storage/emulated/0" + (fPath.startsWith("/") ? "" : "/") + fPath);
+
+            File targetDir = dir1.exists() ? dir1 : (dir2.exists() ? dir2 : null);
+            if (targetDir != null && targetDir.isDirectory()) {
+                File[] files = targetDir.listFiles();
+                if (files != null) {
+                    for (File f : files) {
+                        if (!f.isFile()) continue;
+                        totalAudioCount++;
+                        if (samples.length() < 25) {
+                            samples.put("[File] " + f.getName() + " (" + f.length() + "B)");
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. MediaStore query
         try {
             ContentResolver cr = getContext().getContentResolver();
             Uri audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
@@ -125,17 +156,17 @@ public class CallLogPlugin extends Plugin {
             Cursor cursor = cr.query(audioUri, projection, null, null, MediaStore.Audio.Media.DATE_MODIFIED + " DESC");
             if (cursor != null) {
                 while (cursor.moveToNext()) {
+                    String name = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME));
+                    String path = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA));
                     totalAudioCount++;
-                    if (samples.length() < 20) {
-                        String path = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA));
-                        String name = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME));
-                        samples.put(name + " -> " + path);
+                    if (samples.length() < 25) {
+                        samples.put("[MediaStore] " + name + " -> " + path);
                     }
                 }
                 cursor.close();
             }
         } catch (Exception e) {
-            result.put("error", e.getMessage());
+            result.put("mediaStoreError", e.getMessage());
         }
 
         result.put("totalAudioCount", totalAudioCount);
@@ -149,6 +180,7 @@ public class CallLogPlugin extends Plugin {
         long callDate = call.getLong("callDate", 0L);
         String uploadUrl = call.getString("uploadUrl", "");
         String authToken = call.getString("authToken", "");
+        String recordingFolderPath = call.getString("recordingFolderPath", "/MIUI/sound_recorder/call_rec");
 
         if (phoneNumber.isEmpty() || callDate == 0 || uploadUrl.isEmpty()) {
             call.reject("phoneNumber, callDate, and uploadUrl are required");
@@ -157,7 +189,7 @@ public class CallLogPlugin extends Plugin {
 
         new Thread(() -> {
             try {
-                File recordingFile = findRecordingFile(phoneNumber, callDate);
+                File recordingFile = findRecordingFile(phoneNumber, callDate, recordingFolderPath);
                 if (recordingFile == null) {
                     JSObject result = new JSObject();
                     result.put("found", false);
@@ -186,6 +218,7 @@ public class CallLogPlugin extends Plugin {
 
     private void readCallLogs(PluginCall call) {
         int limit = call.getInt("limit", 50);
+        String recordingFolderPath = call.getString("recordingFolderPath", "/MIUI/sound_recorder/call_rec");
         JSArray callLogArray = new JSArray();
 
         try {
@@ -224,7 +257,7 @@ public class CallLogPlugin extends Plugin {
                     log.put("name", name != null ? name : "");
 
                     if (number != null && duration > 0) {
-                        File recFile = findRecordingFile(number, date);
+                        File recFile = findRecordingFile(number, date, recordingFolderPath);
                         if (recFile != null) {
                             log.put("hasRecording", true);
                             log.put("recordingFilePath", recFile.getAbsolutePath());
@@ -247,7 +280,7 @@ public class CallLogPlugin extends Plugin {
         }
     }
 
-    private File findRecordingFile(String rawNumber, long callDateMs) {
+    private File findRecordingFile(String rawNumber, long callDateMs, String customFolderPath) {
         if (rawNumber == null || rawNumber.length() < 4) return null;
 
         String digitsOnly = rawNumber.replaceAll("[^0-9]", "");
@@ -259,6 +292,48 @@ public class CallLogPlugin extends Plugin {
         long windowStartMs = callDateMs - (10 * 60 * 1000);
         long windowEndMs = callDateMs + (30 * 60 * 1000);
 
+        // 1. Direct scan of configured custom folder path
+        if (customFolderPath != null && !customFolderPath.isEmpty()) {
+            File customDir1 = new File(Environment.getExternalStorageDirectory(), customFolderPath);
+            File customDir2 = new File("/storage/emulated/0" + (customFolderPath.startsWith("/") ? "" : "/") + customFolderPath);
+
+            File match1 = scanFolderForCallRecording(customDir1, rawNumber, callDateMs, last10, last7, windowStartMs, windowEndMs);
+            if (match1 != null) return match1;
+
+            File match2 = scanFolderForCallRecording(customDir2, rawNumber, callDateMs, last10, last7, windowStartMs, windowEndMs);
+            if (match2 != null) return match2;
+        }
+
+        // 2. Direct scan of known manufacturer recording directories
+        String[] knownPaths = {
+            "MIUI/sound_recorder/call_rec",
+            "Recordings/Call",
+            "Recordings",
+            "CallRecord",
+            "Record/Call",
+            "call_record",
+            "PhoneRecord",
+            "Recording/Call",
+            "Sounds/CallRecord",
+            "Music/Recordings/Call Recordings",
+            "Call Recordings",
+            "Android/data/com.android.phone/files",
+            "VoiceRecorder",
+            "Sounds"
+        };
+
+        for (String path : knownPaths) {
+            File dir1 = new File(Environment.getExternalStorageDirectory(), path);
+            File dir2 = new File("/storage/emulated/0/" + path);
+
+            File match1 = scanFolderForCallRecording(dir1, rawNumber, callDateMs, last10, last7, windowStartMs, windowEndMs);
+            if (match1 != null) return match1;
+
+            File match2 = scanFolderForCallRecording(dir2, rawNumber, callDateMs, last10, last7, windowStartMs, windowEndMs);
+            if (match2 != null) return match2;
+        }
+
+        // 3. Fallback to MediaStore query
         try {
             ContentResolver cr = getContext().getContentResolver();
             Uri audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
@@ -275,9 +350,6 @@ public class CallLogPlugin extends Plugin {
                 File bestNumberMatch = null;
                 long closestTimeDiff = Long.MAX_VALUE;
 
-                File bestTimeMatchInCallDir = null;
-                long closestCallDirTimeDiff = Long.MAX_VALUE;
-
                 while (cursor.moveToNext()) {
                     String filePath = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA));
                     String fileName = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME));
@@ -291,7 +363,7 @@ public class CallLogPlugin extends Plugin {
 
                     if (!lowerName.endsWith(".m4a") && !lowerName.endsWith(".mp3") && !lowerName.endsWith(".amr") &&
                         !lowerName.endsWith(".wav") && !lowerName.endsWith(".aac") && !lowerName.endsWith(".ogg") &&
-                        !lowerName.endsWith(".3gp") && !lowerPath.endsWith(".m4a") && !lowerPath.endsWith(".mp3")) continue;
+                        !lowerName.endsWith(".3gp")) continue;
 
                     long dateModifiedMs = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)) * 1000L;
                     if (dateModifiedMs <= 0) {
@@ -300,9 +372,8 @@ public class CallLogPlugin extends Plugin {
                     }
 
                     boolean containsNumber = lowerName.contains(last10) || lowerPath.contains(last10) ||
-                                             lowerName.contains(last7) || lowerPath.contains(last7);
-
-                    boolean isCallRecFolder = lowerPath.contains("record") || lowerPath.contains("call") || lowerPath.contains("sound");
+                                             lowerName.contains(last7) || lowerPath.contains(last7) ||
+                                             lowerName.contains(digitsOnly);
 
                     long timeDiff = Math.abs(dateModifiedMs - callDateMs);
 
@@ -314,14 +385,6 @@ public class CallLogPlugin extends Plugin {
                                 closestTimeDiff = timeDiff;
                             }
                         }
-                    } else if (isCallRecFolder && dateModifiedMs >= windowStartMs && dateModifiedMs <= windowEndMs) {
-                        if (timeDiff < closestCallDirTimeDiff) {
-                            File f = new File(filePath);
-                            if (f.exists() && f.canRead()) {
-                                bestTimeMatchInCallDir = f;
-                                closestCallDirTimeDiff = timeDiff;
-                            }
-                        }
                     }
                 }
                 cursor.close();
@@ -330,81 +393,52 @@ public class CallLogPlugin extends Plugin {
                     Log.d(TAG, "Found recording via MediaStore number match: " + bestNumberMatch.getAbsolutePath());
                     return bestNumberMatch;
                 }
-
-                if (bestTimeMatchInCallDir != null) {
-                    Log.d(TAG, "Found recording via MediaStore call folder time match: " + bestTimeMatchInCallDir.getAbsolutePath());
-                    return bestTimeMatchInCallDir;
-                }
             }
         } catch (Exception e) {
             Log.w(TAG, "MediaStore query error", e);
         }
 
-        try {
-            File sdcard = Environment.getExternalStorageDirectory();
-            String[] knownPaths = {
-                "Recordings/Call",
-                "Recordings",
-                "CallRecord",
-                "MIUI/sound_recorder/call_rec",
-                "Record/Call",
-                "call_record",
-                "PhoneRecord",
-                "Recording/Call",
-                "Sounds/CallRecord",
-                "Music/Recordings/Call Recordings",
-                "Call Recordings",
-                "Android/data/com.android.phone/files",
-                "VoiceRecorder",
-                "Sounds"
-            };
+        return null;
+    }
 
-            File bestMatch = null;
-            long bestMatchTimeDiff = Long.MAX_VALUE;
+    private File scanFolderForCallRecording(File dir, String rawNumber, long callDateMs, String last10, String last7, long windowStartMs, long windowEndMs) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return null;
+        File[] files = dir.listFiles();
+        if (files == null || files.length == 0) return null;
 
-            for (String path : knownPaths) {
-                File dir = new File(sdcard, path);
-                if (!dir.exists() || !dir.isDirectory()) continue;
+        File bestMatch = null;
+        long bestTimeDiff = Long.MAX_VALUE;
 
-                File[] files = dir.listFiles();
-                if (files == null) continue;
+        String digitsOnly = rawNumber.replaceAll("[^0-9]", "");
 
-                for (File f : files) {
-                    if (!f.isFile()) continue;
-                    String fname = f.getName().toLowerCase();
+        for (File f : files) {
+            if (!f.isFile()) continue;
+            String name = f.getName().toLowerCase();
+            if (!name.endsWith(".mp3") && !name.endsWith(".m4a") && !name.endsWith(".amr") &&
+                !name.endsWith(".wav") && !name.endsWith(".aac") && !name.endsWith(".3gp") && !name.endsWith(".ogg")) continue;
 
-                    if (!fname.endsWith(".m4a") && !fname.endsWith(".mp3") && !fname.endsWith(".amr") &&
-                        !fname.endsWith(".wav") && !fname.endsWith(".aac") && !fname.endsWith(".ogg") &&
-                        !fname.endsWith(".3gp")) continue;
+            long fTime = f.lastModified();
+            long timeDiff = Math.abs(fTime - callDateMs);
 
-                    long fileTime = f.lastModified();
-                    long timeDiff = Math.abs(fileTime - callDateMs);
+            boolean containsNumber = name.contains(last10) || name.contains(last7) || (digitsOnly.length() >= 7 && name.contains(digitsOnly));
 
-                    boolean numberMatch = fname.contains(last10) || fname.contains(last7);
-
-                    if (numberMatch) {
-                        if (timeDiff < bestMatchTimeDiff) {
-                            bestMatch = f;
-                            bestMatchTimeDiff = timeDiff;
-                        }
-                    } else if (fileTime >= windowStartMs && fileTime <= windowEndMs) {
-                        if (bestMatch == null || timeDiff < bestMatchTimeDiff) {
-                            bestMatch = f;
-                            bestMatchTimeDiff = timeDiff;
-                        }
-                    }
+            if (containsNumber) {
+                if (timeDiff < bestTimeDiff) {
+                    bestMatch = f;
+                    bestTimeDiff = timeDiff;
+                }
+            } else if (fTime >= windowStartMs && fTime <= windowEndMs) {
+                if (bestMatch == null || timeDiff < bestMatchTimeDiff) {
+                    bestMatch = f;
+                    bestTimeDiff = timeDiff;
                 }
             }
-
-            if (bestMatch != null) {
-                Log.d(TAG, "Found recording via filesystem scan: " + bestMatch.getAbsolutePath());
-                return bestMatch;
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Filesystem scan error", e);
         }
 
-        return null;
+        if (bestMatch != null) {
+            Log.d(TAG, "Found call recording in " + dir.getAbsolutePath() + ": " + bestMatch.getAbsolutePath());
+        }
+        return bestMatch;
     }
 
     private String uploadFileToServer(File file, String uploadUrl, String authToken, String phoneNumber) throws Exception {
