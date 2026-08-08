@@ -1832,7 +1832,9 @@ END:VCARD`
                                                 </div>
                                                 <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">
                                                     {(() => {
-                                                        if (item.description && item.description.startsWith('🎙️ CALL_JSON:')) {
+                                                        if (!item.description) return null
+
+                                                        if (item.description.startsWith('🎙️ CALL_JSON:')) {
                                                             try {
                                                                 const parsed = JSON.parse(item.description.replace('🎙️ CALL_JSON:', ''))
                                                                 return (
@@ -1859,7 +1861,27 @@ END:VCARD`
                                                                 return item.description
                                                             }
                                                         }
-                                                        return item.description
+
+                                                        const audioUrlMatch = item.description.match(/(https?:\/\/[^\s]+\.(mp3|m4a|wav|aac|ogg|3gp)|https?:\/\/[^\s]+\/call-recordings\/[^\s]+)/i)
+                                                        
+                                                        if (audioUrlMatch) {
+                                                            const audioUrl = audioUrlMatch[0]
+                                                            const cleanText = item.description.replace(audioUrl, '').trim()
+                                                            return (
+                                                                <div className="space-y-2">
+                                                                    {cleanText && <p className="text-slate-800 whitespace-pre-wrap font-medium">{cleanText}</p>}
+                                                                    <div className="mt-2 p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs space-y-1">
+                                                                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-blue-700">
+                                                                            <Phone size={13} />
+                                                                            <span>Call Recording</span>
+                                                                        </div>
+                                                                        <audio controls src={audioUrl} className="w-full h-8 outline-none" />
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        }
+
+                                                        return <p className="whitespace-pre-wrap">{item.description}</p>
                                                     })()}
                                                 </div>
                                             </div>
