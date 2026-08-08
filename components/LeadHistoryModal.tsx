@@ -170,7 +170,8 @@ export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryM
             <div className="relative pl-8 border-l-2 border-emerald-500/40 space-y-6 my-4">
               {historyItems.map((item, idx) => {
                 const actorName = item.actor_name || item.performed_by || lead.user_name || 'Agent';
-                const recordingUrl = item.metadata?.recording_url || item.recording_url;
+                const urlMatch = item.description?.match(/(https?:\/\/[^\s]+\.(mp3|m4a|wav|aac|ogg|3gp)|https?:\/\/[^\s]+\/call-recordings\/[^\s]+)/i)
+                const recordingUrl = item.metadata?.recording_url || item.recording_url || (urlMatch ? urlMatch[0] : null);
                 return (
                   <div key={item.id || idx} className="relative">
                     {/* Circle Bullet on Timeline */}

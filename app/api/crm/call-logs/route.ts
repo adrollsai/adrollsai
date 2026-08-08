@@ -114,44 +114,71 @@ export async function POST(request: Request) {
               ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` 
               : 'No answer'
 
+            let desc = `📞 Phone Call (${callType.toLowerCase()}): ${status}. Duration: ${durationText}.${log.notes ? ` Notes: ${log.notes}` : ''}`
+            if (finalRecordingUrl) {
+              desc += `\n🎙️ Call Recording: ${finalRecordingUrl}`
+            }
+
             await supabase
               .from('lead_history')
               .insert({
                 lead_id: matchedLead.id,
+                user_id: user.id,
                 action_type: 'CALL',
-                title: `📞 Phone Call Logged (${callType.toLowerCase()}): ${status}`,
-                description: `Duration: ${durationText}.${log.notes ? ` Notes: ${log.notes}` : ''}`,
-                metadata: {
-                  call_log_id: insertedCall.id,
-                  duration: durationSec,
-                  status: status,
-                  call_type: callType,
-                  recording_url: finalRecordingUrl,
-                  caller_user_id: user.id
-                }
+                description: desc,
+                created_at: startedAt
               })
           }
         }
-      } else if (finalRecordingUrl && !existing.recording_url) {
-        await supabase
-          .from('call_logs')
-          .update({ recording_url: finalRecordingUrl })
-          .eq('id', existing.id)
-
+      } else {
+        // Log already exists in call_logs table: update lead_id and ensure lead_history entry exists
+        const targetCallId = existing.id
         if (matchedLead) {
           await supabase
-            .from('lead_history')
-            .insert({
-              lead_id: matchedLead.id,
-              action_type: 'CALL_RECORDING',
-              title: '🎙️ Call Recording Synced',
-              description: `Call recording automatically attached.`,
-              metadata: {
-                call_log_id: existing.id,
-                recording_url: finalRecordingUrl,
-                caller_user_id: user.id
-              }
+            .from('leads')
+            .update({
+              last_call_at: startedAt,
+              last_call_status: status,
+              last_called_by: user.id
             })
+            .eq('id', matchedLead.id)
+
+          const { data: exHist } = await supabase
+            .from('lead_history')
+            .select('id')
+            .eq('lead_id', matchedLead.id)
+            .eq('action_type', 'CALL')
+            .gte('created_at', new Date(new Date(startedAt).getTime() - 10000).toISOString())
+            .lte('created_at', new Date(new Date(startedAt).getTime() + 10000).toISOString())
+            .maybeSingle()
+
+          if (!exHist) {
+            const durationText = durationSec > 0 
+              ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` 
+              : 'No answer'
+
+            let desc = `📞 Phone Call (${callType.toLowerCase()}): ${status}. Duration: ${durationText}.${log.notes ? ` Notes: ${log.notes}` : ''}`
+            if (finalRecordingUrl || existing.recording_url) {
+              desc += `\n🎙️ Call Recording: ${finalRecordingUrl || existing.recording_url}`
+            }
+
+            await supabase
+              .from('lead_history')
+              .insert({
+                lead_id: matchedLead.id,
+                user_id: user.id,
+                action_type: 'CALL',
+                description: desc,
+                created_at: startedAt
+              })
+          }
+        }
+
+        if (finalRecordingUrl && !existing.recording_url) {
+          await supabase
+            .from('call_logs')
+            .update({ recording_url: finalRecordingUrl })
+            .eq('id', existing.id)
         }
       }
     }

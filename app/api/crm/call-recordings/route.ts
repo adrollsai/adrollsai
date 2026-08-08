@@ -110,14 +110,10 @@ export async function POST(request: Request) {
         .from('lead_history')
         .insert({
           lead_id: matchedLeadId,
+          user_id: user.id,
           action_type: 'CALL_RECORDING',
-          title: '🎙️ Call Recording Auto-Attached',
-          description: `Call recording automatically attached from device (${file.name || 'audio'}).`,
-          metadata: {
-            recording_url: recordingUrl,
-            uploader_id: user.id,
-            auto_synced: true
-          }
+          description: `🎙️ Call Recording Attached: ${file.name || 'audio'}\n${recordingUrl}`,
+          created_at: new Date().toISOString()
         })
     }
 
