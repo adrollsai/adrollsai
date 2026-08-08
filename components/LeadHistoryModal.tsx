@@ -38,6 +38,37 @@ export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryM
     }
   }
 
+  const [uploadingRecording, setUploadingRecording] = useState(false)
+
+  const handleUploadRecording = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !lead?.id) return
+
+    setUploadingRecording(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('leadId', lead.id)
+      formData.append('phoneNumber', lead.phone || '')
+
+      const res = await fetch('/api/crm/call-recordings', {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await res.json()
+      if (data.success) {
+        fetchHistory()
+      } else {
+        console.error('Failed to upload call recording:', data.error)
+      }
+    } catch (err: any) {
+      console.error('Upload failed:', err)
+    } finally {
+      setUploadingRecording(false)
+    }
+  }
+
   if (!isOpen || !lead) return null
 
   // Format date/time
@@ -58,45 +89,58 @@ export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryM
   }
 
   // Extract initial for avatar
-  const getInitial = (name: string) => {
-    if (!name) return 'U'
-    return name.trim().charAt(0).toUpperCase()
+  const getInitial = (nameStr: string) => {
+    if (!nameStr) return 'L'
+    return nameStr.trim().charAt(0).toUpperCase()
   }
 
   return (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200 pb-24 sm:pb-8">
-      <div className="relative w-full max-w-3xl bg-white border border-slate-200 rounded-3xl shadow-2xl overflow-hidden my-auto flex flex-col max-h-[88vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="bg-white border border-slate-200 rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] sm:max-h-[85vh] flex flex-col overflow-hidden">
         
-        {/* Modal Top Bar */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-b border-slate-100 shrink-0">
-          <div className="flex items-center space-x-3 min-w-0">
-            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 shrink-0">
-              <History className="w-5 h-5" />
+        {/* Modal Header */}
+        <div className="px-3.5 sm:px-6 py-3 sm:py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+              <History size={20} />
             </div>
-            <div className="min-w-0">
-              <h3 className="text-base sm:text-lg font-extrabold text-slate-900 truncate">
-                History Timeline - {lead.name || 'Unnamed Lead'}
+            <div>
+              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                <span>Timeline History for {lead.name || 'Lead'}</span>
               </h3>
-              <p className="text-xs text-slate-500 truncate">Phone: {lead.phone || 'N/A'}</p>
+              <p className="text-slate-500 text-xs mt-0.5">
+                {lead.phone || 'No Phone'} • Status: <span className="font-semibold text-blue-600">{lead.pipeline_stage || 'New Lead'}</span>
+              </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors shrink-0"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            <label className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl cursor-pointer border border-blue-200 transition-colors flex items-center gap-1.5">
+              <Phone size={14} />
+              <span>{uploadingRecording ? 'Uploading...' : 'Attach Recording'}</span>
+              <input 
+                type="file" 
+                accept="audio/*" 
+                onChange={handleUploadRecording} 
+                disabled={uploadingRecording} 
+                className="hidden" 
+              />
+            </label>
+
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
-        {/* Content Body */}
-        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar space-y-6">
-          <div className="text-center border-b border-slate-100 pb-3">
-            <h4 className="text-base font-extrabold text-slate-700 uppercase tracking-wide">Lead History</h4>
-          </div>
-
+        {/* Modal Body: Timeline Items */}
+        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
-              <RefreshCw className="w-6 h-6 animate-spin text-emerald-600" />
+            <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
+              <RefreshCw size={18} className="animate-spin text-blue-600" />
               <span className="text-xs font-semibold">Loading timeline records...</span>
             </div>
           ) : historyItems.length === 0 ? (
@@ -126,6 +170,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryM
             <div className="relative pl-8 border-l-2 border-emerald-500/40 space-y-6 my-4">
               {historyItems.map((item, idx) => {
                 const actorName = item.actor_name || item.performed_by || lead.user_name || 'Agent';
+                const recordingUrl = item.metadata?.recording_url || item.recording_url;
                 return (
                   <div key={item.id || idx} className="relative">
                     {/* Circle Bullet on Timeline */}
@@ -142,10 +187,26 @@ export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryM
 
                     {/* Event Detail Card */}
                     <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-1.5 text-xs text-slate-700 font-medium leading-relaxed">
-                      <p className="font-extrabold text-sm text-slate-900">{item.action_type || item.title || 'Followup Event'}</p>
+                      <p className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                        <span>{item.action_type || item.title || 'Followup Event'}</span>
+                      </p>
 
                       {item.description && (
                         <p className="text-slate-800 whitespace-pre-wrap">{item.description}</p>
+                      )}
+
+                      {/* Call Audio Recording Player */}
+                      {recordingUrl && (
+                        <div className="mt-2.5 p-2 bg-white rounded-xl border border-slate-200">
+                          <div className="flex items-center gap-2 mb-1.5 text-[11px] font-bold text-blue-700">
+                            <Phone size={14} />
+                            <span>Human Call Recording</span>
+                          </div>
+                          <audio controls className="w-full h-8">
+                            <source src={recordingUrl} type="audio/mpeg" />
+                            Your browser does not support audio playback.
+                          </audio>
+                        </div>
                       )}
 
                       {/* Structured Details */}
@@ -159,7 +220,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryM
                         </div>
                       )}
 
-                      {!item.details && (
+                      {!item.details && !recordingUrl && (
                         <div className="space-y-0.5 pt-1 text-slate-600">
                           <div><strong>Lead Name :</strong> {lead.name || 'N/A'}</div>
                           <div><strong>Contact no :</strong> {lead.phone || 'N/A'}</div>

@@ -16,6 +16,7 @@ import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicke
 import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadHistoryModal from '@/components/LeadHistoryModal'
+import { syncAndroidCallLogs } from '@/utils/callTracking'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
@@ -84,6 +85,8 @@ export default function CRMPage() {
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isSyncingCalls, setIsSyncingCalls] = useState(false)
+  const [showMobileCrmActions, setShowMobileCrmActions] = useState(false)
   const [enableDistribution, setEnableDistribution] = useState(false)
   const [assignedCampaigns, setAssignedCampaigns] = useState<string[]>([])
   const [activeMediaModal, setActiveMediaModal] = useState<any>(null)
@@ -1410,20 +1413,35 @@ END:VCARD\n`
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
         
         {/* HEADER */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-6">
             <div>
-                <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight ml-1">CRM Pipeline</h1>
-                <div className="flex items-center gap-3 mt-2 ml-1">
-                    <p className="text-slate-500 text-sm font-medium">Manage and distribute your leads</p>
+                <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight ml-1">CRM Pipeline</h1>
+                <div className="flex items-center gap-3 mt-1.5 ml-1">
+                    <p className="text-slate-500 text-xs sm:text-sm font-medium">Manage and distribute your leads</p>
                     {!isPushEnabled ? (
-                        <button onClick={enablePushNotifications} className="text-[10px] text-blue-600 font-bold flex items-center gap-1.5 bg-blue-100/50 px-2.5 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                        <button onClick={enablePushNotifications} className="text-[10px] text-blue-600 font-bold flex items-center gap-1.5 bg-blue-100/50 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition-colors">
                             <Bell size={12} /> Enable Alerts
                         </button>
                     ) : <TestNotificationBtn />}
                 </div>
             </div>
             
-            <div className="flex gap-2.5 flex-wrap w-full md:w-auto">
+            {/* MOBILE COLLAPSIBLE ACTIONS TOGGLE BUTTON */}
+            <div className="w-full md:hidden">
+              <button
+                type="button"
+                onClick={() => setShowMobileCrmActions(!showMobileCrmActions)}
+                className="w-full py-2.5 px-4 bg-white border border-slate-200 rounded-2xl text-xs font-black text-slate-700 flex items-center justify-between shadow-xs transition-all active:scale-98"
+              >
+                <span className="flex items-center gap-2">
+                  <Tag size={14} className="text-blue-600" />
+                  <span>CRM Actions & Controls</span>
+                </span>
+                <ChevronDown size={16} className={`transition-transform duration-200 text-slate-500 ${showMobileCrmActions ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            <div className={`gap-2 flex-wrap w-full md:w-auto ${showMobileCrmActions ? 'flex' : 'hidden md:flex'}`}>
                 {isAdminLike && role !== 'agent' && (
                     <>
                         <button onClick={toggleGlobalDistribution} disabled={isAssigning} className={`flex-1 md:flex-none p-3 rounded-2xl shadow-sm border active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 ${enableDistribution ? 'bg-violet-600 border-violet-600 text-white hover:bg-violet-700' : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'}`}>
@@ -1442,6 +1460,29 @@ END:VCARD\n`
                         }} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
                             <Download size={16} />
                             <span className="font-bold text-[10px] sm:text-sm">Sync Meta</span>
+                        </button>
+                        <button 
+                            onClick={async () => {
+                                setIsSyncingCalls(true)
+                                try {
+                                    const res = await syncAndroidCallLogs()
+                                    if (res.success) {
+                                        toast.success(`Synced ${res.syncedCount} calls and matched ${res.matchedLeadsCount} leads!`)
+                                        fetchLeads(true)
+                                    } else {
+                                        toast.error(res.error || 'Failed to sync call logs')
+                                    }
+                                } catch (e: any) {
+                                    toast.error('Sync error: ' + e.message)
+                                } finally {
+                                    setIsSyncingCalls(false)
+                                }
+                            }}
+                            disabled={isSyncingCalls}
+                            className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 disabled:opacity-50"
+                        >
+                            <Phone size={16} className={isSyncingCalls ? 'animate-spin text-blue-600' : 'text-blue-600'} />
+                            <span className="font-bold text-[10px] sm:text-sm">{isSyncingCalls ? 'Syncing...' : 'Sync Calls'}</span>
                         </button>
                         <button onClick={downloadAllVCard} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-slate-200/60 bg-white hover:bg-slate-50 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2" title="Export All Contacts to Phone">
                             <Download size={16} className="text-slate-600" />

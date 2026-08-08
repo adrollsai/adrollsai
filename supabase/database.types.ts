@@ -203,6 +203,63 @@ export type Database = {
           },
         ]
       }
+      call_logs: {
+        Row: {
+          call_type: string
+          created_at: string
+          duration: number
+          id: string
+          lead_id: string | null
+          notes: string | null
+          phone_number: string
+          recording_url: string | null
+          started_at: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          call_type?: string
+          created_at?: string
+          duration?: number
+          id?: string
+          lead_id?: string | null
+          notes?: string | null
+          phone_number: string
+          recording_url?: string | null
+          started_at?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          call_type?: string
+          created_at?: string
+          duration?: number
+          id?: string
+          lead_id?: string | null
+          notes?: string | null
+          phone_number?: string
+          recording_url?: string | null
+          started_at?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_logs_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_analyses: {
         Row: {
           analysis_text: string

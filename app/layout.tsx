@@ -88,12 +88,16 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+import { CapacitorBridge } from "@/components/CapacitorBridge";
+import { CallTrackingListener } from "@/components/CallTrackingListener";
+
 export const viewport: Viewport = {
   themeColor: "#FFFFFF",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
 };
 
 
@@ -160,6 +164,8 @@ export default async function RootLayout({
         <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" />
       </head>
       <body className={inter.className} suppressHydrationWarning>
+        <CapacitorBridge />
+        <CallTrackingListener />
         {children}
         <Toaster richColors position="top-right" />
       </body>
