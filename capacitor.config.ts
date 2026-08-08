@@ -6,6 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'public',
   server: {
     url: 'https://app.nobogent.com',
+    allowNavigation: ['app.nobogent.com', '*.nobogent.com', 'nobogent.com'],
     cleartext: true,
   },
   plugins: {
