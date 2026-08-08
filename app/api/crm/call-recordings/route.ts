@@ -1,12 +1,35 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
+import { createClient as createServerClient } from '@/utils/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    let user: any = null
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization')
+    
+    const adminSupabase = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+
+    // 1. Try Bearer token from header (for native Android HTTP uploads)
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace('Bearer ', '').trim()
+      if (token) {
+        const { data: userData } = await adminSupabase.auth.getUser(token)
+        user = userData?.user || null
+      }
+    }
+
+    // 2. Fallback to SSR cookie auth
+    if (!user) {
+      const supabase = await createServerClient()
+      const { data: userData } = await supabase.auth.getUser()
+      user = userData?.user || null
+    }
 
     if (!user) {
+      console.error('[Call Recording Upload] Unauthorized request - no valid session or Bearer token')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -26,7 +49,7 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await file.arrayBuffer())
 
     let storageBucket = 'call-recordings'
-    let { error: uploadErr } = await supabase.storage
+    let { error: uploadErr } = await adminSupabase.storage
       .from(storageBucket)
       .upload(fileName, buffer, {
         contentType: file.type || 'audio/mpeg',
@@ -35,7 +58,7 @@ export async function POST(request: Request) {
 
     if (uploadErr) {
       storageBucket = 'public-assets'
-      const fallbackRes = await supabase.storage
+      const fallbackRes = await adminSupabase.storage
         .from(storageBucket)
         .upload(fileName, buffer, {
           contentType: file.type || 'audio/mpeg',
@@ -49,7 +72,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to upload call recording file' }, { status: 500 })
     }
 
-    const { data: publicUrlData } = supabase.storage
+    const { data: publicUrlData } = adminSupabase.storage
       .from(storageBucket)
       .getPublicUrl(fileName)
 
@@ -57,7 +80,7 @@ export async function POST(request: Request) {
 
     // 2. Link recordingUrl to call_logs
     if (callLogId) {
-      await supabase
+      await adminSupabase
         .from('call_logs')
         .update({ recording_url: recordingUrl })
         .eq('id', callLogId)
@@ -66,7 +89,7 @@ export async function POST(request: Request) {
       const last10 = normalizedPhone.length >= 10 ? normalizedPhone.slice(-10) : normalizedPhone
 
       if (last10) {
-        const { data: recentLog } = await supabase
+        const { data: recentLog } = await adminSupabase
           .from('call_logs')
           .select('id')
           .eq('user_id', user.id)
@@ -76,7 +99,7 @@ export async function POST(request: Request) {
           .maybeSingle()
 
         if (recentLog) {
-          await supabase
+          await adminSupabase
             .from('call_logs')
             .update({ recording_url: recordingUrl })
             .eq('id', recentLog.id)
@@ -90,7 +113,7 @@ export async function POST(request: Request) {
       const normalizedPhone = phoneNumber.replace(/[^0-9]/g, '')
       const last10 = normalizedPhone.length >= 10 ? normalizedPhone.slice(-10) : normalizedPhone
       if (last10) {
-        const { data: matchedLead } = await supabase
+        const { data: matchedLead } = await adminSupabase
           .from('leads')
           .select('id, name')
           .eq('user_id', user.id)
@@ -104,9 +127,9 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. Insert timeline history entry for matched lead
+    // 4. Insert timeline history entry for matched lead using valid lead_history schema
     if (matchedLeadId) {
-      await supabase
+      await adminSupabase
         .from('lead_history')
         .insert({
           lead_id: matchedLeadId,

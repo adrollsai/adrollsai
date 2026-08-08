@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
+import { createClient as createServerClient } from '@/utils/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 // Helper to normalize phone numbers for fuzzy matching (returns last 10 digits)
 function normalizePhone(phone: string | null | undefined): string {
@@ -10,8 +11,29 @@ function normalizePhone(phone: string | null | undefined): string {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    let user: any = null
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization')
+    
+    const adminSupabase = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+
+    // 1. Try Bearer token from header (for native Android HTTP calls)
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace('Bearer ', '').trim()
+      if (token) {
+        const { data: userData } = await adminSupabase.auth.getUser(token)
+        user = userData?.user || null
+      }
+    }
+
+    // 2. Fallback to SSR cookie auth
+    if (!user) {
+      const supabase = await createServerClient()
+      const { data: userData } = await supabase.auth.getUser()
+      user = userData?.user || null
+    }
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -26,8 +48,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No valid call log entries provided' }, { status: 400 })
     }
 
-    // 1. Fetch user's leads to match by phone number
-    const { data: userLeads } = await supabase
+    // Fetch user's leads to match by phone number
+    const { data: userLeads } = await adminSupabase
       .from('leads')
       .select('id, phone, name')
       .eq('user_id', user.id)
@@ -58,10 +80,10 @@ export async function POST(request: Request) {
 
       const startedAt = log.startedAt ? new Date(log.startedAt).toISOString() : new Date().toISOString()
 
-      // Avoid duplicates: check existing log with same user & last10 digits within 2 minute window
+      // Check existing log with same user & last10 digits within 2 minute window
       let existing = null
       if (norm) {
-        const { data: exData } = await supabase
+        const { data: exData } = await adminSupabase
           .from('call_logs')
           .select('id, recording_url')
           .eq('user_id', user.id)
@@ -77,8 +99,7 @@ export async function POST(request: Request) {
       let finalRecordingUrl = log.recordingUrl || null
 
       if (!existing) {
-        // Insert into call_logs
-        const { data: insertedCall, error: insertErr } = await supabase
+        const { data: insertedCall, error: insertErr } = await adminSupabase
           .from('call_logs')
           .insert({
             user_id: user.id,
@@ -97,11 +118,10 @@ export async function POST(request: Request) {
         if (!insertErr && insertedCall) {
           syncedCount++
 
-          // If matched lead, update lead's last_call_at & insert timeline history entry
           if (matchedLead) {
             matchedLeadsCount++
             
-            await supabase
+            await adminSupabase
               .from('leads')
               .update({
                 last_call_at: startedAt,
@@ -119,7 +139,7 @@ export async function POST(request: Request) {
               desc += `\n🎙️ Call Recording: ${finalRecordingUrl}`
             }
 
-            await supabase
+            await adminSupabase
               .from('lead_history')
               .insert({
                 lead_id: matchedLead.id,
@@ -131,10 +151,8 @@ export async function POST(request: Request) {
           }
         }
       } else {
-        // Log already exists in call_logs table: update lead_id and ensure lead_history entry exists
-        const targetCallId = existing.id
         if (matchedLead) {
-          await supabase
+          await adminSupabase
             .from('leads')
             .update({
               last_call_at: startedAt,
@@ -143,7 +161,7 @@ export async function POST(request: Request) {
             })
             .eq('id', matchedLead.id)
 
-          const { data: exHist } = await supabase
+          const { data: exHist } = await adminSupabase
             .from('lead_history')
             .select('id')
             .eq('lead_id', matchedLead.id)
@@ -162,7 +180,7 @@ export async function POST(request: Request) {
               desc += `\n🎙️ Call Recording: ${finalRecordingUrl || existing.recording_url}`
             }
 
-            await supabase
+            await adminSupabase
               .from('lead_history')
               .insert({
                 lead_id: matchedLead.id,
@@ -175,7 +193,7 @@ export async function POST(request: Request) {
         }
 
         if (finalRecordingUrl && !existing.recording_url) {
-          await supabase
+          await adminSupabase
             .from('call_logs')
             .update({ recording_url: finalRecordingUrl })
             .eq('id', existing.id)
@@ -183,7 +201,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const { count: totalLogsInDb } = await supabase
+    const { count: totalLogsInDb } = await adminSupabase
       .from('call_logs')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
@@ -203,7 +221,7 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
