@@ -5,9 +5,12 @@ const config: CapacitorConfig = {
   appName: 'Nobogent AI',
   webDir: 'public',
   server: {
-    url: 'https://app.nobogent.com',
-    allowNavigation: ['*'],
+    // If CAPACITOR_SERVER_URL is set (e.g. http://10.0.2.2:3000 for Android emulator dev), use it.
+    // Otherwise default to standard production app URL.
+    url: process.env.CAPACITOR_SERVER_URL || 'https://app.nobogent.com',
     cleartext: true,
+    androidScheme: 'https',
+    iosScheme: 'https',
   },
   plugins: {
     SplashScreen: {
