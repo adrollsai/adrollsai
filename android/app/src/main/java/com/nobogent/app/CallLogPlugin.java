@@ -22,8 +22,6 @@ import java.io.FileInputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
 
 @CapacitorPlugin(
     name = "CallLog",
@@ -53,7 +51,6 @@ public class CallLogPlugin extends Plugin {
             ret.put("hasPermission", true);
             call.resolve(ret);
         } else {
-            // Request all permission aliases
             requestAllPermissions(call, "permissionCallback");
         }
     }
@@ -73,7 +70,7 @@ public class CallLogPlugin extends Plugin {
     }
 
     @Override
-    protected boolean hasRequiredPermissions() {
+    public boolean hasRequiredPermissions() {
         boolean hasCallLog = getPermissionState("callLog") == com.getcapacitor.PermissionState.GRANTED;
         boolean hasMedia;
         if (Build.VERSION.SDK_INT >= 33) {
@@ -102,10 +99,50 @@ public class CallLogPlugin extends Plugin {
         }
     }
 
-    /**
-     * Find the recording file for a specific call and upload it directly to the server.
-     * This avoids sending large base64 data through the JS bridge.
-     */
+    @PluginMethod
+    public void debugScanRecordings(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("sdkVersion", Build.VERSION.SDK_INT);
+        result.put("hasCallLogPermission", getPermissionState("callLog") == com.getcapacitor.PermissionState.GRANTED);
+        
+        boolean hasMediaPerm = Build.VERSION.SDK_INT >= 33
+            ? getPermissionState("audio") == com.getcapacitor.PermissionState.GRANTED
+            : getPermissionState("storage") == com.getcapacitor.PermissionState.GRANTED;
+        result.put("hasAudioPermission", hasMediaPerm);
+
+        JSArray samples = new JSArray();
+        int totalAudioCount = 0;
+
+        try {
+            ContentResolver cr = getContext().getContentResolver();
+            Uri audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+            String[] projection = {
+                MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.SIZE
+            };
+
+            Cursor cursor = cr.query(audioUri, projection, null, null, MediaStore.Audio.Media.DATE_MODIFIED + " DESC");
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    totalAudioCount++;
+                    if (samples.length() < 20) {
+                        String path = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA));
+                        String name = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME));
+                        samples.put(name + " -> " + path);
+                    }
+                }
+                cursor.close();
+            }
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+        }
+
+        result.put("totalAudioCount", totalAudioCount);
+        result.put("sampleFiles", samples);
+        call.resolve(result);
+    }
+
     @PluginMethod
     public void uploadCallRecording(PluginCall call) {
         String phoneNumber = call.getString("phoneNumber", "");
@@ -131,7 +168,6 @@ public class CallLogPlugin extends Plugin {
 
                 Log.d(TAG, "Found recording: " + recordingFile.getAbsolutePath() + " (" + recordingFile.length() + " bytes)");
 
-                // Upload the file directly via multipart HTTP POST
                 String recordingUrl = uploadFileToServer(recordingFile, uploadUrl, authToken, phoneNumber);
 
                 JSObject result = new JSObject();
@@ -187,7 +223,6 @@ public class CallLogPlugin extends Plugin {
                     log.put("date", date);
                     log.put("name", name != null ? name : "");
 
-                    // Check if a recording file exists for this call (just flag it, don't load content)
                     if (number != null && duration > 0) {
                         File recFile = findRecordingFile(number, date);
                         if (recFile != null) {
@@ -212,90 +247,18 @@ public class CallLogPlugin extends Plugin {
         }
     }
 
-    /**
-     * Find a recording file matching a phone call by scanning:
-     * 1. Known manufacturer recording directories on the filesystem
-     * 2. MediaStore audio index as fallback
-     */
     private File findRecordingFile(String rawNumber, long callDateMs) {
         if (rawNumber == null || rawNumber.length() < 4) return null;
 
         String digitsOnly = rawNumber.replaceAll("[^0-9]", "");
         if (digitsOnly.length() < 4) return null;
 
-        // Get last 10 and last 7 digits for flexible matching
         String last10 = digitsOnly.length() >= 10 ? digitsOnly.substring(digitsOnly.length() - 10) : digitsOnly;
         String last7 = digitsOnly.length() >= 7 ? digitsOnly.substring(digitsOnly.length() - 7) : digitsOnly;
 
-        // Time window: 2 minutes before call to 10 minutes after (in milliseconds)
-        long windowStartMs = callDateMs - (2 * 60 * 1000);
-        long windowEndMs = callDateMs + (10 * 60 * 1000);
+        long windowStartMs = callDateMs - (10 * 60 * 1000);
+        long windowEndMs = callDateMs + (30 * 60 * 1000);
 
-        // 1. Direct filesystem scan of known recording directories
-        File sdcard = Environment.getExternalStorageDirectory();
-        String[] knownPaths = {
-            "Recordings/Call",
-            "Recordings",
-            "CallRecord",
-            "MIUI/sound_recorder/call_rec",
-            "Record/Call",
-            "call_record",
-            "PhoneRecord",
-            "Recording/Call",
-            "Sounds/CallRecord",
-            "Music/Recordings/Call Recordings",
-            "Call Recordings"
-        };
-
-        File bestMatch = null;
-        long bestMatchTimeDiff = Long.MAX_VALUE;
-
-        for (String path : knownPaths) {
-            File dir = new File(sdcard, path);
-            if (!dir.exists() || !dir.isDirectory()) continue;
-
-            File[] files = dir.listFiles();
-            if (files == null) continue;
-
-            for (File f : files) {
-                if (!f.isFile()) continue;
-                String fname = f.getName().toLowerCase();
-
-                // Must be an audio file
-                if (!fname.endsWith(".m4a") && !fname.endsWith(".mp3") && !fname.endsWith(".amr") &&
-                    !fname.endsWith(".wav") && !fname.endsWith(".aac") && !fname.endsWith(".ogg") &&
-                    !fname.endsWith(".3gp")) continue;
-
-                // File modification time must be within our window
-                long fileTime = f.lastModified();
-                if (fileTime < windowStartMs || fileTime > windowEndMs) continue;
-
-                // Check if filename contains the phone number (last 10 or last 7 digits)
-                boolean numberMatch = fname.contains(last10) || fname.contains(last7);
-
-                // If the phone number isn't in filename, still accept if it's in a call recording
-                // folder AND the timestamp matches closely (within 2 minutes of call)
-                long timeDiff = Math.abs(fileTime - callDateMs);
-                if (numberMatch) {
-                    if (timeDiff < bestMatchTimeDiff) {
-                        bestMatch = f;
-                        bestMatchTimeDiff = timeDiff;
-                    }
-                } else if (timeDiff < 120000) { // Within 2 minutes - likely the right recording
-                    if (bestMatch == null || timeDiff < bestMatchTimeDiff) {
-                        bestMatch = f;
-                        bestMatchTimeDiff = timeDiff;
-                    }
-                }
-            }
-        }
-
-        if (bestMatch != null) {
-            Log.d(TAG, "Found recording via filesystem scan: " + bestMatch.getAbsolutePath());
-            return bestMatch;
-        }
-
-        // 2. Fallback: MediaStore query
         try {
             ContentResolver cr = getContext().getContentResolver();
             Uri audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
@@ -306,51 +269,144 @@ public class CallLogPlugin extends Plugin {
                 MediaStore.Audio.Media.SIZE
             };
 
-            long windowStartSec = windowStartMs / 1000;
-            long windowEndSec = windowEndMs / 1000;
-
-            String selection = MediaStore.Audio.Media.DATE_MODIFIED + " >= ? AND " +
-                               MediaStore.Audio.Media.DATE_MODIFIED + " <= ?";
-            String[] selectionArgs = { String.valueOf(windowStartSec), String.valueOf(windowEndSec) };
-
-            Cursor cursor = cr.query(audioUri, projection, selection, selectionArgs,
-                MediaStore.Audio.Media.DATE_MODIFIED + " DESC");
+            Cursor cursor = cr.query(audioUri, projection, null, null, MediaStore.Audio.Media.DATE_MODIFIED + " DESC");
 
             if (cursor != null) {
+                File bestNumberMatch = null;
+                long closestTimeDiff = Long.MAX_VALUE;
+
+                File bestTimeMatchInCallDir = null;
+                long closestCallDirTimeDiff = Long.MAX_VALUE;
+
                 while (cursor.moveToNext()) {
                     String filePath = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA));
                     String fileName = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME));
                     long fileSize = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE));
 
-                    if (fileSize <= 0 || fileSize > 50 * 1024 * 1024) continue;
+                    if (fileSize <= 0 || fileSize > 100 * 1024 * 1024) continue;
                     if (filePath == null) continue;
 
                     String lowerPath = filePath.toLowerCase();
-                    boolean isCallRecFolder = lowerPath.contains("record") || lowerPath.contains("call");
-                    boolean containsNumber = (fileName != null && (fileName.contains(last10) || fileName.contains(last7)));
+                    String lowerName = fileName != null ? fileName.toLowerCase() : "";
 
-                    if (containsNumber || isCallRecFolder) {
-                        File audioFile = new File(filePath);
-                        if (audioFile.exists() && audioFile.canRead()) {
-                            cursor.close();
-                            Log.d(TAG, "Found recording via MediaStore: " + filePath);
-                            return audioFile;
+                    if (!lowerName.endsWith(".m4a") && !lowerName.endsWith(".mp3") && !lowerName.endsWith(".amr") &&
+                        !lowerName.endsWith(".wav") && !lowerName.endsWith(".aac") && !lowerName.endsWith(".ogg") &&
+                        !lowerName.endsWith(".3gp") && !lowerPath.endsWith(".m4a") && !lowerPath.endsWith(".mp3")) continue;
+
+                    long dateModifiedMs = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)) * 1000L;
+                    if (dateModifiedMs <= 0) {
+                        File tmpFile = new File(filePath);
+                        if (tmpFile.exists()) dateModifiedMs = tmpFile.lastModified();
+                    }
+
+                    boolean containsNumber = lowerName.contains(last10) || lowerPath.contains(last10) ||
+                                             lowerName.contains(last7) || lowerPath.contains(last7);
+
+                    boolean isCallRecFolder = lowerPath.contains("record") || lowerPath.contains("call") || lowerPath.contains("sound");
+
+                    long timeDiff = Math.abs(dateModifiedMs - callDateMs);
+
+                    if (containsNumber) {
+                        if (timeDiff < closestTimeDiff) {
+                            File f = new File(filePath);
+                            if (f.exists() && f.canRead()) {
+                                bestNumberMatch = f;
+                                closestTimeDiff = timeDiff;
+                            }
+                        }
+                    } else if (isCallRecFolder && dateModifiedMs >= windowStartMs && dateModifiedMs <= windowEndMs) {
+                        if (timeDiff < closestCallDirTimeDiff) {
+                            File f = new File(filePath);
+                            if (f.exists() && f.canRead()) {
+                                bestTimeMatchInCallDir = f;
+                                closestCallDirTimeDiff = timeDiff;
+                            }
                         }
                     }
                 }
                 cursor.close();
+
+                if (bestNumberMatch != null) {
+                    Log.d(TAG, "Found recording via MediaStore number match: " + bestNumberMatch.getAbsolutePath());
+                    return bestNumberMatch;
+                }
+
+                if (bestTimeMatchInCallDir != null) {
+                    Log.d(TAG, "Found recording via MediaStore call folder time match: " + bestTimeMatchInCallDir.getAbsolutePath());
+                    return bestTimeMatchInCallDir;
+                }
             }
         } catch (Exception e) {
-            Log.w(TAG, "MediaStore query failed", e);
+            Log.w(TAG, "MediaStore query error", e);
+        }
+
+        try {
+            File sdcard = Environment.getExternalStorageDirectory();
+            String[] knownPaths = {
+                "Recordings/Call",
+                "Recordings",
+                "CallRecord",
+                "MIUI/sound_recorder/call_rec",
+                "Record/Call",
+                "call_record",
+                "PhoneRecord",
+                "Recording/Call",
+                "Sounds/CallRecord",
+                "Music/Recordings/Call Recordings",
+                "Call Recordings",
+                "Android/data/com.android.phone/files",
+                "VoiceRecorder",
+                "Sounds"
+            };
+
+            File bestMatch = null;
+            long bestMatchTimeDiff = Long.MAX_VALUE;
+
+            for (String path : knownPaths) {
+                File dir = new File(sdcard, path);
+                if (!dir.exists() || !dir.isDirectory()) continue;
+
+                File[] files = dir.listFiles();
+                if (files == null) continue;
+
+                for (File f : files) {
+                    if (!f.isFile()) continue;
+                    String fname = f.getName().toLowerCase();
+
+                    if (!fname.endsWith(".m4a") && !fname.endsWith(".mp3") && !fname.endsWith(".amr") &&
+                        !fname.endsWith(".wav") && !fname.endsWith(".aac") && !fname.endsWith(".ogg") &&
+                        !fname.endsWith(".3gp")) continue;
+
+                    long fileTime = f.lastModified();
+                    long timeDiff = Math.abs(fileTime - callDateMs);
+
+                    boolean numberMatch = fname.contains(last10) || fname.contains(last7);
+
+                    if (numberMatch) {
+                        if (timeDiff < bestMatchTimeDiff) {
+                            bestMatch = f;
+                            bestMatchTimeDiff = timeDiff;
+                        }
+                    } else if (fileTime >= windowStartMs && fileTime <= windowEndMs) {
+                        if (bestMatch == null || timeDiff < bestMatchTimeDiff) {
+                            bestMatch = f;
+                            bestMatchTimeDiff = timeDiff;
+                        }
+                    }
+                }
+            }
+
+            if (bestMatch != null) {
+                Log.d(TAG, "Found recording via filesystem scan: " + bestMatch.getAbsolutePath());
+                return bestMatch;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Filesystem scan error", e);
         }
 
         return null;
     }
 
-    /**
-     * Upload a file to the server using multipart/form-data HTTP POST.
-     * Returns the public URL of the uploaded recording.
-     */
     private String uploadFileToServer(File file, String uploadUrl, String authToken, String phoneNumber) throws Exception {
         String boundary = "----NobogentBoundary" + System.currentTimeMillis();
         URL url = new URL(uploadUrl);
@@ -366,13 +422,10 @@ public class CallLogPlugin extends Plugin {
         conn.setReadTimeout(60000);
 
         OutputStream os = conn.getOutputStream();
-
-        // Write phone number field
         writeMultipartField(os, boundary, "phoneNumber", phoneNumber);
 
-        // Write the file
         String fileName = file.getName();
-        String mimeType = "audio/mp4"; // default
+        String mimeType = "audio/mp4";
         if (fileName.endsWith(".mp3")) mimeType = "audio/mpeg";
         else if (fileName.endsWith(".amr")) mimeType = "audio/amr";
         else if (fileName.endsWith(".wav")) mimeType = "audio/wav";
@@ -404,8 +457,6 @@ public class CallLogPlugin extends Plugin {
             is.close();
             if (len > 0) {
                 String respStr = new String(respBytes, 0, len, "UTF-8");
-                // Parse JSON response to get recording URL
-                // Simple extraction without JSON library
                 int idx = respStr.indexOf("\"recordingUrl\"");
                 if (idx >= 0) {
                     int start = respStr.indexOf("\"", idx + 14) + 1;

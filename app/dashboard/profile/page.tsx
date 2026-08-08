@@ -351,6 +351,8 @@ export default function ProfilePage() {
   }
 
   const [showFolderModal, setShowFolderModal] = useState(false)
+  const [showDebugModal, setShowDebugModal] = useState(false)
+  const [debugScanOutput, setDebugScanOutput] = useState<any>(null)
 
   const pickDirectoryNative = async () => {
     if ('showDirectoryPicker' in window && !(window as any).Capacitor?.isNativePlatform()) {
@@ -1877,6 +1879,28 @@ export default function ProfilePage() {
                 >
                   <RefreshCw size={16} className={isSyncingCallLogs ? 'animate-spin' : ''} />
                   <span>{isSyncingCallLogs ? 'Syncing Calls & Recordings...' : 'Sync Call Logs & Recordings Now'}</span>
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const plugin = (window as any).Capacitor?.Plugins?.CallLog || (window as any).CallLog
+                      if (!plugin || typeof plugin.debugScanRecordings !== 'function') {
+                        toast.error('Debug scanner unavailable. Please rebuild APK.')
+                        return
+                      }
+                      const res = await plugin.debugScanRecordings()
+                      setDebugScanOutput(res)
+                      setShowDebugModal(true)
+                    } catch (err: any) {
+                      toast.error('Debug scanner failed: ' + err.message)
+                    }
+                  }}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-3.5 px-6 rounded-2xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                >
+                  <Info size={16} />
+                  <span>Debug Phone Recording Scanner</span>
                 </button>
               </div>
 
@@ -3810,6 +3834,85 @@ export default function ProfilePage() {
                 className="bg-slate-900 text-white font-extrabold py-3.5 px-6 rounded-2xl text-xs transition-all cursor-pointer"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDebugModal && debugScanOutput && (
+        <div className="fixed inset-0 z-[20000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-white max-w-lg w-full rounded-[2.5rem] p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-5 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="bg-purple-100 text-purple-600 p-3 rounded-2xl">
+                  <Info size={22} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Recording Scanner Diagnostics</h3>
+                  <p className="text-xs text-slate-500 font-medium">Device permissions & MediaStore file status</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDebugModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4 overflow-y-auto pr-1 flex-1 text-xs">
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2">
+                <div className="flex justify-between font-bold">
+                  <span className="text-slate-500">Android SDK Version:</span>
+                  <span className="text-slate-900 font-mono">API {debugScanOutput.sdkVersion}</span>
+                </div>
+                <div className="flex justify-between font-bold">
+                  <span className="text-slate-500">Call Log Permission:</span>
+                  <span className={debugScanOutput.hasCallLogPermission ? 'text-green-600' : 'text-red-500'}>
+                    {debugScanOutput.hasCallLogPermission ? 'GRANTED' : 'DENIED'}
+                  </span>
+                </div>
+                <div className="flex justify-between font-bold">
+                  <span className="text-slate-500">Audio / Storage Permission:</span>
+                  <span className={debugScanOutput.hasAudioPermission ? 'text-green-600' : 'text-red-500'}>
+                    {debugScanOutput.hasAudioPermission ? 'GRANTED' : 'DENIED'}
+                  </span>
+                </div>
+                <div className="flex justify-between font-bold pt-2 border-t border-slate-200">
+                  <span className="text-slate-500">Total Audio Files Indexed:</span>
+                  <span className="text-blue-600 font-mono text-sm">{debugScanOutput.totalAudioCount} files</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2 font-bold">
+                  Sample Audio Files Found on Device (First 20):
+                </span>
+                {Array.isArray(debugScanOutput.sampleFiles) && debugScanOutput.sampleFiles.length > 0 ? (
+                  <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                    {debugScanOutput.sampleFiles.map((fileStr: string, idx: number) => (
+                      <div key={idx} className="bg-slate-100 p-2.5 rounded-xl font-mono text-[11px] text-slate-700 break-all border border-slate-200/60">
+                        {fileStr}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 text-amber-800 p-4 rounded-2xl text-xs font-medium border border-amber-200">
+                    No audio files found by Android MediaStore. Please ensure your voice recorder saves calls to storage and grants audio permission.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex justify-end flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowDebugModal(false)}
+                className="bg-slate-900 text-white font-extrabold py-3.5 px-6 rounded-2xl text-xs transition-all cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>
