@@ -311,7 +311,9 @@ export default function ProfilePage() {
   const [selectedTextLlm, setSelectedTextLlm] = useState('gemini')
   const [callTrackingSettings, setCallTrackingSettings] = useState<CallTrackingSettings>(() => getCallTrackingSettings())
   const [isSyncingCallLogs, setIsSyncingCallLogs] = useState(false)
-  const folderInputRef = useRef<HTMLInputElement>(null)
+  const [testCallPhone, setTestCallPhone] = useState('')
+  const [testCallDuration, setTestCallDuration] = useState('30')
+  const [isLoggingTestCall, setIsLoggingTestCall] = useState(false)
 
   const handleFolderSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -329,15 +331,7 @@ export default function ProfilePage() {
         }
       }
 
-      if (!path && (firstFile as any).path) {
-        const fullPath = (firstFile as any).path
-        const lastSlash = fullPath.lastIndexOf('/')
-        if (lastSlash > 0) {
-          path = fullPath.substring(0, lastSlash)
-        }
-      }
-
-      if (!path) {
+      if (!path && (firstFile as any).name) {
         path = '/Recordings/Call'
       }
 
@@ -366,6 +360,7 @@ export default function ProfilePage() {
         if (e.name === 'AbortError') return
       }
     }
+    // Fallback on mobile: click file input to choose file/folder
     folderInputRef.current?.click()
   }
 
@@ -1787,7 +1782,7 @@ export default function ProfilePage() {
                   type="file"
                   ref={folderInputRef}
                   onChange={handleFolderSelect}
-                  {...({ webkitdirectory: '', directory: '' } as any)}
+                  accept="audio/*,video/*,*/*"
                   className="hidden"
                 />
 
@@ -1866,7 +1861,7 @@ export default function ProfilePage() {
                     }
                   }}
                   disabled={isSyncingCallLogs}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-4 px-6 rounded-2xl text-xs shadow-md transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-4 px-6 rounded-2xl text-xs shadow-md transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 cursor-pointer"
                 >
                   <RefreshCw size={16} className={isSyncingCallLogs ? 'animate-spin' : ''} />
                   <span>{isSyncingCallLogs ? 'Syncing Calls & Recordings...' : 'Sync Call Logs & Recordings Now'}</span>
@@ -1878,6 +1873,66 @@ export default function ProfilePage() {
                   Last synced: {new Date(callTrackingSettings.lastSyncedAt).toLocaleString()}
                 </p>
               )}
+
+              {/* Quick Test Call Logger */}
+              <div className="pt-4 border-t border-slate-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 font-black uppercase tracking-wider">
+                    Instant Call Log Tester
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-semibold">Test matching lead calls instantly</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="tel"
+                    value={testCallPhone}
+                    onChange={(e) => setTestCallPhone(e.target.value)}
+                    placeholder="Lead Phone Number (e.g. 9876543210)"
+                    className="flex-1 bg-slate-50 border border-slate-200 py-3 px-3.5 rounded-2xl text-xs font-bold outline-none text-slate-800 focus:border-blue-500 transition-all"
+                  />
+                  <input
+                    type="number"
+                    value={testCallDuration}
+                    onChange={(e) => setTestCallDuration(e.target.value)}
+                    placeholder="Duration (s)"
+                    className="w-24 bg-slate-50 border border-slate-200 py-3 px-3 rounded-2xl text-xs font-bold outline-none text-slate-800 focus:border-blue-500 transition-all"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!testCallPhone.trim()) {
+                      toast.error('Please enter a phone number to test')
+                      return
+                    }
+                    setIsLoggingTestCall(true)
+                    try {
+                      const res = await syncAndroidCallLogs([{
+                        phoneNumber: testCallPhone,
+                        callType: 'OUTGOING',
+                        duration: parseInt(testCallDuration || '30', 10),
+                        status: 'CONNECTED',
+                        startedAt: new Date().toISOString()
+                      }])
+                      if (res.success) {
+                        toast.success(`Test call logged! Matched ${res.matchedLeadsCount} lead.`)
+                        setTestCallPhone('')
+                      } else {
+                        toast.error(res.error || 'Failed to log test call')
+                      }
+                    } catch (e: any) {
+                      toast.error('Error logging call: ' + e.message)
+                    } finally {
+                      setIsLoggingTestCall(false)
+                    }
+                  }}
+                  disabled={isLoggingTestCall || !testCallPhone.trim()}
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3 px-4 rounded-2xl text-xs shadow-sm transition-all active:scale-98 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Phone size={14} />
+                  <span>{isLoggingTestCall ? 'Logging Call...' : 'Log & Match Call to Lead Now'}</span>
+                </button>
+              </div>
             </div>
           </div>
         ) : activeSection === 'calendar' ? (

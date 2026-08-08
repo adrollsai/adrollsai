@@ -25,6 +25,13 @@ export function CapacitorBridge() {
         // Hide splash screen once bridge is ready
         await SplashScreen.hide().catch(() => {});
 
+        // Hide splash screen when app resumes from background (e.g. after phone call)
+        await App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) {
+            SplashScreen.hide().catch(() => {});
+          }
+        });
+
         // Configure Status Bar style
         await StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
 

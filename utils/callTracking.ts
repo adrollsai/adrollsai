@@ -64,8 +64,15 @@ export async function syncAndroidCallLogs(manualLogs?: CallLogEntry[]): Promise<
     // On Native Android, attempt reading call logs if available
     if (isAndroidCallTrackingAvailable() && !manualLogs) {
       try {
-        if ((window as any).Capacitor?.Plugins?.CallLog) {
-          const result = await (window as any).Capacitor.Plugins.CallLog.getCallLog({ limit: 50 })
+        const CallLogPlugin = (window as any).Capacitor?.Plugins?.CallLog || (window as any).CallLog
+        if (CallLogPlugin) {
+          if (typeof CallLogPlugin.hasPermission === 'function') {
+            const perm = await CallLogPlugin.hasPermission().catch(() => ({}))
+            if (!perm?.hasPermission && typeof CallLogPlugin.requestPermission === 'function') {
+              await CallLogPlugin.requestPermission().catch(() => {})
+            }
+          }
+          const result = await CallLogPlugin.getCallLog({ limit: 50 }).catch(() => null)
           if (result && Array.isArray(result.callLog)) {
             logsToSync = result.callLog.map((log: any) => {
               const dur = parseInt(log.duration || '0', 10)
