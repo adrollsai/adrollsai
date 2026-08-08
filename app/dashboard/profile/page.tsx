@@ -41,7 +41,8 @@ import {
   Mail,
   ExternalLink,
   Coins,
-  Folder
+  Folder,
+  X
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import WhatsAppSettings from '@/components/WhatsAppSettings'
