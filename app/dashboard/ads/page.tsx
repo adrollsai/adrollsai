@@ -611,7 +611,7 @@ export default function AdsPage() {
       if (targetProfile?.parent_id) effectiveUserIds.push(targetProfile.parent_id);
       if (targetProfile?.agency_id) effectiveUserIds.push(targetProfile.agency_id);
 
-      let propQuery = supabase.from('properties').select('id, title, price, image_url, description').in('user_id', effectiveUserIds);
+      let propQuery = supabase.from('properties').select('id, title, price, image_url, description, tags, configurations').in('user_id', effectiveUserIds);
 
       let pageQuery = supabase.from('landing_pages').select('*').in('user_id', effectiveUserIds);
 

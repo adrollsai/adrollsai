@@ -1,7 +1,5 @@
 'use client'
 
-import { Capacitor } from '@capacitor/core'
-
 export interface CallLogEntry {
   phoneNumber: string
   callType: 'OUTGOING' | 'INCOMING' | 'MISSED' | 'REJECTED'
@@ -49,7 +47,12 @@ export function saveCallTrackingSettings(settings: CallTrackingSettings): void {
  * True ONLY on native Android devices.
  */
 export function isAndroidCallTrackingAvailable(): boolean {
-  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
+  if (typeof window === 'undefined') return false
+  const cap = (window as any).Capacitor
+  if (cap && typeof cap.isNativePlatform === 'function') {
+    return cap.isNativePlatform() && cap.getPlatform() === 'android'
+  }
+  return false
 }
 
 function getCallLogPlugin(): any {

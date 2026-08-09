@@ -2,21 +2,20 @@
 
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Capacitor } from '@capacitor/core';
 
 export function CapacitorBridge() {
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) {
-      return;
-    }
-
     let backButtonListener: any = null;
 
     const setupNativeListeners = async () => {
       try {
+        const { Capacitor } = await import('@capacitor/core');
+        if (!Capacitor.isNativePlatform()) {
+          return;
+        }
         // Dynamically import plugins to avoid SSR issues
         const { App } = await import('@capacitor/app');
         const { StatusBar, Style } = await import('@capacitor/status-bar');

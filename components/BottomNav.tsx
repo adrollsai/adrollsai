@@ -13,6 +13,41 @@ export default function BottomNav() {
 
   const [showDistribute, setShowDistribute] = useState(false)
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent' | null>(null)
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
+
+  useEffect(() => {
+    const checkIsInputActive = () => {
+      if (typeof document === 'undefined') return
+      const active = document.activeElement as HTMLElement | null
+      let isInput = false
+      if (active) {
+        const tag = active.tagName ? active.tagName.toLowerCase() : ''
+        isInput = active.isContentEditable || tag === 'textarea' || (tag === 'input' && !['checkbox', 'radio', 'button', 'submit', 'range', 'color'].includes((active as HTMLInputElement).type || ''))
+      }
+      const isViewportShrunk = (typeof window !== 'undefined' && window.visualViewport) ? window.visualViewport.height < window.innerHeight * 0.85 : false
+      setIsKeyboardOpen(isInput || isViewportShrunk)
+    }
+
+    const interval = setInterval(checkIsInputActive, 200)
+    window.addEventListener('focusin', checkIsInputActive)
+    window.addEventListener('focusout', checkIsInputActive)
+    window.addEventListener('resize', checkIsInputActive)
+    if (typeof window !== 'undefined' && window.visualViewport) {
+      window.visualViewport.addEventListener('resize', checkIsInputActive)
+      window.visualViewport.addEventListener('scroll', checkIsInputActive)
+    }
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focusin', checkIsInputActive)
+      window.removeEventListener('focusout', checkIsInputActive)
+      window.removeEventListener('resize', checkIsInputActive)
+      if (typeof window !== 'undefined' && window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', checkIsInputActive)
+        window.visualViewport.removeEventListener('scroll', checkIsInputActive)
+      }
+    }
+  }, [])
 
   const impersonateId = searchParams.get('impersonate')
   useEffect(() => {
@@ -61,7 +96,7 @@ export default function BottomNav() {
     }
   }, [supabase])
 
-  if (!role) return null;
+  if (!role || isKeyboardOpen) return null;
 
   const allNavItems = [
     { name: 'Analytics', icon: BarChart2, path: '/dashboard/analytics' },

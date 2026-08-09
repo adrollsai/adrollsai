@@ -46,7 +46,7 @@ export async function GET(req: Request) {
         // Fetch properties for the owner
         const { data: properties, error: propErr } = await supabase
             .from('properties')
-            .select('id, title, price, address, configurations, youtube_url, image_url, images')
+            .select('id, title, price, address, configurations, youtube_url, image_url, images, tags')
             .eq('user_id', ownerUserId)
             .order('created_at', { ascending: false })
 

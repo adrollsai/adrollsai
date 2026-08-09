@@ -804,7 +804,18 @@ export default function ProductsPage() {
               </div>
               <div className="p-5 flex flex-col flex-1">
                 <div className="flex justify-between items-start mb-2 gap-2">
-                  <h3 className="text-lg font-bold text-slate-900 leading-tight line-clamp-1">{prop.title || 'Untitled'}</h3>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 leading-tight line-clamp-1">{prop.title || 'Untitled'}</h3>
+                    {(() => {
+                      const tags = getPropertyTags(prop);
+                      if (tags.length === 0) return null;
+                      return (
+                        <p className="text-[11px] font-bold text-blue-600 mt-0.5 truncate">
+                          🏷️ {tags.join(', ')}
+                        </p>
+                      );
+                    })()}
+                  </div>
                   
                   {/* Action Buttons Row */}
                   <div className="flex items-center gap-2 shrink-0">

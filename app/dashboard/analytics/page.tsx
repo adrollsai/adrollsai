@@ -121,7 +121,7 @@ export default function AnalyticsPage() {
   // --- STATE ---
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [duration, setDuration] = useState<'7d' | '30d' | 'this_month' | 'last_month' | 'all'>('30d')
+  const [duration, setDuration] = useState<'today' | '7d' | '30d' | 'this_month' | 'last_month' | 'all'>('30d')
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -211,6 +211,16 @@ export default function AnalyticsPage() {
 
   // All sales reps resolved from team profiles AND assigned lead records
   const allSalesReps = useMemo(() => {
+    const isTeamUser = !!(profile?.parent_id || profile?.agency_id || profile?.role === 'team_member' || profile?.role === 'agent');
+    if (isTeamUser && profile?.id) {
+      return [{
+        id: profile.id,
+        name: profile.business_name || profile.full_name || profile.email || 'You',
+        email: profile.email,
+        role: profile.role || 'agent'
+      }]
+    }
+
     const repIdsFromLeads = Array.from(new Set(leads.map(l => l.assigned_to).filter(Boolean)))
 
     const list = [
@@ -226,7 +236,7 @@ export default function AnalyticsPage() {
     ]
 
     return list
-  }, [leads, team])
+  }, [leads, team, profile])
 
   // Filter leads based on selectedAgentId for dashboard cards
   const filteredLeads = useMemo(() => {
@@ -607,14 +617,14 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Duration Selector */}
-          <div className="bg-slate-100 border border-slate-200 p-1 rounded-2xl flex items-center shadow-inner">
-            {(['7d', '30d', 'this_month', 'last_month', 'all'] as const).map((d) => (
+          <div className="bg-slate-100 border border-slate-200 p-1 rounded-2xl flex items-center shadow-inner overflow-x-auto">
+            {(['today', '7d', '30d', 'this_month', 'last_month', 'all'] as const).map((d) => (
               <button
                 key={d}
                 onClick={() => setDuration(d)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${duration === d ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all ${duration === d ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
               >
-                {d === '7d' ? '7 Days' : d === '30d' ? '30 Days' : d === 'this_month' ? 'This Month' : d === 'last_month' ? 'Last Month' : 'All Time'}
+                {d === 'today' ? 'Today' : d === '7d' ? '7 Days' : d === '30d' ? '30 Days' : d === 'this_month' ? 'This Month' : d === 'last_month' ? 'Last Month' : 'All Time'}
               </button>
             ))}
           </div>

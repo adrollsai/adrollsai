@@ -10,6 +10,7 @@ import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
 import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import { PhoneOff, PhoneCall } from 'lucide-react'
+import { getPropertyDisplayLabel } from '@/utils/property-helper'
 
 const STAGES = [
   'New Lead',
@@ -85,6 +86,7 @@ export default function LeadProfilePage() {
     const [reminderDate, setReminderDate] = useState('')
     const [pixels, setPixels] = useState<any[]>([])
     const [isLoadingPixels, setIsLoadingPixels] = useState(false)
+    const [isTeamMember, setIsTeamMember] = useState(false)
     const [isCalling, setIsCalling] = useState(false)
     const [showTranscript, setShowTranscript] = useState(false)
 
@@ -261,6 +263,13 @@ export default function LeadProfilePage() {
     const fetchPixelsForLead = async (ownerUserId: string) => {
         setIsLoadingPixels(true)
         try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+                const { data: myProf } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
+                if (myProf) {
+                    setIsTeamMember(!!(myProf.parent_id || myProf.agency_id || myProf.role === 'team_member'))
+                }
+            }
             const { data: profile } = await supabase.from('profiles').select('ad_account_id').eq('id', ownerUserId).single()
             if (profile?.ad_account_id) {
                 const res = await fetch('/api/facebook/pixels', {
@@ -535,7 +544,7 @@ export default function LeadProfilePage() {
             fetchNextLeadId(data)
 
             try {
-                const { data: propsData } = await supabase.from('properties').select('id, title').eq('user_id', data.user_id)
+                const { data: propsData } = await supabase.from('properties').select('id, title, tags, configurations').eq('user_id', data.user_id)
                 if (propsData) setProperties(propsData)
             } catch (e) {
                 console.error("Failed to fetch properties for lead detail:", e)
@@ -1095,23 +1104,25 @@ END:VCARD`
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Lead Source</span>
                             <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">{lead.source}</span>
                         </div>
-                        <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-50">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Target Meta Pixel</span>
-                            {isLoadingPixels ? (
-                                <span className="text-[10px] text-slate-400 animate-pulse font-bold">Loading...</span>
-                            ) : (
-                                <select
-                                    value={lead.pixel_id || ''}
-                                    onChange={(e) => handleFieldUpdate('pixel_id', e.target.value || null)}
-                                    className="bg-purple-50 text-purple-700 text-xs font-bold rounded-md border border-purple-200 px-2 py-1 outline-none cursor-pointer"
-                                >
-                                    <option value="">Profile Default</option>
-                                    {pixels.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
-                                    ))}
-                                </select>
-                            )}
-                        </div>
+                        {!isTeamMember && (
+                            <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-50">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">Target Meta Pixel</span>
+                                {isLoadingPixels ? (
+                                    <span className="text-[10px] text-slate-400 animate-pulse font-bold">Loading...</span>
+                                ) : (
+                                    <select
+                                        value={lead.pixel_id || ''}
+                                        onChange={(e) => handleFieldUpdate('pixel_id', e.target.value || null)}
+                                        className="bg-purple-50 text-purple-700 text-xs font-bold rounded-md border border-purple-200 px-2 py-1 outline-none cursor-pointer"
+                                    >
+                                        <option value="">Profile Default</option>
+                                        {pixels.map(p => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                )}
+                            </div>
+                        )}
                         {/* Meta Ad Origin & Creative Preview */}
                         {(() => {
                             let customFields = lead.custom_fields;
@@ -1246,7 +1257,7 @@ END:VCARD`
                                                     >
                                                         <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
                                                         {properties.map((p: any) => (
-                                                            <option key={p.id} value={p.id}>{p.title}</option>
+                                                            <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
                                                         ))}
                                                         {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
                                                     </select>

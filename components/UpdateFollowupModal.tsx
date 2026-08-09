@@ -2,6 +2,9 @@
 
 import React, { useState, useEffect } from 'react'
 import { X, Calendar, User, Building2, PhoneCall, CheckSquare, Clock, Tag, Sparkles, Loader2, AlertCircle } from 'lucide-react'
+import { getPropertyTags } from '@/utils/property-tags'
+import { getPropertyDisplayLabel } from '@/utils/property-helper'
+import { createClient } from '@/utils/supabase/client'
 
 interface UpdateFollowupModalProps {
   isOpen: boolean
@@ -61,6 +64,58 @@ export default function UpdateFollowupModal({
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [localProperties, setLocalProperties] = useState<any[]>(properties)
+
+  useEffect(() => {
+    const loadProperties = async () => {
+      // 1. If properties prop provided from parent, use it
+      if (properties && properties.length > 0) {
+        setLocalProperties(properties)
+        return
+      }
+
+      const leadOwnerId = lead?.user_id || lead?.agency_id || lead?.parent_id
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      const currentUserId = user?.id
+
+      // 2. Check strictly scoped localStorage property cache for lead's owner account
+      try {
+        if (typeof window !== 'undefined' && leadOwnerId) {
+          const raw = localStorage.getItem(`properties_cache_${leadOwnerId}`)
+          if (raw) {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setLocalProperties(parsed)
+              return
+            }
+          }
+        }
+      } catch (e) {}
+
+      // 3. Query Supabase strictly for workspace owner IDs
+      try {
+        const ownerIds = Array.from(new Set([leadOwnerId, currentUserId].filter(Boolean)))
+        if (ownerIds.length === 0) return
+
+        const { data } = await supabase
+          .from('properties')
+          .select('id, title, tags, configurations')
+          .in('user_id', ownerIds)
+          .order('created_at', { ascending: false })
+
+        if (data && data.length > 0) {
+          setLocalProperties(data)
+        }
+      } catch (e) {
+        console.error("UpdateFollowupModal property fetch error:", e)
+      }
+    }
+
+    if (isOpen) {
+      loadProperties()
+    }
+  }, [isOpen, lead, properties])
 
   useEffect(() => {
     if (lead && isOpen) {
@@ -243,10 +298,22 @@ export default function UpdateFollowupModal({
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-medium focus:outline-none focus:border-blue-500 focus:bg-white"
                   >
                     <option value="">-- Choose Project --</option>
-                    {properties.map(p => (
-                      <option key={p.id} value={p.id}>{p.title || p.name}</option>
+                    {localProperties.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {getPropertyDisplayLabel(p)}
+                      </option>
                     ))}
                   </select>
+                  {(() => {
+                    const selProp = localProperties.find(p => p.id === selectedPropertyId);
+                    const tags = selProp ? getPropertyTags(selProp) : [];
+                    if (tags.length === 0) return null;
+                    return (
+                      <p className="text-[11px] font-semibold text-blue-600 mt-1 truncate">
+                        🏷️ Internal Tags: {tags.join(', ')}
+                      </p>
+                    );
+                  })()}
                 </div>
 
                 <div>

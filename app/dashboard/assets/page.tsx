@@ -14,6 +14,7 @@ import { useUpload } from '@/utils/UploadContext'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
 import { getVideoPosterUrl } from '@/utils/get-video-poster'
+import { getPropertyTags } from '@/utils/property-tags'
 
 type Asset = {
     id: string
@@ -30,6 +31,8 @@ type Asset = {
 type Property = {
     id: string
     title: string
+    tags?: string[]
+    configurations?: any
 }
 
 const filters = ['All', 'image', 'video', 'Campaign Ready']
@@ -300,7 +303,7 @@ export default function AssetsPage() {
 
             const { data: propData } = await supabase
                 .from('properties')
-                .select('id, title')
+                .select('id, title, tags, configurations')
                 .eq('user_id', targetUserId)
                 .order('created_at', { ascending: false });
 
@@ -1108,9 +1111,14 @@ export default function AssetsPage() {
                         >
                             <option value="all">All Products</option>
                             <option value="unassigned">Unassigned / General</option>
-                            {properties.map(p => (
-                                <option key={p.id} value={p.id}>{p.title}</option>
-                            ))}
+                            {properties.map(p => {
+                                const tags = getPropertyTags(p);
+                                return (
+                                    <option key={p.id} value={p.id}>
+                                        {p.title}{tags.length > 0 ? ` [${tags.join(', ')}]` : ''}
+                                    </option>
+                                );
+                            })}
                         </select>
                         <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
@@ -1146,6 +1154,7 @@ export default function AssetsPage() {
                             const batchAssets = filteredAssets.filter(a => a.master_creative_id === batchId);
                             const sampleAsset = batchAssets[0];
                             const property = properties.find(p => p.id === sampleAsset.property_id);
+                            const propTags = getPropertyTags(property);
                             
                             // Create a readable label from the first asset's date
                             const batchDate = (sampleAsset as any).created_at ? new Date((sampleAsset as any).created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Recent';
@@ -1157,6 +1166,11 @@ export default function AssetsPage() {
                                             <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                                                 <Sparkles size={20} className="text-yellow-500" /> {property?.title || 'Creative Group'}
                                             </h3>
+                                            {propTags.length > 0 && (
+                                                <p className="text-xs font-semibold text-blue-600 mt-0.5">
+                                                    🏷️ Internal Tags: {propTags.join(', ')}
+                                                </p>
+                                            )}
                                             <p className="text-[10px] font-black text-blue-600 uppercase tracking-tighter bg-blue-50 px-2 py-0.5 rounded-md inline-block mt-1">Batch ID: {batchId?.slice(-6).toUpperCase()}</p>
                                             <span className="text-[10px] text-slate-400 font-bold ml-2 uppercase">{batchDate}</span>
                                         </div>

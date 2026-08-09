@@ -503,7 +503,7 @@ export default function CreationPage() {
 
       const { data, error: dbError } = await supabase
         .from('properties')
-        .select('id, title, address, price, images, image_url, description, created_at')
+        .select('id, title, address, price, images, image_url, description, created_at, tags, configurations')
         .eq('user_id', tUserId)
         .order('created_at', { ascending: false })
 

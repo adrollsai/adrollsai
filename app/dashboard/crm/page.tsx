@@ -108,8 +108,6 @@ export default function CRMPage() {
   const setActiveStage = (stage: string) => {
     setActiveStageState(stage)
     setCurrentPageState(1)
-    setLoading(true)
-    setLeads([])
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('crm_stage', stage)
       sessionStorage.setItem('crm_page', '1')
@@ -357,7 +355,7 @@ export default function CRMPage() {
       // Impersonation & Hierarchy Logic
       const urlParams = new URLSearchParams(window.location.search)
       const impersonateId = urlParams.get('impersonate')
-      let targetUserId = (['admin', 'agent'].includes(currentRole) && (profile?.parent_id || profile?.agency_id)) 
+      let targetUserId = (['admin', 'agent', 'team_member'].includes(currentRole) && (profile?.parent_id || profile?.agency_id)) 
         ? (profile.parent_id || profile.agency_id) 
         : user.id
 
@@ -376,9 +374,18 @@ export default function CRMPage() {
       }
       setTargetUserId(targetUserId)
 
-      // Fetch user properties for title resolution and manual product assignment
-      const { data: propsData } = await supabase.from('properties').select('id, title').eq('user_id', targetUserId)
-      if (propsData) setProperties(propsData)
+      // Fetch user properties for title resolution and manual product assignment strictly scoped to workspace owner
+      const workspaceOwnerIds = Array.from(new Set([targetUserId, parentId, user.id].filter(Boolean)))
+      let { data: propsData } = await supabase
+        .from('properties')
+        .select('id, title, tags, configurations')
+        .in('user_id', workspaceOwnerIds)
+        .order('created_at', { ascending: false })
+
+      if (propsData && propsData.length > 0) {
+          setProperties(propsData)
+          try { localStorage.setItem(`properties_cache_${targetUserId}`, JSON.stringify(propsData)); } catch(e) {}
+      }
 
       // Get campaign assignment rules for agents
       let activeCampaigns: string[] = []
@@ -404,93 +411,76 @@ export default function CRMPage() {
       }
       setAssignedCampaigns(activeCampaigns)
 
-      if (leads.length === 0 && !force) {
+      // Check local client cache to hydrate CRM pipeline immediately without showing loader spinner
+      const cacheKey = `crm_cache_${user.id}_${targetUserId}`;
+      const cachedLeads = force ? [] : getLocalCache<any>(cacheKey);
+
+      if (cachedLeads && cachedLeads.length > 0 && leads.length === 0) {
+          setLeads(cachedLeads);
+          setLoading(false);
+      } else if (leads.length === 0 && !force) {
           setLoading(true);
       }
       if (force) setIsRefreshing(true);
 
-      // Fetch Meta Pixels for target account
-      let adAccountId = profile?.ad_account_id
-      if (targetUserId !== user.id) {
-          const { data: targetProfile } = await supabase.from('profiles').select('ad_account_id').eq('id', targetUserId).single()
-          if (targetProfile?.ad_account_id) {
-              adAccountId = targetProfile.ad_account_id
-          }
+      // Fetch Meta Pixels for target account safely
+      try {
+        let adAccountId = profile?.ad_account_id
+        if (targetUserId !== user.id) {
+            const { data: targetProfile } = await supabase.from('profiles').select('ad_account_id').eq('id', targetUserId).single()
+            if (targetProfile?.ad_account_id) {
+                adAccountId = targetProfile.ad_account_id
+            }
+        }
+        if (adAccountId) {
+            fetchPixels(adAccountId, impersonateId)
+        }
+      } catch (e) {}
+
+      // Fetch team members safely
+      try {
+        if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
+            const { data: teamData } = await supabase.from('profiles')
+              .select('id, business_name, role')
+              .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
+              .in('role', ['admin', 'agent', 'agency'])
+            
+            let finalTeam = teamData || []
+            if (!finalTeam.find(t => t.id === targetUserId)) {
+                const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, role').eq('id', targetUserId).single()
+                if (targetProfile) finalTeam.push(targetProfile)
+            }
+
+            setTeam(finalTeam)
+        } else {
+            setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
+        }
+      } catch (e) {
+        setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
       }
-      if (adAccountId) {
-          fetchPixels(adAccountId, impersonateId)
-      }
 
-      if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
-          const { data: teamData } = await supabase.from('profiles')
-            .select('id, business_name, role')
-            .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
-            .in('role', ['admin', 'agent', 'agency'])
-          
-          let finalTeam = teamData || []
-          if (!finalTeam.find(t => t.id === targetUserId)) {
-              const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, role').eq('id', targetUserId).single()
-              if (targetProfile) finalTeam.push(targetProfile)
-          }
-
-          setTeam(finalTeam)
-      } else {
-          setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
-      }
-
-      // Query paginated leads from Supabase using range and count: 'exact'
-      const start = (currentPage - 1) * leadsPerPage;
-      const end = start + leadsPerPage - 1;
-
-      let buildQuery = (selectClause: string) => {
+      // Query leads strictly scoped to active user role
+      let buildQuery = () => {
           let q = supabase.from('leads')
-            .select(selectClause, { count: 'exact' })
-            .order('created_at', { ascending: false, nullsFirst: false });
+            .select('*')
+            .order('created_at', { ascending: false, nullsFirst: false })
+            .limit(1000);
 
-          if (currentRole === 'super_admin' || currentRole === 'agency' || currentRole === 'admin' || currentRole === 'client') {
-              q = q.eq('user_id', targetUserId);
+          const isTeamMemberUser = currentRole === 'agent' || currentRole === 'team_member' || !!parentId;
+
+          if (isTeamMemberUser) {
+              q = q.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`);
           } else {
-              q = q.eq('assigned_to', user.id);
+              q = q.eq('user_id', targetUserId);
           }
 
-          if (searchQuery.trim() !== '') {
-              const term = `%${searchQuery.trim()}%`;
-              q = q.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
-          } else if (activeStage) {
-              if (activeStage === 'New Lead') {
-                q = q.in('pipeline_stage', ['New Lead', 'New']);
-              } else if (activeStage === 'Requirement Taken' || activeStage === 'Contacted') {
-                q = q.in('pipeline_stage', ['Requirement Taken', 'Contacted', 'Qualified', 'Unqualified']);
-              } else if (activeStage === 'Appointment Booked') {
-                q = q.in('pipeline_stage', ['Appointment Booked', 'Appointment booked']);
-              } else if (activeStage === 'Visit Done') {
-                q = q.in('pipeline_stage', ['Visit Done', 'Appointment done']);
-              } else if (activeStage === 'Deal/Token') {
-                q = q.in('pipeline_stage', ['Deal/Token', 'Closed']);
-              } else {
-                q = q.eq('pipeline_stage', activeStage);
-              }
-          }
-
-          if (selectedCampaign.trim() !== '') {
-              q = q.or(`ad_name.eq.${selectedCampaign.trim()},campaign_name.eq.${selectedCampaign.trim()}`);
-          }
-          if (selectedForm.trim() !== '') {
-              q = q.or(`form_name.eq.${selectedForm.trim()},source.eq.${selectedForm.trim()}`);
-          }
-          if (selectedCsvAudience.trim() !== '') {
-              q = q.eq('csv_audience', selectedCsvAudience.trim());
-          }
-
-          return q.range(start, end);
+          return q;
       };
 
-      let { data, count, error } = await buildQuery('*, lead_history(action_type, description, created_at)');
-      if (error) {
-          const fallbackRes = await buildQuery('*');
-          if (fallbackRes.error) throw fallbackRes.error;
-          data = fallbackRes.data;
-          count = fallbackRes.count;
+      let { data, error } = await buildQuery();
+      if (error || !data) {
+          console.error("[CRM fetchLeads error]:", error?.message || error);
+          data = [];
       }
 
       if (data) {
@@ -508,9 +498,8 @@ export default function CRMPage() {
               return { ...lead, custom_fields: parsedCustomFields };
           });
           setLeads(parsedData);
-          if (count !== null && count !== undefined) {
-              setTotalLeadsCount(count);
-          }
+          setLocalCache(cacheKey, parsedData.slice(0, 150));
+          setTotalLeadsCount(parsedData.length);
       }
 
       try {
@@ -689,15 +678,6 @@ export default function CRMPage() {
     }
   }, [])
 
-  // Fetch leads when page or active filters change
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    setLoading(true)
-    fetchLeads(true)
-  }, [currentPage, activeStage, selectedCampaign, selectedForm, selectedCsvAudience])
 
   // Restore scroll position after leads finish rendering in DOM
   useEffect(() => {
@@ -1275,10 +1255,11 @@ END:VCARD\n`
   // --- ADVANCED FILTERING ---
   // 1. Leads matching search, campaign, and form filters (but NOT pipeline stage)
   const leadsMatchingFilters = useMemo(() => {
-    const unfiltered = leads.filter(l => {
-      // RESTRICT AGENTS: Only show leads assigned to them
-      if (role === 'agent') {
-          if (l.assigned_to !== userId) return false;
+    return leads.filter(l => {
+      // RESTRICT AGENTS / TEAM MEMBERS: Only show leads assigned to them or created by them
+      const isTeamMemberUser = (role as string) === 'agent' || (role as string) === 'team_member' || !!parentAdminId;
+      if (isTeamMemberUser) {
+          if (l.assigned_to !== userId && l.user_id !== userId) return false;
       }
 
       const matchSearch = !searchQuery || 
@@ -1301,37 +1282,55 @@ END:VCARD\n`
       
       return matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
+  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience, role, userId, parentAdminId])
 
-    // Sort to prioritize leads with active call status and newer creation times before deduplicating
-    const sortedUnfiltered = [...unfiltered].sort((a, b) => {
-        const hasHistoryA = (a.voice_call_status && a.voice_call_status !== 'not_called') ? 1 : 0;
-        const hasHistoryB = (b.voice_call_status && b.voice_call_status !== 'not_called') ? 1 : 0;
-        if (hasHistoryA !== hasHistoryB) {
-            return hasHistoryB - hasHistoryA;
-        }
-        const timeA = new Date(a.facebook_created_at || a.created_at).getTime();
-        const timeB = new Date(b.facebook_created_at || b.created_at).getTime();
-        return timeB - timeA;
-    });
+  const matchLeadToStage = (l: any, stageName: string): boolean => {
+    const statusLower = (l.status || '').trim().toLowerCase()
+    const pipelineLower = (l.pipeline_stage || '').trim().toLowerCase()
+    const s1 = statusLower || pipelineLower || 'new lead'
+    const s2 = pipelineLower || statusLower || 'new lead'
 
-    // Deduplicate leads by unique phone number (or ID if no phone) to keep CRM clean of duplicate contacts
-    const seen = new Set();
-    return sortedUnfiltered.filter(lead => {
-        const cleanPhone = lead.phone ? lead.phone.replace(/\D/g, '') : '';
-        const key = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : lead.id;
-        if (!key) return true;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    });
-  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, role, userId, assignedCampaigns, getLeadCampaignName])
+    const checkMatch = (s: string) => {
+      if (stageName === 'New Lead') {
+        return ['new lead', 'new', 'fresh', 'uncontacted', ''].includes(s)
+      } else if (stageName === 'Requirement Taken') {
+        return ['requirement taken', 'requirement', 'contacted', 'qualified', 'requirement_taken'].includes(s)
+      } else if (stageName === 'Appointment Booked') {
+        return ['appointment booked', 'appointment', 'booked', 'appointment_booked'].includes(s)
+      } else if (stageName === 'Visit Planned') {
+        return ['visit planned', 'visit plan', 'planned', 'visit_planned'].includes(s)
+      } else if (stageName === 'Visit Done') {
+        return ['visit done', 'appointment done', 'visited', 'site visit done', 'visit_done'].includes(s)
+      } else if (stageName === 'Revisit Done') {
+        return ['revisit done', 'revisit', 're-visited', 'revisit_done'].includes(s)
+      } else if (stageName === 'Negotiation') {
+        return ['negotiation', 'negotiating', 'offer'].includes(s)
+      } else if (stageName === 'Deal/Token') {
+        return ['deal/token', 'deal', 'token', 'closed', 'won', 'deal_token'].includes(s)
+      } else if (stageName === 'Lost/NI') {
+        return ['lost/ni', 'lost', 'ni', 'unqualified', 'not interested', 'lost_ni'].includes(s)
+      }
+      return s === stageName.toLowerCase()
+    }
 
-  // 2. Final filtered list including pipeline stage matching and sorted by newest first
+    return checkMatch(s1) || checkMatch(s2)
+  }
+
+  // 2. Stage counts calculated directly from leadsMatchingFilters using matchLeadToStage
+  const stageCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    STAGES.forEach(s => {
+      counts[s] = leadsMatchingFilters.filter(l => matchLeadToStage(l, s)).length
+    })
+    return counts
+  }, [leadsMatchingFilters])
+
+  // 3. Final filtered list including flexible pipeline stage matching and sorted by newest first
   const filteredLeads = useMemo(() => {
     const list = leadsMatchingFilters.filter(l => {
-      // If there's an active search query, bypass the pipeline stage tab filter to allow global search
       if (searchQuery.trim() !== '') return true
-      return (l.pipeline_stage || 'New') === activeStage
+      if (!activeStage) return true
+      return matchLeadToStage(l, activeStage)
     })
     return list.sort((a, b) => {
       const timeA = new Date(a.facebook_created_at || a.created_at).getTime()
@@ -1340,8 +1339,12 @@ END:VCARD\n`
     })
   }, [leadsMatchingFilters, activeStage, searchQuery])
 
-  const totalPages = Math.max(1, Math.ceil(totalLeadsCount / leadsPerPage))
-  const currentLeads = leads
+  const totalFilteredCount = filteredLeads.length
+  const totalPages = Math.max(1, Math.ceil(totalFilteredCount / leadsPerPage))
+  const currentLeads = useMemo(() => {
+    const start = (currentPage - 1) * leadsPerPage
+    return filteredLeads.slice(start, start + leadsPerPage)
+  }, [filteredLeads, currentPage, leadsPerPage])
 
   const renderPagination = (position: 'top' | 'bottom') => {
     if (totalPages <= 1) return null
@@ -1705,15 +1708,16 @@ END:VCARD\n`
                 {STAGES.map(stage => (
                     <button 
                         key={stage} 
-                        onClick={() => setActiveStage(stage)} 
+                        onClick={() => {
+                            setActiveStage(stage)
+                            setCurrentPage(1)
+                        }} 
                         className={`whitespace-nowrap px-5 py-3 rounded-2xl text-sm font-bold transition-all shadow-sm flex items-center gap-2 ${activeStage === stage ? 'bg-slate-900 text-white border border-slate-900' : 'bg-white text-slate-600 border border-slate-200/60 hover:bg-slate-50 hover:border-slate-300'}`}
                     >
                         {stage} 
-                        {activeStage === stage && (
-                            <span className="px-2 py-0.5 rounded-lg text-xs bg-slate-700 text-white">
-                                {totalLeadsCount}
-                            </span>
-                        )}
+                        <span className={`px-2 py-0.5 rounded-lg text-xs font-bold ${activeStage === stage ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                            {stageCounts[stage] || 0}
+                        </span>
                     </button>
                 ))}
             </div>
@@ -2298,26 +2302,32 @@ END:VCARD\n`
                                 );
                             })()}
 
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Meta Pixel</span>
-                                {isLoadingPixels ? (
-                                    <span className="text-xs text-slate-400 font-bold animate-pulse">Loading...</span>
-                                ) : (
-                                    <div onClick={e => e.stopPropagation()} className="relative mt-0.5">
-                                        <select 
-                                            value={lead.pixel_id || ''} 
-                                            onChange={(e) => updateLeadPixel(lead.id, e.target.value || null)} 
-                                            className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 text-slate-700 text-xs font-bold rounded-lg py-1.5 pl-2 pr-6 outline-none transition-all cursor-pointer truncate border border-slate-200/60"
-                                        >
-                                            <option value="">Profile Default</option>
-                                            {pixels.map(p => (
-                                                <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            {(() => {
+                                const isTeamMember = !!parentAdminId || (role as string) === 'team_member';
+                                if (isTeamMember) return null;
+                                return (
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Meta Pixel</span>
+                                        {isLoadingPixels ? (
+                                            <span className="text-xs text-slate-400 font-bold animate-pulse">Loading...</span>
+                                        ) : (
+                                            <div onClick={e => e.stopPropagation()} className="relative mt-0.5">
+                                                <select 
+                                                    value={lead.pixel_id || ''} 
+                                                    onChange={(e) => updateLeadPixel(lead.id, e.target.value || null)} 
+                                                    className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 text-slate-700 text-xs font-bold rounded-lg py-1.5 pl-2 pr-6 outline-none transition-all cursor-pointer truncate border border-slate-200/60"
+                                                >
+                                                    <option value="">Profile Default</option>
+                                                    {pixels.map(p => (
+                                                        <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
+                                );
+                            })()}
                         </div>
 
                         <div className="flex-grow"></div>

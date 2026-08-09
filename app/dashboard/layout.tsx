@@ -152,7 +152,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               .eq('id', session.user.id);
           }
         }
-        setAcceptedTerms(userProfile?.accepted_terms !== false)
+        const isTeamMember = !!(userProfile?.parent_id || userProfile?.agency_id || userProfile?.role === 'team_member')
+        setAcceptedTerms(isTeamMember || userProfile?.accepted_terms !== false)
         setIsAuthorized(true)
       }
     }

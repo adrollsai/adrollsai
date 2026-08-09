@@ -323,7 +323,7 @@ export default function PagesDashboard() {
             // Load properties inventory
             const { data: propertiesData, error: propertiesErr } = await supabase
                 .from('properties')
-                .select('id, title, description')
+                .select('id, title, description, tags, configurations')
                 .eq('user_id', userId)
                 .order('created_at', { ascending: false })
             if (propertiesErr) throw propertiesErr

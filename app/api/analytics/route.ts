@@ -30,18 +30,19 @@ export async function GET(req: Request) {
             .single()
 
         const myRole = myProfile?.role?.toLowerCase() || 'admin'
+        const isTeamUser = !!(myProfile?.parent_id || myProfile?.agency_id || myRole === 'agent' || myRole === 'team_member')
 
         // Determine target workspace owner ID
         let targetOwnerId = user.id
         if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
             targetOwnerId = impersonateId
-        } else if (myRole === 'agent' && (myProfile?.parent_id || myProfile?.agency_id)) {
+        } else if (isTeamUser && (myProfile?.parent_id || myProfile?.agency_id)) {
             targetOwnerId = myProfile.parent_id || myProfile.agency_id || user.id
         }
 
         // Determine active agent filter
         let activeAgentId = (filterAgentId && filterAgentId !== 'null' && filterAgentId !== 'undefined') ? filterAgentId : null
-        if (myRole === 'agent') {
+        if (isTeamUser) {
             activeAgentId = user.id
         }
 
@@ -51,6 +52,10 @@ export async function GET(req: Request) {
         let endDate: Date | null = null
 
         switch (duration) {
+            case 'today':
+                startDate = new Date()
+                startDate.setHours(0, 0, 0, 0)
+                break
             case '7d':
                 startDate = new Date()
                 startDate.setDate(now.getDate() - 7)
@@ -153,7 +158,8 @@ export async function GET(req: Request) {
             .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
             .order('created_at', { ascending: false })
 
-        const safeTeamMembers = teamMembers || []
+        const rawTeamMembers = teamMembers || []
+        const safeTeamMembers = isTeamUser ? rawTeamMembers.filter(m => m.id === user.id) : rawTeamMembers
 
         const teamData = safeTeamMembers.map(member => {
             const memberLeads = finalLeads.filter(l => l.assigned_to === member.id)
