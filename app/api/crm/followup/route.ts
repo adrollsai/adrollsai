@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { sendFollowupReminderEmail } from '@/utils/email-helper'
+import { sendPushNotification } from '@/utils/notification-helper'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -72,9 +73,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Call initiated logged successfully' })
     }
 
-    // Build update object for lead
-    const updatePayload: Record<string, any> = {
-      last_followup_at: new Date().toISOString()
+    // Build update object for lead using strictly verified DB columns
+    const updatePayload: Record<string, any> = {}
+
+    if (nextActionDate) {
+      updatePayload.next_followup = nextActionDate
     }
 
     if (leadStatus) {
@@ -92,10 +95,6 @@ export async function POST(request: Request) {
       updatePayload.pipeline_stage = body.pipelineStage || stageMap[leadStatus] || leadStatus
     }
 
-    if (clientStatus) {
-      updatePayload.client_status = clientStatus
-    }
-
     if (assignedTo) {
       updatePayload.assigned_to = assignedTo
     }
@@ -108,15 +107,7 @@ export async function POST(request: Request) {
       updatePayload.budget = budget
     }
 
-    if (nextActionDate) {
-      updatePayload.next_action_date = nextActionDate
-    }
-
-    if (nextActionType) {
-      updatePayload.next_action_type = nextActionType
-    }
-
-    // Update custom_fields with reference info & interested properties & DNP state
+    // Update custom_fields with reference info, interested properties, client_status, next action & DNP state
     let customFields: Record<string, any> = {}
     if (lead.custom_fields) {
       if (typeof lead.custom_fields === 'string') {
@@ -124,6 +115,15 @@ export async function POST(request: Request) {
       } else if (typeof lead.custom_fields === 'object') {
         customFields = { ...lead.custom_fields }
       }
+    }
+
+    customFields.last_followup_at = new Date().toISOString()
+    customFields.last_followup_type = followupType
+    if (nextActionDate) customFields.next_action_date = nextActionDate
+    if (nextActionType) customFields.next_action_type = nextActionType
+
+    if (clientStatus) {
+      customFields.client_status = clientStatus
     }
 
     if (isDnp) {
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
       description: historyDesc
     })
 
-    // Send email notification to assigned lead person
+    // Send Push & Email Notifications for next action / followup
     try {
       const assignedTargetId = assignedTo || lead.assigned_to || user.id
       const { data: assignedProfile } = await supabaseAdmin
@@ -184,6 +184,18 @@ export async function POST(request: Request) {
         .eq('id', assignedTargetId)
         .maybeSingle()
 
+      const formattedActionDate = nextActionDate 
+        ? new Date(nextActionDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : 'TBD';
+
+      const pushTitle = `📅 Scheduled Action: ${nextActionType || followupType}`
+      const pushBody = `Scheduled ${nextActionType || followupType} for ${lead.name || 'Lead'} (${lead.phone || 'No Phone'}) on ${formattedActionDate}.${remarks ? ` Note: ${remarks}` : ''}`
+      
+      const targetUserIdsToNotify = Array.from(new Set([assignedTargetId, lead.user_id, user.id].filter(Boolean)))
+      for (const targetId of targetUserIdsToNotify) {
+        await sendPushNotification(targetId, pushTitle, pushBody, `/dashboard/crm`, 'reminder').catch(e => console.error(`[Push Notification Error]:`, e))
+      }
+
       if (assignedProfile?.email) {
         const agentName = assignedProfile.full_name || assignedProfile.business_name || 'Sales Rep'
         await sendFollowupReminderEmail(
@@ -191,14 +203,14 @@ export async function POST(request: Request) {
           agentName,
           lead.name || 'Prospect Lead',
           lead.phone || 'N/A',
-          followupType,
+          nextActionType || followupType,
           nextActionDate || followupDate || new Date().toISOString(),
           remarks || ''
         )
         console.log(`[Followup API] Sent reminder email to ${assignedProfile.email} for lead ${lead.name}`);
       }
-    } catch (emailErr) {
-      console.error("[Followup API] Failed to send email alert to assigned rep:", emailErr)
+    } catch (notifErr) {
+      console.error("[Followup API] Failed to send notification alerts to assigned rep:", notifErr)
     }
 
     return NextResponse.json({

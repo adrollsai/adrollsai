@@ -77,20 +77,17 @@ export async function GET(req: Request) {
                 break
         }
 
-        // 1. Fetch CRM Leads using admin client (bypassing RLS)
+        // 1. Fetch CRM Leads using admin client (bypassing RLS truncation)
         let leadsQuery = supabaseAdmin
             .from('leads')
             .select('*')
-            .eq('user_id', targetOwnerId)
 
-        if (startDate) {
-            leadsQuery = leadsQuery.gte('created_at', startDate.toISOString())
-        }
-        if (endDate) {
-            leadsQuery = leadsQuery.lte('created_at', endDate.toISOString())
-        }
-        if (activeAgentId) {
-            leadsQuery = leadsQuery.eq('assigned_to', activeAgentId)
+        if (isTeamUser) {
+            leadsQuery = leadsQuery.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
+        } else if (activeAgentId) {
+            leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+        } else {
+            leadsQuery = leadsQuery.or(`user_id.eq.${targetOwnerId},assigned_to.eq.${targetOwnerId}`).limit(5000)
         }
 
         const { data: leads, error: leadsErr } = await leadsQuery
@@ -162,7 +159,7 @@ export async function GET(req: Request) {
         const safeTeamMembers = isTeamUser ? rawTeamMembers.filter(m => m.id === user.id) : rawTeamMembers
 
         const teamData = safeTeamMembers.map(member => {
-            const memberLeads = finalLeads.filter(l => l.assigned_to === member.id)
+            const memberLeads = finalLeads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
             const wonLeads = memberLeads.filter(l => ['Won', 'Closed', 'Appointment done'].includes(l.pipeline_stage)).length
             const qualifiedLeads = memberLeads.filter(l => ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won'].includes(l.pipeline_stage)).length
             const lostLeads = memberLeads.filter(l => ['Lost', 'Unqualified'].includes(l.pipeline_stage)).length

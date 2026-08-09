@@ -2334,20 +2334,22 @@ export default function ProfilePage() {
                   </h3>
                 </div>
               </div>
-              <div className="relative z-10 flex gap-3 w-full sm:w-auto shrink-0 mt-3 sm:mt-0">
-                <button
-                  onClick={() => router.push('/dashboard/usage')}
-                  className="w-full sm:w-auto text-center px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold text-white transition-all active:scale-95 cursor-pointer shadow-sm"
-                >
-                  View Ledger
-                </button>
-                <button
-                  onClick={() => router.push('/dashboard/billing')}
-                  className="w-full sm:w-auto text-center px-4 py-2 bg-white text-indigo-600 hover:bg-indigo-50 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
-                >
-                  Buy Packages
-                </button>
-              </div>
+              {isAdminLike && (
+                <div className="relative z-10 flex gap-3 w-full sm:w-auto shrink-0 mt-3 sm:mt-0">
+                  <button
+                    onClick={() => router.push('/dashboard/usage')}
+                    className="w-full sm:w-auto text-center px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold text-white transition-all active:scale-95 cursor-pointer shadow-sm"
+                  >
+                    View Ledger
+                  </button>
+                  <button
+                    onClick={() => router.push('/dashboard/billing')}
+                    className="w-full sm:w-auto text-center px-4 py-2 bg-white text-indigo-600 hover:bg-indigo-50 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+                  >
+                    Buy Packages
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Header Identity Card */}

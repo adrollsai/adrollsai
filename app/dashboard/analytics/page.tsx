@@ -129,8 +129,9 @@ export default function AnalyticsPage() {
   const [sortField, setSortField] = useState<string>('total')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  // WorkVeu Sub-Tab Navigation (Project Mgr & Action Mgr removed)
-  const [activeTab, setActiveTab] = useState<'analytics' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>('analytics')
+  // Sub-Tab Navigation
+  const [activeTab, setActiveTab] = useState<'analytics' | 'action_mgr' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>('analytics')
+  const [actionStatusFilter, setActionStatusFilter] = useState<'pending' | 'schedule' | 'today'>('today')
 
   // Data State
   const [leads, setLeads] = useState<any[]>([])
@@ -452,6 +453,123 @@ export default function AnalyticsPage() {
     }
   }, [leads, allSalesReps, searchQuery])
 
+  const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(profile?.role || 'admin')
+
+  // --- EMPLOYEE-WISE ACTION MANAGER MATRIX (Screenshot 1) ---
+  const actionManagerMatrix = useMemo(() => {
+    const salesReps = [
+      ...allSalesReps,
+      { id: 'unassigned', name: 'Unassigned', email: '' }
+    ]
+
+    const todayObj = new Date()
+    const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`
+
+    const getLocalDateStr = (dateVal: any): string | null => {
+      if (!dateVal) return null
+      let d: Date | null = null
+      if (typeof dateVal === 'string' && dateVal.includes('-') && dateVal.split('-')[0].length === 2) {
+        const parts = dateVal.split(' ')
+        const dateParts = parts[0].split('-')
+        d = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}T${parts[1] || '00:00'}:00`)
+      } else {
+        d = new Date(dateVal)
+      }
+      if (!d || isNaN(d.getTime())) return null
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    const actionTypes = [
+      { key: 'Call', label: 'Call' },
+      { key: 'Visit', label: 'Visit' },
+      { key: 'Revisit', label: 'Revisit' },
+      { key: 'Closing Meeting', label: 'Closing Meeting' },
+      { key: 'Home Meeting', label: 'Home Meeting' }
+    ]
+
+    let rows = salesReps.map(rep => {
+      const repLeads = leads.filter(l => rep.id === 'unassigned' ? (!l.assigned_to && !l.user_id) : (l.assigned_to === rep.id || l.user_id === rep.id))
+      
+      const targetLeads = repLeads.filter(l => {
+        let cf: any = l.custom_fields
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf) } catch (e) {}
+        }
+
+        const lastFollowupDateStr = getLocalDateStr(cf?.last_followup_at || l.last_call_at)
+        const nextActionDateStr = getLocalDateStr(l.next_followup || cf?.next_action_date || l.booked_time)
+
+        if (actionStatusFilter === 'today') {
+          return nextActionDateStr === todayStr
+        } else if (actionStatusFilter === 'schedule') {
+          return !!nextActionDateStr && nextActionDateStr > todayStr
+        } else if (actionStatusFilter === 'pending') {
+          // Show in Pending ONLY if a scheduled followup date in the past was missed AND followup remark was NOT updated on or after that date
+          if (!nextActionDateStr || nextActionDateStr >= todayStr) return false
+          if (['Closed', 'Lost/NI', 'Deal/Token'].includes(l.status || l.pipeline_stage)) return false
+          if (lastFollowupDateStr && lastFollowupDateStr >= nextActionDateStr) return false
+          return true
+        }
+        return true
+      })
+
+      const typeLeads: Record<string, any[]> = {
+        'Call': [],
+        'Visit': [],
+        'Revisit': [],
+        'Closing Meeting': [],
+        'Home Meeting': []
+      }
+
+      targetLeads.forEach(l => {
+        let cf: any = l.custom_fields
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf) } catch (e) {}
+        }
+        const actType = (cf?.next_action_type || l.next_action_type || cf?.last_followup_type || l.last_followup_type || 'Call').trim()
+        if (actType.toLowerCase().includes('revisit')) typeLeads['Revisit'].push(l)
+        else if (actType.toLowerCase().includes('closing')) typeLeads['Closing Meeting'].push(l)
+        else if (actType.toLowerCase().includes('home')) typeLeads['Home Meeting'].push(l)
+        else if (actType.toLowerCase().includes('visit')) typeLeads['Visit'].push(l)
+        else typeLeads['Call'].push(l)
+      })
+
+      const counts: Record<string, number> = {
+        'Call': typeLeads['Call'].length,
+        'Visit': typeLeads['Visit'].length,
+        'Revisit': typeLeads['Revisit'].length,
+        'Closing Meeting': typeLeads['Closing Meeting'].length,
+        'Home Meeting': typeLeads['Home Meeting'].length,
+        'total': targetLeads.length
+      }
+
+      return { rep, counts, typeLeads, targetLeads }
+    }).filter(r => r.rep.id !== 'unassigned' || r.counts.total > 0)
+
+    // For team members / agents, show ONLY their own stats card!
+    if (!isAdminLike && profile?.id) {
+      rows = rows.filter(r => r.rep.id === profile.id)
+    } else if (selectedAgentId && selectedAgentId !== 'all') {
+      rows = rows.filter(r => r.rep.id === selectedAgentId)
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim()
+      rows = rows.filter(r => r.rep.name.toLowerCase().includes(q))
+    }
+
+    const totals: Record<string, number> = { total: 0 }
+    actionTypes.forEach(t => totals[t.key] = 0)
+    rows.forEach(r => {
+      totals.total += r.counts.total
+      actionTypes.forEach(t => {
+        totals[t.key] += r.counts[t.key] || 0
+      })
+    })
+
+    return { rows, totals, actionTypes }
+  }, [leads, allSalesReps, actionStatusFilter, isAdminLike, profile?.id, selectedAgentId, searchQuery])
+
   // --- LEADERBOARD COMPUTATIONS (WorkVeu Screenshot 3) ---
   const followupBoardRows = useMemo(() => {
     return allSalesReps.map(rep => {
@@ -609,7 +727,7 @@ export default function AnalyticsPage() {
               <option value="unassigned">⚠️ Unassigned Leads ({leads.filter(l => !l.assigned_to).length})</option>
               {allSalesReps.map(rep => (
                 <option key={rep.id} value={rep.id}>
-                  👤 {rep.name} ({leads.filter(l => l.assigned_to === rep.id).length} leads)
+                  👤 {rep.name} ({leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id).length} leads)
                 </option>
               ))}
             </select>
@@ -654,6 +772,18 @@ export default function AnalyticsPage() {
           >
             <BarChart2 size={16} />
             <span>Analytics Dashboard</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('action_mgr')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold shrink-0 transition-all ${
+              activeTab === 'action_mgr' 
+                ? 'bg-blue-600 text-white shadow-sm' 
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <CheckSquare size={16} />
+            <span>Action Manager</span>
           </button>
 
           <button
@@ -893,6 +1023,128 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
 
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB: ACTION MANAGER (Screenshot 1 Request) */}
+          {activeTab === 'action_mgr' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              
+              {/* Controls Header: User Selector & Filter Options */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">User</span>
+                  {isAdminLike ? (
+                    <select
+                      value={selectedAgentId || 'all'}
+                      onChange={(e) => setSelectedAgentId(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 text-slate-900 text-sm font-extrabold rounded-2xl px-4 py-2 outline-none hover:bg-slate-100 cursor-pointer transition-all shadow-xs"
+                    >
+                      <option value="all">Me / All Team Members</option>
+                      {allSalesReps.map(rep => (
+                        <option key={rep.id} value={rep.id}>{rep.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="bg-slate-100 border border-slate-200 text-slate-900 text-sm font-extrabold rounded-2xl px-4 py-2 flex items-center gap-2">
+                      <User size={14} className="text-blue-600" />
+                      <span>{profile?.full_name || profile?.business_name || 'Me'}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Filter Checkboxes / Buttons (Pending, Schedule, Today) */}
+                <div className="flex items-center gap-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/60 self-start md:self-auto">
+                  <button
+                    onClick={() => setActionStatusFilter('pending')}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+                      actionStatusFilter === 'pending' ? 'bg-amber-500 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Clock size={13} /> Pending
+                  </button>
+                  <button
+                    onClick={() => setActionStatusFilter('schedule')}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+                      actionStatusFilter === 'schedule' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Calendar size={13} /> Schedule
+                  </button>
+                  <button
+                    onClick={() => setActionStatusFilter('today')}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+                      actionStatusFilter === 'today' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <CheckSquare size={13} /> Today
+                  </button>
+                </div>
+              </div>
+
+              {/* Employee Cards Grid (Matching Screenshot 1) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {actionManagerMatrix.rows.map(row => (
+                  <div key={row.rep.id} className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+                    
+                    <div>
+                      <div className="mb-4 pb-3 border-b border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Emp Name</span>
+                        <h4 className="text-lg font-black text-slate-900 mt-0.5">{row.rep.name}</h4>
+                      </div>
+
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between items-center py-1.5 px-3 text-xs font-extrabold text-slate-400 border-b border-slate-100">
+                          <span>Type</span>
+                          <span>T</span>
+                        </div>
+
+                        {actionManagerMatrix.actionTypes.map(t => {
+                          const count = row.counts[t.key] || 0
+                          return (
+                            <div
+                              key={t.key}
+                              onClick={() => {
+                                if (count > 0) {
+                                  openLeadsDrilldown(
+                                    `${row.rep.name} - ${t.label}`,
+                                    `${actionStatusFilter.toUpperCase()} ${t.label} Actions (${count})`,
+                                    row.typeLeads[t.key] || []
+                                  )
+                                }
+                              }}
+                              className={`flex justify-between items-center py-2.5 px-3 rounded-xl transition-all cursor-pointer ${
+                                count > 0 ? 'hover:bg-blue-50/70 text-slate-800 font-bold' : 'text-slate-400'
+                              }`}
+                            >
+                              <span className="text-sm font-bold text-slate-700">{t.label}</span>
+                              <span className={`text-sm font-black ${count > 0 ? 'text-blue-600' : 'text-slate-400'}`}>{count}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div
+                      onClick={() => {
+                        if (row.counts.total > 0) {
+                          openLeadsDrilldown(
+                            `${row.rep.name} - Total Actions`,
+                            `${actionStatusFilter.toUpperCase()} Total Actions (${row.counts.total})`,
+                            row.targetLeads
+                          )
+                        }
+                      }}
+                      className="flex justify-between items-center py-3 px-4 rounded-2xl bg-slate-50 border border-slate-200/80 font-black text-slate-900 mt-5 cursor-pointer hover:bg-blue-50 hover:border-blue-200 transition-colors"
+                    >
+                      <span className="text-sm font-black">Total</span>
+                      <span className="text-lg font-black text-blue-600">{row.counts.total}</span>
+                    </div>
+
+                  </div>
+                ))}
               </div>
 
             </div>

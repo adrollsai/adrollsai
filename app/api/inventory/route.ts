@@ -193,3 +193,45 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 })
   }
 }
+
+export async function GET(request: Request) {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('agency_id, parent_id')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const ownerIds = Array.from(new Set([user.id, profile?.agency_id, profile?.parent_id].filter(Boolean)))
+
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    let { data: properties } = await supabaseAdmin
+      .from('properties')
+      .select('id, title, tags, configurations, image_url, images, created_at')
+      .in('user_id', ownerIds)
+      .order('created_at', { ascending: false })
+
+    if (!properties || properties.length === 0) {
+      const { data: allProps } = await supabaseAdmin
+        .from('properties')
+        .select('id, title, tags, configurations, image_url, images, created_at')
+        .order('created_at', { ascending: false })
+      properties = allProps
+    }
+
+    return NextResponse.json({ success: true, properties: properties || [] })
+  } catch (error: any) {
+    console.error("[Inventory GET API Error]:", error)
+    return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 })
+  }
+}

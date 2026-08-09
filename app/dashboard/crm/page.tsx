@@ -374,18 +374,27 @@ export default function CRMPage() {
       }
       setTargetUserId(targetUserId)
 
-      // Fetch user properties for title resolution and manual product assignment strictly scoped to workspace owner
-      const workspaceOwnerIds = Array.from(new Set([targetUserId, parentId, user.id].filter(Boolean)))
-      let { data: propsData } = await supabase
-        .from('properties')
-        .select('id, title, tags, configurations')
-        .in('user_id', workspaceOwnerIds)
-        .order('created_at', { ascending: false })
+      // Fetch user properties for title resolution and manual product assignment via /api/inventory
+      try {
+        const invRes = await fetch('/api/inventory')
+        const invData = await invRes.json()
+        if (invData.success && Array.isArray(invData.properties) && invData.properties.length > 0) {
+          setProperties(invData.properties)
+          try { localStorage.setItem(`properties_cache_${targetUserId}`, JSON.stringify(invData.properties)); } catch(e) {}
+        } else {
+          const workspaceOwnerIds = Array.from(new Set([targetUserId, parentId, user.id].filter(Boolean)))
+          const { data: propsData } = await supabase
+            .from('properties')
+            .select('id, title, tags, configurations')
+            .in('user_id', workspaceOwnerIds)
+            .order('created_at', { ascending: false })
 
-      if (propsData && propsData.length > 0) {
-          setProperties(propsData)
-          try { localStorage.setItem(`properties_cache_${targetUserId}`, JSON.stringify(propsData)); } catch(e) {}
-      }
+          if (propsData && propsData.length > 0) {
+            setProperties(propsData)
+            try { localStorage.setItem(`properties_cache_${targetUserId}`, JSON.stringify(propsData)); } catch(e) {}
+          }
+        }
+      } catch (e) {}
 
       // Get campaign assignment rules for agents
       let activeCampaigns: string[] = []
@@ -2095,6 +2104,58 @@ END:VCARD\n`
                             <span className="text-[11px] font-bold text-slate-400 shrink-0">
                                 {new Date(lead.facebook_created_at || lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
                             </span>
+                        </div>
+
+                        {/* SCREENSHOT 2 REQUIREMENT: Followup, Next Action & Opening Comments Overlay */}
+                        <div className="mb-4 space-y-2 text-[11px] font-medium text-slate-700">
+                            {/* Followup Block */}
+                            {(() => {
+                                const followupRemark = lead.last_call_remark || lead.last_followup_remark || lead.last_followup_type || (lead.notes ? lead.notes.split('\n')[0] : 'Call Not Picked (DNP)');
+                                const followupDate = lead.last_followup_at || lead.last_call_at || lead.updated_at || lead.created_at;
+                                const followupDateStr = followupDate ? new Date(followupDate).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+                                return (
+                                    <div className="flex items-start gap-2 bg-blue-50/70 border border-blue-200/70 p-2.5 rounded-2xl shadow-xs">
+                                        <span className="text-blue-600 font-bold shrink-0 mt-0.5">📋</span>
+                                        <div className="min-w-0 flex-1">
+                                            <span className="font-extrabold text-blue-900">Followup :- </span>
+                                            <span className="text-slate-800 font-semibold">{followupRemark}</span>
+                                            {followupDateStr && <span className="font-extrabold text-blue-800 block text-[10px] mt-0.5">on {followupDateStr}</span>}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Next Action Block */}
+                            {(() => {
+                                const actionType = lead.next_action_type || lead.last_followup_type || 'Call';
+                                const actionDate = lead.next_action_date || lead.next_followup || lead.booked_time;
+                                const actionDateStr = actionDate ? new Date(actionDate).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'TBD';
+                                return (
+                                    <div className="flex items-start gap-2 bg-purple-50/70 border border-purple-200/70 p-2.5 rounded-2xl shadow-xs">
+                                        <span className="text-purple-600 font-bold shrink-0 mt-0.5">📅</span>
+                                        <div className="min-w-0 flex-1">
+                                            <span className="font-extrabold text-purple-900">Next Action :- </span>
+                                            <span className="text-slate-800 font-semibold">{actionType}</span>
+                                            <span className="font-extrabold text-purple-800 block text-[10px] mt-0.5">on {actionDateStr}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Opening Comments Block */}
+                            {(() => {
+                                const openingComment = lead.opening_comments || lead.remarks || lead.custom_fields?.requirements || (lead.form_name ? `Form: ${lead.form_name}` : null);
+                                if (!openingComment) return null;
+                                return (
+                                    <div className="flex items-start gap-2 bg-slate-50 border border-slate-200 p-2.5 rounded-2xl shadow-xs">
+                                        <span className="text-slate-500 font-bold shrink-0 mt-0.5">📝</span>
+                                        <div className="min-w-0 flex-1">
+                                            <span className="font-extrabold text-slate-900">Opening Comments :- </span>
+                                            <p className="text-slate-600 text-[11px] leading-snug line-clamp-3 mt-0.5">{openingComment}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         {/* ROW 3: Data Grid */}

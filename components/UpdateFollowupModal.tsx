@@ -74,34 +74,22 @@ export default function UpdateFollowupModal({
         return
       }
 
-      const leadOwnerId = lead?.user_id || lead?.agency_id || lead?.parent_id
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      const currentUserId = user?.id
-
-      // 2. Check strictly scoped localStorage property cache for lead's owner account
+      // 2. Fetch properties via /api/inventory API route (bypasses browser RLS blocks)
       try {
-        if (typeof window !== 'undefined' && leadOwnerId) {
-          const raw = localStorage.getItem(`properties_cache_${leadOwnerId}`)
-          if (raw) {
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setLocalProperties(parsed)
-              return
-            }
-          }
+        const res = await fetch('/api/inventory')
+        const data = await res.json()
+        if (data.success && Array.isArray(data.properties) && data.properties.length > 0) {
+          setLocalProperties(data.properties)
+          return
         }
       } catch (e) {}
 
-      // 3. Query Supabase strictly for workspace owner IDs
+      // 3. Fallback: Query Supabase directly
       try {
-        const ownerIds = Array.from(new Set([leadOwnerId, currentUserId].filter(Boolean)))
-        if (ownerIds.length === 0) return
-
+        const supabase = createClient()
         const { data } = await supabase
           .from('properties')
           .select('id, title, tags, configurations')
-          .in('user_id', ownerIds)
           .order('created_at', { ascending: false })
 
         if (data && data.length > 0) {
@@ -115,7 +103,7 @@ export default function UpdateFollowupModal({
     if (isOpen) {
       loadProperties()
     }
-  }, [isOpen, lead, properties])
+  }, [isOpen, properties])
 
   useEffect(() => {
     if (lead && isOpen) {
