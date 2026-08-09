@@ -12,7 +12,8 @@ import {
   AlertCircle,
   MoreVertical,
   Mail,
-  Calendar
+  Calendar,
+  ArrowLeft
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -161,6 +162,17 @@ export default function TeamPage() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24 px-4 sm:px-8 pt-8">
+      {/* Back Button */}
+      <div className="max-w-5xl mx-auto mb-4">
+        <button
+          onClick={() => router.push(`/dashboard/profile${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200/80 px-3.5 py-2 rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
+        >
+          <ArrowLeft size={16} />
+          <span>Back to Profile</span>
+        </button>
+      </div>
+
       {/* Header */}
       <div className="max-w-5xl mx-auto mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

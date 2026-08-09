@@ -13,7 +13,7 @@ import { PhoneOff, PhoneCall } from 'lucide-react'
 
 const STAGES = [
   'New Lead',
-  'Contacted',
+  'Requirement Taken',
   'Appointment Booked',
   'Visit Planned',
   'Visit Done',

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
-  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, FileText, Send, HelpCircle, Target, Calendar,
+  Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, ChevronUp, SlidersHorizontal, FileText, Send, HelpCircle, Target, Calendar,
   LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw, History
 } from 'lucide-react'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
@@ -22,7 +22,7 @@ import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@
 
 const STAGES = [
   'New Lead',
-  'Contacted',
+  'Requirement Taken',
   'Appointment Booked',
   'Visit Planned',
   'Visit Done',
@@ -120,6 +120,7 @@ export default function CRMPage() {
   const [selectedCampaign, setSelectedCampaign] = useState('')
   const [selectedForm, setSelectedForm] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [isMobileControlsCollapsed, setIsMobileControlsCollapsed] = useState(true)
 
   // --- VIEW MODE & DNP MANAGER STATE ---
   const [viewMode, setViewMode] = useState<'cards' | 'table'>(() => {
@@ -458,8 +459,8 @@ export default function CRMPage() {
           } else if (activeStage) {
               if (activeStage === 'New Lead') {
                 q = q.in('pipeline_stage', ['New Lead', 'New']);
-              } else if (activeStage === 'Contacted') {
-                q = q.in('pipeline_stage', ['Contacted', 'Requirement Taken', 'Qualified', 'Unqualified']);
+              } else if (activeStage === 'Requirement Taken' || activeStage === 'Contacted') {
+                q = q.in('pipeline_stage', ['Requirement Taken', 'Contacted', 'Qualified', 'Unqualified']);
               } else if (activeStage === 'Appointment Booked') {
                 q = q.in('pipeline_stage', ['Appointment Booked', 'Appointment booked']);
               } else if (activeStage === 'Visit Done') {
@@ -1559,44 +1560,65 @@ END:VCARD\n`
                     />
                 </div>
 
-                {/* View Mode Switcher (Cards vs Table List) */}
-                <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center gap-1 border border-slate-200/80 shrink-0 self-stretch sm:self-auto justify-center">
-                    <button
-                        type="button"
-                        onClick={() => setViewModeState('cards')}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all ${
-                            viewMode === 'cards'
-                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
-                                : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                        title="Cards View"
+                {/* Mobile Toggle Button for View & Filter Controls */}
+                <button 
+                  type="button" 
+                  onClick={() => setIsMobileControlsCollapsed(!isMobileControlsCollapsed)}
+                  className="sm:hidden flex items-center justify-between w-full bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/80 rounded-2xl px-4 py-2.5 transition-all text-left font-extrabold text-xs text-slate-700 active:scale-98 cursor-pointer shrink-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal size={14} className="text-blue-600" />
+                    <span>View & Filter Controls</span>
+                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL') && (
+                      <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
+                    <span>{isMobileControlsCollapsed ? 'Show' : 'Hide'}</span>
+                    {isMobileControlsCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+                  </div>
+                </button>
+
+                {/* View Mode Switcher (Cards vs Table List) - Collapsible on Mobile */}
+                <div className={`${isMobileControlsCollapsed ? 'hidden sm:flex' : 'flex'} flex-col sm:flex-row items-center gap-3 w-full md:w-auto`}>
+                    <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center gap-1 border border-slate-200/80 shrink-0 self-stretch sm:self-auto justify-center w-full sm:w-auto">
+                        <button
+                            type="button"
+                            onClick={() => setViewModeState('cards')}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all flex-1 sm:flex-initial ${
+                                viewMode === 'cards'
+                                    ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                                    : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                            title="Cards View"
+                        >
+                            <LayoutGrid size={15} /> Grid Cards
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setViewModeState('table')}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all flex-1 sm:flex-initial ${
+                                viewMode === 'table'
+                                    ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
+                                    : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                            title="Table List View"
+                        >
+                            <List size={15} /> List Table
+                        </button>
+                    </div>
+
+                    <button 
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto ${showFilters || selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
                     >
-                        <LayoutGrid size={15} /> Grid Cards
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setViewModeState('table')}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all ${
-                            viewMode === 'table'
-                                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50'
-                                : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                        title="Table List View"
-                    >
-                        <List size={15} /> List Table
+                        <Filter size={18} /> Filters {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL') && <span className="w-2 h-2 rounded-full bg-blue-400"></span>}
                     </button>
                 </div>
-
-                <button 
-                    onClick={() => setShowFilters(!showFilters)}
-                    className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 ${showFilters || selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-                >
-                    <Filter size={18} /> Filters {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL') && <span className="w-2 h-2 rounded-full bg-blue-400"></span>}
-                </button>
             </div>
 
-            {/* DNP MANAGER QUICK PILLS */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar pt-1">
+            {/* DNP MANAGER QUICK PILLS - Collapsible on Mobile */}
+            <div className={`${isMobileControlsCollapsed ? 'hidden sm:flex' : 'flex'} items-center gap-2 overflow-x-auto pb-1 custom-scrollbar pt-1`}>
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
                     <PhoneOff size={13} className="text-rose-500" /> DNP Filter:
                 </span>

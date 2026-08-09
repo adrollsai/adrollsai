@@ -14,7 +14,7 @@ interface UpdateFollowupModalProps {
 
 const STAGES = [
   'New Lead',
-  'Contacted',
+  'Requirement Taken',
   'Appointment Booked',
   'Visit Planned',
   'Visit Done',
