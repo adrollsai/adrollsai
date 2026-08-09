@@ -153,17 +153,28 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. Insert timeline history entry for matched lead using valid lead_history schema
+    // 4. Insert timeline history entry for matched lead using valid lead_history schema (with deduplication)
     if (matchedLeadId) {
-      await adminSupabase
+      const fileNameStr = file.name || 'audio'
+      const { data: existingEntry } = await adminSupabase
         .from('lead_history')
-        .insert({
-          lead_id: matchedLeadId,
-          user_id: user.id,
-          action_type: 'CALL_RECORDING',
-          description: `🎙️ Call Recording Attached: ${file.name || 'audio'}\n${recordingUrl}`,
-          created_at: new Date().toISOString()
-        })
+        .select('id')
+        .eq('lead_id', matchedLeadId)
+        .ilike('description', `%${fileNameStr}%`)
+        .limit(1)
+        .maybeSingle()
+
+      if (!existingEntry) {
+        await adminSupabase
+          .from('lead_history')
+          .insert({
+            lead_id: matchedLeadId,
+            user_id: user.id,
+            action_type: 'CALL_RECORDING',
+            description: `🎙️ Call Recording Attached: ${fileNameStr}\n${recordingUrl}`,
+            created_at: new Date().toISOString()
+          })
+      }
     }
 
     return NextResponse.json({

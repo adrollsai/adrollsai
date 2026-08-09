@@ -16,6 +16,43 @@
   }
 }
 
+/* Mobile View Scaling & Sleek Typography Adjustments */
+@media (max-width: 639px) {
+  html {
+    font-size: 14.5px;
+  }
+
+  body {
+    letter-spacing: -0.01em;
+  }
+
+  /* Scale down oversized cartoonish rounded corners on mobile */
+  .rounded-\[2\.5rem\],
+  .rounded-\[2rem\],
+  .rounded-\[1\.75rem\] {
+    border-radius: 1.25rem !important;
+  }
+
+  .rounded-3xl {
+    border-radius: 1rem !important;
+  }
+
+  /* Compact button & card padding for mobile screens */
+  .p-6, .p-8 {
+    padding: 1rem !important;
+  }
+
+  .px-6, .px-8 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .py-6, .py-8 {
+    padding-top: 1rem !important;
+    padding-bottom: 1rem !important;
+  }
+}
+
 /* Active tap feel for instant tactile responsiveness */
 button:active, a:active, [role="button"]:active {
   transform: scale(0.98);
@@ -35,4 +72,4 @@ button:active, a:active, [role="button"]:active {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
-}
+}

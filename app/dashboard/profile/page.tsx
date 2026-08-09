@@ -3703,6 +3703,25 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* Call & Recording Settings Tile - Available to ALL users (including team members & staff) */}
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+              <button 
+                onClick={() => setActiveSection('call_settings')} 
+                className="w-full p-5 flex items-center justify-between hover:bg-slate-50 transition-all group"
+              >
+                <div className="flex items-center gap-4 text-left">
+                  <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl group-hover:scale-105 transition-transform">
+                    <Phone size={20} />
+                  </div>
+                  <div>
+                    <span className="font-bold text-sm text-slate-900 block">Call & Recording Settings</span>
+                    <span className="text-[11px] text-slate-500 font-medium">Configure Android call log sync & recordings folder path</span>
+                  </div>
+                </div>
+                <ChevronRight size={20} className="text-slate-400 group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+
             <div className="bg-white rounded-[2rem] shadow-sm border border-red-100 overflow-hidden transition-all hover:border-red-200 hover:shadow-md">
               <button
                 onClick={handleSignOut}
