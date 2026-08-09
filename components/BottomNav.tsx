@@ -104,9 +104,9 @@ export default function BottomNav() {
   })
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[70] flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
-      <div className="bg-white/95 backdrop-blur-2xl border-t sm:border border-slate-200/60 shadow-[0_-8px_40px_rgba(0,0,0,0.08)] sm:shadow-2xl w-full sm:w-auto sm:max-w-[95%] sm:mb-6 sm:rounded-[2.5rem] px-2 sm:px-6 py-2 sm:py-3 pointer-events-auto transition-all">
-        <div className="flex items-center justify-start sm:justify-center gap-1 sm:gap-2 overflow-x-auto scrollbar-hide px-4 sm:px-0">
+    <div className="fixed bottom-0 left-0 right-0 z-[70] flex justify-center pointer-events-none bg-white/95 sm:bg-transparent backdrop-blur-2xl sm:backdrop-blur-none border-t sm:border-t-0 border-slate-200/80 shadow-[0_-4px_25px_rgba(0,0,0,0.06)] sm:shadow-none pb-[env(safe-area-inset-bottom)]">
+      <div className="bg-transparent sm:bg-white/95 sm:backdrop-blur-2xl sm:border border-slate-200/60 sm:shadow-2xl w-full sm:w-auto sm:max-w-[95%] sm:mb-6 sm:rounded-[2.5rem] px-2 sm:px-6 py-1.5 sm:py-3 pointer-events-auto transition-all">
+        <div className="flex items-center justify-start sm:justify-center gap-1 sm:gap-2 overflow-x-auto scrollbar-hide px-3 sm:px-0">
 
           {navItems.map((item) => {
             const isActive = item.path === '/dashboard'
