@@ -3523,9 +3523,28 @@ export default function AdsPage() {
                                                           
                                                           toast.success('Lead Form created successfully on Meta!');
                                                           
-                                                          // Append to forms dropdown list
-                                                          const createdForm = { id: data.id, name: newAdFormName.trim() };
+                                                          // Append complete form object with questions to state
+                                                          const createdForm = { 
+                                                            id: data.id, 
+                                                            name: newAdFormName.trim(),
+                                                            questions: [
+                                                              { type: 'FULL_NAME', label: 'Full Name' },
+                                                              { type: 'EMAIL', label: 'Email Address' },
+                                                              { type: 'PHONE', label: 'Phone Number' },
+                                                              ...adFormQuestions
+                                                            ]
+                                                          };
                                                           setMetaLeadForms((prev: any[]) => [...prev, createdForm]);
+                                                          
+                                                          // Refetch full forms list from Meta API
+                                                          fetch(`/api/facebook/forms${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+                                                            .then(r => r.json())
+                                                            .then(d => {
+                                                              if (d.forms && Array.isArray(d.forms)) {
+                                                                setMetaLeadForms(d.forms);
+                                                              }
+                                                            })
+                                                            .catch(console.error);
                                                           
                                                           // Automatically select it in the editingNode
                                                           setEditingNode({
