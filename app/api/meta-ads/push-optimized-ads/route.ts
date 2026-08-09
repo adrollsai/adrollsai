@@ -14,9 +14,6 @@ function normalizePublicR2Url(url: string): string {
             }
         } catch (e) {}
     }
-    if (target.includes('.r2.dev/adrolls-storage/')) {
-        target = target.replace('.r2.dev/adrolls-storage/', '.r2.dev/');
-    }
     return target;
 }
 

@@ -139,17 +139,12 @@ export default function CreationPage() {
       const response = await fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
       const assetData = await response.json()
       if (Array.isArray(assetData)) {
-        const photoAssets = assetData
-          .filter((a: any) => 
-            a.type === 'image' && 
-            a.url && 
-            !a.url.includes('processing') && 
-            !['Processing', 'Rendering', 'Failed'].includes(a.status)
-          )
-          .map((a: any) => ({
-            ...a,
-            url: a.url ? a.url.replace('r2.dev/adrolls-storage/', 'r2.dev/') : a.url
-          }))
+        const photoAssets = assetData.filter((a: any) => 
+          a.type === 'image' && 
+          a.url && 
+          !a.url.includes('processing') && 
+          !['Processing', 'Rendering', 'Failed'].includes(a.status)
+        )
         setExistingAssets(photoAssets)
       }
     } catch (err) {
@@ -2523,7 +2518,7 @@ export default function CreationPage() {
 
                       return (
                         <div key={i} className="relative group w-16 h-16 rounded-2xl overflow-hidden border-2 border-slate-200 shadow-sm flex-shrink-0 bg-slate-50 transition-all hover:scale-95 duration-200">
-                          <img src={url} className="w-full h-full object-cover" alt="asset" />
+                          <img src={url.includes('r2.dev') ? `/api/fetch-image?url=${encodeURIComponent(url)}` : url} className="w-full h-full object-cover" alt="asset" />
                           <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[8px] font-black text-center py-0.5 uppercase tracking-wide">
                             {badge}
                           </div>
@@ -2700,7 +2695,7 @@ export default function CreationPage() {
                         className="bg-white rounded-2xl overflow-hidden border border-slate-100 hover:border-blue-500 shadow-sm hover:shadow-md cursor-pointer transition-all group flex flex-col"
                       >
                         <div className="relative aspect-square overflow-hidden bg-slate-100">
-                          <img src={asset.url ? asset.url.replace('r2.dev/adrolls-storage/', 'r2.dev/') : ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="asset" />
+                          <img src={asset.url ? (asset.url.includes('r2.dev') ? `/api/fetch-image?url=${encodeURIComponent(asset.url)}` : asset.url) : ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="asset" />
                         </div>
                         <div className="p-3 flex-1 flex flex-col justify-between">
                           <span className="text-[9px] font-bold text-slate-400 capitalize truncate">
