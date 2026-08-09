@@ -24,8 +24,8 @@ async function processReferenceVideo(videoUrl: string, userId: string): Promise<
 
   const videoKey = `generated/${userId}/trimmed_ref_v2_${hash}.mp4`
   const audioKey = `generated/${userId}/ref_audio_v2_${hash}.mp3`
-  const trimmedVideoUrl = `${R2_PUBLIC_URL}/adrolls-storage/${videoKey}`
-  const extractedAudioUrl = `${R2_PUBLIC_URL}/adrolls-storage/${audioKey}`
+  const trimmedVideoUrl = `${R2_PUBLIC_URL}/${videoKey}`
+  const extractedAudioUrl = `${R2_PUBLIC_URL}/${audioKey}`
 
   // Check R2 cache first
   try {

@@ -227,7 +227,7 @@ export async function POST(req: Request) {
                         ContentType: contentType
                     }));
                     
-                    persistedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
+                    persistedUrl = `${R2_PUBLIC_URL}/${finalFileName}`;
                     console.log("[Worker] Successfully persisted to R2:", persistedUrl);
                 } catch (r2Error) {
                     console.error("[Worker] R2 Persistence Failed, using original URL:", r2Error);

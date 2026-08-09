@@ -139,12 +139,17 @@ export default function CreationPage() {
       const response = await fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
       const assetData = await response.json()
       if (Array.isArray(assetData)) {
-        const photoAssets = assetData.filter((a: any) => 
-          a.type === 'image' && 
-          a.url && 
-          !a.url.includes('processing') && 
-          !['Processing', 'Rendering', 'Failed'].includes(a.status)
-        )
+        const photoAssets = assetData
+          .filter((a: any) => 
+            a.type === 'image' && 
+            a.url && 
+            !a.url.includes('processing') && 
+            !['Processing', 'Rendering', 'Failed'].includes(a.status)
+          )
+          .map((a: any) => ({
+            ...a,
+            url: a.url ? a.url.replace('r2.dev/adrolls-storage/', 'r2.dev/') : a.url
+          }))
         setExistingAssets(photoAssets)
       }
     } catch (err) {
@@ -2695,7 +2700,7 @@ export default function CreationPage() {
                         className="bg-white rounded-2xl overflow-hidden border border-slate-100 hover:border-blue-500 shadow-sm hover:shadow-md cursor-pointer transition-all group flex flex-col"
                       >
                         <div className="relative aspect-square overflow-hidden bg-slate-100">
-                          <img src={asset.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="asset" />
+                          <img src={asset.url ? asset.url.replace('r2.dev/adrolls-storage/', 'r2.dev/') : ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="asset" />
                         </div>
                         <div className="p-3 flex-1 flex flex-col justify-between">
                           <span className="text-[9px] font-bold text-slate-400 capitalize truncate">

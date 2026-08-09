@@ -254,7 +254,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
           ContentType: contentType
         }));
 
-        persistedUrl = `${R2_PUBLIC_URL}/adrolls-storage/${finalFileName}`;
+        persistedUrl = `${R2_PUBLIC_URL}/${finalFileName}`;
         console.log("[Auto-Generate Worker] Successfully persisted to R2:", persistedUrl);
       } catch (r2Error) {
         console.error("[Auto-Generate Worker] R2 Persistence Failed, using original URL:", r2Error);
