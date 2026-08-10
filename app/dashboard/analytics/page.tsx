@@ -121,7 +121,12 @@ export default function AnalyticsPage() {
   // --- STATE ---
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [duration, setDuration] = useState<'today' | '7d' | '30d' | 'this_month' | 'last_month' | 'all'>('30d')
+  const [duration, setDuration] = useState<'today' | '7d' | '30d' | 'this_month' | 'last_month' | 'all'>('all')
+  const [customDate, setCustomDate] = useState<string>('')
+  const [startDate, setStartDate] = useState<string>('')
+  const [endDate, setEndDate] = useState<string>('')
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState<boolean>(false)
+  const [dateFilterMode, setDateFilterMode] = useState<'single' | 'range'>('single')
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -185,6 +190,9 @@ export default function AnalyticsPage() {
       queryParams.set('duration', duration)
       if (selectedAgentId) queryParams.set('agentId', selectedAgentId)
       if (impersonateId) queryParams.set('impersonate', impersonateId)
+      if (customDate) queryParams.set('customDate', customDate)
+      if (startDate) queryParams.set('startDate', startDate)
+      if (endDate) queryParams.set('endDate', endDate)
 
       const res = await fetch(`/api/analytics?${queryParams.toString()}`)
       const data = await res.json()
@@ -208,7 +216,7 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     fetchAnalytics()
-  }, [duration, selectedAgentId])
+  }, [duration, selectedAgentId, customDate, startDate, endDate])
 
   // All sales reps resolved from team profiles AND assigned lead records
   const allSalesReps = useMemo(() => {
@@ -739,12 +747,135 @@ export default function AnalyticsPage() {
             {(['today', '7d', '30d', 'this_month', 'last_month', 'all'] as const).map((d) => (
               <button
                 key={d}
-                onClick={() => setDuration(d)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all ${duration === d ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                onClick={() => {
+                  setCustomDate('')
+                  setStartDate('')
+                  setEndDate('')
+                  setDuration(d)
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all ${duration === d && !customDate && !startDate ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 {d === 'today' ? 'Today' : d === '7d' ? '7 Days' : d === '30d' ? '30 Days' : d === 'this_month' ? 'This Month' : d === 'last_month' ? 'Last Month' : 'All Time'}
               </button>
             ))}
+          </div>
+
+          {/* Custom Date / Range Picker Button */}
+          <div className="relative">
+            <button
+              onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+              className={`px-3 py-2 rounded-2xl text-xs font-black flex items-center gap-1.5 transition-all border shadow-xs cursor-pointer ${
+                (customDate || (startDate && endDate))
+                  ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                  : 'bg-white border-slate-300 text-slate-700 hover:border-blue-500'
+              }`}
+            >
+              <Calendar size={14} className={(customDate || (startDate && endDate)) ? 'text-white' : 'text-blue-600'} />
+              <span>
+                {customDate
+                  ? `Date: ${customDate}`
+                  : (startDate && endDate)
+                  ? `${startDate} → ${endDate}`
+                  : 'Custom Date'}
+              </span>
+            </button>
+
+            {/* Date Picker Popover */}
+            {isDatePickerOpen && (
+              <div className="absolute right-0 top-12 z-50 bg-white border border-slate-200 rounded-2xl p-4 shadow-xl w-72 space-y-3 animate-in fade-in zoom-in-95">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Calendar size={14} className="text-blue-600" /> Filter by Date
+                  </span>
+                  <button onClick={() => setIsDatePickerOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                    <X size={15} />
+                  </button>
+                </div>
+
+                {/* Mode Switcher */}
+                <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => { setDateFilterMode('single'); setStartDate(''); setEndDate(''); }}
+                    className={`py-1 rounded-lg transition-all cursor-pointer ${dateFilterMode === 'single' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    Single Date
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setDateFilterMode('range'); setCustomDate(''); }}
+                    className={`py-1 rounded-lg transition-all cursor-pointer ${dateFilterMode === 'range' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500'}`}
+                  >
+                    Date Range
+                  </button>
+                </div>
+
+                {dateFilterMode === 'single' ? (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 block">Select Specific Date:</label>
+                    <input
+                      type="date"
+                      value={customDate}
+                      onChange={(e) => {
+                        setCustomDate(e.target.value)
+                        setStartDate('')
+                        setEndDate('')
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Start Date:</label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => {
+                          setStartDate(e.target.value)
+                          setCustomDate('')
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">End Date:</label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => {
+                          setEndDate(e.target.value)
+                          setCustomDate('')
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomDate('')
+                      setStartDate('')
+                      setEndDate('')
+                      setIsDatePickerOpen(false)
+                    }}
+                    className="text-xs font-extrabold text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    Clear Filter
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsDatePickerOpen(false)}
+                    className="bg-blue-600 text-white px-4 py-1.5 rounded-xl text-xs font-bold shadow-sm hover:bg-blue-500 cursor-pointer"
+                  >
+                    Apply Filter
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Sync / Refresh Button */}

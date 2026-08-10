@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Plus, Trash2, Users, Layers, ArrowRight, RefreshCw, CheckCircle2, 
-  ChevronDown, Sparkles, UserCheck, Shield, SlidersHorizontal, AlertCircle
+  ChevronDown, Sparkles, UserCheck, Shield, SlidersHorizontal, AlertCircle, Search
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
@@ -57,7 +57,10 @@ export default function GroupLeadDistributionModal({
   const [isAddingGroup, setIsAddingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [selectedUserToAdd, setSelectedUserToAdd] = useState<Record<string, string>>({});
-  const [selectedCampaignToAdd, setSelectedCampaignToAdd] = useState<Record<string, string>>({});
+  
+  // Searchable Campaign Picker State
+  const [activePickerGroupId, setActivePickerGroupId] = useState<string | null>(null);
+  const [campaignSearchQuery, setCampaignSearchQuery] = useState('');
 
   // Flatten campaign names list
   const campaignNamesList = Array.from(new Set(
@@ -287,8 +290,6 @@ export default function GroupLeadDistributionModal({
       }
       return g;
     }));
-
-    setSelectedCampaignToAdd(prev => ({ ...prev, [groupId]: '' }));
   };
 
   const handleRemoveCampaign = (groupId: string, campaignName: string) => {
@@ -590,7 +591,7 @@ export default function GroupLeadDistributionModal({
                       {/* Mobile Section 2: Selected Integrations / Campaigns */}
                       <div className="space-y-1.5 pt-1">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                          Selected Campaigns
+                          Selected Campaigns ({group.campaigns.length})
                         </label>
                         <div className="flex flex-wrap gap-1.5 items-center">
                           {group.campaigns.length === 0 ? (
@@ -614,16 +615,16 @@ export default function GroupLeadDistributionModal({
 
                           {availableCampaigns.length > 0 && (
                             <div className="w-full pt-1">
-                              <select
-                                value={selectedCampaignToAdd[group.id] || ''}
-                                onChange={(e) => handleAddCampaignToGroup(group.id, e.target.value)}
-                                className="w-full appearance-none bg-emerald-100/80 hover:bg-emerald-200 border border-emerald-300 text-emerald-900 text-xs font-extrabold rounded-xl px-2.5 py-1.5 cursor-pointer outline-none transition-all"
+                              <button
+                                onClick={() => {
+                                  setActivePickerGroupId(group.id);
+                                  setCampaignSearchQuery('');
+                                }}
+                                className="w-full bg-emerald-100/80 hover:bg-emerald-200 border border-emerald-300 text-emerald-900 text-xs font-extrabold rounded-xl px-3 py-1.5 cursor-pointer transition-all shadow-xs flex items-center justify-center gap-1.5"
                               >
-                                <option value="">+ Add New Campaign</option>
-                                {availableCampaigns.map((c, i) => (
-                                  <option key={i} value={c}>{c}</option>
-                                ))}
-                              </select>
+                                <Search size={13} />
+                                <span>+ Add / Search Campaigns ({availableCampaigns.length} available)</span>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -736,7 +737,7 @@ export default function GroupLeadDistributionModal({
                               </div>
                             </td>
 
-                            {/* 3. Selected Integrations / Campaigns (Pills) */}
+                            {/* 3. Selected Integrations / Campaigns (Pills + Search Button) */}
                             <td className="py-4 px-4 align-top">
                               <div className="flex flex-wrap gap-1.5 items-center">
                                 {group.campaigns.length === 0 ? (
@@ -759,18 +760,16 @@ export default function GroupLeadDistributionModal({
                                 )}
 
                                 {availableCampaigns.length > 0 && (
-                                  <div className="relative inline-block">
-                                    <select
-                                      value={selectedCampaignToAdd[group.id] || ''}
-                                      onChange={(e) => handleAddCampaignToGroup(group.id, e.target.value)}
-                                      className="appearance-none bg-emerald-100/80 hover:bg-emerald-200/80 border border-emerald-300 text-emerald-900 text-xs font-extrabold rounded-xl px-3 py-1 cursor-pointer outline-none transition-all"
-                                    >
-                                      <option value="">+ Add New Campaign</option>
-                                      {availableCampaigns.map((c, i) => (
-                                        <option key={i} value={c}>{c}</option>
-                                      ))}
-                                    </select>
-                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      setActivePickerGroupId(group.id);
+                                      setCampaignSearchQuery('');
+                                    }}
+                                    className="inline-flex items-center gap-1 bg-emerald-100/80 hover:bg-emerald-200 border border-emerald-300 text-emerald-900 text-xs font-extrabold rounded-xl px-3 py-1 cursor-pointer transition-all shadow-xs"
+                                  >
+                                    <Search size={13} />
+                                    <span>+ Add / Search Campaigns</span>
+                                  </button>
                                 )}
                               </div>
                             </td>
@@ -841,6 +840,99 @@ export default function GroupLeadDistributionModal({
         </div>
 
       </div>
+
+      {/* SEARCHABLE CAMPAIGN PICKER MODAL POPOVER */}
+      {activePickerGroupId && (() => {
+        const targetGrp = groups.find(g => g.id === activePickerGroupId);
+        if (!targetGrp) return null;
+        const availCamps = campaignNamesList.filter(c => !targetGrp.campaigns.includes(c));
+        const filteredCamps = availCamps.filter(c => c.toLowerCase().includes(campaignSearchQuery.toLowerCase().trim()));
+
+        return (
+          <div 
+            onClick={() => setActivePickerGroupId(null)}
+            className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          >
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 p-4 sm:p-5 space-y-3.5 animate-in zoom-in-95"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+                    <Layers size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">Add Campaign to "{targetGrp.group_name}"</h3>
+                    <p className="text-[10px] font-bold text-slate-400">{availCamps.length} available campaign(s)</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setActivePickerGroupId(null)} 
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Search Input */}
+              <div className="relative">
+                <Search size={16} className="absolute left-3.5 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Type to search (e.g. Ananta, Penthouse, Vintage, August)..."
+                  value={campaignSearchQuery}
+                  onChange={(e) => setCampaignSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-8 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/30"
+                />
+                {campaignSearchQuery && (
+                  <button 
+                    onClick={() => setCampaignSearchQuery('')} 
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Campaign List */}
+              <div className="max-h-64 overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
+                {filteredCamps.length === 0 ? (
+                  <div className="py-8 text-center text-xs font-bold text-slate-400">
+                    No matching campaigns found for "{campaignSearchQuery}"
+                  </div>
+                ) : (
+                  filteredCamps.map((camp) => (
+                    <button
+                      key={camp}
+                      onClick={() => {
+                        handleAddCampaignToGroup(targetGrp.id, camp);
+                        setActivePickerGroupId(null);
+                        setCampaignSearchQuery('');
+                      }}
+                      className="w-full text-left bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200/80 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:text-emerald-900 transition-all flex items-center justify-between group cursor-pointer"
+                    >
+                      <span className="truncate pr-2">{camp}</span>
+                      <Plus size={14} className="text-slate-400 group-hover:text-emerald-600 shrink-0" />
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] font-bold text-slate-400">
+                <span>Showing {filteredCamps.length} of {availCamps.length} campaigns</span>
+                <button 
+                  onClick={() => setActivePickerGroupId(null)} 
+                  className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-extrabold cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

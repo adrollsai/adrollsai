@@ -51,50 +51,100 @@ export async function GET(req: Request) {
         let startDate: Date | null = null
         let endDate: Date | null = null
 
-        switch (duration) {
-            case 'today':
-                startDate = new Date()
-                startDate.setHours(0, 0, 0, 0)
-                break
-            case '7d':
-                startDate = new Date()
-                startDate.setDate(now.getDate() - 7)
-                break
-            case '30d':
-                startDate = new Date()
-                startDate.setDate(now.getDate() - 30)
-                break
-            case 'this_month':
-                startDate = new Date(now.getFullYear(), now.getMonth(), 1)
-                break
-            case 'last_month':
-                startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-                endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
-                break
-            case 'all':
-            default:
-                startDate = null
-                break
-        }
+        const startDateParam = url.searchParams.get('startDate')
+        const endDateParam = url.searchParams.get('endDate')
+        const customDateParam = url.searchParams.get('customDate')
 
-        // 1. Fetch CRM Leads using admin client (bypassing RLS truncation)
-        let leadsQuery = supabaseAdmin
-            .from('leads')
-            .select('*')
-
-        if (isTeamUser) {
-            leadsQuery = leadsQuery.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
-        } else if (activeAgentId) {
-            leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+        if (customDateParam && customDateParam !== 'null' && customDateParam !== 'undefined') {
+            startDate = new Date(customDateParam)
+            startDate.setHours(0, 0, 0, 0)
+            endDate = new Date(customDateParam)
+            endDate.setHours(23, 59, 59, 999)
+        } else if (startDateParam && startDateParam !== 'null' && startDateParam !== 'undefined') {
+            startDate = new Date(startDateParam)
+            startDate.setHours(0, 0, 0, 0)
+            if (endDateParam && endDateParam !== 'null' && endDateParam !== 'undefined') {
+                endDate = new Date(endDateParam)
+                endDate.setHours(23, 59, 59, 999)
+            }
         } else {
-            leadsQuery = leadsQuery.or(`user_id.eq.${targetOwnerId},assigned_to.eq.${targetOwnerId}`).limit(5000)
+            switch (duration) {
+                case 'today':
+                    startDate = new Date()
+                    startDate.setHours(0, 0, 0, 0)
+                    break
+                case '7d':
+                    startDate = new Date()
+                    startDate.setDate(now.getDate() - 7)
+                    break
+                case '30d':
+                    startDate = new Date()
+                    startDate.setDate(now.getDate() - 30)
+                    break
+                case 'this_month':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+                    break
+                case 'last_month':
+                    startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+                    endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+                    break
+                case 'all':
+                default:
+                    startDate = null
+                    break
+            }
         }
 
-        const { data: leads, error: leadsErr } = await leadsQuery
-        if (leadsErr) {
-            console.error("[Analytics API] Leads fetch error:", leadsErr)
+        // 1. Fetch ALL CRM Leads using admin client with pagination to bypass PostgREST 1,000 row cap
+        let finalLeads: any[] = []
+        let page = 0
+        const pageSize = 1000
+
+        // Determine workspace team profile IDs if workspace admin
+        let workspaceOwnerTeamIds: string[] = [targetOwnerId]
+        const { data: workspaceTeamProfiles } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
+
+        if (workspaceTeamProfiles && workspaceTeamProfiles.length > 0) {
+            workspaceOwnerTeamIds = Array.from(new Set(workspaceTeamProfiles.map(p => p.id)))
         }
-        const finalLeads = leads || []
+
+        while (true) {
+            let leadsQuery = supabaseAdmin
+                .from('leads')
+                .select('*')
+                .range(page * pageSize, (page + 1) * pageSize - 1)
+                .order('created_at', { ascending: false })
+
+            if (isTeamUser && activeAgentId) {
+                leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+            } else if (activeAgentId) {
+                leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+            } else {
+                // Return all leads belonging to any team member of this workspace
+                leadsQuery = leadsQuery.in('user_id', workspaceOwnerTeamIds)
+            }
+
+            if (startDate) {
+                leadsQuery = leadsQuery.gte('created_at', startDate.toISOString())
+            }
+            if (endDate) {
+                leadsQuery = leadsQuery.lte('created_at', endDate.toISOString())
+            }
+
+            const { data: pageLeads, error: leadsErr } = await leadsQuery
+            if (leadsErr) {
+                console.error("[Analytics API] Leads fetch error:", leadsErr)
+                break
+            }
+
+            if (!pageLeads || pageLeads.length === 0) break
+            finalLeads.push(...pageLeads)
+            if (pageLeads.length < pageSize) break
+            page++
+        }
 
         // 2. Fetch WhatsApp Chats & Messages
         let chatsQuery = supabaseAdmin
