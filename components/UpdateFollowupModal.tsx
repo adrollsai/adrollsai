@@ -24,7 +24,8 @@ const STAGES = [
   'Revisit Done',
   'Negotiation',
   'Deal/Token',
-  'Lost/NI'
+  'Lost/NI',
+  'Different Requirement'
 ]
 
 const FOLLOWUP_TYPES = ['Call', 'Visit', 'Revisit', 'Closing Meeting', 'Home Meeting', 'WhatsApp', 'Email']

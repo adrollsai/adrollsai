@@ -21,6 +21,7 @@ import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
 const STAGES = [
+  'All Leads',
   'New Lead',
   'Requirement Taken',
   'Appointment Booked',
@@ -29,7 +30,8 @@ const STAGES = [
   'Revisit Done',
   'Negotiation',
   'Deal/Token',
-  'Lost/NI'
+  'Lost/NI',
+  'Different Requirement'
 ]
 
 
@@ -96,13 +98,13 @@ export default function CRMPage() {
   const [activeStage, setActiveStageState] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('crm_stage')
+      if (saved && STAGES.includes(saved)) return saved
       if (saved === 'New') return 'New Lead'
-      if (saved === 'Requirement Taken') return 'Contacted'
       if (saved === 'Appointment booked') return 'Appointment Booked'
       if (saved === 'Appointment done') return 'Visit Done'
-      return saved || 'New Lead'
+      return saved || 'All Leads'
     }
-    return 'New Lead'
+    return 'All Leads'
   })
   
   const setActiveStage = (stage: string) => {
@@ -136,6 +138,8 @@ export default function CRMPage() {
   }
 
   const [selectedDnpFilter, setSelectedDnpFilter] = useState<'ALL' | 'DNP_ONLY' | 'DNP_1' | 'DNP_2' | 'DNP_3PLUS' | 'NO_DNP'>('ALL')
+  const [selectedNextActionFilter, setSelectedNextActionFilter] = useState<'ALL' | 'HAS_ACTION' | 'TODAY' | 'OVERDUE' | 'UPCOMING' | 'NO_ACTION'>('ALL')
+  const [selectedNextActionType, setSelectedNextActionType] = useState<string>('ALL')
   const [selectedAgentFilter, setSelectedAgentFilter] = useState<string>('ALL')
   const [selectedDateRange, setSelectedDateRange] = useState<string>('ALL')
   const [selectedCsvAudience, setSelectedCsvAudience] = useState<string>('')
@@ -377,8 +381,11 @@ export default function CRMPage() {
       // Fetch user properties for title resolution and manual product assignment via /api/inventory
       try {
         const invRes = await fetch('/api/inventory')
-        const invData = await invRes.json()
-        if (invData.success && Array.isArray(invData.properties) && invData.properties.length > 0) {
+        let invData: any = null
+        if (invRes.ok) {
+          try { invData = await invRes.json() } catch (e) {}
+        }
+        if (invData && invData.success && Array.isArray(invData.properties) && invData.properties.length > 0) {
           setProperties(invData.properties)
           try { localStorage.setItem(`properties_cache_${targetUserId}`, JSON.stringify(invData.properties)); } catch(e) {}
         } else {
@@ -471,8 +478,13 @@ export default function CRMPage() {
       // Fetch all workspace leads via server API without 1,000 row cap
       try {
         const leadsRes = await fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
-        const leadsJson = await leadsRes.json()
-        if (leadsJson.success && Array.isArray(leadsJson.leads)) {
+        let leadsJson: any = null
+        if (leadsRes.ok) {
+          try {
+            leadsJson = await leadsRes.json()
+          } catch (e) {}
+        }
+        if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads)) {
           setLeads(leadsJson.leads)
           setLocalCache(cacheKey, leadsJson.leads.slice(0, 150))
           setTotalLeadsCount(leadsJson.leads.length)
@@ -494,9 +506,11 @@ export default function CRMPage() {
 
       try {
           const res = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
-          const campaignData = await res.json()
-          if (campaignData.campaigns) {
-              setCampaigns(campaignData.campaigns)
+          if (res.ok) {
+              const campaignData = await res.json().catch(() => null)
+              if (campaignData && campaignData.campaigns) {
+                  setCampaigns(campaignData.campaigns)
+              }
           }
       } catch (err) {
           console.error("Error fetching campaigns in CRM:", err)
@@ -601,25 +615,27 @@ export default function CRMPage() {
     if (!origin?.video_url && (origin?.ad_id || leadId)) {
       try {
         const res = await fetch(`/api/meta-ads/video-source?adId=${origin.ad_id || ''}&leadId=${leadId || ''}`)
-        const data = await res.json()
-        if (data.success && data.video_url) {
-          const updatedOrigin = { 
-            ...origin, 
-            video_url: data.video_url, 
-            headline: data.headline || origin.headline, 
-            body: data.body || origin.body 
-          }
-          setActiveMediaModal({ origin: updatedOrigin, liveAdUrl })
-          
-          if (leadId) {
-            setLeads(prev => prev.map(l => {
-              if (l.id === leadId) {
-                let cf = l.custom_fields || {}
-                if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
-                return { ...l, custom_fields: { ...cf, meta_ad_origin: updatedOrigin } }
-              }
-              return l
-            }))
+        if (res.ok) {
+          const data = await res.json().catch(() => null)
+          if (data && data.success && data.video_url) {
+            const updatedOrigin = { 
+              ...origin, 
+              video_url: data.video_url, 
+              headline: data.headline || origin.headline, 
+              body: data.body || origin.body 
+            }
+            setActiveMediaModal({ origin: updatedOrigin, liveAdUrl })
+            
+            if (leadId) {
+              setLeads(prev => prev.map(l => {
+                if (l.id === leadId) {
+                  let cf = l.custom_fields || {}
+                  if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+                  return { ...l, custom_fields: { ...cf, meta_ad_origin: updatedOrigin } }
+                }
+                return l
+              }))
+            }
           }
         }
       } catch (e) {
@@ -700,8 +716,8 @@ export default function CRMPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ impersonateId })
-        }).then(res => res.json()).then(data => {
-          if (data.updatedCount > 0) {
+        }).then(res => res.ok ? res.json() : null).then(data => {
+          if (data && data.updatedCount > 0) {
             fetchLeads(true);
           }
         }).catch(err => console.error("WhatsApp lead auto-backfill error:", err));
@@ -710,9 +726,11 @@ export default function CRMPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         })
-        const syncData = await syncRes.json()
-        if (syncData.success && syncData.count > 0) {
-          fetchLeads(true)
+        if (syncRes.ok) {
+          const syncData = await syncRes.json().catch(() => null)
+          if (syncData && syncData.success && syncData.count > 0) {
+            fetchLeads(true)
+          }
         }
       } catch (e) {
         console.error("Auto background CRM sync error:", e)
@@ -822,8 +840,11 @@ export default function CRMPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adAccountId, impersonateId: impId })
       })
-      const data = await res.json()
-      if (data.pixels) {
+      let data: any = null
+      if (res.ok) {
+        data = await res.json().catch(() => null)
+      }
+      if (data && data.pixels) {
         setPixels(data.pixels)
       } else {
         setPixels([])
@@ -1114,8 +1135,11 @@ export default function CRMPage() {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ formId: selectedFormId || undefined }) 
         })
-        const data = await res.json()
-        if (data.success) {
+        let data: any = null
+        if (res.ok) {
+          data = await res.json().catch(() => null)
+        }
+        if (data && data.success) {
             alert(`Imported ${data.count} new leads out of ${data.total} found.`)
             fetchLeads(true)
             setIsSyncModalOpen(false)
@@ -1464,6 +1488,49 @@ END:VCARD\n`
         return true
       })()
 
+      // NEXT ACTION FILTER
+      const matchNextAction = (() => {
+        let cf: any = l.custom_fields
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf) } catch (e) {}
+        }
+        const actionDateStr = l.next_action_date || l.next_followup || cf?.next_action_date
+        const hasDate = !!actionDateStr
+        let isPast = false
+        let isToday = false
+        let isFuture = false
+
+        if (hasDate) {
+          const actionDateObj = new Date(actionDateStr)
+          if (!isNaN(actionDateObj.getTime())) {
+            const now = new Date()
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+            const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+            if (actionDateObj < startOfToday) {
+              isPast = true
+            } else if (actionDateObj >= startOfToday && actionDateObj <= endOfToday) {
+              isToday = true
+            } else {
+              isFuture = true
+            }
+          }
+        }
+
+        if (selectedNextActionFilter === 'HAS_ACTION' && !hasDate) return false
+        if (selectedNextActionFilter === 'TODAY' && (!hasDate || !isToday)) return false
+        if (selectedNextActionFilter === 'OVERDUE' && (!hasDate || !isPast)) return false
+        if (selectedNextActionFilter === 'UPCOMING' && (!hasDate || !isFuture)) return false
+        if (selectedNextActionFilter === 'NO_ACTION' && hasDate) return false
+
+        if (selectedNextActionType !== 'ALL') {
+          const actionType = l.next_action_type || cf?.next_action_type || l.last_followup_type || 'Call'
+          if (actionType.toLowerCase() !== selectedNextActionType.toLowerCase()) return false
+        }
+
+        return true
+      })()
+
       const matchSearch = !searchQuery || 
                           l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           l.phone?.includes(searchQuery) || 
@@ -1482,11 +1549,12 @@ END:VCARD\n`
       const matchCsvAudience = selectedCsvAudience === '' || 
                                l.csv_audience?.trim() === selectedCsvAudience.trim()
       
-      return matchAgent && matchDate && matchDnp && matchSearch && matchCampaign && matchForm && matchCsvAudience
+      return matchAgent && matchDate && matchDnp && matchNextAction && matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
-  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, selectedDnpFilter, role, userId, parentAdminId])
+  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
 
   const matchLeadToStage = (l: any, stageName: string): boolean => {
+    if (stageName === 'All Leads') return true
     const statusLower = (l.status || '').trim().toLowerCase()
     const pipelineLower = (l.pipeline_stage || '').trim().toLowerCase()
     const s1 = statusLower || pipelineLower || 'new lead'
@@ -1511,6 +1579,8 @@ END:VCARD\n`
         return ['deal/token', 'deal', 'token', 'closed', 'won', 'deal_token'].includes(s)
       } else if (stageName === 'Lost/NI') {
         return ['lost/ni', 'lost', 'ni', 'unqualified', 'not interested', 'lost_ni'].includes(s)
+      } else if (stageName === 'Different Requirement') {
+        return ['different requirement', 'different_requirement', 'different req'].includes(s)
       }
       return s === stageName.toLowerCase()
     }
@@ -1774,7 +1844,7 @@ END:VCARD\n`
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal size={14} className="text-blue-600" />
                     <span>View & Filter Controls</span>
-                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL') && (
+                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL') && (
                       <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
                     )}
                   </div>
@@ -1815,43 +1885,15 @@ END:VCARD\n`
 
                     <button 
                         onClick={() => setShowFilters(!showFilters)}
-                        className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto ${showFilters || selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                        className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto ${showFilters || selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
                     >
-                        <Filter size={18} /> Filters {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL') && <span className="w-2 h-2 rounded-full bg-blue-400"></span>}
+                        <Filter size={18} /> Filters {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL') && <span className="w-2 h-2 rounded-full bg-blue-400"></span>}
                     </button>
                 </div>
             </div>
 
-            {/* DNP MANAGER QUICK PILLS - Collapsible on Mobile */}
-            <div className={`${isMobileControlsCollapsed ? 'hidden sm:flex' : 'flex'} items-center gap-2 overflow-x-auto pb-1 custom-scrollbar pt-1`}>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
-                    <PhoneOff size={13} className="text-rose-500" /> DNP Filter:
-                </span>
-                {[
-                    { id: 'ALL', label: 'All Leads' },
-                    { id: 'DNP_ONLY', label: '🔥 DNP Only' },
-                    { id: 'DNP_1', label: 'DNP 1' },
-                    { id: 'DNP_2', label: 'DNP 2' },
-                    { id: 'DNP_3PLUS', label: 'DNP 3+ (Retry Queue)' },
-                    { id: 'NO_DNP', label: 'No DNP' }
-                ].map(p => (
-                    <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setSelectedDnpFilter(p.id as any)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all border shrink-0 ${
-                            selectedDnpFilter === p.id
-                                ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
-                                : 'bg-slate-50 text-slate-600 border-slate-200/80 hover:bg-slate-100'
-                        }`}
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-
             {showFilters && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100 animate-in slide-in-from-top-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-3 border-t border-slate-100 animate-in slide-in-from-top-2">
                     {/* Agent Filter */}
                     <div className="relative flex-1">
                         <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Assigned Agent</label>
@@ -1863,6 +1905,50 @@ END:VCARD\n`
                             ))}
                         </select>
                         <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+                    </div>
+
+                    {/* Next Action Timing Filter */}
+                    <div className="relative flex-1">
+                        <label className="block text-[9px] font-black text-purple-600 uppercase mb-1">Next Action Schedule</label>
+                        <select value={selectedNextActionFilter} onChange={(e) => setSelectedNextActionFilter(e.target.value as any)} className="w-full appearance-none bg-purple-50/60 hover:bg-purple-100/60 border border-purple-200/80 text-purple-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-purple-500/20 transition-all cursor-pointer truncate">
+                            <option value="ALL">All Next Actions</option>
+                            <option value="TODAY">📅 Due Today</option>
+                            <option value="OVERDUE">⚠️ Overdue Actions</option>
+                            <option value="UPCOMING">⚡ Upcoming / Future</option>
+                            <option value="HAS_ACTION">🔔 Any Scheduled Action</option>
+                            <option value="NO_ACTION">❌ No Action Scheduled</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-purple-400 pointer-events-none" />
+                    </div>
+
+                    {/* Next Action Type Filter */}
+                    <div className="relative flex-1">
+                        <label className="block text-[9px] font-black text-purple-600 uppercase mb-1">Action Type</label>
+                        <select value={selectedNextActionType} onChange={(e) => setSelectedNextActionType(e.target.value)} className="w-full appearance-none bg-purple-50/60 hover:bg-purple-100/60 border border-purple-200/80 text-purple-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-purple-500/20 transition-all cursor-pointer truncate">
+                            <option value="ALL">All Action Types</option>
+                            <option value="Call">📞 Call</option>
+                            <option value="Visit">🏠 Visit</option>
+                            <option value="Revisit">🔄 Revisit</option>
+                            <option value="Closing Meeting">💼 Closing Meeting</option>
+                            <option value="Home Meeting">🏡 Home Meeting</option>
+                            <option value="WhatsApp">💬 WhatsApp</option>
+                            <option value="Email">✉️ Email</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-purple-400 pointer-events-none" />
+                    </div>
+
+                    {/* DNP Filter Dropdown */}
+                    <div className="relative flex-1">
+                        <label className="block text-[9px] font-black text-rose-500 uppercase mb-1">DNP Status</label>
+                        <select value={selectedDnpFilter} onChange={(e) => setSelectedDnpFilter(e.target.value as any)} className="w-full appearance-none bg-rose-50/60 hover:bg-rose-100/60 border border-rose-200/80 text-rose-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-rose-500/20 transition-all cursor-pointer truncate">
+                            <option value="ALL">All Leads (No DNP Filter)</option>
+                            <option value="DNP_ONLY">🔥 DNP Only</option>
+                            <option value="DNP_1">DNP 1</option>
+                            <option value="DNP_2">DNP 2</option>
+                            <option value="DNP_3PLUS">DNP 3+ (Retry Queue)</option>
+                            <option value="NO_DNP">No DNP</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-rose-400 pointer-events-none" />
                     </div>
 
                     {/* Date Range Filter */}
@@ -1898,9 +1984,9 @@ END:VCARD\n`
                         <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
                     </div>
 
-                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL') && (
+                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL') && (
                         <div className="col-span-full flex justify-end">
-                            <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setSelectedDnpFilter('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors">Clear All Filters</button>
+                            <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setSelectedDnpFilter('ALL'); setSelectedNextActionFilter('ALL'); setSelectedNextActionType('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors">Clear All Filters</button>
                         </div>
                     )}
                 </div>
@@ -2028,7 +2114,7 @@ END:VCARD\n`
                                                     onChange={(e) => updateStage(lead.id, e.target.value, e)}
                                                     className="appearance-none bg-blue-50 text-blue-700 text-xs font-bold rounded-xl py-1.5 px-2.5 border border-blue-200/80 outline-none cursor-pointer hover:bg-blue-100 transition-all"
                                                 >
-                                                    {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                                                    {STAGES.filter(s => s !== 'All Leads').map(s => <option key={s} value={s}>{s}</option>)}
                                                 </select>
                                             </td>
                                             <td className="p-4" onClick={e => e.stopPropagation()}>
@@ -2284,13 +2370,13 @@ END:VCARD\n`
                                         onChange={(e) => updateStage(lead.id, e.target.value, e)}
                                         className="appearance-none bg-blue-50 text-blue-700 text-xs font-bold rounded-xl py-1 px-3 pr-7 border border-blue-200 outline-none cursor-pointer hover:bg-blue-100 transition-all"
                                     >
-                                        {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                                        {STAGES.filter(s => s !== 'All Leads').map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                     <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
                                 </div>
-                                {lead.booked_time && (
-                                    <span className="text-xs font-black bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-300/80 flex items-center gap-1.5 shadow-sm shrink-0 mt-1">
-                                        📆 Booked: {new Date(lead.booked_time).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                {(lead.next_followup || lead.custom_fields?.next_action_date) && (
+                                    <span className="text-xs font-black bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-200/80 flex items-center gap-1.5 shadow-sm shrink-0 mt-1">
+                                        ⏰ Next Action: {lead.custom_fields?.next_action_type || 'Followup'} on {new Date(lead.next_followup || lead.custom_fields?.next_action_date).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
                                     </span>
                                 )}
                             </div>
@@ -2299,65 +2385,34 @@ END:VCARD\n`
                             </span>
                         </div>
 
-                        {/* SCREENSHOT 2 REQUIREMENT: Followup, Next Action & Opening Comments Overlay */}
-                        <div className="mb-4 space-y-2 text-[11px] font-medium text-slate-700">
-                            {/* Followup Block */}
-                            {(() => {
-                                const followupRemark = lead.last_call_remark || lead.last_followup_remark || lead.last_followup_type || (lead.notes ? lead.notes.split('\n')[0] : 'Call Not Picked (DNP)');
-                                const followupDate = lead.last_followup_at || lead.last_call_at || lead.updated_at || lead.created_at;
-                                const followupDateStr = followupDate ? new Date(followupDate).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-                                return (
-                                    <div className="flex items-start gap-2 bg-blue-50/70 border border-blue-200/70 p-2.5 rounded-2xl shadow-xs">
-                                        <span className="text-blue-600 font-bold shrink-0 mt-0.5">📋</span>
-                                        <div className="min-w-0 flex-1">
-                                            <span className="font-extrabold text-blue-900">Followup :- </span>
-                                            <span className="text-slate-800 font-semibold">{followupRemark}</span>
-                                            {followupDateStr && <span className="font-extrabold text-blue-800 block text-[10px] mt-0.5">on {followupDateStr}</span>}
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-
-                            {/* Next Action Block */}
-                            {(() => {
-                                const actionType = lead.next_action_type || lead.last_followup_type || 'Call';
-                                const actionDate = lead.next_action_date || lead.next_followup || lead.booked_time;
-                                const actionDateStr = actionDate ? new Date(actionDate).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'TBD';
-                                return (
-                                    <div className="flex items-start gap-2 bg-purple-50/70 border border-purple-200/70 p-2.5 rounded-2xl shadow-xs">
-                                        <span className="text-purple-600 font-bold shrink-0 mt-0.5">📅</span>
-                                        <div className="min-w-0 flex-1">
-                                            <span className="font-extrabold text-purple-900">Next Action :- </span>
-                                            <span className="text-slate-800 font-semibold">{actionType}</span>
-                                            <span className="font-extrabold text-purple-800 block text-[10px] mt-0.5">on {actionDateStr}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-
-                            {/* Opening Comments Block */}
-                            {(() => {
-                                const openingComment = lead.opening_comments || lead.remarks || lead.custom_fields?.requirements || (lead.form_name ? `Form: ${lead.form_name}` : null);
-                                if (!openingComment) return null;
-                                return (
-                                    <div className="flex items-start gap-2 bg-slate-50 border border-slate-200 p-2.5 rounded-2xl shadow-xs">
+                        {/* Last Remarks Box */}
+                        {(() => {
+                            let customFields = lead.custom_fields;
+                            if (customFields && typeof customFields === 'string') {
+                                try { while (typeof customFields === 'string') customFields = JSON.parse(customFields); } catch (e) {}
+                            }
+                            const lastRemark = customFields?.last_followup_remark || lead.last_followup_remark || lead.last_call_remark || (lead.notes ? (lead.notes.includes('[Last Remarks]:') ? lead.notes.split('[Last Remarks]:')[1]?.split('\n\n')[0]?.trim() : lead.notes) : null);
+                            if (!lastRemark) return null;
+                            return (
+                                <div className="mb-4 text-[11px] font-medium text-slate-700">
+                                    <div className="flex items-start gap-2 bg-slate-50 border border-slate-200/80 p-2.5 rounded-2xl shadow-xs">
                                         <span className="text-slate-500 font-bold shrink-0 mt-0.5">📝</span>
                                         <div className="min-w-0 flex-1">
-                                            <span className="font-extrabold text-slate-900">Opening Comments :- </span>
-                                            <p className="text-slate-600 text-[11px] leading-snug line-clamp-3 mt-0.5">{openingComment}</p>
+                                            <span className="font-extrabold text-slate-900">Last Remarks :- </span>
+                                            <p className="text-slate-600 text-[11px] leading-snug line-clamp-3 mt-0.5 font-medium">{lastRemark}</p>
                                         </div>
                                     </div>
-                                );
-                            })()}
-                        </div>
+                                </div>
+                            );
+                        })()}
 
-                        {/* ROW 3: Data Grid */}
-                        <div className="grid grid-cols-2 gap-y-4 gap-x-2 mb-4">
+                        {/* ROW 3: Data Grid (Clean & Compact) */}
+                        <div className="grid grid-cols-2 gap-y-3 gap-x-2 mt-3 pt-3 border-t border-slate-100">
                             {/* Left Column */}
                             <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lead Manager</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lead Manager</span>
                                 {isAdminLike ? (
-                                    <div onClick={e => e.stopPropagation()} className="relative mt-0.5">
+                                    <div onClick={e => e.stopPropagation()} className="relative">
                                         <select value={lead.assigned_to || ''} onChange={(e) => assignLead(lead.id, e.target.value, e)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 text-slate-700 text-xs font-bold rounded-lg py-1.5 pl-2 pr-6 outline-none transition-all cursor-pointer truncate border border-slate-200/60">
                                             <option value="">Unassigned</option>
                                             {team.map(member => <option key={member.id} value={member.id}>{member.business_name || 'Agent'}</option>)}
@@ -2365,286 +2420,18 @@ END:VCARD\n`
                                         <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                     </div>
                                 ) : (
-                                    <span className="text-xs font-bold text-slate-700 truncate mt-0.5">{team.find(t => t.id === lead.assigned_to)?.business_name || 'Unassigned'}</span>
+                                    <span className="text-xs font-bold text-slate-700 truncate">{team.find(t => t.id === lead.assigned_to)?.business_name || 'Unassigned'}</span>
                                 )}
                             </div>
                             
                             {/* Right Column */}
                             <div className="flex flex-col gap-1 justify-center min-w-0">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Lead Source</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lead Source</span>
                                 <span className="text-xs font-bold text-slate-700 truncate block">{lead.source || '--'}</span>
                             </div>
-
-                            <div className="flex flex-col gap-1 min-w-0">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Source Detail</span>
-                                <span className="text-xs font-bold text-slate-700 truncate block" title={getLeadCampaignName(lead) || lead.form_name || lead.ad_name}>{getLeadCampaignName(lead) || lead.form_name || lead.ad_name || '--'}</span>
-                            </div>
-
-                            {/* Qualification Details dynamically from custom_fields */}
-                            {(() => {
-                                let customFields = lead.custom_fields;
-                                if (customFields && typeof customFields === 'string') {
-                                    try {
-                                        while (typeof customFields === 'string') {
-                                            customFields = JSON.parse(customFields);
-                                        }
-                                    } catch (e) {
-                                        customFields = {};
-                                    }
-                                }
-                                const origin = customFields?.meta_ad_origin;
-                                const matchedProp = properties.find(p => 
-                                     p.id === lead.property_id || 
-                                     p.id === origin?.product_id || 
-                                     p.title === origin?.product_name ||
-                                     (p.title && (lead.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
-                                     (p.title && (origin?.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
-                                     (p.title && (origin?.campaign_name || '').toLowerCase().includes(p.title.toLowerCase().trim()))
-                                 );
-                                 const productName = origin?.product_name || matchedProp?.title || null;
-                                 const previewImageUrl = origin?.image_url || matchedProp?.image_url || (matchedProp?.images && matchedProp.images[0]) || null;
-                                 const previewVideoUrl = origin?.video_url || null;
-
-                                 const adOrCampaignName = getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name;
-
-                                 const displayOrigin = origin || (adOrCampaignName && adOrCampaignName !== 'WhatsApp Direct Message' ? {
-                                     ad_name: adOrCampaignName.includes(' | ') ? adOrCampaignName.split(' | ')[0] : adOrCampaignName,
-                                     campaign_name: adOrCampaignName.includes(' | ') ? adOrCampaignName.split(' | ')[1] : (lead.source || 'Meta Ad'),
-                                     headline: matchedProp?.title || adOrCampaignName,
-                                     image_url: previewImageUrl,
-                                     video_url: previewVideoUrl,
-                                     source_url: 'https://www.facebook.com/ads/library/'
-                                 } : (matchedProp ? {
-                                     ad_name: `${matchedProp.title} Meta Campaign`,
-                                     campaign_name: 'WhatsApp CTWA Ad',
-                                     headline: matchedProp.title,
-                                     image_url: previewImageUrl,
-                                     video_url: previewVideoUrl,
-                                     source_url: 'https://www.facebook.com/ads/library/'
-                                 } : null));
-
-                                 const getLiveAdUrl = () => {
-                                      if (!displayOrigin) return 'https://www.facebook.com/ads/library/';
-                                      const rawUrl = displayOrigin.source_url;
-                                      const adId = displayOrigin.ad_id || displayOrigin.source_id;
-                                      if (rawUrl && rawUrl !== 'https://facebook.com' && rawUrl !== 'https://facebook.com/' && !rawUrl.endsWith('facebook.com')) {
-                                          return rawUrl;
-                                      }
-                                      if (adId) {
-                                          return `https://www.facebook.com/ads/library/?id=${adId}`;
-                                      }
-                                      return 'https://www.facebook.com/ads/library/';
-                                  };
-
-                                  const liveAdUrl = getLiveAdUrl();
-                                  const finalImgUrl = displayOrigin?.image_url || previewImageUrl;
-                                  const finalVidUrl = displayOrigin?.video_url || previewVideoUrl;
-
-                                return (
-                                    <>
-                                        {displayOrigin && (
-                                            <div className="col-span-2 mt-2 p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-3">
-                                                <div className="flex justify-between items-center">
-                                                    <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wider">
-                                                        <Target size={13} className="text-indigo-500" /> Meta Ad Origin & Inventory Mapping
-                                                    </div>
-                                                </div>
-
-                                                {(finalImgUrl || finalVidUrl || displayOrigin.body) && (
-                                                    <div className="flex items-start gap-3 bg-white p-2.5 rounded-xl border border-indigo-100/70 shadow-xs">
-                                                        {(finalImgUrl || finalVidUrl) && (
-                                                            <div 
-                                                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); openMediaModal({ ...displayOrigin, image_url: finalImgUrl, video_url: finalVidUrl }, liveAdUrl, lead.id); }}
-                                                                className="relative group cursor-pointer shrink-0 rounded-lg overflow-hidden border border-slate-200 shadow-xs w-16 h-16 bg-slate-900 flex items-center justify-center"
-                                                                title="Click to enlarge creative"
-                                                            >
-                                                                {finalVidUrl ? (
-                                                                    <>
-                                                                        <video src={finalVidUrl} className="w-full h-full object-cover opacity-90" />
-                                                                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
-                                                                            <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-[10px] font-black">▶</span>
-                                                                        </div>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <img src={finalImgUrl} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
-                                                                            <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1 py-0.5 rounded shadow-xs">🔍 Zoom</span>
-                                                                        </div>
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        <div className="min-w-0 flex-1 text-[10px]">
-                                                            <div className="flex justify-between items-start">
-                                                                <span className="font-extrabold text-indigo-950 block truncate text-xs max-w-[220px]">{displayOrigin.headline || displayOrigin.ad_name}</span>
-                                                                {(finalImgUrl || finalVidUrl) && (
-                                                                    <button 
-                                                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); openMediaModal({ ...displayOrigin, image_url: finalImgUrl, video_url: finalVidUrl }, liveAdUrl, lead.id); }}
-                                                                        className="text-[9px] font-extrabold text-indigo-600 hover:text-indigo-800 underline ml-1 shrink-0"
-                                                                    >
-                                                                        🔍 Enlarge
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                            {displayOrigin.body && <p className="text-slate-500 line-clamp-2 text-[9.5px] mt-0.5 leading-snug">{displayOrigin.body}</p>}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
-                                                    {displayOrigin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{displayOrigin.ad_name}</span></div>}
-                                                    {displayOrigin.adset_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.adset_name}</span></div>}
-                                                    {displayOrigin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.campaign_name}</span></div>}
-                                                    {displayOrigin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.headline}</span></div>}
-                                                </div>
-                                                <div className="bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-[10px] space-y-2" onClick={(e) => e.stopPropagation()}>
-                                                     <div className="flex items-center gap-2">
-                                                         <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0 text-xs">📦</span>
-                                                         <div className="min-w-0 flex-1">
-                                                             <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
-                                                             <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'Unmapped Product'}</span>
-                                                         </div>
-                                                     </div>
-                                                     {properties.length > 0 && (
-                                                         <select
-                                                             value={lead.property_id || matchedProp?.id || ''}
-                                                             onChange={(e) => handleAssignProduct(lead.id, e.target.value || null)}
-                                                             className="w-full bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none hover:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 transition-all cursor-pointer shadow-xs"
-                                                         >
-                                                             <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
-                                                             {properties.map((p: any) => (
-                                                                 <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
-                                                             ))}
-                                                             {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
-                                                         </select>
-                                                     )}
-                                                 </div>
-                                            </div>
-                                        )}
-
-                                        {!origin && properties.length > 0 && (
-                                            <div className="col-span-2 mt-1 bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-[10px] space-y-2" onClick={(e) => e.stopPropagation()}>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="p-1.5 bg-slate-400 text-white rounded-lg font-black shrink-0 text-xs">📦</span>
-                                                    <div className="min-w-0 flex-1">
-                                                        <span className="text-[8px] font-bold text-slate-500 uppercase block tracking-wider">Inventory Product</span>
-                                                        <span className="font-bold text-slate-800 text-xs truncate block">{productName ? getPropertyDisplayLabel(matchedProp || properties.find((p: any) => p.id === lead.property_id)) : 'Unmapped Product'}</span>
-                                                    </div>
-                                                </div>
-                                                <select
-                                                    value={lead.property_id || matchedProp?.id || ''}
-                                                    onChange={(e) => handleAssignProduct(lead.id, e.target.value || null)}
-                                                    className="w-full text-xs font-bold bg-white border border-slate-300 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer hover:border-slate-400 shadow-xs"
-                                                >
-                                                    <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
-                                                    {properties.map((p: any) => (
-                                                        <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
-                                                    ))}
-                                                    {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
-                                                </select>
-                                            </div>
-                                        )}
-
-                                        {customFields && typeof customFields === 'object' && Object.entries(customFields).filter(([k]) => k !== 'meta_ad_origin').map(([key, value]) => (
-                                             <div key={key} className="flex flex-col gap-1 min-w-0">
-                                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate block">{key.replace(/_/g, ' ')}</span>
-                                                 <span className="text-xs font-bold text-slate-700 truncate block" title={String(value || '--')}>{String(value || '--')}</span>
-                                             </div>
-                                         ))}
-                                    </>
-                                );
-                            })()}
-
-                            {(() => {
-                                const isTeamMember = !!parentAdminId || (role as string) === 'team_member';
-                                if (isTeamMember) return null;
-                                return (
-                                    <div className="flex flex-col gap-1">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Meta Pixel</span>
-                                        {isLoadingPixels ? (
-                                            <span className="text-xs text-slate-400 font-bold animate-pulse">Loading...</span>
-                                        ) : (
-                                            <div onClick={e => e.stopPropagation()} className="relative mt-0.5">
-                                                <select 
-                                                    value={lead.pixel_id || ''} 
-                                                    onChange={(e) => updateLeadPixel(lead.id, e.target.value || null)} 
-                                                    className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 text-slate-700 text-xs font-bold rounded-lg py-1.5 pl-2 pr-6 outline-none transition-all cursor-pointer truncate border border-slate-200/60"
-                                                >
-                                                    <option value="">Profile Default</option>
-                                                    {pixels.map(p => (
-                                                        <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
-                                                    ))}
-                                                </select>
-                                                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })()}
                         </div>
 
                         <div className="flex-grow"></div>
-
-                        {/* ROW 4: Footer Sections (Followup, Appointment, Opening Comments) */}
-                        <div className="mt-auto flex flex-col gap-3">
-                            {lead.booked_time && (
-                                <div className="pt-3 border-t border-emerald-100 flex items-start gap-3 bg-emerald-50/80 p-2.5 rounded-xl border border-emerald-200 shadow-xs">
-                                    <div className="mt-0.5 w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                                        <Calendar size={13} />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
-                                            📅 Site Visit / Appointment Booked
-                                        </span>
-                                        <span className="text-xs font-extrabold text-emerald-700 mt-0.5">
-                                            {new Date(lead.booked_time).toLocaleString('en-IN', {
-                                                weekday: 'short',
-                                                day: '2-digit',
-                                                month: 'short',
-                                                year: 'numeric',
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                                hour12: true
-                                            })}
-                                        </span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {lead.next_followup && new Date(lead.next_followup) > new Date() && (
-                                <div className="pt-3 border-t border-slate-100 flex items-start gap-3">
-                                    <div className="mt-0.5 w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                                        <Clock size={12} className="text-blue-500" />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-bold text-slate-800">
-                                            Next Action :- Reminder on <span className="text-blue-600">{new Date(lead.next_followup).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}</span>
-                                        </span>
-                                        <span className="text-xs text-slate-500 mt-0.5 font-medium">Automated reminder set.</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {(lead.lead_history?.filter((h: any) => h.action_type === 'REMARK')?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || lead.notes || lead.email) && (
-                                <div className="pt-3 border-t border-slate-100 flex items-start gap-3">
-                                    <div className="mt-0.5 w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                                        <FileText size={12} className="text-blue-500" />
-                                    </div>
-                                    <div className="flex flex-col flex-1 min-w-0">
-                                        <span className="text-xs font-bold text-slate-800">Last Remark :-</span>
-                                        <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed font-medium">
-                                            {(() => {
-                                                const lastRemark = lead.lead_history?.filter((h: any) => h.action_type === 'REMARK')?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]?.description;
-                                                if (lastRemark) return lastRemark;
-                                                return lead.notes ? lead.notes : `Email: ${lead.email}`;
-                                            })()}
-                                        </p>
-                                        <span className="text-[10px] font-bold text-blue-500 mt-1 uppercase tracking-wider hover:underline">Read More</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
                     </div>
                     )
                 })}

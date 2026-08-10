@@ -21,7 +21,8 @@ const STAGES = [
   'Revisit Done',
   'Negotiation',
   'Deal/Token',
-  'Lost/NI'
+  'Lost/NI',
+  'Different Requirement'
 ]
 
 function formatCallPhone(phoneRaw: string | null | undefined): string {
@@ -89,6 +90,11 @@ export default function LeadProfilePage() {
     const [isTeamMember, setIsTeamMember] = useState(false)
     const [isCalling, setIsCalling] = useState(false)
     const [showTranscript, setShowTranscript] = useState(false)
+
+    // Collapsible Section States (Collapsed by default)
+    const [isMetaOriginOpen, setIsMetaOriginOpen] = useState(false)
+    const [isVoiceDetailsOpen, setIsVoiceDetailsOpen] = useState(false)
+    const [isQualificationOpen, setIsQualificationOpen] = useState(false)
 
     // Call feedback & history states
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
@@ -1093,197 +1099,276 @@ END:VCARD`
             </div>
 
             {/* Content Body */}
-            <div className="p-4 sm:p-6 lg:p-8 flex-1 w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+            <div className="p-4 sm:p-6 lg:p-8 flex-1 w-full max-w-7xl mx-auto space-y-6">
 
-                {/* Left Column: Details */}
-                <div className="lg:col-span-7 xl:col-span-8 space-y-6">
+                {/* HIGHLIGHTED NEXT ACTION & REMINDER BANNER */}
+                {(() => {
+                    const actionDate = lead.next_action_date || lead.next_followup || lead.custom_fields?.next_action_date;
+                    const actionType = lead.next_action_type || lead.custom_fields?.next_action_type || lead.last_followup_type || 'Call';
+                    const actionRemarks = lead.next_action_remarks || lead.custom_fields?.next_remarks || lead.custom_fields?.next_action_remarks || lead.last_followup_remark;
+                    const hasReminder = lead.remind_me !== false && lead.custom_fields?.remind_me !== false;
+                    
+                    if (!actionDate) return null;
+                    const actionDateObj = new Date(actionDate);
+                    if (isNaN(actionDateObj.getTime())) return null;
+                    const isPast = actionDateObj < new Date();
 
-                    {/* Meta Card */}
-                    <div className="bg-white p-4.5 rounded-2xl shadow-sm border border-slate-100">
-                        <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-50">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Lead Source</span>
-                            <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">{lead.source}</span>
-                        </div>
-                        {!isTeamMember && (
-                            <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-50">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase">Target Meta Pixel</span>
-                                {isLoadingPixels ? (
-                                    <span className="text-[10px] text-slate-400 animate-pulse font-bold">Loading...</span>
-                                ) : (
-                                    <select
-                                        value={lead.pixel_id || ''}
-                                        onChange={(e) => handleFieldUpdate('pixel_id', e.target.value || null)}
-                                        className="bg-purple-50 text-purple-700 text-xs font-bold rounded-md border border-purple-200 px-2 py-1 outline-none cursor-pointer"
-                                    >
-                                        <option value="">Profile Default</option>
-                                        {pixels.map(p => (
-                                            <option key={p.id} value={p.id}>{p.name}</option>
-                                        ))}
-                                    </select>
-                                )}
-                            </div>
-                        )}
-                        {/* Meta Ad Origin & Creative Preview */}
-                        {(() => {
-                            let customFields = lead.custom_fields;
-                            if (customFields && typeof customFields === 'string') {
-                                try {
-                                    while (typeof customFields === 'string') {
-                                        customFields = JSON.parse(customFields);
-                                    }
-                                } catch (e) {
-                                    customFields = {};
-                                }
-                            }
-                            const origin = customFields?.meta_ad_origin;
-                            const matchedProp = properties.find(p => 
-                                p.id === lead.property_id || 
-                                p.id === origin?.product_id || 
-                                p.title === origin?.product_name ||
-                                (p.title && (lead.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
-                                (p.title && (origin?.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
-                                (p.title && (origin?.campaign_name || '').toLowerCase().includes(p.title.toLowerCase().trim()))
-                            );
-                            const productName = origin?.product_name || matchedProp?.title || null;
-                            const previewImageUrl = origin?.image_url || matchedProp?.image_url || (matchedProp?.images && matchedProp.images[0]) || null;
-                            const previewVideoUrl = origin?.video_url || null;
-
-                            const displayOrigin = origin || (lead.ad_name ? {
-                                ad_name: lead.ad_name.includes(' | ') ? lead.ad_name.split(' | ')[0] : lead.ad_name,
-                                campaign_name: lead.ad_name.includes(' | ') ? lead.ad_name.split(' | ')[1] : (lead.source || 'Meta Ad'),
-                                headline: matchedProp?.title || lead.ad_name,
-                                image_url: previewImageUrl,
-                                video_url: previewVideoUrl,
-                                source_url: 'https://www.facebook.com/ads/library/'
-                            } : null);
-
-                            const getLiveAdUrl = () => {
-                                if (!displayOrigin) return 'https://www.facebook.com/ads/library/';
-                                const rawUrl = displayOrigin.source_url;
-                                const adId = displayOrigin.ad_id || displayOrigin.source_id;
-                                if (rawUrl && rawUrl !== 'https://facebook.com' && rawUrl !== 'https://facebook.com/' && !rawUrl.endsWith('facebook.com')) {
-                                    return rawUrl;
-                                }
-                                if (adId) {
-                                    return `https://www.facebook.com/ads/library/?id=${adId}`;
-                                }
-                                return 'https://www.facebook.com/ads/library/';
-                            };
-
-                            const liveAdUrl = getLiveAdUrl();
-                            const finalImgUrl = displayOrigin?.image_url || previewImageUrl;
-                            const finalVidUrl = displayOrigin?.video_url || previewVideoUrl;
-
-                            return (
-                                <div className="mb-4 space-y-3">
-                                    {displayOrigin ? (
-                                        <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-3">
-                                            <div className="flex justify-between items-center">
-                                                <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wider">
-                                                    <Target size={13} className="text-indigo-500" /> Meta Ad Origin & Inventory Mapping
-                                                </div>
-                                                <a 
-                                                    href={liveAdUrl} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer" 
-                                                    className="text-[9px] font-extrabold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                                                >
-                                                    🔗 Live Ad
-                                                </a>
-                                            </div>
-
-                                            {(finalImgUrl || finalVidUrl || displayOrigin.body) && (
-                                                <div className="flex items-start gap-3 bg-white p-2.5 rounded-xl border border-indigo-100/70 shadow-xs">
-                                                    {(finalImgUrl || finalVidUrl) && (
-                                                        <div 
-                                                            onClick={() => openMediaModal({ ...displayOrigin, image_url: finalImgUrl, video_url: finalVidUrl }, liveAdUrl)}
-                                                            className="relative group cursor-pointer shrink-0 rounded-lg overflow-hidden border border-slate-200 shadow-xs w-20 h-20 bg-slate-900 flex items-center justify-center"
-                                                            title="Click to enlarge creative"
-                                                        >
-                                                            {finalVidUrl ? (
-                                                                <>
-                                                                    <video src={fixR2Url(finalVidUrl)} className="w-full h-full object-cover opacity-90" />
-                                                                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
-                                                                        <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-xs font-black">▶</span>
-                                                                    </div>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <img src={fixR2Url(finalImgUrl)} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
-                                                                        <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1.5 py-0.5 rounded shadow-xs">🔍 Zoom</span>
-                                                                    </div>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    <div className="min-w-0 flex-1 text-xs">
-                                                        <div className="flex justify-between items-start gap-2">
-                                                            <span className="font-extrabold text-indigo-950 block truncate text-xs">{displayOrigin.headline || displayOrigin.ad_name}</span>
-                                                            {(finalImgUrl || finalVidUrl) && (
-                                                                <button 
-                                                                    onClick={() => openMediaModal({ ...displayOrigin, image_url: finalImgUrl, video_url: finalVidUrl }, liveAdUrl)}
-                                                                    className="text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 underline shrink-0"
-                                                                >
-                                                                    🔍 Enlarge
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                        {displayOrigin.body && <p className="text-slate-600 text-xs mt-1 leading-relaxed bg-slate-50/70 p-2 rounded-lg border border-slate-100">{displayOrigin.body}</p>}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
-                                                {displayOrigin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{displayOrigin.ad_name}</span></div>}
-                                                {displayOrigin.adset_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.adset_name}</span></div>}
-                                                {displayOrigin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.campaign_name}</span></div>}
-                                                {displayOrigin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.headline}</span></div>}
-                                            </div>
-
-                                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-xs">
-                                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                    <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0 text-xs">📦</span>
-                                                    <div className="min-w-0 flex-1">
-                                                        <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
-                                                        <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'Unmapped Product'}</span>
-                                                    </div>
-                                                </div>
-                                                {properties.length > 0 && (
-                                                    <select
-                                                        value={lead.property_id || matchedProp?.id || ''}
-                                                        onChange={(e) => handleAssignProduct(e.target.value || null)}
-                                                        className="w-full sm:w-auto bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 text-xs font-bold shrink-0 outline-none hover:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 transition-all cursor-pointer shadow-xs"
-                                                    >
-                                                        <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
-                                                        {properties.map((p: any) => (
-                                                            <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
-                                                        ))}
-                                                        {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
-                                                    </select>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        lead.ad_name && (
-                                            <p className="text-xs font-medium text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                                                <span className="font-bold text-slate-400 block mb-0.5 text-[10px] uppercase">Campaign / Ad</span>
-                                                {lead.ad_name}
-                                            </p>
-                                        )
+                    return (
+                        <div className={`p-3.5 sm:p-4 rounded-2xl border shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                            isPast 
+                                ? 'bg-amber-50/90 border-amber-200/80 text-amber-950' 
+                                : 'bg-purple-50/90 border-purple-200/80 text-purple-950'
+                        }`}>
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center font-bold text-xs ${
+                                    isPast ? 'bg-amber-600 text-white' : 'bg-purple-600 text-white'
+                                }`}>
+                                    <Clock size={16} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-xs font-black text-slate-900">
+                                            Next Action: {actionType} on {actionDateObj.toLocaleString('en-IN', {
+                                                day: '2-digit',
+                                                month: 'short',
+                                                year: 'numeric',
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                hour12: true
+                                            })}
+                                        </span>
+                                        {isPast && <span className="text-[9px] font-black bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded uppercase">Overdue</span>}
+                                        {hasReminder && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">🔔 Reminder Set</span>}
+                                    </div>
+                                    {actionRemarks && (
+                                        <p className="text-[11px] text-slate-600 font-medium truncate mt-0.5">{actionRemarks}</p>
                                     )}
                                 </div>
-                            );
-                        })()}
-                        <div className="mt-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5 ml-1">Static Notes</label>
-                            <textarea
-                                className="w-full bg-slate-50 p-3 rounded-xl text-sm border border-slate-100 outline-none resize-none"
-                                rows={2}
-                                defaultValue={lead.notes || ''}
-                                onBlur={(e) => handleNotesChange(e.target.value)}
-                            />
+                            </div>
+
+                            <button
+                                onClick={() => setIsUpdateFollowupOpen(true)}
+                                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs shrink-0 self-end sm:self-center"
+                            >
+                                Reschedule
+                            </button>
                         </div>
+                    );
+                })()}
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+
+                    {/* Left Column: Details */}
+                    <div className="lg:col-span-7 xl:col-span-8 space-y-6">
+
+                    {/* Meta Card - Collapsible (Collapsed by default) */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                        <button 
+                            type="button"
+                            onClick={() => setIsMetaOriginOpen(!isMetaOriginOpen)}
+                            className="w-full p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors text-left"
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className="p-1.5 bg-blue-50 text-blue-600 rounded-xl font-black text-xs">🎯</span>
+                                <div>
+                                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Lead Source & Campaign Origin</h3>
+                                    <p className="text-[11px] text-slate-500 font-medium">Source: <span className="font-bold text-slate-700">{lead.source || 'Meta Ad'}</span></p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-extrabold text-slate-400">{isMetaOriginOpen ? 'Hide Details' : 'Show Details'}</span>
+                                <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${isMetaOriginOpen ? 'rotate-180' : ''}`} />
+                            </div>
+                        </button>
+
+                        {isMetaOriginOpen && (
+                            <div className="p-4.5 pt-2 border-t border-slate-100 space-y-4 animate-in fade-in duration-200">
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-50">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Lead Source</span>
+                                    <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">{lead.source}</span>
+                                </div>
+                                {!isTeamMember && (
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-50">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase">Target Meta Pixel</span>
+                                        {isLoadingPixels ? (
+                                            <span className="text-[10px] text-slate-400 animate-pulse font-bold">Loading...</span>
+                                        ) : (
+                                            <select
+                                                value={lead.pixel_id || ''}
+                                                onChange={(e) => handleFieldUpdate('pixel_id', e.target.value || null)}
+                                                className="bg-purple-50 text-purple-700 text-xs font-bold rounded-md border border-purple-200 px-2 py-1 outline-none cursor-pointer"
+                                            >
+                                                <option value="">Profile Default</option>
+                                                {pixels.map(p => (
+                                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                    </div>
+                                )}
+                                {/* Meta Ad Origin & Creative Preview */}
+                                {(() => {
+                                    let customFields = lead.custom_fields;
+                                    if (customFields && typeof customFields === 'string') {
+                                        try {
+                                            while (typeof customFields === 'string') {
+                                                customFields = JSON.parse(customFields);
+                                            }
+                                        } catch (e) {
+                                            customFields = {};
+                                        }
+                                    }
+                                    const origin = customFields?.meta_ad_origin;
+                                    const matchedProp = properties.find(p => 
+                                        p.id === lead.property_id || 
+                                        p.id === origin?.product_id || 
+                                        p.title === origin?.product_name ||
+                                        (p.title && (lead.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
+                                        (p.title && (origin?.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
+                                        (p.title && (origin?.campaign_name || '').toLowerCase().includes(p.title.toLowerCase().trim()))
+                                    );
+                                    const productName = origin?.product_name || matchedProp?.title || null;
+                                    const previewImageUrl = origin?.image_url || matchedProp?.image_url || (matchedProp?.images && matchedProp.images[0]) || null;
+                                    const previewVideoUrl = origin?.video_url || null;
+
+                                    const displayOrigin = origin || (lead.ad_name ? {
+                                        ad_name: lead.ad_name.includes(' | ') ? lead.ad_name.split(' | ')[0] : lead.ad_name,
+                                        campaign_name: lead.ad_name.includes(' | ') ? lead.ad_name.split(' | ')[1] : (lead.source || 'Meta Ad'),
+                                        headline: matchedProp?.title || lead.ad_name,
+                                        image_url: previewImageUrl,
+                                        video_url: previewVideoUrl,
+                                        source_url: 'https://www.facebook.com/ads/library/'
+                                    } : null);
+
+                                    const getLiveAdUrl = () => {
+                                        if (!displayOrigin) return 'https://www.facebook.com/ads/library/';
+                                        const rawUrl = displayOrigin.source_url;
+                                        const adId = displayOrigin.ad_id || displayOrigin.source_id;
+                                        if (rawUrl && rawUrl !== 'https://facebook.com' && rawUrl !== 'https://facebook.com/' && !rawUrl.endsWith('facebook.com')) {
+                                            return rawUrl;
+                                        }
+                                        if (adId) {
+                                            return `https://www.facebook.com/ads/library/?id=${adId}`;
+                                        }
+                                        return 'https://www.facebook.com/ads/library/';
+                                    };
+
+                                    const liveAdUrl = getLiveAdUrl();
+                                    const finalImgUrl = displayOrigin?.image_url || previewImageUrl;
+                                    const finalVidUrl = displayOrigin?.video_url || previewVideoUrl;
+
+                                    return (
+                                        <div className="space-y-3">
+                                            {displayOrigin ? (
+                                                <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-blue-50/80 to-slate-50 border border-indigo-150 rounded-2xl shadow-xs space-y-3">
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 uppercase tracking-wider">
+                                                            <Target size={13} className="text-indigo-500" /> Meta Ad Origin & Inventory Mapping
+                                                        </div>
+                                                        <a 
+                                                            href={liveAdUrl} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer" 
+                                                            className="text-[9px] font-extrabold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                                                        >
+                                                            🔗 Live Ad
+                                                        </a>
+                                                    </div>
+
+                                                    {(finalImgUrl || finalVidUrl || displayOrigin.body) && (
+                                                        <div className="flex items-start gap-3 bg-white p-2.5 rounded-xl border border-indigo-100/70 shadow-xs">
+                                                            {(finalImgUrl || finalVidUrl) && (
+                                                                <div 
+                                                                    onClick={() => openMediaModal({ ...displayOrigin, image_url: finalImgUrl, video_url: finalVidUrl }, liveAdUrl)}
+                                                                    className="relative group cursor-pointer shrink-0 rounded-lg overflow-hidden border border-slate-200 shadow-xs w-20 h-20 bg-slate-900 flex items-center justify-center"
+                                                                    title="Click to enlarge creative"
+                                                                >
+                                                                    {finalVidUrl ? (
+                                                                        <>
+                                                                            <video src={fixR2Url(finalVidUrl)} className="w-full h-full object-cover opacity-90" />
+                                                                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
+                                                                                <span className="p-1 bg-white/90 rounded-full text-indigo-700 shadow-md text-xs font-black">▶</span>
+                                                                            </div>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <img src={fixR2Url(finalImgUrl)} alt="Ad Creative Preview" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 flex items-center justify-center transition-colors">
+                                                                                <span className="opacity-0 group-hover:opacity-100 text-white font-extrabold text-[8px] bg-indigo-600/90 px-1.5 py-0.5 rounded shadow-xs">🔍 Zoom</span>
+                                                                            </div>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            <div className="min-w-0 flex-1 text-xs">
+                                                                <div className="flex justify-between items-start gap-2">
+                                                                    <span className="font-extrabold text-indigo-950 block truncate text-xs">{displayOrigin.headline || displayOrigin.ad_name}</span>
+                                                                    {(finalImgUrl || finalVidUrl) && (
+                                                                        <button 
+                                                                            onClick={() => openMediaModal({ ...displayOrigin, image_url: finalImgUrl, video_url: finalVidUrl }, liveAdUrl)}
+                                                                            className="text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 underline shrink-0"
+                                                                        >
+                                                                            🔍 Enlarge
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                                {displayOrigin.body && <p className="text-slate-600 text-xs mt-1 leading-relaxed bg-slate-50/70 p-2 rounded-lg border border-slate-100">{displayOrigin.body}</p>}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                                                        {displayOrigin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{displayOrigin.ad_name}</span></div>}
+                                                        {displayOrigin.adset_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.adset_name}</span></div>}
+                                                        {displayOrigin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.campaign_name}</span></div>}
+                                                        {displayOrigin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.headline}</span></div>}
+                                                    </div>
+
+                                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-emerald-50/90 border border-emerald-200/80 p-2.5 rounded-xl text-xs">
+                                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                            <span className="p-1.5 bg-emerald-500 text-white rounded-lg font-black shrink-0 text-xs">📦</span>
+                                                            <div className="min-w-0 flex-1">
+                                                                <span className="text-[8px] font-black text-emerald-700 uppercase block tracking-wider">Mapped Inventory Product</span>
+                                                                <span className="font-extrabold text-emerald-950 text-xs truncate block">{productName || 'Unmapped Product'}</span>
+                                                            </div>
+                                                        </div>
+                                                        {properties.length > 0 && (
+                                                            <select
+                                                                value={lead.property_id || matchedProp?.id || ''}
+                                                                onChange={(e) => handleAssignProduct(e.target.value || null)}
+                                                                className="w-full sm:w-auto bg-white border border-emerald-300 text-emerald-900 rounded-lg px-2.5 py-1.5 text-xs font-bold shrink-0 outline-none hover:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 transition-all cursor-pointer shadow-xs"
+                                                            >
+                                                                <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
+                                                                {properties.map((p: any) => (
+                                                                    <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
+                                                                ))}
+                                                                {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
+                                                            </select>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                lead.ad_name && (
+                                                    <p className="text-xs font-medium text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                                        <span className="font-bold text-slate-400 block mb-0.5 text-[10px] uppercase">Campaign / Ad</span>
+                                                        {lead.ad_name}
+                                                    </p>
+                                                )
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                                <div className="mt-2">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5 ml-1">Static Notes</label>
+                                    <textarea
+                                        className="w-full bg-slate-50 p-3 rounded-xl text-sm border border-slate-100 outline-none resize-none"
+                                        rows={2}
+                                        defaultValue={lead.notes || ''}
+                                        onBlur={(e) => handleNotesChange(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Google Calendar Booking Details */}
@@ -1365,317 +1450,363 @@ END:VCARD`
                         </div>
                     )}
 
-                    {/* Qualification & Custom Fields Card */}
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-                        <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                                <CheckCircle2 size={14} className="text-emerald-500" /> Qualification Details
-                            </h3>
-                            {!isAddingCustomField && (
-                                <button 
-                                    onClick={() => setIsAddingCustomField(true)}
-                                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-3.5 py-1.5 rounded-full transition-all active:scale-95 shadow-sm"
-                                >
-                                    + Add Custom Field
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Inline Add Field Form */}
-                        {isAddingCustomField && (
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 space-y-3 animate-in slide-in-from-top-2 duration-200">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Field Name</label>
-                                        <input 
-                                            type="text" 
-                                            value={newFieldKey}
-                                            onChange={(e) => setNewFieldKey(e.target.value)}
-                                            placeholder="e.g. City, Preferred Location"
-                                            className="w-full bg-white border border-slate-200/80 p-2 py-1.5 rounded-lg text-xs font-semibold outline-none focus:border-blue-400"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Value</label>
-                                        <input 
-                                            type="text" 
-                                            value={newFieldValue}
-                                            onChange={(e) => setNewFieldValue(e.target.value)}
-                                            placeholder="e.g. Delhi, 3 BHK"
-                                            className="w-full bg-white border border-slate-200/80 p-2 py-1.5 rounded-lg text-xs font-semibold outline-none focus:border-blue-400"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="flex justify-end gap-2 pt-1">
-                                    <button 
-                                        onClick={() => { setIsAddingCustomField(false); setNewFieldKey(''); setNewFieldValue(''); }}
-                                        className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-black rounded-lg transition-all"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button 
-                                        onClick={handleAddCustomField}
-                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black rounded-lg transition-all"
-                                    >
-                                        Add Field
-                                    </button>
+                    {/* Qualification & Custom Fields Card - Collapsible (Collapsed by default) */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                        <button 
+                            type="button"
+                            onClick={() => setIsQualificationOpen(!isQualificationOpen)}
+                            className="w-full p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors text-left"
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className="p-1.5 bg-emerald-50 text-emerald-600 rounded-xl font-black text-xs">📋</span>
+                                <div>
+                                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Qualification Details & Custom Fields</h3>
+                                    <p className="text-[11px] text-slate-500 font-medium">Budget, property preferences & custom fields</p>
                                 </div>
                             </div>
-                        )}
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-extrabold text-slate-400">{isQualificationOpen ? 'Hide Details' : 'Show Details'}</span>
+                                <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${isQualificationOpen ? 'rotate-180' : ''}`} />
+                            </div>
+                        </button>
 
-                        {/* Custom Fields Grid & Meta Ad Origin */}
-                        {(() => {
-                            let customFields = lead.custom_fields || {};
-                            if (customFields && typeof customFields === 'string') {
-                                try {
-                                    while (typeof customFields === 'string') customFields = JSON.parse(customFields);
-                                } catch (e) {}
-                            }
-                            const origin = customFields?.meta_ad_origin;
-                            const entries = Object.entries(customFields).filter(([k]) => k !== 'meta_ad_origin');
-                            const matchedProp = properties.find(p => p.id === lead.property_id || p.id === origin?.product_id || p.title === origin?.product_name);
-                            const productName = origin?.product_name || matchedProp?.title || null;
-
-                            return (
-                                <div className="space-y-4">
-                                     {!origin && properties.length > 0 && (
-                                         <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 p-3 rounded-2xl text-[10px]">
-                                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                 <span className="p-1.5 bg-slate-400 text-white rounded-lg font-black shrink-0">📦</span>
-                                                 <div className="min-w-0 flex-1">
-                                                     <span className="text-[8px] font-bold text-slate-500 uppercase block tracking-wider">Inventory Product</span>
-                                                     <span className="font-bold text-slate-800 text-xs truncate block">{productName || 'Unmapped Product'}</span>
-                                                 </div>
-                                             </div>
-                                             <select
-                                                 value={lead.property_id || matchedProp?.id || ''}
-                                                 onChange={(e) => handleAssignProduct(e.target.value || null)}
-                                                 className="text-[11px] font-extrabold bg-white border border-slate-300 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer hover:border-slate-400 shrink-0 shadow-xs"
-                                             >
-                                                 <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
-                                                 {properties.map((p: any) => (
-                                                     <option key={p.id} value={p.id}>{p.title}</option>
-                                                 ))}
-                                                 {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
-                                             </select>
-                                         </div>
-                                     )}
-
-                                    {entries.length > 0 ? (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            {entries.map(([key, value]) => (
-                                                <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-start group">
-                                                    <div className="min-w-0 flex-1">
-                                                        <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{key.replace(/_/g, ' ')}</span>
-                                                        <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">{String(value)}</span>
-                                                    </div>
-                                                    <button 
-                                                        onClick={() => handleDeleteCustomField(key)}
-                                                        className="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2"
-                                                        title="Delete custom field"
-                                                    >
-                                                        <X size={14} />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : !origin && (
-                                        <div className="text-center py-6 text-xs text-slate-400 font-medium">
-                                            No custom fields added yet.
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })()}
-                    </div>
-
-                    {/* Voice Agent Call Details Card */}
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-                        <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                                🎙️ Voice Agent Call Details
-                            </h3>
-                            {lead.phone && (
-                                <div className="flex gap-2">
-                                    {leadHistory.some(h => h.description && h.description.startsWith('🎙️ CALL_JSON:')) && (
+                        {isQualificationOpen && (
+                            <div className="p-4.5 pt-2 border-t border-slate-100 space-y-4 animate-in fade-in duration-200">
+                                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                        <CheckCircle2 size={14} className="text-emerald-500" /> Qualification Details
+                                    </h3>
+                                    {!isAddingCustomField && (
                                         <button 
-                                            onClick={() => setIsAllHistoryModalOpen(true)}
-                                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-4.5 py-2 rounded-full transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
+                                            onClick={() => setIsAddingCustomField(true)}
+                                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-3.5 py-1.5 rounded-full transition-all active:scale-95 shadow-sm"
                                         >
-                                            <History size={12} /> Call History
+                                            + Add Custom Field
                                         </button>
                                     )}
-                                    <button 
-                                        onClick={handleTriggerCall}
-                                        disabled={isCalling || lead.voice_call_status === 'calling'}
-                                        className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-black px-4 py-2 rounded-full transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
-                                    >
-                                        {isCalling || lead.voice_call_status === 'calling' ? (
-                                            <>
-                                                <Loader2 size={12} className="animate-spin text-white" /> Calling...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Phone size={12} /> Call via AI
-                                            </>
-                                        )}
-                                    </button>
                                 </div>
-                            )}
-                        </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50">
-                                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Call Status</span>
-                                <span className={`font-black uppercase tracking-wider ${
-                                    lead.voice_call_status === 'completed' ? 'text-emerald-600' : 
-                                    lead.voice_call_status === 'calling' ? 'text-indigo-600 animate-pulse' : 
-                                    lead.voice_call_status === 'scheduled_retry' ? 'text-amber-500 animate-pulse' :
-                                    lead.voice_call_status === 'scheduled_callback' ? 'text-blue-500 animate-pulse' :
-                                    ['failed', 'failed_max_retries'].includes(lead.voice_call_status || '') ? 'text-red-500' : 
-                                    'text-slate-500'
-                                }`}>
-                                    ● {(lead.voice_call_status || 'not_called').replace(/_/g, ' ')}
-                                </span>
-                            </div>
-
-                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50 flex justify-between items-center">
-                                <div>
-                                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Calling Queue</span>
-                                    <span className={`font-black uppercase tracking-wider ${lead.calling_enabled !== false ? 'text-emerald-600' : 'text-red-500'}`}>
-                                        {lead.calling_enabled !== false ? 'Active' : 'Stopped'}
-                                    </span>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={lead.calling_enabled !== false} 
-                                        onChange={(e) => handleToggleCallingEnabled(e.target.checked)}
-                                        className="sr-only peer"
-                                    />
-                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                                </label>
-                            </div>
-
-                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50 flex justify-between items-center">
-                                <div>
-                                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">WhatsApp Auto-Messaging</span>
-                                    <span className={`font-black uppercase tracking-wider ${lead.whatsapp_enabled !== false ? 'text-emerald-600' : 'text-red-500'}`}>
-                                        {lead.whatsapp_enabled !== false ? 'Active' : 'Stopped'}
-                                    </span>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={lead.whatsapp_enabled !== false} 
-                                        onChange={(e) => handleToggleWhatsAppEnabled(e.target.checked)}
-                                        className="sr-only peer"
-                                    />
-                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                                </label>
-                            </div>
-
-                            {lead.voice_call_scheduled_at && (
-                                <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100 relative overflow-hidden flex flex-col justify-between min-h-[90px]">
-                                    {isEditingCallback ? (
-                                        <div className="space-y-1.5 w-full">
-                                            <span className="block text-[9px] font-bold text-amber-800 uppercase tracking-wider">Change Callback Time</span>
-                                            <div className="flex flex-col gap-1 w-full">
+                                {/* Inline Add Field Form */}
+                                {isAddingCustomField && (
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 space-y-3 animate-in slide-in-from-top-2 duration-200">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Field Name</label>
                                                 <input 
-                                                    type="datetime-local" 
-                                                    defaultValue={toLocalDateTimeString(lead.voice_call_scheduled_at)} 
-                                                    onChange={(e) => setTempCallbackTime(e.target.value)}
-                                                    className="bg-white border border-amber-200 p-1 py-0.5 rounded text-[11px] font-bold outline-none w-full"
+                                                    type="text" 
+                                                    value={newFieldKey}
+                                                    onChange={(e) => setNewFieldKey(e.target.value)}
+                                                    placeholder="e.g. City, Preferred Location"
+                                                    className="w-full bg-white border border-slate-200/80 p-2 py-1.5 rounded-lg text-xs font-semibold outline-none focus:border-blue-400"
                                                 />
-                                                <div className="flex gap-1.5 mt-0.5">
-                                                    <button 
-                                                        onClick={async () => {
-                                                            const timeToSave = tempCallbackTime || toLocalDateTimeString(lead.voice_call_scheduled_at)
-                                                            await handleUpdateCallback(timeToSave)
-                                                            setIsEditingCallback(false)
-                                                        }}
-                                                        className="bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-bold px-2 py-1 rounded"
-                                                    >
-                                                        Save
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => setIsEditingCallback(false)}
-                                                        className="bg-amber-100 hover:bg-amber-200 text-amber-900 text-[9px] font-bold px-2 py-1 rounded"
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Value</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={newFieldValue}
+                                                    onChange={(e) => setNewFieldValue(e.target.value)}
+                                                    placeholder="e.g. Delhi, 3 BHK"
+                                                    className="w-full bg-white border border-slate-200/80 p-2 py-1.5 rounded-lg text-xs font-semibold outline-none focus:border-blue-400"
+                                                />
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="flex flex-col justify-between h-full w-full">
-                                            <div>
-                                                <span className="block text-[9px] font-bold text-amber-800 uppercase tracking-wider mb-1">Scheduled Callback</span>
-                                                <span className="font-extrabold text-amber-950 block">
-                                                    {new Date(lead.voice_call_scheduled_at).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
-                                                </span>
-                                            </div>
-                                            <div className="flex gap-2 mt-1.5">
+                                        <div className="flex justify-end gap-2 pt-1">
+                                            <button 
+                                                onClick={() => { setIsAddingCustomField(false); setNewFieldKey(''); setNewFieldValue(''); }}
+                                                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-black rounded-lg transition-all"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button 
+                                                onClick={handleAddCustomField}
+                                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black rounded-lg transition-all"
+                                            >
+                                                Add Field
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Custom Fields Grid & Meta Ad Origin */}
+                                {(() => {
+                                    let customFields = lead.custom_fields || {};
+                                    if (customFields && typeof customFields === 'string') {
+                                        try {
+                                            while (typeof customFields === 'string') customFields = JSON.parse(customFields);
+                                        } catch (e) {}
+                                    }
+                                    const origin = customFields?.meta_ad_origin;
+                                    const entries = Object.entries(customFields).filter(([k]) => k !== 'meta_ad_origin');
+                                    const matchedProp = properties.find(p => p.id === lead.property_id || p.id === origin?.product_id || p.title === origin?.product_name);
+                                    const productName = origin?.product_name || matchedProp?.title || null;
+
+                                    return (
+                                        <div className="space-y-4">
+                                             {!origin && properties.length > 0 && (
+                                                 <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 p-3 rounded-2xl text-[10px]">
+                                                     <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                         <span className="p-1.5 bg-slate-400 text-white rounded-lg font-black shrink-0">📦</span>
+                                                         <div className="min-w-0 flex-1">
+                                                             <span className="text-[8px] font-bold text-slate-500 uppercase block tracking-wider">Inventory Product</span>
+                                                             <span className="font-bold text-slate-800 text-xs truncate block">{productName || 'Unmapped Product'}</span>
+                                                         </div>
+                                                     </div>
+                                                     <select
+                                                         value={lead.property_id || matchedProp?.id || ''}
+                                                         onChange={(e) => handleAssignProduct(e.target.value || null)}
+                                                         className="text-[11px] font-extrabold bg-white border border-slate-300 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer hover:border-slate-400 shrink-0 shadow-xs"
+                                                     >
+                                                         <option value="">{productName ? 'Change Product...' : '+ Assign Product'}</option>
+                                                         {properties.map((p: any) => (
+                                                             <option key={p.id} value={p.id}>{p.title}</option>
+                                                         ))}
+                                                         {(lead.property_id || matchedProp) && <option value="">None (Unassign)</option>}
+                                                     </select>
+                                                 </div>
+                                             )}
+
+                                            {entries.length > 0 ? (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    {entries.map(([key, value]) => (
+                                                        <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-start group">
+                                                            <div className="min-w-0 flex-1">
+                                                                <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{key.replace(/_/g, ' ')}</span>
+                                                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">{String(value)}</span>
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => handleDeleteCustomField(key)}
+                                                                className="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2"
+                                                                title="Delete custom field"
+                                                            >
+                                                                <X size={14} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : !origin && (
+                                                <div className="text-center py-6 text-xs text-slate-400 font-medium">
+                                                    No custom fields added yet.
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Voice Agent Call Details Card - Collapsible (Collapsed by default) */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                        <button 
+                            type="button"
+                            onClick={() => setIsVoiceDetailsOpen(!isVoiceDetailsOpen)}
+                            className="w-full p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors text-left"
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className="p-1.5 bg-purple-50 text-purple-600 rounded-xl font-black text-xs">🎙️</span>
+                                <div>
+                                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">AI Voice Agent Call Details</h3>
+                                    <p className="text-[11px] text-slate-500 font-medium">
+                                        Status: <span className="font-bold text-indigo-600 font-mono">{(lead.voice_call_status || 'not_called').replace(/_/g, ' ')}</span>
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-extrabold text-slate-400">{isVoiceDetailsOpen ? 'Hide Details' : 'Show Details'}</span>
+                                <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${isVoiceDetailsOpen ? 'rotate-180' : ''}`} />
+                            </div>
+                        </button>
+
+                        {isVoiceDetailsOpen && (
+                            <div className="p-4.5 pt-2 border-t border-slate-100 space-y-4 animate-in fade-in duration-200">
+                                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                        🎙️ Voice Agent Call Details
+                                    </h3>
+                                    {lead.phone && (
+                                        <div className="flex gap-2">
+                                            {leadHistory.some(h => h.description && h.description.startsWith('🎙️ CALL_JSON:')) && (
                                                 <button 
-                                                    onClick={() => {
-                                                        setTempCallbackTime(toLocalDateTimeString(lead.voice_call_scheduled_at))
-                                                        setIsEditingCallback(true)
-                                                    }}
-                                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-850 underline transition-colors"
+                                                    onClick={() => setIsAllHistoryModalOpen(true)}
+                                                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-4.5 py-2 rounded-full transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
                                                 >
-                                                    Reschedule
+                                                    <History size={12} /> Call History
                                                 </button>
-                                                <span className="text-amber-200">|</span>
-                                                <button 
-                                                    onClick={handleDeleteCallback}
-                                                    className="text-[10px] font-bold text-red-500 hover:text-red-750 underline transition-colors"
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
+                                            )}
+                                            <button 
+                                                onClick={handleTriggerCall}
+                                                disabled={isCalling || lead.voice_call_status === 'calling'}
+                                                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-black px-4 py-2 rounded-full transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
+                                            >
+                                                {isCalling || lead.voice_call_status === 'calling' ? (
+                                                    <>
+                                                        <Loader2 size={12} className="animate-spin text-white" /> Calling...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Phone size={12} /> Call via AI
+                                                    </>
+                                                )}
+                                            </button>
                                         </div>
                                     )}
                                 </div>
-                            )}
-                        </div>
 
-                        {lead.voice_call_summary && (
-                            <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100">
-                                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Call AI Summary</span>
-                                <p className="text-xs font-semibold text-slate-700 leading-relaxed">
-                                    {lead.voice_call_summary}
-                                </p>
-                            </div>
-                        )}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50">
+                                        <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Call Status</span>
+                                        <span className={`font-black uppercase tracking-wider ${
+                                            lead.voice_call_status === 'completed' ? 'text-emerald-600' : 
+                                            lead.voice_call_status === 'calling' ? 'text-indigo-600 animate-pulse' : 
+                                            lead.voice_call_status === 'scheduled_retry' ? 'text-amber-500 animate-pulse' :
+                                            lead.voice_call_status === 'scheduled_callback' ? 'text-blue-500 animate-pulse' :
+                                            ['failed', 'failed_max_retries'].includes(lead.voice_call_status || '') ? 'text-red-500' : 
+                                            'text-slate-500'
+                                        }`}>
+                                            ● {(lead.voice_call_status || 'not_called').replace(/_/g, ' ')}
+                                        </span>
+                                    </div>
 
-                        {lead.voice_recording_url && (
-                            <div className="space-y-1.5">
-                                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Listen to Call Recording</span>
-                                <audio controls src={lead.voice_recording_url} className="w-full h-9 rounded-lg outline-none" />
-                            </div>
-                        )}
+                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50 flex justify-between items-center">
+                                        <div>
+                                            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Calling Queue</span>
+                                            <span className={`font-black uppercase tracking-wider ${lead.calling_enabled !== false ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                {lead.calling_enabled !== false ? 'Active' : 'Stopped'}
+                                            </span>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={lead.calling_enabled !== false} 
+                                                onChange={(e) => handleToggleCallingEnabled(e.target.checked)}
+                                                className="sr-only peer"
+                                            />
+                                            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                                        </label>
+                                    </div>
 
-                        {lead.voice_call_transcript && Array.isArray(lead.voice_call_transcript) && lead.voice_call_transcript.length > 0 && (
-                            <div className="pt-3 border-t border-slate-100">
-                                <button 
-                                    type="button"
-                                    onClick={() => setShowTranscript(!showTranscript)}
-                                    className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 transition-colors"
-                                >
-                                    💬 {showTranscript ? 'Hide' : 'View'} full transcript ({lead.voice_call_transcript.length} messages)
-                                </button>
-                                {showTranscript && (
-                                    <div className="mt-3 p-4 bg-slate-50 border border-slate-100/50 rounded-2xl max-h-60 overflow-y-auto space-y-3.5 custom-scrollbar">
-                                        {cleanTranscript(lead.voice_call_transcript).map((msg: any, index: number) => (
-                                            <div key={index} className={`flex flex-col ${msg.role === 'agent' ? 'items-start' : 'items-end'}`}>
-                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
-                                                    {msg.role === 'agent' ? 'AI Voice Agent' : 'Lead'}
-                                                </span>
-                                                <span className={`text-xs p-3 rounded-2xl max-w-[85%] font-semibold leading-relaxed ${msg.role === 'agent' ? 'bg-white text-slate-800 border border-slate-200/50 rounded-tl-none' : 'bg-indigo-600 text-white rounded-tr-none shadow-sm'}`}>
-                                                    {msg.message}
-                                                </span>
+                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100/50 flex justify-between items-center">
+                                        <div>
+                                            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">WhatsApp Auto-Messaging</span>
+                                            <span className={`font-black uppercase tracking-wider ${lead.whatsapp_enabled !== false ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                {lead.whatsapp_enabled !== false ? 'Active' : 'Stopped'}
+                                            </span>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={lead.whatsapp_enabled !== false} 
+                                                onChange={(e) => handleToggleWhatsAppEnabled(e.target.checked)}
+                                                className="sr-only peer"
+                                            />
+                                            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                                        </label>
+                                    </div>
+
+                                    {lead.voice_call_scheduled_at && (
+                                        <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100 relative overflow-hidden flex flex-col justify-between min-h-[90px]">
+                                            {isEditingCallback ? (
+                                                <div className="space-y-1.5 w-full">
+                                                    <span className="block text-[9px] font-bold text-amber-800 uppercase tracking-wider">Change Callback Time</span>
+                                                    <div className="flex flex-col gap-1 w-full">
+                                                        <input 
+                                                            type="datetime-local" 
+                                                            defaultValue={toLocalDateTimeString(lead.voice_call_scheduled_at)} 
+                                                            onChange={(e) => setTempCallbackTime(e.target.value)}
+                                                            className="bg-white border border-amber-200 p-1 py-0.5 rounded text-[11px] font-bold outline-none w-full"
+                                                        />
+                                                        <div className="flex gap-1.5 mt-0.5">
+                                                            <button 
+                                                                onClick={async () => {
+                                                                    const timeToSave = tempCallbackTime || toLocalDateTimeString(lead.voice_call_scheduled_at)
+                                                                    await handleUpdateCallback(timeToSave)
+                                                                    setIsEditingCallback(false)
+                                                                }}
+                                                                className="bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-bold px-2 py-1 rounded"
+                                                            >
+                                                                Save
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => setIsEditingCallback(false)}
+                                                                className="bg-amber-100 hover:bg-amber-200 text-amber-900 text-[9px] font-bold px-2 py-1 rounded"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col justify-between h-full w-full">
+                                                    <div>
+                                                        <span className="block text-[9px] font-bold text-amber-800 uppercase tracking-wider mb-1">Scheduled Callback</span>
+                                                        <span className="font-extrabold text-amber-950 block">
+                                                            {new Date(lead.voice_call_scheduled_at).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex gap-2 mt-1.5">
+                                                        <button 
+                                                            onClick={() => {
+                                                                setTempCallbackTime(toLocalDateTimeString(lead.voice_call_scheduled_at))
+                                                                setIsEditingCallback(true)
+                                                            }}
+                                                            className="text-[10px] font-bold text-indigo-600 hover:text-indigo-850 underline transition-colors"
+                                                        >
+                                                            Reschedule
+                                                        </button>
+                                                        <span className="text-amber-200">|</span>
+                                                        <button 
+                                                            onClick={handleDeleteCallback}
+                                                            className="text-[10px] font-bold text-red-500 hover:text-red-750 underline transition-colors"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {lead.voice_call_summary && (
+                                    <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                                        <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Call AI Summary</span>
+                                        <p className="text-xs font-semibold text-slate-700 leading-relaxed">
+                                            {lead.voice_call_summary}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {lead.voice_recording_url && (
+                                    <div className="space-y-1.5">
+                                        <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Listen to Call Recording</span>
+                                        <audio controls src={lead.voice_recording_url} className="w-full h-9 rounded-lg outline-none" />
+                                    </div>
+                                )}
+
+                                {lead.voice_call_transcript && Array.isArray(lead.voice_call_transcript) && lead.voice_call_transcript.length > 0 && (
+                                    <div className="pt-3 border-t border-slate-100">
+                                        <button 
+                                            type="button"
+                                            onClick={() => setShowTranscript(!showTranscript)}
+                                            className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 transition-colors"
+                                        >
+                                            💬 {showTranscript ? 'Hide' : 'View'} full transcript ({lead.voice_call_transcript.length} messages)
+                                        </button>
+                                        {showTranscript && (
+                                            <div className="mt-3 p-4 bg-slate-50 border border-slate-100/50 rounded-2xl max-h-60 overflow-y-auto space-y-3.5 custom-scrollbar">
+                                                {cleanTranscript(lead.voice_call_transcript).map((msg: any, index: number) => (
+                                                    <div key={index} className={`flex flex-col ${msg.role === 'agent' ? 'items-start' : 'items-end'}`}>
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+                                                            {msg.role === 'agent' ? 'AI Voice Agent' : 'Lead'}
+                                                        </span>
+                                                        <span className={`text-xs p-3 rounded-2xl max-w-[85%] font-semibold leading-relaxed ${msg.role === 'agent' ? 'bg-white text-slate-800 border border-slate-200/50 rounded-tl-none' : 'bg-indigo-600 text-white rounded-tr-none shadow-sm'}`}>
+                                                            {msg.message}
+                                                        </span>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -2261,6 +2392,7 @@ END:VCARD`
                 onSuccess={() => { fetchLeadData(); fetchLeadHistory(); }}
                 properties={properties}
             />
+        </div>
         </div>
     )
 }
