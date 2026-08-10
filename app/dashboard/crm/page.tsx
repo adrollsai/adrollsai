@@ -16,6 +16,7 @@ import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicke
 import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadHistoryModal from '@/components/LeadHistoryModal'
+import GroupLeadDistributionModal from '@/components/GroupLeadDistributionModal'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
@@ -176,6 +177,7 @@ export default function CRMPage() {
   const [callFeedbackLead, setCallFeedbackLead] = useState<any>(null)
   const [updateFollowupLead, setUpdateFollowupLead] = useState<any>(null)
   const [historyLead, setHistoryLead] = useState<any>(null)
+  const [isGroupDistributionModalOpen, setIsGroupDistributionModalOpen] = useState(false)
   
   const [currentPage, setCurrentPageState] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -1773,13 +1775,9 @@ END:VCARD\n`
             <div className={`gap-2 flex-wrap w-full md:w-auto ${showMobileCrmActions ? 'flex' : 'hidden md:flex'}`}>
                 {isAdminLike && role !== 'agent' && (
                     <>
-                        <button onClick={toggleGlobalDistribution} disabled={isAssigning} className={`flex-1 md:flex-none p-3 rounded-2xl shadow-sm border active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 ${enableDistribution ? 'bg-violet-600 border-violet-600 text-white hover:bg-violet-700' : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'}`}>
-                            {isAssigning ? <Loader2 size={16} className="animate-spin" /> : <Shuffle size={16} />}
-                            <span className="font-bold text-[10px] sm:text-sm">{enableDistribution ? 'Auto Distribute: ON' : 'Auto Distribute: OFF'}</span>
-                        </button>
-                        <button onClick={() => setIsCampaignAssignModalOpen(true)} disabled={isAssigning} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
-                            <Tag size={16} />
-                            <span className="font-bold text-[10px] sm:text-sm">Campaign Assign</span>
+                        <button onClick={() => setIsGroupDistributionModalOpen(true)} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-blue-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 cursor-pointer shadow-md shadow-blue-600/20">
+                            <SlidersHorizontal size={16} />
+                            <span className="font-bold text-[10px] sm:text-sm">Group Lead Distribution</span>
                         </button>
                         <button onClick={() => { 
                             setIsSyncModalOpen(true); 
@@ -2902,6 +2900,18 @@ END:VCARD\n`
          isOpen={!!historyLead}
          lead={historyLead}
          onClose={() => setHistoryLead(null)}
+       />
+
+       {/* GROUP LEAD DISTRIBUTION MODAL */}
+       <GroupLeadDistributionModal
+         isOpen={isGroupDistributionModalOpen}
+         onClose={() => setIsGroupDistributionModalOpen(false)}
+         team={team}
+         campaigns={uniqueCampaigns}
+         leads={leads}
+         targetUserId={targetUserId || userId || ''}
+         impersonateId={impersonateId}
+         onLeadsUpdated={() => fetchLeads(true)}
        />
        </div>
      </div>

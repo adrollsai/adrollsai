@@ -2641,28 +2641,98 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
             customFields.meta_ad_origin = metaAdOrigin;
           }
 
-          // ASSIGNMENT LOGIC: Campaign Rule First, then Global Rule
+          // ASSIGNMENT LOGIC: Group-Weighted Rule First, then Campaign Rule, then Global Rule
           let assignedAgentId: string | null = null;
           
-          // 1. Campaign-Specific Assignment
-          const ruleTitle = `Campaign-Assignment: ${adCampaignString}`;
-          const ruleTitleCamp = `Campaign-Assignment: ${campaignName}`;
-          
-          const { data: automations } = await supabaseAdmin
-            .from('automations')
-            .select('description')
-            .eq('user_id', profile.id)
-            .in('title', [ruleTitle, ruleTitleCamp])
-            .eq('is_active', true)
-            .limit(1)
+          // 0. GROUP WEIGHTED DISTRIBUTION RULE (Primary Strategy)
+          try {
+            const { data: groupAutomations } = await supabaseAdmin
+              .from('automations')
+              .select('*')
+              .eq('user_id', profile.id)
+              .like('title', 'Group-Distribution:%')
+              .eq('is_active', true);
 
-          if (automations && automations.length > 0) {
-              try {
-                  const agentIds = JSON.parse(automations[0].description || '[]');
-                  if (agentIds && agentIds.length > 0) {
-                      assignedAgentId = await getNextRoundRobinAgent(supabaseAdmin, agentIds);
+            if (groupAutomations && groupAutomations.length > 0) {
+              for (const aut of groupAutomations) {
+                try {
+                  const parsedGroup = JSON.parse(aut.description || '{}');
+                  const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
+                  const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
+
+                  if (groupMembers.length > 0 && groupCampaigns.length > 0) {
+                    const matchesCamp = groupCampaigns.some(gc => {
+                      const gcClean = gc.trim().toLowerCase();
+                      return (
+                        (adCampaignString && adCampaignString.toLowerCase().includes(gcClean)) ||
+                        (campaignName && campaignName.toLowerCase().includes(gcClean)) ||
+                        (formName && formName.toLowerCase().includes(gcClean))
+                      );
+                    });
+
+                    if (matchesCamp) {
+                      // Build weighted sequence pool
+                      const weightedPool: any[] = [];
+                      groupMembers.forEach(m => {
+                        for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
+                          weightedPool.push(m);
+                        }
+                      });
+
+                      let currentIdx = 0;
+                      if (parsedGroup.last_assigned_user_id) {
+                        const lastIdx = weightedPool.findIndex(m => m.userId === parsedGroup.last_assigned_user_id);
+                        if (lastIdx !== -1) {
+                          currentIdx = (lastIdx + 1) % weightedPool.length;
+                        }
+                      }
+
+                      const selectedMember = weightedPool[currentIdx];
+                      assignedAgentId = selectedMember.userId;
+
+                      // Update group automation rule state
+                      parsedGroup.last_assigned_user_id = selectedMember.userId;
+                      parsedGroup.last_assigned_user_name = selectedMember.name;
+                      parsedGroup.last_assigned_at = new Date().toISOString();
+
+                      await supabaseAdmin
+                        .from('automations')
+                        .update({ description: JSON.stringify(parsedGroup) })
+                        .eq('id', aut.id);
+
+                      break;
+                    }
                   }
-              } catch (e) { console.error("Error parsing campaign assignment rule", e) }
+                } catch (e) {
+                  console.error("Error parsing Group-Distribution rule:", e);
+                }
+              }
+            }
+          } catch (err) {
+            console.error("Error evaluating Group-Distribution rules:", err);
+          }
+
+          // 1. Campaign-Specific Assignment Fallback
+          if (!assignedAgentId) {
+            const ruleTitle = `Campaign-Assignment: ${adCampaignString}`;
+            const ruleTitleCamp = `Campaign-Assignment: ${campaignName}`;
+            
+            const { data: automations } = await supabaseAdmin
+              .from('automations')
+              .select('description')
+              .eq('user_id', profile.id)
+              .in('title', [ruleTitle, ruleTitleCamp])
+              .eq('is_active', true)
+              .limit(1)
+
+            if (automations && automations.length > 0) {
+                try {
+                    const agentIds = JSON.parse(automations[0].description || '[]');
+                    if (agentIds && agentIds.length > 0) {
+                        assignedAgentId = await getNextRoundRobinAgent(supabaseAdmin, agentIds);
+                    }
+                } catch (e) { console.error("Error parsing campaign assignment rule", e) }
+            }
           }
 
           // 2. Global Distribution Fallback
