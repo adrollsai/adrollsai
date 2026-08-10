@@ -468,47 +468,28 @@ export default function CRMPage() {
         setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
       }
 
-      // Query leads strictly scoped to active user role
-      let buildQuery = () => {
-          let q = supabase.from('leads')
-            .select('*')
-            .order('created_at', { ascending: false, nullsFirst: false })
-            .limit(1000);
-
-          const isTeamMemberUser = currentRole === 'agent' || currentRole === 'team_member' || !!parentId;
-
-          if (isTeamMemberUser) {
-              q = q.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`);
-          } else {
-              q = q.eq('user_id', targetUserId);
+      // Fetch all workspace leads via server API without 1,000 row cap
+      try {
+        const leadsRes = await fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+        const leadsJson = await leadsRes.json()
+        if (leadsJson.success && Array.isArray(leadsJson.leads)) {
+          setLeads(leadsJson.leads)
+          setLocalCache(cacheKey, leadsJson.leads.slice(0, 150))
+          setTotalLeadsCount(leadsJson.leads.length)
+        } else {
+          // Fallback to direct client query if API fails
+          let q = supabase.from('leads').select('*').order('created_at', { ascending: false, nullsFirst: false })
+          const isTeamMemberUser = currentRole === 'agent' || currentRole === 'team_member' || !!parentId
+          if (isTeamMemberUser) q = q.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
+          else q = q.eq('user_id', targetUserId)
+          const { data } = await q
+          if (data) {
+            setLeads(data)
+            setTotalLeadsCount(data.length)
           }
-
-          return q;
-      };
-
-      let { data, error } = await buildQuery();
-      if (error || !data) {
-          console.error("[CRM fetchLeads error]:", error?.message || error);
-          data = [];
-      }
-
-      if (data) {
-          const parsedData = (data as any[]).map((lead: any) => {
-              let parsedCustomFields = lead.custom_fields;
-              if (parsedCustomFields && typeof parsedCustomFields === 'string') {
-                  try {
-                      while (typeof parsedCustomFields === 'string') {
-                          parsedCustomFields = JSON.parse(parsedCustomFields);
-                      }
-                  } catch (e) {
-                      parsedCustomFields = {};
-                  }
-              }
-              return { ...lead, custom_fields: parsedCustomFields };
-          });
-          setLeads(parsedData);
-          setLocalCache(cacheKey, parsedData.slice(0, 150));
-          setTotalLeadsCount(parsedData.length);
+        }
+      } catch (err) {
+        console.error('[CRM fetchLeads error]:', err)
       }
 
       try {
@@ -1155,15 +1136,174 @@ export default function CRMPage() {
 
     const reader = new FileReader()
     reader.onload = async (event) => {
-        const rows = (event.target?.result as string).split('\n').slice(1)
-        const newLeads = rows.map(r => r.split(',')).filter(c => c.length >= 2).map(cols => ({ 
-            user_id: effectiveUserId, name: cols[0]?.trim(), phone: cols[1]?.trim(), 
-            email: cols[2]?.trim(), source: 'CSV Import', pipeline_stage: 'New',
+        const text = (event.target?.result as string) || ''
+        
+        // Multi-line CSV parser with quote handling
+        const parseCSVRows = (str: string) => {
+          const rows: string[][] = []
+          let row: string[] = [], field = '', inQuotes = false
+          for (let i = 0; i < str.length; i++) {
+            const c = str[i]
+            if (c === '"') inQuotes = !inQuotes
+            else if (c === ',' && !inQuotes) { row.push(field); field = '' }
+            else if ((c === '\r' || c === '\n') && !inQuotes) {
+              if (c === '\r' && str[i + 1] === '\n') i++
+              row.push(field)
+              if (row.some(f => f.trim())) rows.push(row)
+              row = []; field = ''
+            } else { field += c }
+          }
+          if (field || row.length) { row.push(field); if (row.some(f => f.trim())) rows.push(row) }
+          return rows
+        }
+
+        const parseCustomDate = (dateStr: string) => {
+          if (!dateStr || !dateStr.trim()) return null
+          const s = dateStr.trim()
+          try {
+            const match = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(am|pm)?$/i)
+            if (match) {
+              let day = parseInt(match[1], 10), month = parseInt(match[2], 10) - 1, year = parseInt(match[3], 10)
+              let hour = parseInt(match[4], 10), minute = parseInt(match[5], 10)
+              const ampm = match[6]?.toLowerCase()
+              if (ampm === 'pm' && hour < 12) hour += 12
+              if (ampm === 'am' && hour === 12) hour = 0
+              const d = new Date(Date.UTC(year, month, day, hour - 5, minute - 30))
+              if (!isNaN(d.getTime())) return d.toISOString()
+            }
+            const fallback = new Date(s)
+            if (!isNaN(fallback.getTime())) return fallback.toISOString()
+          } catch (e) {}
+          return null
+        }
+
+        const rows = parseCSVRows(text)
+        if (rows.length < 2) return
+
+        const headers = rows[0].map(h => h.trim())
+        const idx = {
+          name: headers.indexOf('Lead Name'),
+          phone: headers.indexOf('Contacts'),
+          email: headers.indexOf('Email'),
+          owner: headers.indexOf('Lead Owner'),
+          source: headers.indexOf('Lead Source'),
+          sourceDetails: headers.indexOf('Source Details'),
+          budget: headers.indexOf('Budget'),
+          status: headers.indexOf('Lead Status'),
+          clientStatus: headers.indexOf('Client Status'),
+          nextFollowupText: headers.indexOf('Next Followup'),
+          nextFollowupDate: headers.indexOf('Next Followup Date'),
+          followupTaken: headers.indexOf('Followup Taken'),
+          openingRemarks: headers.indexOf('Openning Remarks'),
+          lastRemarks: headers.indexOf('Last Remarks'),
+          meetingDate: headers.indexOf('Meeting Date'),
+          createdDate: headers.indexOf('Created Date')
+        }
+
+        // Build list of team profiles to resolve Lead Owner
+        const { data: teamProfiles } = await supabase
+          .from('profiles')
+          .select('id, email, business_name, full_name')
+          .or(`parent_id.eq.${effectiveUserId},agency_id.eq.${effectiveUserId},id.eq.${effectiveUserId}`)
+
+        const resolveOwner = (ownerName: string) => {
+          if (!ownerName || !teamProfiles) return effectiveUserId
+          const nameLower = ownerName.toLowerCase().trim()
+          const matched = teamProfiles.find(p => {
+            const bName = (p.business_name || p.full_name || p.email || '').toLowerCase()
+            return bName.includes(nameLower) || nameLower.includes(bName.split(' ')[0])
+          })
+          return matched ? matched.id : effectiveUserId
+        }
+
+        const newLeads = rows.slice(1).map(r => {
+          const name = idx.name !== -1 ? (r[idx.name] || '').trim() : (r[0] || '').trim()
+          const rawPhone = idx.phone !== -1 ? (r[idx.phone] || '').trim() : (r[1] || '').trim()
+          if (!name && !rawPhone) return null
+
+          let phone = rawPhone
+          if (phone && !phone.startsWith('+')) {
+            const digits = phone.replace(/\D/g, '')
+            if (digits.length === 10) phone = `+91${digits}`
+            else if (digits.length > 10) phone = `+${digits}`
+          }
+
+          const email = idx.email !== -1 ? (r[idx.email] || '').trim() : (r[2] || '').trim()
+          const ownerName = idx.owner !== -1 ? (r[idx.owner] || '').trim() : ''
+          const assignedTo = resolveOwner(ownerName)
+
+          const source = idx.source !== -1 ? ((r[idx.source] || '').trim() || 'CSV Import') : 'CSV Import'
+          const sourceDetails = idx.sourceDetails !== -1 ? (r[idx.sourceDetails] || '').trim() : ''
+          const budget = idx.budget !== -1 ? (r[idx.budget] || '').trim() : ''
+          const leadStatus = idx.status !== -1 ? ((r[idx.status] || '').trim() || 'New Lead') : 'New'
+          const clientStatus = idx.clientStatus !== -1 ? (r[idx.clientStatus] || '').trim() : ''
+          
+          const nextFollowupText = idx.nextFollowupText !== -1 ? (r[idx.nextFollowupText] || '').trim() : ''
+          const nextFollowupDateStr = idx.nextFollowupDate !== -1 ? (r[idx.nextFollowupDate] || '').trim() : ''
+          const isoNextFollowup = parseCustomDate(nextFollowupDateStr)
+
+          let nextActionType = 'Call'
+          if (nextFollowupText.toLowerCase().includes('visit')) nextActionType = 'Visit'
+          else if (nextFollowupText.toLowerCase().includes('revisit')) nextActionType = 'Revisit'
+          else if (nextFollowupText.toLowerCase().includes('meeting')) nextActionType = 'Closing Meeting'
+
+          const followupTaken = idx.followupTaken !== -1 ? (r[idx.followupTaken] || '').trim() : ''
+          const openingRemarks = idx.openingRemarks !== -1 ? (r[idx.openingRemarks] || '').trim() : ''
+          const lastRemarks = idx.lastRemarks !== -1 ? (r[idx.lastRemarks] || '').trim() : ''
+          const meetingDateStr = idx.meetingDate !== -1 ? (r[idx.meetingDate] || '').trim() : ''
+          const isoMeetingDate = parseCustomDate(meetingDateStr)
+          const createdDateStr = idx.createdDate !== -1 ? (r[idx.createdDate] || '').trim() : ''
+          const isoCreatedDate = parseCustomDate(createdDateStr) || new Date().toISOString()
+
+          let stage = 'New'
+          if (leadStatus.includes('Meeting')) stage = 'Meeting Planned'
+          else if (leadStatus.includes('Visit Planned')) stage = 'Appointment booked'
+          else if (leadStatus.includes('Visit Done')) stage = 'Appointment done'
+          else if (leadStatus.includes('Negotiation')) stage = 'Qualified'
+          else if (leadStatus.includes('Deal') || leadStatus.includes('Token')) stage = 'Closed'
+          else if (leadStatus.includes('Lost')) stage = 'Unqualified'
+          else if (leadStatus.includes('Requirement')) stage = 'Contacted'
+
+          let notes = ''
+          if (openingRemarks) notes += `[Opening Remarks]: ${openingRemarks}\n\n`
+          if (lastRemarks) notes += `[Last Remarks]: ${lastRemarks}`
+          notes = notes.trim()
+
+          return {
+            user_id: effectiveUserId,
+            assigned_to: assignedTo,
+            name: name || 'Lead',
+            phone: phone || null,
+            email: email || null,
+            source,
+            ad_name: sourceDetails || null,
+            budget: budget || null,
+            status: leadStatus,
+            pipeline_stage: stage,
+            next_followup: isoNextFollowup,
+            booked_time: isoMeetingDate,
+            created_at: isoCreatedDate,
+            notes: notes || null,
             csv_audience: csvAudience,
-            created_at: new Date().toISOString()
-        }))
+            custom_fields: {
+              client_status: clientStatus,
+              next_action_type: nextActionType,
+              next_action_date: isoNextFollowup,
+              opening_comments: openingRemarks,
+              last_followup_remark: lastRemarks,
+              followup_count: followupTaken ? parseInt(followupTaken, 10) : 0,
+              meeting_date: isoMeetingDate,
+              csv_audience: csvAudience
+            }
+          }
+        }).filter(Boolean)
+
         if (newLeads.length > 0) {
-            await supabase.from('leads').insert(newLeads)
+            const BATCH = 500
+            for (let i = 0; i < newLeads.length; i += BATCH) {
+              await supabase.from('leads').insert(newLeads.slice(i, i + BATCH))
+            }
+            toast.success(`Successfully imported ${newLeads.length} leads!`)
             fetchLeads(true)
         }
     }
@@ -1262,7 +1402,7 @@ END:VCARD\n`
   }, [leads])
 
   // --- ADVANCED FILTERING ---
-  // 1. Leads matching search, campaign, and form filters (but NOT pipeline stage)
+  // 1. Leads matching search, campaign, form, agent, date range, and DNP filters
   const leadsMatchingFilters = useMemo(() => {
     return leads.filter(l => {
       // RESTRICT AGENTS / TEAM MEMBERS: Only show leads assigned to them or created by them
@@ -1270,6 +1410,59 @@ END:VCARD\n`
       if (isTeamMemberUser) {
           if (l.assigned_to !== userId && l.user_id !== userId) return false;
       }
+
+      // ASSIGNED AGENT FILTER
+      const matchAgent = selectedAgentFilter === 'ALL' || (() => {
+        if (selectedAgentFilter === 'UNASSIGNED') {
+          return !l.assigned_to
+        }
+        return l.assigned_to === selectedAgentFilter || l.user_id === selectedAgentFilter
+      })()
+
+      // DATE CREATED RANGE FILTER
+      const matchDate = selectedDateRange === 'ALL' || (() => {
+        const rawDateStr = l.facebook_created_at || l.created_at
+        if (!rawDateStr) return false
+        const leadDate = new Date(rawDateStr)
+        const now = new Date()
+        if (isNaN(leadDate.getTime())) return false
+
+        if (selectedDateRange === 'TODAY') {
+          return leadDate.getFullYear() === now.getFullYear() &&
+                 leadDate.getMonth() === now.getMonth() &&
+                 leadDate.getDate() === now.getDate()
+        } else if (selectedDateRange === 'YESTERDAY') {
+          const yest = new Date(now)
+          yest.setDate(now.getDate() - 1)
+          return leadDate.getFullYear() === yest.getFullYear() &&
+                 leadDate.getMonth() === yest.getMonth() &&
+                 leadDate.getDate() === yest.getDate()
+        } else if (selectedDateRange === '7D') {
+          const limit = new Date(now)
+          limit.setDate(now.getDate() - 7)
+          return leadDate >= limit
+        } else if (selectedDateRange === '30D') {
+          const limit = new Date(now)
+          limit.setDate(now.getDate() - 30)
+          return leadDate >= limit
+        }
+        return true
+      })()
+
+      // DNP FILTER
+      const matchDnp = selectedDnpFilter === 'ALL' || (() => {
+        let cf: any = l.custom_fields
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf) } catch (e) {}
+        }
+        const count = l.dnp_count || cf?.dnp_count || 0
+        if (selectedDnpFilter === 'DNP_ONLY') return count > 0
+        if (selectedDnpFilter === 'DNP_1') return count === 1
+        if (selectedDnpFilter === 'DNP_2') return count === 2
+        if (selectedDnpFilter === 'DNP_3PLUS') return count >= 3
+        if (selectedDnpFilter === 'NO_DNP') return count === 0
+        return true
+      })()
 
       const matchSearch = !searchQuery || 
                           l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -1289,9 +1482,9 @@ END:VCARD\n`
       const matchCsvAudience = selectedCsvAudience === '' || 
                                l.csv_audience?.trim() === selectedCsvAudience.trim()
       
-      return matchSearch && matchCampaign && matchForm && matchCsvAudience
+      return matchAgent && matchDate && matchDnp && matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
-  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience, role, userId, parentAdminId])
+  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, selectedDnpFilter, role, userId, parentAdminId])
 
   const matchLeadToStage = (l: any, stageName: string): boolean => {
     const statusLower = (l.status || '').trim().toLowerCase()
