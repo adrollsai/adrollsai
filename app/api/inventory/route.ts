@@ -217,14 +217,14 @@ export async function GET(request: Request) {
 
     let { data: properties } = await supabaseAdmin
       .from('properties')
-      .select('id, title, tags, configurations, image_url, images, created_at')
+      .select('id, title, configurations, image_url, images, created_at, address, price, description')
       .in('user_id', ownerIds)
       .order('created_at', { ascending: false })
 
     if (!properties || properties.length === 0) {
       const { data: allProps } = await supabaseAdmin
         .from('properties')
-        .select('id, title, tags, configurations, image_url, images, created_at')
+        .select('id, title, configurations, image_url, images, created_at, address, price, description')
         .order('created_at', { ascending: false })
       properties = allProps
     }

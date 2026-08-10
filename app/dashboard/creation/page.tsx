@@ -501,31 +501,33 @@ export default function CreationPage() {
           }
       }
 
-      const { data, error: dbError } = await supabase
-        .from('properties')
-        .select('id, title, address, price, images, image_url, description, created_at, tags, configurations')
-        .eq('user_id', tUserId)
-        .order('created_at', { ascending: false })
-
-      if (dbError) throw new Error(dbError.message)
-      
-      if (data) {
-          setProperties(data)
-      }
+      try {
+        const invRes = await fetch('/api/inventory')
+        const invData = await invRes.json()
+        if (invData.success && Array.isArray(invData.properties)) {
+          setProperties(invData.properties)
+        } else {
+          const { data } = await supabase
+            .from('properties')
+            .select('id, title, address, price, images, image_url, description, created_at, configurations')
+            .eq('user_id', tUserId)
+            .order('created_at', { ascending: false })
+          if (data) setProperties(data)
+        }
+      } catch (e) {}
 
       // Fetch User's Reference Library creatives (both personal and global library items)
-      const { data: userRefs, error: refsError } = await supabase
-        .from('reference_creatives')
-        .select('id, category, url')
-        .or(`user_id.eq.${tUserId},user_id.is.null`)
-        .order('created_at', { ascending: false })
-      if (!refsError && userRefs) {
-        setUserReferences(userRefs)
-      }
+      try {
+        const { data: userRefs } = await supabase
+          .from('reference_creatives')
+          .select('id, category, url')
+          .or(`user_id.eq.${tUserId},user_id.is.null`)
+          .order('created_at', { ascending: false })
+        if (userRefs) setUserReferences(userRefs)
+      } catch (e) {}
 
     } catch (error: any) {
       console.error("Fetch Error:", error.message)
-      toast.error("Failed to load catalog.")
     } finally {
       setIsLoadingProperties(false)
       setIsRefreshing(false)

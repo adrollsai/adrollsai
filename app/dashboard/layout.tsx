@@ -76,7 +76,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
 
       // Whitelisted emails that do not get trapped by subscription expiry
-      const whitelistedEmails = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com']
+      const whitelistedEmails = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com', 'meta-reviewer@nobogent.com']
       const userEmail = userProfile?.email?.toLowerCase() || ''
       const isWhitelisted = whitelistedEmails.includes(userEmail)
 
