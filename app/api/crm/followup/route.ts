@@ -84,6 +84,7 @@ export async function POST(request: Request) {
       updatePayload.status = leadStatus
       const stageMap: Record<string, string> = {
         'New Lead': 'New',
+        'Ongoing': 'Ongoing',
         'Requirement Taken': 'Contacted',
         'Visit Planned': 'Appointment booked',
         'Visit Done': 'Appointment done',

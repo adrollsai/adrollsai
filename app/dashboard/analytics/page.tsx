@@ -315,6 +315,7 @@ export default function AnalyticsPage() {
 
     const stagesList = [
       { key: 'new', label: 'New Lead' },
+      { key: 'ongoing', label: 'Ongoing' },
       { key: 'contacted', label: 'Contacted' },
       { key: 'appointment', label: 'Appointment Booked' },
       { key: 'booked', label: 'Visit Planned' },
@@ -332,6 +333,7 @@ export default function AnalyticsPage() {
       
       const categoryLeads: Record<string, any[]> = {
         new: repLeads.filter(l => l.pipeline_stage === 'New Lead' || l.pipeline_stage === 'New' || l.status === 'New Lead' || l.status === 'New'),
+        ongoing: repLeads.filter(l => l.pipeline_stage === 'Ongoing' || l.status === 'Ongoing'),
         contacted: repLeads.filter(l => l.pipeline_stage === 'Contacted' || l.pipeline_stage === 'Requirement Taken' || l.status === 'Contacted'),
         appointment: repLeads.filter(l => l.pipeline_stage === 'Appointment Booked' || l.pipeline_stage === 'Appointment booked'),
         booked: repLeads.filter(l => l.pipeline_stage === 'Visit Planned' || l.status === 'Visit Planned'),
@@ -1100,6 +1102,7 @@ export default function AnalyticsPage() {
                   <div className="space-y-2.5">
                     {[
                       { label: 'New Lead', stage: 'New Lead', color: 'bg-blue-500' },
+                      { label: 'Ongoing', stage: 'Ongoing', color: 'bg-cyan-500' },
                       { label: 'Requirement Taken', stage: 'Requirement Taken', color: 'bg-indigo-500' },
                       { label: 'Visit Planned', stage: 'Visit Planned', color: 'bg-amber-500' },
                       { label: 'Visit Done', stage: 'Visit Done', color: 'bg-emerald-500' },

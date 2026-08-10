@@ -14,6 +14,7 @@ import { getPropertyDisplayLabel } from '@/utils/property-helper'
 
 const STAGES = [
   'New Lead',
+  'Ongoing',
   'Requirement Taken',
   'Appointment Booked',
   'Visit Planned',

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag, Building } from 'lucide-react'
+import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag, Building, ChevronLeft, ChevronRight, Upload, Download } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
@@ -11,8 +11,6 @@ import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@
 import LazyVideo from '@/components/LazyVideo'
 import { getPropertyTags, formatPropertyConfigWithTags } from '@/utils/property-tags'
 
-
-// Custom WhatsApp SVG Icon
 const WhatsAppIcon = ({ size = 24, className = "" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
@@ -112,6 +110,13 @@ export default function ProductsPage() {
   
   const fileInputRef = useRef<HTMLInputElement>(null)
   const editFileInputRef = useRef<HTMLInputElement>(null)
+
+  // PDF states
+  const pdfFileInputRef = useRef<HTMLInputElement>(null)
+  const editPdfFileInputRef = useRef<HTMLInputElement>(null)
+  const [selectedPdfFiles, setSelectedPdfFiles] = useState<File[]>([])
+  const [existingPdfUrls, setExistingPdfUrls] = useState<string[]>([])
+  const [editPdfFiles, setEditPdfFiles] = useState<File[]>([])
 
 
 
@@ -268,8 +273,11 @@ export default function ProductsPage() {
     setEditTagsInput(getPropertyTags(prop).join(', '))
     // Initialize existing images
     setExistingImages(prop.images && prop.images.length > 0 ? prop.images : (prop.image_url ? [prop.image_url] : []))
+    const configsObj = typeof prop.configurations === 'object' && prop.configurations !== null ? (prop.configurations as Record<string, any>) : {};
+    setExistingPdfUrls(Array.isArray(configsObj.pdf_urls) ? configsObj.pdf_urls : [])
     setEditFiles([])
     setEditPreviews([])
+    setEditPdfFiles([])
     setShowEditModal(true)
   }
 
@@ -292,10 +300,9 @@ export default function ProductsPage() {
 
       const uploadedUrls: string[] = []
 
-      // Upload any *new* files selected
+      // Upload any *new* image files selected
       if (editFiles.length > 0) {
         const uploadPromises = editFiles.map(async (file) => {
-          // COMPRESS BEFORE UPLOAD
           const compressedFile = await compressImage(file)
           const publicUrl = await uploadToR2(compressedFile, 'properties')
           return publicUrl
@@ -304,11 +311,28 @@ export default function ProductsPage() {
         uploadedUrls.push(...results)
       }
 
+      // Upload new PDF files if selected
+      const newPdfUrls: string[] = []
+      if (editPdfFiles.length > 0) {
+        const pdfPromises = editPdfFiles.map(async (file) => {
+          return await uploadToR2(file, 'product_pdfs')
+        })
+        const pdfResults = await Promise.all(pdfPromises)
+        newPdfUrls.push(...pdfResults)
+      }
+
+      const finalPdfUrls = [...existingPdfUrls, ...newPdfUrls]
+
       // Combine existing un-deleted images with newly uploaded images
       const finalImages = [...existingImages, ...uploadedUrls]
       const finalMainImage = finalImages.length > 0 ? finalImages[0] : ""
       const updatedTags = editTagsInput.split(',').map((t: string) => t.trim()).filter(Boolean)
-      const updatedConfigurations = formatPropertyConfigWithTags(editProp.configurations, updatedTags)
+      let updatedConfigurations: any = formatPropertyConfigWithTags(editProp.configurations, updatedTags)
+      if (typeof updatedConfigurations === 'object' && updatedConfigurations !== null) {
+        updatedConfigurations = { ...updatedConfigurations, pdf_urls: finalPdfUrls }
+      } else {
+        updatedConfigurations = { pdf_urls: finalPdfUrls }
+      }
 
       const apiRes = await fetch('/api/inventory', {
         method: 'POST',
@@ -350,9 +374,106 @@ export default function ProductsPage() {
       toast.success('Product updated successfully!')
       setShowEditModal(false)
       setEditProp(null)
+      setEditPdfFiles([])
 
     } catch (error: any) {
       toast.error('Error updating product', { description: error.message })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleAddProperty = async () => {
+    if (!newProp.title) {
+        toast.error("Please enter a Product/Service Name.")
+        return
+    }
+    if (selectedFiles.length > 20) {
+        toast.error("Maximum 20 images allowed.")
+        return
+    }
+
+    setIsSubmitting(true)
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error("Not authenticated")
+
+      const uploadedUrls: string[] = []
+
+      if (selectedFiles.length > 0) {
+        const uploadPromises = selectedFiles.map(async (file) => {
+          const compressedFile = await compressImage(file)
+          const publicUrl = await uploadToR2(compressedFile, 'properties')
+          return publicUrl
+        })
+        const results = await Promise.all(uploadPromises)
+        uploadedUrls.push(...results)
+      }
+
+      // Upload PDF files if selected
+      const pdfUrls: string[] = []
+      if (selectedPdfFiles.length > 0) {
+        const pdfPromises = selectedPdfFiles.map(async (file) => {
+          return await uploadToR2(file, 'product_pdfs')
+        })
+        const pdfResults = await Promise.all(pdfPromises)
+        pdfUrls.push(...pdfResults)
+      }
+
+      // Resolve correct attribution ID
+      let finalOwnerId = ownerId || user.id
+      if (!ownerId) {
+        const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
+        if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+            finalOwnerId = (profile?.parent_id || profile?.agency_id) as string
+        }
+      }
+
+      const newTagsArr = (newProp.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean)
+      let newConfigurations: any = formatPropertyConfigWithTags(null, newTagsArr)
+      if (pdfUrls.length > 0) {
+        if (typeof newConfigurations === 'object' && newConfigurations !== null) {
+          newConfigurations = { ...newConfigurations, pdf_urls: pdfUrls }
+        } else {
+          newConfigurations = { pdf_urls: pdfUrls }
+        }
+      }
+
+      const apiRes = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'insert',
+          targetUserId: finalOwnerId,
+          propertyData: {
+            title: newProp.title,
+            description: newProp.description,
+            address: '',
+            price: '',
+            property_type: 'Generic',
+            status: 'Active',
+            image_url: uploadedUrls[0] || "",
+            images: uploadedUrls,
+            youtube_url: newProp.youtube_url || null,
+            show_on_landing_page: newProp.show_on_landing_page !== false,
+            configurations: newConfigurations
+          }
+        })
+      })
+
+      const apiData = await apiRes.json()
+      if (!apiRes.ok) throw new Error(apiData.error || 'Failed to add product')
+
+      await fetchProperties(true)
+      setShowAddModal(false)
+      setNewProp({ title: '', description: '', youtube_url: '', show_on_landing_page: true, tags: '' })
+      setSelectedFiles([])
+      setPreviews([])
+      setSelectedPdfFiles([])
+
+    } catch (error: any) {
+      toast.error('Error adding product', { description: error.message })
     } finally {
       setIsSubmitting(false)
     }
@@ -514,85 +635,6 @@ export default function ProductsPage() {
       toast.error("Failed to update status: " + error.message)
     } finally {
       setIsTogglingLandingId(null)
-    }
-  }
-
-  const handleAddProperty = async () => {
-    if (!newProp.title) {
-        toast.error("Please enter a Product/Service Name.")
-        return
-    }
-    if (selectedFiles.length > 20) {
-        toast.error("Maximum 20 images allowed.")
-        return
-    }
-
-    setIsSubmitting(true)
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error("Not authenticated")
-
-      const uploadedUrls: string[] = []
-
-      if (selectedFiles.length > 0) {
-        const uploadPromises = selectedFiles.map(async (file) => {
-          // COMPRESS BEFORE UPLOAD
-          const compressedFile = await compressImage(file)
-          const publicUrl = await uploadToR2(compressedFile, 'properties')
-          return publicUrl
-        })
-        const results = await Promise.all(uploadPromises)
-        uploadedUrls.push(...results)
-      }
-
-      // Resolve correct attribution ID (use ownerId state if active, otherwise check profiles relationship or fallback to user.id)
-      let finalOwnerId = ownerId || user.id
-      if (!ownerId) {
-        const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
-        if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
-            finalOwnerId = (profile?.parent_id || profile?.agency_id) as string
-        }
-      }
-
-      const newTagsArr = (newProp.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean)
-      const newConfigurations = formatPropertyConfigWithTags(null, newTagsArr)
-
-      const apiRes = await fetch('/api/inventory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'insert',
-          targetUserId: finalOwnerId,
-          propertyData: {
-            title: newProp.title,
-            description: newProp.description,
-            address: '',
-            price: '',
-            property_type: 'Generic',
-            status: 'Active',
-            image_url: uploadedUrls[0] || "",
-            images: uploadedUrls,
-            youtube_url: newProp.youtube_url || null,
-            show_on_landing_page: newProp.show_on_landing_page !== false,
-            configurations: newConfigurations
-          }
-        })
-      })
-
-      const apiData = await apiRes.json()
-      if (!apiRes.ok) throw new Error(apiData.error || 'Failed to add product')
-
-      await fetchProperties(true)
-      setShowAddModal(false)
-      setNewProp({ title: '', description: '', youtube_url: '', show_on_landing_page: true, tags: '' })
-      setSelectedFiles([])
-      setPreviews([])
-
-    } catch (error: any) {
-      toast.error('Error adding product', { description: error.message })
-    } finally {
-      setIsSubmitting(false)
     }
   }
 
@@ -946,23 +988,118 @@ export default function ProductsPage() {
               </div>
               
               {previews.length > 0 && (
-                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                  {previews.map((src, i) => (
-                    <div key={i} className="relative flex-shrink-0 group">
-                       <img src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 shadow-sm" alt="Preview" />
-                       <button 
-                           onClick={() => {
-                               setPreviews(prev => prev.filter((_, idx) => idx !== i));
-                               setSelectedFiles(prev => prev.filter((_, idx) => idx !== i));
-                           }} 
-                           className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
-                       >
-                           <X size={12}/>
-                       </button>
-                    </div>
-                  ))}
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Uploaded Photos ({previews.length})</span>
+                    <span className="text-[10px] text-slate-400 font-medium">Use ← → to reorder</span>
+                  </div>
+                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                    {previews.map((src, i) => (
+                      <div key={i} className="relative flex-shrink-0 group">
+                        <img src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 shadow-sm" alt="Preview" />
+                        <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between p-1 rounded-b-xl">
+                          <button
+                            type="button"
+                            disabled={i === 0}
+                            onClick={() => {
+                              if (i === 0) return;
+                              const newP = [...previews];
+                              const newF = [...selectedFiles];
+                              [newP[i - 1], newP[i]] = [newP[i], newP[i - 1]];
+                              [newF[i - 1], newF[i]] = [newF[i], newF[i - 1]];
+                              setPreviews(newP);
+                              setSelectedFiles(newF);
+                            }}
+                            className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
+                            title="Move Left"
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={i === previews.length - 1}
+                            onClick={() => {
+                              if (i === previews.length - 1) return;
+                              const newP = [...previews];
+                              const newF = [...selectedFiles];
+                              [newP[i + 1], newP[i]] = [newP[i], newP[i + 1]];
+                              [newF[i + 1], newF[i]] = [newF[i], newF[i + 1]];
+                              setPreviews(newP);
+                              setSelectedFiles(newF);
+                            }}
+                            className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
+                            title="Move Right"
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
+                        <button 
+                            type="button"
+                            onClick={() => {
+                                setPreviews(prev => prev.filter((_, idx) => idx !== i));
+                                setSelectedFiles(prev => prev.filter((_, idx) => idx !== i));
+                            }} 
+                            className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                            title="Remove Photo"
+                        >
+                            <X size={12}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
+
+              {/* PDF Document Upload Field */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1"><FileText size={12} className="text-red-500" /> Upload PDF Documents (Brochure / Layouts)</span>
+                </label>
+                <div 
+                  onClick={() => pdfFileInputRef.current?.click()} 
+                  className="w-full bg-slate-50 border border-slate-200 hover:bg-slate-100/50 p-3.5 rounded-xl flex items-center justify-between cursor-pointer border-dashed transition-all"
+                >
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <FileText size={18} className="text-red-500" />
+                    <span className="text-xs font-bold text-slate-700">
+                      {selectedPdfFiles.length > 0 ? `${selectedPdfFiles.length} PDF file(s) attached` : 'Upload PDF Brochure / Floor Plans'}
+                    </span>
+                  </div>
+                  <Upload size={16} className="text-slate-400" />
+                  <input 
+                    type="file" 
+                    multiple 
+                    ref={pdfFileInputRef} 
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        setSelectedPdfFiles(prev => [...prev, ...Array.from(e.target.files!)])
+                      }
+                    }} 
+                    accept="application/pdf" 
+                    className="hidden" 
+                  />
+                </div>
+                {selectedPdfFiles.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    {selectedPdfFiles.map((pdfFile, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2.5 bg-red-50/60 rounded-xl border border-red-100 text-xs font-semibold text-slate-800">
+                        <div className="flex items-center gap-2 truncate">
+                          <FileText size={14} className="text-red-500 shrink-0" />
+                          <span className="truncate">{pdfFile.name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPdfFiles(prev => prev.filter((_, i) => i !== idx))}
+                          className="text-red-500 hover:bg-red-100 p-1 rounded-full shrink-0"
+                          title="Remove PDF"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
                
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Title</label>
@@ -1049,37 +1186,178 @@ export default function ProductsPage() {
               
               {/* Display both existing and new preview images */}
               {(existingImages.length > 0 || editPreviews.length > 0) && (
-                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                  {/* Existing Saved Images */}
-                  {existingImages.map((src, i) => (
-                    <div key={`exist-${i}`} className="relative flex-shrink-0 group">
-                       <img src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 shadow-sm" alt="Saved" />
-                       <button 
-                           onClick={() => setExistingImages(prev => prev.filter((_, idx) => idx !== i))} 
-                           className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
-                           title="Remove Saved Image"
-                       >
-                           <X size={12}/>
-                       </button>
-                    </div>
-                  ))}
-                  {/* Newly Added Images */}
-                  {editPreviews.map((src, i) => (
-                    <div key={`new-${i}`} className="relative flex-shrink-0 group">
-                       <img src={src} className="w-20 h-20 rounded-xl object-cover border-blue-400 border-2 shadow-sm" alt="New Preview" />
-                       <button 
-                           onClick={() => {
-                               setEditPreviews(prev => prev.filter((_, idx) => idx !== i));
-                               setEditFiles(prev => prev.filter((_, idx) => idx !== i));
-                           }} 
-                           className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
-                       >
-                           <X size={12}/>
-                       </button>
-                    </div>
-                  ))}
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Photos ({existingImages.length + editPreviews.length})</span>
+                    <span className="text-[10px] text-slate-400 font-medium">Use ← → to reorder</span>
+                  </div>
+                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                    {/* Existing Saved Images */}
+                    {existingImages.map((src, i) => (
+                      <div key={`exist-${i}`} className="relative flex-shrink-0 group">
+                        <img src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 shadow-sm" alt="Saved" />
+                        <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between p-1 rounded-b-xl">
+                          <button
+                            type="button"
+                            disabled={i === 0}
+                            onClick={() => {
+                              if (i === 0) return;
+                              const newImgs = [...existingImages];
+                              [newImgs[i - 1], newImgs[i]] = [newImgs[i], newImgs[i - 1]];
+                              setExistingImages(newImgs);
+                            }}
+                            className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
+                            title="Move Left"
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={i === existingImages.length - 1}
+                            onClick={() => {
+                              if (i === existingImages.length - 1) return;
+                              const newImgs = [...existingImages];
+                              [newImgs[i + 1], newImgs[i]] = [newImgs[i], newImgs[i + 1]];
+                              setExistingImages(newImgs);
+                            }}
+                            className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
+                            title="Move Right"
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
+                        <button 
+                            type="button"
+                            onClick={() => setExistingImages(prev => prev.filter((_, idx) => idx !== i))} 
+                            className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                            title="Remove Saved Image"
+                        >
+                            <X size={12}/>
+                        </button>
+                      </div>
+                    ))}
+                    {/* Newly Added Images */}
+                    {editPreviews.map((src, i) => (
+                      <div key={`new-${i}`} className="relative flex-shrink-0 group">
+                        <img src={src} className="w-20 h-20 rounded-xl object-cover border-blue-400 border-2 shadow-sm" alt="New Preview" />
+                        <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between p-1 rounded-b-xl">
+                          <button
+                            type="button"
+                            disabled={i === 0}
+                            onClick={() => {
+                              if (i === 0) return;
+                              const newP = [...editPreviews];
+                              const newF = [...editFiles];
+                              [newP[i - 1], newP[i]] = [newP[i], newP[i - 1]];
+                              [newF[i - 1], newF[i]] = [newF[i], newF[i - 1]];
+                              setEditPreviews(newP);
+                              setEditFiles(newF);
+                            }}
+                            className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
+                            title="Move Left"
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={i === editPreviews.length - 1}
+                            onClick={() => {
+                              if (i === editPreviews.length - 1) return;
+                              const newP = [...editPreviews];
+                              const newF = [...editFiles];
+                              [newP[i + 1], newP[i]] = [newP[i], newP[i + 1]];
+                              [newF[i + 1], newF[i]] = [newF[i], newF[i + 1]];
+                              setEditPreviews(newP);
+                              setEditFiles(newF);
+                            }}
+                            className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
+                            title="Move Right"
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
+                        <button 
+                            type="button"
+                            onClick={() => {
+                                setEditPreviews(prev => prev.filter((_, idx) => idx !== i));
+                                setEditFiles(prev => prev.filter((_, idx) => idx !== i));
+                            }} 
+                            className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                        >
+                            <X size={12}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
+
+              {/* Edit PDF Document Upload Field */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1"><FileText size={12} className="text-red-500" /> PDF Documents (Brochure / Layouts)</span>
+                </label>
+                <div 
+                  onClick={() => editPdfFileInputRef.current?.click()} 
+                  className="w-full bg-slate-50 border border-slate-200 hover:bg-slate-100/50 p-3.5 rounded-xl flex items-center justify-between cursor-pointer border-dashed transition-all"
+                >
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <FileText size={18} className="text-red-500" />
+                    <span className="text-xs font-bold text-slate-700">Add PDF Brochure / Floor Plans</span>
+                  </div>
+                  <Upload size={16} className="text-slate-400" />
+                  <input 
+                    type="file" 
+                    multiple 
+                    ref={editPdfFileInputRef} 
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        setEditPdfFiles(prev => [...prev, ...Array.from(e.target.files!)])
+                      }
+                    }} 
+                    accept="application/pdf" 
+                    className="hidden" 
+                  />
+                </div>
+                {(existingPdfUrls.length > 0 || editPdfFiles.length > 0) && (
+                  <div className="mt-2 space-y-1.5">
+                    {existingPdfUrls.map((url, idx) => (
+                      <div key={`exist-pdf-${idx}`} className="flex items-center justify-between p-2.5 bg-red-50/60 rounded-xl border border-red-100 text-xs font-semibold text-slate-800">
+                        <div className="flex items-center gap-2 truncate">
+                          <FileText size={14} className="text-red-500 shrink-0" />
+                          <a href={url} target="_blank" rel="noopener noreferrer" className="truncate text-red-600 hover:underline">
+                            Document {idx + 1}.pdf
+                          </a>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setExistingPdfUrls(prev => prev.filter((_, i) => i !== idx))}
+                          className="text-red-500 hover:bg-red-100 p-1 rounded-full shrink-0"
+                          title="Remove PDF"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    {editPdfFiles.map((pdfFile, idx) => (
+                      <div key={`new-pdf-${idx}`} className="flex items-center justify-between p-2.5 bg-blue-50/60 rounded-xl border border-blue-100 text-xs font-semibold text-slate-800">
+                        <div className="flex items-center gap-2 truncate">
+                          <FileText size={14} className="text-blue-500 shrink-0" />
+                          <span className="truncate">{pdfFile.name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditPdfFiles(prev => prev.filter((_, i) => i !== idx))}
+                          className="text-red-500 hover:bg-red-100 p-1 rounded-full shrink-0"
+                          title="Remove New PDF"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
                
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Title</label>

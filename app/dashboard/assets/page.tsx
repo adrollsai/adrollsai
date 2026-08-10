@@ -301,11 +301,22 @@ export default function AssetsPage() {
             
             if (assetData?.error) throw new Error(assetData.error)
 
-            const { data: propData } = await supabase
-                .from('properties')
-                .select('id, title, tags, configurations')
-                .eq('user_id', targetUserId)
-                .order('created_at', { ascending: false });
+            let propData: Property[] = [];
+            try {
+                const invRes = await fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`);
+                const invJson = await invRes.json();
+                if (invJson.success && Array.isArray(invJson.properties)) {
+                    propData = invJson.properties;
+                }
+            } catch (e) {
+                console.error("Failed to fetch inventory via API, falling back:", e);
+                const { data } = await supabase
+                    .from('properties')
+                    .select('id, title, tags, configurations')
+                    .eq('user_id', targetUserId)
+                    .order('created_at', { ascending: false });
+                if (data) propData = data as any;
+            }
 
             let mergedAssets = force ? assetData : mergeCacheData<any>(cachedAssets.filter(c => c.status !== 'Failed'), assetData || []);
             let mergedProps = propData || [];
@@ -948,6 +959,34 @@ export default function AssetsPage() {
 
     const clearSelection = () => {
         setSelectedIds(new Set());
+    };
+
+    const handleDirectSingleDownload = async (asset: Asset) => {
+        try {
+            toast.loading("Preparing download...", { id: 'download-single' });
+            const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(asset.url)}`;
+            const response = await fetch(proxyUrl);
+            if (!response.ok) throw new Error("Fetch failed");
+            const blob = await response.blob();
+            const mimeType = blob.type || (asset.type === 'video' ? 'video/mp4' : 'image/png');
+            const ext = mimeType.split('/')[1] || (asset.type === 'video' ? 'mp4' : 'png');
+            const fileName = `asset-${asset.id.slice(0, 8)}.${ext}`;
+            
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            }, 100);
+            toast.success("Download started!", { id: 'download-single' });
+        } catch (e) {
+            toast.error("Failed to download file", { id: 'download-single' });
+        }
     };
 
     const handleDownloadSelected = async () => {
@@ -2045,6 +2084,41 @@ export default function AssetsPage() {
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+            {/* FLOATING SELECTION BAR */}
+            {selectedIds.size > 0 && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[70] bg-slate-900/90 backdrop-blur-md text-white px-6 py-3.5 rounded-full shadow-2xl flex items-center gap-4 border border-slate-700/60 animate-in slide-in-from-bottom-5 duration-300">
+                    <span className="text-xs font-extrabold text-slate-200">
+                        {selectedIds.size} {selectedIds.size === 1 ? 'Asset' : 'Assets'} Selected
+                    </span>
+                    <div className="h-4 w-px bg-slate-700" />
+                    {selectedIds.size === 1 ? (
+                        <button
+                            onClick={() => {
+                                const singleAsset = assets.find(a => selectedIds.has(a.id));
+                                if (singleAsset) handleDirectSingleDownload(singleAsset);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold px-4 py-2 rounded-full flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+                        >
+                            <Download size={14} /> Download
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handleDownloadSelected}
+                            disabled={isZipping}
+                            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold px-4 py-2 rounded-full flex items-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                            {isZipping ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                            Download ZIP
+                        </button>
+                    )}
+                    <button
+                        onClick={clearSelection}
+                        className="text-slate-400 hover:text-white text-xs font-bold transition-colors ml-1 cursor-pointer"
+                    >
+                        Cancel
+                    </button>
                 </div>
             )}
         </div>

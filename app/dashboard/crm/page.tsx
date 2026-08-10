@@ -24,6 +24,7 @@ import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@
 const STAGES = [
   'All Leads',
   'New Lead',
+  'Ongoing',
   'Requirement Taken',
   'Appointment Booked',
   'Visit Planned',
@@ -238,11 +239,13 @@ export default function CRMPage() {
   const [isCallingCampaign, setIsCallingCampaign] = useState(false)
   const [templateVarMappings, setTemplateVarMappings] = useState<Record<string, { field: string; customVal: string }>>({})
   const [userBusinessName, setUserBusinessName] = useState('Nobogent')
+  const [userRole, setUserRole] = useState<string>('admin')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
-        supabase.from('profiles').select('business_name').eq('id', user.id).single().then(({ data }) => {
+        supabase.from('profiles').select('role, business_name').eq('id', user.id).single().then(({ data }) => {
+          if (data?.role) setUserRole(data.role)
           if (data?.business_name) setUserBusinessName(data.business_name)
         })
       }
@@ -1600,6 +1603,8 @@ END:VCARD\n`
     const checkMatch = (s: string) => {
       if (stageName === 'New Lead') {
         return ['new lead', 'new', 'fresh', 'uncontacted', ''].includes(s)
+      } else if (stageName === 'Ongoing') {
+        return ['ongoing', 'in progress', 'attempted', 'ongoing lead'].includes(s)
       } else if (stageName === 'Requirement Taken') {
         return ['requirement taken', 'requirement', 'contacted', 'qualified', 'requirement_taken'].includes(s)
       } else if (stageName === 'Appointment Booked') {
@@ -2370,13 +2375,15 @@ END:VCARD\n`
                                         >
                                             <Phone size={14} />
                                         </a>
-                                        <button 
-                                            onClick={(e) => handleDeleteLead(lead.id, e)} 
-                                            className="p-2 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-colors border border-slate-200/60 shadow-xs"
-                                            title="Delete Lead"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
+                                        {userRole !== 'agent' && (
+                                            <button 
+                                                onClick={(e) => handleDeleteLead(lead.id, e)} 
+                                                className="p-2 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-colors border border-slate-200/60 shadow-xs"
+                                                title="Delete Lead"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -2424,7 +2431,11 @@ END:VCARD\n`
                             if (customFields && typeof customFields === 'string') {
                                 try { while (typeof customFields === 'string') customFields = JSON.parse(customFields); } catch (e) {}
                             }
-                            const lastRemark = customFields?.last_followup_remark || lead.last_followup_remark || lead.last_call_remark || (lead.notes ? (lead.notes.includes('[Last Remarks]:') ? lead.notes.split('[Last Remarks]:')[1]?.split('\n\n')[0]?.trim() : lead.notes) : null);
+                            const extractLastRemark = (notesStr?: string | null) => {
+                                if (!notesStr || !notesStr.includes('[Last Remarks]:')) return null;
+                                return notesStr.split('[Last Remarks]:')[1]?.split('\n\n')[0]?.trim() || null;
+                            };
+                            const lastRemark = customFields?.last_followup_remark || lead.last_followup_remark || lead.last_call_remark || extractLastRemark(lead.notes);
                             if (!lastRemark) return null;
                             return (
                                 <div className="mb-4 text-[11px] font-medium text-slate-700">
