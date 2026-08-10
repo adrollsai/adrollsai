@@ -82,11 +82,41 @@ export default function CRMPage() {
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(role)
 
   // --- CRM STATE ---
-  const [leads, setLeads] = useState<any[]>([])
-  const [totalLeadsCount, setTotalLeadsCount] = useState(0)
-  const [properties, setProperties] = useState<any[]>([])
-  const [campaigns, setCampaigns] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [leads, setLeads] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getLocalCache<any>('crm_last_leads_cache')
+      if (cached && Array.isArray(cached) && cached.length > 0) return cached
+    }
+    return []
+  })
+  const [totalLeadsCount, setTotalLeadsCount] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getLocalCache<any>('crm_last_leads_cache')
+      if (cached && Array.isArray(cached) && cached.length > 0) return cached.length
+    }
+    return 0
+  })
+  const [properties, setProperties] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getLocalCache<any>('crm_properties_cache')
+      if (cached && Array.isArray(cached) && cached.length > 0) return cached
+    }
+    return []
+  })
+  const [campaigns, setCampaigns] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getLocalCache<any>('crm_campaigns_cache')
+      if (cached && Array.isArray(cached) && cached.length > 0) return cached
+    }
+    return []
+  })
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getLocalCache<any>('crm_last_leads_cache')
+      if (cached && Array.isArray(cached) && cached.length > 0) return false
+    }
+    return true
+  })
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSyncingCalls, setIsSyncingCalls] = useState(false)
   const [showMobileCrmActions, setShowMobileCrmActions] = useState(false)
@@ -387,6 +417,7 @@ export default function CRMPage() {
         }
         if (invData && invData.success && Array.isArray(invData.properties) && invData.properties.length > 0) {
           setProperties(invData.properties)
+          setLocalCache('crm_properties_cache', invData.properties)
           try { localStorage.setItem(`properties_cache_${targetUserId}`, JSON.stringify(invData.properties)); } catch(e) {}
         } else {
           const workspaceOwnerIds = Array.from(new Set([targetUserId, parentId, user.id].filter(Boolean)))
@@ -429,10 +460,10 @@ export default function CRMPage() {
 
       // Check local client cache to hydrate CRM pipeline immediately without showing loader spinner
       const cacheKey = `crm_cache_${user.id}_${targetUserId}`;
-      const cachedLeads = force ? [] : getLocalCache<any>(cacheKey);
+      const cachedLeads = force ? [] : (getLocalCache<any>(cacheKey) || getLocalCache<any>('crm_last_leads_cache'));
 
-      if (cachedLeads && cachedLeads.length > 0 && leads.length === 0) {
-          setLeads(cachedLeads);
+      if (cachedLeads && cachedLeads.length > 0) {
+          setLeads(prev => prev.length === 0 ? cachedLeads : prev);
           setLoading(false);
       } else if (leads.length === 0 && !force) {
           setLoading(true);
@@ -486,7 +517,8 @@ export default function CRMPage() {
         }
         if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads)) {
           setLeads(leadsJson.leads)
-          setLocalCache(cacheKey, leadsJson.leads.slice(0, 150))
+          setLocalCache(cacheKey, leadsJson.leads.slice(0, 300))
+          setLocalCache('crm_last_leads_cache', leadsJson.leads.slice(0, 300))
           setTotalLeadsCount(leadsJson.leads.length)
         } else {
           // Fallback to direct client query if API fails
@@ -497,6 +529,8 @@ export default function CRMPage() {
           const { data } = await q
           if (data) {
             setLeads(data)
+            setLocalCache(cacheKey, data.slice(0, 300))
+            setLocalCache('crm_last_leads_cache', data.slice(0, 300))
             setTotalLeadsCount(data.length)
           }
         }
@@ -510,6 +544,7 @@ export default function CRMPage() {
               const campaignData = await res.json().catch(() => null)
               if (campaignData && campaignData.campaigns) {
                   setCampaigns(campaignData.campaigns)
+                  setLocalCache('crm_campaigns_cache', campaignData.campaigns)
               }
           }
       } catch (err) {
