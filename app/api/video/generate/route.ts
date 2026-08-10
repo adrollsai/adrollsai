@@ -1037,6 +1037,7 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                         last_successful_task_id: avatarUrl,
                         aspect_ratio: "9:16",
                         status: 'Processing',
+                        audio_url: referenceAudioUrl || audioUrl || null,
                         final_caption: script.finalCaption || null
                     });
             });

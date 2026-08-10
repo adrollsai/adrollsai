@@ -379,13 +379,34 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: `Scene ${videoTask.current_index + 1} completed. Waiting for other clips.` });
         }
 
-        // All scenes are completed! Stitch them together
-        siblings.sort((a, b) => a.current_index - b.current_index);
+        // Check if voiceover audio exists on task, asset metadata, or user profile voice settings
+        let hasVoiceover = false;
+        let candidateAudioUrl = videoTask.audio_url || null;
+
+        if (!candidateAudioUrl && videoTask.asset_id) {
+            const { data: assetRow } = await supabaseAdmin.from('assets').select('metadata').eq('id', videoTask.asset_id).single();
+            if (assetRow?.metadata?.audioUrl) {
+                candidateAudioUrl = assetRow.metadata.audioUrl;
+            }
+        }
+
+        if (!candidateAudioUrl && videoTask.user_id) {
+            const { data: userProfile } = await supabaseAdmin.from('profiles').select('character_audio_url, avatar_audio_url').eq('id', videoTask.user_id).single();
+            if (userProfile?.character_audio_url) {
+                candidateAudioUrl = userProfile.character_audio_url;
+            } else if (userProfile?.avatar_audio_url) {
+                candidateAudioUrl = userProfile.avatar_audio_url;
+            }
+        }
+
+        if (candidateAudioUrl) {
+            hasVoiceover = true;
+        }
 
         // If there is only 1 scene AND no voiceover audio attached, bypass the stitcher and finalize immediately
-        if (siblings.length === 1 && !videoTask.audio_url) {
+        if (siblings.length === 1 && !hasVoiceover) {
             const clipUrl = siblings[0].last_successful_task_id;
-            console.log(`[Video Callback] Single-clip video detected (15s). Finalizing asset and applying faststart: ${clipUrl}`);
+            console.log(`[Video Callback] Single-clip video with no voiceover detected (15s). Finalizing asset: ${clipUrl}`);
             
             let finalUrl = clipUrl;
             let thumbnailUrl = null;
