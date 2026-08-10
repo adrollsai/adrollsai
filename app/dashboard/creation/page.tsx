@@ -502,7 +502,7 @@ export default function CreationPage() {
       }
 
       try {
-        const invRes = await fetch('/api/inventory')
+        const invRes = await fetch(`/api/inventory${tUserId ? `?impersonate=${tUserId}` : ''}`)
         const invData = await invRes.json()
         if (invData.success && Array.isArray(invData.properties)) {
           setProperties(invData.properties)

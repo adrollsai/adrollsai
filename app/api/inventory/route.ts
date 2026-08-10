@@ -202,32 +202,42 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { searchParams } = new URL(request.url)
+    const impersonateId = searchParams.get('impersonate')
+
     const { data: profile } = await supabase
       .from('profiles')
-      .select('agency_id, parent_id')
+      .select('agency_id, parent_id, role')
       .eq('id', user.id)
       .maybeSingle()
 
-    const ownerIds = Array.from(new Set([user.id, profile?.agency_id, profile?.parent_id].filter(Boolean)))
+    let targetUserId = user.id
+    if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined') {
+      targetUserId = impersonateId
+    } else if (profile?.agency_id || profile?.parent_id) {
+      targetUserId = profile.agency_id || profile.parent_id
+    }
 
     const supabaseAdmin = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    let { data: properties } = await supabaseAdmin
+    // Resolve all associated team profile IDs for this workspace
+    const { data: teamProfiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .or(`parent_id.eq.${targetUserId},agency_id.eq.${targetUserId},id.eq.${targetUserId}`)
+
+    const ownerIds = (teamProfiles && teamProfiles.length > 0)
+      ? Array.from(new Set(teamProfiles.map(p => p.id)))
+      : [targetUserId]
+
+    const { data: properties } = await supabaseAdmin
       .from('properties')
-      .select('id, title, configurations, image_url, images, created_at, address, price, description')
+      .select('id, title, configurations, image_url, images, created_at, address, price, description, user_id')
       .in('user_id', ownerIds)
       .order('created_at', { ascending: false })
-
-    if (!properties || properties.length === 0) {
-      const { data: allProps } = await supabaseAdmin
-        .from('properties')
-        .select('id, title, configurations, image_url, images, created_at, address, price, description')
-        .order('created_at', { ascending: false })
-      properties = allProps
-    }
 
     return NextResponse.json({ success: true, properties: properties || [] })
   } catch (error: any) {
