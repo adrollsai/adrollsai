@@ -115,7 +115,7 @@ export async function GET(req: Request) {
 
         let totalCount = 0
 
-        while (page < 5) {
+        while (page < 2) {
             let leadsQuery = supabaseAdmin
                 .from('leads')
                 .select(leadFields, { count: 'exact' })
@@ -130,13 +130,6 @@ export async function GET(req: Request) {
                 leadsQuery = leadsQuery.is('assigned_to', null)
             } else {
                 leadsQuery = leadsQuery.eq('user_id', targetOwnerId)
-            }
-
-            if (startDate) {
-                leadsQuery = leadsQuery.gte('created_at', startDate.toISOString())
-            }
-            if (endDate) {
-                leadsQuery = leadsQuery.lte('created_at', endDate.toISOString())
             }
 
             const { data: pageLeads, error: leadsErr, count: exactCount } = await leadsQuery
@@ -210,6 +203,22 @@ export async function GET(req: Request) {
             }
         })
 
+        // 3. Fetch lead_history entries for Action Attempt Reports
+        let historyQuery = supabaseAdmin
+            .from('lead_history')
+            .select('id, lead_id, user_id, action_type, description, created_at')
+            .order('created_at', { ascending: false })
+            .limit(500)
+
+        if (startDate) {
+            historyQuery = historyQuery.gte('created_at', startDate.toISOString())
+        }
+        if (endDate) {
+            historyQuery = historyQuery.lte('created_at', endDate.toISOString())
+        }
+
+        const { data: historyLogs } = await historyQuery
+
         return NextResponse.json({
             success: true,
             duration,
@@ -219,7 +228,7 @@ export async function GET(req: Request) {
             totalCount: totalCount || finalLeads.length,
             chats: [],
             messages: [],
-            history: [],
+            history: historyLogs || [],
             team: teamData
         })
 

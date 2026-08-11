@@ -130,6 +130,12 @@ export async function POST(request: Request) {
     if (isDnp) {
       customFields.last_call_dnp = true
       customFields.dnp_count = (customFields.dnp_count || 0) + 1
+      // Automatically advance attempted lead from New Lead to Ongoing stage
+      const currentStage = lead.status || lead.pipeline_stage || 'New Lead'
+      if (currentStage === 'New Lead' || currentStage === 'New') {
+        updatePayload.status = 'Ongoing'
+        updatePayload.pipeline_stage = 'Ongoing'
+      }
     } else {
       customFields.last_call_dnp = false
     }

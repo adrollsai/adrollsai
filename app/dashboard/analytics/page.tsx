@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { getCachedValue, setCachedValue } from '@/utils/client-cache'
 import { toast } from 'sonner'
 import { 
   BarChart2, 
@@ -29,6 +28,8 @@ import {
   Filter,
   CheckSquare,
   Building2,
+  FileText,
+  PhoneCall,
   UserCheck,
   Calendar,
   Search,
@@ -120,13 +121,7 @@ export default function AnalyticsPage() {
   const impersonateId = searchParams.get('impersonate')
 
   // --- STATE ---
-  const [loading, setLoading] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
-      if (cached && ((cached.leads && cached.leads.length > 0) || (cached.team && cached.team.length > 0))) return false
-    }
-    return true
-  })
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [duration, setDuration] = useState<'today' | '7d' | '30d' | 'this_month' | 'last_month' | 'all'>('all')
   const [customDate, setCustomDate] = useState<string>('')
@@ -142,36 +137,19 @@ export default function AnalyticsPage() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   // Sub-Tab Navigation
-  const [activeTab, setActiveTab] = useState<'analytics' | 'action_mgr' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>('analytics')
+  const [activeTab, setActiveTab] = useState<'analytics' | 'action_mgr' | 'report' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>('analytics')
   const [showPending, setShowPending] = useState(true)
   const [showSchedule, setShowSchedule] = useState(true)
   const [showToday, setShowToday] = useState(true)
 
-  const [totalServerCount, setTotalServerCount] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
-      if (cached?.totalCount) return cached.totalCount
-    }
-    return 0
-  })
+  const [totalServerCount, setTotalServerCount] = useState<number>(0)
 
-  // Data State — initialize from persistent cache for instant UI
-  const [leads, setLeads] = useState<any[]>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
-      if (cached?.leads && cached.leads.length > 0) return cached.leads
-    }
-    return []
-  })
+  // Data State — Direct live data from server (No local caching)
+  const [leads, setLeads] = useState<any[]>([])
+  const [history, setHistory] = useState<any[]>([])
   const [chats, setChats] = useState<any[]>([])
   const [messages, setMessages] = useState<any[]>([])
-  const [team, setTeam] = useState<any[]>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
-      if (cached?.team) return cached.team
-    }
-    return []
-  })
+  const [team, setTeam] = useState<any[]>([])
   const [profile, setProfile] = useState<any>(null)
 
   // Modals & Interactive Drilldown State
@@ -192,26 +170,21 @@ export default function AnalyticsPage() {
     searchFilter: ''
   })
 
-  // Fetch Analytics & User Info
+  // Clear legacy analytics caches from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        Object.keys(localStorage).forEach(k => {
+          if (k.startsWith('analytics_cache_')) localStorage.removeItem(k)
+        })
+      } catch (e) {}
+    }
+  }, [])
+
+  // Fetch Analytics & User Info — Direct Live API call
   const fetchAnalytics = async (forceRefresh = false) => {
     if (forceRefresh) setRefreshing(true)
-
-    const cacheKey = `analytics_cache_${duration}_${selectedAgentId || 'all'}_${impersonateId || 'none'}`
-
-    // Hydrate from persistent localStorage cache (survives tab close + navigation)
-    if (!forceRefresh && typeof window !== 'undefined') {
-      const cached = getCachedValue<any>(cacheKey)
-      if (cached && ((cached.leads && cached.leads.length > 0) || (cached.team && cached.team.length > 0))) {
-        setLeads(cached.leads || [])
-        setTeam(cached.team || [])
-        if (cached.totalCount) setTotalServerCount(cached.totalCount)
-        setLoading(false)
-      } else {
-        setLoading(true)
-      }
-    } else if (!forceRefresh && leads.length === 0) {
-      setLoading(true)
-    }
+    else if (leads.length === 0) setLoading(true)
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -233,7 +206,7 @@ export default function AnalyticsPage() {
 
       const queryParams = new URLSearchParams()
       queryParams.set('duration', duration)
-      if (selectedAgentId) queryParams.set('agentId', selectedAgentId)
+      if (selectedAgentId && selectedAgentId !== 'all') queryParams.set('agentId', selectedAgentId)
       if (impersonateId) queryParams.set('impersonate', impersonateId)
       if (customDate) queryParams.set('customDate', customDate)
       if (startDate) queryParams.set('startDate', startDate)
@@ -242,29 +215,17 @@ export default function AnalyticsPage() {
       const res = await fetch(`/api/analytics?${queryParams.toString()}`)
       const data = await res.json()
 
-      if (data.success && Array.isArray(data.leads) && data.leads.length > 0) {
+      if (data.success && Array.isArray(data.leads)) {
         setLeads(data.leads)
         if (data.team) setTeam(data.team)
-        if (data.totalCount) setTotalServerCount(data.totalCount)
-        // Persist to localStorage
-        setCachedValue(cacheKey, {
-          leads: data.leads,
-          totalCount: data.totalCount || data.leads.length,
-          team: data.team || []
-        })
-      } else if (data.success && data.leads) {
-        // Handle case where leads is empty array (e.g. filtered by date/agent with zero results)
-        setLeads(data.leads)
-        if (data.team) setTeam(data.team)
+        if (data.history) setHistory(data.history)
         if (data.totalCount !== undefined) setTotalServerCount(data.totalCount)
       } else {
         toast.error('Failed to sync metrics', { description: data.error || 'Server error' })
       }
     } catch (e: any) {
-      console.error(e)
-      if (leads.length === 0) {
-        toast.error('Connection timed out: ' + (e.message || String(e)))
-      }
+      console.error('[Analytics Fetch Error]:', e)
+      toast.error('Connection error: ' + (e.message || String(e)))
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -774,6 +735,154 @@ export default function AnalyticsPage() {
     }).sort((a, b) => b.totalLeads - a.totalLeads)
   }, [leads])
 
+  // --- ACTION REPORT COMPUTATIONS ---
+  const actionReportData = useMemo(() => {
+    const now = new Date()
+    let startCutoff: Date | null = null
+    let endCutoff: Date | null = null
+
+    if (customDate) {
+      startCutoff = new Date(customDate)
+      startCutoff.setHours(0, 0, 0, 0)
+      endCutoff = new Date(customDate)
+      endCutoff.setHours(23, 59, 59, 999)
+    } else if (startDate) {
+      startCutoff = new Date(startDate)
+      startCutoff.setHours(0, 0, 0, 0)
+      if (endDate) {
+        endCutoff = new Date(endDate)
+        endCutoff.setHours(23, 59, 59, 999)
+      }
+    } else {
+      switch (duration) {
+        case 'today':
+          startCutoff = new Date()
+          startCutoff.setHours(0, 0, 0, 0)
+          endCutoff = new Date()
+          break
+        case '7d':
+          startCutoff = new Date()
+          startCutoff.setDate(now.getDate() - 7)
+          startCutoff.setHours(0, 0, 0, 0)
+          endCutoff = new Date()
+          break
+        case '30d':
+          startCutoff = new Date()
+          startCutoff.setDate(now.getDate() - 30)
+          startCutoff.setHours(0, 0, 0, 0)
+          endCutoff = new Date()
+          break
+        case 'this_month':
+          startCutoff = new Date(now.getFullYear(), now.getMonth(), 1)
+          startCutoff.setHours(0, 0, 0, 0)
+          endCutoff = new Date()
+          break
+        case 'last_month':
+          startCutoff = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+          startCutoff.setHours(0, 0, 0, 0)
+          endCutoff = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+          break
+        case 'all':
+        default:
+          startCutoff = null
+          endCutoff = null
+          break
+      }
+    }
+
+    const parseItemDate = (item?: any) => {
+      if (!item) return null
+      if (typeof item === 'object' && item.description) {
+        const match = item.description.match(/(?:Call|Visit|DNP|Followup|Picked|Remark|Status).*?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i)
+        if (match) {
+          const day = parseInt(match[1], 10)
+          const month = parseInt(match[2], 10) - 1
+          const year = parseInt(match[3], 10)
+          if (year >= 2020 && year <= 2026) {
+            return new Date(year, month, day)
+          }
+        }
+      }
+      const rawStr = typeof item === 'string' ? item : item?.created_at || item?.last_call_at
+      if (!rawStr) return null
+      const d = new Date(rawStr)
+      if (isNaN(d.getTime())) return null
+      if (d.getFullYear() > 2026) return null
+      return d
+    }
+
+    const isDateInRange = (item?: any) => {
+      const d = parseItemDate(item)
+      if (!d) return false
+      if (startCutoff && d < startCutoff) return false
+      if (endCutoff && d > endCutoff) return false
+      return true
+    }
+
+    // Filter history logs strictly by selected date range
+    const rawHistory = history || []
+    const historyList = rawHistory.filter(h => {
+      if (!startCutoff && !endCutoff) return true
+      return isDateInRange(h)
+    })
+
+    let totalCalls = 0, totalVisits = 0, totalMeetings = 0, totalDnp = 0
+
+    const rows = allSalesReps.map(rep => {
+      const repLogs = historyList.filter(h => h.user_id === rep.id)
+      const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
+
+      let calls = repLogs.filter(h => h.action_type === 'CALL_INITIATED' || h.action_type === 'CALL_FEEDBACK' || h.action_type === 'VOICE_CALL' || (h.description && h.description.toLowerCase().includes('call'))).length
+      let visits = repLogs.filter(h => h.description && (h.description.toLowerCase().includes('visit') || h.description.toLowerCase().includes('revisit'))).length
+      let meetings = repLogs.filter(h => h.description && (h.description.toLowerCase().includes('meeting') || h.description.toLowerCase().includes('closing'))).length
+      let dnp = repLogs.filter(h => h.action_type === 'DNP' || (h.description && (h.description.includes('DNP') || h.description.includes('Not Picked')))).length
+
+      // Date-filtered leads for fallback metrics
+      const dateFilteredLeads = repLeads.filter(l => {
+        if (!startCutoff && !endCutoff) return true
+        let cf: any = l.custom_fields
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf) } catch (e) {}
+        }
+        return isDateInRange(l.created_at) || isDateInRange(l.last_call_at) || isDateInRange(cf?.last_followup_at)
+      })
+
+      const leadCalls = dateFilteredLeads.filter(l => l.last_call_at || l.last_call_status || l.notes?.includes('Followup')).length
+      const leadDnp = dateFilteredLeads.reduce((acc, l) => acc + (l.dnp_count || l.custom_fields?.dnp_count || 0), 0)
+
+      if (repLogs.length === 0 && dateFilteredLeads.length > 0) {
+        calls = Math.max(calls, leadCalls)
+        dnp = Math.max(dnp, leadDnp)
+      }
+
+      const total = calls + visits + meetings + dnp
+
+      totalCalls += calls
+      totalVisits += visits
+      totalMeetings += meetings
+      totalDnp += dnp
+
+      return {
+        rep,
+        calls,
+        visits,
+        meetings,
+        dnp,
+        total,
+        repLeads: dateFilteredLeads.length > 0 ? dateFilteredLeads : repLeads
+      }
+    }).sort((a, b) => b.total - a.total)
+
+    return {
+      totalCalls,
+      totalVisits,
+      totalMeetings,
+      totalDnp,
+      totalActions: totalCalls + totalVisits + totalMeetings + totalDnp,
+      rows
+    }
+  }, [history, leads, allSalesReps, duration, customDate, startDate, endDate])
+
   // Open interactive drilldown drawer for leads
   const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[]) => {
     setDrilldownModal({
@@ -1009,6 +1118,18 @@ export default function AnalyticsPage() {
           >
             <CheckSquare size={16} />
             <span>Action Manager</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('report')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold shrink-0 transition-all ${
+              activeTab === 'report' 
+                ? 'bg-blue-600 text-white shadow-sm' 
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <FileText size={16} />
+            <span>Action Report</span>
           </button>
 
           <button
@@ -1411,6 +1532,133 @@ export default function AnalyticsPage() {
                 ))}
               </div>
 
+            </div>
+          )}
+
+          {/* TAB: ACTION REPORT (Attempted Actions Report by Date & Rep) */}
+          {activeTab === 'report' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              
+              {/* Header Banner */}
+              <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 rounded-3xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="bg-blue-500/30 text-blue-200 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase">ATTEMPTED ACTIONS REPORT</span>
+                    <span className="text-slate-300 text-xs font-semibold">Filter by Date & Sales Rep</span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black">Agent Action Attempt Analytics</h2>
+                  <p className="text-xs text-blue-200/80 mt-0.5">Track calls, site visits, meetings, and DNPs attempted by each sales rep.</p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-blue-200 bg-white/10 px-3 py-1.5 rounded-xl backdrop-blur-md border border-white/10">
+                    Range: {duration === 'all' ? 'All Time' : duration.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Summary KPI Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+                  <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100">
+                    <PhoneCall size={22} />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-slate-400 uppercase">Calls Attempted</p>
+                    <p className="text-2xl font-black text-slate-900">{actionReportData.totalCalls}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+                  <div className="p-3 rounded-2xl bg-purple-50 text-purple-600 border border-purple-100">
+                    <Building2 size={22} />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-slate-400 uppercase">Visits Attempted</p>
+                    <p className="text-2xl font-black text-slate-900">{actionReportData.totalVisits}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+                  <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100">
+                    <Users size={22} />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-slate-400 uppercase">Meetings Attempted</p>
+                    <p className="text-2xl font-black text-slate-900">{actionReportData.totalMeetings}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+                  <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100">
+                    <AlertCircle size={22} />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-slate-400 uppercase">DNP / Unanswered</p>
+                    <p className="text-2xl font-black text-amber-600">{actionReportData.totalDnp}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Table: Agent Attempt Matrix */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">Agent Action Attempt Matrix</h3>
+                    <p className="text-xs text-slate-500">Breakdown of attempted calls, site visits, meetings & DNPs per agent</p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase tracking-wider text-[11px]">
+                      <tr>
+                        <th className="py-3.5 px-6">Sales Rep</th>
+                        <th className="py-3.5 px-4 text-center">Calls</th>
+                        <th className="py-3.5 px-4 text-center">Visits</th>
+                        <th className="py-3.5 px-4 text-center">Meetings</th>
+                        <th className="py-3.5 px-4 text-center">DNP</th>
+                        <th className="py-3.5 px-4 text-center">Total Attempts</th>
+                        <th className="py-3.5 px-6 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {actionReportData.rows.map(row => (
+                        <tr key={row.rep.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-4 px-6">
+                            <div className="font-extrabold text-slate-900">{row.rep.name}</div>
+                            <div className="text-[11px] text-slate-400">{row.rep.email || row.rep.role}</div>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="px-2.5 py-1 rounded-xl bg-blue-50 text-blue-700 font-black">{row.calls}</span>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="px-2.5 py-1 rounded-xl bg-purple-50 text-purple-700 font-black">{row.visits}</span>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 font-black">{row.meetings}</span>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-700 font-black">{row.dnp}</span>
+                          </td>
+                          <td className="py-4 px-4 text-center font-black text-slate-900 text-sm">
+                            {row.total}
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            <button
+                              onClick={() => openLeadsDrilldown(`Action Log: ${row.rep.name}`, `Attempted actions for ${row.rep.name}`, row.repLeads)}
+                              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl font-bold hover:bg-blue-100 transition-colors text-xs inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>View Attempts</span>
+                              <ChevronRight size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 
