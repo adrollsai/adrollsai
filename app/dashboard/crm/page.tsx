@@ -3012,6 +3012,7 @@ END:VCARD\n`
          isOpen={!!historyLead}
          lead={historyLead}
          onClose={() => setHistoryLead(null)}
+         viewerRole={role}
        />
 
        {/* GROUP LEAD DISTRIBUTION MODAL */}

@@ -2159,6 +2159,7 @@ export default function AnalyticsPage() {
         isOpen={!!historyLead}
         lead={historyLead}
         onClose={() => setHistoryLead(null)}
+        viewerRole={profile?.role}
       />
 
       {/* UPDATE FOLLOWUP MODAL */}

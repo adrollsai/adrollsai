@@ -8,9 +8,10 @@ interface LeadHistoryModalProps {
   isOpen: boolean
   onClose: () => void
   lead: any
+  viewerRole?: string
 }
 
-export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryModalProps) {
+export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: LeadHistoryModalProps) {
   const [historyItems, setHistoryItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
@@ -30,7 +31,23 @@ export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryM
         .eq('lead_id', lead.id)
         .order('created_at', { ascending: false })
       
-      setHistoryItems(data || [])
+      let items = data || []
+
+      // If viewer is an agent, apply history_visible_from cutoff
+      // so they don't see history from before the transfer
+      const isAgent = viewerRole === 'agent'
+      if (isAgent) {
+        let cf = lead.custom_fields
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf) } catch (e) { cf = null }
+        }
+        const cutoff = cf?.history_visible_from
+        if (cutoff) {
+          items = items.filter(item => new Date(item.created_at) >= new Date(cutoff))
+        }
+      }
+
+      setHistoryItems(items)
     } catch (err) {
       console.error("Failed to fetch lead history timeline:", err)
     } finally {

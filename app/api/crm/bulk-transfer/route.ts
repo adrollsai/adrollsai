@@ -46,42 +46,47 @@ export async function POST(req: Request) {
     const senderName = senderProfile?.business_name || senderProfile?.full_name || senderProfile?.email || 'Admin'
 
     if (deleteHistory) {
-      // 1. Delete all past history logs for transferred leads
-      const { error: historyErr } = await supabaseAdmin
-        .from('lead_history')
-        .delete()
-        .in('lead_id', leadIds)
+      // Instead of deleting history, set a cutoff timestamp so agents can't see old history
+      // but admin still sees everything. We store this in custom_fields.history_visible_from
+      const cutoffTimestamp = new Date().toISOString()
 
-      if (historyErr) {
-        console.error('[Bulk Transfer] Error deleting history:', historyErr)
-      }
-
-      // 2. Build payload for reset + reassignment
-      const updatePayload: any = {
-        assigned_to: targetAgentId,
-        status: 'New Lead',
-        pipeline_stage: 'New Lead'
-      }
-
-      if (!transferWithScheduledActions) {
-        updatePayload.next_followup = null
-      }
-
-      const { error: leadUpdateErr } = await supabaseAdmin
+      // Fetch current leads to merge custom_fields
+      const { data: currentLeads } = await supabaseAdmin
         .from('leads')
-        .update(updatePayload)
+        .select('id, custom_fields')
         .in('id', leadIds)
 
-      if (leadUpdateErr) {
-        throw new Error(leadUpdateErr.message)
+      // Update each lead with the cutoff + reassignment
+      for (const lead of (currentLeads || [])) {
+        let cf = lead.custom_fields || {}
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+        }
+        cf.history_visible_from = cutoffTimestamp
+
+        const updatePayload: any = {
+          assigned_to: targetAgentId,
+          status: 'New Lead',
+          pipeline_stage: 'New Lead',
+          custom_fields: cf
+        }
+
+        if (!transferWithScheduledActions) {
+          updatePayload.next_followup = null
+        }
+
+        await supabaseAdmin
+          .from('leads')
+          .update(updatePayload)
+          .eq('id', lead.id)
       }
 
-      // 3. Log initial fresh transfer history entry
+      // Log transfer history entry (this entry will be AFTER the cutoff, so agent sees it)
       const historyEntries = leadIds.map(leadId => ({
         lead_id: leadId,
         user_id: user.id,
         action_type: 'TRANSFER',
-        description: `🔄 Lead transferred from ${senderName} to ${agentName} (History Reset & Moved to New Lead)`
+        description: `🔄 Lead transferred from ${senderName} to ${agentName} (History Hidden & Moved to New Lead)`
       }))
 
       await supabaseAdmin.from('lead_history').insert(historyEntries)
