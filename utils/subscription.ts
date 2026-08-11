@@ -164,6 +164,15 @@ export type UsageStats = {
 };
 
 export function getUserLimits(profile: any) {
+    const userEmail = (profile?.email || '').toLowerCase().trim();
+    const whitelistedEmails = [
+        'rchopra489@gmail.com',
+        'infobluesquareinfra@gmail.com',
+        'khushiramrealtor@gmail.com',
+        'meta-reviewer@nobogent.com'
+    ];
+    const isWhitelisted = whitelistedEmails.includes(userEmail);
+
     const planKey = (profile?.subscription_plan || 'free').toLowerCase();
     const plan = PLANS[planKey as keyof typeof PLANS] || PLANS.free;
     
@@ -178,14 +187,20 @@ export function getUserLimits(profile: any) {
     const addon_campaign_optimizations = profile?.addon_campaign_optimizations || 0;
     const addon_retargeting_campaigns = profile?.addon_retargeting_campaigns || 0;
 
+    const isUnlimitedTeam = isWhitelisted || 
+        profile?.role === 'super_admin' || 
+        profile?.role === 'agency' || 
+        planKey === 'enterprise' || 
+        base.team_members === 999999;
+
     return {
-        videos: base.videos + addon_videos,
-        images: base.images + addon_images,
-        seo_articles: base.seo_articles,
-        campaign_launches: base.campaign_launches + addon_campaign_launches,
-        campaign_optimizations: base.campaign_optimizations + addon_campaign_optimizations,
-        team_members: base.team_members === 999999 ? 999999 : base.team_members + addon_team_members,
-        retargeting_campaigns: base.retargeting_campaigns + addon_retargeting_campaigns,
-        storage_gb: base.storage_gb || 10
+        videos: isWhitelisted ? 999999 : base.videos + addon_videos,
+        images: isWhitelisted ? 999999 : base.images + addon_images,
+        seo_articles: isWhitelisted ? 999 : base.seo_articles,
+        campaign_launches: isWhitelisted ? 999999 : base.campaign_launches + addon_campaign_launches,
+        campaign_optimizations: isWhitelisted ? 999999 : base.campaign_optimizations + addon_campaign_optimizations,
+        team_members: isUnlimitedTeam ? 999999 : base.team_members + addon_team_members,
+        retargeting_campaigns: isWhitelisted ? 999999 : base.retargeting_campaigns + addon_retargeting_campaigns,
+        storage_gb: isWhitelisted ? 999 : base.storage_gb || 10
     };
 }

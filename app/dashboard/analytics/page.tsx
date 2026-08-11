@@ -147,6 +147,14 @@ export default function AnalyticsPage() {
   const [showSchedule, setShowSchedule] = useState(true)
   const [showToday, setShowToday] = useState(true)
 
+  const [totalServerCount, setTotalServerCount] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
+      if (cached?.totalCount) return cached.totalCount
+    }
+    return 0
+  })
+
   // Data State — initialize from persistent cache for instant UI
   const [leads, setLeads] = useState<any[]>(() => {
     if (typeof window !== 'undefined') {
@@ -155,20 +163,8 @@ export default function AnalyticsPage() {
     }
     return []
   })
-  const [chats, setChats] = useState<any[]>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
-      if (cached?.chats) return cached.chats
-    }
-    return []
-  })
-  const [messages, setMessages] = useState<any[]>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
-      if (cached?.messages) return cached.messages
-    }
-    return []
-  })
+  const [chats, setChats] = useState<any[]>([])
+  const [messages, setMessages] = useState<any[]>([])
   const [team, setTeam] = useState<any[]>(() => {
     if (typeof window !== 'undefined') {
       const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
@@ -207,15 +203,13 @@ export default function AnalyticsPage() {
       const cached = getCachedValue<any>(cacheKey)
       if (cached && ((cached.leads && cached.leads.length > 0) || (cached.team && cached.team.length > 0))) {
         setLeads(cached.leads || [])
-        setChats(cached.chats || [])
-        setMessages(cached.messages || [])
         setTeam(cached.team || [])
+        if (cached.totalCount) setTotalServerCount(cached.totalCount)
         setLoading(false)
-        // Don't return — still fetch fresh data in background for freshness
       } else {
         setLoading(true)
       }
-    } else if (!forceRefresh) {
+    } else if (!forceRefresh && leads.length === 0) {
       setLoading(true)
     }
 
@@ -248,24 +242,26 @@ export default function AnalyticsPage() {
       const res = await fetch(`/api/analytics?${queryParams.toString()}`)
       const data = await res.json()
 
-      if (data.success || data.leads) {
-        setLeads(data.leads || [])
-        setChats(data.chats || [])
-        setMessages(data.messages || [])
-        setTeam(data.team || [])
-        // Persist to localStorage for instant hydration on next visit
+      if (data.success && Array.isArray(data.leads) && data.leads.length > 0) {
+        setLeads(data.leads)
+        if (data.team) setTeam(data.team)
+        if (data.totalCount) setTotalServerCount(data.totalCount)
+        // Persist to localStorage
         setCachedValue(cacheKey, {
-          leads: data.leads || [],
-          chats: data.chats || [],
-          messages: data.messages || [],
+          leads: data.leads,
+          totalCount: data.totalCount || data.leads.length,
           team: data.team || []
         })
+      } else if (data.success && data.leads) {
+        // Handle case where leads is empty array (e.g. filtered by date/agent with zero results)
+        setLeads(data.leads)
+        if (data.team) setTeam(data.team)
+        if (data.totalCount !== undefined) setTotalServerCount(data.totalCount)
       } else {
         toast.error('Failed to sync metrics', { description: data.error || 'Server error' })
       }
     } catch (e: any) {
       console.error(e)
-      // Only show error if we don't have cached data to show
       if (leads.length === 0) {
         toast.error('Connection timed out: ' + (e.message || String(e)))
       }
@@ -317,7 +313,7 @@ export default function AnalyticsPage() {
 
   // --- STATS PRE-COMPUTATIONS ---
   const stats = useMemo(() => {
-    const totalLeads = filteredLeads.length
+    const totalLeads = (!selectedAgentId && duration === 'all' && totalServerCount > filteredLeads.length) ? totalServerCount : filteredLeads.length
     const wonLeads = filteredLeads.filter(l => l.pipeline_stage === 'Won' || l.pipeline_stage === 'Closed').length
     const lostLeads = filteredLeads.filter(l => l.pipeline_stage === 'Lost' || l.pipeline_stage === 'Unqualified').length
     const inProgress = totalLeads - wonLeads - lostLeads

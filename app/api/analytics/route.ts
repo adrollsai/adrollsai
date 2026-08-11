@@ -41,7 +41,7 @@ export async function GET(req: Request) {
         }
 
         // Determine active agent filter
-        let activeAgentId = (filterAgentId && filterAgentId !== 'null' && filterAgentId !== 'undefined') ? filterAgentId : null
+        let activeAgentId = (filterAgentId && filterAgentId !== 'null' && filterAgentId !== 'undefined' && filterAgentId !== 'all') ? filterAgentId : null
         if (isTeamUser) {
             activeAgentId = user.id
         }
@@ -113,19 +113,23 @@ export async function GET(req: Request) {
 
         const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience'
 
-        while (true) {
+        let totalCount = 0
+
+        while (page < 5) {
             let leadsQuery = supabaseAdmin
                 .from('leads')
-                .select(leadFields)
+                .select(leadFields, { count: 'exact' })
                 .range(page * pageSize, (page + 1) * pageSize - 1)
                 .order('created_at', { ascending: false })
 
             if (isTeamUser && activeAgentId) {
                 leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
-            } else if (activeAgentId) {
+            } else if (activeAgentId && activeAgentId !== 'unassigned') {
                 leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+            } else if (activeAgentId === 'unassigned') {
+                leadsQuery = leadsQuery.is('assigned_to', null)
             } else {
-                leadsQuery = leadsQuery.or(`user_id.in.(${workspaceOwnerTeamIds.join(',')}),assigned_to.in.(${workspaceOwnerTeamIds.join(',')})`)
+                leadsQuery = leadsQuery.eq('user_id', targetOwnerId)
             }
 
             if (startDate) {
@@ -135,10 +139,14 @@ export async function GET(req: Request) {
                 leadsQuery = leadsQuery.lte('created_at', endDate.toISOString())
             }
 
-            const { data: pageLeads, error: leadsErr } = await leadsQuery
+            const { data: pageLeads, error: leadsErr, count: exactCount } = await leadsQuery
             if (leadsErr) {
                 console.error("[Analytics API] Leads fetch error:", leadsErr)
                 break
+            }
+
+            if (exactCount && totalCount === 0) {
+                totalCount = exactCount
             }
 
             if (!pageLeads || pageLeads.length === 0) break
@@ -208,6 +216,7 @@ export async function GET(req: Request) {
             workspaceOwnerId: targetOwnerId,
             myRole,
             leads: finalLeads,
+            totalCount: totalCount || finalLeads.length,
             chats: [],
             messages: [],
             history: [],

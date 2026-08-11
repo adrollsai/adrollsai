@@ -103,18 +103,18 @@ export function setCachedValue<T>(key: string, data: T): void {
 
 /**
  * Trim large arrays inside data objects to keep localStorage usage reasonable.
- * Keeps max 200 items per array to prevent quota overflow.
+ * Keeps max 1500 items per array to prevent quota overflow while preserving full datasets.
  */
 function trimForStorage(data: any): any {
     if (data === null || data === undefined) return data;
     if (Array.isArray(data)) {
-        return data.slice(0, 200);
+        return data.slice(0, 1500);
     }
     if (typeof data === 'object') {
         const trimmed: any = {};
         for (const k of Object.keys(data)) {
             if (Array.isArray(data[k])) {
-                trimmed[k] = data[k].slice(0, 200);
+                trimmed[k] = data[k].slice(0, 1500);
             } else {
                 trimmed[k] = data[k];
             }
