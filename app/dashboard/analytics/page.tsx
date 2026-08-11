@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
+import { getCachedValue, setCachedValue } from '@/utils/client-cache'
 import { toast } from 'sonner'
 import { 
   BarChart2, 
@@ -119,7 +120,13 @@ export default function AnalyticsPage() {
   const impersonateId = searchParams.get('impersonate')
 
   // --- STATE ---
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
+      if (cached && ((cached.leads && cached.leads.length > 0) || (cached.team && cached.team.length > 0))) return false
+    }
+    return true
+  })
   const [refreshing, setRefreshing] = useState(false)
   const [duration, setDuration] = useState<'today' | '7d' | '30d' | 'this_month' | 'last_month' | 'all'>('all')
   const [customDate, setCustomDate] = useState<string>('')
@@ -140,11 +147,35 @@ export default function AnalyticsPage() {
   const [showSchedule, setShowSchedule] = useState(true)
   const [showToday, setShowToday] = useState(true)
 
-  // Data State
-  const [leads, setLeads] = useState<any[]>([])
-  const [chats, setChats] = useState<any[]>([])
-  const [messages, setMessages] = useState<any[]>([])
-  const [team, setTeam] = useState<any[]>([])
+  // Data State — initialize from persistent cache for instant UI
+  const [leads, setLeads] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
+      if (cached?.leads && cached.leads.length > 0) return cached.leads
+    }
+    return []
+  })
+  const [chats, setChats] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
+      if (cached?.chats) return cached.chats
+    }
+    return []
+  })
+  const [messages, setMessages] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
+      if (cached?.messages) return cached.messages
+    }
+    return []
+  })
+  const [team, setTeam] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>(`analytics_cache_all_all_${impersonateId || 'none'}`)
+      if (cached?.team) return cached.team
+    }
+    return []
+  })
   const [profile, setProfile] = useState<any>(null)
 
   // Modals & Interactive Drilldown State
@@ -168,23 +199,24 @@ export default function AnalyticsPage() {
   // Fetch Analytics & User Info
   const fetchAnalytics = async (forceRefresh = false) => {
     if (forceRefresh) setRefreshing(true)
-    else setLoading(true)
 
     const cacheKey = `analytics_cache_${duration}_${selectedAgentId || 'all'}_${impersonateId || 'none'}`
+
+    // Hydrate from persistent localStorage cache (survives tab close + navigation)
     if (!forceRefresh && typeof window !== 'undefined') {
-      const cached = sessionStorage.getItem(cacheKey)
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached)
-          if (parsed && ((parsed.leads && parsed.leads.length > 0) || (parsed.team && parsed.team.length > 0))) {
-            setLeads(parsed.leads || [])
-            setChats(parsed.chats || [])
-            setMessages(parsed.messages || [])
-            setTeam(parsed.team || [])
-            setLoading(false)
-          }
-        } catch (e) {}
+      const cached = getCachedValue<any>(cacheKey)
+      if (cached && ((cached.leads && cached.leads.length > 0) || (cached.team && cached.team.length > 0))) {
+        setLeads(cached.leads || [])
+        setChats(cached.chats || [])
+        setMessages(cached.messages || [])
+        setTeam(cached.team || [])
+        setLoading(false)
+        // Don't return — still fetch fresh data in background for freshness
+      } else {
+        setLoading(true)
       }
+    } else if (!forceRefresh) {
+      setLoading(true)
     }
 
     try {
@@ -221,28 +253,22 @@ export default function AnalyticsPage() {
         setChats(data.chats || [])
         setMessages(data.messages || [])
         setTeam(data.team || [])
-        if (typeof window !== 'undefined') {
-          try {
-            sessionStorage.setItem(cacheKey, JSON.stringify({
-              leads: data.leads || [],
-              chats: data.chats || [],
-              messages: data.messages || [],
-              team: data.team || []
-            }))
-          } catch (storageErr) {
-            try {
-              Object.keys(sessionStorage).forEach(k => {
-                if (k.startsWith('analytics_cache_')) sessionStorage.removeItem(k)
-              })
-            } catch (e) {}
-          }
-        }
+        // Persist to localStorage for instant hydration on next visit
+        setCachedValue(cacheKey, {
+          leads: data.leads || [],
+          chats: data.chats || [],
+          messages: data.messages || [],
+          team: data.team || []
+        })
       } else {
         toast.error('Failed to sync metrics', { description: data.error || 'Server error' })
       }
     } catch (e: any) {
       console.error(e)
-      toast.error('Connection timed out: ' + (e.message || String(e)))
+      // Only show error if we don't have cached data to show
+      if (leads.length === 0) {
+        toast.error('Connection timed out: ' + (e.message || String(e)))
+      }
     } finally {
       setLoading(false)
       setRefreshing(false)

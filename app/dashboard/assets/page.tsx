@@ -43,9 +43,55 @@ export default function AssetsPage() {
     const { uploadAssets, subscribeToCompletion, hasActiveTasks, tasks, removeTask } = useUpload()
 
     // --- STATE ---
-    const [assets, setAssets] = useState<Asset[]>([])
-    const [properties, setProperties] = useState<Property[]>([])
-    const [loading, setLoading] = useState(true)
+    const [assets, setAssets] = useState<Asset[]>(() => {
+        if (typeof window !== 'undefined') {
+            // Try any assets_cache_ key
+            try {
+                for (const key of Object.keys(localStorage)) {
+                    if (key.startsWith('assets_cache_')) {
+                        const val = localStorage.getItem(key)
+                        if (val) {
+                            const parsed = JSON.parse(val)
+                            if (Array.isArray(parsed) && parsed.length > 0) return parsed
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+        return []
+    })
+    const [properties, setProperties] = useState<Property[]>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                for (const key of Object.keys(localStorage)) {
+                    if (key.startsWith('properties_cache_')) {
+                        const val = localStorage.getItem(key)
+                        if (val) {
+                            const parsed = JSON.parse(val)
+                            if (Array.isArray(parsed) && parsed.length > 0) return parsed
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+        return []
+    })
+    const [loading, setLoading] = useState(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                for (const key of Object.keys(localStorage)) {
+                    if (key.startsWith('assets_cache_')) {
+                        const val = localStorage.getItem(key)
+                        if (val) {
+                            const parsed = JSON.parse(val)
+                            if (Array.isArray(parsed) && parsed.length > 0) return false
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+        return true
+    })
     const [isRefreshing, setIsRefreshing] = useState(false)
 
     useEffect(() => {

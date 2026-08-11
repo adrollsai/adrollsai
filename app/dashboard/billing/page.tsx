@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import { getCachedValue, setCachedValue } from '@/utils/client-cache';
 import {
     X,
     Check,
@@ -23,12 +24,33 @@ export default function BillingPage() {
     const router = useRouter();
     const supabase = createClient();
 
-    const [loading, setLoading] = useState(true);
-    const [activePlan, setActivePlan] = useState<string>('free');
-    const [activePlanName, setActivePlanName] = useState<string>('Free Plan');
-    const [renewalDate, setRenewalDate] = useState<string | null>(null);
-    const [creditsBalance, setCreditsBalance] = useState<number>(0);
-    const [isUnlimited, setIsUnlimited] = useState<boolean>(false);
+    const [loading, setLoading] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const cached = getCachedValue<any>('billing_cache');
+            if (cached) return false;
+        }
+        return true;
+    });
+    const [activePlan, setActivePlan] = useState<string>(() => {
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        return cached?.activePlan || 'free';
+    });
+    const [activePlanName, setActivePlanName] = useState<string>(() => {
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        return cached?.activePlanName || 'Free Plan';
+    });
+    const [renewalDate, setRenewalDate] = useState<string | null>(() => {
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        return cached?.renewalDate || null;
+    });
+    const [creditsBalance, setCreditsBalance] = useState<number>(() => {
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        return cached?.creditsBalance || 0;
+    });
+    const [isUnlimited, setIsUnlimited] = useState<boolean>(() => {
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        return cached?.isUnlimited || false;
+    });
 
     const fetchBillingData = async () => {
         try {
@@ -45,23 +67,35 @@ export default function BillingPage() {
                 setCreditsBalance(data.credits || 0);
                 setIsUnlimited(!!data.isUnlimited);
 
+                let formattedDate: string | null = null;
                 if (data.resetDate) {
-                    setRenewalDate(new Date(data.resetDate).toLocaleDateString('en-IN', {
+                    formattedDate = new Date(data.resetDate).toLocaleDateString('en-IN', {
                         year: 'numeric',
                         month: 'long',
                         day: 'numeric'
-                    }));
+                    });
+                    setRenewalDate(formattedDate);
                 }
-            }
 
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('subscription_plan, subscription_status')
-                .eq('id', user.id)
-                .single();
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('subscription_plan, subscription_status')
+                    .eq('id', user.id)
+                    .single();
 
-            if (profile) {
-                setActivePlan(profile.subscription_plan || 'free');
+                const plan = profile?.subscription_plan || 'free';
+                if (profile) {
+                    setActivePlan(plan);
+                }
+
+                // Persist billing data to localStorage
+                setCachedValue('billing_cache', {
+                    activePlan: plan,
+                    activePlanName: data.planName,
+                    renewalDate: formattedDate,
+                    creditsBalance: data.credits || 0,
+                    isUnlimited: !!data.isUnlimited
+                });
             }
         } catch (error) {
             console.error("Error loading billing details:", error);

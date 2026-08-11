@@ -5,6 +5,7 @@ import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, Youtube
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2, compressImage } from '@/utils/upload-helper'
 import { toast } from 'sonner'
+import { getCachedValue, setCachedValue } from '@/utils/client-cache'
 
 import { useRouter } from 'next/navigation'
 
@@ -23,8 +24,20 @@ export default function FeedManagementPage() {
   const supabase = createClient()
   const router = useRouter()
   
-  const [posts, setPosts] = useState<Post[]>([])
-  const [loading, setLoading] = useState(true)
+  const [posts, setPosts] = useState<Post[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<Post[]>('feed_posts_cache')
+      if (cached && Array.isArray(cached) && cached.length > 0) return cached
+    }
+    return []
+  })
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<Post[]>('feed_posts_cache')
+      if (cached && Array.isArray(cached) && cached.length > 0) return false
+    }
+    return true
+  })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null)
 
@@ -45,7 +58,7 @@ export default function FeedManagementPage() {
 
   const fetchPosts = async () => {
     try {
-      setLoading(true)
+      if (posts.length === 0) setLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
@@ -83,6 +96,8 @@ export default function FeedManagementPage() {
 
       if (error) throw error
       setPosts(data || [])
+      // Persist to localStorage
+      setCachedValue('feed_posts_cache', data || [])
     } catch (error: any) {
       toast.error("Failed to load feed posts")
       console.error(error)

@@ -15,6 +15,7 @@ import {
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
+import { getCachedValue, setCachedValue } from '@/utils/client-cache'
 
 export default function PluginsPage() {
   const router = useRouter()
@@ -22,14 +23,38 @@ export default function PluginsPage() {
   const impersonateId = searchParams.get('impersonate')
   const supabase = createClient()
 
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('plugins_cache')
+      if (cached) return false
+    }
+    return true
+  })
   const [userId, setUserId] = useState<string | null>(null)
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
-  const [businessName, setBusinessName] = useState('')
+  const [businessName, setBusinessName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('plugins_cache')
+      if (cached?.businessName) return cached.businessName
+    }
+    return ''
+  })
 
   // 99acres Webhook
-  const [webhookToken, setWebhookToken] = useState<string | null>(null)
-  const [webhookUrl, setWebhookUrl] = useState<string | null>(null)
+  const [webhookToken, setWebhookToken] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('plugins_cache')
+      if (cached?.webhookToken) return cached.webhookToken
+    }
+    return null
+  })
+  const [webhookUrl, setWebhookUrl] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('plugins_cache')
+      if (cached?.webhookUrl) return cached.webhookUrl
+    }
+    return null
+  })
   const [isGeneratingWebhook, setIsGeneratingWebhook] = useState(false)
 
   useEffect(() => {
@@ -78,11 +103,21 @@ export default function PluginsPage() {
 
         if (profile) {
           setBusinessName(profile.business_name || '')
+          let token: string | null = null
+          let url: string | null = null
           if (profile.webhook_token_99acres) {
-            setWebhookToken(profile.webhook_token_99acres)
+            token = profile.webhook_token_99acres
             const origin = typeof window !== 'undefined' ? window.location.origin : ''
-            setWebhookUrl(`${origin}/api/webhooks/99acres/${profile.webhook_token_99acres}`)
+            url = `${origin}/api/webhooks/99acres/${profile.webhook_token_99acres}`
+            setWebhookToken(token)
+            setWebhookUrl(url)
           }
+          // Persist to localStorage
+          setCachedValue('plugins_cache', {
+            businessName: profile.business_name || '',
+            webhookToken: token,
+            webhookUrl: url
+          })
         }
       } catch (err) {
         console.error('Failed to load plugins page:', err)

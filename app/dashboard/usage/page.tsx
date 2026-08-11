@@ -13,18 +13,37 @@ import {
     ShieldCheck
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { getCachedValue, setCachedValue } from '@/utils/client-cache'
 
 export default function UsagePage() {
-    const [usage, setUsage] = useState<any>(null)
-    const [loading, setLoading] = useState(true)
-    const [transactions, setTransactions] = useState<any[]>([])
+    const [usage, setUsage] = useState<any>(() => {
+        if (typeof window !== 'undefined') {
+            const cached = getCachedValue<any>('usage_cache')
+            if (cached?.usage) return cached.usage
+        }
+        return null
+    })
+    const [loading, setLoading] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const cached = getCachedValue<any>('usage_cache')
+            if (cached?.usage) return false
+        }
+        return true
+    })
+    const [transactions, setTransactions] = useState<any[]>(() => {
+        if (typeof window !== 'undefined') {
+            const cached = getCachedValue<any>('usage_cache')
+            if (cached?.transactions) return cached.transactions
+        }
+        return []
+    })
     const [page, setPage] = useState(1)
     const [hasMore, setHasMore] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
 
     const fetchUsage = async (targetPage = 1) => {
-        if (targetPage === 1) setLoading(true)
-        else setLoadingMore(true)
+        if (targetPage === 1 && !usage) setLoading(true)
+        else if (targetPage > 1) setLoadingMore(true)
         
         try {
             const res = await fetch(`/api/subscription/usage?page=${targetPage}&limit=10`)
@@ -34,6 +53,11 @@ export default function UsagePage() {
             if (targetPage === 1) {
                 setUsage(data)
                 setTransactions(data.transactions || [])
+                // Persist to localStorage
+                setCachedValue('usage_cache', {
+                    usage: data,
+                    transactions: data.transactions || []
+                })
             } else {
                 setTransactions(prev => [...prev, ...(data.transactions || [])])
             }

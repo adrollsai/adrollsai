@@ -95,7 +95,7 @@ export async function GET(req: Request) {
             }
         }
 
-        // 1. Fetch ALL CRM Leads using admin client with pagination to bypass PostgREST 1,000 row cap
+        // 1. Fetch CRM Leads with ONLY required fields and date filters applied at DB level
         let finalLeads: any[] = []
         let page = 0
         const pageSize = 1000
@@ -111,10 +111,12 @@ export async function GET(req: Request) {
             workspaceOwnerTeamIds = Array.from(new Set(workspaceTeamProfiles.map(p => p.id)))
         }
 
+        const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience'
+
         while (true) {
             let leadsQuery = supabaseAdmin
                 .from('leads')
-                .select('*')
+                .select(leadFields)
                 .range(page * pageSize, (page + 1) * pageSize - 1)
                 .order('created_at', { ascending: false })
 
@@ -123,8 +125,14 @@ export async function GET(req: Request) {
             } else if (activeAgentId) {
                 leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
             } else {
-                // Return all leads belonging to or assigned to any team member of this workspace
                 leadsQuery = leadsQuery.or(`user_id.in.(${workspaceOwnerTeamIds.join(',')}),assigned_to.in.(${workspaceOwnerTeamIds.join(',')})`)
+            }
+
+            if (startDate) {
+                leadsQuery = leadsQuery.gte('created_at', startDate.toISOString())
+            }
+            if (endDate) {
+                leadsQuery = leadsQuery.lte('created_at', endDate.toISOString())
             }
 
             const { data: pageLeads, error: leadsErr } = await leadsQuery
@@ -134,71 +142,31 @@ export async function GET(req: Request) {
             }
 
             if (!pageLeads || pageLeads.length === 0) break
-            finalLeads.push(...pageLeads)
+            
+            // Safely parse custom_fields if stringified
+            const parsedBatch = pageLeads.map(lead => {
+                let cf = lead.custom_fields
+                if (cf && typeof cf === 'string') {
+                    try {
+                        while (typeof cf === 'string') cf = JSON.parse(cf)
+                    } catch (e) {
+                        cf = {}
+                    }
+                }
+                return { ...lead, custom_fields: cf || {} }
+            })
+
+            finalLeads.push(...parsedBatch)
             if (pageLeads.length < pageSize) break
             page++
         }
 
-        // 2, 3 & 4. Parallel fetch for WhatsApp Chats, Lead History, and Team Profiles
-        let chatsQuery = supabaseAdmin
-            .from('whatsapp_chats')
-            .select('id, recipient_phone, recipient_name, lead_id, updated_at')
-            .eq('user_id', targetOwnerId)
-
-        if (activeAgentId) {
-            const agentLeadIds = finalLeads.map(l => l.id)
-            if (agentLeadIds.length > 0) {
-                chatsQuery = chatsQuery.in('lead_id', agentLeadIds)
-            } else {
-                chatsQuery = chatsQuery.eq('id', '00000000-0000-0000-0000-000000000000')
-            }
-        }
-
-        let historyQuery = supabaseAdmin
-            .from('lead_history')
-            .select('id, lead_id, user_id, action_type, description, created_at')
-        
-        if (startDate) {
-            historyQuery = historyQuery.gte('created_at', startDate.toISOString())
-        }
-        if (endDate) {
-            historyQuery = historyQuery.lte('created_at', endDate.toISOString())
-        }
-
-        let teamMembersQuery = supabaseAdmin
+        // 2. Fetch Team Profiles for team matrix
+        const { data: teamMembers } = await supabaseAdmin
             .from('profiles')
             .select('id, email, business_name, full_name, role, created_at')
             .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
             .order('created_at', { ascending: false })
-
-        const [{ data: chats }, { data: leadHistoryData }, { data: teamMembers }] = await Promise.all([
-            chatsQuery,
-            historyQuery,
-            teamMembersQuery
-        ])
-
-        const finalChats = chats || []
-        const chatIds = finalChats.map(c => c.id)
-
-        let finalMessages: any[] = []
-        if (chatIds.length > 0) {
-            let messagesQuery = supabaseAdmin
-                .from('whatsapp_messages')
-                .select('direction, created_at, chat_id')
-                .in('chat_id', chatIds)
-
-            if (startDate) {
-                messagesQuery = messagesQuery.gte('created_at', startDate.toISOString())
-            }
-            if (endDate) {
-                messagesQuery = messagesQuery.lte('created_at', endDate.toISOString())
-            }
-
-            const { data: messages } = await messagesQuery
-            finalMessages = messages || []
-        }
-
-        const safeLeadHistory = leadHistoryData || []
 
         const rawTeamMembers = teamMembers || []
         const safeTeamMembers = isTeamUser ? rawTeamMembers.filter(m => m.id === user.id) : rawTeamMembers
@@ -209,9 +177,7 @@ export async function GET(req: Request) {
             const qualifiedLeads = memberLeads.filter(l => ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won'].includes(l.pipeline_stage)).length
             const lostLeads = memberLeads.filter(l => ['Lost', 'Unqualified'].includes(l.pipeline_stage)).length
             
-            const memberCallLogs = safeLeadHistory.filter(h => h.user_id === member.id && ['CALL_INITIATED', 'CALL_FEEDBACK', 'DNP', 'VOICE_CALL'].includes(h.action_type))
-            const memberDnpLogs = safeLeadHistory.filter(h => h.user_id === member.id && (h.action_type === 'DNP' || (h.description && h.description.includes('DNP'))))
-            
+            const memberCallCount = memberLeads.filter(l => l.last_called_by === member.id || l.last_call_at || l.last_call_status).length
             const totalDnpOnLeads = memberLeads.reduce((acc, l) => {
                 const count = l.dnp_count || l.custom_fields?.dnp_count || 0
                 return acc + count
@@ -229,8 +195,8 @@ export async function GET(req: Request) {
                     wonCount: wonLeads,
                     qualifiedCount: qualifiedLeads,
                     lostCount: lostLeads,
-                    callsCount: Math.max(memberCallLogs.length, memberLeads.filter(l => l.last_called_by === member.id).length),
-                    dnpCount: Math.max(totalDnpOnLeads, memberDnpLogs.length),
+                    callsCount: memberCallCount,
+                    dnpCount: totalDnpOnLeads,
                     conversionRate
                 }
             }
@@ -242,9 +208,9 @@ export async function GET(req: Request) {
             workspaceOwnerId: targetOwnerId,
             myRole,
             leads: finalLeads,
-            chats: finalChats,
-            messages: finalMessages,
-            history: safeLeadHistory,
+            chats: [],
+            messages: [],
+            history: [],
             team: teamData
         })
 

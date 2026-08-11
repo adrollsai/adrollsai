@@ -56,13 +56,6 @@ type Asset = {
 export default function ProductsPage() {
   const supabase = createClient()
   const router = useRouter()
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.pathname === '/dashboard') {
-      const urlParams = new URLSearchParams(window.location.search)
-      const impersonateId = urlParams.get('impersonate')
-      router.replace(impersonateId ? `/dashboard/analytics?impersonate=${impersonateId}` : '/dashboard/analytics')
-    }
-  }, [router])
 
   // --- STATE ---
   const [properties, setProperties] = useState<Property[]>([])

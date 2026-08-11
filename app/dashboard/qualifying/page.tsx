@@ -14,6 +14,7 @@ import {
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
+import { getCachedValue, setCachedValue } from '@/utils/client-cache'
 
 export default function QualifyingPage() {
   const router = useRouter()
@@ -21,10 +22,28 @@ export default function QualifyingPage() {
   const impersonateId = searchParams.get('impersonate')
   const supabase = createClient()
 
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('qualifying_cache')
+      if (cached) return false
+    }
+    return true
+  })
   const [isSaving, setIsSaving] = useState(false)
-  const [qualifyingEnabled, setQualifyingEnabled] = useState(false)
-  const [qualifyingQuestions, setQualifyingQuestions] = useState<string[]>([])
+  const [qualifyingEnabled, setQualifyingEnabled] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('qualifying_cache')
+      if (cached) return cached.qualifyingEnabled || false
+    }
+    return false
+  })
+  const [qualifyingQuestions, setQualifyingQuestions] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('qualifying_cache')
+      if (cached?.qualifyingQuestions) return cached.qualifyingQuestions
+    }
+    return []
+  })
   const [newQuestionText, setNewQuestionText] = useState('')
   const [userId, setUserId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string>('admin')
@@ -68,6 +87,11 @@ export default function QualifyingPage() {
         if (profile) {
           setQualifyingEnabled(profile.qualifying_enabled || false)
           setQualifyingQuestions(profile.qualifying_questions || [])
+          // Persist to localStorage
+          setCachedValue('qualifying_cache', {
+            qualifyingEnabled: profile.qualifying_enabled || false,
+            qualifyingQuestions: profile.qualifying_questions || []
+          })
         }
       } catch (err) {
         console.error("Failed to load qualification settings:", err)

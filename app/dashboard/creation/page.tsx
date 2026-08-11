@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+import { getLocalCache, getCachedValue, setCachedValue } from '@/utils/client-cache'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
@@ -107,8 +108,33 @@ export default function CreationPage() {
   const supabase = createClient()
   
   // Data State
-  const [properties, setProperties] = useState<Property[]>([])
-  const [isLoadingProperties, setIsLoadingProperties] = useState(true)
+  const [properties, setProperties] = useState<Property[]>(() => {
+    if (typeof window !== 'undefined') {
+      // Reuse cached properties from inventory page or creation-specific cache
+      const cached = getCachedValue<Property[]>('creation_properties_cache')
+      if (cached && Array.isArray(cached) && cached.length > 0) return cached
+      // Fallback to any properties_cache_ key in localStorage
+      try {
+        for (const key of Object.keys(localStorage)) {
+          if (key.startsWith('properties_cache_')) {
+            const val = localStorage.getItem(key)
+            if (val) {
+              const parsed = JSON.parse(val)
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed
+            }
+          }
+        }
+      } catch (e) {}
+    }
+    return []
+  })
+  const [isLoadingProperties, setIsLoadingProperties] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<Property[]>('creation_properties_cache')
+      if (cached && Array.isArray(cached) && cached.length > 0) return false
+    }
+    return true
+  })
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
@@ -506,13 +532,17 @@ export default function CreationPage() {
         const invData = await invRes.json()
         if (invData.success && Array.isArray(invData.properties)) {
           setProperties(invData.properties)
+          setCachedValue('creation_properties_cache', invData.properties)
         } else {
           const { data } = await supabase
             .from('properties')
             .select('id, title, address, price, images, image_url, description, created_at, configurations')
             .eq('user_id', tUserId)
             .order('created_at', { ascending: false })
-          if (data) setProperties(data)
+          if (data) {
+            setProperties(data)
+            setCachedValue('creation_properties_cache', data)
+          }
         }
       } catch (e) {}
 
