@@ -119,6 +119,8 @@ export async function syncAndroidCallLogs(manualLogs?: CallLogEntry[]): Promise<
                 2: 'OUTGOING',
                 3: 'MISSED',
                 5: 'REJECTED',
+                6: 'REJECTED',
+                7: 'INCOMING',
                 'INCOMING': 'INCOMING',
                 'OUTGOING': 'OUTGOING',
                 'MISSED': 'MISSED',

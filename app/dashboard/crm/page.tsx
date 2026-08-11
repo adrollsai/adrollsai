@@ -197,7 +197,37 @@ export default function CRMPage() {
   }
 
   const [pageInputVal, setPageInputVal] = useState(String(currentPage))
-  const leadsPerPage = 50
+  
+  // Custom Pagination Limit State (persisted in localStorage)
+  const [leadsPerPage, setLeadsPerPageState] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('nobogent_crm_leads_per_page')
+      if (saved && !isNaN(parseInt(saved, 10)) && parseInt(saved, 10) > 0) {
+        return parseInt(saved, 10)
+      }
+    }
+    return 50
+  })
+
+  const setLeadsPerPage = (num: number) => {
+    setLeadsPerPageState(num)
+    setCurrentPageState(1)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('nobogent_crm_leads_per_page', num.toString())
+      sessionStorage.setItem('crm_page', '1')
+    }
+  }
+
+  // CRM Custom Date Filter State
+  const [crmCustomDate, setCrmCustomDate] = useState<string>('')
+  const [crmStartDate, setCrmStartDate] = useState<string>('')
+  const [crmEndDate, setCrmEndDate] = useState<string>('')
+  const [isCrmDatePickerOpen, setIsCrmDatePickerOpen] = useState<boolean>(false)
+  const [crmDateFilterMode, setCrmDateFilterMode] = useState<'single' | 'range'>('single')
+
+  // Selected From Agent Filter State in Bulk Actions Modal
+  const [selectedFromOwnerIds, setSelectedFromOwnerIds] = useState<string[]>([])
+
   const isFirstRender = useRef(true)
   const isSearchMounted = useRef(false)
 
@@ -253,20 +283,32 @@ export default function CRMPage() {
   const [searchTeammateQuery, setSearchTeammateQuery] = useState('')
 
   const selectedLeadsOwnerBreakdown = useMemo(() => {
-    const map = new Map<string, number>()
+    const map = new Map<string, { id: string; name: string; count: number }>()
     selectedLeadIds.forEach(id => {
       const l = leads.find(item => item.id === id)
       if (l) {
         const ownerId = l.assigned_to || l.user_id || 'unassigned'
         const ownerName = team.find(t => t.id === ownerId)?.business_name || (ownerId === 'unassigned' ? 'Unassigned' : 'Unknown Owner')
-        map.set(ownerName, (map.get(ownerName) || 0) + 1)
+        const existing = map.get(ownerId) || { id: ownerId, name: ownerName, count: 0 }
+        existing.count += 1
+        map.set(ownerId, existing)
       }
     })
-    return Array.from(map.entries()).map(([name, count]) => ({ name, count }))
+    return Array.from(map.values())
   }, [selectedLeadIds, leads, team])
 
+  // Auto-populate selectedFromOwnerIds with all current selected leads' owner IDs when opening Bulk Actions Modal
+  useEffect(() => {
+    if (isBulkActionsModalOpen) {
+      const allOwnerIds = selectedLeadsOwnerBreakdown.map(o => o.id).filter(Boolean)
+      setSelectedFromOwnerIds(allOwnerIds)
+    }
+  }, [isBulkActionsModalOpen])
+
   const handleExecuteBulkTransfer = async () => {
-    if (!targetTransferAgentId) return toast.error('Please select a team member to transfer ownership to.')
+    if (!targetTransferAgentId) {
+      return toast.error("Please select a target teammate to transfer leads to.")
+    }
     if (selectedLeadIds.length === 0) return
 
     setIsTransferring(true)
@@ -278,7 +320,8 @@ export default function CRMPage() {
           leadIds: selectedLeadIds,
           targetAgentId: targetTransferAgentId,
           deleteHistory: deleteHistoryOnTransfer,
-          transferWithScheduledActions
+          transferWithScheduledActions,
+          fromAgentIds: selectedFromOwnerIds
         })
       })
 
@@ -287,6 +330,7 @@ export default function CRMPage() {
         toast.success(`Successfully transferred ${data.transferredCount} lead(s) to ${data.targetAgentName}! 🎉`)
         setIsBulkActionsModalOpen(false)
         setSelectedLeadIds([])
+        setSelectedFromOwnerIds([])
         fetchLeads(true)
       } else {
         toast.error(data.error || 'Failed to transfer leads.')
@@ -1582,6 +1626,31 @@ END:VCARD\n`
         return true
       })()
 
+      // CRM CUSTOM DATE / RANGE FILTER
+      const matchCustomDate = (() => {
+        if (!crmCustomDate && (!crmStartDate || !crmEndDate)) return true
+        const leadRawDate = l.created_at || l.facebook_created_at || l.last_call_at
+        if (!leadRawDate) return false
+        const leadDate = new Date(leadRawDate)
+        if (isNaN(leadDate.getTime())) return false
+
+        if (crmCustomDate) {
+          const target = new Date(crmCustomDate)
+          return leadDate.getFullYear() === target.getFullYear() &&
+                 leadDate.getMonth() === target.getMonth() &&
+                 leadDate.getDate() === target.getDate()
+        } else if (crmStartDate && crmEndDate) {
+          const start = new Date(crmStartDate)
+          start.setHours(0, 0, 0, 0)
+          const end = new Date(crmEndDate)
+          end.setHours(23, 59, 59, 999)
+          return leadDate >= start && leadDate <= end
+        }
+        return true
+      })()
+
+      if (!matchCustomDate) return false
+
       // DNP FILTER
       const matchDnp = selectedDnpFilter === 'ALL' || (() => {
         let cf: any = l.custom_fields
@@ -1798,6 +1867,22 @@ END:VCARD\n`
                 >
                     Go
                 </button>
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1 rounded-xl border border-slate-200/80">
+                <span className="text-xs font-extrabold text-slate-500">Leads per page:</span>
+                <select
+                    value={leadsPerPage}
+                    onChange={(e) => setLeadsPerPage(parseInt(e.target.value, 10))}
+                    className="bg-white border border-slate-200 text-slate-800 text-xs font-extrabold rounded-lg py-1 px-2 outline-none cursor-pointer hover:border-blue-400"
+                >
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="200">200</option>
+                    <option value="500">500</option>
+                </select>
             </div>
         </div>
     )
@@ -2080,6 +2165,127 @@ END:VCARD\n`
                         <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
                     </div>
 
+                    {/* Custom Date Filter Button */}
+                    <div className="relative flex-1">
+                        <label className="block text-[9px] font-black text-blue-600 uppercase mb-1">Custom Date / Range</label>
+                        <button
+                            type="button"
+                            onClick={() => setIsCrmDatePickerOpen(!isCrmDatePickerOpen)}
+                            className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between transition-all border shadow-xs cursor-pointer ${
+                                (crmCustomDate || (crmStartDate && crmEndDate))
+                                    ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                                    : 'bg-slate-50 border-slate-200/80 text-slate-700 hover:border-blue-400'
+                            }`}
+                        >
+                            <span className="truncate">
+                                {crmCustomDate
+                                    ? `Date: ${crmCustomDate}`
+                                    : (crmStartDate && crmEndDate)
+                                    ? `${crmStartDate} → ${crmEndDate}`
+                                    : 'Pick Custom Date'}
+                            </span>
+                            <Calendar size={13} className={(crmCustomDate || (crmStartDate && crmEndDate)) ? 'text-white' : 'text-blue-600'} />
+                        </button>
+
+                        {isCrmDatePickerOpen && (
+                            <>
+                                <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-40 sm:hidden" onClick={() => setIsCrmDatePickerOpen(false)} />
+                                <div className="fixed inset-x-4 top-24 z-50 bg-white border border-slate-200 rounded-2xl p-4 shadow-2xl space-y-3 sm:absolute sm:inset-auto sm:right-0 sm:top-14 sm:w-72">
+                                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                        <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                                            <Calendar size={14} className="text-blue-600" /> Filter Leads by Date
+                                        </span>
+                                        <button type="button" onClick={() => setIsCrmDatePickerOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                                            <X size={15} />
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setCrmDateFilterMode('single'); setCrmStartDate(''); setCrmEndDate(''); }}
+                                            className={`py-1 rounded-lg transition-all cursor-pointer ${crmDateFilterMode === 'single' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500'}`}
+                                        >
+                                            Single Date
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setCrmDateFilterMode('range'); setCrmCustomDate(''); }}
+                                            className={`py-1 rounded-lg transition-all cursor-pointer ${crmDateFilterMode === 'range' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500'}`}
+                                        >
+                                            Date Range
+                                        </button>
+                                    </div>
+
+                                    {crmDateFilterMode === 'single' ? (
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-500 block">Select Specific Date:</label>
+                                            <input
+                                                type="date"
+                                                value={crmCustomDate}
+                                                onChange={(e) => {
+                                                    setCrmCustomDate(e.target.value)
+                                                    setCrmStartDate('')
+                                                    setCrmEndDate('')
+                                                }}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Start Date:</label>
+                                                <input
+                                                    type="date"
+                                                    value={crmStartDate}
+                                                    onChange={(e) => {
+                                                        setCrmStartDate(e.target.value)
+                                                        setCrmCustomDate('')
+                                                    }}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-500 block mb-0.5">End Date:</label>
+                                                <input
+                                                    type="date"
+                                                    value={crmEndDate}
+                                                    onChange={(e) => {
+                                                        setCrmEndDate(e.target.value)
+                                                        setCrmCustomDate('')
+                                                    }}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setCrmCustomDate('')
+                                                setCrmStartDate('')
+                                                setCrmEndDate('')
+                                                setIsCrmDatePickerOpen(false)
+                                            }}
+                                            className="text-xs font-extrabold text-slate-400 hover:text-slate-600 cursor-pointer"
+                                        >
+                                            Clear Filter
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsCrmDatePickerOpen(false)}
+                                            className="bg-blue-600 text-white px-4 py-1.5 rounded-xl text-xs font-bold shadow-sm hover:bg-blue-500 cursor-pointer"
+                                        >
+                                            Apply Filter
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
                     {/* Campaign Filter */}
                     <div className="relative flex-1">
                         <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Campaign</label>
@@ -2230,7 +2436,9 @@ END:VCARD\n`
                                                 <input 
                                                     type="checkbox"
                                                     checked={selectedLeadIds.includes(lead.id)}
+                                                    onClick={(e) => e.stopPropagation()}
                                                     onChange={(e) => {
+                                                        e.stopPropagation();
                                                         if (selectedLeadIds.includes(lead.id)) {
                                                             setSelectedLeadIds(prev => prev.filter(id => id !== lead.id))
                                                         } else {
@@ -2363,19 +2571,22 @@ END:VCARD\n`
                             {/* ROW 1: Lead Name, Checkbox, Phone & Reopened Badge */}
                             <div className="flex items-start gap-2.5 mb-2 pb-2 border-b border-slate-100">
                                 {isAdminLike && role !== 'agent' && (
-                                <input 
-                                    type="checkbox"
-                                    checked={selectedLeadIds.includes(lead.id)}
-                                    onChange={(e) => {
-                                        e.stopPropagation();
-                                        if (selectedLeadIds.includes(lead.id)) {
-                                            setSelectedLeadIds(prev => prev.filter(id => id !== lead.id))
-                                        } else {
-                                            setSelectedLeadIds(prev => [...prev, lead.id])
-                                        }
-                                    }}
-                                    className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer shrink-0"
-                                />
+                                <div onClick={(e) => e.stopPropagation()} className="shrink-0 p-0.5">
+                                    <input 
+                                        type="checkbox"
+                                        checked={selectedLeadIds.includes(lead.id)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => {
+                                            e.stopPropagation();
+                                            if (selectedLeadIds.includes(lead.id)) {
+                                                setSelectedLeadIds(prev => prev.filter(id => id !== lead.id))
+                                            } else {
+                                                setSelectedLeadIds(prev => [...prev, lead.id])
+                                            }
+                                        }}
+                                        className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer shrink-0"
+                                    />
+                                </div>
                                 )}
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -3148,15 +3359,35 @@ END:VCARD\n`
                          </div>
 
                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                           {selectedLeadsOwnerBreakdown
-                             .filter(o => o.name.toLowerCase().includes(searchOwnerQuery.toLowerCase()))
-                             .map((o, idx) => (
-                               <div key={idx} className="flex items-center justify-between text-xs py-1.5 px-2 bg-white rounded-xl border border-slate-200/60 font-extrabold text-slate-700">
-                                 <span className="truncate">{o.name}</span>
-                                 <span className="px-2 py-0.5 bg-slate-100 rounded-md text-[10px] text-slate-500 font-black">{o.count}</span>
-                               </div>
-                             ))}
-                         </div>
+                          {selectedLeadsOwnerBreakdown
+                            .filter(o => o.name.toLowerCase().includes(searchOwnerQuery.toLowerCase()))
+                            .map((o, idx) => {
+                              const isChecked = selectedFromOwnerIds.includes(o.id);
+                              return (
+                                <label key={idx} className={`flex items-center justify-between text-xs py-1.5 px-2 bg-white rounded-xl border font-extrabold cursor-pointer transition-all ${
+                                  isChecked ? 'border-blue-300 text-blue-900 bg-blue-50/40' : 'border-slate-200/60 text-slate-500'
+                                }`}>
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (!o.id) return;
+                                        if (e.target.checked) {
+                                          setSelectedFromOwnerIds(prev => Array.from(new Set([...prev, o.id])));
+                                        } else {
+                                          setSelectedFromOwnerIds(prev => prev.filter(id => id !== o.id));
+                                        }
+                                      }}
+                                      className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                                    />
+                                    <span className="truncate">{o.name}</span>
+                                  </div>
+                                  <span className="px-2 py-0.5 bg-slate-100 rounded-md text-[10px] text-slate-500 font-black">{o.count}</span>
+                                </label>
+                              );
+                            })}
+                        </div>
                        </div>
 
                        {/* TO Column */}

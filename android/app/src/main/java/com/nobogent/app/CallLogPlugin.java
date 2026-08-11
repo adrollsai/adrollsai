@@ -2,6 +2,7 @@ package com.nobogent.app;
 
 import android.Manifest;
 import android.content.ContentResolver;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -28,7 +29,11 @@ import java.net.URL;
     permissions = {
         @Permission(
             alias = "callLog",
-            strings = { Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_PHONE_STATE }
+            strings = { Manifest.permission.READ_CALL_LOG }
+        ),
+        @Permission(
+            alias = "phoneState",
+            strings = { Manifest.permission.READ_PHONE_STATE }
         ),
         @Permission(
             alias = "audio",
@@ -44,47 +49,51 @@ public class CallLogPlugin extends Plugin {
 
     private static final String TAG = "CallLogPlugin";
 
+    private boolean hasCallLogPermission() {
+        try {
+            boolean capacitorCheck = getPermissionState("callLog") == com.getcapacitor.PermissionState.GRANTED;
+            boolean nativeCheck = getContext().checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED;
+            return capacitorCheck || nativeCheck;
+        } catch (Exception e) {
+            Log.w(TAG, "Error checking permission state: " + e.getMessage());
+            return false;
+        }
+    }
+
     @PluginMethod
     public void requestPermission(PluginCall call) {
-        if (hasRequiredPermissions()) {
+        if (hasCallLogPermission()) {
             JSObject ret = new JSObject();
             ret.put("hasPermission", true);
             call.resolve(ret);
         } else {
-            requestAllPermissions(call, "permissionCallback");
+            requestPermissionForAlias("callLog", call, "permissionCallback");
         }
     }
 
     @PluginMethod
     public void hasPermission(PluginCall call) {
         JSObject ret = new JSObject();
-        ret.put("hasPermission", hasRequiredPermissions());
+        ret.put("hasPermission", hasCallLogPermission());
         call.resolve(ret);
     }
 
     @PermissionCallback
     private void permissionCallback(PluginCall call) {
         JSObject ret = new JSObject();
-        ret.put("hasPermission", hasRequiredPermissions());
+        ret.put("hasPermission", hasCallLogPermission());
         call.resolve(ret);
     }
 
     @Override
     public boolean hasRequiredPermissions() {
-        boolean hasCallLog = getPermissionState("callLog") == com.getcapacitor.PermissionState.GRANTED;
-        boolean hasMedia;
-        if (Build.VERSION.SDK_INT >= 33) {
-            hasMedia = getPermissionState("audio") == com.getcapacitor.PermissionState.GRANTED;
-        } else {
-            hasMedia = getPermissionState("storage") == com.getcapacitor.PermissionState.GRANTED;
-        }
-        return hasCallLog && hasMedia;
+        return hasCallLogPermission();
     }
 
     @PluginMethod
     public void getCallLog(PluginCall call) {
-        if (!hasRequiredPermissions()) {
-            requestAllPermissions(call, "getCallLogCallback");
+        if (!hasCallLogPermission()) {
+            requestPermissionForAlias("callLog", call, "getCallLogCallback");
             return;
         }
         readCallLogs(call);
@@ -92,7 +101,7 @@ public class CallLogPlugin extends Plugin {
 
     @PermissionCallback
     private void getCallLogCallback(PluginCall call) {
-        if (getPermissionState("callLog") == com.getcapacitor.PermissionState.GRANTED) {
+        if (hasCallLogPermission()) {
             readCallLogs(call);
         } else {
             call.reject("Permission to read call logs was denied.");
@@ -316,6 +325,9 @@ public class CallLogPlugin extends Plugin {
             "Recording/Call",
             "Sounds/CallRecord",
             "Music/Recordings/Call Recordings",
+            "Music/Recordings",
+            "Audio/Recordings",
+            "Audio/Call Recordings",
             "Call Recordings",
             "Android/data/com.android.phone/files",
             "VoiceRecorder",

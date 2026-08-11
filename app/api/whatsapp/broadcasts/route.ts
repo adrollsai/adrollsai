@@ -28,10 +28,46 @@ export async function GET(req: Request) {
 
             if (!broadcast) return NextResponse.json({ error: 'Broadcast not found' }, { status: 404 })
 
-            const { data: recipients } = await supabaseAdmin
+            let { data: recipients } = await supabaseAdmin
                 .from('whatsapp_broadcast_recipients')
                 .select('*')
                 .eq('broadcast_id', broadcastId)
+
+            if ((!recipients || recipients.length === 0) && broadcast.status === 'sent') {
+                let leadQuery = supabaseAdmin
+                    .from('leads')
+                    .select('id, phone')
+                    .or(`user_id.eq.${broadcast.user_id},assigned_to.eq.${broadcast.user_id}`)
+                    .lte('created_at', broadcast.created_at || new Date().toISOString())
+                    .order('created_at', { ascending: true })
+
+                if (broadcast.recipient_stage && broadcast.recipient_stage !== 'All') {
+                    leadQuery = leadQuery.eq('pipeline_stage', broadcast.recipient_stage)
+                }
+
+                const { data: fallbackLeads } = await leadQuery
+                if (fallbackLeads && fallbackLeads.length > 0) {
+                    const fallbackPayloads = fallbackLeads.map(l => ({
+                        broadcast_id: broadcast.id,
+                        lead_id: l.id,
+                        user_id: broadcast.user_id,
+                        phone_number: l.phone || '',
+                        status: 'sent',
+                        sent_at: broadcast.sent_at || broadcast.created_at || new Date().toISOString()
+                    })).filter(r => !!r.phone_number)
+
+                    for (let i = 0; i < fallbackPayloads.length; i += 100) {
+                        const batch = fallbackPayloads.slice(i, i + 100)
+                        await supabaseAdmin.from('whatsapp_broadcast_recipients').insert(batch)
+                    }
+
+                    const { data: refetched } = await supabaseAdmin
+                        .from('whatsapp_broadcast_recipients')
+                        .select('*')
+                        .eq('broadcast_id', broadcastId)
+                    if (refetched) recipients = refetched
+                }
+            }
 
             const total = recipients?.length || 0
             const sent = recipients?.filter(r => r.status === 'sent').length || 0
@@ -155,7 +191,7 @@ export async function GET(req: Request) {
 
         // Fetch status stats for each broadcast
         const resolvedBroadcasts = await Promise.all((broadcasts || []).map(async (b) => {
-            const { data: recipients } = await supabase
+            const { data: recipients } = await supabaseAdmin
                 .from('whatsapp_broadcast_recipients')
                 .select('status')
                 .eq('broadcast_id', b.id)

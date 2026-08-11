@@ -985,7 +985,9 @@ export default function AnalyticsPage() {
 
             {/* Date Picker Popover */}
             {isDatePickerOpen && (
-              <div className="absolute right-0 top-12 z-50 bg-white border border-slate-200 rounded-2xl p-4 shadow-xl w-72 space-y-3 animate-in fade-in zoom-in-95">
+              <>
+                <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-40 sm:hidden" onClick={() => setIsDatePickerOpen(false)} />
+                <div className="fixed inset-x-4 top-24 z-50 bg-white border border-slate-200 rounded-2xl p-4 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 sm:absolute sm:inset-auto sm:right-0 sm:top-12 sm:w-72">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
                     <Calendar size={14} className="text-blue-600" /> Filter by Date
@@ -1078,6 +1080,7 @@ export default function AnalyticsPage() {
                   </button>
                 </div>
               </div>
+              </>
             )}
           </div>
 

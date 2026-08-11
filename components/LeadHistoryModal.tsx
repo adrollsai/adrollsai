@@ -33,10 +33,10 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
       
       let items = data || []
 
-      // If viewer is an agent, apply history_visible_from cutoff
-      // so they don't see history from before the transfer
-      const isAgent = viewerRole === 'agent'
-      if (isAgent) {
+      // Admin / Agency / Super Admin role retains 100% full history access
+      const isAdmin = viewerRole === 'super_admin' || viewerRole === 'agency' || viewerRole === 'admin'
+      
+      if (!isAdmin) {
         let cf = lead.custom_fields
         if (typeof cf === 'string') {
           try { cf = JSON.parse(cf) } catch (e) { cf = null }

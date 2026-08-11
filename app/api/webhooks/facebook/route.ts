@@ -2663,10 +2663,14 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                   if (groupMembers.length > 0 && groupCampaigns.length > 0) {
                     const matchesCamp = groupCampaigns.some(gc => {
                       const gcClean = gc.trim().toLowerCase();
+                      if (!gcClean) return false;
+                      const adClean = (adCampaignString || '').toLowerCase();
+                      const campClean = (campaignName || '').toLowerCase();
+                      const formClean = (formName || '').toLowerCase();
                       return (
-                        (adCampaignString && adCampaignString.toLowerCase().includes(gcClean)) ||
-                        (campaignName && campaignName.toLowerCase().includes(gcClean)) ||
-                        (formName && formName.toLowerCase().includes(gcClean))
+                        (adClean && (adClean.includes(gcClean) || gcClean.includes(adClean))) ||
+                        (campClean && (campClean.includes(gcClean) || gcClean.includes(campClean))) ||
+                        (formClean && (formClean.includes(gcClean) || gcClean.includes(formClean)))
                       );
                     });
 

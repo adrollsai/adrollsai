@@ -779,4 +779,30 @@ export async function sendFollowupReminderEmail(
     return { success: false, error: error.message };
   }
 }
+
+export async function sendLeadTransferEmail(to: string, agentName: string, senderName: string, leadCount: number) {
+  try {
+    const info = await transporter.sendMail({
+      from: '"Nobogent CRM" <no-reply@mail.nobogent.com>',
+      to: to,
+      subject: `🎯 ${leadCount} Lead(s) Transferred to You on Nobogent CRM`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; padding: 20px;">
+          <h2 style="color: #2563eb;">🎯 New Leads Transferred</h2>
+          <p>Hi <strong>${agentName}</strong>,</p>
+          <p><strong>${senderName}</strong> has assigned <strong>${leadCount} lead(s)</strong> to your CRM account.</p>
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 12px; margin: 15px 0;">
+            <p style="margin: 0; font-size: 14px; font-weight: bold; color: #475569;">Total Transferred Records: ${leadCount}</p>
+          </div>
+          <p><a href="https://app.nobogent.com/dashboard/crm" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 10px; font-weight: bold;">View Leads in CRM</a></p>
+          <p style="font-size: 12px; color: #94a3b8; margin-top: 20px;">Nobogent CRM Notifications</p>
+        </div>
+      `
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error("Lead Transfer Email Error:", error);
+    return { success: false, error: error.message };
+  }
+}
 

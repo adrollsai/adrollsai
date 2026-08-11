@@ -59,6 +59,8 @@ export async function POST(request: Request) {
       userLeads.forEach(lead => {
         const norm = normalizePhone(lead.phone)
         if (norm) leadPhoneMap.set(norm, lead)
+        const digits = (lead.phone || '').replace(/[^\d]/g, '')
+        if (digits) leadPhoneMap.set(digits, lead)
       })
     }
 
@@ -68,7 +70,8 @@ export async function POST(request: Request) {
     for (const log of logsToProcess) {
       const rawPhone = log.phoneNumber || log.phone || ''
       const norm = normalizePhone(rawPhone)
-      const matchedLead = norm ? leadPhoneMap.get(norm) : null
+      const rawDigits = rawPhone.replace(/[^\d]/g, '')
+      const matchedLead = (norm ? leadPhoneMap.get(norm) : null) || (rawDigits ? leadPhoneMap.get(rawDigits) : null)
 
       const durationSec = parseInt(log.duration || 0, 10)
       const callType = (log.callType || 'OUTGOING').toUpperCase()
@@ -80,20 +83,27 @@ export async function POST(request: Request) {
 
       const startedAt = log.startedAt ? new Date(log.startedAt).toISOString() : new Date().toISOString()
 
-      // Check existing log with same user & last10 digits within 2 minute window
-      let existing = null
-      if (norm) {
-        const { data: exData } = await adminSupabase
-          .from('call_logs')
-          .select('id, recording_url')
-          .eq('user_id', user.id)
-          .ilike('phone_number', `%${norm}%`)
-          .gte('started_at', new Date(new Date(startedAt).getTime() - 120000).toISOString())
-          .lte('started_at', new Date(new Date(startedAt).getTime() + 120000).toISOString())
-          .limit(1)
-          .maybeSingle()
+      // Check existing log with same user & matching normalized number within 3 minute window
+      let existing: any = null
+      if (norm || rawDigits) {
+        const startTime = new Date(startedAt).getTime()
+        const windowStart = new Date(startTime - 180000).toISOString()
+        const windowEnd = new Date(startTime + 180000).toISOString()
 
-        existing = exData
+        const { data: exDataList } = await adminSupabase
+          .from('call_logs')
+          .select('id, phone_number, recording_url')
+          .eq('user_id', user.id)
+          .gte('started_at', windowStart)
+          .lte('started_at', windowEnd)
+
+        if (exDataList && exDataList.length > 0) {
+          existing = exDataList.find(ex => {
+            const exNorm = normalizePhone(ex.phone_number)
+            const exDigits = (ex.phone_number || '').replace(/[^\d]/g, '')
+            return (norm && exNorm === norm) || (rawDigits && exDigits === rawDigits)
+          }) || null
+        }
       }
 
       let finalRecordingUrl = log.recordingUrl || null

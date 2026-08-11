@@ -313,24 +313,31 @@ export default function GroupLeadDistributionModal({
       return toast.error(`Please assign at least one campaign to group "${group.group_name}".`);
     }
 
-    // Filter unassigned leads matching group's campaigns
+    // Filter unassigned or workspace owner leads matching group's campaigns
     const matchingLeads = leads.filter(l => {
-      if (l.assigned_to) return false;
-      const leadCampName = (l.ad_name || l.campaign_name || l.source || '').trim();
-      const customOrigin = l.custom_fields?.meta_ad_origin?.ad_name || l.custom_fields?.meta_ad_origin?.campaign_name;
+      // Include unassigned leads or leads assigned to target workspace owner
+      const isUnassignedOrOwner = !l.assigned_to || l.assigned_to === targetUserId || l.user_id === targetUserId;
+      if (!isUnassignedOrOwner) return false;
+
+      const leadCampName = (l.ad_name || l.campaign_name || l.form_name || l.source || '').trim().toLowerCase();
+      const customOriginAd = (l.custom_fields?.meta_ad_origin?.ad_name || '').trim().toLowerCase();
+      const customOriginCamp = (l.custom_fields?.meta_ad_origin?.campaign_name || '').trim().toLowerCase();
+      const formName = (l.form_name || '').trim().toLowerCase();
 
       return group.campaigns.some(gc => {
         const gcClean = gc.trim().toLowerCase();
+        if (!gcClean) return false;
         return (
-          (leadCampName && leadCampName.toLowerCase().includes(gcClean)) ||
-          (customOrigin && customOrigin.toLowerCase().includes(gcClean)) ||
-          (l.source && l.source.toLowerCase().includes(gcClean))
+          (leadCampName && (leadCampName.includes(gcClean) || gcClean.includes(leadCampName))) ||
+          (customOriginAd && (customOriginAd.includes(gcClean) || gcClean.includes(customOriginAd))) ||
+          (customOriginCamp && (customOriginCamp.includes(gcClean) || gcClean.includes(customOriginCamp))) ||
+          (formName && (formName.includes(gcClean) || gcClean.includes(formName)))
         );
       });
     });
 
     if (matchingLeads.length === 0) {
-      return toast.error(`No unassigned leads found matching group "${group.group_name}" campaigns.`);
+      return toast.error(`No eligible unassigned/owner leads found matching group "${group.group_name}" campaigns.`);
     }
 
     setIsDistributing(group.id);
