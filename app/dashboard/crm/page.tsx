@@ -6,7 +6,7 @@ import {
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
   Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, ChevronUp, SlidersHorizontal, FileText, Send, HelpCircle, Target, Calendar,
-  LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw, History
+  LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw, History, ArrowRightLeft, Layers
 } from 'lucide-react'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
@@ -241,6 +241,74 @@ export default function CRMPage() {
   const [templateVarMappings, setTemplateVarMappings] = useState<Record<string, { field: string; customVal: string }>>({})
   const [userBusinessName, setUserBusinessName] = useState('Nobogent')
   const [userRole, setUserRole] = useState<string>('admin')
+
+  // --- BULK ACTIONS & TRANSFER STATE ---
+  const [isBulkActionsModalOpen, setIsBulkActionsModalOpen] = useState(false)
+  const [activeBulkTab, setActiveBulkTab] = useState<'transfer' | 'trash'>('transfer')
+  const [targetTransferAgentId, setTargetTransferAgentId] = useState<string>('')
+  const [deleteHistoryOnTransfer, setDeleteHistoryOnTransfer] = useState<boolean>(false)
+  const [transferWithScheduledActions, setTransferWithScheduledActions] = useState<boolean>(true)
+  const [isTransferring, setIsTransferring] = useState<boolean>(false)
+  const [searchOwnerQuery, setSearchOwnerQuery] = useState('')
+  const [searchTeammateQuery, setSearchTeammateQuery] = useState('')
+
+  const selectedLeadsOwnerBreakdown = useMemo(() => {
+    const map = new Map<string, number>()
+    selectedLeadIds.forEach(id => {
+      const l = leads.find(item => item.id === id)
+      if (l) {
+        const ownerId = l.assigned_to || l.user_id || 'unassigned'
+        const ownerName = team.find(t => t.id === ownerId)?.business_name || (ownerId === 'unassigned' ? 'Unassigned' : 'Unknown Owner')
+        map.set(ownerName, (map.get(ownerName) || 0) + 1)
+      }
+    })
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count }))
+  }, [selectedLeadIds, leads, team])
+
+  const handleExecuteBulkTransfer = async () => {
+    if (!targetTransferAgentId) return toast.error('Please select a team member to transfer ownership to.')
+    if (selectedLeadIds.length === 0) return
+
+    setIsTransferring(true)
+    try {
+      const res = await fetch('/api/crm/bulk-transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadIds: selectedLeadIds,
+          targetAgentId: targetTransferAgentId,
+          deleteHistory: deleteHistoryOnTransfer,
+          transferWithScheduledActions
+        })
+      })
+
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`Successfully transferred ${data.transferredCount} lead(s) to ${data.targetAgentName}! 🎉`)
+        setIsBulkActionsModalOpen(false)
+        setSelectedLeadIds([])
+        fetchLeads(true)
+      } else {
+        toast.error(data.error || 'Failed to transfer leads.')
+      }
+    } catch (err: any) {
+      toast.error('An error occurred during transfer: ' + (err.message || String(err)))
+    } finally {
+      setIsTransferring(false)
+    }
+  }
+
+  const handleDeleteSelectedLeads = async () => {
+    if (selectedLeadIds.length === 0) return
+    try {
+      await supabase.from('leads').delete().in('id', selectedLeadIds)
+      toast.success(`Deleted ${selectedLeadIds.length} lead(s).`)
+      setSelectedLeadIds([])
+      fetchLeads(true)
+    } catch (err: any) {
+      toast.error('Failed to delete selected leads: ' + (err.message || String(err)))
+    }
+  }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -2073,7 +2141,8 @@ END:VCARD\n`
             </div>
         ) : (
             <>
-            {/* SELECT ALL & SELECTION ACTIONS INFO BAR */}
+            {/* SELECT ALL & SELECTION ACTIONS INFO BAR (Admin only) */}
+            {isAdminLike && role !== 'agent' && (
             <div className="flex justify-between items-center bg-white border border-slate-200/60 py-3 px-5 rounded-2xl mb-6 shadow-sm">
                 <div className="flex items-center gap-3">
                     <input 
@@ -2093,9 +2162,27 @@ END:VCARD\n`
                     <span className="text-xs font-bold text-slate-700">Select All {currentLeads.length} leads on this page</span>
                 </div>
                 {selectedLeadIds.length > 0 && (
-                    <span className="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full">{selectedLeadIds.length} Selected</span>
+                    <div className="flex items-center gap-2 bg-blue-50/80 px-3 py-1 rounded-xl border border-blue-200">
+                        <span className="text-xs font-bold text-slate-700">You have selected <strong className="text-blue-600 font-black">{selectedLeadIds.length}</strong> record(s)</span>
+                        <button 
+                            type="button"
+                            onClick={() => setIsBulkActionsModalOpen(true)}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-black text-xs transition-all shadow-xs"
+                        >
+                            Action
+                        </button>
+                        <span className="text-slate-300 font-bold">|</span>
+                        <button 
+                            type="button"
+                            onClick={() => setSelectedLeadIds([])}
+                            className="text-xs font-extrabold text-rose-600 hover:underline"
+                        >
+                            Reset
+                        </button>
+                    </div>
                 )}
             </div>
+            )}
 
             {renderPagination('top')}
 
@@ -2105,6 +2192,7 @@ END:VCARD\n`
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-slate-50/80 border-b border-slate-200/60 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                    {isAdminLike && role !== 'agent' && (
                                     <th className="p-4 w-10 text-center">
                                         <input 
                                             type="checkbox"
@@ -2121,6 +2209,7 @@ END:VCARD\n`
                                             className="rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer"
                                         />
                                     </th>
+                                    )}
                                     <th className="p-4">Lead Name & Phone</th>
                                     <th className="p-4">Stage</th>
                                     <th className="p-4">Assigned Agent</th>
@@ -2136,6 +2225,7 @@ END:VCARD\n`
                                     const dnpCount = lead.dnp_count || lead.custom_fields?.dnp_count || 0;
                                     return (
                                         <tr key={lead.id} onClick={() => handleLeadClick(lead)} className="hover:bg-slate-50/70 transition-colors cursor-pointer group">
+                                            {isAdminLike && role !== 'agent' && (
                                             <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
                                                 <input 
                                                     type="checkbox"
@@ -2150,6 +2240,7 @@ END:VCARD\n`
                                                     className="rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer"
                                                 />
                                             </td>
+                                            )}
                                             <td className="p-4">
                                                 <div className="flex flex-col min-w-[160px]">
                                                     <span className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors truncate">{lead.name || 'Unknown Lead'}</span>
@@ -2271,6 +2362,7 @@ END:VCARD\n`
                             
                             {/* ROW 1: Lead Name, Checkbox, Phone & Reopened Badge */}
                             <div className="flex items-start gap-2.5 mb-2 pb-2 border-b border-slate-100">
+                                {isAdminLike && role !== 'agent' && (
                                 <input 
                                     type="checkbox"
                                     checked={selectedLeadIds.includes(lead.id)}
@@ -2284,6 +2376,7 @@ END:VCARD\n`
                                     }}
                                     className="mt-1 rounded text-blue-600 focus:ring-blue-500/20 w-4 h-4 cursor-pointer shrink-0"
                                 />
+                                )}
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                         <h3 className="font-extrabold text-slate-900 text-base sm:text-lg leading-snug group-hover:text-blue-600 break-words" title={lead.name || 'Unknown Lead'}>
@@ -2644,7 +2737,7 @@ END:VCARD\n`
           </div>
       )}
        {/* FLOATING ACTION OVERLAY PANEL */}
-      {selectedLeadIds.length > 0 && (
+      {isAdminLike && role !== 'agent' && selectedLeadIds.length > 0 && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] bg-slate-950/95 backdrop-blur-md px-6 py-4 rounded-full shadow-2xl border border-slate-800 text-white flex items-center gap-6 animate-in slide-in-from-bottom-5 duration-300">
               <span className="text-xs font-black tracking-wider text-slate-300 uppercase">
                   {selectedLeadIds.length} Leads Selected
@@ -2932,6 +3025,254 @@ END:VCARD\n`
          impersonateId={impersonateId}
          onLeadsUpdated={() => fetchLeads(true)}
        />
+
+       {/* BULK ACTIONS & TRANSFER OWNERSHIP MODAL */}
+       {isBulkActionsModalOpen && (
+         <div className="fixed inset-0 z-[99999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
+           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+             
+             {/* Modal Header */}
+             <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+               <div className="flex items-center gap-3">
+                 <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center border border-blue-200 shrink-0">
+                   <ArrowRightLeft size={20} />
+                 </div>
+                 <div>
+                   <div className="flex items-center gap-2">
+                     <h3 className="text-lg font-black text-slate-900">Bulk actions</h3>
+                     <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-extrabold text-xs">
+                       {selectedLeadIds.length} selected
+                     </span>
+                   </div>
+                   <p className="text-xs text-slate-500 font-medium mt-0.5">
+                     {selectedLeadIds.length} records selected · {activeBulkTab === 'transfer' ? 'Transfer' : 'Trash'}
+                   </p>
+                 </div>
+               </div>
+
+               <button
+                 onClick={() => setIsBulkActionsModalOpen(false)}
+                 className="p-2 rounded-xl bg-slate-200/60 text-slate-600 hover:bg-slate-200 transition-colors"
+               >
+                 <X size={18} />
+               </button>
+             </div>
+
+             {/* Modal Body (Sidebar + Content) */}
+             <div className="flex-1 grid grid-cols-1 md:grid-cols-12 min-h-0 overflow-hidden">
+               
+               {/* Left Sidebar */}
+               <div className="md:col-span-4 border-r border-slate-200 bg-slate-50/50 p-4 space-y-6 overflow-y-auto">
+                 <div>
+                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2 px-2">Ownership</span>
+                   <div className="space-y-1">
+                     <button
+                       onClick={() => setActiveBulkTab('transfer')}
+                       className={`w-full text-left p-3 rounded-2xl transition-all border ${
+                         activeBulkTab === 'transfer' 
+                           ? 'bg-blue-50 border-blue-200 text-blue-900 shadow-xs' 
+                           : 'border-transparent text-slate-700 hover:bg-slate-100'
+                       }`}
+                     >
+                       <div className="flex items-center gap-2.5 font-extrabold text-xs">
+                         <ArrowRightLeft size={16} className={activeBulkTab === 'transfer' ? 'text-blue-600' : 'text-slate-400'} />
+                         <span>Transfer</span>
+                       </div>
+                       <p className="text-[11px] text-slate-500 font-medium mt-1 ml-6">Reassign ownership to another teammate</p>
+                     </button>
+
+                     {isAdminLike && (
+                       <button
+                         onClick={() => setActiveBulkTab('trash')}
+                         className={`w-full text-left p-3 rounded-2xl transition-all border ${
+                           activeBulkTab === 'trash' 
+                             ? 'bg-rose-50 border-rose-200 text-rose-900 shadow-xs' 
+                             : 'border-transparent text-slate-700 hover:bg-slate-100'
+                         }`}
+                       >
+                         <div className="flex items-center gap-2.5 font-extrabold text-xs">
+                           <Trash2 size={16} className={activeBulkTab === 'trash' ? 'text-rose-600' : 'text-slate-400'} />
+                           <span>Trash</span>
+                         </div>
+                         <p className="text-[11px] text-slate-500 font-medium mt-1 ml-6">Move selected records to trash</p>
+                       </button>
+                     )}
+                   </div>
+                 </div>
+
+                 <div>
+                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2 px-2">Messaging</span>
+                   <div className="space-y-1">
+                     <button
+                       onClick={() => {
+                         setIsBulkActionsModalOpen(false);
+                         setIsSendTemplateModalOpen(true);
+                       }}
+                       className="w-full text-left p-3 rounded-2xl border border-transparent text-slate-700 hover:bg-slate-100 transition-all"
+                     >
+                       <div className="flex items-center gap-2.5 font-extrabold text-xs">
+                         <MessageCircle size={16} className="text-emerald-600" />
+                         <span>WhatsApp</span>
+                       </div>
+                       <p className="text-[11px] text-slate-500 font-medium mt-1 ml-6">Send WhatsApp from a template</p>
+                     </button>
+                   </div>
+                 </div>
+               </div>
+
+               {/* Main Content Area */}
+               <div className="md:col-span-8 p-6 overflow-y-auto flex flex-col justify-between">
+                 {activeBulkTab === 'transfer' ? (
+                   <div className="space-y-5">
+                     <div>
+                       <h4 className="text-base font-extrabold text-slate-900">Transfer ownership</h4>
+                       <p className="text-xs text-slate-500 font-medium mt-0.5">Move selected records from current owners to a teammate.</p>
+                     </div>
+
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                       {/* FROM Column */}
+                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                         <span className="text-xs font-black text-slate-700 block">From</span>
+                         <p className="text-[11px] text-slate-400 font-medium">Owners represented in your selection</p>
+                         
+                         <div className="relative">
+                           <input
+                             type="text"
+                             placeholder="Search owners"
+                             value={searchOwnerQuery}
+                             onChange={e => setSearchOwnerQuery(e.target.value)}
+                             className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-400 font-medium text-slate-800"
+                           />
+                           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                         </div>
+
+                         <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                           {selectedLeadsOwnerBreakdown
+                             .filter(o => o.name.toLowerCase().includes(searchOwnerQuery.toLowerCase()))
+                             .map((o, idx) => (
+                               <div key={idx} className="flex items-center justify-between text-xs py-1.5 px-2 bg-white rounded-xl border border-slate-200/60 font-extrabold text-slate-700">
+                                 <span className="truncate">{o.name}</span>
+                                 <span className="px-2 py-0.5 bg-slate-100 rounded-md text-[10px] text-slate-500 font-black">{o.count}</span>
+                               </div>
+                             ))}
+                         </div>
+                       </div>
+
+                       {/* TO Column */}
+                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                         <span className="text-xs font-black text-slate-700 block">To</span>
+                         <p className="text-[11px] text-slate-400 font-medium">Select the user who should own these records</p>
+
+                         <div className="relative">
+                           <input
+                             type="text"
+                             placeholder="Search teammates"
+                             value={searchTeammateQuery}
+                             onChange={e => setSearchTeammateQuery(e.target.value)}
+                             className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-400 font-medium text-slate-800"
+                           />
+                           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                         </div>
+
+                         <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                           {team
+                             .filter(m => (m.business_name || m.full_name || 'Teammate').toLowerCase().includes(searchTeammateQuery.toLowerCase()))
+                             .map(member => (
+                               <label key={member.id} className={`flex items-center gap-2 text-xs py-2 px-2.5 rounded-xl border cursor-pointer transition-all ${
+                                 targetTransferAgentId === member.id 
+                                   ? 'bg-blue-50 border-blue-300 text-blue-900 font-extrabold shadow-xs' 
+                                   : 'bg-white border-slate-200/60 text-slate-700 font-bold hover:bg-slate-100'
+                               }`}>
+                                 <input
+                                   type="radio"
+                                   name="targetTeammate"
+                                   value={member.id}
+                                   checked={targetTransferAgentId === member.id}
+                                   onChange={() => setTargetTransferAgentId(member.id)}
+                                   className="text-blue-600 focus:ring-blue-500"
+                                 />
+                                 <span className="truncate">{member.business_name || member.full_name || 'Teammate'}</span>
+                               </label>
+                             ))}
+                         </div>
+
+                         {/* Options Checkboxes */}
+                         <div className="pt-3 border-t border-slate-200/80 space-y-2 text-xs font-bold text-slate-700">
+                           <label className="flex items-center gap-2 cursor-pointer hover:text-slate-900">
+                             <input
+                               type="checkbox"
+                               checked={deleteHistoryOnTransfer}
+                               onChange={e => setDeleteHistoryOnTransfer(e.target.checked)}
+                               className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                             />
+                             <span>Delete history</span>
+                           </label>
+                           <label className="flex items-center gap-2 cursor-pointer hover:text-slate-900">
+                             <input
+                               type="checkbox"
+                               checked={transferWithScheduledActions}
+                               onChange={e => setTransferWithScheduledActions(e.target.checked)}
+                               className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                             />
+                             <span>Transfer with scheduled actions</span>
+                           </label>
+                         </div>
+
+                       </div>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="space-y-4">
+                     <h4 className="text-base font-extrabold text-slate-900 text-rose-600">Trash Selected Leads</h4>
+                     <p className="text-xs text-slate-500 font-medium">Are you sure you want to delete {selectedLeadIds.length} selected lead(s)? This action cannot be undone.</p>
+                   </div>
+                 )}
+               </div>
+
+             </div>
+
+             {/* Modal Footer */}
+             <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+               <button
+                 onClick={() => setIsBulkActionsModalOpen(false)}
+                 className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-extrabold hover:bg-slate-100 transition-colors"
+               >
+                 Cancel
+               </button>
+
+               {activeBulkTab === 'transfer' ? (
+                 <button
+                   disabled={!targetTransferAgentId || isTransferring}
+                   onClick={handleExecuteBulkTransfer}
+                   className="px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-md shadow-blue-600/20"
+                 >
+                   {isTransferring ? (
+                     <>
+                       <Loader2 size={14} className="animate-spin" />
+                       <span>Transferring...</span>
+                     </>
+                   ) : (
+                     <span>Proceed</span>
+                   )}
+                 </button>
+               ) : (
+                 <button
+                   onClick={async () => {
+                     if (confirm(`Delete ${selectedLeadIds.length} lead(s)?`)) {
+                       await handleDeleteSelectedLeads();
+                       setIsBulkActionsModalOpen(false);
+                     }
+                   }}
+                   className="px-6 py-2 bg-rose-600 text-white rounded-xl text-xs font-black hover:bg-rose-700 transition-colors shadow-md shadow-rose-600/20"
+                 >
+                   Delete {selectedLeadIds.length} Leads
+                 </button>
+               )}
+             </div>
+
+           </div>
+         </div>
+       )}
        </div>
      </div>
    )
