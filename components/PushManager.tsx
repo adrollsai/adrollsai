@@ -57,6 +57,18 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
     }
   }, [variant])
 
+  async function syncSubscriptionWithBackend(sub: PushSubscription) {
+    try {
+      await fetch('/api/web-push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub, ownerId }),
+      })
+    } catch (e) {
+      console.warn('Failed to auto-sync push subscription:', e)
+    }
+  }
+
   // This function manually registers custom-sw.js
   async function registerServiceWorker() {
     try {
@@ -68,7 +80,11 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       await navigator.serviceWorker.ready
       
       const sub = await registration.pushManager.getSubscription()
-      if (sub) setSubscription(sub)
+      if (sub) {
+        setSubscription(sub)
+        // Auto-sync this device's subscription with the logged-in user account
+        syncSubscriptionWithBackend(sub)
+      }
     } catch (error) {
       console.error('Service Worker registration failed:', error)
     }
@@ -110,7 +126,7 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       }
       vapidKey = vapidKey.replace(/^['"]|['"]$/g, '').trim();
 
-      // Check if an existing subscription is already active
+      // Get or create subscription
       let sub = await registration.pushManager.getSubscription()
       if (!sub) {
         sub = await registration.pushManager.subscribe({
@@ -122,20 +138,11 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       setSubscription(sub)
       setPermissionState('granted')
 
-      // Sync with backend before confirming success to the user
-      const syncRes = await fetch('/api/web-push/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: sub, ownerId }),
-      })
-
-      if (!syncRes.ok) {
-        const syncData = await syncRes.json().catch(() => ({}))
-        throw new Error(syncData.error || 'Failed to save push subscription to backend')
-      }
+      // Sync with backend for current logged-in user
+      await syncSubscriptionWithBackend(sub)
 
       toast.success("Notifications Enabled!", {
-        description: "You are now subscribed to real-time updates."
+        description: "You are now subscribed to real-time updates on this device."
       })
 
     } catch (error: any) {
@@ -155,16 +162,27 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
   async function triggerBackgroundTest() {
       setLoading(true)
       toast.info("Testing...", { 
-        description: "Close this app/tab NOW! Notification comes instantly." 
+        description: "Sending test alert to all your active devices!" 
       })
 
       try {
-          await fetch('/api/test-notification', {
+          if (subscription) {
+            await syncSubscriptionWithBackend(subscription)
+          }
+
+          const res = await fetch('/api/test-notification', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' }
           })
-      } catch (e) {
-          toast.error("Test failed")
+
+          if (res.ok) {
+            toast.success("Test Sent!", { description: "Notification dispatched to this device." })
+          } else {
+            const data = await res.json().catch(() => ({}))
+            toast.error("Test failed: " + (data.error || "Server error"))
+          }
+      } catch (e: any) {
+          toast.error("Test failed", { description: e.message || "Network error" })
       } finally {
           setLoading(false)
       }

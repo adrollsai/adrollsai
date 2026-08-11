@@ -1961,10 +1961,10 @@ export default function AnalyticsPage() {
                         {/* Call */}
                         <a
                           href={`tel:${lead.phone}`}
-                          className="p-1.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-colors"
+                          className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-xs flex items-center justify-center"
                           title="Direct Call"
                         >
-                          <Phone size={14} />
+                          <Phone size={18} />
                         </a>
                       </div>
                     </div>

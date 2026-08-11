@@ -95,7 +95,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryM
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white border border-slate-200 rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] sm:max-h-[85vh] flex flex-col overflow-hidden">
         
         {/* Modal Header */}
@@ -193,7 +193,14 @@ export default function LeadHistoryModal({ isOpen, onClose, lead }: LeadHistoryM
                       </p>
 
                       {item.description && (
-                        <p className="text-slate-800 whitespace-pre-wrap">{item.description}</p>
+                        <div className="mt-2 pt-2 border-t border-slate-200/80">
+                          <span className="block text-[11px] font-extrabold uppercase text-slate-500 tracking-wider mb-1">
+                            Remark / Details:
+                          </span>
+                          <p className="text-slate-800 text-xs font-semibold leading-relaxed whitespace-pre-wrap bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-2xs">
+                            {item.description}
+                          </p>
+                        </div>
                       )}
 
                       {/* Call Audio Recording Player */}

@@ -65,7 +65,18 @@ export default function TeamPage() {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', targetId).single()
       setCurrentUser(profile)
 
-      // 2. Fetch Team Members (Admin or Agent)
+      // 2. Fetch Team Members via API to get accurate is_disabled status
+      const response = await fetch(`/api/team?adminId=${targetId}`)
+      if (response.ok) {
+        const teamData = await response.json()
+        if (teamData.team) {
+          setTeam(teamData.team)
+          try { localStorage.setItem(cacheKey, JSON.stringify(teamData.team)); } catch (e) {}
+          return
+        }
+      }
+
+      // Fallback: Fetch directly from Supabase
       const { data: members, error } = await supabase
         .from('profiles')
         .select('*')
@@ -88,6 +99,36 @@ export default function TeamPage() {
   useEffect(() => {
     fetchData()
   }, [impersonateId])
+
+  const handleToggleMemberStatus = async (memberId: string, newDisabledState: boolean) => {
+    if (!currentUser?.id) return
+    try {
+      // Optimistic state update
+      setTeam(prev => prev.map(m => m.id === memberId ? { ...m, is_disabled: newDisabledState } : m))
+
+      const response = await fetch('/api/team', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: currentUser.id,
+          agentId: memberId,
+          isDisabled: newDisabledState
+        })
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Failed to update member status')
+      }
+
+      const resData = await response.json()
+      toast.success(resData.message || (newDisabledState ? "Member access disabled" : "Member access enabled"))
+      fetchData()
+    } catch (err: any) {
+      toast.error("Status Update Failed", { description: err.message })
+      fetchData()
+    }
+  }
 
   const handleCreateMember = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -223,13 +264,18 @@ export default function TeamPage() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-bold text-slate-900 truncate">{member.full_name || member.business_name}</h3>
                       <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
                         member.role === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
                       }`}>
                         {member.role}
                       </span>
+                      {member.is_disabled && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-rose-100 text-rose-700">
+                          Disabled
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
                       <Mail size={12} />
@@ -238,17 +284,40 @@ export default function TeamPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                         <span className="flex items-center gap-1"><Calendar size={12} /> Added {new Date(member.created_at).toLocaleDateString()}</span>
                     </div>
-                    <button 
-                        onClick={() => handleDeleteMember(member.id)}
-                        className="text-slate-300 hover:text-red-500 transition-colors p-2"
-                        title="Remove Member"
-                    >
-                        <Trash2 size={16} />
-                    </button>
+                    
+                    <div className="flex items-center gap-3">
+                      {/* Access Toggle */}
+                      <div className="flex items-center gap-2" title={member.is_disabled ? 'Click to enable platform access' : 'Click to disable platform access'}>
+                        <span className={`text-[11px] font-bold ${member.is_disabled ? 'text-rose-500' : 'text-emerald-600'}`}>
+                          {member.is_disabled ? 'Disabled' : 'Active'}
+                        </span>
+                        <button 
+                          type="button"
+                          onClick={() => handleToggleMemberStatus(member.id, !member.is_disabled)}
+                          className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            !member.is_disabled ? 'bg-emerald-500' : 'bg-slate-300'
+                          }`}
+                        >
+                          <span 
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                              !member.is_disabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      <button 
+                          onClick={() => handleDeleteMember(member.id)}
+                          className="text-slate-300 hover:text-red-500 transition-colors p-1.5"
+                          title="Remove Member"
+                      >
+                          <Trash2 size={16} />
+                      </button>
+                    </div>
                 </div>
               </div>
             ))}

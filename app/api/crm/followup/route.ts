@@ -189,13 +189,7 @@ export async function POST(request: Request) {
         ? new Date(nextActionDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
         : 'TBD';
 
-      const pushTitle = `📅 Scheduled Action: ${nextActionType || followupType}`
-      const pushBody = `Scheduled ${nextActionType || followupType} for ${lead.name || 'Lead'} (${lead.phone || 'No Phone'}) on ${formattedActionDate}.${remarks ? ` Note: ${remarks}` : ''}`
-      
-      const targetUserIdsToNotify = Array.from(new Set([assignedTargetId, lead.user_id, user.id].filter(Boolean)))
-      for (const targetId of targetUserIdsToNotify) {
-        await sendPushNotification(targetId, pushTitle, pushBody, `/dashboard/crm`, 'reminder').catch(e => console.error(`[Push Notification Error]:`, e))
-      }
+      // Push notification skipped on manual follow-up update per request
 
       if (assignedProfile?.email) {
         const agentName = assignedProfile.full_name || assignedProfile.business_name || 'Sales Rep'

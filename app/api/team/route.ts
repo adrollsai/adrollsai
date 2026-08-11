@@ -256,3 +256,139 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: error.message || "Failed to remove account" }, { status: 500 });
   }
 }
+
+// --- FETCH TEAM MEMBERS WITH ACCESS STATUS ---
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const adminId = searchParams.get('adminId');
+
+    if (!adminId) {
+      return NextResponse.json({ error: 'Missing adminId parameter' }, { status: 400 });
+    }
+
+    // 1. Fetch team members from profiles
+    const { data: members, error: pErr } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('parent_id', adminId)
+      .in('role', ['admin', 'agent'])
+      .order('created_at', { ascending: false });
+
+    if (pErr) throw pErr;
+
+    // 2. Fetch Auth Users directory to resolve is_disabled / banned_until status
+    let authUsersMap: Record<string, any> = {};
+    try {
+      let page = 1;
+      while (true) {
+        const { data: { users }, error: uErr } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+        if (uErr || !users || users.length === 0) break;
+        users.forEach(u => {
+          authUsersMap[u.id] = u;
+        });
+        if (users.length < 1000) break;
+        page++;
+      }
+    } catch (e) {
+      console.warn('[TEAM GET API] Auth listUsers lookup warning:', e);
+    }
+
+    const finalMembers = (members || []).map(m => {
+      const authUser = authUsersMap[m.id];
+      const isBannedInAuth = !!(authUser?.banned_until && new Date(authUser.banned_until) > new Date());
+      const isMetaDisabled = authUser?.user_metadata?.is_disabled === true;
+      const isDisabled = m.is_disabled === true || isBannedInAuth || isMetaDisabled;
+
+      return {
+        ...m,
+        is_disabled: isDisabled
+      };
+    });
+
+    return NextResponse.json({ success: true, team: finalMembers });
+  } catch (error: any) {
+    console.error("Team GET API Error:", error);
+    return NextResponse.json({ error: error.message || "Failed to fetch team" }, { status: 500 });
+  }
+}
+
+// --- TOGGLE MEMBER ACCESS (ENABLE / DISABLE) ---
+export async function PATCH(req: Request) {
+  try {
+    const { adminId, agentId, isDisabled } = await req.json();
+
+    if (!adminId || !agentId || typeof isDisabled !== 'boolean') {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    // 1. Verify authority
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('parent_id, agency_id, role')
+      .eq('id', agentId)
+      .single();
+
+    const { data: adminProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('role')
+      .eq('id', adminId)
+      .single();
+
+    const isSuperAdmin = adminProfile?.role === 'super_admin';
+    const isAuthorized = isSuperAdmin || profile?.parent_id === adminId || profile?.agency_id === adminId;
+
+    if (!isAuthorized) {
+      return NextResponse.json({ error: 'Unauthorized to modify access for this account' }, { status: 403 });
+    }
+
+    // 2. Fetch existing user auth data
+    const { data: authUser, error: authFetchErr } = await supabaseAdmin.auth.admin.getUserById(agentId);
+    if (authFetchErr || !authUser?.user) {
+      return NextResponse.json({ error: 'User auth account not found' }, { status: 404 });
+    }
+
+    const currentMetadata = authUser.user.user_metadata || {};
+
+    // 3. Update Auth Ban status and metadata
+    if (isDisabled) {
+      const { error: banErr } = await supabaseAdmin.auth.admin.updateUserById(agentId, {
+        ban_duration: '876000h',
+        user_metadata: {
+          ...currentMetadata,
+          is_disabled: true
+        }
+      });
+      if (banErr) console.error('[TEAM PATCH] Auth ban error:', banErr);
+    } else {
+      const { error: unbanErr } = await supabaseAdmin.auth.admin.updateUserById(agentId, {
+        ban_duration: 'none',
+        user_metadata: {
+          ...currentMetadata,
+          is_disabled: false
+        }
+      });
+      if (unbanErr) console.error('[TEAM PATCH] Auth unban error:', unbanErr);
+    }
+
+    // 4. Update profiles table status
+    try {
+      await supabaseAdmin
+        .from('profiles')
+        .update({ is_disabled: isDisabled })
+        .eq('id', agentId);
+    } catch (dbErr) {
+      console.warn('[TEAM PATCH] Profile DB update warning:', dbErr);
+    }
+
+    return NextResponse.json({
+      success: true,
+      agentId,
+      isDisabled,
+      message: isDisabled ? 'Member account has been disabled.' : 'Member account access has been enabled.'
+    });
+  } catch (error: any) {
+    console.error("Team PATCH API Error:", error);
+    return NextResponse.json({ error: error.message || "Failed to update member status" }, { status: 500 });
+  }
+}

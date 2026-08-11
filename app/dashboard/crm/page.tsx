@@ -127,6 +127,7 @@ export default function CRMPage() {
   const [activeMediaModal, setActiveMediaModal] = useState<any>(null)
 
   // --- FILTER STATE ---
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest')
   const [activeStage, setActiveStageState] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('crm_stage')
@@ -134,9 +135,9 @@ export default function CRMPage() {
       if (saved === 'New') return 'New Lead'
       if (saved === 'Appointment booked') return 'Appointment Booked'
       if (saved === 'Appointment done') return 'Visit Done'
-      return saved || 'All Leads'
+      return saved || 'New Lead'
     }
-    return 'All Leads'
+    return 'New Lead'
   })
   
   const setActiveStage = (stage: string) => {
@@ -1639,7 +1640,7 @@ END:VCARD\n`
     return counts
   }, [leadsMatchingFilters])
 
-  // 3. Final filtered list including flexible pipeline stage matching and sorted by newest first
+  // 3. Final filtered list including flexible pipeline stage matching and date sorting
   const filteredLeads = useMemo(() => {
     const list = leadsMatchingFilters.filter(l => {
       if (searchQuery.trim() !== '') return true
@@ -1649,9 +1650,9 @@ END:VCARD\n`
     return list.sort((a, b) => {
       const timeA = new Date(a.facebook_created_at || a.created_at).getTime()
       const timeB = new Date(b.facebook_created_at || b.created_at).getTime()
-      return timeB - timeA
+      return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA
     })
-  }, [leadsMatchingFilters, activeStage, searchQuery])
+  }, [leadsMatchingFilters, activeStage, searchQuery, sortOrder])
 
   const totalFilteredCount = filteredLeads.length
   const totalPages = Math.max(1, Math.ceil(totalFilteredCount / leadsPerPage))
@@ -1920,6 +1921,15 @@ END:VCARD\n`
                             <List size={15} /> List Table
                         </button>
                     </div>
+
+                    <select
+                        value={sortOrder}
+                        onChange={(e) => setSortOrder(e.target.value as 'newest' | 'oldest')}
+                        className="bg-white border border-slate-200/80 text-slate-800 font-extrabold text-xs rounded-2xl px-3.5 py-3.5 shadow-xs focus:outline-none focus:border-blue-500 cursor-pointer shrink-0"
+                    >
+                        <option value="newest">📅 Sort: Newest First</option>
+                        <option value="oldest">📅 Sort: Oldest First</option>
+                    </select>
 
                     <button 
                         onClick={() => setShowFilters(!showFilters)}
@@ -2365,16 +2375,16 @@ END:VCARD\n`
                                             <MessageCircle size={14} className={lead.whatsapp_enabled === false ? 'line-through opacity-70' : ''} />
                                         </button>
                                         <a 
-                                            href={`tel:${formatCallPhone(displayPhone)}`} 
-                                            onClick={e => { 
-                                                e.stopPropagation(); 
-                                                setUpdateFollowupLead(lead);
-                                            }} 
-                                            className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-colors border border-emerald-200 shadow-xs"
-                                            title="Call Lead & Log Outcome"
-                                        >
-                                            <Phone size={14} />
-                                        </a>
+                                             href={`tel:${formatCallPhone(displayPhone)}`} 
+                                             onClick={e => { 
+                                                 e.stopPropagation(); 
+                                                 setUpdateFollowupLead(lead);
+                                             }} 
+                                             className="p-2.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl transition-colors shadow-xs flex items-center justify-center"
+                                             title="Call Lead & Log Outcome"
+                                         >
+                                             <Phone size={18} />
+                                         </a>
                                         {userRole !== 'agent' && (
                                             <button 
                                                 onClick={(e) => handleDeleteLead(lead.id, e)} 

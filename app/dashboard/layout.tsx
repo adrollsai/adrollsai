@@ -55,9 +55,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Check user's profile
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms')
+        .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms, is_disabled')
         .eq('id', session.user.id)
         .single()
+
+      // Check if user account is disabled by admin
+      const isAccountDisabled = userProfile?.is_disabled === true || session.user.user_metadata?.is_disabled === true
+      if (isAccountDisabled) {
+        await supabase.auth.signOut()
+        router.push('/login?disabled=true')
+        return
+      }
 
       // Resolve Primary User for subscription check
       let subscriptionStatus = userProfile?.subscription_status?.toLowerCase() || ''

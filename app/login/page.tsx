@@ -1,15 +1,17 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useMemo, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight, CheckCircle2, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
+import Image from 'next/image'
 
 type AuthMode = 'login' | 'signup' | 'forgot_password'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
   
   const [mode, setModeState] = useState<AuthMode>('login')
@@ -20,6 +22,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [agreed, setAgreed] = useState(false)
+
+  useEffect(() => {
+    if (searchParams.get('disabled') === 'true') {
+      setError('Your account has been disabled by your administrator. Please contact your admin for access.')
+    }
+  }, [searchParams])
 
   const switchMode = (newMode: AuthMode) => {
     setModeState(newMode)
@@ -44,7 +52,7 @@ export default function LoginPage() {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard/analytics`,
             data: {
               accepted_terms: true,
             }
@@ -68,20 +76,36 @@ export default function LoginPage() {
         
         if (signUpData?.session) {
           toast.success("Account created successfully!")
-          router.push('/dashboard')
+          router.push('/dashboard/analytics')
         } else {
           setSuccessMessage('Account created! Please check your email to verify your account.')
           toast.success("Verification email sent!")
         }
         
       } else if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data: authData, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
-        if (error) throw error
+        if (error) {
+          const errMsg = error.message.toLowerCase()
+          if (errMsg.includes('banned') || errMsg.includes('disabled')) {
+            throw new Error('Your account has been disabled by your administrator. Please contact your admin for access.')
+          }
+          throw error
+        }
+
+        if (authData?.user) {
+          const isMetaDisabled = authData.user.user_metadata?.is_disabled === true
+          const { data: prof } = await supabase.from('profiles').select('is_disabled').eq('id', authData.user.id).single()
+          if (isMetaDisabled || prof?.is_disabled) {
+            await supabase.auth.signOut()
+            throw new Error('Your account has been disabled by your administrator. Please contact your admin for access.')
+          }
+        }
+
         toast.success("Welcome back!")
-        router.push('/dashboard')
+        router.push('/dashboard/analytics')
         
       } else if (mode === 'forgot_password') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -108,7 +132,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard/analytics`,
         }
       })
       if (error) throw error
@@ -127,9 +151,12 @@ export default function LoginPage() {
         
         <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto mb-5 relative drop-shadow-xl hover:scale-105 transition-transform duration-300">
-                <img 
+                <Image 
                     src="/icon-512x512.png" 
                     alt="Nobogent AI Logo" 
+                    width={80}
+                    height={80}
+                    priority
                     className="w-full h-full object-contain rounded-2xl" 
                 />
             </div>
@@ -320,5 +347,17 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-4">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }

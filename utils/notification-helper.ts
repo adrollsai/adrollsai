@@ -44,10 +44,28 @@ export async function sendPushNotification(
 ) {
   console.log(`[PUSH] Looking for tokens for User: ${userId}`);
 
-  const { data: subscriptions } = await getSupabaseAdmin()
+  // Fetch profile to include agency/parent subscriptions if any
+  const { data: userProfile } = await getSupabaseAdmin()
+    .from('profiles')
+    .select('parent_id, agency_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  const parentId = userProfile?.parent_id || userProfile?.agency_id;
+
+  const { data: rawSubscriptions } = await getSupabaseAdmin()
     .from('push_subscriptions')
     .select('*')
-    .or(`user_id.eq.${userId},catalog_owner_id.eq.${userId}`);
+    .or(`user_id.eq.${userId},catalog_owner_id.eq.${userId}${parentId ? `,user_id.eq.${parentId},catalog_owner_id.eq.${parentId}` : ''}`);
+
+  // Deduplicate subscriptions by endpoint
+  const subscriptionsMap = new Map();
+  (rawSubscriptions || []).forEach((sub: any) => {
+    if (sub.endpoint && !subscriptionsMap.has(sub.endpoint)) {
+      subscriptionsMap.set(sub.endpoint, sub);
+    }
+  });
+  const subscriptions = Array.from(subscriptionsMap.values());
 
   if (!ensureVapidDetails()) {
     console.warn(`[PUSH] Skipping push dispatch: VAPID details not configured.`);
