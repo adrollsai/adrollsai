@@ -13,6 +13,8 @@ export async function middleware(request: NextRequest) {
   
   // Safe list for platform-owned domains
   const isPlatformDomain = hostname.includes(mainDomain) || 
+                           hostname.includes('nobogent.com') ||
+                           hostname.includes('nobogent') ||
                            hostname.includes('localhost') || 
                            hostname.includes('vercel.app') || 
                            hostname.includes('ngrok-free.dev');

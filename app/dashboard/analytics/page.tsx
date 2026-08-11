@@ -136,7 +136,9 @@ export default function AnalyticsPage() {
 
   // Sub-Tab Navigation
   const [activeTab, setActiveTab] = useState<'analytics' | 'action_mgr' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>('analytics')
-  const [actionStatusFilter, setActionStatusFilter] = useState<'pending' | 'schedule' | 'today'>('today')
+  const [showPending, setShowPending] = useState(true)
+  const [showSchedule, setShowSchedule] = useState(true)
+  const [showToday, setShowToday] = useState(true)
 
   // Data State
   const [leads, setLeads] = useState<any[]>([])
@@ -167,6 +169,23 @@ export default function AnalyticsPage() {
   const fetchAnalytics = async (forceRefresh = false) => {
     if (forceRefresh) setRefreshing(true)
     else setLoading(true)
+
+    const cacheKey = `analytics_cache_${duration}_${selectedAgentId || 'all'}_${impersonateId || 'none'}`
+    if (!forceRefresh && typeof window !== 'undefined') {
+      const cached = sessionStorage.getItem(cacheKey)
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached)
+          if (parsed && ((parsed.leads && parsed.leads.length > 0) || (parsed.team && parsed.team.length > 0))) {
+            setLeads(parsed.leads || [])
+            setChats(parsed.chats || [])
+            setMessages(parsed.messages || [])
+            setTeam(parsed.team || [])
+            setLoading(false)
+          }
+        } catch (e) {}
+      }
+    }
 
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -202,6 +221,22 @@ export default function AnalyticsPage() {
         setChats(data.chats || [])
         setMessages(data.messages || [])
         setTeam(data.team || [])
+        if (typeof window !== 'undefined') {
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify({
+              leads: data.leads || [],
+              chats: data.chats || [],
+              messages: data.messages || [],
+              team: data.team || []
+            }))
+          } catch (storageErr) {
+            try {
+              Object.keys(sessionStorage).forEach(k => {
+                if (k.startsWith('analytics_cache_')) sessionStorage.removeItem(k)
+              })
+            } catch (e) {}
+          }
+        }
       } else {
         toast.error('Failed to sync metrics', { description: data.error || 'Server error' })
       }
@@ -497,10 +532,39 @@ export default function AnalyticsPage() {
       { key: 'Home Meeting', label: 'Home Meeting' }
     ]
 
-    let rows = salesReps.map(rep => {
-      const repLeads = leads.filter(l => rep.id === 'unassigned' ? (!l.assigned_to && !l.user_id) : (l.assigned_to === rep.id || l.user_id === rep.id))
-      
-      const targetLeads = repLeads.filter(l => {
+    let rows = allSalesReps.map(rep => {
+      const repLeadsRaw = leads.filter(l => rep.id === 'unassigned' ? (!l.assigned_to && !l.user_id) : (l.assigned_to === rep.id || l.user_id === rep.id))
+
+      // Deduplicate by ID and phone number
+      const seenIds = new Set()
+      const seenPhones = new Set()
+      const repLeads = repLeadsRaw.filter(l => {
+        if (seenIds.has(l.id)) return false
+        seenIds.add(l.id)
+        if (l.phone) {
+          const cleanP = l.phone.replace(/\D/g, '').slice(-10)
+          if (cleanP.length === 10) {
+            if (seenPhones.has(cleanP)) return false
+            seenPhones.add(cleanP)
+          }
+        }
+        return true
+      })
+
+      const counts: Record<string, { pending: number; schedule: number; today: number; total: number }> = {}
+      const typeLeads: Record<string, { pending: any[]; schedule: any[]; today: any[] }> = {}
+
+      actionTypes.forEach(t => {
+        counts[t.key] = { pending: 0, schedule: 0, today: 0, total: 0 }
+        typeLeads[t.key] = { pending: [], schedule: [], today: [] }
+      })
+
+      let totalPending = 0, totalSchedule = 0, totalToday = 0
+      const totalPendingLeads: any[] = []
+      const totalScheduleLeads: any[] = []
+      const totalTodayLeads: any[] = []
+
+      repLeads.forEach(l => {
         let cf: any = l.custom_fields
         if (typeof cf === 'string') {
           try { cf = JSON.parse(cf) } catch (e) {}
@@ -509,52 +573,67 @@ export default function AnalyticsPage() {
         const lastFollowupDateStr = getLocalDateStr(cf?.last_followup_at || l.last_call_at)
         const nextActionDateStr = getLocalDateStr(l.next_followup || cf?.next_action_date || l.booked_time)
 
-        if (actionStatusFilter === 'today') {
-          return nextActionDateStr === todayStr
-        } else if (actionStatusFilter === 'schedule') {
-          return !!nextActionDateStr && nextActionDateStr > todayStr
-        } else if (actionStatusFilter === 'pending') {
-          // Show in Pending ONLY if a scheduled followup date in the past was missed AND followup remark was NOT updated on or after that date
-          if (!nextActionDateStr || nextActionDateStr >= todayStr) return false
-          if (['Closed', 'Lost/NI', 'Deal/Token'].includes(l.status || l.pipeline_stage)) return false
-          if (lastFollowupDateStr && lastFollowupDateStr >= nextActionDateStr) return false
-          return true
+        if (!nextActionDateStr) return
+
+        const rawActType = (cf?.next_action_type || l.next_action_type || cf?.last_followup_type || l.last_followup_type || 'Call').trim()
+        let actTypeKey = 'Call'
+        if (rawActType.toLowerCase().includes('revisit')) actTypeKey = 'Revisit'
+        else if (rawActType.toLowerCase().includes('closing')) actTypeKey = 'Closing Meeting'
+        else if (rawActType.toLowerCase().includes('home')) actTypeKey = 'Home Meeting'
+        else if (rawActType.toLowerCase().includes('visit')) actTypeKey = 'Visit'
+
+        const isToday = nextActionDateStr === todayStr
+        const isSchedule = nextActionDateStr > todayStr
+        
+        let isPending = false;
+        if (nextActionDateStr < todayStr) {
+          if (!['Closed', 'Lost/NI', 'Deal/Token'].includes(l.status || l.pipeline_stage)) {
+            if (!lastFollowupDateStr || lastFollowupDateStr < nextActionDateStr) {
+              isPending = true
+            }
+          }
         }
-        return true
+
+        if (isToday) {
+          counts[actTypeKey].today++
+          counts[actTypeKey].total++
+          typeLeads[actTypeKey].today.push(l)
+          totalToday++
+          totalTodayLeads.push(l)
+        } else if (isSchedule) {
+          counts[actTypeKey].schedule++
+          counts[actTypeKey].total++
+          typeLeads[actTypeKey].schedule.push(l)
+          totalSchedule++
+          totalScheduleLeads.push(l)
+        } else if (isPending) {
+          counts[actTypeKey].pending++
+          counts[actTypeKey].total++
+          typeLeads[actTypeKey].pending.push(l)
+          totalPending++
+          totalPendingLeads.push(l)
+        }
       })
 
-      const typeLeads: Record<string, any[]> = {
-        'Call': [],
-        'Visit': [],
-        'Revisit': [],
-        'Closing Meeting': [],
-        'Home Meeting': []
+      const repTotals = {
+        pending: totalPending,
+        schedule: totalSchedule,
+        today: totalToday,
+        grandTotal: totalPending + totalSchedule + totalToday
       }
 
-      targetLeads.forEach(l => {
-        let cf: any = l.custom_fields
-        if (typeof cf === 'string') {
-          try { cf = JSON.parse(cf) } catch (e) {}
+      return {
+        rep,
+        counts,
+        typeLeads,
+        totals: repTotals,
+        totalLeads: {
+          pending: totalPendingLeads,
+          schedule: totalScheduleLeads,
+          today: totalTodayLeads
         }
-        const actType = (cf?.next_action_type || l.next_action_type || cf?.last_followup_type || l.last_followup_type || 'Call').trim()
-        if (actType.toLowerCase().includes('revisit')) typeLeads['Revisit'].push(l)
-        else if (actType.toLowerCase().includes('closing')) typeLeads['Closing Meeting'].push(l)
-        else if (actType.toLowerCase().includes('home')) typeLeads['Home Meeting'].push(l)
-        else if (actType.toLowerCase().includes('visit')) typeLeads['Visit'].push(l)
-        else typeLeads['Call'].push(l)
-      })
-
-      const counts: Record<string, number> = {
-        'Call': typeLeads['Call'].length,
-        'Visit': typeLeads['Visit'].length,
-        'Revisit': typeLeads['Revisit'].length,
-        'Closing Meeting': typeLeads['Closing Meeting'].length,
-        'Home Meeting': typeLeads['Home Meeting'].length,
-        'total': targetLeads.length
       }
-
-      return { rep, counts, typeLeads, targetLeads }
-    }).filter(r => r.rep.id !== 'unassigned' || r.counts.total > 0)
+    }).filter(r => r.rep.id !== 'unassigned' || r.totals.grandTotal > 0)
 
     // For team members / agents, show ONLY their own stats card!
     if (!isAdminLike && profile?.id) {
@@ -568,17 +647,8 @@ export default function AnalyticsPage() {
       rows = rows.filter(r => r.rep.name.toLowerCase().includes(q))
     }
 
-    const totals: Record<string, number> = { total: 0 }
-    actionTypes.forEach(t => totals[t.key] = 0)
-    rows.forEach(r => {
-      totals.total += r.counts.total
-      actionTypes.forEach(t => {
-        totals[t.key] += r.counts[t.key] || 0
-      })
-    })
-
-    return { rows, totals, actionTypes }
-  }, [leads, allSalesReps, actionStatusFilter, isAdminLike, profile?.id, selectedAgentId, searchQuery])
+    return { rows, actionTypes }
+  }, [leads, allSalesReps, isAdminLike, profile?.id, selectedAgentId, searchQuery])
 
   // --- LEADERBOARD COMPUTATIONS (WorkVeu Screenshot 3) ---
   const followupBoardRows = useMemo(() => {
@@ -1189,36 +1259,41 @@ export default function AnalyticsPage() {
                   )}
                 </div>
 
-                {/* Filter Checkboxes / Buttons (Pending, Schedule, Today) */}
-                <div className="flex items-center gap-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/60 self-start md:self-auto">
-                  <button
-                    onClick={() => setActionStatusFilter('pending')}
-                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
-                      actionStatusFilter === 'pending' ? 'bg-amber-500 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <Clock size={13} /> Pending
-                  </button>
-                  <button
-                    onClick={() => setActionStatusFilter('schedule')}
-                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
-                      actionStatusFilter === 'schedule' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <Calendar size={13} /> Schedule
-                  </button>
-                  <button
-                    onClick={() => setActionStatusFilter('today')}
-                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
-                      actionStatusFilter === 'today' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <CheckSquare size={13} /> Today
-                  </button>
+                {/* Filter Checkboxes (Pending, Schedule, Today) */}
+                <div className="flex items-center gap-3 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-xs self-start md:self-auto font-extrabold text-xs">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-amber-700 hover:text-amber-800">
+                    <input 
+                      type="checkbox" 
+                      checked={showPending} 
+                      onChange={e => setShowPending(e.target.checked)} 
+                      className="rounded text-amber-500 focus:ring-amber-400 w-4 h-4 cursor-pointer"
+                    />
+                    <span>Pending</span>
+                  </label>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer text-purple-700 hover:text-purple-800">
+                    <input 
+                      type="checkbox" 
+                      checked={showSchedule} 
+                      onChange={e => setShowSchedule(e.target.checked)} 
+                      className="rounded text-purple-600 focus:ring-purple-400 w-4 h-4 cursor-pointer"
+                    />
+                    <span>Schedule</span>
+                  </label>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer text-emerald-700 hover:text-emerald-800">
+                    <input 
+                      type="checkbox" 
+                      checked={showToday} 
+                      onChange={e => setShowToday(e.target.checked)} 
+                      className="rounded text-emerald-600 focus:ring-emerald-400 w-4 h-4 cursor-pointer"
+                    />
+                    <span>Today</span>
+                  </label>
                 </div>
               </div>
 
-              {/* Employee Cards Grid (Matching Screenshot 1) */}
+              {/* Employee Cards Grid (Matching Screenshot from Previous CRM) */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {actionManagerMatrix.rows.map(row => (
                   <div key={row.rep.id} className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
@@ -1230,51 +1305,84 @@ export default function AnalyticsPage() {
                       </div>
 
                       <div className="space-y-1 text-sm">
-                        <div className="flex justify-between items-center py-1.5 px-3 text-xs font-extrabold text-slate-400 border-b border-slate-100">
-                          <span>Type</span>
-                          <span>T</span>
+                        {/* Table Header */}
+                        <div className="grid grid-cols-4 items-center py-1.5 px-3 text-xs font-black text-slate-400 border-b border-slate-100">
+                          <span className="col-span-1">Type</span>
+                          <div className="col-span-3 grid grid-cols-3 text-center font-extrabold">
+                            {showPending && <span className="text-amber-600 font-black">P</span>}
+                            {showSchedule && <span className="text-purple-600 font-black">S</span>}
+                            {showToday && <span className="text-emerald-600 font-black">T</span>}
+                          </div>
                         </div>
 
+                        {/* Action Type Rows */}
                         {actionManagerMatrix.actionTypes.map(t => {
-                          const count = row.counts[t.key] || 0
+                          const c = row.counts[t.key]
+                          const leadsGroup = row.typeLeads[t.key]
                           return (
-                            <div
-                              key={t.key}
-                              onClick={() => {
-                                if (count > 0) {
-                                  openLeadsDrilldown(
-                                    `${row.rep.name} - ${t.label}`,
-                                    `${actionStatusFilter.toUpperCase()} ${t.label} Actions (${count})`,
-                                    row.typeLeads[t.key] || []
-                                  )
-                                }
-                              }}
-                              className={`flex justify-between items-center py-2.5 px-3 rounded-xl transition-all cursor-pointer ${
-                                count > 0 ? 'hover:bg-blue-50/70 text-slate-800 font-bold' : 'text-slate-400'
-                              }`}
-                            >
-                              <span className="text-sm font-bold text-slate-700">{t.label}</span>
-                              <span className={`text-sm font-black ${count > 0 ? 'text-blue-600' : 'text-slate-400'}`}>{count}</span>
+                            <div key={t.key} className="grid grid-cols-4 items-center py-2.5 px-3 rounded-xl hover:bg-slate-50 transition-all border-b border-slate-50">
+                              <span className="col-span-1 text-xs font-bold text-slate-700 truncate" title={t.label}>{t.label}</span>
+                              <div className="col-span-3 grid grid-cols-3 text-center text-xs font-black">
+                                {showPending && (
+                                  <span 
+                                    onClick={() => c.pending > 0 && openLeadsDrilldown(`${row.rep.name} - Pending ${t.label}`, `Pending ${t.label} Actions (${c.pending})`, leadsGroup.pending)} 
+                                    className={`py-1 rounded-md transition-all ${c.pending > 0 ? 'text-amber-600 font-extrabold cursor-pointer hover:bg-amber-100 hover:scale-110' : 'text-slate-300 font-normal'}`}
+                                  >
+                                    {c.pending}
+                                  </span>
+                                )}
+                                {showSchedule && (
+                                  <span 
+                                    onClick={() => c.schedule > 0 && openLeadsDrilldown(`${row.rep.name} - Scheduled ${t.label}`, `Scheduled ${t.label} Actions (${c.schedule})`, leadsGroup.schedule)} 
+                                    className={`py-1 rounded-md transition-all ${c.schedule > 0 ? 'text-purple-600 font-extrabold cursor-pointer hover:bg-purple-100 hover:scale-110' : 'text-slate-300 font-normal'}`}
+                                  >
+                                    {c.schedule}
+                                  </span>
+                                )}
+                                {showToday && (
+                                  <span 
+                                    onClick={() => c.today > 0 && openLeadsDrilldown(`${row.rep.name} - Today ${t.label}`, `Today's ${t.label} Actions (${c.today})`, leadsGroup.today)} 
+                                    className={`py-1 rounded-md transition-all ${c.today > 0 ? 'text-emerald-600 font-extrabold cursor-pointer hover:bg-emerald-100 hover:scale-110' : 'text-slate-300 font-normal'}`}
+                                  >
+                                    {c.today}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )
                         })}
                       </div>
                     </div>
 
-                    <div
-                      onClick={() => {
-                        if (row.counts.total > 0) {
-                          openLeadsDrilldown(
-                            `${row.rep.name} - Total Actions`,
-                            `${actionStatusFilter.toUpperCase()} Total Actions (${row.counts.total})`,
-                            row.targetLeads
-                          )
-                        }
-                      }}
-                      className="flex justify-between items-center py-3 px-4 rounded-2xl bg-slate-50 border border-slate-200/80 font-black text-slate-900 mt-5 cursor-pointer hover:bg-blue-50 hover:border-blue-200 transition-colors"
-                    >
-                      <span className="text-sm font-black">Total</span>
-                      <span className="text-lg font-black text-blue-600">{row.counts.total}</span>
+                    {/* Total Row */}
+                    <div className="grid grid-cols-4 items-center py-3 px-4 rounded-2xl bg-slate-50 border border-slate-200/80 font-black text-slate-900 mt-5">
+                      <span className="col-span-1 text-xs uppercase font-black tracking-wider text-slate-800">Total</span>
+                      <div className="col-span-3 grid grid-cols-3 text-center text-sm font-black">
+                        {showPending && (
+                          <span 
+                            onClick={() => row.totals.pending > 0 && openLeadsDrilldown(`${row.rep.name} - All Pending Actions`, `Total ${row.totals.pending} Pending Actions`, row.totalLeads.pending)}
+                            className={`py-0.5 rounded-md ${row.totals.pending > 0 ? 'text-amber-600 cursor-pointer hover:bg-amber-100' : 'text-slate-400'}`}
+                          >
+                            {row.totals.pending}
+                          </span>
+                        )}
+                        {showSchedule && (
+                          <span 
+                            onClick={() => row.totals.schedule > 0 && openLeadsDrilldown(`${row.rep.name} - All Scheduled Actions`, `Total ${row.totals.schedule} Scheduled Actions`, row.totalLeads.schedule)}
+                            className={`py-0.5 rounded-md ${row.totals.schedule > 0 ? 'text-purple-600 cursor-pointer hover:bg-purple-100' : 'text-slate-400'}`}
+                          >
+                            {row.totals.schedule}
+                          </span>
+                        )}
+                        {showToday && (
+                          <span 
+                            onClick={() => row.totals.today > 0 && openLeadsDrilldown(`${row.rep.name} - All Today Actions`, `Total ${row.totals.today} Today Actions`, row.totalLeads.today)}
+                            className={`py-0.5 rounded-md ${row.totals.today > 0 ? 'text-emerald-600 cursor-pointer hover:bg-emerald-100' : 'text-slate-400'}`}
+                          >
+                            {row.totals.today}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                   </div>
@@ -1910,63 +2018,121 @@ export default function AnalyticsPage() {
 
                 return filtered.map((lead: any) => {
                   const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
+
+                  let cf: any = lead.custom_fields
+                  if (typeof cf === 'string') {
+                    try { cf = JSON.parse(cf) } catch (e) {}
+                  }
+
+                  let lastRemark = (cf?.last_followup_remark || '').trim()
+                  if (!lastRemark && lead.notes && lead.notes.includes('[Last Remarks]:')) {
+                    lastRemark = lead.notes.split('[Last Remarks]:')[1]?.trim() || ''
+                  }
+                  
+                  const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
+                  const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
+                  const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || '').trim()
+
+                  let nextActionFormatted = ''
+                  if (rawNextDate) {
+                    try {
+                      const d = new Date(rawNextDate)
+                      if (!isNaN(d.getTime())) {
+                        nextActionFormatted = d.toLocaleString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true
+                        })
+                      }
+                    } catch (e) {}
+                  }
+
                   return (
-                    <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-blue-50/30 transition-colors">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-extrabold text-sm text-slate-900">{lead.name || 'Unknown Prospect'}</h4>
-                          <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-extrabold text-[10px]">
-                            {lead.pipeline_stage || 'New'}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 font-bold text-[10px]">
-                            Rep: {assignedRep}
-                          </span>
+                    <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200 rounded-2xl flex flex-col justify-between gap-3 hover:bg-blue-50/30 transition-colors">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-extrabold text-sm text-slate-900">{lead.name || 'Unknown Prospect'}</h4>
+                            <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-extrabold text-[10px]">
+                              {lead.pipeline_stage || 'New'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 font-bold text-[10px]">
+                              Rep: {assignedRep}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-slate-600 flex items-center gap-2">
+                            <span>📞 {lead.phone || 'No phone'}</span>
+                            {lead.ad_name && <span className="text-slate-400">• 📢 {lead.ad_name}</span>}
+                          </p>
                         </div>
-                        <p className="text-xs font-bold text-slate-600 flex items-center gap-2">
-                          <span>📞 {lead.phone || 'No phone'}</span>
-                          {lead.ad_name && <span className="text-slate-400">• 📢 {lead.ad_name}</span>}
-                        </p>
+
+                        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                          {/* History Button */}
+                          <button
+                            onClick={() => setHistoryLead(lead)}
+                            className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-black hover:bg-slate-100 shadow-xs flex items-center gap-1"
+                          >
+                            <History size={13} className="text-blue-600" />
+                            <span>History</span>
+                          </button>
+
+                          {/* Followup Button */}
+                          <button
+                            onClick={() => setFollowupLead(lead)}
+                            className="px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 shadow-xs flex items-center gap-1"
+                          >
+                            <RefreshCw size={13} />
+                            <span>Followup</span>
+                          </button>
+
+                          {/* WhatsApp Auto */}
+                          <a
+                            href={`https://wa.me/${(lead.phone || '').replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors"
+                            title="WhatsApp Chat"
+                          >
+                            <MessageSquare size={14} />
+                          </a>
+
+                          {/* Call */}
+                          <a
+                            href={`tel:${lead.phone}`}
+                            className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-xs flex items-center justify-center"
+                            title="Direct Call"
+                          >
+                            <Phone size={18} />
+                          </a>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                        {/* History Button */}
-                        <button
-                          onClick={() => setHistoryLead(lead)}
-                          className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-black hover:bg-slate-100 shadow-xs flex items-center gap-1"
-                        >
-                          <History size={13} className="text-blue-600" />
-                          <span>History</span>
-                        </button>
+                      {/* Remarks & Scheduled Next Action Details */}
+                      {(lastRemark || nextActionFormatted) && (
+                        <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
+                          {lastRemark && (
+                            <div className="bg-amber-50/80 border border-amber-200/80 p-2.5 rounded-xl text-xs text-amber-950 font-medium leading-relaxed">
+                              <span className="font-extrabold text-amber-800 uppercase text-[10px] tracking-wider block mb-0.5">Last Followup Remark:</span>
+                              <span className="whitespace-pre-wrap">{lastRemark}</span>
+                            </div>
+                          )}
 
-                        {/* Followup Button */}
-                        <button
-                          onClick={() => setFollowupLead(lead)}
-                          className="px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 shadow-xs flex items-center gap-1"
-                        >
-                          <RefreshCw size={13} />
-                          <span>Followup</span>
-                        </button>
-
-                        {/* WhatsApp Auto */}
-                        <a
-                          href={`https://wa.me/${(lead.phone || '').replace(/\D/g, '')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors"
-                          title="WhatsApp Chat"
-                        >
-                          <MessageSquare size={14} />
-                        </a>
-
-                        {/* Call */}
-                        <a
-                          href={`tel:${lead.phone}`}
-                          className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-xs flex items-center justify-center"
-                          title="Direct Call"
-                        >
-                          <Phone size={18} />
-                        </a>
-                      </div>
+                          {nextActionFormatted && (
+                            <div className="bg-blue-50/80 border border-blue-200/80 p-2.5 rounded-xl text-xs text-blue-950 font-medium leading-relaxed flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                              <div>
+                                <span className="font-extrabold text-blue-800 uppercase text-[10px] tracking-wider inline mr-2">🗓️ Next Action ({nextActionType}):</span>
+                                <span className="font-bold text-slate-800">{nextActionFormatted}</span>
+                              </div>
+                              {nextActionRemark && (
+                                <span className="text-slate-600 text-[11px] font-semibold italic">Note: {nextActionRemark}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })
@@ -2001,6 +2167,13 @@ export default function AnalyticsPage() {
         lead={followupLead}
         onClose={() => setFollowupLead(null)}
         onSuccess={() => {
+          if (followupLead) {
+            const updatedId = followupLead.id
+            setDrilldownModal(prev => ({
+              ...prev,
+              leads: prev.leads.filter((l: any) => l.id !== updatedId)
+            }))
+          }
           setFollowupLead(null)
           fetchAnalytics(true)
         }}

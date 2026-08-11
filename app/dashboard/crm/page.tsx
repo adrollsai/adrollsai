@@ -2461,11 +2461,11 @@ END:VCARD\n`
                         })()}
 
                         {/* ROW 3: Data Grid (Clean & Compact) */}
-                        <div className="grid grid-cols-2 gap-y-3 gap-x-2 mt-3 pt-3 border-t border-slate-100">
-                            {/* Left Column */}
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lead Manager</span>
-                                {isAdminLike ? (
+                        <div className={`grid ${['super_admin', 'agency', 'admin'].includes(userRole) ? 'grid-cols-2' : 'grid-cols-1'} gap-y-3 gap-x-2 mt-3 pt-3 border-t border-slate-100`}>
+                            {/* Left Column - Lead Manager (Only visible to Admins) */}
+                            {['super_admin', 'agency', 'admin'].includes(userRole) && (
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lead Manager</span>
                                     <div onClick={e => e.stopPropagation()} className="relative">
                                         <select value={lead.assigned_to || ''} onChange={(e) => assignLead(lead.id, e.target.value, e)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 text-slate-700 text-xs font-bold rounded-lg py-1.5 pl-2 pr-6 outline-none transition-all cursor-pointer truncate border border-slate-200/60">
                                             <option value="">Unassigned</option>
@@ -2473,10 +2473,8 @@ END:VCARD\n`
                                         </select>
                                         <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                     </div>
-                                ) : (
-                                    <span className="text-xs font-bold text-slate-700 truncate">{team.find(t => t.id === lead.assigned_to)?.business_name || 'Unassigned'}</span>
-                                )}
-                            </div>
+                                </div>
+                            )}
                             
                             {/* Right Column */}
                             <div className="flex flex-col gap-1 justify-center min-w-0">

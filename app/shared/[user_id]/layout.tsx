@@ -49,7 +49,7 @@ export default async function SharedLayout({
     params 
 }: { 
     children: React.ReactNode, 
-    params: Promise<{ user_id: string }> 
+    params: any 
 }) {
     return <>{children}</>
 }

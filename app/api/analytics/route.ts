@@ -123,15 +123,8 @@ export async function GET(req: Request) {
             } else if (activeAgentId) {
                 leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
             } else {
-                // Return all leads belonging to any team member of this workspace
-                leadsQuery = leadsQuery.in('user_id', workspaceOwnerTeamIds)
-            }
-
-            if (startDate) {
-                leadsQuery = leadsQuery.gte('created_at', startDate.toISOString())
-            }
-            if (endDate) {
-                leadsQuery = leadsQuery.lte('created_at', endDate.toISOString())
+                // Return all leads belonging to or assigned to any team member of this workspace
+                leadsQuery = leadsQuery.or(`user_id.in.(${workspaceOwnerTeamIds.join(',')}),assigned_to.in.(${workspaceOwnerTeamIds.join(',')})`)
             }
 
             const { data: pageLeads, error: leadsErr } = await leadsQuery
@@ -146,7 +139,7 @@ export async function GET(req: Request) {
             page++
         }
 
-        // 2. Fetch WhatsApp Chats & Messages
+        // 2, 3 & 4. Parallel fetch for WhatsApp Chats, Lead History, and Team Profiles
         let chatsQuery = supabaseAdmin
             .from('whatsapp_chats')
             .select('id, recipient_phone, recipient_name, lead_id, updated_at')
@@ -161,7 +154,29 @@ export async function GET(req: Request) {
             }
         }
 
-        const { data: chats } = await chatsQuery
+        let historyQuery = supabaseAdmin
+            .from('lead_history')
+            .select('id, lead_id, user_id, action_type, description, created_at')
+        
+        if (startDate) {
+            historyQuery = historyQuery.gte('created_at', startDate.toISOString())
+        }
+        if (endDate) {
+            historyQuery = historyQuery.lte('created_at', endDate.toISOString())
+        }
+
+        let teamMembersQuery = supabaseAdmin
+            .from('profiles')
+            .select('id, email, business_name, full_name, role, created_at')
+            .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
+            .order('created_at', { ascending: false })
+
+        const [{ data: chats }, { data: leadHistoryData }, { data: teamMembers }] = await Promise.all([
+            chatsQuery,
+            historyQuery,
+            teamMembersQuery
+        ])
+
         const finalChats = chats || []
         const chatIds = finalChats.map(c => c.id)
 
@@ -183,27 +198,7 @@ export async function GET(req: Request) {
             finalMessages = messages || []
         }
 
-        // 3. Fetch Call & Action History logs
-        let historyQuery = supabaseAdmin
-            .from('lead_history')
-            .select('id, lead_id, user_id, action_type, description, created_at')
-        
-        if (startDate) {
-            historyQuery = historyQuery.gte('created_at', startDate.toISOString())
-        }
-        if (endDate) {
-            historyQuery = historyQuery.lte('created_at', endDate.toISOString())
-        }
-
-        const { data: leadHistoryData } = await historyQuery
         const safeLeadHistory = leadHistoryData || []
-
-        // 4. Fetch Team Members associated with workspace owner
-        const { data: teamMembers } = await supabaseAdmin
-            .from('profiles')
-            .select('id, email, business_name, full_name, role, created_at')
-            .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
-            .order('created_at', { ascending: false })
 
         const rawTeamMembers = teamMembers || []
         const safeTeamMembers = isTeamUser ? rawTeamMembers.filter(m => m.id === user.id) : rawTeamMembers
