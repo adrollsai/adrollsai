@@ -54,8 +54,21 @@ export async function POST(req: Request) {
       .in('id', leadIds)
 
     if (Array.isArray(fromAgentIds) && fromAgentIds.length > 0) {
-      // Filter to only leads assigned to or created by selected From agents
-      query = query.or(`assigned_to.in.(${fromAgentIds.join(',')}),user_id.in.(${fromAgentIds.join(',')})`)
+      const hasUnassigned = fromAgentIds.includes('unassigned')
+      const validUuids = fromAgentIds.filter(id => id && id !== 'unassigned')
+
+      const conditions: string[] = []
+      if (hasUnassigned) {
+        conditions.push(`assigned_to.is.null`)
+      }
+      if (validUuids.length > 0) {
+        conditions.push(`assigned_to.in.(${validUuids.join(',')})`)
+        conditions.push(`user_id.in.(${validUuids.join(',')})`)
+      }
+
+      if (conditions.length > 0) {
+        query = query.or(conditions.join(','))
+      }
     }
 
     const { data: targetLeads, error: fetchErr } = await query
@@ -76,8 +89,7 @@ export async function POST(req: Request) {
       }
 
       const updatePayload: any = {
-        assigned_to: targetAgentId,
-        updated_at: cutoffTimestamp
+        assigned_to: targetAgentId
       }
 
       if (deleteHistory) {

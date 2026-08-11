@@ -91,16 +91,23 @@ export async function GET(req: Request) {
             const chatMap = new Map((chats || []).map(c => [c.recipient_phone, c]))
             const chatIds = (chats || []).map(c => c.id).filter(Boolean)
 
-            // Batch fetch inbound messages for these chat IDs to get the LEAD's actual response
+            // Batch fetch inbound messages for these chat IDs created after broadcast start time
             let inboundMsgs: any[] = []
+            const broadcastStartTime = broadcast.sent_at || broadcast.created_at
             for (let i = 0; i < chatIds.length; i += 100) {
                 const batch = chatIds.slice(i, i + 100)
-                const { data: bMsgs } = await supabaseAdmin
+                let msgQuery = supabaseAdmin
                     .from('whatsapp_messages')
                     .select('chat_id, message_text, created_at')
                     .in('chat_id', batch)
                     .eq('direction', 'inbound')
                     .order('created_at', { ascending: false })
+                
+                if (broadcastStartTime) {
+                    msgQuery = msgQuery.gte('created_at', broadcastStartTime)
+                }
+
+                const { data: bMsgs } = await msgQuery
                 if (bMsgs) inboundMsgs = inboundMsgs.concat(bMsgs)
             }
 

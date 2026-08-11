@@ -38,20 +38,22 @@ export async function GET(req: Request) {
       targetOwnerId = parentId
     }
 
-    // Fetch all leads using pagination range (up to 20,000 leads)
-    let allLeads: any[] = []
-    let page = 0;
-    const PAGE_SIZE = 1000;
-    let hasMore = true;
+    const limitParam = url.searchParams.get('limit')
+    const maxLeadsToFetch = limitParam ? parseInt(limitParam, 10) : 5000
 
-    while (hasMore && page < 20) {
+    let allLeads: any[] = []
+    let page = 0
+    const PAGE_SIZE = 1000
+    let hasMore = true
+
+    while (hasMore && allLeads.length < maxLeadsToFetch) {
       let query = supabaseAdmin
         .from('leads')
         .select('*')
         .order('created_at', { ascending: false, nullsFirst: false })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
-      if (isTeamUser) {
+      if (role === 'agent' || role === 'team_member') {
         query = query.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       } else {
         query = query.or(`user_id.eq.${targetOwnerId},assigned_to.eq.${targetOwnerId}`)

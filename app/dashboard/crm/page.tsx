@@ -578,12 +578,12 @@ export default function CRMPage() {
 
       // Check local client cache to hydrate CRM pipeline immediately without showing loader spinner
       const cacheKey = `crm_cache_${user.id}_${targetUserId}`;
-      const cachedLeads = force ? [] : (getLocalCache<any>(cacheKey) || getLocalCache<any>('crm_last_leads_cache'));
+      const cachedLeads = force ? [] : getLocalCache<any>(cacheKey);
 
       if (cachedLeads && cachedLeads.length > 0) {
           setLeads(prev => prev.length === 0 ? cachedLeads : prev);
           setLoading(false);
-      } else if (leads.length === 0 && !force) {
+      } else {
           setLoading(true);
       }
       if (force) setIsRefreshing(true);
@@ -636,7 +636,6 @@ export default function CRMPage() {
         if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads)) {
           setLeads(leadsJson.leads)
           setLocalCache(cacheKey, leadsJson.leads.slice(0, 300))
-          setLocalCache('crm_last_leads_cache', leadsJson.leads.slice(0, 300))
           setTotalLeadsCount(leadsJson.leads.length)
         } else {
           // Fallback to direct client query if API fails
@@ -648,12 +647,14 @@ export default function CRMPage() {
           if (data) {
             setLeads(data)
             setLocalCache(cacheKey, data.slice(0, 300))
-            setLocalCache('crm_last_leads_cache', data.slice(0, 300))
             setTotalLeadsCount(data.length)
           }
         }
       } catch (err) {
         console.error('[CRM fetchLeads error]:', err)
+      } finally {
+        setLoading(false)
+        setIsRefreshing(false)
       }
 
       try {
