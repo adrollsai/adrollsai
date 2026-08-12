@@ -211,11 +211,14 @@ export async function GET(request: Request) {
       .eq('id', user.id)
       .maybeSingle()
 
+    const role = profile?.role?.toLowerCase() || 'admin'
+    const isTeamUser = role === 'agent' || role === 'team_member'
+
     let targetUserId = user.id
     if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined') {
       targetUserId = impersonateId
-    } else if (profile?.agency_id || profile?.parent_id) {
-      targetUserId = profile.agency_id || profile.parent_id
+    } else if (isTeamUser && (profile?.agency_id || profile?.parent_id)) {
+      targetUserId = profile.agency_id || profile.parent_id || user.id
     }
 
     const supabaseAdmin = createAdminClient(

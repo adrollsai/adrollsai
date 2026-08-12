@@ -238,8 +238,22 @@ export default function AnalyticsPage() {
 
   // All sales reps resolved from team profiles AND assigned lead records
   const allSalesReps = useMemo(() => {
-    const isTeamUser = !!(profile?.parent_id || profile?.agency_id || profile?.role === 'team_member' || profile?.role === 'agent');
-    if (isTeamUser && profile?.id) {
+    if (team && team.length > 0) {
+      const repIdsFromLeads = Array.from(new Set(leads.map(l => l.assigned_to).filter(Boolean)))
+      return [
+        ...team.map(member => ({
+          id: member.id,
+          name: member.business_name || member.full_name || member.email || 'Sales Rep',
+          email: member.email,
+          role: member.role || 'agent'
+        })),
+        ...repIdsFromLeads
+          .filter(id => !team.some(t => t.id === id))
+          .map(id => ({ id, name: id === profile?.id ? (profile?.business_name || profile?.full_name || 'You') : `Agent (${id.slice(0, 6)})`, email: '', role: 'agent' }))
+      ]
+    }
+
+    if (profile?.id) {
       return [{
         id: profile.id,
         name: profile.business_name || profile.full_name || profile.email || 'You',
@@ -248,22 +262,8 @@ export default function AnalyticsPage() {
       }]
     }
 
-    const repIdsFromLeads = Array.from(new Set(leads.map(l => l.assigned_to).filter(Boolean)))
-
-    const list = [
-      ...team.map(member => ({
-        id: member.id,
-        name: member.business_name || member.full_name || member.email || 'Sales Rep',
-        email: member.email,
-        role: member.role || 'agent'
-      })),
-      ...repIdsFromLeads
-        .filter(id => !team.some(t => t.id === id))
-        .map(id => ({ id, name: `Agent (${id.slice(0, 6)})`, email: '', role: 'agent' }))
-    ]
-
-    return list
-  }, [leads, team, profile])
+    return []
+  }, [team, leads, profile])
 
   // Filter leads based on selectedAgentId for dashboard cards
   const filteredLeads = useMemo(() => {
@@ -635,8 +635,31 @@ export default function AnalyticsPage() {
 
   // --- LEADERBOARD COMPUTATIONS (WorkVeu Screenshot 3) ---
   const followupBoardRows = useMemo(() => {
+    if (team && team.length > 0) {
+      return team.map(member => {
+        const rep = {
+          id: member.id,
+          name: member.business_name || member.full_name || member.email || 'Sales Rep',
+          email: member.email,
+          role: member.role || 'agent'
+        }
+        const repLeads = leads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
+        const m = member.metrics || {}
+
+        return {
+          rep,
+          repLeads,
+          totalFollowups: m.callsCount !== undefined ? m.callsCount : (m.leadsCount || 0),
+          closingMeetings: m.negotiationCount !== undefined ? m.negotiationCount : (m.qualifiedCount || 0),
+          visits: m.visitDoneCount !== undefined ? m.visitDoneCount : (m.wonCount || 0),
+          dnp: m.dnpCount || 0,
+          conversionRate: m.conversionRate || '0.0'
+        }
+      }).sort((a, b) => b.totalFollowups - a.totalFollowups)
+    }
+
     return allSalesReps.map(rep => {
-      const repLeads = leads.filter(l => l.assigned_to === rep.id)
+      const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
       const totalFollowups = repLeads.filter(l => l.last_followup_at || l.last_call_at || l.notes).length
       const closingMeetings = repLeads.filter(l => l.status === 'Negotiation' || l.pipeline_stage === 'Qualified').length
       const visits = repLeads.filter(l => l.status === 'Visit Done' || l.status === 'Revisit Done' || l.pipeline_stage === 'Appointment done').length
@@ -654,11 +677,35 @@ export default function AnalyticsPage() {
         conversionRate
       }
     }).sort((a, b) => b.totalFollowups - a.totalFollowups)
-  }, [allSalesReps, leads])
+  }, [team, allSalesReps, leads])
 
   const statusBoardRows = useMemo(() => {
+    if (team && team.length > 0) {
+      return team.map(member => {
+        const rep = {
+          id: member.id,
+          name: member.business_name || member.full_name || member.email || 'Sales Rep',
+          email: member.email,
+          role: member.role || 'agent'
+        }
+        const repLeads = leads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
+        const m = member.metrics || {}
+
+        return {
+          rep,
+          repLeads,
+          reqTaken: m.reqTakenCount || 0,
+          visitPlanned: m.visitPlannedCount || 0,
+          visitDone: m.visitDoneCount || 0,
+          revisitDone: m.revisitDoneCount || 0,
+          negotiation: m.negotiationCount || 0,
+          dealToken: m.dealTokenCount || 0
+        }
+      }).sort((a, b) => b.dealToken - a.dealToken || b.negotiation - a.negotiation)
+    }
+
     return allSalesReps.map(rep => {
-      const repLeads = leads.filter(l => l.assigned_to === rep.id)
+      const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
       const reqTaken = repLeads.filter(l => l.status === 'Requirement Taken' || l.pipeline_stage === 'Contacted').length
       const visitPlanned = repLeads.filter(l => l.status === 'Visit Planned' || l.pipeline_stage === 'Appointment booked').length
       const visitDone = repLeads.filter(l => l.status === 'Visit Done' || l.pipeline_stage === 'Appointment done').length
@@ -677,7 +724,7 @@ export default function AnalyticsPage() {
         dealToken
       }
     }).sort((a, b) => b.dealToken - a.dealToken || b.negotiation - a.negotiation)
-  }, [allSalesReps, leads])
+  }, [team, allSalesReps, leads])
 
   const sourceBoardRows = useMemo(() => {
     const map: Record<string, any[]> = {}

@@ -171,8 +171,21 @@ export async function POST(request: Request) {
     if (updateErr) throw updateErr
 
     // Log entry in lead_history
+    const formattedNextActionText = nextActionDate 
+      ? new Date(nextActionDate).toLocaleString('en-US', { 
+          timeZone: 'Asia/Kolkata',
+          month: 'numeric',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true 
+        })
+      : 'TBD'
+
     const historyDesc = isDnp
-      ? `⚠️ Call Not Picked (DNP) logged by ${callerName}. Next Action: ${nextActionType} on ${nextActionDate ? new Date(nextActionDate).toLocaleString() : 'TBD'}. ${remarks ? `Remarks: ${remarks}` : ''}`
+      ? `⚠️ Call Not Picked (DNP) logged by ${callerName}. Next Action: ${nextActionType} on ${formattedNextActionText}. ${remarks ? `Remarks: ${remarks}` : ''}`
       : `📝 Followup (${followupType}) updated by ${callerName}. Stage: ${leadStatus || lead.pipeline_stage}${clientStatus ? `, Rating: ${clientStatus}` : ''}. ${remarks ? `Remarks: ${remarks}` : ''}`
 
     await supabaseAdmin.from('lead_history').insert({

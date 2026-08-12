@@ -46,12 +46,11 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // Determine if authentication check is necessary
+  // Determine if authentication check in middleware is necessary (API routes authenticate internally)
   const isDashboardRoute = url.pathname.startsWith('/dashboard');
   const isRootRoute = url.pathname === '/';
-  const isApiRoute = url.pathname.startsWith('/api/');
 
-  if (!isDashboardRoute && !isRootRoute && !isApiRoute) {
+  if (!isDashboardRoute && !isRootRoute) {
     return response;
   }
 
@@ -84,7 +83,7 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // AI Operations Protection for Demo Account
-  if (user && user.email === 'adrolls-realty-demo@adrolls.in' && isApiRoute) {
+  if (user && user.email === 'adrolls-realty-demo@adrolls.in' && url.pathname.startsWith('/api/')) {
     const isAiOperation = 
       request.nextUrl.pathname.startsWith('/api/chat') ||
       request.nextUrl.pathname.startsWith('/api/background-worker') ||

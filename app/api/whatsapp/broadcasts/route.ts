@@ -196,21 +196,30 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: bErr.message }, { status: 500 })
         }
 
-        // Fetch status stats for each broadcast
-        const resolvedBroadcasts = await Promise.all((broadcasts || []).map(async (b) => {
-            const { data: recipients } = await supabaseAdmin
+        // Batch fetch status stats for all broadcasts in a single indexed query (prevents N+1 DB connection floods)
+        const broadcastIds = (broadcasts || []).map(b => b.id).filter(Boolean)
+        let recipientsMap = new Map<string, { total: number; sent: number; failed: number }>()
+
+        if (broadcastIds.length > 0) {
+            const { data: allRecipients } = await supabaseAdmin
                 .from('whatsapp_broadcast_recipients')
-                .select('status')
-                .eq('broadcast_id', b.id)
+                .select('broadcast_id, status')
+                .in('broadcast_id', broadcastIds)
 
-            const total = recipients?.length || 0
-            const sent = recipients?.filter(r => r.status === 'sent').length || 0
-            const failed = recipients?.filter(r => r.status === 'failed').length || 0
-
-            return {
-                ...b,
-                stats: { total, sent, failed }
+            if (allRecipients) {
+                allRecipients.forEach(r => {
+                    let st = recipientsMap.get(r.broadcast_id) || { total: 0, sent: 0, failed: 0 }
+                    st.total++
+                    if (r.status === 'sent') st.sent++
+                    if (r.status === 'failed') st.failed++
+                    recipientsMap.set(r.broadcast_id, st)
+                })
             }
+        }
+
+        const resolvedBroadcasts = (broadcasts || []).map(b => ({
+            ...b,
+            stats: recipientsMap.get(b.id) || { total: 0, sent: 0, failed: 0 }
         }))
 
         return NextResponse.json({ success: true, broadcasts: resolvedBroadcasts })

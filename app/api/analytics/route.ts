@@ -30,7 +30,7 @@ export async function GET(req: Request) {
             .single()
 
         const myRole = myProfile?.role?.toLowerCase() || 'admin'
-        const isTeamUser = !!(myProfile?.parent_id || myProfile?.agency_id || myRole === 'agent' || myRole === 'team_member')
+        const isTeamUser = myRole === 'agent' || myRole === 'team_member'
 
         // Determine target workspace owner ID
         let targetOwnerId = user.id
@@ -95,74 +95,70 @@ export async function GET(req: Request) {
             }
         }
 
-        // 1. Fetch CRM Leads with ONLY required fields and date filters applied at DB level
-        let finalLeads: any[] = []
-        let page = 0
-        const pageSize = 1000
-
-        // Determine workspace team profile IDs if workspace admin
-        let workspaceOwnerTeamIds: string[] = [targetOwnerId]
+        // Determine workspace team profile IDs
+        let workspaceTeamIds: string[] = [targetOwnerId]
         const { data: workspaceTeamProfiles } = await supabaseAdmin
             .from('profiles')
             .select('id')
             .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
 
         if (workspaceTeamProfiles && workspaceTeamProfiles.length > 0) {
-            workspaceOwnerTeamIds = Array.from(new Set(workspaceTeamProfiles.map(p => p.id)))
+            workspaceTeamIds = Array.from(new Set(workspaceTeamProfiles.map(p => p.id)))
         }
 
+        // 1. Fetch CRM Leads using fast parallel indexed queries (prevents Postgres statement timeouts)
         const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience'
 
-        let totalCount = 0
+        let leads1Query = supabaseAdmin.from('leads').select(leadFields).order('created_at', { ascending: false }).limit(2000)
+        let leads2Query = supabaseAdmin.from('leads').select(leadFields).order('created_at', { ascending: false }).limit(2000)
 
-        while (page < 2) {
-            let leadsQuery = supabaseAdmin
-                .from('leads')
-                .select(leadFields, { count: 'exact' })
-                .range(page * pageSize, (page + 1) * pageSize - 1)
-                .order('created_at', { ascending: false })
-
-            if (isTeamUser && activeAgentId) {
-                leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
-            } else if (activeAgentId && activeAgentId !== 'unassigned') {
-                leadsQuery = leadsQuery.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
-            } else if (activeAgentId === 'unassigned') {
-                leadsQuery = leadsQuery.is('assigned_to', null)
-            } else {
-                leadsQuery = leadsQuery.eq('user_id', targetOwnerId)
-            }
-
-            const { data: pageLeads, error: leadsErr, count: exactCount } = await leadsQuery
-            if (leadsErr) {
-                console.error("[Analytics API] Leads fetch error:", leadsErr)
-                break
-            }
-
-            if (exactCount && totalCount === 0) {
-                totalCount = exactCount
-            }
-
-            if (!pageLeads || pageLeads.length === 0) break
-            
-            // Safely parse custom_fields if stringified
-            const parsedBatch = pageLeads.map(lead => {
-                let cf = lead.custom_fields
-                if (cf && typeof cf === 'string') {
-                    try {
-                        while (typeof cf === 'string') cf = JSON.parse(cf)
-                    } catch (e) {
-                        cf = {}
-                    }
-                }
-                return { ...lead, custom_fields: cf || {} }
-            })
-
-            finalLeads.push(...parsedBatch)
-            if (pageLeads.length < pageSize) break
-            page++
+        if (startDate) {
+            leads1Query = leads1Query.gte('created_at', startDate.toISOString())
+            leads2Query = leads2Query.gte('created_at', startDate.toISOString())
+        }
+        if (endDate) {
+            leads1Query = leads1Query.lte('created_at', endDate.toISOString())
+            leads2Query = leads2Query.lte('created_at', endDate.toISOString())
         }
 
-        // 2. Fetch Team Profiles for team matrix
+        if (isTeamUser && activeAgentId) {
+            leads1Query = leads1Query.eq('assigned_to', activeAgentId)
+            leads2Query = leads2Query.eq('user_id', activeAgentId)
+        } else if (activeAgentId && activeAgentId !== 'unassigned') {
+            leads1Query = leads1Query.eq('assigned_to', activeAgentId)
+            leads2Query = leads2Query.eq('user_id', activeAgentId)
+        } else if (activeAgentId === 'unassigned') {
+            leads1Query = leads1Query.is('assigned_to', null).in('user_id', workspaceTeamIds)
+            leads2Query = leads2Query.is('assigned_to', null).in('user_id', workspaceTeamIds)
+        } else {
+            leads1Query = leads1Query.in('user_id', workspaceTeamIds)
+            leads2Query = leads2Query.in('assigned_to', workspaceTeamIds)
+        }
+
+        const [{ data: leads1, error: err1 }, { data: leads2, error: err2 }] = await Promise.all([leads1Query, leads2Query])
+        if (err1) console.error("[Analytics API] leads1Query error:", err1)
+        if (err2) console.error("[Analytics API] leads2Query error:", err2)
+
+        const leadMap = new Map<string, any>()
+        ;(leads1 || []).forEach(l => leadMap.set(l.id, l))
+        ;(leads2 || []).forEach(l => leadMap.set(l.id, l))
+
+        const rawLeads = Array.from(leadMap.values())
+        rawLeads.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+
+        const finalLeads = rawLeads.map(lead => {
+            let cf = lead.custom_fields
+            if (cf && typeof cf === 'string') {
+                try {
+                    while (typeof cf === 'string') cf = JSON.parse(cf)
+                } catch (e) {
+                    cf = {}
+                }
+            }
+            return { ...lead, custom_fields: cf || {} }
+        })
+
+        // 2. Fetch ALL Team Profiles for workspace leaderboard ranking
         const { data: teamMembers } = await supabaseAdmin
             .from('profiles')
             .select('id, email, business_name, full_name, role, created_at')
@@ -170,21 +166,42 @@ export async function GET(req: Request) {
             .order('created_at', { ascending: false })
 
         const rawTeamMembers = teamMembers || []
-        const safeTeamMembers = isTeamUser ? rawTeamMembers.filter(m => m.id === user.id) : rawTeamMembers
 
-        const teamData = safeTeamMembers.map(member => {
+        // 3. Fetch lead_history entries for date range to compute call attempts
+        let historyQuery = supabaseAdmin
+            .from('lead_history')
+            .select('id, lead_id, user_id, action_type, description, created_at')
+            .order('created_at', { ascending: false })
+            .limit(1000)
+
+        if (startDate) {
+            historyQuery = historyQuery.gte('created_at', startDate.toISOString())
+        }
+        if (endDate) {
+            historyQuery = historyQuery.lte('created_at', endDate.toISOString())
+        }
+
+        const { data: historyLogs } = await historyQuery
+        const safeHistoryLogs = historyLogs || []
+
+        const teamData = rawTeamMembers.map(member => {
             const memberLeads = finalLeads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
-            const wonLeads = memberLeads.filter(l => ['Won', 'Closed', 'Appointment done'].includes(l.pipeline_stage)).length
-            const qualifiedLeads = memberLeads.filter(l => ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won'].includes(l.pipeline_stage)).length
-            const lostLeads = memberLeads.filter(l => ['Lost', 'Unqualified'].includes(l.pipeline_stage)).length
+            const wonLeads = memberLeads.filter(l => ['Won', 'Closed', 'Appointment done', 'Deal/Token'].includes(l.pipeline_stage) || ['Won', 'Closed', 'Appointment done', 'Deal/Token'].includes(l.status)).length
+            const qualifiedLeads = memberLeads.filter(l => ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won', 'Negotiation', 'Visit Done'].includes(l.pipeline_stage) || ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won', 'Negotiation', 'Visit Done'].includes(l.status)).length
+            const lostLeads = memberLeads.filter(l => ['Lost', 'Unqualified', 'Lost/NI', 'Different Requirement'].includes(l.pipeline_stage) || ['Lost', 'Unqualified', 'Lost/NI', 'Different Requirement'].includes(l.status)).length
             
-            const memberCallCount = memberLeads.filter(l => l.last_called_by === member.id || l.last_call_at || l.last_call_status).length
-            const totalDnpOnLeads = memberLeads.reduce((acc, l) => {
-                const count = l.dnp_count || l.custom_fields?.dnp_count || 0
-                return acc + count
-            }, 0)
+            const reqTakenCount = memberLeads.filter(l => l.status === 'Requirement Taken' || l.pipeline_stage === 'Contacted').length
+            const visitPlannedCount = memberLeads.filter(l => l.status === 'Visit Planned' || l.pipeline_stage === 'Appointment booked').length
+            const visitDoneCount = memberLeads.filter(l => l.status === 'Visit Done' || l.pipeline_stage === 'Appointment done').length
+            const revisitDoneCount = memberLeads.filter(l => l.status === 'Revisit Done').length
+            const negotiationCount = memberLeads.filter(l => l.status === 'Negotiation' || l.pipeline_stage === 'Qualified').length
+            const dealTokenCount = memberLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
 
-            const conversionRate = memberLeads.length > 0 ? ((qualifiedLeads / memberLeads.length) * 100).toFixed(1) : '0.0'
+            const memberHistory = safeHistoryLogs.filter(h => h.user_id === member.id)
+            const memberCallCount = memberHistory.filter(h => h.action_type === 'CALL_FEEDBACK' || h.action_type === 'REMARK' || h.action_type === 'STATUS_CHANGE').length || memberLeads.filter(l => l.last_called_by === member.id).length
+            const totalDnpOnLeads = memberHistory.filter(h => h.description?.includes('DNP') || h.description?.includes('Call Not Picked')).length || memberLeads.reduce((acc, l) => acc + (l.dnp_count || l.custom_fields?.dnp_count || 0), 0)
+
+            const conversionRate = memberLeads.length > 0 ? ((wonLeads / memberLeads.length) * 100).toFixed(1) : '0.0'
 
             return {
                 id: member.id,
@@ -198,37 +215,30 @@ export async function GET(req: Request) {
                     lostCount: lostLeads,
                     callsCount: memberCallCount,
                     dnpCount: totalDnpOnLeads,
-                    conversionRate
+                    conversionRate,
+                    reqTakenCount,
+                    visitPlannedCount,
+                    visitDoneCount,
+                    revisitDoneCount,
+                    negotiationCount,
+                    dealTokenCount
                 }
             }
         })
 
-        // 3. Fetch lead_history entries for Action Attempt Reports
-        let historyQuery = supabaseAdmin
-            .from('lead_history')
-            .select('id, lead_id, user_id, action_type, description, created_at')
-            .order('created_at', { ascending: false })
-            .limit(500)
-
-        if (startDate) {
-            historyQuery = historyQuery.gte('created_at', startDate.toISOString())
-        }
-        if (endDate) {
-            historyQuery = historyQuery.lte('created_at', endDate.toISOString())
-        }
-
-        const { data: historyLogs } = await historyQuery
+        // Privacy scoping for lead cards if team member user
+        const safeLeads = isTeamUser ? finalLeads.filter(l => l.assigned_to === user.id || l.user_id === user.id) : finalLeads
 
         return NextResponse.json({
             success: true,
             duration,
             workspaceOwnerId: targetOwnerId,
             myRole,
-            leads: finalLeads,
-            totalCount: totalCount || finalLeads.length,
+            leads: safeLeads,
+            totalCount: safeLeads.length,
             chats: [],
             messages: [],
-            history: historyLogs || [],
+            history: safeHistoryLogs,
             team: teamData
         })
 

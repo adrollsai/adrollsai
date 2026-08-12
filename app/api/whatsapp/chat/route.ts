@@ -35,12 +35,13 @@ export async function GET(req: Request) {
             : supabase
 
         if (chatId) {
-            // Fetch messages for a specific chat
+            // Fetch messages for a specific chat (limit to recent 500)
             const { data: messages, error } = await dbClient
                 .from('whatsapp_messages')
                 .select('*')
                 .eq('chat_id', chatId)
                 .order('created_at', { ascending: true })
+                .limit(500)
 
             if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -80,6 +81,7 @@ export async function GET(req: Request) {
                     .select('*')
                     .in('lead_id', assignedLeadIds)
                     .order('updated_at', { ascending: false })
+                    .limit(500)
 
                 if (error) return NextResponse.json({ error: error.message }, { status: 500 })
                 return NextResponse.json({ success: true, chats })
@@ -90,6 +92,7 @@ export async function GET(req: Request) {
                     .select('*')
                     .eq('user_id', effectiveUserId)
                     .order('updated_at', { ascending: false })
+                    .limit(500)
 
                 if (error) return NextResponse.json({ error: error.message }, { status: 500 })
                 return NextResponse.json({ success: true, chats })

@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     if (reminderType === 'followup') {
       const { data: lead, error: leadErr } = await supabaseAdmin
         .from('leads')
-        .select('id, user_id, name, phone, next_followup')
+        .select('id, user_id, assigned_to, name, phone, next_followup')
         .eq('id', leadId)
         .maybeSingle()
 
@@ -51,14 +51,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'Next follow-up date already cleared' })
       }
 
-      // Send the Push Notification
-      await sendPushNotification(
-        lead.user_id,
-        "Follow-Up Reminder ⏰",
-        `Time to follow up with ${lead.name} ${lead.phone ? `(${lead.phone})` : ''}`,
-        `/dashboard/crm/${lead.id}`, 
-        "reminder"
-      )
+      // Send Push Notification to assigned rep AND workspace owner
+      const targetUserIds = Array.from(new Set([lead.assigned_to, lead.user_id].filter(Boolean)))
+      for (const targetId of targetUserIds) {
+        await sendPushNotification(
+          targetId,
+          "Follow-Up Reminder ⏰",
+          `Time to follow up with ${lead.name} ${lead.phone ? `(${lead.phone})` : ''}`,
+          `/dashboard/crm/${lead.id}`, 
+          "reminder"
+        ).catch(err => console.error(`[Reminders Worker] Push failed for ${targetId}:`, err))
+      }
 
       // Clear the next_followup date so it doesn't trigger again
       const { error: updateError } = await supabaseAdmin

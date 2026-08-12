@@ -28,51 +28,49 @@ export async function GET(req: Request) {
       .single()
 
     const role = profile?.role?.toLowerCase() || 'admin'
-    const parentId = profile?.parent_id || profile?.agency_id
-    const isTeamUser = !!(parentId || role === 'agent' || role === 'team_member')
+    const isTeamUser = role === 'agent' || role === 'team_member'
 
     let targetOwnerId = user.id
     if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
       targetOwnerId = impersonateId
-    } else if (isTeamUser && parentId) {
-      targetOwnerId = parentId
+    } else if (isTeamUser && (profile?.parent_id || profile?.agency_id)) {
+      targetOwnerId = profile.parent_id || profile.agency_id || user.id
+    }
+
+    let workspaceTeamIds: string[] = [targetOwnerId]
+    if (!isTeamUser) {
+      const { data: teamProfiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
+
+      if (teamProfiles && teamProfiles.length > 0) {
+        workspaceTeamIds = Array.from(new Set(teamProfiles.map(p => p.id)))
+      }
     }
 
     const limitParam = url.searchParams.get('limit')
-    const maxLeadsToFetch = limitParam ? parseInt(limitParam, 10) : 5000
+    const maxLeadsToFetch = limitParam ? parseInt(limitParam, 10) : 1000
 
-    let allLeads: any[] = []
-    let page = 0
-    const PAGE_SIZE = 1000
-    let hasMore = true
+    let leads1Query = supabaseAdmin.from('leads').select('*').order('created_at', { ascending: false }).limit(maxLeadsToFetch)
+    let leads2Query = supabaseAdmin.from('leads').select('*').order('created_at', { ascending: false }).limit(maxLeadsToFetch)
 
-    while (hasMore && allLeads.length < maxLeadsToFetch) {
-      let query = supabaseAdmin
-        .from('leads')
-        .select('*')
-        .order('created_at', { ascending: false, nullsFirst: false })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-
-      if (role === 'agent' || role === 'team_member') {
-        query = query.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
-      } else {
-        query = query.or(`user_id.eq.${targetOwnerId},assigned_to.eq.${targetOwnerId}`)
-      }
-
-      const { data: leadsBatch, error } = await query
-      if (error) {
-        console.error('[API CRM Leads] Fetch error:', error)
-        break
-      }
-
-      if (!leadsBatch || leadsBatch.length === 0) {
-        hasMore = false
-      } else {
-        allLeads = allLeads.concat(leadsBatch)
-        page++
-        if (leadsBatch.length < PAGE_SIZE) hasMore = false
-      }
+    if (isTeamUser) {
+      leads1Query = leads1Query.eq('assigned_to', user.id)
+      leads2Query = leads2Query.eq('user_id', user.id)
+    } else {
+      leads1Query = leads1Query.in('user_id', workspaceTeamIds)
+      leads2Query = leads2Query.in('assigned_to', workspaceTeamIds)
     }
+
+    const [{ data: leads1 }, { data: leads2 }] = await Promise.all([leads1Query, leads2Query])
+
+    const leadMap = new Map<string, any>()
+    ;(leads1 || []).forEach(l => leadMap.set(l.id, l))
+    ;(leads2 || []).forEach(l => leadMap.set(l.id, l))
+
+    const allLeads = Array.from(leadMap.values())
+    allLeads.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
 
     // Parse custom_fields
     const parsedLeads = allLeads.map(lead => {
