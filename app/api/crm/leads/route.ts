@@ -50,27 +50,45 @@ export async function GET(req: Request) {
     }
 
     const limitParam = url.searchParams.get('limit')
-    const maxLeadsToFetch = limitParam ? parseInt(limitParam, 10) : 1000
+    const requestedLimit = limitParam ? parseInt(limitParam, 10) : 0
 
-    let leads1Query = supabaseAdmin.from('leads').select('*').order('created_at', { ascending: false }).limit(maxLeadsToFetch)
-    let leads2Query = supabaseAdmin.from('leads').select('*').order('created_at', { ascending: false }).limit(maxLeadsToFetch)
+    let allLeads: any[] = []
+    let page = 0
+    const PAGE_SIZE = 1000
+    let hasMore = true
 
-    if (isTeamUser) {
-      leads1Query = leads1Query.eq('assigned_to', user.id)
-      leads2Query = leads2Query.eq('user_id', user.id)
-    } else {
-      leads1Query = leads1Query.in('user_id', workspaceTeamIds)
-      leads2Query = leads2Query.in('assigned_to', workspaceTeamIds)
+    while (hasMore && (requestedLimit === 0 || allLeads.length < requestedLimit) && page < 20) {
+      let query = supabaseAdmin
+        .from('leads')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+
+      if (isTeamUser) {
+        query = query.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
+      } else {
+        const workspaceOrConditions = workspaceTeamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
+        query = query.or(workspaceOrConditions)
+      }
+
+      const { data: batch, error } = await query
+      if (error) {
+        console.error('[API CRM Leads] Fetch error:', error)
+        break
+      }
+
+      if (!batch || batch.length === 0) {
+        hasMore = false
+      } else {
+        allLeads = allLeads.concat(batch)
+        page++
+        if (batch.length < PAGE_SIZE) hasMore = false
+      }
     }
 
-    const [{ data: leads1 }, { data: leads2 }] = await Promise.all([leads1Query, leads2Query])
-
-    const leadMap = new Map<string, any>()
-    ;(leads1 || []).forEach(l => leadMap.set(l.id, l))
-    ;(leads2 || []).forEach(l => leadMap.set(l.id, l))
-
-    const allLeads = Array.from(leadMap.values())
-    allLeads.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    if (requestedLimit > 0 && allLeads.length > requestedLimit) {
+      allLeads = allLeads.slice(0, requestedLimit)
+    }
 
     // Parse custom_fields
     const parsedLeads = allLeads.map(lead => {
