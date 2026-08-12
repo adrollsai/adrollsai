@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sendPushNotification } from '@/utils/notification-helper'
 
 // Force dynamic execution to bypass Vercel static build cache
 export const dynamic = 'force-dynamic'
@@ -29,14 +30,16 @@ export async function GET(request: Request) {
     }
 
     const nowUtcString = new Date().toISOString()
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
     const now = new Date()
     const targetTime = new Date(now.getTime() + 35 * 60 * 1000) // 35 minutes from now
 
-    // 1. Fetch leads due for CRM follow-up alert
+    // 1. Fetch leads due for CRM follow-up alert (within recent 2-hour window)
     const { data: leadsToRemind, error: followupErr } = await supabaseAdmin
       .from('leads')
-      .select('id')
+      .select('id, user_id, assigned_to')
       .not('next_followup', 'is', null)
+      .gte('next_followup', twoHoursAgo)
       .lte('next_followup', nowUtcString)
 
     if (followupErr) throw followupErr
@@ -86,39 +89,34 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, message: 'No reminders or followups due at this time.' })
     }
 
-    console.log(`[Reminders Dispatcher] Queueing ${tasksToQueue.length} tasks in QStash...`)
+    // Process due followup push notifications directly
+    for (const item of tasksToQueue) {
+      if (item.type === 'followup') {
+        const { data: lead } = await supabaseAdmin
+          .from('leads')
+          .select('id, user_id, assigned_to, name, phone, next_followup')
+          .eq('id', item.id)
+          .maybeSingle()
 
-    const qstashToken = process.env.QSTASH_TOKEN
-    if (!qstashToken) {
-      console.error('[Reminders Dispatcher] QSTASH_TOKEN environment variable is not configured.')
-      return NextResponse.json({ error: 'QStash not configured' }, { status: 500 })
+        if (lead && lead.next_followup) {
+          const targetIds = Array.from(new Set([lead.assigned_to, lead.user_id].filter(Boolean)))
+          for (const targetId of targetIds) {
+            await sendPushNotification(
+              targetId,
+              "Follow-Up Reminder ⏰",
+              `Time to follow up with ${lead.name || 'Lead'} ${lead.phone ? `(${lead.phone})` : ''}`,
+              `/dashboard/crm/${lead.id}`,
+              "reminder"
+            ).catch((err: any) => console.error('[Reminders Dispatcher Push Error]:', err))
+          }
+
+          // Clear next_followup after sending push alert
+          await supabaseAdmin.from('leads').update({ next_followup: null }).eq('id', lead.id)
+        }
+      }
     }
 
-    // Construct the destination worker URL dynamically
-    const workerUrl = `${url.origin}/api/cron/reminders/worker`
-    const publishPromises = tasksToQueue.map(async (item) => {
-      const qstashPublishUrl = `https://qstash.upstash.io/v2/publish/${workerUrl}`
-      
-      const res = await fetch(qstashPublishUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${qstashToken}`,
-          'Content-Type': 'application/json',
-          'Upstash-Forward-Authorization': `Bearer ${process.env.CRON_SECRET || ''}`
-        },
-        body: JSON.stringify({ id: item.id, type: item.type })
-      })
-
-      if (!res.ok) {
-        const errText = await res.text()
-        console.error(`[Reminders Dispatcher] Failed to queue task ${item.id}:`, errText)
-      }
-    })
-
-    await Promise.all(publishPromises)
-    console.log(`[Reminders Dispatcher] Successfully queued ${tasksToQueue.length} tasks in QStash.`)
-
-    return NextResponse.json({ success: true, queuedCount: tasksToQueue.length })
+    return NextResponse.json({ success: true, processedCount: tasksToQueue.length })
   } catch (error: any) {
     console.error('[Reminders Dispatcher] Error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
