@@ -183,7 +183,10 @@ export async function POST(req: Request) {
             // Trigger delayed billing calculation (QStash or background setTimeout)
             const callSid = formData.get('CallSid') as string || ''
             if (callSid) {
-                const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
+                let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
+                if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com')) {
+                    appUrl = 'https://app.nobogent.com'
+                }
                 const qstashToken = process.env.QSTASH_TOKEN
                 
                 console.log(`[TWILIO STATUS CALLBACK] Scheduling delayed billing for call ${callSid}...`)

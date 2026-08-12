@@ -58,7 +58,10 @@ export async function POST(req: Request) {
                         // We already own this number! Update its webhook configurations on Twilio
                         const updateUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers/${existingNumberSid}.json`
                         const updateParams = new URLSearchParams()
-                        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
+                        let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
+                        if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com')) {
+                            appUrl = 'https://app.nobogent.com'
+                        }
                         updateParams.append('VoiceUrl', `${appUrl}/api/voice/twiml`)
                         updateParams.append('VoiceMethod', 'POST')
                         updateParams.append('StatusCallback', `${appUrl}/api/voice/status-callback`)
@@ -141,7 +144,10 @@ export async function POST(req: Request) {
         const params = new URLSearchParams()
         params.append('PhoneNumber', selectedNumber)
 
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
+        let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
+        if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com')) {
+            appUrl = 'https://app.nobogent.com'
+        }
         params.append('VoiceUrl', `${appUrl}/api/voice/twiml`)
         params.append('VoiceMethod', 'POST')
         params.append('StatusCallback', `${appUrl}/api/voice/status-callback`)

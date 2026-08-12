@@ -294,7 +294,10 @@ export async function triggerOutboundCall(
             .eq('id', lead.id)
 
         // 5. Call Twilio REST API
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
+        let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
+        if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com')) {
+            appUrl = 'https://app.nobogent.com'
+        }
         const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls.json`
         const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')
 
