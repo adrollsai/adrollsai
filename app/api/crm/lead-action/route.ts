@@ -80,6 +80,7 @@ export async function POST(request: Request) {
 
     if (updateStage) {
       updates.pipeline_stage = updateStage
+      updates.status = updateStage
     }
 
     // Handle DNP increment

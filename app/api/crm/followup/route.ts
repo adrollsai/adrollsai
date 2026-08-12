@@ -110,6 +110,12 @@ export async function POST(request: Request) {
       updatePayload.next_followup = nextActionDate
     }
 
+    // Apply lead status/stage from the followup form (both DNP and non-DNP flows)
+    if (leadStatus) {
+      updatePayload.status = leadStatus
+      updatePayload.pipeline_stage = leadStatus
+    }
+
     // Automatically clear next_followup if status/stage is set to Lost/NI, Closed, Unqualified, or Junk
     const targetStatus = leadStatus || updatePayload.status || lead.status || ''
     const targetStage = updatePayload.pipeline_stage || lead.pipeline_stage || ''
@@ -170,6 +176,12 @@ export async function POST(request: Request) {
       }
     } else {
       customFields.last_call_dnp = false
+      // For non-DNP: auto-advance New Lead → Ongoing when a next action is set and no explicit stage change was made
+      const currentStage = (leadStatus || lead.status || lead.pipeline_stage || 'New Lead').trim()
+      if ((currentStage === 'New Lead' || currentStage === 'New') && nextActionDate) {
+        updatePayload.status = 'Ongoing'
+        updatePayload.pipeline_stage = 'Ongoing'
+      }
     }
 
     if (referenceName) customFields.reference_name = referenceName

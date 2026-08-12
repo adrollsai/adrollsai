@@ -842,7 +842,7 @@ export default function LeadProfilePage() {
     }
 
     const updateStage = async (newStage: string) => {
-        const nextLead = { ...lead, pipeline_stage: newStage }
+        const nextLead = { ...lead, pipeline_stage: newStage, status: newStage }
         setLead(nextLead)
         updateLocalCRMCache(nextLead)
         const desc = `Moved to ${newStage}`
@@ -851,7 +851,7 @@ export default function LeadProfilePage() {
         await fetch('/api/crm/update-stage', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ leadId: id, newStage, notes: lead?.notes })
+            body: JSON.stringify({ leadId: id, newStage, notes: lead?.notes || '' })
         })
 
         await fetch('/api/crm/lead-action', {
@@ -860,6 +860,7 @@ export default function LeadProfilePage() {
             body: JSON.stringify({ leadId: id, actionType: 'STATUS_CHANGE', description: desc })
         })
     }
+
 
     const handleAddRemark = async () => {
         if (!remarkInput.trim()) return
