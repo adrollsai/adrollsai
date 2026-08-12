@@ -1259,13 +1259,15 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                 };
 
                 if (bookingTime) {
-                    console.log(`[BRIDGE] Detected booking slot from Gemini call: ${bookingTime}. Updating stage to Visit Planned!`);
-                    updatePayload.status = 'Visit Planned';
-                    updatePayload.pipeline_stage = 'Visit Planned';
+                    console.log(`[BRIDGE] Detected booking slot from Gemini call: ${bookingTime}. Updating stage to Appointment Booked!`);
+                    updatePayload.status = 'Appointment Booked';
+                    updatePayload.pipeline_stage = 'Appointment Booked';
                     updatePayload.booked_time = bookingTime;
-                } else if (isQualified) {
-                    updatePayload.status = 'Negotiation';
-                    updatePayload.pipeline_stage = 'Negotiation';
+                } else {
+                    if (!leadData || !leadData.pipeline_stage || leadData.pipeline_stage === 'New Lead' || leadData.pipeline_stage === 'New' || leadData.status === 'New Lead' || leadData.status === 'New') {
+                        updatePayload.status = 'Ongoing';
+                        updatePayload.pipeline_stage = 'Ongoing';
+                    }
                 }
 
                 try {

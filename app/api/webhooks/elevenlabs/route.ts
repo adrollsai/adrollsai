@@ -313,9 +313,16 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
             }
         }
 
-        // Transition pipeline stage if qualified
-        if (isQualified && lead.pipeline_stage !== 'Won' && !bookingTime) {
-            updateData.pipeline_stage = 'Qualified'
+        // Transition pipeline stage if booked or ongoing
+        if (bookingTime) {
+            updateData.status = 'Appointment Booked'
+            updateData.pipeline_stage = 'Appointment Booked'
+            updateData.booked_time = bookingTime
+        } else {
+            if (!lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.status === 'New Lead' || lead.status === 'New') {
+                updateData.status = 'Ongoing'
+                updateData.pipeline_stage = 'Ongoing'
+            }
         }
 
         const { error: updateErr } = await supabaseAdmin

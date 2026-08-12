@@ -733,14 +733,16 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                     }
                 }
 
-                // Transition pipeline stage if booked or qualified
+                // Transition pipeline stage if booked or ongoing
                 if (bookingTime && lead.pipeline_stage !== 'Deal/Token' && lead.pipeline_stage !== 'Closed') {
-                    updateData.status = 'Visit Planned'
-                    updateData.pipeline_stage = 'Visit Planned'
+                    updateData.status = 'Appointment Booked'
+                    updateData.pipeline_stage = 'Appointment Booked'
                     updateData.booked_time = bookingTime
-                } else if (isQualified && lead.pipeline_stage !== 'Deal/Token' && lead.pipeline_stage !== 'Visit Planned') {
-                    updateData.status = 'Negotiation'
-                    updateData.pipeline_stage = 'Negotiation'
+                } else if (!bookingTime) {
+                    if (!lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.status === 'New Lead' || lead.status === 'New') {
+                        updateData.status = 'Ongoing'
+                        updateData.pipeline_stage = 'Ongoing'
+                    }
                 }
             }
 
