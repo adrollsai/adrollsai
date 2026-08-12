@@ -1,4 +1,4 @@
-import { AbsoluteFill, OffthreadVideo, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
+import { AbsoluteFill, OffthreadVideo, Audio, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
 import React from 'react';
 import { loadFont } from "@remotion/google-fonts/Montserrat";
 
@@ -32,6 +32,7 @@ export type Theme = {
 
 interface CaptionsCompositionProps {
     videoUrl: string;
+    audioUrl?: string;
     captions: Caption[];
     effects?: Effect[];
     theme: Theme;
@@ -40,6 +41,7 @@ interface CaptionsCompositionProps {
 
 export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
     videoUrl,
+    audioUrl,
     captions,
     effects = [],
     theme,
@@ -94,6 +96,9 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
 
     return (
         <AbsoluteFill style={{ backgroundColor: 'black' }}>
+            {/* Voiceover Audio Track */}
+            {audioUrl && <Audio src={audioUrl} volume={1.0} />}
+
             {/* Background Video with Zoom & Shake transforms */}
             <div style={{
                 width: '100%',
@@ -106,6 +111,7 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                     src={videoUrl} 
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                     crossOrigin="anonymous" 
+                    volume={audioUrl ? 0.1 : 1.0}
                 />
             </div>
 

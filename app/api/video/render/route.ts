@@ -149,11 +149,13 @@ export async function POST(request: Request) {
             }
 
             // Strip redundant /adrolls-storage/ prefix from R2 public domain URLs (r2.dev mounts bucket root directly)
-            if (cleanVideoUrl.includes('r2.dev/adrolls-storage/')) {
-                cleanVideoUrl = cleanVideoUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
+            const audioUrlCandidate = originalAsset?.metadata?.audioUrl || originalAsset?.voiceover_url || originalAsset?.audio_url;
+            let cleanAudioUrl = audioUrlCandidate;
+            if (cleanAudioUrl && typeof cleanAudioUrl === 'string' && cleanAudioUrl.includes('r2.dev/adrolls-storage/')) {
+                cleanAudioUrl = cleanAudioUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
             }
 
-            console.log(`[Render Route] Dispatching render for video URL: ${cleanVideoUrl}`);
+            console.log(`[Render Route] Dispatching render for video URL: ${cleanVideoUrl}, audio URL: ${cleanAudioUrl}`);
 
             const renderResult = await renderMediaOnLambda({
                 region,
@@ -162,6 +164,7 @@ export async function POST(request: Request) {
                 composition: 'CaptionsComposition',
                 inputProps: {
                     videoUrl: cleanVideoUrl,
+                    ...(cleanAudioUrl ? { audioUrl: cleanAudioUrl } : {}),
                     captions,
                     effects,
                     theme,
