@@ -17,6 +17,7 @@ const pwa = withPWA({
 });
 
 const nextConfig: NextConfig = {
+  turbopack: {},
   serverExternalPackages: [
     '@supabase/supabase-js',
     '@remotion/lambda',

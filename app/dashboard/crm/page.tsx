@@ -2812,7 +2812,6 @@ END:VCARD\n`
                                                  cf.last_call_initiated_at = nowIso;
                                                  const updated = { ...lead, custom_fields: cf };
                                                  setLeads(prev => prev.map(item => item.id === lead.id ? updated : item));
-                                                 updateLocalCRMCache(updated);
 
                                                  fetch('/api/crm/followup', {
                                                      method: 'POST',
