@@ -36,15 +36,31 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
       // Admin / Agency / Super Admin role retains 100% full history access
       const isAdmin = viewerRole === 'super_admin' || viewerRole === 'agency' || viewerRole === 'admin'
       
-      if (!isAdmin) {
-        let cf = lead.custom_fields
-        if (typeof cf === 'string') {
-          try { cf = JSON.parse(cf) } catch (e) { cf = null }
+      let cf: any = lead.custom_fields
+      if (typeof cf === 'string') {
+        try { cf = JSON.parse(cf) } catch (e) { cf = null }
+      }
+
+      // Ensure initial / imported last remark is included in timeline if missing
+      const lastRemark = (cf?.last_followup_remark || cf?.opening_comments || lead.notes || lead.summary || '').trim()
+      if (lastRemark) {
+        const exists = items.some(item => (item.description || '').includes(lastRemark))
+        if (!exists) {
+          items.push({
+            id: 'synthetic_last_remark',
+            lead_id: lead.id,
+            action_type: 'LAST_FOLLOWUP_REMARK',
+            description: lastRemark,
+            actor_name: lead.user_name || 'Agent',
+            created_at: cf?.last_followup_at || lead.last_call_at || lead.created_at
+          })
+          items.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         }
-        const cutoff = cf?.history_visible_from
-        if (cutoff) {
-          items = items.filter(item => new Date(item.created_at) >= new Date(cutoff))
-        }
+      }
+
+      const cutoff = cf?.history_visible_from
+      if (cutoff && !isAdmin) {
+        items = items.filter(item => new Date(item.created_at) >= new Date(cutoff))
       }
 
       setHistoryItems(items)
