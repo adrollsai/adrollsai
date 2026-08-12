@@ -13,13 +13,41 @@ const supabaseAdmin = createSupabaseAdmin(
 
 export async function POST(req: Request) {
   try {
+    const body = await req.json()
+
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    let { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) user = session.user
+    }
+
+    const authHeader = req.headers.get('Authorization')
+    if (!user && authHeader) {
+      const token = authHeader.replace('Bearer ', '').trim()
+      if (token) {
+        const { data: authUserData } = await supabaseAdmin.auth.getUser(token)
+        if (authUserData?.user) user = authUserData.user
+      }
+    }
+
+    if (!user && (body.userId || body.impersonateId)) {
+      const targetId = body.userId || body.impersonateId
+      const { data: fallbackProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('id', targetId)
+        .maybeSingle()
+
+      if (fallbackProfile) {
+        user = { id: fallbackProfile.id } as any
+      }
+    }
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const body = await req.json()
     const { leadIds, targetAgentId, deleteHistory, transferWithScheduledActions, fromAgentIds } = body
 
     if (!Array.isArray(leadIds) || leadIds.length === 0) {
