@@ -1200,8 +1200,13 @@ export default function CRMPage() {
 
         const leadPayload: any = {
             user_id: targetUserId || userId,
-            name: newLead.name, phone: newLead.phone, email: newLead.email, notes: newLead.notes,
-            source: 'Manual', pipeline_stage: 'New',
+            name: newLead.name.trim(),
+            phone: newLead.phone.trim(),
+            email: newLead.email?.trim() || null,
+            notes: newLead.notes?.trim() || null,
+            source: 'Manual',
+            status: 'New Lead',
+            pipeline_stage: 'New Lead',
             created_at: new Date().toISOString()
         }
         if (role === 'agent') leadPayload.assigned_to = userId
@@ -1212,10 +1217,16 @@ export default function CRMPage() {
         if (!error && savedLead) {
             console.log("[CRM] Lead inserted successfully!", savedLead);
 
-            // Force cache refresh
-            await fetchLeads(true)
-            setIsAddModalOpen(false)
-            setNewLead({ name: '', phone: '', email: '', notes: '' })
+            // 1. Instantly inject new lead into local React state at top so it shows up immediately
+            setLeads(prev => [savedLead, ...prev]);
+
+            // 2. Instantly close modal and reset inputs
+            setIsAddModalOpen(false);
+            setNewLead({ name: '', phone: '', email: '', notes: '' });
+            toast.success("Lead added successfully!");
+
+            // 3. Background cache refresh without blocking UI
+            fetchLeads(true).catch(() => {});
         } else {
             console.error("[CRM] Manual lead insert database error:", error);
             alert("Error adding lead: " + (error ? error.message : "Unknown error"));
