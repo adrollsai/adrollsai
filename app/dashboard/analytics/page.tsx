@@ -2424,10 +2424,17 @@ export default function AnalyticsPage() {
                             }
 
                             let lastRemark = (cf?.last_followup_remark || '').trim()
-                            if (!lastRemark && lead.notes && lead.notes.includes('[Last Remarks]:')) {
-                              lastRemark = lead.notes.split('[Last Remarks]:')[1]?.trim() || ''
+                            if (!lastRemark && cf?.opening_comments) {
+                              lastRemark = cf.opening_comments.trim()
                             }
-                            if (!lastRemark && lead.summary) lastRemark = lead.summary
+                            if (!lastRemark && lead.notes && typeof lead.notes === 'string') {
+                              let cleaned = lead.notes.trim()
+                              if (cleaned.includes('[Last Remarks]:')) {
+                                cleaned = cleaned.split('[Last Remarks]:')[1]?.trim() || cleaned
+                              }
+                              lastRemark = cleaned
+                            }
+                            if (!lastRemark && lead.summary) lastRemark = lead.summary.trim()
 
                             const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                             const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
