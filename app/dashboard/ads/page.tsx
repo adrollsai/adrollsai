@@ -611,14 +611,15 @@ export default function AdsPage() {
       if (targetProfile?.parent_id) effectiveUserIds.push(targetProfile.parent_id);
       if (targetProfile?.agency_id) effectiveUserIds.push(targetProfile.agency_id);
 
-      let propQuery = supabase.from('properties').select('id, title, price, image_url, description, tags, configurations').in('user_id', effectiveUserIds);
-
       let pageQuery = supabase.from('landing_pages').select('*').in('user_id', effectiveUserIds);
 
       let formQuery = supabase.from('qualification_forms').select('*').in('user_id', effectiveUserIds);
 
-      const [propsRes, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
-          propQuery.order('created_at', { ascending: false }),
+      const [inventoryData, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
+          fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`).then(r => r.json()).catch(e => {
+              console.error("Failed to load properties from API", e);
+              return { properties: [] };
+          }),
           supabase.from('leads').select('campaign_id').in('user_id', effectiveUserIds),
           pageQuery.order('created_at', { ascending: false }),
           formQuery.order('created_at', { ascending: false }),
@@ -632,7 +633,8 @@ export default function AdsPage() {
           })
       ])
 
-      const mergedProps = propsRes.data || []
+      const freshProps = (inventoryData?.properties && Array.isArray(inventoryData.properties)) ? inventoryData.properties : [];
+      const mergedProps = force ? freshProps : mergeCacheData<any>(cachedProps, freshProps);
 
       const freshPages = pagesRes.data || []
       const mergedPages = force ? freshPages : mergeCacheData<any>(cachedPages, freshPages);
@@ -4335,40 +4337,46 @@ export default function AdsPage() {
                 <p className="text-[11px] text-amber-700 font-medium mb-3">Choose one or more products this campaign is for. Creatives will be mapped to their corresponding product context.</p>
                 
                 <div className="max-h-48 overflow-y-auto space-y-2 pr-2 scrollbar-thin">
-                  {properties.map(p => {
-                    const isSelected = selectedProducts.some(sp => sp.id === p.id);
-                    return (
-                      <div 
-                        key={p.id} 
-                        onClick={() => {
-                          if (isSelected) {
-                            const updated = selectedProducts.filter(sp => sp.id !== p.id);
-                            setSelectedProducts(updated);
-                            // Also update legacy selectedProduct fallback if it matches
-                            if (selectedProduct?.id === p.id) {
-                              setSelectedProduct(updated[0] || null);
+                  {properties.length === 0 ? (
+                    <div className="p-4 text-center text-xs font-semibold text-amber-700 bg-white/70 rounded-xl border border-amber-200/50">
+                      No inventory products found for this account. Please add a product in Inventory.
+                    </div>
+                  ) : (
+                    properties.map(p => {
+                      const isSelected = selectedProducts.some(sp => sp.id === p.id);
+                      return (
+                        <div 
+                          key={p.id} 
+                          onClick={() => {
+                            if (isSelected) {
+                              const updated = selectedProducts.filter(sp => sp.id !== p.id);
+                              setSelectedProducts(updated);
+                              // Also update legacy selectedProduct fallback if it matches
+                              if (selectedProduct?.id === p.id) {
+                                setSelectedProduct(updated[0] || null);
+                              }
+                            } else {
+                              const updated = [...selectedProducts, p];
+                              setSelectedProducts(updated);
+                              if (!selectedProduct) setSelectedProduct(p);
                             }
-                          } else {
-                            const updated = [...selectedProducts, p];
-                            setSelectedProducts(updated);
-                            if (!selectedProduct) setSelectedProduct(p);
-                          }
-                        }}
-                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer bg-white ${isSelected ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-200 hover:border-amber-300'}`}
-                      >
-                        <input 
-                          type="checkbox" 
-                          checked={isSelected}
-                          readOnly
-                          className="rounded text-amber-600 focus:ring-amber-500 h-4 w-4 border-slate-300 cursor-pointer"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-bold text-slate-800 truncate">{p.title}</div>
-                          {p.price && <div className="text-[10px] text-amber-600 font-bold">{p.price}</div>}
+                          }}
+                          className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer bg-white ${isSelected ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-200 hover:border-amber-300'}`}
+                        >
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected}
+                            readOnly
+                            className="rounded text-amber-600 focus:ring-amber-500 h-4 w-4 border-slate-300 cursor-pointer"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold text-slate-800 truncate">{p.title}</div>
+                            {p.price && <div className="text-[10px] text-amber-600 font-bold">{p.price}</div>}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
 
                 {selectedProducts.length > 0 && (
