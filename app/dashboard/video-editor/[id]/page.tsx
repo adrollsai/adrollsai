@@ -106,7 +106,6 @@ export default function VideoEditorPage() {
                 const proxyUrl = getBrowserMediaUrl(assetData.url)
                 const directUrl = fixR2Url(assetData.url)
                 const video = document.createElement('video')
-                video.crossOrigin = 'anonymous'
                 video.preload = 'metadata'
 
                 let readyTriggered = false
@@ -115,6 +114,7 @@ export default function VideoEditorPage() {
                     const videoDuration = video.duration
                     if (videoDuration && !isNaN(videoDuration) && isFinite(videoDuration) && videoDuration > 0) {
                         readyTriggered = true
+                        console.log(`[Video Editor] Probed video duration: ${videoDuration}s`)
                         const calculatedFrames = Math.ceil(videoDuration * 30) + 120
                         setDurationInFrames(calculatedFrames)
                         setVideoReady(true)
@@ -124,15 +124,21 @@ export default function VideoEditorPage() {
                 video.onloadedmetadata = handleDuration
                 video.onloadeddata = handleDuration
                 video.oncanplay = handleDuration
-                video.src = directUrl
+                
+                // Use proxy URL to avoid CORS blocks on cross-origin duration probing
+                video.src = proxyUrl
 
-                // Fallback timeout after 3s so editor never gets stuck
+                // Fallback timeout after 5s so editor never gets stuck
                 setTimeout(() => {
                     if (!readyTriggered) {
-                        readyTriggered = true
-                        setVideoReady(true)
+                        if (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 0) {
+                            handleDuration()
+                        } else {
+                            readyTriggered = true
+                            setVideoReady(true)
+                        }
                     }
-                }, 3000)
+                }, 5000)
             } else {
                 setVideoReady(true)
             }
@@ -262,7 +268,7 @@ export default function VideoEditorPage() {
                         controls
                         style={{ width: '100%', height: '100%' }}
                         inputProps={{
-                            videoUrl: fixR2Url(asset.url),
+                            videoUrl: getBrowserMediaUrl(asset.url),
                             captions: captions,
                             effects: effects,
                             theme: SUBTITLE_THEMES[selectedTheme],

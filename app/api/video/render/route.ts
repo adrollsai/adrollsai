@@ -148,6 +148,10 @@ export async function POST(request: Request) {
                 } catch (e) {}
             }
 
+            if (cleanVideoUrl && typeof cleanVideoUrl === 'string' && cleanVideoUrl.includes('r2.dev/adrolls-storage/')) {
+                cleanVideoUrl = cleanVideoUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
+            }
+
             // Strip redundant /adrolls-storage/ prefix from R2 public domain URLs (r2.dev mounts bucket root directly)
             const audioUrlCandidate = originalAsset?.metadata?.audioUrl || originalAsset?.voiceover_url || originalAsset?.audio_url;
             let cleanAudioUrl = audioUrlCandidate;
