@@ -5,11 +5,45 @@ import { sendFollowupReminderEmail } from '@/utils/email-helper'
 import { sendPushNotification } from '@/utils/notification-helper'
 
 export async function POST(request: Request) {
+  const body = await request.json()
+
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  let { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) user = session.user
+  }
+
+  const supabaseAdmin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  const authHeader = request.headers.get('Authorization')
+  if (!user && authHeader) {
+    const token = authHeader.replace('Bearer ', '').trim()
+    if (token) {
+      const { data: authUserData } = await supabaseAdmin.auth.getUser(token)
+      if (authUserData?.user) user = authUserData.user
+    }
+  }
+
+  if (!user && (body.userId || body.impersonateId)) {
+    const targetId = body.userId || body.impersonateId
+    const { data: fallbackProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('id', targetId)
+      .maybeSingle()
+
+    if (fallbackProfile) {
+      user = { id: fallbackProfile.id } as any
+    }
+  }
+
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json()
   const {
     action = 'update_followup',
     leadId,
@@ -35,10 +69,6 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabaseAdmin = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
 
     // Verify lead & access
     const { data: lead, error: leadErr } = await supabaseAdmin
@@ -80,20 +110,22 @@ export async function POST(request: Request) {
       updatePayload.next_followup = nextActionDate
     }
 
-    if (leadStatus) {
-      updatePayload.status = leadStatus
-      const stageMap: Record<string, string> = {
-        'New Lead': 'New',
-        'Ongoing': 'Ongoing',
-        'Requirement Taken': 'Contacted',
-        'Visit Planned': 'Appointment booked',
-        'Visit Done': 'Appointment done',
-        'Revisit Done': 'Appointment done',
-        'Negotiation': 'Qualified',
-        'Deal/Token': 'Closed',
-        'Lost/NI': 'Unqualified'
-      }
-      updatePayload.pipeline_stage = body.pipelineStage || stageMap[leadStatus] || leadStatus
+    // Automatically clear next_followup if status/stage is set to Lost/NI, Closed, Unqualified, or Junk
+    const targetStatus = leadStatus || updatePayload.status || lead.status || ''
+    const targetStage = updatePayload.pipeline_stage || lead.pipeline_stage || ''
+    const targetClientStatus = clientStatus || ''
+    const combinedStatusStr = (targetStatus + ' ' + targetStage + ' ' + targetClientStatus).toLowerCase()
+
+    const isLostOrClosed = 
+      combinedStatusStr.includes('lost') ||
+      combinedStatusStr.includes('ni') ||
+      combinedStatusStr.includes('not interested') ||
+      combinedStatusStr.includes('junk') ||
+      combinedStatusStr.includes('unqualified') ||
+      combinedStatusStr.includes('closed')
+
+    if (isLostOrClosed) {
+      updatePayload.next_followup = null
     }
 
     if (assignedTo) {

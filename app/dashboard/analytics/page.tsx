@@ -169,6 +169,7 @@ export default function AnalyticsPage() {
     leads: [],
     searchFilter: ''
   })
+  const [drilldownViewMode, setDrilldownViewMode] = useState<'list' | 'card'>('list')
 
   // Clear legacy analytics caches from localStorage on mount
   useEffect(() => {
@@ -551,6 +552,21 @@ export default function AnalyticsPage() {
         let cf: any = l.custom_fields
         if (typeof cf === 'string') {
           try { cf = JSON.parse(cf) } catch (e) {}
+        }
+
+        // Strict Exclusion: Never include Lost/NI, Closed, Unqualified, Junk, or Deal/Token leads in Action Manager
+        const leadStatusStr = ((l.status || '') + ' ' + (l.pipeline_stage || '') + ' ' + (cf?.client_status || '')).toLowerCase().trim()
+        if (
+          leadStatusStr.includes('lost') ||
+          leadStatusStr.includes('ni') ||
+          leadStatusStr.includes('not interested') ||
+          leadStatusStr.includes('junk') ||
+          leadStatusStr.includes('unqualified') ||
+          leadStatusStr.includes('closed') ||
+          leadStatusStr.includes('deal/token') ||
+          leadStatusStr.includes('won')
+        ) {
+          return
         }
 
         const lastFollowupDateStr = getLocalDateStr(cf?.last_followup_at || l.last_call_at)
@@ -2297,9 +2313,9 @@ export default function AnalyticsPage() {
               </button>
             </div>
 
-            {/* Modal Search Bar */}
-            <div className="p-4 border-b border-slate-100 bg-white flex items-center gap-3">
-              <div className="relative flex-1">
+            {/* Modal Search Bar & View Mode Toggle */}
+            <div className="p-4 border-b border-slate-100 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="relative flex-1 w-full">
                 <Search size={14} className="absolute left-3 top-3 text-slate-400" />
                 <input
                   type="text"
@@ -2309,19 +2325,68 @@ export default function AnalyticsPage() {
                   className="w-full bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 rounded-xl pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
-              <span className="text-xs font-black text-slate-500 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 shrink-0">
-                {drilldownModal.leads.filter(l => {
-                  if (!drilldownModal.searchFilter.trim()) return true
-                  const q = drilldownModal.searchFilter.toLowerCase().trim()
-                  return (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q) || (l.pipeline_stage || '').toLowerCase().includes(q)
-                }).length} leads
-              </span>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                {/* View Mode Toggle: Compact List vs Cards */}
+                <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200 text-xs font-bold shrink-0">
+                  <button
+                    onClick={() => setDrilldownViewMode('list')}
+                    className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${drilldownViewMode === 'list' ? 'bg-blue-600 text-white shadow-xs font-extrabold' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    <span>📋 List View</span>
+                  </button>
+                  <button
+                    onClick={() => setDrilldownViewMode('card')}
+                    className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${drilldownViewMode === 'card' ? 'bg-blue-600 text-white shadow-xs font-extrabold' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    <span>📇 Card View</span>
+                  </button>
+                </div>
+
+                <span className="text-xs font-black text-slate-500 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 shrink-0">
+                  {drilldownModal.leads.filter(l => {
+                    let cf: any = l.custom_fields
+                    if (typeof cf === 'string') {
+                      try { cf = JSON.parse(cf) } catch (e) {}
+                    }
+                    const leadStatusStr = ((l.status || '') + ' ' + (l.pipeline_stage || '') + ' ' + (cf?.client_status || '')).toLowerCase().trim()
+                    if (
+                      leadStatusStr.includes('lost') ||
+                      leadStatusStr.includes('ni') ||
+                      leadStatusStr.includes('not interested') ||
+                      leadStatusStr.includes('junk') ||
+                      leadStatusStr.includes('unqualified') ||
+                      leadStatusStr.includes('closed')
+                    ) {
+                      return false
+                    }
+                    if (!drilldownModal.searchFilter.trim()) return true
+                    const q = drilldownModal.searchFilter.toLowerCase().trim()
+                    return (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q) || (l.pipeline_stage || '').toLowerCase().includes(q)
+                  }).length} leads
+                </span>
+              </div>
             </div>
 
             {/* Modal Leads List */}
-            <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-3">
+            <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-2">
               {(() => {
                 const filtered = drilldownModal.leads.filter(l => {
+                  let cf: any = l.custom_fields
+                  if (typeof cf === 'string') {
+                    try { cf = JSON.parse(cf) } catch (e) {}
+                  }
+                  const leadStatusStr = ((l.status || '') + ' ' + (l.pipeline_stage || '') + ' ' + (cf?.client_status || '')).toLowerCase().trim()
+                  if (
+                    leadStatusStr.includes('lost') ||
+                    leadStatusStr.includes('ni') ||
+                    leadStatusStr.includes('not interested') ||
+                    leadStatusStr.includes('junk') ||
+                    leadStatusStr.includes('unqualified') ||
+                    leadStatusStr.includes('closed')
+                  ) {
+                    return false
+                  }
                   if (!drilldownModal.searchFilter.trim()) return true
                   const q = drilldownModal.searchFilter.toLowerCase().trim()
                   return (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q) || (l.pipeline_stage || '').toLowerCase().includes(q)
@@ -2331,7 +2396,146 @@ export default function AnalyticsPage() {
                   return (
                     <div className="text-center py-12 text-slate-400">
                       <Users size={32} className="mx-auto mb-2 opacity-50" />
-                      <p className="text-xs font-extrabold">No matching leads found for this view.</p>
+                      <p className="text-xs font-extrabold">No active leads found for this view.</p>
+                    </div>
+                  )
+                }
+
+                if (drilldownViewMode === 'list') {
+                  // COMPACT LIST VIEW WITH LAST REMARKS GLIMPSE
+                  return (
+                    <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-xs">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-wider">
+                            <th className="py-3 px-3">Lead & Contact</th>
+                            <th className="py-3 px-3">Stage / Rep</th>
+                            <th className="py-3 px-3 min-w-[220px]">Last Remark / Notes</th>
+                            <th className="py-3 px-3">Next Action</th>
+                            <th className="py-3 px-3 text-right">Quick Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-xs">
+                          {filtered.map((lead: any) => {
+                            const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
+                            let cf: any = lead.custom_fields
+                            if (typeof cf === 'string') {
+                              try { cf = JSON.parse(cf) } catch (e) {}
+                            }
+
+                            let lastRemark = (cf?.last_followup_remark || '').trim()
+                            if (!lastRemark && lead.notes && lead.notes.includes('[Last Remarks]:')) {
+                              lastRemark = lead.notes.split('[Last Remarks]:')[1]?.trim() || ''
+                            }
+                            if (!lastRemark && lead.summary) lastRemark = lead.summary
+
+                            const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
+                            const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
+
+                            let nextActionFormatted = ''
+                            if (rawNextDate) {
+                              try {
+                                const d = new Date(rawNextDate)
+                                if (!isNaN(d.getTime())) {
+                                  nextActionFormatted = d.toLocaleString('en-IN', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })
+                                }
+                              } catch (e) {}
+                            }
+
+                            return (
+                              <tr key={lead.id} className="hover:bg-blue-50/40 transition-colors group">
+                                <td className="py-2.5 px-3">
+                                  <div className="font-extrabold text-slate-900 text-xs">{lead.name || 'Unknown Prospect'}</div>
+                                  <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
+                                    <span>📞 {lead.phone || 'No phone'}</span>
+                                  </div>
+                                </td>
+
+                                <td className="py-2.5 px-3">
+                                  <div className="flex flex-col gap-1 items-start">
+                                    <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-black text-[10px]">
+                                      {lead.pipeline_stage || lead.status || 'New'}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 font-bold truncate max-w-[110px]">
+                                      Rep: {assignedRep}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td className="py-2.5 px-3">
+                                  {lastRemark ? (
+                                    <div className="bg-amber-50 border border-amber-200/80 p-2 rounded-xl text-[11px] text-amber-950 font-medium leading-tight max-w-[320px]">
+                                      <span className="font-extrabold text-amber-800 text-[9px] uppercase tracking-wider block mb-0.5">Last Remark:</span>
+                                      <span className="line-clamp-2 italic">{lastRemark}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-[11px] italic">No remarks recorded</span>
+                                  )}
+                                </td>
+
+                                <td className="py-2.5 px-3">
+                                  {nextActionFormatted ? (
+                                    <div className="text-[11px] font-bold text-slate-800">
+                                      <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-black text-[10px] block mb-0.5 w-fit">
+                                        {nextActionType}
+                                      </span>
+                                      <span>{nextActionFormatted}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-[11px]">Pending</span>
+                                  )}
+                                </td>
+
+                                <td className="py-2.5 px-3 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      onClick={() => setHistoryLead(lead)}
+                                      className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-[11px] font-black hover:bg-slate-100 shadow-xs flex items-center gap-1 cursor-pointer"
+                                      title="View History"
+                                    >
+                                      <History size={12} className="text-blue-600" />
+                                      <span>History</span>
+                                    </button>
+
+                                    <button
+                                      onClick={() => setFollowupLead(lead)}
+                                      className="px-2.5 py-1 bg-blue-600 text-white rounded-lg text-[11px] font-black hover:bg-blue-700 shadow-xs flex items-center gap-1 cursor-pointer"
+                                      title="Record Followup"
+                                    >
+                                      <RefreshCw size={12} />
+                                      <span>Followup</span>
+                                    </button>
+
+                                    <a
+                                      href={`https://wa.me/${(lead.phone || '').replace(/\D/g, '')}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                                      title="WhatsApp"
+                                    >
+                                      <MessageSquare size={13} />
+                                    </a>
+
+                                    <a
+                                      href={`tel:${lead.phone}`}
+                                      className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                                      title="Call"
+                                    >
+                                      <Phone size={13} />
+                                    </a>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   )
                 }
