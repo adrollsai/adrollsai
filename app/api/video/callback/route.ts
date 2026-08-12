@@ -605,7 +605,9 @@ export async function POST(request: Request) {
                             try {
                                 const audioRes = await fetch(ttsStatus.resultUrl);
                                 if (audioRes.ok) {
-                                    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                    const rawAudioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                    const { ensureMp3AudioBuffer } = await import('@/utils/audio-converter');
+                                    const audioBuffer = await ensureMp3AudioBuffer(rawAudioBuffer);
                                     const r2Key = `voiceover/${Date.now()}_grok_async_tts.mp3`;
                                     await r2.send(new PutObjectCommand({
                                         Bucket: R2_BUCKET,
@@ -684,7 +686,9 @@ export async function POST(request: Request) {
                                         try {
                                             const audioRes = await fetch(ttsStatus.resultUrl);
                                             if (audioRes.ok) {
-                                                const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                                const rawAudioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                                                const { ensureMp3AudioBuffer } = await import('@/utils/audio-converter');
+                                                const audioBuffer = await ensureMp3AudioBuffer(rawAudioBuffer);
                                                 const r2Key = `voiceover/${Date.now()}_grok_stitch.mp3`;
                                                 await r2.send(new PutObjectCommand({
                                                     Bucket: R2_BUCKET,

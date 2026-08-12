@@ -60,7 +60,9 @@ export async function POST(request: Request) {
                 try {
                     const audioRes = await fetch(rawAudioUrl);
                     if (audioRes.ok) {
-                        const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                        const rawAudioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                        const { ensureMp3AudioBuffer } = await import('@/utils/audio-converter');
+                        const audioBuffer = await ensureMp3AudioBuffer(rawAudioBuffer);
                         const { r2, R2_BUCKET, R2_PUBLIC_URL } = await import('@/utils/r2');
                         const { PutObjectCommand } = await import('@aws-sdk/client-s3');
                         const r2Key = `voiceover/${Date.now()}_${taskId}.mp3`;

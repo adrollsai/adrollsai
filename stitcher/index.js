@@ -130,8 +130,10 @@ app.post('/stitch', async (req, res) => {
                 console.log(`[Stitcher] Downloading voiceover audio for stitch: ${cleanAudioUrl}...`);
                 const audioRes = await fetch(cleanAudioUrl);
                 if (audioRes.ok) {
-                    localAudioPath = path.join(tempDir, 'voiceover.mp3');
-                    fs.writeFileSync(localAudioPath, Buffer.from(await audioRes.arrayBuffer()));
+                    const buf = Buffer.from(await audioRes.arrayBuffer());
+                    const isWav = buf.length > 12 && buf.toString('utf8', 0, 4) === 'RIFF';
+                    localAudioPath = path.join(tempDir, isWav ? 'voiceover.wav' : 'voiceover.mp3');
+                    fs.writeFileSync(localAudioPath, buf);
                 }
             } catch (audErr) {
                 console.warn(`[Stitcher] Failed to download voiceover audio:`, audErr.message);
