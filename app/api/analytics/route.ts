@@ -107,6 +107,9 @@ export async function GET(req: Request) {
         }
 
         // 1. Fetch CRM Leads across workspace using fast paginated batches
+        // NOTE: Do NOT filter leads by created_at date range here. The action report needs ALL leads
+        // to cross-reference with history entries (a lead created months ago could be attempted today).
+        // Date-based filtering for stats cards is handled on the frontend.
         const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience'
 
         let rawLeadsBatch: any[] = []
@@ -120,13 +123,6 @@ export async function GET(req: Request) {
                 .select(leadFields)
                 .range(page * pageSize, (page + 1) * pageSize - 1)
                 .order('created_at', { ascending: false })
-
-            if (startDate) {
-                query = query.gte('created_at', startDate.toISOString())
-            }
-            if (endDate) {
-                query = query.lte('created_at', endDate.toISOString())
-            }
 
             if (isTeamUser && activeAgentId) {
                 query = query.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
@@ -182,21 +178,45 @@ export async function GET(req: Request) {
         const rawTeamMembers = teamMembers || []
 
         // 3. Fetch lead_history entries for date range to compute call attempts
-        let historyQuery = supabaseAdmin
+        // Scope history to workspace team members for accurate per-agent counting
+        const leadIds = finalLeads.map(l => l.id)
+        let allHistoryLogs: any[] = []
+
+        // Fetch in batches of 2000 to get comprehensive history
+        const historyBatchSize = 2000
+        let historyPage = 0
+        let historyHasMore = true
+
+        while (historyHasMore && historyPage < 5) {
+          let historyQuery = supabaseAdmin
             .from('lead_history')
             .select('id, lead_id, user_id, action_type, description, created_at')
             .order('created_at', { ascending: false })
-            .limit(1000)
+            .range(historyPage * historyBatchSize, (historyPage + 1) * historyBatchSize - 1)
 
-        if (startDate) {
+          // Filter by workspace team user IDs for relevant history
+          if (workspaceTeamIds.length > 0) {
+            historyQuery = historyQuery.in('user_id', workspaceTeamIds)
+          }
+
+          if (startDate) {
             historyQuery = historyQuery.gte('created_at', startDate.toISOString())
-        }
-        if (endDate) {
+          }
+          if (endDate) {
             historyQuery = historyQuery.lte('created_at', endDate.toISOString())
+          }
+
+          const { data: historyBatch } = await historyQuery
+          if (!historyBatch || historyBatch.length === 0) {
+            historyHasMore = false
+          } else {
+            allHistoryLogs = allHistoryLogs.concat(historyBatch)
+            historyPage++
+            if (historyBatch.length < historyBatchSize) historyHasMore = false
+          }
         }
 
-        const { data: historyLogs } = await historyQuery
-        const safeHistoryLogs = historyLogs || []
+        const safeHistoryLogs = allHistoryLogs
 
         const teamData = rawTeamMembers.map(member => {
             const memberLeads = finalLeads.filter(l => l.assigned_to === member.id || l.user_id === member.id)

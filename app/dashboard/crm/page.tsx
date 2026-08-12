@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { 
   Search, Phone, MessageCircle, RefreshCw, Upload, 
-  Plus, CheckCircle2, X, Download, Trash2, UserPlus, 
+  Plus, CheckCircle2, X, Download, Trash2, UserPlus, Eye,
   Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, ChevronUp, SlidersHorizontal, FileText, Send, HelpCircle, Target, Calendar,
   LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw, History, ArrowRightLeft, Layers
 } from 'lucide-react'
@@ -64,6 +64,78 @@ function formatCallPhone(phoneRaw: string | null | undefined): string {
     return `+${digits}`;
   }
   return `+${digits}`;
+}
+
+function getLeadLastRemark(lead: any): string | null {
+  if (!lead) return null;
+  let cf = lead.custom_fields;
+  if (cf && typeof cf === 'string') {
+    try { while (typeof cf === 'string') cf = JSON.parse(cf); } catch (e) {}
+  }
+  
+  if (cf?.last_followup_remark && typeof cf.last_followup_remark === 'string' && cf.last_followup_remark.trim()) {
+    return cf.last_followup_remark.trim();
+  }
+  if (cf?.last_remark && typeof cf.last_remark === 'string' && cf.last_remark.trim()) {
+    return cf.last_remark.trim();
+  }
+  if (lead.last_followup_remark && typeof lead.last_followup_remark === 'string' && lead.last_followup_remark.trim()) {
+    return lead.last_followup_remark.trim();
+  }
+  if (lead.last_call_remark && typeof lead.last_call_remark === 'string' && lead.last_call_remark.trim()) {
+    return lead.last_call_remark.trim();
+  }
+
+  if (lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
+    const notesStr = lead.notes.trim();
+    const topEntry = notesStr.split(/\n\n+/)[0]?.trim();
+    if (topEntry) {
+      if (topEntry.includes(']:')) {
+        const parts = topEntry.split(']:');
+        const content = parts.slice(1).join(']:').trim();
+        if (content) return content;
+      }
+      return topEntry;
+    }
+  }
+
+  if (lead.summary && typeof lead.summary === 'string' && lead.summary.trim()) {
+    return lead.summary.trim();
+  }
+  if (cf?.notes && typeof cf.notes === 'string' && cf.notes.trim()) {
+    return cf.notes.trim();
+  }
+
+  return null;
+}
+
+function getLeadLastAttemptDate(lead: any): Date | null {
+  if (!lead) return null;
+  let cf = lead.custom_fields;
+  if (cf && typeof cf === 'string') {
+    try { while (typeof cf === 'string') cf = JSON.parse(cf); } catch (e) {}
+  }
+  const tFollowup = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : 0;
+  const tAction = cf?.last_action_date ? new Date(cf.last_action_date).getTime() : 0;
+  const tCallInitiated = cf?.last_call_initiated_at ? new Date(cf.last_call_initiated_at).getTime() : 0;
+  const tLastCall = lead.last_call_at ? new Date(lead.last_call_at).getTime() : 0;
+  
+  const lastAttempt = Math.max(tFollowup, tAction, tCallInitiated, tLastCall);
+  if (lastAttempt > 0) return new Date(lastAttempt);
+  return null;
+}
+
+function formatIsoDatesInText(text: string): string {
+  if (!text) return '';
+  return text.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, (match) => {
+    try {
+      const d = new Date(match);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleString([], { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+      }
+    } catch (e) {}
+    return match;
+  });
 }
 
 export default function CRMPage() {
@@ -127,7 +199,7 @@ export default function CRMPage() {
   const [activeMediaModal, setActiveMediaModal] = useState<any>(null)
 
   // --- FILTER STATE ---
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest')
+  const [sortOrder, setSortOrder] = useState<'last_attempted' | 'newest' | 'oldest'>('last_attempted')
   const [activeStage, setActiveStageState] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('crm_stage')
@@ -150,6 +222,7 @@ export default function CRMPage() {
   }
 
   const [searchQuery, setSearchQuery] = useState('')
+  const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string; attemptDate?: Date | null } | null>(null)
   const [selectedCampaign, setSelectedCampaign] = useState('')
   const [selectedForm, setSelectedForm] = useState('')
   const [showFilters, setShowFilters] = useState(false)
@@ -1782,10 +1855,28 @@ END:VCARD\n`
   const filteredLeads = useMemo(() => {
     const list = leadsMatchingFilters.filter(l => {
       if (searchQuery.trim() !== '') return true
-      if (!activeStage) return true
+      if (!activeStage || activeStage === 'All Leads') return true
       return matchLeadToStage(l, activeStage)
     })
     return list.sort((a, b) => {
+      if (sortOrder === 'last_attempted') {
+        const getAttemptTime = (l: any) => {
+          let cf = l.custom_fields
+          if (typeof cf === 'string') {
+            try { cf = JSON.parse(cf) } catch (e) {}
+          }
+          const tFollowup = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : 0
+          const tAction = cf?.last_action_date ? new Date(cf.last_action_date).getTime() : 0
+          const tCallInitiated = cf?.last_call_initiated_at ? new Date(cf.last_call_initiated_at).getTime() : 0
+          const tLastCall = l.last_call_at ? new Date(l.last_call_at).getTime() : 0
+          
+          const lastAttempt = Math.max(tFollowup, tAction, tCallInitiated, tLastCall)
+          if (lastAttempt > 0) return lastAttempt
+
+          return new Date(l.facebook_created_at || l.created_at || 0).getTime()
+        }
+        return getAttemptTime(b) - getAttemptTime(a)
+      }
       const timeA = new Date(a.facebook_created_at || a.created_at).getTime()
       const timeB = new Date(b.facebook_created_at || b.created_at).getTime()
       return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA
@@ -2078,10 +2169,11 @@ END:VCARD\n`
 
                     <select
                         value={sortOrder}
-                        onChange={(e) => setSortOrder(e.target.value as 'newest' | 'oldest')}
+                        onChange={(e) => setSortOrder(e.target.value as 'last_attempted' | 'newest' | 'oldest')}
                         className="bg-white border border-slate-200/80 text-slate-800 font-extrabold text-xs rounded-2xl px-3.5 py-3.5 shadow-xs focus:outline-none focus:border-blue-500 cursor-pointer shrink-0"
                     >
-                        <option value="newest">📅 Sort: Newest First</option>
+                        <option value="last_attempted">⚡ Sort: Recently Attempted First</option>
+                        <option value="newest">📅 Sort: Newest Created First</option>
                         <option value="oldest">📅 Sort: Oldest First</option>
                     </select>
 
@@ -2419,6 +2511,7 @@ END:VCARD\n`
                                     )}
                                     <th className="p-4">Lead Name & Phone</th>
                                     <th className="p-4">Stage</th>
+                                    <th className="p-4">Last Remark</th>
                                     <th className="p-4">Assigned Agent</th>
                                     <th className="p-4">DNP Status</th>
                                     <th className="p-4">Campaign / Source</th>
@@ -2465,6 +2558,35 @@ END:VCARD\n`
                                                     {STAGES.filter(s => s !== 'All Leads').map(s => <option key={s} value={s}>{s}</option>)}
                                                 </select>
                                             </td>
+                                            <td className="p-4 max-w-[240px]" onClick={e => e.stopPropagation()}>
+                                                 {(() => {
+                                                     const remark = getLeadLastRemark(lead);
+                                                     if (!remark) return <span className="text-xs text-slate-400 font-medium italic">No remark</span>;
+                                                     return (
+                                                         <div className="flex items-center gap-1.5">
+                                                             <span className="text-[11px] font-semibold text-slate-700 truncate max-w-[160px] leading-tight" title={remark}>
+                                                                 📝 {remark}
+                                                             </span>
+                                                             <button
+                                                                 type="button"
+                                                                 onClick={(e) => {
+                                                                     e.stopPropagation();
+                                                                     setFullRemarkModal({ 
+                                                                         leadName: lead.name || 'Lead', 
+                                                                         remark,
+                                                                         attemptDate: getLeadLastAttemptDate(lead)
+                                                                     });
+                                                                 }}
+                                                                 className="px-2 py-0.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg text-[10px] font-extrabold transition-all border border-blue-200 shrink-0 cursor-pointer flex items-center gap-1 shadow-2xs"
+                                                                 title="Tap to see full last remark"
+                                                             >
+                                                                 <Eye size={11} />
+                                                                 <span>View</span>
+                                                             </button>
+                                                         </div>
+                                                     );
+                                                 })()}
+                                             </td>
                                             <td className="p-4" onClick={e => e.stopPropagation()}>
                                                 {isAdminLike ? (
                                                     <select value={lead.assigned_to || ''} onChange={(e) => assignLead(lead.id, e.target.value, e)} className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-lg py-1.5 px-2.5 outline-none transition-all cursor-pointer border border-slate-200/60 max-w-[140px] truncate">
@@ -2679,10 +2801,25 @@ END:VCARD\n`
                                         >
                                             <MessageCircle size={14} className={lead.whatsapp_enabled === false ? 'line-through opacity-70' : ''} />
                                         </button>
-                                        <a 
+                                         <a 
                                              href={`tel:${formatCallPhone(displayPhone)}`} 
                                              onClick={e => { 
-                                                 e.stopPropagation(); 
+                                                 e.stopPropagation();
+                                                 const nowIso = new Date().toISOString();
+                                                 let cf = lead.custom_fields || {};
+                                                 if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (err) {} }
+                                                 cf.last_followup_at = nowIso;
+                                                 cf.last_call_initiated_at = nowIso;
+                                                 const updated = { ...lead, custom_fields: cf };
+                                                 setLeads(prev => prev.map(item => item.id === lead.id ? updated : item));
+                                                 updateLocalCRMCache(updated);
+
+                                                 fetch('/api/crm/followup', {
+                                                     method: 'POST',
+                                                     headers: { 'Content-Type': 'application/json' },
+                                                     body: JSON.stringify({ action: 'log_call', leadId: lead.id })
+                                                 }).catch(() => {});
+
                                                  setUpdateFollowupLead(lead);
                                              }} 
                                              className="p-2.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl transition-colors shadow-xs flex items-center justify-center"
@@ -2742,24 +2879,34 @@ END:VCARD\n`
 
                         {/* Last Remarks Box */}
                         {(() => {
-                            let customFields = lead.custom_fields;
-                            if (customFields && typeof customFields === 'string') {
-                                try { while (typeof customFields === 'string') customFields = JSON.parse(customFields); } catch (e) {}
-                            }
-                            const extractLastRemark = (notesStr?: string | null) => {
-                                if (!notesStr || !notesStr.includes('[Last Remarks]:')) return null;
-                                return notesStr.split('[Last Remarks]:')[1]?.split('\n\n')[0]?.trim() || null;
-                            };
-                            const lastRemark = customFields?.last_followup_remark || lead.last_followup_remark || lead.last_call_remark || extractLastRemark(lead.notes);
+                            const lastRemark = getLeadLastRemark(lead);
                             if (!lastRemark) return null;
                             return (
                                 <div className="mb-4 text-[11px] font-medium text-slate-700">
-                                    <div className="flex items-start gap-2 bg-slate-50 border border-slate-200/80 p-2.5 rounded-2xl shadow-xs">
-                                        <span className="text-slate-500 font-bold shrink-0 mt-0.5">📝</span>
-                                        <div className="min-w-0 flex-1">
-                                            <span className="font-extrabold text-slate-900">Last Remarks :- </span>
-                                            <p className="text-slate-600 text-[11px] leading-snug line-clamp-3 mt-0.5 font-medium">{lastRemark}</p>
+                                    <div className="flex items-start gap-2 bg-slate-50 border border-slate-200/80 p-2.5 rounded-2xl shadow-xs justify-between">
+                                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                                            <span className="text-slate-500 font-bold shrink-0 mt-0.5">📝</span>
+                                            <div className="min-w-0 flex-1">
+                                                <span className="font-extrabold text-slate-900">Last Remarks :- </span>
+                                                <p className="text-slate-600 text-[11px] leading-snug line-clamp-3 mt-0.5 font-medium">{formatIsoDatesInText(lastRemark)}</p>
+                                            </div>
                                         </div>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setFullRemarkModal({ 
+                                                    leadName: lead.name || 'Lead', 
+                                                    remark: lastRemark,
+                                                    attemptDate: getLeadLastAttemptDate(lead)
+                                                });
+                                            }}
+                                            className="px-2 py-1 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white rounded-lg text-[10px] font-extrabold transition-all border border-blue-200 shrink-0 cursor-pointer flex items-center gap-1 shadow-2xs mt-0.5"
+                                            title="Tap to see full last remark"
+                                        >
+                                            <Eye size={11} />
+                                            <span>View</span>
+                                        </button>
                                     </div>
                                 </div>
                             );
@@ -3506,7 +3653,52 @@ END:VCARD\n`
            </div>
          </div>
        )}
-       </div>
-     </div>
-   )
- }
+        {/* FULL LAST REMARK MODAL */}
+        {fullRemarkModal && (
+            <div className="fixed inset-0 z-[999999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150" onClick={() => setFullRemarkModal(null)}>
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                    <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+                        <div className="flex items-center gap-3">
+                            <span className="p-2.5 rounded-2xl bg-blue-100 text-blue-700 font-bold text-lg">📝</span>
+                            <div>
+                                <h3 className="text-base font-extrabold text-slate-900">{fullRemarkModal.leadName}</h3>
+                                {fullRemarkModal.attemptDate ? (
+                                    <p className="text-xs font-bold text-blue-600 flex items-center gap-1 mt-0.5">
+                                        <Clock size={13} />
+                                        <span>Last Attempt: {fullRemarkModal.attemptDate.toLocaleString([], { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                                    </p>
+                                ) : (
+                                    <p className="text-xs font-semibold text-slate-400 mt-0.5">Last Remark Details</p>
+                                )}
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setFullRemarkModal(null)}
+                            className="p-2 rounded-xl bg-slate-200/60 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+                    <div className="p-6 max-h-[60vh] overflow-y-auto">
+                        <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
+                            <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block mb-1">Full Remark Text</span>
+                            <p className="text-sm font-semibold text-slate-800 leading-relaxed whitespace-pre-wrap">
+                                {formatIsoDatesInText(fullRemarkModal.remark)}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+                        <button
+                            onClick={() => setFullRemarkModal(null)}
+                            className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-all shadow-sm cursor-pointer"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+        </div>
+      </div>
+    )
+  }

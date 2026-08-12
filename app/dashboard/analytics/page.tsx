@@ -169,7 +169,13 @@ export default function AnalyticsPage() {
     leads: [],
     searchFilter: ''
   })
-  const [drilldownViewMode, setDrilldownViewMode] = useState<'list' | 'card'>('list')
+  const [drilldownViewMode, setDrilldownViewMode] = useState<'list' | 'card'>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768 ? 'list' : 'card'
+    }
+    return 'list'
+  })
+  const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string } | null>(null)
 
   // Clear legacy analytics caches from localStorage on mount
   useEffect(() => {
@@ -855,22 +861,10 @@ export default function AnalyticsPage() {
 
     const parseItemDate = (item?: any) => {
       if (!item) return null
-      if (typeof item === 'object' && item.description) {
-        const match = item.description.match(/(?:Call|Visit|DNP|Followup|Picked|Remark|Status).*?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i)
-        if (match) {
-          const day = parseInt(match[1], 10)
-          const month = parseInt(match[2], 10) - 1
-          const year = parseInt(match[3], 10)
-          if (year >= 2020 && year <= 2026) {
-            return new Date(year, month, day)
-          }
-        }
-      }
-      const rawStr = typeof item === 'string' ? item : item?.created_at || item?.last_call_at
+      const rawStr = typeof item === 'string' ? item : item?.created_at
       if (!rawStr) return null
       const d = new Date(rawStr)
       if (isNaN(d.getTime())) return null
-      if (d.getFullYear() > 2026) return null
       return d
     }
 
@@ -891,29 +885,59 @@ export default function AnalyticsPage() {
 
     let totalCalls = 0, totalVisits = 0, totalMeetings = 0, totalDnp = 0
 
-    const rows = allSalesReps.map(rep => {
+    let rows = allSalesReps.map(rep => {
       const repLogs = historyList.filter(h => h.user_id === rep.id)
       const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
 
-      let calls = repLogs.filter(h => h.action_type === 'CALL_INITIATED' || h.action_type === 'CALL_FEEDBACK' || h.action_type === 'VOICE_CALL' || (h.description && h.description.toLowerCase().includes('call'))).length
-      let visits = repLogs.filter(h => h.description && (h.description.toLowerCase().includes('visit') || h.description.toLowerCase().includes('revisit'))).length
-      let meetings = repLogs.filter(h => h.description && (h.description.toLowerCase().includes('meeting') || h.description.toLowerCase().includes('closing'))).length
-      let dnp = repLogs.filter(h => h.action_type === 'DNP' || (h.description && (h.description.includes('DNP') || h.description.includes('Not Picked')))).length
+      let calls = 0, visits = 0, meetings = 0, dnp = 0
+      const attemptedLeadIds = new Set<string>()
 
-      // Date-filtered leads for fallback metrics
-      const dateFilteredLeads = repLeads.filter(l => {
-        if (!startCutoff && !endCutoff) return true
+      repLogs.forEach(h => {
+        if (h.lead_id) attemptedLeadIds.add(h.lead_id)
+        const desc = (h.description || '').toLowerCase()
+        const type = (h.action_type || '').toUpperCase()
+
+        if (type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) {
+          dnp++
+        } else if (desc.includes('visit') || desc.includes('revisit')) {
+          visits++
+        } else if (desc.includes('meeting') || desc.includes('closing')) {
+          meetings++
+        } else {
+          calls++
+        }
+      })
+
+      // Build attempted leads list from history log lead_ids for drilldown
+      const attemptedLeads = repLeads.filter(l => {
+        if (attemptedLeadIds.has(l.id)) return true
+        
         let cf: any = l.custom_fields
         if (typeof cf === 'string') {
           try { cf = JSON.parse(cf) } catch (e) {}
         }
-        return isDateInRange(l.created_at) || isDateInRange(l.last_call_at) || isDateInRange(cf?.last_followup_at)
+        if (cf?.last_followup_at && isDateInRange(cf.last_followup_at)) return true
+        if (cf?.last_action_date && isDateInRange(cf.last_action_date)) return true
+        
+        return false
       })
 
-      const leadCalls = dateFilteredLeads.filter(l => l.last_call_at || l.last_call_status || l.notes?.includes('Followup')).length
-      const leadDnp = dateFilteredLeads.reduce((acc, l) => acc + (l.dnp_count || l.custom_fields?.dnp_count || 0), 0)
-
-      if (repLogs.length === 0 && dateFilteredLeads.length > 0) {
+      // Fallback: if no history logs exist but leads have call data, use lead-based counts
+      if (repLogs.length === 0 && attemptedLeads.length > 0) {
+        const leadCalls = attemptedLeads.filter(l => {
+          let cf: any = l.custom_fields
+          if (typeof cf === 'string') {
+            try { cf = JSON.parse(cf) } catch (e) {}
+          }
+          return cf?.last_followup_at || l.notes?.includes('Followup')
+        }).length
+        const leadDnp = attemptedLeads.reduce((acc: number, l: any) => {
+          let cf: any = l.custom_fields
+          if (typeof cf === 'string') {
+            try { cf = JSON.parse(cf) } catch (e) {}
+          }
+          return acc + (cf?.dnp_count || 0)
+        }, 0)
         calls = Math.max(calls, leadCalls)
         dnp = Math.max(dnp, leadDnp)
       }
@@ -932,9 +956,16 @@ export default function AnalyticsPage() {
         meetings,
         dnp,
         total,
-        repLeads: dateFilteredLeads.length > 0 ? dateFilteredLeads : repLeads
+        repLeads: attemptedLeads.length > 0 ? attemptedLeads : repLeads
       }
     }).sort((a, b) => b.total - a.total)
+
+    // For team members / agents, show ONLY their own metrics in the Action Report table!
+    if (!isAdminLike && profile?.id) {
+      rows = rows.filter(r => r.rep.id === profile.id)
+    } else if (selectedAgentId && selectedAgentId !== 'all') {
+      rows = rows.filter(r => r.rep.id === selectedAgentId)
+    }
 
     return {
       totalCalls,
@@ -944,10 +975,12 @@ export default function AnalyticsPage() {
       totalActions: totalCalls + totalVisits + totalMeetings + totalDnp,
       rows
     }
-  }, [history, leads, allSalesReps, duration, customDate, startDate, endDate])
+  }, [history, leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, selectedAgentId])
 
   // Open interactive drilldown drawer for leads
   const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[]) => {
+    const isDesktop = typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+    setDrilldownViewMode(isDesktop ? 'list' : 'card')
     setDrilldownModal({
       isOpen: true,
       title,
@@ -2555,10 +2588,19 @@ export default function AnalyticsPage() {
                     try { cf = JSON.parse(cf) } catch (e) {}
                   }
 
-                  let lastRemark = (cf?.last_followup_remark || '').trim()
-                  if (!lastRemark && lead.notes && lead.notes.includes('[Last Remarks]:')) {
-                    lastRemark = lead.notes.split('[Last Remarks]:')[1]?.trim() || ''
+                  let lastRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim()
+                  if (!lastRemark && lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
+                    const topEntry = lead.notes.trim().split(/\n\n+/)[0]?.trim()
+                    if (topEntry) {
+                      if (topEntry.includes(']:')) {
+                        const parts = topEntry.split(']:')
+                        lastRemark = parts.slice(1).join(']:').trim()
+                      } else {
+                        lastRemark = topEntry
+                      }
+                    }
                   }
+                  if (!lastRemark && lead.summary) lastRemark = lead.summary.trim()
                   
                   const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                   const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
@@ -2710,6 +2752,44 @@ export default function AnalyticsPage() {
           fetchAnalytics(true)
         }}
       />
+
+      {/* FULL LAST REMARK MODAL */}
+      {fullRemarkModal && (
+        <div className="fixed inset-0 z-[999999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150" onClick={() => setFullRemarkModal(null)}>
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-blue-100 text-blue-700 font-bold">📝</span>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Last Remark</h3>
+                  <p className="text-xs font-semibold text-slate-500">{fullRemarkModal.leadName}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setFullRemarkModal(null)}
+                className="p-2 rounded-xl bg-slate-200/60 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
+                <p className="text-sm font-medium text-slate-800 leading-relaxed whitespace-pre-wrap">
+                  {fullRemarkModal.remark}
+                </p>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+              <button
+                onClick={() => setFullRemarkModal(null)}
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
