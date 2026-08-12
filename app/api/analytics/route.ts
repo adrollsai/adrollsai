@@ -106,42 +106,56 @@ export async function GET(req: Request) {
             workspaceTeamIds = Array.from(new Set(workspaceTeamProfiles.map(p => p.id)))
         }
 
-        // 1. Fetch CRM Leads using fast parallel indexed queries (prevents Postgres statement timeouts)
+        // 1. Fetch CRM Leads across workspace using fast paginated batches
         const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience'
 
-        let leads1Query = supabaseAdmin.from('leads').select(leadFields).order('created_at', { ascending: false }).limit(2000)
-        let leads2Query = supabaseAdmin.from('leads').select(leadFields).order('created_at', { ascending: false }).limit(2000)
+        let rawLeadsBatch: any[] = []
+        let page = 0
+        const pageSize = 1000
+        let hasMore = true
 
-        if (startDate) {
-            leads1Query = leads1Query.gte('created_at', startDate.toISOString())
-            leads2Query = leads2Query.gte('created_at', startDate.toISOString())
-        }
-        if (endDate) {
-            leads1Query = leads1Query.lte('created_at', endDate.toISOString())
-            leads2Query = leads2Query.lte('created_at', endDate.toISOString())
-        }
+        while (hasMore && page < 15) {
+            let query = supabaseAdmin
+                .from('leads')
+                .select(leadFields)
+                .range(page * pageSize, (page + 1) * pageSize - 1)
+                .order('created_at', { ascending: false })
 
-        if (isTeamUser && activeAgentId) {
-            leads1Query = leads1Query.eq('assigned_to', activeAgentId)
-            leads2Query = leads2Query.eq('user_id', activeAgentId)
-        } else if (activeAgentId && activeAgentId !== 'unassigned') {
-            leads1Query = leads1Query.eq('assigned_to', activeAgentId)
-            leads2Query = leads2Query.eq('user_id', activeAgentId)
-        } else if (activeAgentId === 'unassigned') {
-            leads1Query = leads1Query.is('assigned_to', null).in('user_id', workspaceTeamIds)
-            leads2Query = leads2Query.is('assigned_to', null).in('user_id', workspaceTeamIds)
-        } else {
-            leads1Query = leads1Query.in('user_id', workspaceTeamIds)
-            leads2Query = leads2Query.in('assigned_to', workspaceTeamIds)
-        }
+            if (startDate) {
+                query = query.gte('created_at', startDate.toISOString())
+            }
+            if (endDate) {
+                query = query.lte('created_at', endDate.toISOString())
+            }
 
-        const [{ data: leads1, error: err1 }, { data: leads2, error: err2 }] = await Promise.all([leads1Query, leads2Query])
-        if (err1) console.error("[Analytics API] leads1Query error:", err1)
-        if (err2) console.error("[Analytics API] leads2Query error:", err2)
+            if (isTeamUser && activeAgentId) {
+                query = query.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+            } else if (activeAgentId && activeAgentId !== 'unassigned') {
+                query = query.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+            } else if (activeAgentId === 'unassigned') {
+                query = query.is('assigned_to', null).in('user_id', workspaceTeamIds)
+            } else {
+                const workspaceOrConditions = workspaceTeamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
+                query = query.or(workspaceOrConditions)
+            }
+
+            const { data: pageLeads, error: leadsErr } = await query
+            if (leadsErr) {
+                console.error("[Analytics API] Leads fetch error:", leadsErr)
+                break
+            }
+
+            if (!pageLeads || pageLeads.length === 0) {
+                hasMore = false
+            } else {
+                rawLeadsBatch = rawLeadsBatch.concat(pageLeads)
+                page++
+                if (pageLeads.length < pageSize) hasMore = false
+            }
+        }
 
         const leadMap = new Map<string, any>()
-        ;(leads1 || []).forEach(l => leadMap.set(l.id, l))
-        ;(leads2 || []).forEach(l => leadMap.set(l.id, l))
+        rawLeadsBatch.forEach(l => leadMap.set(l.id, l))
 
         const rawLeads = Array.from(leadMap.values())
         rawLeads.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
