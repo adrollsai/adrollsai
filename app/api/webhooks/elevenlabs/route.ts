@@ -319,7 +319,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
             updateData.pipeline_stage = 'Appointment Booked'
             updateData.booked_time = bookingTime
         } else {
-            if (!lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.status === 'New Lead' || lead.status === 'New') {
+            if (!lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || (lead as any).status === 'New Lead' || (lead as any).status === 'New') {
                 updateData.status = 'Ongoing'
                 updateData.pipeline_stage = 'Ongoing'
             }
