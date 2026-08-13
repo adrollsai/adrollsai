@@ -52,40 +52,89 @@ export async function POST(request: Request) {
     );
     console.log(`Retrieved ${leads.length} leads from Meta API`);
 
-    // 1. Fetch ALL existing facebook_lead_ids and phone numbers for targetUserId to filter out duplicates reliably
-    const existingFbidSet = new Set<string>();
-    const existingPhoneSet = new Set<string>();
+    // 1. Identify existing leads by facebook_lead_id and phone numbers
+    const existingFbidMap = new Map<string, any>();
+    const existingPhoneMap = new Map<string, any>();
     let offset = 0;
     while (true) {
         const { data: existingPage, error: pageErr } = await supabase
             .from('leads')
-            .select('facebook_lead_id, phone')
+            .select('id, user_id, facebook_lead_id, phone, name, email, pipeline_stage, custom_fields')
             .eq('user_id', targetUserId)
             .range(offset, offset + 999);
 
         if (pageErr || !existingPage || existingPage.length === 0) break;
         existingPage.forEach(l => { 
-            if (l.facebook_lead_id) existingFbidSet.add(l.facebook_lead_id);
+            if (l.facebook_lead_id) existingFbidMap.set(l.facebook_lead_id, l);
             if (l.phone) {
                 const digits = l.phone.replace(/\D/g, '').slice(-10);
-                if (digits.length >= 7) existingPhoneSet.add(digits);
+                if (digits.length >= 7) existingPhoneMap.set(digits, l);
             }
         });
         if (existingPage.length < 1000) break;
         offset += 1000;
     }
 
-    const trulyNewLeads = leads.filter(l => {
-        if (!l) return false;
-        if (l.facebook_lead_id && existingFbidSet.has(l.facebook_lead_id)) return false;
-        if (l.phone) {
+    const trulyNewLeads: any[] = [];
+    const duplicateLeadsToReopen: any[] = [];
+
+    leads.forEach(l => {
+        if (!l) return;
+        let existing = null;
+        if (l.facebook_lead_id && existingFbidMap.has(l.facebook_lead_id)) {
+            existing = existingFbidMap.get(l.facebook_lead_id);
+        } else if (l.phone) {
             const digits = l.phone.replace(/\D/g, '').slice(-10);
-            if (digits.length >= 7 && existingPhoneSet.has(digits)) return false;
+            if (digits.length >= 7 && existingPhoneMap.has(digits)) {
+                existing = existingPhoneMap.get(digits);
+            }
         }
-        return true;
+
+        if (existing) {
+            duplicateLeadsToReopen.push({ lead: l, existing });
+        } else {
+            trulyNewLeads.push(l);
+        }
     });
 
-    console.log(`Filtered out duplicates. Truly new leads to sync: ${trulyNewLeads.length}`);
+    console.log(`Filtered Meta Sync leads: ${trulyNewLeads.length} truly new, ${duplicateLeadsToReopen.length} existing duplicate submissions to process for reopening.`);
+
+    // Process duplicate lead submissions to reopen lead & log history
+    if (duplicateLeadsToReopen.length > 0) {
+        for (const item of duplicateLeadsToReopen) {
+            try {
+                const existingLead = item.existing;
+                const newLead = item.lead;
+
+                let cf: any = existingLead.custom_fields || {};
+                if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) { cf = {}; } }
+                
+                const reopenedCount = (cf.reopened_count || 0) + 1;
+                cf.reopened_count = reopenedCount;
+                cf.last_reopened_at = new Date().toISOString();
+
+                await supabase
+                    .from('leads')
+                    .update({
+                        custom_fields: JSON.stringify(cf),
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', existingLead.id);
+
+                const reopenDesc = `The lead was reopened from Facebook Ad Submission\nLead Name : ${newLead.name || existingLead.name}\nContact no : ${newLead.phone || existingLead.phone}\nEmail : ${newLead.email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${newLead.ad_name || newLead.form_name || 'Meta Ad'}\nLead Status : ${existingLead.pipeline_stage || 'New'}`;
+
+                await supabase.from('lead_history').insert({
+                    lead_id: existingLead.id,
+                    user_id: targetUserId,
+                    action_type: 'REOPENED',
+                    description: reopenDesc,
+                    created_at: new Date().toISOString()
+                });
+            } catch (err) {
+                console.error('[CRM Sync Reopen Error]:', err);
+            }
+        }
+    }
 
     // 2. Setup round robin pool and start index if distribution is enabled
     let agentIds: string[] = [];

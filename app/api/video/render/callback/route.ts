@@ -48,10 +48,10 @@ export async function POST(request: Request) {
         // 2. Handle failure
         if (!isSuccess) {
             console.error(`[Lambda Callback] Render/Stitch failed for asset ${assetId}:`, renderError);
-            
+
             await supabaseAdmin
                 .from('assets')
-                .update({ 
+                .update({
                     status: 'Failed',
                     metadata: { ...asset.metadata, error: renderError || "AWS Lambda rendering failed." }
                 })
@@ -104,10 +104,6 @@ export async function POST(request: Request) {
 
         console.log(`[Lambda Callback] Downloading rendered video from AWS S3: ${outputUrl}`);
         const videoRes = await fetch(outputUrl);
-        if (!videoRes.ok) {
-            throw new Error(`Failed to download output video from AWS S3: ${videoRes.statusText}`);
-        }
-
         const arrayBuffer = await videoRes.arrayBuffer();
         let buffer = Buffer.from(arrayBuffer);
 
@@ -149,11 +145,11 @@ export async function POST(request: Request) {
             } catch (voErr) {
                 console.error("[Lambda Callback] FFmpeg voiceover bake error:", voErr);
             } finally {
-                try { if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) {}
+                try { if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) { }
             }
         }
 
-        const r2Key = isStitch 
+        const r2Key = isStitch
             ? `generated/${asset.user_id}/stitched_${Date.now()}.mp4`
             : `renders/${asset.user_id}/${assetId}.mp4`;
         console.log(`[Lambda Callback] Uploading finished video to Cloudflare R2 bucket ${R2_BUCKET} at key: ${r2Key}`);
@@ -179,7 +175,7 @@ export async function POST(request: Request) {
             console.error("[Lambda Callback] Failed to generate thumbnail:", thumbErr);
         } finally {
             if (fs.existsSync(tempVideoPath)) {
-                try { fs.unlinkSync(tempVideoPath); } catch (e) {}
+                try { fs.unlinkSync(tempVideoPath); } catch (e) { }
             }
         }
 
@@ -217,10 +213,10 @@ export async function POST(request: Request) {
             const title = isStitch ? `🎬 Video Creative Ready!` : `🎬 Edited Video Ready!`;
             const body = isStitch ? `Your stitched AI video ad has been generated successfully.` : `Your AI-edited video ad has been generated successfully.`;
             await sendPushNotification(
-                asset.user_id, 
-                title, 
-                body, 
-                "/dashboard/assets", 
+                asset.user_id,
+                title,
+                body,
+                "/dashboard/assets",
                 "asset_ready"
             );
             console.log(`[Lambda Callback] Push notification dispatched to user: ${asset.user_id}`);
