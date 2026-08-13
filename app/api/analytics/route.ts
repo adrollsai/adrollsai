@@ -117,7 +117,7 @@ export async function GET(req: Request) {
         const pageSize = 1000
         let hasMore = true
 
-        while (hasMore && page < 15) {
+        while (hasMore && page < 50) {
             let query = supabaseAdmin
                 .from('leads')
                 .select(leadFields)
