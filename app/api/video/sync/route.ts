@@ -272,15 +272,36 @@ export async function POST(request: Request) {
                             const buffer = Buffer.from(await res.arrayBuffer());
                             fs.writeFileSync(localPath, buffer);
                             
+                            // Check if voiceover audio exists on asset metadata
+                            let audioPath: string | null = null;
+                            if (task.asset_id) {
+                                const { data: assetData } = await supabaseAdmin.from('assets').select('metadata').eq('id', task.asset_id).maybeSingle();
+                                const audioUrl = assetData?.metadata?.audioUrl;
+                                if (audioUrl && typeof audioUrl === 'string' && audioUrl.startsWith('http')) {
+                                    try {
+                                        const audRes = await fetch(audioUrl);
+                                        if (audRes.ok) {
+                                            audioPath = path.join(tempDir, 'voiceover.mp3');
+                                            fs.writeFileSync(audioPath, Buffer.from(await audRes.arrayBuffer()));
+                                            console.log(`[Sync Endpoint] Downloaded voiceover MP3 for single clip: ${audioUrl}`);
+                                        }
+                                    } catch (e) {
+                                        console.warn(`[Sync Endpoint] Failed to download single clip voiceover:`, e);
+                                    }
+                                }
+                            }
+
                             const ffmpegBinary = path.join(
                                 process.cwd(), 
                                 'node_modules', 
                                 'ffmpeg-static', 
                                 os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                             );
-                            
-                            const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
-                            console.log(`[Sync Endpoint] Running FFmpeg faststart command: ${cmd}`);
+
+                            const cmd = audioPath
+                                ? `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -filter_complex "[1:a]volume=2.5[aout]" -map 0:v:0 -map "[aout]" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
+                                : `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
+                            console.log(`[Sync Endpoint] Running FFmpeg command: ${cmd}`);
                             
                             await new Promise<void>((resolvePromise, rejectPromise) => {
                                 exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {

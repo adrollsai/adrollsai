@@ -109,7 +109,49 @@ export async function POST(request: Request) {
         }
 
         const arrayBuffer = await videoRes.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        let buffer = Buffer.from(arrayBuffer);
+
+        // Ensure voiceover audio is hard-stitched into MP4 video stream if audioUrl exists in metadata
+        const voiceoverUrl = asset.metadata?.audioUrl;
+        if (voiceoverUrl && typeof voiceoverUrl === 'string' && voiceoverUrl.startsWith('http')) {
+            console.log(`[Lambda Callback] Baking voiceover audio from ${voiceoverUrl} into video...`);
+            const tempDir = path.join(os.tmpdir(), `vo_${assetId}_${Date.now()}`);
+            try {
+                if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+                const videoFile = path.join(tempDir, 'video.mp4');
+                const audioFile = path.join(tempDir, 'voiceover.mp3');
+                const outputFile = path.join(tempDir, 'output.mp4');
+
+                fs.writeFileSync(videoFile, buffer);
+                const audioRes = await fetch(voiceoverUrl);
+                if (audioRes.ok) {
+                    const audioBuf = Buffer.from(await audioRes.arrayBuffer());
+                    fs.writeFileSync(audioFile, audioBuf);
+
+                    const ffmpegBinary = path.join(
+                        process.cwd(),
+                        'node_modules',
+                        'ffmpeg-static',
+                        os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+                    );
+
+                    const cmd = `"${ffmpegBinary}" -y -i "${videoFile}" -i "${audioFile}" -filter_complex "[1:a]volume=2.5[aout]" -map 0:v:0 -map "[aout]" -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputFile}"`;
+                    const { exec: execCmd } = await import('child_process');
+                    await new Promise<void>((res, rej) => {
+                        execCmd(cmd, { maxBuffer: 1024 * 1024 * 50 }, (err) => err ? rej(err) : res());
+                    });
+
+                    if (fs.existsSync(outputFile)) {
+                        buffer = fs.readFileSync(outputFile);
+                        console.log(`[Lambda Callback] Successfully baked voiceover audio with FFmpeg AAC!`);
+                    }
+                }
+            } catch (voErr) {
+                console.error("[Lambda Callback] FFmpeg voiceover bake error:", voErr);
+            } finally {
+                try { if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) {}
+            }
+        }
 
         const r2Key = isStitch 
             ? `generated/${asset.user_id}/stitched_${Date.now()}.mp4`

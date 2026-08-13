@@ -425,6 +425,20 @@ export async function POST(request: Request) {
                 const buffer = Buffer.from(await res.arrayBuffer());
                 fs.writeFileSync(localPath, buffer);
                 
+                let audioPath: string | null = null;
+                if (candidateAudioUrl && typeof candidateAudioUrl === 'string' && candidateAudioUrl.startsWith('http')) {
+                    try {
+                        const audRes = await fetch(candidateAudioUrl);
+                        if (audRes.ok) {
+                            audioPath = path.join(tempDir, 'voiceover.mp3');
+                            fs.writeFileSync(audioPath, Buffer.from(await audRes.arrayBuffer()));
+                            console.log(`[Video Callback] Downloaded voiceover MP3 for single clip: ${candidateAudioUrl}`);
+                        }
+                    } catch (e) {
+                        console.warn(`[Video Callback] Failed to download single clip voiceover:`, e);
+                    }
+                }
+
                 const ffmpegBinary = path.join(
                     process.cwd(), 
                     'node_modules', 
@@ -432,8 +446,10 @@ export async function POST(request: Request) {
                     os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                 );
                 
-                const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
-                console.log(`[Video Callback] Running FFmpeg faststart command: ${cmd}`);
+                const cmd = audioPath
+                    ? `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -filter_complex "[1:a]volume=2.5[aout]" -map 0:v:0 -map "[aout]" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
+                    : `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
+                console.log(`[Video Callback] Running FFmpeg command: ${cmd}`);
                 
                 await new Promise<void>((resolvePromise, rejectPromise) => {
                     exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
@@ -762,7 +778,7 @@ export async function POST(request: Request) {
 
                 const outputPath = path.join(tempStitchDir, 'final_stitched.mp4');
                 const ffmpegCmd = localAudioPath
-                    ? `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -ar 48000 -ac 2 -shortest -movflags +faststart "${outputPath}"`
+                    ? `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[1:a]volume=2.5[aout]" -map 0:v:0 -map "[aout]" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
                     : `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
 
                 console.log(`[Video Callback] Executing fast FFmpeg command: ${ffmpegCmd}`);

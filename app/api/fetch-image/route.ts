@@ -68,12 +68,13 @@ export async function GET(request: Request) {
       }
     }
 
+    const isVideo = mimeType ? mimeType.startsWith('video/') : false;
     const headers: Record<string, string> = {
-      'Content-Type': mimeType,
+      'Content-Type': mimeType || 'video/mp4',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': '*',
       'Accept-Ranges': response.headers.get('Accept-Ranges') || 'bytes',
-      'Cache-Control': 'public, max-age=31536000, immutable'
+      'Cache-Control': isVideo ? 'no-cache, no-store, must-revalidate' : 'public, max-age=31536000, immutable'
     };
 
     if (response.headers.get('Content-Length')) {
