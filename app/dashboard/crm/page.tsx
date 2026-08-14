@@ -267,6 +267,56 @@ export default function CRMPage() {
   const [filteredTransferDeleteHistory, setFilteredTransferDeleteHistory] = useState<boolean>(false)
   const [filteredTransferKeepActions, setFilteredTransferKeepActions] = useState<boolean>(true)
   const [isExecutingFilteredTransfer, setIsExecutingFilteredTransfer] = useState<boolean>(false)
+  const [previewCount, setPreviewCount] = useState<number | null>(null)
+  const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false)
+
+  useEffect(() => {
+    if (!isFilteredBulkTransferModalOpen) return
+
+    const fetchPreview = async () => {
+      setIsLoadingPreview(true)
+      try {
+        const res = await fetch('/api/crm/bulk-transfer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            useFilters: true,
+            previewOnly: true,
+            fromAgentIds: filteredTransferFromIds,
+            filterStage: filteredTransferStage,
+            filterDnp: filteredTransferDnp,
+            filterDateRange: filteredTransferDateRange,
+            filterCampaign: filteredTransferCampaign,
+            filterForm: filteredTransferForm,
+            maxLimit: filteredTransferMaxLimit ? parseInt(filteredTransferMaxLimit, 10) : 0,
+            impersonateId
+          })
+        })
+        const data = await res.json()
+        if (res.ok && data.success) {
+          setPreviewCount(data.previewCount)
+        } else {
+          setPreviewCount(0)
+        }
+      } catch (e) {
+        setPreviewCount(0)
+      } finally {
+        setIsLoadingPreview(false)
+      }
+    }
+
+    const timer = setTimeout(fetchPreview, 250)
+    return () => clearTimeout(timer)
+  }, [
+    isFilteredBulkTransferModalOpen,
+    filteredTransferFromIds,
+    filteredTransferStage,
+    filteredTransferDnp,
+    filteredTransferDateRange,
+    filteredTransferCampaign,
+    filteredTransferForm,
+    filteredTransferMaxLimit
+  ])
 
   const handleExecuteFilteredBulkTransfer = async () => {
     if (!filteredTransferTargetAgentId) {
@@ -3913,21 +3963,33 @@ END:VCARD\n`
                 </div>
 
                 {/* Real-time Summary Box */}
-                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 p-4 rounded-2xl flex items-center justify-between">
+                <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-blue-50 border border-indigo-200/90 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
                   <div>
-                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-wider block">Transfer Action Summary</span>
-                    <p className="text-xs font-bold text-slate-800 mt-0.5">
-                      Reassigning matching leads from <span className="font-extrabold text-indigo-700">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider block">Transfer Action Summary</span>
+                      {isLoadingPreview ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full animate-pulse">
+                          <Loader2 size={10} className="animate-spin" /> Calculating count...
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200 shadow-2xs">
+                          ⚡ {previewCount !== null ? previewCount.toLocaleString() : 0} Matching Leads Found
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs font-bold text-slate-800 leading-relaxed">
+                      Reassigning <span className="font-extrabold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">{previewCount !== null ? previewCount.toLocaleString() : 0} leads</span> from <span className="font-extrabold text-indigo-700">
                         {filteredTransferFromIds[0] === 'ALL' ? 'All Team Members' : filteredTransferFromIds[0] === 'UNASSIGNED' ? 'Unassigned Only' : (team.find(t=>t.id===filteredTransferFromIds[0])?.business_name || 'Selected Agent')}
                       </span> to <span className="font-extrabold text-purple-700">
                         {team.find(t=>t.id===filteredTransferTargetAgentId)?.business_name || 'Target Agent'}
                       </span>
                     </p>
                   </div>
-                  <div className="text-right">
-                    <span className="px-3 py-1 bg-indigo-600 text-white rounded-full text-xs font-black shadow-sm">
-                      Bulk Filter Action
-                    </span>
+                  <div className="shrink-0 self-end sm:self-center">
+                    <div className="bg-indigo-600 text-white px-3.5 py-1.5 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5">
+                      <Users size={13} />
+                      <span>{previewCount !== null ? previewCount.toLocaleString() : 0} Leads</span>
+                    </div>
                   </div>
                 </div>
 
@@ -3943,7 +4005,7 @@ END:VCARD\n`
                 </button>
 
                 <button
-                  disabled={!filteredTransferTargetAgentId || isExecutingFilteredTransfer}
+                  disabled={!filteredTransferTargetAgentId || isExecutingFilteredTransfer || isLoadingPreview || previewCount === 0}
                   onClick={handleExecuteFilteredBulkTransfer}
                   className="px-7 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl text-xs font-black hover:from-indigo-700 hover:to-purple-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-indigo-600/20 cursor-pointer"
                 >
@@ -3955,7 +4017,7 @@ END:VCARD\n`
                   ) : (
                     <>
                       <ArrowRightLeft size={15} />
-                      <span>Execute Bulk Transfer</span>
+                      <span>Execute Bulk Transfer ({previewCount !== null ? previewCount.toLocaleString() : 0} Leads)</span>
                     </>
                   )}
                 </button>

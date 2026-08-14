@@ -48,9 +48,9 @@ export async function POST(req: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    const { leadIds, targetAgentId, deleteHistory, transferWithScheduledActions, fromAgentIds, useFilters, filterStage, filterDnp, filterDateRange, filterCampaign, filterForm, maxLimit } = body
+    const { leadIds, targetAgentId, deleteHistory, transferWithScheduledActions, fromAgentIds, useFilters, filterStage, filterDnp, filterDateRange, filterCampaign, filterForm, maxLimit, previewOnly } = body
 
-    if (!targetAgentId) {
+    if (!previewOnly && !targetAgentId) {
       return NextResponse.json({ error: 'Target team member is required.' }, { status: 400 })
     }
 
@@ -165,6 +165,13 @@ export async function POST(req: Request) {
         if (filterDnp === 'NO_DNP') return !isDnp
         if (filterDnp === 'NO_CALLS') return !lead.last_call_at && !cf?.last_followup_at
         return true
+      })
+    }
+
+    if (previewOnly) {
+      return NextResponse.json({
+        success: true,
+        previewCount: targetLeads.length
       })
     }
 
