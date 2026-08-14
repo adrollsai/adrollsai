@@ -66,21 +66,42 @@ export async function POST(req: Request) {
     // Get transferrer profile
     const { data: senderProfile } = await supabaseAdmin
       .from('profiles')
-      .select('id, business_name, email, full_name')
+      .select('id, business_name, email, full_name, agency_id, parent_id')
       .eq('id', user.id)
       .single()
 
     const senderName = senderProfile?.business_name || senderProfile?.full_name || senderProfile?.email || 'Admin'
 
-    let query = supabaseAdmin
-      .from('leads')
-      .select('id, name, phone, email, notes, assigned_to, user_id, custom_fields, pipeline_stage, created_at, last_call_at')
+    let rawFetchedLeads: any[] = []
+    let fetchErr: any = null
+    let exactMatchedCount: number | null = null
 
     if (Array.isArray(leadIds) && leadIds.length > 0 && !useFilters) {
-      query = query.in('id', leadIds)
+      // Chunk leadIds to prevent HeadersOverflowError (HTTP header length cap when selecting 500+ leads)
+      const batchSize = 100
+      for (let i = 0; i < leadIds.length; i += batchSize) {
+        const chunk = leadIds.slice(i, i + batchSize)
+        const { data: chunkLeads, error: chunkErr } = await supabaseAdmin
+          .from('leads')
+          .select('id, name, phone, email, notes, assigned_to, user_id, custom_fields, pipeline_stage, created_at')
+          .in('id', chunk)
+
+        if (chunkErr) {
+          console.error('[Bulk Transfer Chunk Error]:', chunkErr)
+          fetchErr = chunkErr
+        }
+        if (chunkLeads) {
+          rawFetchedLeads.push(...chunkLeads)
+        }
+      }
+      exactMatchedCount = rawFetchedLeads.length
     } else {
+      let query = supabaseAdmin
+        .from('leads')
+        .select('id, name, phone, email, notes, assigned_to, user_id, custom_fields, pipeline_stage, created_at', { count: 'exact' })
+
       // Find workspace profiles to scope query
-      const workspaceOwnerId = senderProfile?.id || user.id
+      const workspaceOwnerId = senderProfile?.agency_id || senderProfile?.parent_id || senderProfile?.id || user.id
       const { data: workspaceProfiles } = await supabaseAdmin
         .from('profiles')
         .select('id')
@@ -139,13 +160,28 @@ export async function POST(req: Request) {
       }
 
       if (maxLimit && typeof maxLimit === 'number' && maxLimit > 0) {
-        query = query.limit(maxLimit)
+        query = query.range(0, maxLimit - 1)
       } else {
-        query = query.limit(5000)
+        query = query.range(0, 9999)
       }
+
+      const res = await query
+      rawFetchedLeads = res.data || []
+      exactMatchedCount = res.count
+      fetchErr = res.error
     }
 
-    const { data: rawFetchedLeads, error: fetchErr } = await query
+    if (previewOnly && (!filterDnp || filterDnp === 'ALL')) {
+      const totalCount = exactMatchedCount ?? (rawFetchedLeads?.length || 0)
+      const finalCount = (maxLimit && typeof maxLimit === 'number' && maxLimit > 0)
+        ? Math.min(maxLimit, totalCount)
+        : totalCount
+      
+      return NextResponse.json({
+        success: true,
+        previewCount: finalCount
+      })
+    }
 
     if (fetchErr || !rawFetchedLeads || rawFetchedLeads.length === 0) {
       return NextResponse.json({ 
@@ -163,15 +199,19 @@ export async function POST(req: Request) {
         const isDnp = cf?.last_call_dnp === true || (lead.notes && lead.notes.toLowerCase().includes('dnp'))
         if (filterDnp === 'DNP_ONLY') return isDnp
         if (filterDnp === 'NO_DNP') return !isDnp
-        if (filterDnp === 'NO_CALLS') return !lead.last_call_at && !cf?.last_followup_at
+        if (filterDnp === 'NO_CALLS') return !cf?.last_call_initiated_at && !cf?.last_followup_at
         return true
       })
     }
 
     if (previewOnly) {
+      const finalCount = (maxLimit && typeof maxLimit === 'number' && maxLimit > 0)
+        ? Math.min(maxLimit, targetLeads.length)
+        : targetLeads.length
+
       return NextResponse.json({
         success: true,
-        previewCount: targetLeads.length
+        previewCount: finalCount
       })
     }
 
