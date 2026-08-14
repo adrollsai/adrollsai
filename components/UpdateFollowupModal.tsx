@@ -17,16 +17,21 @@ interface UpdateFollowupModalProps {
 
 const STAGES = [
   'New Lead',
-  'Ongoing',
   'Requirement Taken',
-  'Appointment Booked',
   'Visit Planned',
   'Visit Done',
   'Revisit Done',
+  'Meeting Planned',
+  'Meeting Done',
+  'Never Picked',
   'Negotiation',
   'Deal/Token',
+  'Dealer',
+  'Plan Postponed',
+  'Already Purchased',
   'Lost/NI',
-  'Different Requirement'
+  'Different Requirement',
+  'Appointment Booked'
 ]
 
 const FOLLOWUP_TYPES = ['Call', 'Visit', 'Revisit', 'Closing Meeting', 'Home Meeting', 'WhatsApp', 'Email']

@@ -590,21 +590,6 @@ export default function AdsPage() {
         setSelectedWhatsAppNumber(numbers[0]);
       }
 
-      let newCampaigns: Campaign[] = cachedCampaigns;
-      if (targetProfile?.ad_account_id) {
-          if (force) checkAccountStatus(targetProfile.ad_account_id, targetProfile.selected_page_id)
-          try {
-              const res = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
-              const data = await res.json()
-              if (data.campaigns) {
-                  newCampaigns = data.campaigns;
-                  setLocalCache(campaignCacheKey, newCampaigns);
-              }
-          } catch (e: any) { 
-              console.error("Failed to load campaigns", e) 
-          }
-      }
-
       const maxPropTime = getMaxCreatedAt(cachedProps as any[]);
       const maxPageTime = getMaxCreatedAt(cachedPages);
       const maxFormTime = getMaxCreatedAt(cachedForms);
@@ -615,10 +600,19 @@ export default function AdsPage() {
       if (targetProfile?.agency_id) effectiveUserIds.push(targetProfile.agency_id);
 
       let pageQuery = supabase.from('landing_pages').select('*').in('user_id', effectiveUserIds);
-
       let formQuery = supabase.from('qualification_forms').select('*').in('user_id', effectiveUserIds);
 
-      const [inventoryData, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
+      if (targetProfile?.ad_account_id && force) {
+        checkAccountStatus(targetProfile.ad_account_id, targetProfile.selected_page_id)
+      }
+
+      const [campaignsRes, inventoryData, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
+          targetProfile?.ad_account_id 
+            ? fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`).then(r => r.json()).catch(e => {
+                console.error("Failed to load campaigns", e);
+                return { campaigns: [] };
+              })
+            : Promise.resolve({ campaigns: [] }),
           fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`).then(r => r.json()).catch(e => {
               console.error("Failed to load properties from API", e);
               return { properties: [] };
@@ -635,6 +629,12 @@ export default function AdsPage() {
               return { forms: [] };
           })
       ])
+
+      let newCampaigns: Campaign[] = cachedCampaigns;
+      if (campaignsRes?.campaigns) {
+          newCampaigns = campaignsRes.campaigns;
+          setLocalCache(campaignCacheKey, newCampaigns);
+      }
 
       const freshProps = (inventoryData?.properties && Array.isArray(inventoryData.properties)) ? inventoryData.properties : [];
       const mergedProps = force ? freshProps : mergeCacheData<any>(cachedProps, freshProps);

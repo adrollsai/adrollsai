@@ -3,11 +3,14 @@ import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 const supabaseAdmin = createSupabaseAdmin(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled, lead_score, lead_state, conversion_probability, next_action_recommendation, last_active_at'
 
 export async function GET(req: Request) {
   try {
@@ -54,54 +57,53 @@ export async function GET(req: Request) {
 
     const PAGE_SIZE = 1000
 
-    const buildQuery = (pageIndex: number, withCount = false) => {
-      let q = supabaseAdmin
-        .from('leads')
-        .select('*', withCount ? { count: 'exact' } : undefined)
-        .order('created_at', { ascending: false })
-        .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1)
-
+    const applyFilters = (q: any) => {
       if (isTeamUser) {
-        q = q.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
+        return q.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       } else {
         const workspaceOrConditions = workspaceTeamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
-        q = q.or(workspaceOrConditions)
+        return q.or(workspaceOrConditions)
       }
-      return q
     }
 
-    // 1. Fetch initial batch with exact total count
-    const { data: firstBatch, count: totalDbCount, error: firstErr } = await buildQuery(0, true)
-    if (firstErr) {
-      console.error('[API CRM Leads] First page fetch error:', firstErr)
-      return NextResponse.json({ error: firstErr.message }, { status: 500 })
+    // 1. Get exact total count
+    const countQ = applyFilters(supabaseAdmin.from('leads').select('*', { count: 'exact', head: true }))
+    const { count: totalDbCount, error: countErr } = await countQ
+    if (countErr) {
+      console.error('[API CRM Leads] Count fetch error:', countErr)
     }
 
-    let allLeads: any[] = firstBatch || []
-    const totalCount = totalDbCount || allLeads.length
-
-    // 2. If more leads exist and limit allows, fetch remaining pages in parallel batches
+    const totalCount = totalDbCount || 0
     const effectiveLimit = requestedLimit > 0 ? requestedLimit : totalCount
-    if (totalCount > PAGE_SIZE && allLeads.length < effectiveLimit) {
-      const totalPagesNeeded = Math.min(Math.ceil(effectiveLimit / PAGE_SIZE), 30)
-      const pagePromises = []
+    const totalPagesNeeded = Math.min(Math.ceil(effectiveLimit / PAGE_SIZE) || 1, 50)
 
-      for (let p = 1; p < totalPagesNeeded; p++) {
-        pagePromises.push(
-          buildQuery(p, false).then(({ data, error }) => {
-            if (error) {
-              console.error(`[API CRM Leads] Page ${p} fetch error:`, error)
-              return []
-            }
-            return data || []
-          })
-        )
-      }
+    // Helper for chunked parallel execution
+    const chunkArray = (arr: number[], size: number) => {
+      const chunks: number[][] = []
+      for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size))
+      return chunks
+    }
 
-      const results = await Promise.all(pagePromises)
-      results.forEach(batch => {
-        allLeads = allLeads.concat(batch)
+    const pageIndices = Array.from({ length: totalPagesNeeded }, (_, i) => i)
+    const pageChunks = chunkArray(pageIndices, 8)
+    let allLeads: any[] = []
+
+    for (const chunk of pageChunks) {
+      const chunkPromises = chunk.map(pageIndex => {
+        const baseQuery = supabaseAdmin
+          .from('leads')
+          .select(leadFields)
+        const filteredQuery = applyFilters(baseQuery)
+        return filteredQuery
+          .order('created_at', { ascending: false })
+          .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1)
       })
+      const results = await Promise.all(chunkPromises)
+      for (const r of results) {
+        if (r.data && r.data.length > 0) {
+          allLeads = allLeads.concat(r.data)
+        }
+      }
     }
 
     if (requestedLimit > 0 && allLeads.length > requestedLimit) {

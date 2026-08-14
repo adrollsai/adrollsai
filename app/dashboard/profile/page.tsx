@@ -22,6 +22,7 @@ import {
   Linkedin,
   Users,
   User,
+  Layers,
   Building2,
   Video,
   BarChart3,
@@ -834,21 +835,23 @@ export default function ProfilePage() {
           email: profileData.email || ''
         })
 
+        const parallelFetches: Promise<any>[] = []
+
         if (profileData.facebook_token && isValidFacebookToken(profileData.facebook_token)) {
           setIsFacebookConnected(true)
           setFacebookToken(profileData.facebook_token);
           if (profileData.selected_page_id) setSelectedPageId(profileData.selected_page_id)
-          else fetchPages()
+          else parallelFetches.push(fetchPages())
 
           if (profileData.ad_account_id) {
             setSelectedAdAccountId(profileData.ad_account_id)
-            fetchPixels(profileData.ad_account_id)
+            parallelFetches.push(fetchPixels(profileData.ad_account_id))
           }
           if (profileData.pixel_id) {
             setSelectedPixelId(profileData.pixel_id)
           }
 
-          fetchAdAccounts(profileData.facebook_token);
+          parallelFetches.push(fetchAdAccounts(profileData.facebook_token))
         } else {
           setIsFacebookConnected(false)
           setFacebookToken(null);
@@ -861,12 +864,16 @@ export default function ProfilePage() {
           setIsLinkedinConnected(true)
           setLinkedinName(profileData.linkedin_name || 'Connected Account')
           setSelectedLinkedinUrn(profileData.linkedin_urn || null)
-          fetchLinkedinPages()
+          parallelFetches.push(fetchLinkedinPages())
         } else {
           setIsLinkedinConnected(false)
           setLinkedinName('')
           setSelectedLinkedinUrn(null)
           setLinkedinPages([])
+        }
+
+        if (parallelFetches.length > 0) {
+          Promise.allSettled(parallelFetches).catch(() => {})
         }
 
         // Handle Google & Booking Status
@@ -3169,9 +3176,27 @@ export default function ProfilePage() {
                           </p>
                           <button
                             onClick={() => router.push(`/dashboard/profile/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
-                            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-3 px-5 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm"
+                            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-3 px-5 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                           >
                             <Users size={14} /> Manage Custom Audiences
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Pipeline Stages & Meta CAPI Settings */}
+                      <div className="bg-blue-50/60 rounded-3xl p-4 border border-blue-100 mt-4">
+                        <div className="flex justify-between items-center mb-2 px-1">
+                          <label className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Pipeline Stages & Conversion API</label>
+                        </div>
+                        <div className="py-2 px-1 flex flex-col gap-3 text-left">
+                          <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                            Customize lead statuses (Fresh, Ongoing, Not Interested) and choose which stages automatically trigger Meta Conversion API (CAPI) events.
+                          </p>
+                          <button
+                            onClick={() => router.push(`/dashboard/profile/stages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3 px-5 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                          >
+                            <Layers size={14} /> Configure Stages & Meta CAPI
                           </button>
                         </div>
                       </div>

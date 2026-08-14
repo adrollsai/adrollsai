@@ -115,6 +115,58 @@ function MarkdownRenderer({ text }: { text: string }) {
   )
 }
 
+function getLeadLastAttemptTime(lead: any): number {
+  if (!lead) return 0
+  let cf = lead.custom_fields
+  if (cf && typeof cf === 'string') {
+    try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) {}
+  }
+  const tFollowup = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : 0
+  const tAction = cf?.last_action_date ? new Date(cf.last_action_date).getTime() : 0
+  const tCallInitiated = cf?.last_call_initiated_at ? new Date(cf.last_call_initiated_at).getTime() : 0
+  const tLastCall = lead.last_call_at ? new Date(lead.last_call_at).getTime() : 0
+  
+  let tRemark = 0
+  const rawRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim()
+  if (rawRemark) {
+    const match = rawRemark.match(/(?:Call on\s+|Logged on\s+|\[)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
+    if (match) {
+      const [full, d, m, y, h, min, ampm] = match
+      let hour = h ? parseInt(h, 10) : 0
+      if (ampm) {
+        if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
+        if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
+      }
+      const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
+      if (!isNaN(parsed.getTime())) tRemark = parsed.getTime()
+    }
+  }
+
+  const lastAttempt = Math.max(tFollowup, tAction, tCallInitiated, tLastCall, tRemark)
+  if (lastAttempt > 0 && !isNaN(lastAttempt)) return lastAttempt
+  if (lead.updated_at) {
+    const tu = new Date(lead.updated_at).getTime()
+    if (!isNaN(tu)) return tu
+  }
+  if (lead.created_at) {
+    const tc = new Date(lead.created_at).getTime()
+    if (!isNaN(tc)) return tc
+  }
+  return 0
+}
+
+function getLeadNextActionTime(lead: any): number {
+  if (!lead) return 0
+  let cf = lead.custom_fields
+  if (cf && typeof cf === 'string') {
+    try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) {}
+  }
+  const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
+  if (!rawNextDate) return 0
+  const t = new Date(rawNextDate).getTime()
+  return isNaN(t) ? 0 : t
+}
+
 export default function AnalyticsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -176,6 +228,7 @@ export default function AnalyticsPage() {
     }
     return 'list'
   })
+  const [drilldownSort, setDrilldownSort] = useState<'next_action_asc' | 'next_action_desc' | 'last_attempt_desc' | 'last_attempt_asc' | 'created_desc' | 'created_asc' | 'name_asc'>('next_action_asc')
   const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string } | null>(null)
 
   // Clear legacy analytics caches from localStorage on mount
@@ -1113,9 +1166,21 @@ export default function AnalyticsPage() {
   }, [history, leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId])
 
   // Open interactive drilldown drawer for leads
-  const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[]) => {
+  const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[], defaultSort?: string) => {
     const isDesktop = typeof window !== 'undefined' ? window.innerWidth >= 768 : true
     setDrilldownViewMode(isDesktop ? 'list' : 'card')
+    if (defaultSort) {
+      setDrilldownSort(defaultSort as any)
+    } else {
+      const lower = (title + ' ' + subtitle).toLowerCase()
+      if (lower.includes('attempt') || lower.includes('dnp') || lower.includes('never picked') || lower.includes('action log')) {
+        setDrilldownSort('last_attempt_desc')
+      } else if (lower.includes('schedule') || lower.includes('pending') || lower.includes('today') || lower.includes('follow-up') || lower.includes('call') || lower.includes('visit') || lower.includes('meeting')) {
+        setDrilldownSort('next_action_asc')
+      } else {
+        setDrilldownSort('created_desc')
+      }
+    }
     setDrilldownModal({
       isOpen: true,
       title,
@@ -2529,7 +2594,7 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Modal Search Bar & View Mode Toggle */}
-            <div className="p-4 border-b border-slate-100 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="p-4 border-b border-slate-100 bg-white flex flex-col md:flex-row items-center justify-between gap-3">
               <div className="relative flex-1 w-full">
                 <Search size={14} className="absolute left-3 top-3 text-slate-400" />
                 <input
@@ -2541,20 +2606,39 @@ export default function AnalyticsPage() {
                 />
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+              <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end flex-wrap">
+                {/* Sort Selector Dropdown */}
+                <div className="flex items-center gap-1 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200 text-xs font-bold shrink-0">
+                  <ArrowUpDown size={13} className="text-slate-500 shrink-0" />
+                  <select
+                    value={drilldownSort}
+                    onChange={(e) => setDrilldownSort(e.target.value as any)}
+                    className="bg-transparent border-none text-slate-800 text-xs font-black focus:ring-0 cursor-pointer outline-none pr-1"
+                    title="Sort Leads"
+                  >
+                    <option value="next_action_asc">📅 Next Action (Earliest First)</option>
+                    <option value="next_action_desc">📅 Next Action (Latest First)</option>
+                    <option value="last_attempt_desc">⏱️ Last Attempt (Newest First)</option>
+                    <option value="last_attempt_asc">⏱️ Last Attempt (Oldest First)</option>
+                    <option value="created_desc">✨ Created Date (Newest First)</option>
+                    <option value="created_asc">✨ Created Date (Oldest First)</option>
+                    <option value="name_asc">🔤 Name (A-Z)</option>
+                  </select>
+                </div>
+
                 {/* View Mode Toggle: Compact List vs Cards */}
                 <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200 text-xs font-bold shrink-0">
                   <button
                     onClick={() => setDrilldownViewMode('list')}
                     className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${drilldownViewMode === 'list' ? 'bg-blue-600 text-white shadow-xs font-extrabold' : 'text-slate-600 hover:text-slate-900'}`}
                   >
-                    <span>📋 List View</span>
+                    <span>📋 List</span>
                   </button>
                   <button
                     onClick={() => setDrilldownViewMode('card')}
                     className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${drilldownViewMode === 'card' ? 'bg-blue-600 text-white shadow-xs font-extrabold' : 'text-slate-600 hover:text-slate-900'}`}
                   >
-                    <span>📇 Card View</span>
+                    <span>📇 Cards</span>
                   </button>
                 </div>
 
@@ -2607,7 +2691,44 @@ export default function AnalyticsPage() {
                   return (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q) || (l.pipeline_stage || '').toLowerCase().includes(q)
                 })
 
-                if (filtered.length === 0) {
+                const sortedFiltered = [...filtered].sort((a, b) => {
+                  if (drilldownSort === 'next_action_asc') {
+                    const tA = getLeadNextActionTime(a) || Infinity
+                    const tB = getLeadNextActionTime(b) || Infinity
+                    return tA - tB
+                  }
+                  if (drilldownSort === 'next_action_desc') {
+                    const tA = getLeadNextActionTime(a) || 0
+                    const tB = getLeadNextActionTime(b) || 0
+                    return tB - tA
+                  }
+                  if (drilldownSort === 'last_attempt_desc') {
+                    const tA = getLeadLastAttemptTime(a)
+                    const tB = getLeadLastAttemptTime(b)
+                    return tB - tA
+                  }
+                  if (drilldownSort === 'last_attempt_asc') {
+                    const tA = getLeadLastAttemptTime(a) || Infinity
+                    const tB = getLeadLastAttemptTime(b) || Infinity
+                    return tA - tB
+                  }
+                  if (drilldownSort === 'created_desc') {
+                    const tA = new Date(a.created_at || 0).getTime()
+                    const tB = new Date(b.created_at || 0).getTime()
+                    return tB - tA
+                  }
+                  if (drilldownSort === 'created_asc') {
+                    const tA = new Date(a.created_at || 0).getTime()
+                    const tB = new Date(b.created_at || 0).getTime()
+                    return tA - tB
+                  }
+                  if (drilldownSort === 'name_asc') {
+                    return (a.name || '').localeCompare(b.name || '')
+                  }
+                  return 0
+                })
+
+                if (sortedFiltered.length === 0) {
                   return (
                     <div className="text-center py-12 text-slate-400">
                       <Users size={32} className="mx-auto mb-2 opacity-50" />
@@ -2622,16 +2743,45 @@ export default function AnalyticsPage() {
                     <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-xs">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-wider">
-                            <th className="py-3 px-3">Lead & Contact</th>
+                          <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-wider select-none">
+                            <th 
+                              className="py-3 px-3 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                              onClick={() => setDrilldownSort(prev => prev === 'name_asc' ? 'created_desc' : 'name_asc')}
+                              title="Click to sort by Name"
+                            >
+                              <div className="flex items-center gap-1">
+                                <span>Lead & Contact</span>
+                                {drilldownSort === 'name_asc' && <span className="text-blue-600 font-extrabold">▲</span>}
+                              </div>
+                            </th>
                             <th className="py-3 px-3">Stage / Rep</th>
-                            <th className="py-3 px-3 min-w-[220px]">Last Remark / Notes</th>
-                            <th className="py-3 px-3">Next Action</th>
+                            <th 
+                              className="py-3 px-3 min-w-[220px] cursor-pointer hover:bg-slate-200/70 transition-colors"
+                              onClick={() => setDrilldownSort(prev => prev === 'last_attempt_desc' ? 'last_attempt_asc' : 'last_attempt_desc')}
+                              title="Click to sort by Last Attempt / Remark Date"
+                            >
+                              <div className="flex items-center gap-1">
+                                <span>Last Remark / Notes</span>
+                                {drilldownSort === 'last_attempt_desc' && <span className="text-blue-600 font-extrabold">▼</span>}
+                                {drilldownSort === 'last_attempt_asc' && <span className="text-blue-600 font-extrabold">▲</span>}
+                              </div>
+                            </th>
+                            <th 
+                              className="py-3 px-3 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                              onClick={() => setDrilldownSort(prev => prev === 'next_action_asc' ? 'next_action_desc' : 'next_action_asc')}
+                              title="Click to sort by Next Action Date"
+                            >
+                              <div className="flex items-center gap-1">
+                                <span>Next Action</span>
+                                {drilldownSort === 'next_action_asc' && <span className="text-blue-600 font-extrabold">▲</span>}
+                                {drilldownSort === 'next_action_desc' && <span className="text-blue-600 font-extrabold">▼</span>}
+                              </div>
+                            </th>
                             <th className="py-3 px-3 text-right">Quick Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs">
-                          {filtered.map((lead: any) => {
+                          {sortedFiltered.map((lead: any) => {
                             const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
                             let cf: any = lead.custom_fields
                             if (typeof cf === 'string') {
@@ -2815,7 +2965,7 @@ export default function AnalyticsPage() {
                   )
                 }
 
-                return filtered.map((lead: any) => {
+                return sortedFiltered.map((lead: any) => {
                   const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
 
                   let cf: any = lead.custom_fields

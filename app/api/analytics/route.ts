@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 const supabaseAdmin = createSupabaseAdmin(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -178,47 +179,56 @@ export async function GET(req: Request) {
             workspaceTeamIds = Array.from(new Set(workspaceTeamProfiles.map(p => p.id)))
         }
 
-        // 1. Fetch CRM Leads across workspace using fast paginated batches
-        // NOTE: Do NOT filter leads by created_at date range here. The action report needs ALL leads
-        // to cross-reference with history entries (a lead created months ago could be attempted today).
-        // Date-based filtering for stats cards is handled on the frontend.
-        const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience'
-
-        let rawLeadsBatch: any[] = []
-        let page = 0
-        const pageSize = 1000
-        let hasMore = true
-
-        while (hasMore && page < 50) {
-            let query = supabaseAdmin
-                .from('leads')
-                .select(leadFields)
-                .range(page * pageSize, (page + 1) * pageSize - 1)
-                .order('created_at', { ascending: false })
-
+        // Helper to apply workspace/agent filter to queries
+        const applyLeadFilters = (queryBuilder: any) => {
             if (isTeamUser && activeAgentId) {
-                query = query.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+                return queryBuilder.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
             } else if (activeAgentId && activeAgentId !== 'unassigned') {
-                query = query.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+                return queryBuilder.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
             } else if (activeAgentId === 'unassigned') {
-                query = query.is('assigned_to', null).in('user_id', workspaceTeamIds)
+                return queryBuilder.is('assigned_to', null).in('user_id', workspaceTeamIds)
             } else {
                 const workspaceOrConditions = workspaceTeamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
-                query = query.or(workspaceOrConditions)
+                return queryBuilder.or(workspaceOrConditions)
             }
+        }
 
-            const { data: pageLeads, error: leadsErr } = await query
-            if (leadsErr) {
-                console.error("[Analytics API] Leads fetch error:", leadsErr)
-                break
-            }
+        // 1. Fetch CRM Leads across workspace using ultra-fast parallel batched queries
+        const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience'
 
-            if (!pageLeads || pageLeads.length === 0) {
-                hasMore = false
-            } else {
-                rawLeadsBatch = rawLeadsBatch.concat(pageLeads)
-                page++
-                if (pageLeads.length < pageSize) hasMore = false
+        const countQuery = applyLeadFilters(
+            supabaseAdmin.from('leads').select('*', { count: 'exact', head: true })
+        )
+        const { count: totalLeadsCount } = await countQuery
+        const totalRows = totalLeadsCount || 0
+        const pageSize = 1000
+        const totalPages = Math.min(Math.ceil(totalRows / pageSize) || 1, 50)
+
+        // Parallel chunk helper
+        const chunkArray = (arr: number[], size: number) => {
+            const chunks: number[][] = []
+            for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size))
+            return chunks
+        }
+
+        const pageIndices = Array.from({ length: totalPages }, (_, i) => i)
+        const leadChunks = chunkArray(pageIndices, 8)
+        let rawLeadsBatch: any[] = []
+
+        for (const chunk of leadChunks) {
+            const chunkPromises = chunk.map(pageIdx => {
+                const q = supabaseAdmin
+                    .from('leads')
+                    .select(leadFields)
+                    .order('created_at', { ascending: false })
+                    .range(pageIdx * pageSize, (pageIdx + 1) * pageSize - 1)
+                return applyLeadFilters(q)
+            })
+            const results = await Promise.all(chunkPromises)
+            for (const r of results) {
+                if (r.data && r.data.length > 0) {
+                    rawLeadsBatch = rawLeadsBatch.concat(r.data)
+                }
             }
         }
 
@@ -240,51 +250,58 @@ export async function GET(req: Request) {
             return { ...lead, custom_fields: cf || {} }
         })
 
-        // 2. Fetch ALL Team Profiles for workspace leaderboard ranking
-        const { data: teamMembers } = await supabaseAdmin
+        // 2. Fetch ALL Team Profiles for workspace leaderboard ranking & roster
+        // Note: Do not select non-existent columns (e.g. timezone) to prevent Postgres query failures
+        const { data: teamMembers, error: teamErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, email, business_name, full_name, role, created_at, timezone')
+            .select('id, email, business_name, full_name, role, created_at')
             .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
             .order('created_at', { ascending: false })
 
+        if (teamErr) {
+            console.error('[Analytics API] Team profiles query error:', teamErr)
+        }
+
         const rawTeamMembers = teamMembers || []
 
-        // 3. Fetch lead_history entries for date range to compute call attempts
-        // Scope history to workspace team members for accurate per-agent counting
+        // 3. Fetch lead_history entries in parallel for date range to compute call attempts
         let allHistoryLogs: any[] = []
 
-        // Fetch in batches of 2000 to get comprehensive history
-        const historyBatchSize = 2000
-        let historyPage = 0
-        let historyHasMore = true
-
-        while (historyHasMore && historyPage < 10) {
-          let historyQuery = supabaseAdmin
+        let historyCountQuery = supabaseAdmin
             .from('lead_history')
-            .select('id, lead_id, user_id, action_type, description, created_at')
-            .order('created_at', { ascending: false })
-            .range(historyPage * historyBatchSize, (historyPage + 1) * historyBatchSize - 1)
+            .select('*', { count: 'exact', head: true })
+        if (workspaceTeamIds.length > 0) {
+            historyCountQuery = historyCountQuery.in('user_id', workspaceTeamIds)
+        }
+        if (startDate) historyCountQuery = historyCountQuery.gte('created_at', startDate.toISOString())
+        if (endDate) historyCountQuery = historyCountQuery.lte('created_at', endDate.toISOString())
 
-          // Filter by workspace team user IDs for relevant history
-          if (workspaceTeamIds.length > 0) {
-            historyQuery = historyQuery.in('user_id', workspaceTeamIds)
-          }
+        const { count: totalHistoryCount } = await historyCountQuery
+        const totalHistoryRows = totalHistoryCount || 0
+        const historyBatchSize = 1000
+        const totalHistoryPages = Math.min(Math.ceil(totalHistoryRows / historyBatchSize) || 1, 20)
 
-          if (startDate) {
-            historyQuery = historyQuery.gte('created_at', startDate.toISOString())
-          }
-          if (endDate) {
-            historyQuery = historyQuery.lte('created_at', endDate.toISOString())
-          }
+        const historyPageIndices = Array.from({ length: totalHistoryPages }, (_, i) => i)
+        const historyChunks = chunkArray(historyPageIndices, 8)
 
-          const { data: historyBatch } = await historyQuery
-          if (!historyBatch || historyBatch.length === 0) {
-            historyHasMore = false
-          } else {
-            allHistoryLogs = allHistoryLogs.concat(historyBatch)
-            historyPage++
-            if (historyBatch.length < historyBatchSize) historyHasMore = false
-          }
+        for (const chunk of historyChunks) {
+            const chunkPromises = chunk.map(pageIdx => {
+                let hq = supabaseAdmin
+                    .from('lead_history')
+                    .select('id, lead_id, user_id, action_type, description, created_at')
+                    .order('created_at', { ascending: false })
+                    .range(pageIdx * historyBatchSize, (pageIdx + 1) * historyBatchSize - 1)
+                if (workspaceTeamIds.length > 0) hq = hq.in('user_id', workspaceTeamIds)
+                if (startDate) hq = hq.gte('created_at', startDate.toISOString())
+                if (endDate) hq = hq.lte('created_at', endDate.toISOString())
+                return hq
+            })
+            const results = await Promise.all(chunkPromises)
+            for (const r of results) {
+                if (r.data && r.data.length > 0) {
+                    allHistoryLogs = allHistoryLogs.concat(r.data)
+                }
+            }
         }
 
         const isActualCallAction = (h: any) => {

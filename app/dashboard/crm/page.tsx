@@ -19,22 +19,27 @@ import LeadHistoryModal from '@/components/LeadHistoryModal'
 import GroupLeadDistributionModal from '@/components/GroupLeadDistributionModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
+import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle } from '@/utils/pipeline-stages'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 
 const STAGES = [
-  'All Leads',
   'New Lead',
-  'Ongoing',
   'Requirement Taken',
-  'Appointment Booked',
   'Visit Planned',
   'Visit Done',
   'Revisit Done',
+  'Meeting Planned',
+  'Meeting Done',
+  'Never Picked',
   'Negotiation',
   'Deal/Token',
+  'Dealer',
+  'Plan Postponed',
+  'Already Purchased',
   'Lost/NI',
-  'Different Requirement'
+  'Different Requirement',
+  'Appointment Booked'
 ]
 
 
@@ -203,26 +208,54 @@ export default function CRMPage() {
 
   // --- FILTER STATE ---
   const [sortOrder, setSortOrder] = useState<'last_attempted' | 'newest' | 'oldest'>('last_attempted')
-  const [activeStage, setActiveStageState] = useState(() => {
+  const [customStages, setCustomStages] = useState<PipelineStageConfig[]>(DEFAULT_PIPELINE_STAGES)
+  
+  // 4 Primary Sections: all | fresh | ongoing | not_interested
+  const [activeSection, setActiveSectionState] = useState<'all' | 'fresh' | 'ongoing' | 'not_interested'>(() => {
     if (typeof window !== 'undefined') {
-      const saved = sessionStorage.getItem('crm_stage')
-      if (saved && STAGES.includes(saved)) return saved
-      if (saved === 'New') return 'New Lead'
-      if (saved === 'Appointment booked') return 'Appointment Booked'
-      if (saved === 'Appointment done') return 'Visit Done'
-      return saved || 'New Lead'
+      const saved = sessionStorage.getItem('crm_section')
+      if (saved && ['all', 'fresh', 'ongoing', 'not_interested'].includes(saved)) {
+        return saved as any
+      }
+      const legacyStage = sessionStorage.getItem('crm_stage')
+      if (legacyStage) {
+        if (legacyStage === 'All Leads') return 'all'
+        if (legacyStage.includes('Lost') || legacyStage.includes('NI')) return 'not_interested'
+        if (legacyStage === 'New Lead' || legacyStage === 'New') return 'fresh'
+        return 'ongoing'
+      }
     }
-    return 'New Lead'
+    return 'all'
   })
   
-  const setActiveStage = (stage: string) => {
-    setActiveStageState(stage)
+  const setActiveSection = (section: 'all' | 'fresh' | 'ongoing' | 'not_interested') => {
+    setActiveSectionState(section)
+    setSelectedSpecificStage('ALL')
     setCurrentPageState(1)
     if (typeof window !== 'undefined') {
-      sessionStorage.setItem('crm_stage', stage)
+      sessionStorage.setItem('crm_section', section)
       sessionStorage.setItem('crm_page', '1')
     }
   }
+
+  // Legacy activeStage fallback
+  const activeStage = activeSection === 'fresh' ? 'New Lead' : activeSection === 'all' ? 'All Leads' : activeSection
+
+  const [selectedSpecificStage, setSelectedSpecificStage] = useState<string>('ALL')
+
+  // Stages available for the active section filter
+  const availableStagesForSection = useMemo(() => {
+    if (activeSection === 'ongoing') {
+      return customStages.filter(s => s.category === 'ongoing')
+    }
+    if (activeSection === 'not_interested') {
+      return customStages.filter(s => s.category === 'not_interested')
+    }
+    if (activeSection === 'fresh') {
+      return customStages.filter(s => s.category === 'fresh')
+    }
+    return customStages
+  }, [activeSection, customStages])
 
   const [searchQuery, setSearchQuery] = useState('')
   const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string; attemptDate?: Date | null } | null>(null)
@@ -670,18 +703,21 @@ export default function CRMPage() {
   }
 
   // 1. SAFE FETCH WITH SERVER-SIDE PAGINATION
-  const fetchLeads = async (force = false) => {
+  const fetchLeads = async (force = false, silent = false) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       setUserId(user.id)
 
       // Fetch Fresh Profile Data first to get targetUserId
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads, custom_pipeline_stages').eq('id', user.id).single()
       const currentRole = profile?.role as any || 'admin'
       setRole(currentRole)
       setEnableDistribution(!!profile?.enable_distribution)
       setAutoCallNewLeads(!!profile?.auto_call_new_leads)
+      if (profile?.custom_pipeline_stages && Array.isArray(profile.custom_pipeline_stages) && profile.custom_pipeline_stages.length > 0) {
+        setCustomStages(profile.custom_pipeline_stages)
+      }
       
       const parentId = profile?.parent_id || profile?.agency_id
       if (parentId) setParentAdminId(parentId)
@@ -693,29 +729,18 @@ export default function CRMPage() {
         ? (profile.parent_id || profile.agency_id) 
         : user.id
 
-      if (impersonateId && (['super_admin', 'agency', 'admin'].includes(currentRole))) {
-          if (currentRole !== 'super_admin') {
-              const { data: subAccount } = await supabase
-                .from('profiles')
-                .select('id')
-                .eq('id', impersonateId)
-                .eq('agency_id', profile?.agency_id || user.id)
-                .single()
-              if (subAccount) targetUserId = impersonateId
-          } else {
-              targetUserId = impersonateId
-          }
+      if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
+        if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
+          targetUserId = impersonateId
+        }
       }
       setTargetUserId(targetUserId)
 
-      // Fetch user properties for title resolution and manual product assignment via /api/inventory
+      // Fetch properties via API
       try {
-        const invRes = await fetch('/api/inventory')
-        let invData: any = null
-        if (invRes.ok) {
-          try { invData = await invRes.json() } catch (e) {}
-        }
-        if (invData && invData.success && Array.isArray(invData.properties) && invData.properties.length > 0) {
+        const invRes = await fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+        const invData = await invRes.json()
+        if (invData && invData.properties && Array.isArray(invData.properties)) {
           setProperties(invData.properties)
           setLocalCache('crm_properties_cache', invData.properties)
           try { localStorage.setItem(`properties_cache_${targetUserId}`, JSON.stringify(invData.properties)); } catch(e) {}
@@ -734,7 +759,7 @@ export default function CRMPage() {
         }
       } catch (e) {}
 
-      // Get campaign assignment rules for agents
+      // Get campaign assignment rules
       let activeCampaigns: string[] = []
       if (currentRole === 'agent' && parentId) {
           const { data: automations } = await supabase
@@ -758,19 +783,18 @@ export default function CRMPage() {
       }
       setAssignedCampaigns(activeCampaigns)
 
-      // Check local client cache to hydrate CRM pipeline immediately without showing loader spinner
       const cacheKey = `crm_cache_${user.id}_${targetUserId}`;
       const cachedLeads = force ? [] : getLocalCache<any>(cacheKey);
 
       if (cachedLeads && cachedLeads.length > 0) {
           setLeads(prev => prev.length === 0 ? cachedLeads : prev);
-          setLoading(false);
-      } else {
+          if (!silent) setLoading(false);
+      } else if (leads.length === 0 && !silent) {
           setLoading(true);
       }
-      if (force) setIsRefreshing(true);
+      if (force && !silent) setIsRefreshing(true);
 
-      // Fetch Meta Pixels for target account safely
+      // Fetch Meta Pixels for target account
       try {
         let adAccountId = profile?.ad_account_id
         if (targetUserId !== user.id) {
@@ -784,7 +808,7 @@ export default function CRMPage() {
         }
       } catch (e) {}
 
-      // Fetch team members safely
+      // Fetch team members
       try {
         if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
             const { data: teamData } = await supabase.from('profiles')
@@ -797,7 +821,6 @@ export default function CRMPage() {
                 const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, full_name, role').eq('id', targetUserId).single()
                 if (targetProfile) finalTeam.push(targetProfile)
             }
-
             setTeam(finalTeam)
         } else {
             setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
@@ -806,11 +829,25 @@ export default function CRMPage() {
         setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
       }
 
-      // Fetch all workspace leads via server API without 1,000 row cap
+      // Fetch leads and campaigns
       try {
-        const leadsRes = await fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+        const [leadsRes, campRes] = await Promise.all([
+          fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`).catch(e => null),
+          fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`).catch(e => null)
+        ])
+
+        if (campRes && campRes.ok) {
+          try {
+            const campaignData = await campRes.json()
+            if (campaignData && campaignData.campaigns) {
+              setCampaigns(campaignData.campaigns)
+              setLocalCache('crm_campaigns_cache', campaignData.campaigns)
+            }
+          } catch (cErr) {}
+        }
+
         let leadsJson: any = null
-        if (leadsRes.ok) {
+        if (leadsRes && leadsRes.ok) {
           try {
             leadsJson = await leadsRes.json()
           } catch (e) {}
@@ -822,45 +859,22 @@ export default function CRMPage() {
           const count = leadsJson.totalCount !== undefined ? leadsJson.totalCount : leadsJson.leads.length
           setTotalLeadsCount(count)
           if (typeof window !== 'undefined') localStorage.setItem('crm_total_count', count.toString())
-        } else {
-          // Fallback to direct client query if API fails
-          let q = supabase.from('leads').select('*').order('created_at', { ascending: false, nullsFirst: false })
-          const isTeamMemberUser = currentRole === 'agent' || currentRole === 'team_member' || !!parentId
-          if (isTeamMemberUser) q = q.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
-          else q = q.eq('user_id', targetUserId)
-          const { data } = await q
-          if (data) {
-            setLeads(data)
-            setLocalCache(cacheKey, data.slice(0, 500))
-            setLocalCache('crm_last_leads_cache', data.slice(0, 500))
-            setTotalLeadsCount(data.length)
-            if (typeof window !== 'undefined') localStorage.setItem('crm_total_count', data.length.toString())
-          }
         }
       } catch (err) {
         console.error('[CRM fetchLeads error]:', err)
       } finally {
-        setLoading(false)
-        setIsRefreshing(false)
-      }
-
-      try {
-          const res = await fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
-          if (res.ok) {
-              const campaignData = await res.json().catch(() => null)
-              if (campaignData && campaignData.campaigns) {
-                  setCampaigns(campaignData.campaigns)
-                  setLocalCache('crm_campaigns_cache', campaignData.campaigns)
-              }
-          }
-      } catch (err) {
-          console.error("Error fetching campaigns in CRM:", err)
+        if (!silent) {
+          setLoading(false)
+          setIsRefreshing(false)
+        }
       }
     } catch (e: any) {
       console.error("[CRM fetchLeads Error]:", e?.message || e?.details || String(e), e)
     } finally {
-      setLoading(false)
-      setIsRefreshing(false)
+      if (!silent) {
+        setLoading(false)
+        setIsRefreshing(false)
+      }
     }
   }
 
@@ -877,6 +891,7 @@ export default function CRMPage() {
       setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: newStage, pipeline_stage: newStage } : l));
       toast.success(`Pipeline stage updated to ${newStage}`);
 
+      // 1. Log stage change action
       fetch('/api/crm/lead-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -886,6 +901,17 @@ export default function CRMPage() {
           description: `Stage updated to ${newStage}`
         })
       }).catch(err => console.error("Failed to log stage change:", err));
+
+      // 2. Trigger Meta Conversion API (CAPI) in background if enabled for this stage
+      fetch('/api/crm/capi-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          stageName: newStage,
+          impersonateId
+        })
+      }).catch(err => console.error("CAPI trigger error:", err));
     } catch (err: any) {
       toast.error("Failed to update stage: " + (err.message || String(err)));
     }
@@ -1333,14 +1359,15 @@ export default function CRMPage() {
 
             // 1. Instantly inject new lead into local React state at top so it shows up immediately
             setLeads(prev => [savedLead, ...prev]);
+            setTotalLeadsCount(prev => prev + 1);
 
             // 2. Instantly close modal and reset inputs
             setIsAddModalOpen(false);
             setNewLead({ name: '', phone: '', email: '', notes: '' });
             toast.success("Lead added successfully!");
 
-            // 3. Background cache refresh without blocking UI
-            fetchLeads(true).catch(() => {});
+            // 3. Silent background cache refresh without blocking UI or showing reload spinner
+            fetchLeads(true, true).catch(() => {});
         } else {
             console.error("[CRM] Manual lead insert database error:", error);
             alert("Error adding lead: " + (error ? error.message : "Unknown error"));
@@ -1356,25 +1383,42 @@ export default function CRMPage() {
   const handleDeleteLead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation() 
     if (!confirm("Are you sure you want to delete this lead?")) return
-    await supabase.from('leads').delete().eq('id', id)
-    fetchLeads(true)
+    // Optimistically remove immediately from local state
+    setLeads(prev => prev.filter(l => l.id !== id))
+    setTotalLeadsCount(prev => Math.max(0, prev - 1))
+    toast.success("Lead deleted")
+    try {
+      await supabase.from('leads').delete().eq('id', id)
+      fetchLeads(true, true)
+    } catch (err) {
+      console.error("Failed to delete lead from database:", err)
+    }
   }
 
   const assignLead = async (leadId: string, agentId: string, e: React.ChangeEvent<HTMLSelectElement>) => {
     e.stopPropagation()
     const targetAgentId = agentId === '' ? null : agentId;
-    await supabase.from('leads').update({ assigned_to: targetAgentId }).eq('id', leadId)
     
-    // Notify Agent
-    if (targetAgentId) {
-        const leadName = leads.find(l => l.id === leadId)?.name || 'A new lead';
-        fetch('/api/crm/notify-assignment', {
-            method: 'POST',
-            body: JSON.stringify({ agentId: targetAgentId, title: 'Lead Assigned to You', message: `${leadName} has been assigned to you.`, url: `/dashboard/crm/${leadId}` })
-        }).catch(() => {})
+    // Optimistically update assigned agent immediately in UI
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, assigned_to: targetAgentId } : l))
+    toast.success("Lead assignment updated")
+
+    try {
+      await supabase.from('leads').update({ assigned_to: targetAgentId }).eq('id', leadId)
+      
+      // Notify Agent
+      if (targetAgentId) {
+          const leadName = leads.find(l => l.id === leadId)?.name || 'A new lead';
+          fetch('/api/crm/notify-assignment', {
+              method: 'POST',
+              body: JSON.stringify({ agentId: targetAgentId, title: 'Lead Assigned to You', message: `${leadName} has been assigned to you.`, url: `/dashboard/crm/${leadId}` })
+          }).catch(() => {})
+      }
+      
+      fetchLeads(true, true) 
+    } catch (err) {
+      console.error("Failed to update lead assignment:", err)
     }
-    
-    fetchLeads(true) 
   }
 
   const executeRoundRobin = async (isTogglingOn = false) => {
@@ -1781,9 +1825,9 @@ END:VCARD\n`
   // 1. Leads matching search, campaign, form, agent, date range, and DNP filters
   const leadsMatchingFilters = useMemo(() => {
     return leads.filter(l => {
-      // RESTRICT AGENTS / TEAM MEMBERS: Only show leads assigned to them or created by them
-      const isTeamMemberUser = (role as string) === 'agent' || (role as string) === 'team_member' || !!parentAdminId;
-      if (isTeamMemberUser) {
+      // RESTRICT SALES REPS: Only show assigned leads if user is explicitly a sales agent/team_member (not an admin or agency)
+      const isRestrictedAgent = ((role as string) === 'agent' || (role as string) === 'team_member') && !['admin', 'agency', 'super_admin'].includes((role as string) || '');
+      if (isRestrictedAgent) {
           if (l.assigned_to !== userId && l.user_id !== userId) return false;
       }
 
@@ -1931,7 +1975,7 @@ END:VCARD\n`
   }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
 
   const matchLeadToStage = (l: any, stageName: string): boolean => {
-    if (stageName === 'All Leads') return true
+    if (!stageName || stageName === 'All Leads' || stageName === 'ALL') return true
     const statusLower = (l.status || '').trim().toLowerCase()
     const pipelineLower = (l.pipeline_stage || '').trim().toLowerCase()
     const s1 = statusLower || pipelineLower || 'new lead'
@@ -1940,8 +1984,6 @@ END:VCARD\n`
     const checkMatch = (s: string) => {
       if (stageName === 'New Lead') {
         return ['new lead', 'new', 'fresh', 'uncontacted', ''].includes(s)
-      } else if (stageName === 'Ongoing') {
-        return ['ongoing', 'in progress', 'attempted', 'ongoing lead'].includes(s)
       } else if (stageName === 'Requirement Taken') {
         return ['requirement taken', 'requirement', 'contacted', 'qualified', 'requirement_taken'].includes(s)
       } else if (stageName === 'Appointment Booked') {
@@ -1952,10 +1994,22 @@ END:VCARD\n`
         return ['visit done', 'appointment done', 'visited', 'site visit done', 'visit_done'].includes(s)
       } else if (stageName === 'Revisit Done') {
         return ['revisit done', 'revisit', 're-visited', 'revisit_done'].includes(s)
+      } else if (stageName === 'Meeting Planned') {
+        return ['meeting planned', 'meeting plan', 'meeting_planned'].includes(s)
+      } else if (stageName === 'Meeting Done') {
+        return ['meeting done', 'meeting_done'].includes(s)
+      } else if (stageName === 'Never Picked') {
+        return ['never picked', 'never_picked', 'dnp'].includes(s)
       } else if (stageName === 'Negotiation') {
         return ['negotiation', 'negotiating', 'offer'].includes(s)
       } else if (stageName === 'Deal/Token') {
         return ['deal/token', 'deal', 'token', 'closed', 'won', 'deal_token'].includes(s)
+      } else if (stageName === 'Dealer') {
+        return ['dealer', 'broker', 'channel partner'].includes(s)
+      } else if (stageName === 'Plan Postponed') {
+        return ['plan postponed', 'postponed', 'plan_postponed'].includes(s)
+      } else if (stageName === 'Already Purchased') {
+        return ['already purchased', 'purchased', 'already_purchased'].includes(s)
       } else if (stageName === 'Lost/NI') {
         return ['lost/ni', 'lost', 'ni', 'unqualified', 'not interested', 'lost_ni'].includes(s)
       } else if (stageName === 'Different Requirement') {
@@ -1967,28 +2021,47 @@ END:VCARD\n`
     return checkMatch(s1) || checkMatch(s2)
   }
 
-  // 2. Stage counts calculated directly from leadsMatchingFilters using matchLeadToStage
-  const stageCounts = useMemo(() => {
-    const counts: Record<string, number> = {}
-    const isUnfiltered = !searchQuery && selectedAgentFilter === 'ALL' && selectedDateRange === 'ALL' && selectedDnpFilter === 'ALL' && selectedNextActionFilter === 'ALL' && !selectedCampaign && !selectedForm && !selectedCsvAudience
+  // 2. 4 Primary Section Counts (All, Fresh, Ongoing, Not Interested)
+  const sectionCounts = useMemo(() => {
+    const isUnfiltered = !searchQuery && selectedAgentFilter === 'ALL' && selectedDateRange === 'ALL' && selectedDnpFilter === 'ALL' && selectedNextActionFilter === 'ALL' && !selectedCampaign && !selectedForm && !selectedCsvAudience && selectedSpecificStage === 'ALL'
 
+    const fresh = leadsMatchingFilters.filter(l => categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'fresh').length
+    const ongoing = leadsMatchingFilters.filter(l => categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'ongoing').length
+    const not_interested = leadsMatchingFilters.filter(l => categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'not_interested').length
+    const all = isUnfiltered && totalLeadsCount > leadsMatchingFilters.length
+      ? totalLeadsCount
+      : leadsMatchingFilters.length
+
+    return { all, fresh, ongoing, not_interested }
+  }, [leadsMatchingFilters, totalLeadsCount, customStages, searchQuery, selectedAgentFilter, selectedDateRange, selectedDnpFilter, selectedNextActionFilter, selectedCampaign, selectedForm, selectedCsvAudience, selectedSpecificStage])
+
+  // Backward compatibility for stageCounts
+  const stageCounts: Record<string, number> = useMemo(() => {
+    const counts: Record<string, number> = {}
     STAGES.forEach(s => {
-      if (s === 'All Leads' && isUnfiltered && totalLeadsCount > leadsMatchingFilters.length) {
-        counts[s] = totalLeadsCount
-      } else {
-        counts[s] = leadsMatchingFilters.filter(l => matchLeadToStage(l, s)).length
-      }
+      counts[s] = leadsMatchingFilters.filter(l => matchLeadToStage(l, s)).length
     })
     return counts
-  }, [leadsMatchingFilters, totalLeadsCount, searchQuery, selectedAgentFilter, selectedDateRange, selectedDnpFilter, selectedNextActionFilter, selectedCampaign, selectedForm, selectedCsvAudience])
+  }, [leadsMatchingFilters])
 
-  // 3. Final filtered list including flexible pipeline stage matching and date sorting
+  // 3. Final filtered list based on Active Section and Specific Stage
   const filteredLeads = useMemo(() => {
     const list = leadsMatchingFilters.filter(l => {
+      // If user typed in search box, search across all
       if (searchQuery.trim() !== '') return true
-      if (!activeStage || activeStage === 'All Leads') return true
-      return matchLeadToStage(l, activeStage)
+
+      // 1. Specific Stage Filter (if selected in filter drawer)
+      if (selectedSpecificStage && selectedSpecificStage !== 'ALL') {
+        if (!matchLeadToStage(l, selectedSpecificStage)) return false
+      }
+
+      // 2. Main Section Filter
+      if (activeSection === 'all') {
+        return true
+      }
+      return categorizeLeadStage(l.pipeline_stage || l.status, customStages) === activeSection
     })
+
     return list.sort((a, b) => {
       if (sortOrder === 'last_attempted') {
         const getAttemptTime = (l: any) => {
@@ -2012,7 +2085,7 @@ END:VCARD\n`
       const timeB = new Date(b.facebook_created_at || b.created_at).getTime()
       return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA
     })
-  }, [leadsMatchingFilters, activeStage, searchQuery, sortOrder])
+  }, [leadsMatchingFilters, activeSection, selectedSpecificStage, customStages, searchQuery, sortOrder])
 
   const totalFilteredCount = filteredLeads.length
   const totalPages = Math.max(1, Math.ceil(totalFilteredCount / leadsPerPage))
@@ -2534,30 +2607,62 @@ END:VCARD\n`
                         <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
                     </div>
 
-                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL') && (
+                    {/* Specific Pipeline Stage Filter */}
+                    <div className="relative flex-1">
+                        <label className="block text-[9px] font-black text-indigo-600 uppercase mb-1">
+                            {activeSection === 'ongoing' ? 'Filter Ongoing Stage' : activeSection === 'not_interested' ? 'Filter Not Interested Stage' : 'Specific Stage Filter'}
+                        </label>
+                        <select 
+                            value={selectedSpecificStage} 
+                            onChange={(e) => setSelectedSpecificStage(e.target.value)} 
+                            className="w-full appearance-none bg-indigo-50/60 hover:bg-indigo-100/60 border border-indigo-200/80 text-indigo-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all cursor-pointer truncate"
+                        >
+                            <option value="ALL">All Stages in {activeSection === 'ongoing' ? 'Ongoing' : activeSection === 'not_interested' ? 'Not Interested' : activeSection === 'fresh' ? 'Fresh' : 'View'}</option>
+                            {availableStagesForSection.map(s => (
+                                <option key={s.id} value={s.name}>{s.name}</option>
+                            ))}
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-indigo-400 pointer-events-none" />
+                    </div>
+
+                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' || selectedSpecificStage !== 'ALL') && (
                         <div className="col-span-full flex justify-end">
-                            <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setSelectedDnpFilter('ALL'); setSelectedNextActionFilter('ALL'); setSelectedNextActionType('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors">Clear All Filters</button>
+                            <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setSelectedDnpFilter('ALL'); setSelectedNextActionFilter('ALL'); setSelectedNextActionType('ALL'); setSelectedSpecificStage('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors cursor-pointer">Clear All Filters</button>
                         </div>
                     )}
                 </div>
             )}
 
-            <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide pt-1 sm:overflow-x-visible sm:flex-wrap">
-                {STAGES.map(stage => (
-                    <button 
-                        key={stage} 
-                        onClick={() => {
-                            setActiveStage(stage)
-                            setCurrentPage(1)
-                        }} 
-                        className={`whitespace-nowrap px-5 py-3 rounded-2xl text-sm font-bold transition-all shadow-sm flex items-center gap-2 ${activeStage === stage ? 'bg-slate-900 text-white border border-slate-900' : 'bg-white text-slate-600 border border-slate-200/60 hover:bg-slate-50 hover:border-slate-300'}`}
-                    >
-                        {stage} 
-                        <span className={`px-2 py-0.5 rounded-lg text-xs font-bold ${activeStage === stage ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                            {stageCounts[stage] || 0}
-                        </span>
-                    </button>
-                ))}
+            {/* 4 PRIMARY SECTION TABS */}
+            <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1 scrollbar-hide pt-1 border-b border-slate-100">
+                {[
+                    { id: 'all', label: 'All Leads', count: sectionCounts.all, activeBorder: 'border-slate-900', activeText: 'text-slate-900', badgeActive: 'bg-slate-900 text-white' },
+                    { id: 'fresh', label: 'Fresh Leads', count: sectionCounts.fresh, activeBorder: 'border-blue-600', activeText: 'text-blue-600', badgeActive: 'bg-blue-600 text-white' },
+                    { id: 'ongoing', label: 'Ongoing', count: sectionCounts.ongoing, activeBorder: 'border-indigo-600', activeText: 'text-indigo-600', badgeActive: 'bg-indigo-600 text-white' },
+                    { id: 'not_interested', label: 'Not Interested', count: sectionCounts.not_interested, activeBorder: 'border-amber-600', activeText: 'text-amber-700', badgeActive: 'bg-amber-600 text-white' }
+                ].map(sec => {
+                    const isActive = activeSection === sec.id
+                    return (
+                        <button 
+                            key={sec.id} 
+                            type="button"
+                            onClick={() => {
+                                setActiveSection(sec.id as any)
+                                setCurrentPage(1)
+                            }} 
+                            className={`px-4 sm:px-6 py-3 border-b-2 text-xs sm:text-sm transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                                isActive 
+                                    ? `${sec.activeBorder} ${sec.activeText} font-black bg-slate-50/70` 
+                                    : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300 font-bold'
+                            }`}
+                        >
+                            <span>{sec.label}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-black transition-colors ${isActive ? sec.badgeActive : 'bg-slate-100 text-slate-600'}`}>
+                                {sec.count}
+                            </span>
+                        </button>
+                    )
+                })}
             </div>
         </div>
 
@@ -2689,11 +2794,11 @@ END:VCARD\n`
                                             </td>
                                             <td className="p-4" onClick={e => e.stopPropagation()}>
                                                 <select
-                                                    value={lead.pipeline_stage || 'New'}
+                                                    value={lead.pipeline_stage || 'New Lead'}
                                                     onChange={(e) => updateStage(lead.id, e.target.value, e)}
                                                     className="appearance-none bg-blue-50 text-blue-700 text-xs font-bold rounded-xl py-1.5 px-2.5 border border-blue-200/80 outline-none cursor-pointer hover:bg-blue-100 transition-all"
                                                 >
-                                                    {STAGES.filter(s => s !== 'All Leads').map(s => <option key={s} value={s}>{s}</option>)}
+                                                    {customStages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                                 </select>
                                             </td>
                                             <td className="p-4 max-w-[240px]" onClick={e => e.stopPropagation()}>
@@ -2996,11 +3101,11 @@ END:VCARD\n`
                             <div className="flex flex-col gap-1 items-start">
                                 <div onClick={e => e.stopPropagation()} className="relative">
                                     <select
-                                        value={lead.pipeline_stage || 'New'}
+                                        value={lead.pipeline_stage || 'New Lead'}
                                         onChange={(e) => updateStage(lead.id, e.target.value, e)}
                                         className="appearance-none bg-blue-50 text-blue-700 text-xs font-bold rounded-xl py-1 px-3 pr-7 border border-blue-200 outline-none cursor-pointer hover:bg-blue-100 transition-all"
                                     >
-                                        {STAGES.filter(s => s !== 'All Leads').map(s => <option key={s} value={s}>{s}</option>)}
+                                        {customStages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                     </select>
                                     <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
                                 </div>
@@ -3490,7 +3595,7 @@ END:VCARD\n`
          isOpen={!!callFeedbackLead} 
          lead={callFeedbackLead} 
          onClose={() => setCallFeedbackLead(null)} 
-         onSuccess={() => fetchLeads(true)} 
+         onSuccess={() => fetchLeads(true, true)} 
          currentUserId={userId} 
        />
 
@@ -3499,7 +3604,7 @@ END:VCARD\n`
          isOpen={!!updateFollowupLead}
          lead={updateFollowupLead}
          onClose={() => setUpdateFollowupLead(null)}
-         onSuccess={() => fetchLeads(true)}
+         onSuccess={() => fetchLeads(true, true)}
          properties={properties}
          teamMembers={team}
        />
@@ -3521,7 +3626,7 @@ END:VCARD\n`
          leads={leads}
          targetUserId={targetUserId || userId || ''}
          impersonateId={impersonateId}
-         onLeadsUpdated={() => fetchLeads(true)}
+         onLeadsUpdated={() => fetchLeads(true, true)}
        />
 
        {/* BULK ACTIONS & TRANSFER OWNERSHIP MODAL */}

@@ -15,16 +15,21 @@ import { getPropertyDisplayLabel } from '@/utils/property-helper'
 
 const STAGES = [
   'New Lead',
-  'Ongoing',
   'Requirement Taken',
-  'Appointment Booked',
   'Visit Planned',
   'Visit Done',
   'Revisit Done',
+  'Meeting Planned',
+  'Meeting Done',
+  'Never Picked',
   'Negotiation',
   'Deal/Token',
+  'Dealer',
+  'Plan Postponed',
+  'Already Purchased',
   'Lost/NI',
-  'Different Requirement'
+  'Different Requirement',
+  'Appointment Booked'
 ]
 
 function formatCallPhone(phoneRaw: string | null | undefined): string {

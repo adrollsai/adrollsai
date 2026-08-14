@@ -4,6 +4,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 
+export const maxDuration = 60;
+
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -102,16 +104,19 @@ export async function GET(request: Request) {
             throw assetError;
         }
 
-        // --- Auto-Sync processing assets from Kie.ai on GET request ---
+        // --- Fast Concurrent Auto-Sync for processing assets from Kie.ai ---
         const processingAssets = (assetData || []).filter(a => a.status === 'Processing' && a.kie_task_id);
         if (processingAssets.length > 0) {
-            console.log(`[Assets API] Found ${processingAssets.length} processing assets to sync status.`);
-            for (const asset of processingAssets) {
+            const syncPromises = processingAssets.slice(0, 5).map(async (asset) => {
                 try {
                     const taskId = asset.kie_task_id;
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    
                     const checkRes = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`, {
-                        headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY}` }
-                    });
+                        headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY}` },
+                        signal: controller.signal
+                    }).finally(() => clearTimeout(timeoutId));
                     
                     let markAsFailed = false;
                     let failMsg = "";
@@ -194,10 +199,10 @@ export async function GET(request: Request) {
 
                         asset.status = 'Failed';
                     }
-                } catch (err) {
-                    console.error(`[Assets API] Error syncing asset ${asset.id}:`, err);
-                }
-            }
+                } catch (err) {}
+            });
+
+            await Promise.allSettled(syncPromises);
         }
 
         return NextResponse.json(assetData);

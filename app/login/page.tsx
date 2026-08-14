@@ -104,8 +104,17 @@ function LoginForm() {
           }
         }
 
+        if (typeof window !== 'undefined') {
+          try {
+            const prefixes = ['analytics_cache_', 'crm_cache_', 'crm_last_leads_cache', 'feed_', 'properties_cache_']
+            Object.keys(localStorage).forEach(k => {
+              if (prefixes.some(p => k.startsWith(p))) localStorage.removeItem(k)
+            })
+          } catch (e) {}
+        }
+
         toast.success("Welcome back!")
-        router.push('/dashboard/analytics')
+        window.location.href = '/dashboard/analytics'
         
       } else if (mode === 'forgot_password') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {

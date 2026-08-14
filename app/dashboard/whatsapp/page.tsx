@@ -391,12 +391,14 @@ export default function AutomationPage() {
     }
   }
 
-  // Fetch chats, templates and properties on mount
+  // Fetch chats, templates, properties and profile in parallel on mount
   useEffect(() => {
-    fetchChats()
-    fetchTemplates()
-    fetchProperties()
-    fetchProfileAndBilling()
+    Promise.all([
+      fetchChats(),
+      fetchTemplates(),
+      fetchProperties(),
+      fetchProfileAndBilling()
+    ]).catch(err => console.error('[WhatsApp Page Initial Load Error]:', err))
   }, [])
 
   // Fetch messages (and load cache first) when a chat is selected
