@@ -2637,24 +2637,47 @@ export default function AnalyticsPage() {
                               try { cf = JSON.parse(cf) } catch (e) {}
                             }
 
-                            let lastRemark = (cf?.last_followup_remark || '').trim()
-                            if (!lastRemark && cf?.opening_comments) {
-                              lastRemark = cf.opening_comments.trim()
-                            }
-                            if (!lastRemark && lead.notes && typeof lead.notes === 'string') {
+                            // Robust Remark and Timestamp extraction
+                            let rawRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim()
+                            if (!rawRemark && lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
                               let cleaned = lead.notes.trim()
                               if (cleaned.includes('[Last Remarks]:')) {
-                                cleaned = cleaned.split('[Last Remarks]:')[1]?.trim() || cleaned
+                                rawRemark = cleaned.split('[Last Remarks]:')[1]?.split('\n\n[')[0]?.trim() || cleaned
+                              } else {
+                                rawRemark = cleaned.split(/\n\n+/)[0]?.trim() || cleaned
                               }
-                              lastRemark = cleaned
                             }
-                            if (!lastRemark && lead.summary) lastRemark = lead.summary.trim()
+                            if (!rawRemark && cf?.opening_comments) rawRemark = cf.opening_comments.trim()
+                            if (!rawRemark && lead.summary) rawRemark = lead.summary.trim()
 
                             let lastRemarkTime: string | null = null
+                            let cleanRemark = rawRemark
+
                             if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
                             else if (cf?.last_action_date) lastRemarkTime = cf.last_action_date
                             else if (lead.last_call_at) lastRemarkTime = lead.last_call_at
-                            else if (lead.updated_at && lastRemark) lastRemarkTime = lead.updated_at
+
+                            // If timestamp not in explicit ISO fields, parse from remark string (e.g. "Call on 07/08/2026 04:25 pm")
+                            if (rawRemark) {
+                              const match = rawRemark.match(/(?:Call on\s+|Logged on\s+|\[)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
+                              if (match) {
+                                const [full, d, m, y, h, min, ampm] = match
+                                let hour = h ? parseInt(h, 10) : 0
+                                if (ampm) {
+                                  if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
+                                  if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
+                                }
+                                const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
+                                if (!isNaN(parsed.getTime())) {
+                                  if (!lastRemarkTime) lastRemarkTime = parsed.toISOString()
+                                  const stripped = rawRemark.replace(/^(?:\[Last Remarks\]:\s*)?(?:Call on\s+)?\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*(?:\d{1,2}:\d{2}\s*[ap]m)?\s*/i, '').trim()
+                                  if (stripped) cleanRemark = stripped
+                                }
+                              }
+                            }
+
+                            if (!lastRemarkTime && lead.updated_at && cleanRemark) lastRemarkTime = lead.updated_at
+                            if (!lastRemarkTime && lead.created_at && cleanRemark) lastRemarkTime = lead.created_at
 
                             let formattedRemarkTime = ''
                             if (lastRemarkTime) {
@@ -2671,6 +2694,7 @@ export default function AnalyticsPage() {
                                 }
                               } catch (e) {}
                             }
+                            const lastRemark = cleanRemark
 
                             const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                             const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
@@ -2798,25 +2822,47 @@ export default function AnalyticsPage() {
                     try { cf = JSON.parse(cf) } catch (e) {}
                   }
 
-                  let lastRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim()
-                  if (!lastRemark && lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
+                  let rawRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim()
+                  if (!rawRemark && lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
                     const topEntry = lead.notes.trim().split(/\n\n+/)[0]?.trim()
                     if (topEntry) {
                       if (topEntry.includes(']:')) {
                         const parts = topEntry.split(']:')
-                        lastRemark = parts.slice(1).join(']:').trim()
+                        rawRemark = parts.slice(1).join(']:').trim()
                       } else {
-                        lastRemark = topEntry
+                        rawRemark = topEntry
                       }
                     }
                   }
-                  if (!lastRemark && lead.summary) lastRemark = lead.summary.trim()
+                  if (!rawRemark && lead.summary) rawRemark = lead.summary.trim()
                   
                   let lastRemarkTime: string | null = null
+                  let cleanRemark = rawRemark
+
                   if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
                   else if (cf?.last_action_date) lastRemarkTime = cf.last_action_date
                   else if (lead.last_call_at) lastRemarkTime = lead.last_call_at
-                  else if (lead.updated_at && lastRemark) lastRemarkTime = lead.updated_at
+
+                  if (rawRemark) {
+                    const match = rawRemark.match(/(?:Call on\s+|Logged on\s+|\[)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
+                    if (match) {
+                      const [full, d, m, y, h, min, ampm] = match
+                      let hour = h ? parseInt(h, 10) : 0
+                      if (ampm) {
+                        if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
+                        if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
+                      }
+                      const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
+                      if (!isNaN(parsed.getTime())) {
+                        if (!lastRemarkTime) lastRemarkTime = parsed.toISOString()
+                        const stripped = rawRemark.replace(/^(?:\[Last Remarks\]:\s*)?(?:Call on\s+)?\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*(?:\d{1,2}:\d{2}\s*[ap]m)?\s*/i, '').trim()
+                        if (stripped) cleanRemark = stripped
+                      }
+                    }
+                  }
+
+                  if (!lastRemarkTime && lead.updated_at && cleanRemark) lastRemarkTime = lead.updated_at
+                  if (!lastRemarkTime && lead.created_at && cleanRemark) lastRemarkTime = lead.created_at
 
                   let formattedRemarkTime = ''
                   if (lastRemarkTime) {
@@ -2834,6 +2880,7 @@ export default function AnalyticsPage() {
                       }
                     } catch (e) {}
                   }
+                  const lastRemark = cleanRemark
 
                   const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                   const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
