@@ -3,9 +3,8 @@ import { createClient } from '@/utils/supabase/server';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { logToFile, clearLogFile } from '@/utils/logger';
 
-// This route is now FAST — it only validates and creates a job.
-// No need for long maxDuration since heavy work is done by process-campaign-job.
-export const maxDuration = 30;
+// Extended maxDuration to allow full Meta Marketing API video transcoding & creation
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
     clearLogFile();
@@ -320,59 +319,23 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         logToFile(`Job created in DB: ${jobId}`);
     }
 
-    // --- FIRE-AND-FORGET: Trigger the background processor ---
-    if (!process.env.VERCEL) {
-        logToFile(`[LaunchCampaign] Running locally. Executing runCampaignJob in same process to bypass dev server fetch deadlocks for jobId: ${jobId}`);
-        setTimeout(async () => {
-            try {
-                const { runCampaignJob } = await import('@/utils/campaign-processor');
-                await runCampaignJob(jobId, jobPayload);
-            } catch (err: any) {
-                logToFile(`[LaunchCampaign] Local background processor execution crashed: ${err.message}`);
-            }
-        }, 100);
-    } else {
-        const host = request.headers.get('host') || 'localhost:3000';
-        const protocol = host.includes('localhost') ? 'http' : 'https';
-        const processUrl = `${protocol}://${host}/api/meta-ads/process-campaign-job`;
-        const qstashToken = process.env.QSTASH_TOKEN;
-
-        if (qstashToken) {
-            logToFile(`[LaunchCampaign] Queueing campaign job ${jobId} via QStash...`);
-            const qstashPublishUrl = `https://qstash.upstash.io/v2/publish/${processUrl}`;
-            await fetch(qstashPublishUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${qstashToken}`,
-                    'Content-Type': 'application/json',
-                    'Upstash-Retries': '3'
-                },
-                body: JSON.stringify({ jobId, payload: jobPayload })
-            }).catch(err => {
-                logToFile("Failed to queue campaign job in QStash:", err.message);
-            });
-        } else {
-            // Direct dispatch fallback
-            fetch(processUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jobId, payload: jobPayload })
-            }).then(async res => {
-                if (!res.ok) {
-                    const errText = await res.text();
-                    logToFile(`Job processor request failed with status ${res.status}: ${errText}`);
-                }
-            }).catch(err => {
-                logToFile("Failed to trigger job processor:", err.message);
-            });
-        }
+    // --- EXECUTE CAMPAIGN JOB DIRECTLY ---
+    logToFile(`[LaunchCampaign] Executing runCampaignJob for jobId: ${jobId}`);
+    try {
+        const { runCampaignJob } = await import('@/utils/campaign-processor');
+        const result = await runCampaignJob(jobId, jobPayload);
+        
+        return NextResponse.json({
+            success: true,
+            jobId: jobId,
+            campaignId: result?.campaignId,
+            message: result?.message || 'Campaign launched successfully on Meta!'
+        });
+    } catch (launchErr: any) {
+        logToFile(`[LaunchCampaign] Campaign processing failed: ${launchErr.message}`);
+        await refundLimit(user.id, 'campaign_launches');
+        return NextResponse.json({ 
+            error: launchErr.message || 'Failed to launch campaign on Meta' 
+        }, { status: 400 });
     }
-
-    // --- RETURN IMMEDIATELY ---
-    return NextResponse.json({
-        success: true,
-        jobId: jobId,
-        warning: fallbackWarning || undefined,
-        message: 'Campaign is being launched in the background. You will be notified when it\'s ready.'
-    });
 }
