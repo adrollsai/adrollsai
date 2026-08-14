@@ -679,13 +679,13 @@ export default function CRMPage() {
       try {
         if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
             const { data: teamData } = await supabase.from('profiles')
-              .select('id, business_name, role')
+              .select('id, business_name, full_name, role')
               .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
               .in('role', ['admin', 'agent', 'agency'])
             
             let finalTeam = teamData || []
             if (!finalTeam.find(t => t.id === targetUserId)) {
-                const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, role').eq('id', targetUserId).single()
+                const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, full_name, role').eq('id', targetUserId).single()
                 if (targetProfile) finalTeam.push(targetProfile)
             }
 
@@ -2206,7 +2206,7 @@ END:VCARD\n`
                             <option value="ALL">All Team Members</option>
                             <option value="UNASSIGNED">Unassigned Only</option>
                             {team.map(m => (
-                                <option key={m.id} value={m.id}>{m.business_name || m.email}</option>
+                                <option key={m.id} value={m.id}>{m.business_name || m.full_name || m.email || 'Team Member'}</option>
                             ))}
                         </select>
                         <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
