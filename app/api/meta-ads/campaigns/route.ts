@@ -115,25 +115,36 @@ export async function GET(request: Request) {
       'WITH_ISSUES'
     ]);
 
-    const fbUrl = `${FB_GRAPH_URL}/${formattedAdAccountId}/campaigns?fields=id,name,status,effective_status,objective,start_time,created_time,daily_budget,lifetime_budget,budget_remaining&effective_status=${encodeURIComponent(effectiveStatuses)}&limit=150&access_token=${token}`;
-    
-    let response = await fetch(fbUrl);
-    let data = await response.json();
+    let allMetaCampaigns: any[] = [];
+    let nextUrl: string | null = `${FB_GRAPH_URL}/${formattedAdAccountId}/campaigns?fields=id,name,status,effective_status,objective,start_time,created_time,daily_budget,lifetime_budget,budget_remaining&effective_status=${encodeURIComponent(effectiveStatuses)}&limit=100&access_token=${token}`;
+    let pageCount = 0;
 
-    // Fallback without effective_status filter if error returned
-    if (data.error) {
-      logToFile(`[Campaigns API] Retrying with generic endpoint due to: ${data.error.message}`);
-      const fallbackUrl = `${FB_GRAPH_URL}/${formattedAdAccountId}/campaigns?fields=id,name,status,effective_status,objective,start_time,created_time,daily_budget,lifetime_budget,budget_remaining&limit=150&access_token=${token}`;
-      response = await fetch(fallbackUrl);
-      data = await response.json();
+    while (nextUrl && pageCount < 5) {
+      const pageRes: Response = await fetch(nextUrl);
+      const pageData: any = await pageRes.json();
+      if (pageData.error) {
+        logToFile(`[Campaigns API] Meta API pagination warning/error: ${JSON.stringify(pageData.error)}`);
+        break;
+      }
+      if (pageData.data && Array.isArray(pageData.data)) {
+        allMetaCampaigns = allMetaCampaigns.concat(pageData.data);
+      }
+      nextUrl = pageData.paging?.next || null;
+      pageCount++;
     }
 
-    if (data.error) {
-      logToFile(`[Campaigns API] Meta API fetch error: ${JSON.stringify(data.error)}`);
-      throw new Error(data.error.message);
+    // Fallback without effective_status filter if zero campaigns found
+    if (allMetaCampaigns.length === 0) {
+      logToFile(`[Campaigns API] Retrying with generic endpoint`);
+      const fallbackUrl = `${FB_GRAPH_URL}/${formattedAdAccountId}/campaigns?fields=id,name,status,effective_status,objective,start_time,created_time,daily_budget,lifetime_budget,budget_remaining&limit=100&access_token=${token}`;
+      const fallbackRes = await fetch(fallbackUrl);
+      const fallbackData = await fallbackRes.json();
+      if (fallbackData.data && Array.isArray(fallbackData.data)) {
+        allMetaCampaigns = fallbackData.data;
+      }
     }
 
-    const campaignList = (data.data || []).map((c: any) => ({
+    const campaignList = allMetaCampaigns.map((c: any) => ({
       id: c.id,
       name: c.name || 'Untitled Campaign',
       status: c.effective_status || c.status || 'ACTIVE',
