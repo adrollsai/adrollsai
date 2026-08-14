@@ -22,8 +22,7 @@ export async function GET(request: Request) {
             .single();
 
         if (error || !job) {
-            // If the query returns "not found" but table exists
-            return NextResponse.json({ status: 'completed', message: 'Job not found in database.' });
+            return NextResponse.json({ status: 'queued', message: 'Job is queued for processing...' });
         }
 
         return NextResponse.json({

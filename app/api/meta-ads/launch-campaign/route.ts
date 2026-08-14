@@ -1,10 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { logToFile, clearLogFile } from '@/utils/logger';
 
-// Extended maxDuration to allow full Meta Marketing API video transcoding & creation
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
     clearLogFile();
@@ -319,23 +318,22 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         logToFile(`Job created in DB: ${jobId}`);
     }
 
-    // --- EXECUTE CAMPAIGN JOB DIRECTLY ---
-    logToFile(`[LaunchCampaign] Executing runCampaignJob for jobId: ${jobId}`);
-    try {
-        const { runCampaignJob } = await import('@/utils/campaign-processor');
-        const result = await runCampaignJob(jobId, jobPayload);
-        
-        return NextResponse.json({
-            success: true,
-            jobId: jobId,
-            campaignId: result?.campaignId,
-            message: result?.message || 'Campaign launched successfully on Meta!'
-        });
-    } catch (launchErr: any) {
-        logToFile(`[LaunchCampaign] Campaign processing failed: ${launchErr.message}`);
-        await refundLimit(user.id, 'campaign_launches');
-        return NextResponse.json({ 
-            error: launchErr.message || 'Failed to launch campaign on Meta' 
-        }, { status: 400 });
-    }
+    // --- ASYNCHRONOUS BACKGROUND EXECUTION VIA AFTER() ---
+    logToFile(`[LaunchCampaign] Scheduling async background runCampaignJob for jobId: ${jobId}`);
+    
+    after(async () => {
+        try {
+            const { runCampaignJob } = await import('@/utils/campaign-processor');
+            await runCampaignJob(jobId, jobPayload);
+        } catch (err: any) {
+            logToFile(`[LaunchCampaign] Background processor error: ${err.message}`);
+        }
+    });
+
+    return NextResponse.json({
+        success: true,
+        jobId: jobId,
+        warning: fallbackWarning || undefined,
+        message: 'Campaign is being launched in the background. You will be notified when it\'s ready.'
+    });
 }
