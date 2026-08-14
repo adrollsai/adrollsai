@@ -213,6 +213,8 @@ export default function AnalyticsPage() {
 
       const queryParams = new URLSearchParams()
       queryParams.set('duration', duration)
+      const userTz = userProfile?.timezone || (typeof window !== 'undefined' ? localStorage.getItem('nobogent_user_timezone') : null) || 'Asia/Kolkata'
+      queryParams.set('timezone', userTz)
       if (selectedAgentId && selectedAgentId !== 'all') queryParams.set('agentId', selectedAgentId)
       if (impersonateId) queryParams.set('impersonate', impersonateId)
       if (customDate) queryParams.set('customDate', customDate)
@@ -806,50 +808,111 @@ export default function AnalyticsPage() {
 
   // --- ACTION REPORT COMPUTATIONS ---
   const actionReportData = useMemo(() => {
-    const now = new Date()
+    const userTz = profile?.timezone || (typeof window !== 'undefined' ? localStorage.getItem('nobogent_user_timezone') : null) || 'Asia/Kolkata'
+
+    const getZonedNowParts = (tz: string) => {
+      try {
+        const fmt = new Intl.DateTimeFormat('en-CA', {
+          timeZone: tz,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        })
+        const parts = fmt.formatToParts(new Date())
+        const pMap: Record<string, number> = {}
+        parts.forEach(p => { if (p.type !== 'literal') pMap[p.type] = parseInt(p.value, 10) })
+        return {
+          year: pMap.year || new Date().getFullYear(),
+          month: (pMap.month || (new Date().getMonth() + 1)) - 1,
+          day: pMap.day || new Date().getDate()
+        }
+      } catch (e) {
+        const d = new Date()
+        return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() }
+      }
+    }
+
+    const getUtcDateForZonedMidnight = (year: number, month: number, day: number, tz: string, isEnd = false): Date => {
+      try {
+        const pad = (n: number) => String(n).padStart(2, '0')
+        const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
+        const timeStr = isEnd ? '23:59:59.999' : '00:00:00.000'
+        const testIso = `${dateStr}T${timeStr}Z`
+        const d = new Date(testIso)
+        
+        const invFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          year: 'numeric', month: 'numeric', day: 'numeric',
+          hour: 'numeric', minute: 'numeric', second: 'numeric',
+          hour12: false
+        })
+        
+        const targetParts = invFormatter.formatToParts(d)
+        const zMap: Record<string, number> = {}
+        targetParts.forEach(p => { if (p.type !== 'literal') zMap[p.type] = parseInt(p.value, 10) })
+        
+        const zHour = zMap.hour === 24 ? 0 : (zMap.hour || 0)
+        const zDate = Date.UTC(zMap.year || year, (zMap.month || (month + 1)) - 1, zMap.day || day, zHour, zMap.minute || 0, zMap.second || 0)
+        const diff = zDate - d.getTime()
+        
+        return new Date(d.getTime() - diff)
+      } catch (e) {
+        const fallback = new Date(year, month, day, isEnd ? 23 : 0, isEnd ? 59 : 0, isEnd ? 59 : 0, isEnd ? 999 : 0)
+        return fallback
+      }
+    }
+
+    const zParts = getZonedNowParts(userTz)
     let startCutoff: Date | null = null
     let endCutoff: Date | null = null
 
     if (customDate) {
-      startCutoff = new Date(customDate)
-      startCutoff.setHours(0, 0, 0, 0)
-      endCutoff = new Date(customDate)
-      endCutoff.setHours(23, 59, 59, 999)
-    } else if (startDate) {
-      startCutoff = new Date(startDate)
-      startCutoff.setHours(0, 0, 0, 0)
-      if (endDate) {
-        endCutoff = new Date(endDate)
+      const [cy, cm, cd] = customDate.split('-').map(Number)
+      if (cy && cm && cd) {
+        startCutoff = getUtcDateForZonedMidnight(cy, cm - 1, cd, userTz, false)
+        endCutoff = getUtcDateForZonedMidnight(cy, cm - 1, cd, userTz, true)
+      } else {
+        startCutoff = new Date(customDate)
+        endCutoff = new Date(customDate)
         endCutoff.setHours(23, 59, 59, 999)
+      }
+    } else if (startDate) {
+      const [sy, sm, sd] = startDate.split('-').map(Number)
+      startCutoff = (sy && sm && sd) ? getUtcDateForZonedMidnight(sy, sm - 1, sd, userTz, false) : new Date(startDate)
+      if (endDate) {
+        const [ey, em, ed] = endDate.split('-').map(Number)
+        endCutoff = (ey && em && ed) ? getUtcDateForZonedMidnight(ey, em - 1, ed, userTz, true) : new Date(endDate)
       }
     } else {
       switch (duration) {
         case 'today':
-          startCutoff = new Date()
-          startCutoff.setHours(0, 0, 0, 0)
-          endCutoff = new Date()
+          startCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
           break
         case '7d':
-          startCutoff = new Date()
-          startCutoff.setDate(now.getDate() - 7)
-          startCutoff.setHours(0, 0, 0, 0)
-          endCutoff = new Date()
+          const p7 = getZonedNowParts(userTz)
+          startCutoff = getUtcDateForZonedMidnight(p7.year, p7.month, p7.day - 7, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
           break
         case '30d':
-          startCutoff = new Date()
-          startCutoff.setDate(now.getDate() - 30)
-          startCutoff.setHours(0, 0, 0, 0)
-          endCutoff = new Date()
+          const p30 = getZonedNowParts(userTz)
+          startCutoff = getUtcDateForZonedMidnight(p30.year, p30.month, p30.day - 30, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
           break
         case 'this_month':
-          startCutoff = new Date(now.getFullYear(), now.getMonth(), 1)
-          startCutoff.setHours(0, 0, 0, 0)
-          endCutoff = new Date()
+          startCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, 1, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
           break
         case 'last_month':
-          startCutoff = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-          startCutoff.setHours(0, 0, 0, 0)
-          endCutoff = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+          const lastMonthIndex = zParts.month === 0 ? 11 : zParts.month - 1
+          const lastMonthYear = zParts.month === 0 ? zParts.year - 1 : zParts.year
+          const lastDayOfPrevMonth = new Date(lastMonthYear, lastMonthIndex + 1, 0).getDate()
+          startCutoff = getUtcDateForZonedMidnight(lastMonthYear, lastMonthIndex, 1, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(lastMonthYear, lastMonthIndex, lastDayOfPrevMonth, userTz, true)
           break
         case 'all':
         default:
@@ -876,7 +939,7 @@ export default function AnalyticsPage() {
       return true
     }
 
-    // Filter history logs strictly by selected date range
+    // Filter history logs strictly by selected date range and exclude non-agent automated events
     const rawHistory = history || []
     const historyList = rawHistory.filter(h => {
       if (!startCutoff && !endCutoff) return true
@@ -884,62 +947,89 @@ export default function AnalyticsPage() {
     })
 
     let totalCalls = 0, totalVisits = 0, totalMeetings = 0, totalDnp = 0
+    const allCallLeadsSet = new Set<string>()
+    const allVisitLeadsSet = new Set<string>()
+    const allMeetingLeadsSet = new Set<string>()
+    const allDnpLeadsSet = new Set<string>()
+    const allAttemptLeadsSet = new Set<string>()
 
     let rows = allSalesReps.map(rep => {
       const repLogs = historyList.filter(h => h.user_id === rep.id)
       const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
 
       let calls = 0, visits = 0, meetings = 0, dnp = 0
-      const attemptedLeadIds = new Set<string>()
+      const repCallLeadIds = new Set<string>()
+      const repVisitLeadIds = new Set<string>()
+      const repMeetingLeadIds = new Set<string>()
+      const repDnpLeadIds = new Set<string>()
+      const repAttemptedLeadIds = new Set<string>()
 
       repLogs.forEach(h => {
-        if (h.lead_id) attemptedLeadIds.add(h.lead_id)
         const desc = (h.description || '').toLowerCase()
         const type = (h.action_type || '').toUpperCase()
 
+        // Skip non-call system events
+        if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT'].includes(type)) return
+        if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return
+
+        if (h.lead_id) {
+          repAttemptedLeadIds.add(h.lead_id)
+          allAttemptLeadsSet.add(h.lead_id)
+        }
+
         if (type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) {
           dnp++
+          if (h.lead_id) { repDnpLeadIds.add(h.lead_id); allDnpLeadsSet.add(h.lead_id); }
         } else if (desc.includes('visit') || desc.includes('revisit')) {
           visits++
+          if (h.lead_id) { repVisitLeadIds.add(h.lead_id); allVisitLeadsSet.add(h.lead_id); }
         } else if (desc.includes('meeting') || desc.includes('closing')) {
           meetings++
-        } else {
+          if (h.lead_id) { repMeetingLeadIds.add(h.lead_id); allMeetingLeadsSet.add(h.lead_id); }
+        } else if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG'].includes(type) || desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) {
           calls++
+          if (h.lead_id) { repCallLeadIds.add(h.lead_id); allCallLeadsSet.add(h.lead_id); }
         }
       })
 
-      // Build attempted leads list from history log lead_ids for drilldown
-      const attemptedLeads = repLeads.filter(l => {
-        if (attemptedLeadIds.has(l.id)) return true
-        
+      // Cross reference leads that have followup/call dates in range
+      repLeads.forEach(l => {
         let cf: any = l.custom_fields
         if (typeof cf === 'string') {
           try { cf = JSON.parse(cf) } catch (e) {}
         }
-        if (cf?.last_followup_at && isDateInRange(cf.last_followup_at)) return true
-        if (cf?.last_action_date && isDateInRange(cf.last_action_date)) return true
-        
-        return false
+
+        const isFollowupInRange = cf?.last_followup_at && isDateInRange(cf.last_followup_at)
+        const isActionInRange = cf?.last_action_date && isDateInRange(cf.last_action_date)
+        const isCallInRange = l.last_call_at && isDateInRange(l.last_call_at)
+
+        if (isFollowupInRange || isActionInRange || isCallInRange) {
+          repAttemptedLeadIds.add(l.id)
+          allAttemptLeadsSet.add(l.id)
+          
+          if (cf?.last_call_dnp || (cf?.dnp_count > 0 && isFollowupInRange)) {
+            repDnpLeadIds.add(l.id)
+            allDnpLeadsSet.add(l.id)
+          } else {
+            repCallLeadIds.add(l.id)
+            allCallLeadsSet.add(l.id)
+          }
+        }
       })
 
-      // Fallback: if no history logs exist but leads have call data, use lead-based counts
-      if (repLogs.length === 0 && attemptedLeads.length > 0) {
-        const leadCalls = attemptedLeads.filter(l => {
-          let cf: any = l.custom_fields
-          if (typeof cf === 'string') {
-            try { cf = JSON.parse(cf) } catch (e) {}
-          }
-          return cf?.last_followup_at || l.notes?.includes('Followup')
-        }).length
-        const leadDnp = attemptedLeads.reduce((acc: number, l: any) => {
-          let cf: any = l.custom_fields
-          if (typeof cf === 'string') {
-            try { cf = JSON.parse(cf) } catch (e) {}
-          }
-          return acc + (cf?.dnp_count || 0)
-        }, 0)
-        calls = Math.max(calls, leadCalls)
-        dnp = Math.max(dnp, leadDnp)
+      // Build lead arrays for drilldown
+      const attemptedLeads = repLeads.filter(l => repAttemptedLeadIds.has(l.id))
+      const callLeads = repLeads.filter(l => repCallLeadIds.has(l.id))
+      const visitLeads = repLeads.filter(l => repVisitLeadIds.has(l.id))
+      const meetingLeads = repLeads.filter(l => repMeetingLeadIds.has(l.id))
+      const dnpLeads = repLeads.filter(l => repDnpLeadIds.has(l.id))
+
+      // If repLogs were empty but leads have range-filtered dates, sync counts
+      if (repLogs.length === 0) {
+        calls = callLeads.length
+        visits = visitLeads.length
+        meetings = meetingLeads.length
+        dnp = dnpLeads.length
       }
 
       const total = calls + visits + meetings + dnp
@@ -956,7 +1046,11 @@ export default function AnalyticsPage() {
         meetings,
         dnp,
         total,
-        repLeads: attemptedLeads.length > 0 ? attemptedLeads : repLeads
+        repLeads: attemptedLeads.length > 0 ? attemptedLeads : repLeads,
+        callLeads: callLeads.length > 0 ? callLeads : repLeads,
+        visitLeads: visitLeads.length > 0 ? visitLeads : repLeads,
+        meetingLeads: meetingLeads.length > 0 ? meetingLeads : repLeads,
+        dnpLeads: dnpLeads.length > 0 ? dnpLeads : repLeads
       }
     }).sort((a, b) => b.total - a.total)
 
@@ -967,15 +1061,26 @@ export default function AnalyticsPage() {
       rows = rows.filter(r => r.rep.id === selectedAgentId)
     }
 
+    const allCallLeads = leads.filter(l => allCallLeadsSet.has(l.id))
+    const allVisitLeads = leads.filter(l => allVisitLeadsSet.has(l.id))
+    const allMeetingLeads = leads.filter(l => allMeetingLeadsSet.has(l.id))
+    const allDnpLeads = leads.filter(l => allDnpLeadsSet.has(l.id))
+    const allAttemptLeads = leads.filter(l => allAttemptLeadsSet.has(l.id))
+
     return {
       totalCalls,
       totalVisits,
       totalMeetings,
       totalDnp,
       totalActions: totalCalls + totalVisits + totalMeetings + totalDnp,
+      allCallLeads: allCallLeads.length > 0 ? allCallLeads : leads,
+      allVisitLeads: allVisitLeads.length > 0 ? allVisitLeads : leads,
+      allMeetingLeads: allMeetingLeads.length > 0 ? allMeetingLeads : leads,
+      allDnpLeads: allDnpLeads.length > 0 ? allDnpLeads : leads,
+      allAttemptLeads: allAttemptLeads.length > 0 ? allAttemptLeads : leads,
       rows
     }
-  }, [history, leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, selectedAgentId])
+  }, [history, leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId])
 
   // Open interactive drilldown drawer for leads
   const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[]) => {
@@ -1658,45 +1763,61 @@ export default function AnalyticsPage() {
 
               {/* Summary KPI Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
-                  <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100">
+                <button
+                  type="button"
+                  onClick={() => openLeadsDrilldown('Calls Attempted', `All ${actionReportData.totalCalls} call attempts in selected period`, actionReportData.allCallLeads)}
+                  className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 hover:shadow-md transition-all flex items-center space-x-4 text-left cursor-pointer group"
+                >
+                  <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                     <PhoneCall size={22} />
                   </div>
                   <div>
-                    <p className="text-[11px] font-black text-slate-400 uppercase">Calls Attempted</p>
+                    <p className="text-[11px] font-black text-slate-400 uppercase group-hover:text-blue-600 transition-colors">Calls Attempted</p>
                     <p className="text-2xl font-black text-slate-900">{actionReportData.totalCalls}</p>
                   </div>
-                </div>
+                </button>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
-                  <div className="p-3 rounded-2xl bg-purple-50 text-purple-600 border border-purple-100">
+                <button
+                  type="button"
+                  onClick={() => openLeadsDrilldown('Visits Attempted', `All ${actionReportData.totalVisits} site visit attempts in selected period`, actionReportData.allVisitLeads)}
+                  className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-purple-500 hover:shadow-md transition-all flex items-center space-x-4 text-left cursor-pointer group"
+                >
+                  <div className="p-3 rounded-2xl bg-purple-50 text-purple-600 border border-purple-100 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                     <Building2 size={22} />
                   </div>
                   <div>
-                    <p className="text-[11px] font-black text-slate-400 uppercase">Visits Attempted</p>
+                    <p className="text-[11px] font-black text-slate-400 uppercase group-hover:text-purple-600 transition-colors">Visits Attempted</p>
                     <p className="text-2xl font-black text-slate-900">{actionReportData.totalVisits}</p>
                   </div>
-                </div>
+                </button>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
-                  <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100">
+                <button
+                  type="button"
+                  onClick={() => openLeadsDrilldown('Meetings Attempted', `All ${actionReportData.totalMeetings} meeting attempts in selected period`, actionReportData.allMeetingLeads)}
+                  className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 hover:shadow-md transition-all flex items-center space-x-4 text-left cursor-pointer group"
+                >
+                  <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
                     <Users size={22} />
                   </div>
                   <div>
-                    <p className="text-[11px] font-black text-slate-400 uppercase">Meetings Attempted</p>
+                    <p className="text-[11px] font-black text-slate-400 uppercase group-hover:text-emerald-600 transition-colors">Meetings Attempted</p>
                     <p className="text-2xl font-black text-slate-900">{actionReportData.totalMeetings}</p>
                   </div>
-                </div>
+                </button>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
-                  <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100">
+                <button
+                  type="button"
+                  onClick={() => openLeadsDrilldown('DNP / Unanswered Attempts', `All ${actionReportData.totalDnp} DNP attempts in selected period`, actionReportData.allDnpLeads)}
+                  className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 hover:shadow-md transition-all flex items-center space-x-4 text-left cursor-pointer group"
+                >
+                  <div className="p-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 group-hover:bg-amber-600 group-hover:text-white transition-colors">
                     <AlertCircle size={22} />
                   </div>
                   <div>
-                    <p className="text-[11px] font-black text-slate-400 uppercase">DNP / Unanswered</p>
+                    <p className="text-[11px] font-black text-slate-400 uppercase group-hover:text-amber-600 transition-colors">DNP / Unanswered</p>
                     <p className="text-2xl font-black text-amber-600">{actionReportData.totalDnp}</p>
                   </div>
-                </div>
+                </button>
               </div>
 
               {/* Table: Agent Attempt Matrix */}
@@ -1704,7 +1825,7 @@ export default function AnalyticsPage() {
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-black text-slate-900">Agent Action Attempt Matrix</h3>
-                    <p className="text-xs text-slate-500">Breakdown of attempted calls, site visits, meetings & DNPs per agent</p>
+                    <p className="text-xs text-slate-500">Breakdown of attempted calls, site visits, meetings & DNPs per agent (click numbers to view leads)</p>
                   </div>
                 </div>
 
@@ -1729,22 +1850,53 @@ export default function AnalyticsPage() {
                             <div className="text-[11px] text-slate-400">{row.rep.email || row.rep.role}</div>
                           </td>
                           <td className="py-4 px-4 text-center">
-                            <span className="px-2.5 py-1 rounded-xl bg-blue-50 text-blue-700 font-black">{row.calls}</span>
+                            <button
+                              type="button"
+                              onClick={() => row.calls > 0 && openLeadsDrilldown(`${row.rep.name} - Calls Attempted`, `Calls attempted: ${row.calls}`, row.callLeads)}
+                              className={`px-3 py-1 rounded-xl font-black transition-all ${row.calls > 0 ? 'bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white cursor-pointer hover:shadow-xs' : 'bg-slate-50 text-slate-400 cursor-default'}`}
+                            >
+                              {row.calls}
+                            </button>
                           </td>
                           <td className="py-4 px-4 text-center">
-                            <span className="px-2.5 py-1 rounded-xl bg-purple-50 text-purple-700 font-black">{row.visits}</span>
+                            <button
+                              type="button"
+                              onClick={() => row.visits > 0 && openLeadsDrilldown(`${row.rep.name} - Visits Attempted`, `Visits attempted: ${row.visits}`, row.visitLeads)}
+                              className={`px-3 py-1 rounded-xl font-black transition-all ${row.visits > 0 ? 'bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white cursor-pointer hover:shadow-xs' : 'bg-slate-50 text-slate-400 cursor-default'}`}
+                            >
+                              {row.visits}
+                            </button>
                           </td>
                           <td className="py-4 px-4 text-center">
-                            <span className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 font-black">{row.meetings}</span>
+                            <button
+                              type="button"
+                              onClick={() => row.meetings > 0 && openLeadsDrilldown(`${row.rep.name} - Meetings Attempted`, `Meetings attempted: ${row.meetings}`, row.meetingLeads)}
+                              className={`px-3 py-1 rounded-xl font-black transition-all ${row.meetings > 0 ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white cursor-pointer hover:shadow-xs' : 'bg-slate-50 text-slate-400 cursor-default'}`}
+                            >
+                              {row.meetings}
+                            </button>
                           </td>
                           <td className="py-4 px-4 text-center">
-                            <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-700 font-black">{row.dnp}</span>
+                            <button
+                              type="button"
+                              onClick={() => row.dnp > 0 && openLeadsDrilldown(`${row.rep.name} - DNP / Unanswered`, `DNP logged: ${row.dnp}`, row.dnpLeads)}
+                              className={`px-3 py-1 rounded-xl font-black transition-all ${row.dnp > 0 ? 'bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white cursor-pointer hover:shadow-xs' : 'bg-slate-50 text-slate-400 cursor-default'}`}
+                            >
+                              {row.dnp}
+                            </button>
                           </td>
-                          <td className="py-4 px-4 text-center font-black text-slate-900 text-sm">
-                            {row.total}
+                          <td className="py-4 px-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => row.total > 0 && openLeadsDrilldown(`${row.rep.name} - All Attempted Actions`, `Total attempts: ${row.total}`, row.repLeads)}
+                              className={`px-3.5 py-1.5 rounded-xl font-black text-sm transition-all ${row.total > 0 ? 'bg-slate-100 text-slate-900 hover:bg-blue-600 hover:text-white cursor-pointer hover:shadow-xs' : 'bg-slate-50 text-slate-400 cursor-default'}`}
+                            >
+                              {row.total}
+                            </button>
                           </td>
                           <td className="py-4 px-6 text-right">
                             <button
+                              type="button"
                               onClick={() => openLeadsDrilldown(`Action Log: ${row.rep.name}`, `Attempted actions for ${row.rep.name}`, row.repLeads)}
                               className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl font-bold hover:bg-blue-100 transition-colors text-xs inline-flex items-center gap-1 cursor-pointer"
                             >
@@ -2469,6 +2621,28 @@ export default function AnalyticsPage() {
                             }
                             if (!lastRemark && lead.summary) lastRemark = lead.summary.trim()
 
+                            let lastRemarkTime: string | null = null
+                            if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
+                            else if (cf?.last_action_date) lastRemarkTime = cf.last_action_date
+                            else if (lead.last_call_at) lastRemarkTime = lead.last_call_at
+                            else if (lead.updated_at && lastRemark) lastRemarkTime = lead.updated_at
+
+                            let formattedRemarkTime = ''
+                            if (lastRemarkTime) {
+                              try {
+                                const rd = new Date(lastRemarkTime)
+                                if (!isNaN(rd.getTime())) {
+                                  formattedRemarkTime = rd.toLocaleString('en-IN', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })
+                                }
+                              } catch (e) {}
+                            }
+
                             const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                             const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
 
@@ -2511,7 +2685,14 @@ export default function AnalyticsPage() {
                                 <td className="py-2.5 px-3">
                                   {lastRemark ? (
                                     <div className="bg-amber-50 border border-amber-200/80 p-2 rounded-xl text-[11px] text-amber-950 font-medium leading-tight max-w-[320px]">
-                                      <span className="font-extrabold text-amber-800 text-[9px] uppercase tracking-wider block mb-0.5">Last Remark:</span>
+                                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                                        <span className="font-extrabold text-amber-800 text-[9px] uppercase tracking-wider">Last Remark</span>
+                                        {formattedRemarkTime && (
+                                          <span className="text-[10px] font-bold text-amber-700/90 flex items-center gap-0.5 bg-amber-100/60 px-1.5 py-0.2 rounded">
+                                            <Clock size={9} /> {formattedRemarkTime}
+                                          </span>
+                                        )}
+                                      </div>
                                       <span className="line-clamp-2 italic">{lastRemark}</span>
                                     </div>
                                   ) : (
@@ -2602,6 +2783,29 @@ export default function AnalyticsPage() {
                   }
                   if (!lastRemark && lead.summary) lastRemark = lead.summary.trim()
                   
+                  let lastRemarkTime: string | null = null
+                  if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
+                  else if (cf?.last_action_date) lastRemarkTime = cf.last_action_date
+                  else if (lead.last_call_at) lastRemarkTime = lead.last_call_at
+                  else if (lead.updated_at && lastRemark) lastRemarkTime = lead.updated_at
+
+                  let formattedRemarkTime = ''
+                  if (lastRemarkTime) {
+                    try {
+                      const rd = new Date(lastRemarkTime)
+                      if (!isNaN(rd.getTime())) {
+                        formattedRemarkTime = rd.toLocaleString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true
+                        })
+                      }
+                    } catch (e) {}
+                  }
+
                   const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                   const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
                   const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || '').trim()
@@ -2688,7 +2892,14 @@ export default function AnalyticsPage() {
                         <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
                           {lastRemark && (
                             <div className="bg-amber-50/80 border border-amber-200/80 p-2.5 rounded-xl text-xs text-amber-950 font-medium leading-relaxed">
-                              <span className="font-extrabold text-amber-800 uppercase text-[10px] tracking-wider block mb-0.5">Last Followup Remark:</span>
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className="font-extrabold text-amber-800 uppercase text-[10px] tracking-wider">Last Followup Remark:</span>
+                                {formattedRemarkTime && (
+                                  <span className="text-[11px] font-bold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    <Clock size={11} /> {formattedRemarkTime}
+                                  </span>
+                                )}
+                              </div>
                               <span className="whitespace-pre-wrap">{lastRemark}</span>
                             </div>
                           )}

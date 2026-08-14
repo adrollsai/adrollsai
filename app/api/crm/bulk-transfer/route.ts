@@ -77,23 +77,24 @@ export async function POST(req: Request) {
     let exactMatchedCount: number | null = null
 
     if (Array.isArray(leadIds) && leadIds.length > 0 && !useFilters) {
-      // Chunk leadIds to prevent HeadersOverflowError (HTTP header length cap when selecting 500+ leads)
-      const batchSize = 100
+      // Chunk leadIds and fetch in parallel
+      const batchSize = 200
+      const fetchPromises = []
       for (let i = 0; i < leadIds.length; i += batchSize) {
         const chunk = leadIds.slice(i, i + batchSize)
-        const { data: chunkLeads, error: chunkErr } = await supabaseAdmin
-          .from('leads')
-          .select('id, name, phone, email, notes, assigned_to, user_id, custom_fields, pipeline_stage, created_at')
-          .in('id', chunk)
-
-        if (chunkErr) {
-          console.error('[Bulk Transfer Chunk Error]:', chunkErr)
-          fetchErr = chunkErr
-        }
-        if (chunkLeads) {
-          rawFetchedLeads.push(...chunkLeads)
-        }
+        fetchPromises.push(
+          supabaseAdmin
+            .from('leads')
+            .select('id, name, phone, email, notes, assigned_to, user_id, custom_fields, pipeline_stage, created_at')
+            .in('id', chunk)
+            .then(res => {
+              if (res.error) console.error('[Bulk Transfer Chunk Error]:', res.error)
+              return res.data || []
+            })
+        )
       }
+      const results = await Promise.all(fetchPromises)
+      rawFetchedLeads = results.flat()
       exactMatchedCount = rawFetchedLeads.length
     } else {
       let query = supabaseAdmin
@@ -223,42 +224,63 @@ export async function POST(req: Request) {
 
     const validLeadIds = targetLeads.map(l => l.id)
     const cutoffTimestamp = new Date().toISOString()
+    const BATCH_SIZE = 250
 
-    for (const lead of targetLeads) {
-      let cf = lead.custom_fields || {}
-      if (typeof cf === 'string') {
-        try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+    if (!deleteHistory && transferWithScheduledActions) {
+      // Ultra-fast parallel batch update: update assigned_to in chunks of 250
+      const updatePromises = []
+      for (let i = 0; i < validLeadIds.length; i += BATCH_SIZE) {
+        const chunk = validLeadIds.slice(i, i + BATCH_SIZE)
+        updatePromises.push(
+          supabaseAdmin
+            .from('leads')
+            .update({ assigned_to: targetAgentId })
+            .in('id', chunk)
+        )
       }
+      await Promise.all(updatePromises)
+    } else {
+      // Custom field updates in parallel groups of 50
+      const PARALLEL_GROUP = 50
+      for (let i = 0; i < targetLeads.length; i += PARALLEL_GROUP) {
+        const group = targetLeads.slice(i, i + PARALLEL_GROUP)
+        await Promise.all(group.map(lead => {
+          let cf = lead.custom_fields || {}
+          if (typeof cf === 'string') {
+            try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+          }
 
-      const updatePayload: any = {
-        assigned_to: targetAgentId
+          const updatePayload: any = {
+            assigned_to: targetAgentId
+          }
+
+          if (deleteHistory) {
+            cf.history_visible_from = cutoffTimestamp
+            updatePayload.status = 'New Lead'
+            updatePayload.pipeline_stage = 'New Lead'
+          }
+
+          if (!transferWithScheduledActions) {
+            updatePayload.next_followup = null
+            updatePayload.booked_time = null
+            delete cf.next_action_date
+            delete cf.next_action_type
+            delete cf.next_action_notes
+            delete cf.booked_time
+            delete cf.last_followup_at
+          }
+
+          updatePayload.custom_fields = cf
+
+          return supabaseAdmin
+            .from('leads')
+            .update(updatePayload)
+            .eq('id', lead.id)
+        }))
       }
-
-      if (deleteHistory) {
-        cf.history_visible_from = cutoffTimestamp
-        updatePayload.status = 'New Lead'
-        updatePayload.pipeline_stage = 'New Lead'
-      }
-
-      if (!transferWithScheduledActions) {
-        updatePayload.next_followup = null
-        updatePayload.booked_time = null
-        delete cf.next_action_date
-        delete cf.next_action_type
-        delete cf.next_action_notes
-        delete cf.booked_time
-        delete cf.last_followup_at
-      }
-
-      updatePayload.custom_fields = cf
-
-      await supabaseAdmin
-        .from('leads')
-        .update(updatePayload)
-        .eq('id', lead.id)
     }
 
-    // Log transfer history entries
+    // Log transfer history entries in parallel batches of 250
     const historyEntries = validLeadIds.map(leadId => ({
       lead_id: leadId,
       user_id: user.id,
@@ -268,34 +290,43 @@ export async function POST(req: Request) {
         : `🔄 Lead transferred from ${senderName} to ${agentName}`
     }))
 
-    await supabaseAdmin.from('lead_history').insert(historyEntries)
-
-    // Trigger Push Notification & Email Notification to target agent
-    try {
-      const notifTitle = `🔄 ${validLeadIds.length} Lead(s) Transferred to You!`
-      const notifBody = `${senderName} transferred ${validLeadIds.length} lead(s) to your CRM pipeline.`
-      
-      // 1. Send Push Notification
-      await sendPushNotification(
-        targetAgentId,
-        notifTitle,
-        notifBody,
-        '/dashboard/crm',
-        'lead_transfer'
-      ).catch((err: any) => console.error('[Bulk Transfer Push Error]:', err))
-
-      // 2. Send Email Notification
-      if (targetProfile?.email) {
-        await sendLeadTransferEmail(
-          targetProfile.email,
-          agentName,
-          senderName,
-          validLeadIds.length
-        ).catch((err: any) => console.error('[Bulk Transfer Email Error]:', err))
-      }
-    } catch (notifErr: any) {
-      console.error('[Bulk Transfer Notification Exception]:', notifErr)
+    const historyPromises = []
+    for (let i = 0; i < historyEntries.length; i += BATCH_SIZE) {
+      const chunk = historyEntries.slice(i, i + BATCH_SIZE)
+      historyPromises.push(
+        supabaseAdmin.from('lead_history').insert(chunk)
+      )
     }
+    await Promise.all(historyPromises)
+
+    // Trigger Push Notification & Email Notification to target agent in background
+    ;(async () => {
+      try {
+        const notifTitle = `🔄 ${validLeadIds.length} Lead(s) Transferred to You!`
+        const notifBody = `${senderName} transferred ${validLeadIds.length} lead(s) to your CRM pipeline.`
+        
+        // 1. Send Push Notification
+        await sendPushNotification(
+          targetAgentId,
+          notifTitle,
+          notifBody,
+          '/dashboard/crm',
+          'lead_transfer'
+        ).catch((err: any) => console.error('[Bulk Transfer Push Error]:', err))
+
+        // 2. Send Email Notification
+        if (targetProfile?.email) {
+          await sendLeadTransferEmail(
+            targetProfile.email,
+            agentName,
+            senderName,
+            validLeadIds.length
+          ).catch((err: any) => console.error('[Bulk Transfer Email Error]:', err))
+        }
+      } catch (notifErr: any) {
+        console.error('[Bulk Transfer Notification Exception]:', notifErr)
+      }
+    })()
 
     return NextResponse.json({
       success: true,

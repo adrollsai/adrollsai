@@ -165,6 +165,8 @@ export default function CRMPage() {
   })
   const [totalLeadsCount, setTotalLeadsCount] = useState<number>(() => {
     if (typeof window !== 'undefined') {
+      const savedCount = localStorage.getItem('crm_total_count')
+      if (savedCount && !isNaN(parseInt(savedCount, 10))) return parseInt(savedCount, 10)
       const cached = getLocalCache<any>('crm_last_leads_cache')
       if (cached && Array.isArray(cached) && cached.length > 0) return cached.length
     }
@@ -814,8 +816,11 @@ export default function CRMPage() {
         }
         if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads)) {
           setLeads(leadsJson.leads)
-          setLocalCache(cacheKey, leadsJson.leads.slice(0, 300))
-          setTotalLeadsCount(leadsJson.leads.length)
+          setLocalCache(cacheKey, leadsJson.leads.slice(0, 500))
+          setLocalCache('crm_last_leads_cache', leadsJson.leads.slice(0, 500))
+          const count = leadsJson.totalCount !== undefined ? leadsJson.totalCount : leadsJson.leads.length
+          setTotalLeadsCount(count)
+          if (typeof window !== 'undefined') localStorage.setItem('crm_total_count', count.toString())
         } else {
           // Fallback to direct client query if API fails
           let q = supabase.from('leads').select('*').order('created_at', { ascending: false, nullsFirst: false })
@@ -825,8 +830,10 @@ export default function CRMPage() {
           const { data } = await q
           if (data) {
             setLeads(data)
-            setLocalCache(cacheKey, data.slice(0, 300))
+            setLocalCache(cacheKey, data.slice(0, 500))
+            setLocalCache('crm_last_leads_cache', data.slice(0, 500))
             setTotalLeadsCount(data.length)
+            if (typeof window !== 'undefined') localStorage.setItem('crm_total_count', data.length.toString())
           }
         }
       } catch (err) {
@@ -1962,11 +1969,17 @@ END:VCARD\n`
   // 2. Stage counts calculated directly from leadsMatchingFilters using matchLeadToStage
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {}
+    const isUnfiltered = !searchQuery && selectedAgentFilter === 'ALL' && selectedDateRange === 'ALL' && selectedDnpFilter === 'ALL' && selectedNextActionFilter === 'ALL' && !selectedCampaign && !selectedForm && !selectedCsvAudience
+
     STAGES.forEach(s => {
-      counts[s] = leadsMatchingFilters.filter(l => matchLeadToStage(l, s)).length
+      if (s === 'All Leads' && isUnfiltered && totalLeadsCount > leadsMatchingFilters.length) {
+        counts[s] = totalLeadsCount
+      } else {
+        counts[s] = leadsMatchingFilters.filter(l => matchLeadToStage(l, s)).length
+      }
     })
     return counts
-  }, [leadsMatchingFilters])
+  }, [leadsMatchingFilters, totalLeadsCount, searchQuery, selectedAgentFilter, selectedDateRange, selectedDnpFilter, selectedNextActionFilter, selectedCampaign, selectedForm, selectedCsvAudience])
 
   // 3. Final filtered list including flexible pipeline stage matching and date sorting
   const filteredLeads = useMemo(() => {

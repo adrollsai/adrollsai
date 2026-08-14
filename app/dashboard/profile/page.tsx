@@ -42,6 +42,7 @@ import {
   ExternalLink,
   Coins,
   Folder,
+  Clock,
   X
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -449,6 +450,7 @@ export default function ProfilePage() {
     instagramUrl: '',
     customPrompt: '',
     currency: 'INR',
+    timezone: 'Asia/Kolkata',
     industry: '',
     whatsappPersonalNumber: '',
     email: ''
@@ -826,6 +828,7 @@ export default function ProfilePage() {
           instagramUrl: profileData.instagram_url || '',
           customPrompt: profileData.custom_prompt || '',
           currency: profileData.currency || 'INR',
+          timezone: profileData.timezone || (typeof window !== 'undefined' ? localStorage.getItem('nobogent_user_timezone') : null) || 'Asia/Kolkata',
           industry: profileData.industry || '',
           whatsappPersonalNumber: profileData.whatsapp_personal_number || '',
           email: profileData.email || ''
@@ -1649,8 +1652,13 @@ export default function ProfilePage() {
       instagram_url: isAdminLike ? formData.instagramUrl : undefined,
       custom_prompt: formData.customPrompt,
       currency: formData.currency,
+      timezone: formData.timezone || 'Asia/Kolkata',
       whatsapp_personal_number: formData.whatsappPersonalNumber,
       selected_text_llm: selectedTextLlm
+    }
+
+    if (formData.timezone && typeof window !== 'undefined') {
+      localStorage.setItem('nobogent_user_timezone', formData.timezone)
     }
 
     const res = await fetch('/api/profile/update', {
@@ -2716,6 +2724,37 @@ export default function ProfilePage() {
                     <option value="EUR">EUR (€) - Euro</option>
                     <option value="AED">AED (د.إ) - UAE Dirham</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">
+                    <span className="flex items-center gap-1.5">
+                      <Clock size={14} className="text-blue-600" />
+                      Timezone & Region (for Analytics & Reports)
+                    </span>
+                  </label>
+                  <select
+                    value={formData.timezone || 'Asia/Kolkata'}
+                    onChange={(e) => {
+                      const newTz = e.target.value
+                      setFormData({ ...formData, timezone: newTz })
+                      if (typeof window !== 'undefined') localStorage.setItem('nobogent_user_timezone', newTz)
+                    }}
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-bold focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    <option value="Asia/Kolkata">🇮🇳 India (IST, UTC+5:30) - Asia/Kolkata</option>
+                    <option value="Asia/Dubai">🇦🇪 United Arab Emirates (GST, UTC+4:00) - Asia/Dubai</option>
+                    <option value="Asia/Singapore">🇸🇬 Singapore (SGT, UTC+8:00) - Asia/Singapore</option>
+                    <option value="America/New_York">🇺🇸 US Eastern (EST/EDT, UTC-5:00) - America/New_York</option>
+                    <option value="America/Chicago">🇺🇸 US Central (CST/CDT, UTC-6:00) - America/Chicago</option>
+                    <option value="America/Los_Angeles">🇺🇸 US Pacific (PST/PDT, UTC-8:00) - America/Los_Angeles</option>
+                    <option value="America/Toronto">🇨🇦 Canada Eastern (EST/EDT, UTC-5:00) - America/Toronto</option>
+                    <option value="Europe/London">🇬🇧 United Kingdom (GMT/BST, UTC+0) - Europe/London</option>
+                    <option value="Australia/Sydney">🇦🇺 Australia Eastern (AEST/AEDT, UTC+10:00) - Australia/Sydney</option>
+                    <option value="UTC">🌐 UTC (Coordinated Universal Time, UTC+0)</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 font-medium mt-1.5 ml-2">All Action Reports, Leaderboards, and Action Manager dates calculate based on this timezone.</p>
                 </div>
 
                 <div>

@@ -52,38 +52,56 @@ export async function GET(req: Request) {
     const limitParam = url.searchParams.get('limit')
     const requestedLimit = limitParam ? parseInt(limitParam, 10) : 0
 
-    let allLeads: any[] = []
-    let page = 0
     const PAGE_SIZE = 1000
-    let hasMore = true
 
-    while (hasMore && (requestedLimit === 0 || allLeads.length < requestedLimit) && page < 20) {
-      let query = supabaseAdmin
+    const buildQuery = (pageIndex: number, withCount = false) => {
+      let q = supabaseAdmin
         .from('leads')
-        .select('*')
+        .select('*', withCount ? { count: 'exact' } : undefined)
         .order('created_at', { ascending: false })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+        .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1)
 
       if (isTeamUser) {
-        query = query.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
+        q = q.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
       } else {
         const workspaceOrConditions = workspaceTeamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
-        query = query.or(workspaceOrConditions)
+        q = q.or(workspaceOrConditions)
+      }
+      return q
+    }
+
+    // 1. Fetch initial batch with exact total count
+    const { data: firstBatch, count: totalDbCount, error: firstErr } = await buildQuery(0, true)
+    if (firstErr) {
+      console.error('[API CRM Leads] First page fetch error:', firstErr)
+      return NextResponse.json({ error: firstErr.message }, { status: 500 })
+    }
+
+    let allLeads: any[] = firstBatch || []
+    const totalCount = totalDbCount || allLeads.length
+
+    // 2. If more leads exist and limit allows, fetch remaining pages in parallel batches
+    const effectiveLimit = requestedLimit > 0 ? requestedLimit : totalCount
+    if (totalCount > PAGE_SIZE && allLeads.length < effectiveLimit) {
+      const totalPagesNeeded = Math.min(Math.ceil(effectiveLimit / PAGE_SIZE), 30)
+      const pagePromises = []
+
+      for (let p = 1; p < totalPagesNeeded; p++) {
+        pagePromises.push(
+          buildQuery(p, false).then(({ data, error }) => {
+            if (error) {
+              console.error(`[API CRM Leads] Page ${p} fetch error:`, error)
+              return []
+            }
+            return data || []
+          })
+        )
       }
 
-      const { data: batch, error } = await query
-      if (error) {
-        console.error('[API CRM Leads] Fetch error:', error)
-        break
-      }
-
-      if (!batch || batch.length === 0) {
-        hasMore = false
-      } else {
+      const results = await Promise.all(pagePromises)
+      results.forEach(batch => {
         allLeads = allLeads.concat(batch)
-        page++
-        if (batch.length < PAGE_SIZE) hasMore = false
-      }
+      })
     }
 
     if (requestedLimit > 0 && allLeads.length > requestedLimit) {
@@ -106,7 +124,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       leads: parsedLeads,
-      totalCount: parsedLeads.length
+      totalCount: totalCount
     })
   } catch (error: any) {
     console.error('[API CRM Leads] Server error:', error)

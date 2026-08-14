@@ -239,38 +239,7 @@ export async function POST(request: Request) {
       description: historyDesc
     })
 
-    // Send Push & Email Notifications for next action / followup
-    try {
-      const assignedTargetId = assignedTo || lead.assigned_to || user.id
-      const { data: assignedProfile } = await supabaseAdmin
-        .from('profiles')
-        .select('email, full_name, business_name')
-        .eq('id', assignedTargetId)
-        .maybeSingle()
-
-      const formattedActionDate = nextActionDate 
-        ? new Date(nextActionDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-        : 'TBD';
-
-      // Push notification skipped on manual follow-up update per request
-
-      if (assignedProfile?.email) {
-        const agentName = assignedProfile.full_name || assignedProfile.business_name || 'Sales Rep'
-        await sendFollowupReminderEmail(
-          assignedProfile.email,
-          agentName,
-          lead.name || 'Prospect Lead',
-          lead.phone || 'N/A',
-          nextActionType || followupType,
-          nextActionDate || followupDate || new Date().toISOString(),
-          remarks || ''
-        )
-        console.log(`[Followup API] Sent reminder email to ${assignedProfile.email} for lead ${lead.name}`);
-      }
-    } catch (notifErr) {
-      console.error("[Followup API] Failed to send notification alerts to assigned rep:", notifErr)
-    }
-
+    // Manual followup updated successfully (notifications skipped per user request)
     return NextResponse.json({
       success: true,
       message: isDnp ? 'DNP followup logged successfully' : 'Followup updated successfully'

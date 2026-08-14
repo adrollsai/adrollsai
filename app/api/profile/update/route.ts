@@ -337,14 +337,24 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (error) {
-      // Self-healing database update retry: if missing new avatar columns, retry without them
-      const isMissingAvatarColumn = error.message?.includes('avatar_url') || error.message?.includes('avatar_description') || error.message?.includes('avatar_audio_url')
-      if (isMissingAvatarColumn) {
-        console.warn("[Profile Update API] Database is missing avatar_url/avatar_description/avatar_audio_url columns. Retrying update without them...")
+      // Self-healing database update retry: if missing new avatar or timezone columns, retry without them
+      const isMissingCustomColumn = error.message?.includes('avatar_url') || error.message?.includes('avatar_description') || error.message?.includes('avatar_audio_url') || error.message?.includes('timezone')
+      if (isMissingCustomColumn) {
+        console.warn("[Profile Update API] Database is missing columns. Retrying update with base columns...")
         const healedUpdates = { ...allowedUpdates }
         delete healedUpdates.avatar_url
         delete healedUpdates.avatar_description
         delete healedUpdates.avatar_audio_url
+        delete healedUpdates.timezone
+
+        // Also sync timezone to user_metadata as persistent fallback
+        if (allowedUpdates.timezone) {
+          try {
+            await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
+              user_metadata: { timezone: allowedUpdates.timezone }
+            })
+          } catch (metaErr) {}
+        }
 
         if (Object.keys(healedUpdates).length === 0) {
           const { data: currentProfile } = await supabaseAdmin
@@ -355,8 +365,8 @@ export async function POST(request: Request) {
 
           return NextResponse.json({ 
             success: true, 
-            profile: currentProfile,
-            warning: "Migration pending: Please run the SQL in Supabase editor:\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_description TEXT;\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_audio_url TEXT;"
+            profile: { ...currentProfile, timezone: allowedUpdates.timezone || 'Asia/Kolkata' },
+            warning: "Migration pending: Please run the SQL in Supabase editor:\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Asia/Kolkata';"
           })
         }
 
@@ -369,16 +379,23 @@ export async function POST(request: Request) {
         if (!retryResult.error) {
           return NextResponse.json({ 
             success: true, 
-            profile: retryResult.data,
-            warning: "Migration pending: Please run the SQL in Supabase editor:\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_description TEXT;\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_audio_url TEXT;"
+            profile: { ...retryResult.data, timezone: allowedUpdates.timezone || 'Asia/Kolkata' },
+            warning: "Migration pending: Please run the SQL in Supabase editor:\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Asia/Kolkata';"
           })
         }
         error = retryResult.error
       }
 
-
       console.error("[Profile Update API] Database update error:", error)
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (allowedUpdates.timezone) {
+      try {
+        await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
+          user_metadata: { timezone: allowedUpdates.timezone }
+        })
+      } catch (metaErr) {}
     }
 
     return NextResponse.json({ success: true, profile: data })
