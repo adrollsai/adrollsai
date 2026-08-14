@@ -253,32 +253,44 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         // Prepare thumbnail if videos exist
         const hasVideos = creativeItems.some(item => item.type === 'video');
         if (hasVideos) {
-            let thumbSource = logoUrl || 'https://placehold.co/600x600.png';
-            try {
-                let thumbFetch = await fetch(thumbSource);
-                if (!thumbFetch.ok && thumbSource !== 'https://placehold.co/600x600.png') {
-                    logToFile(`Failed to download custom logo (${thumbFetch.statusText}), falling back to placeholder`);
-                    thumbSource = 'https://placehold.co/600x600.png';
-                    thumbFetch = await fetch(thumbSource);
+            if (logoUrl) {
+                try {
+                    const thumbFetch = await fetch(logoUrl);
+                    if (thumbFetch.ok) {
+                        const thumbBlob = await thumbFetch.blob();
+                        const thumbData = new FormData();
+                        thumbData.append('source', thumbBlob, `thumb_${Date.now()}.png`);
+                        thumbData.append('access_token', facebookToken);
+                        const thumbRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { method: 'POST', body: thumbData });
+                        const thumbResult = await thumbRes.json();
+                        if (thumbResult.images) {
+                            globalThumbHash = thumbResult.images[Object.keys(thumbResult.images)[0]].hash;
+                            logToFile(`Successfully uploaded custom logo thumbnail to Meta. Hash: ${globalThumbHash}`);
+                        }
+                    }
+                } catch (e: any) {
+                    logToFile("Failed to prepare custom logo thumbnail:", e.message);
                 }
-                if (thumbFetch.ok) {
-                    const thumbBlob = await thumbFetch.blob();
+            }
+
+            // If still null, generate and upload an in-memory 1x1 PNG thumbnail to Meta (guaranteed to succeed without external network)
+            if (!globalThumbHash) {
+                try {
+                    const base64Png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+                    const pngBuffer = Buffer.from(base64Png, 'base64');
+                    const thumbBlob = new Blob([pngBuffer], { type: 'image/png' });
                     const thumbData = new FormData();
-                    thumbData.append('source', thumbBlob, `thumb_${Date.now()}.png`);
+                    thumbData.append('source', thumbBlob, `default_thumb_${Date.now()}.png`);
                     thumbData.append('access_token', facebookToken);
                     const thumbRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adimages`, { method: 'POST', body: thumbData });
                     const thumbResult = await thumbRes.json();
                     if (thumbResult.images) {
                         globalThumbHash = thumbResult.images[Object.keys(thumbResult.images)[0]].hash;
-                        logToFile(`Successfully uploaded thumbnail to Meta. Hash: ${globalThumbHash}`);
-                    } else {
-                        logToFile("Meta thumbnail upload response missing images:", thumbResult);
+                        logToFile(`Successfully uploaded in-memory fallback thumbnail to Meta. Hash: ${globalThumbHash}`);
                     }
-                } else {
-                    logToFile(`Failed to download fallback placeholder image: ${thumbFetch.statusText}`);
+                } catch (fallbackErr: any) {
+                    logToFile("Failed to upload fallback thumbnail to Meta:", fallbackErr.message);
                 }
-            } catch (e: any) {
-                logToFile("Failed to prepare thumbnail:", e.message);
             }
         }
 
@@ -333,7 +345,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                         try {
                             logToFile(`Falling back to downloading video for binary upload: ${item.url}`);
                             const controller = new AbortController();
-                            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+                            const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout for video
 
                             const videoFetch = await fetch(item.url, { signal: controller.signal });
                             if (!videoFetch.ok) {
@@ -405,8 +417,24 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         }
 
         if (uploadedCreatives.some(c => c.type === 'video')) {
-            logToFile("Waiting 5 seconds for Meta to process uploaded videos...");
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            logToFile("Polling Meta to ensure uploaded videos are ready...");
+            for (const c of uploadedCreatives) {
+                if (c.type === 'video' && c.videoId) {
+                    let attempts = 0;
+                    while (attempts < 5) {
+                        try {
+                            const statusRes = await fetch(`${FB_MARKETING_URL}/${c.videoId}?fields=status&access_token=${facebookToken}`);
+                            const statusData = await statusRes.json();
+                            logToFile(`Video ${c.videoId} processing status:`, statusData);
+                            if (statusData.status?.video_status === 'ready') {
+                                break;
+                            }
+                        } catch (e) {}
+                        attempts++;
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                    }
+                }
+            }
         }
         logToFile(`Uploaded ${uploadedCreatives.length} creatives to Meta.`);
 
