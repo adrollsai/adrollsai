@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { triggerWelcomeDrip, sendInstantFormCatalogMessage } from '@/utils/whatsapp/drips'
 import { bookAppointment, triggerOutboundCall } from '@/utils/voice-helper'
 import { deductCreditsByCost, calculateLLMCost } from '@/utils/credits'
+import { updateLeadScoreInDB, parseCustomFields } from '@/utils/lead-scoring'
 
 export const dynamic = 'force-dynamic'
 
@@ -977,7 +978,7 @@ IMPORTANT RULES:
                                     // 2. Find or create CRM lead record
                                     let { data: latestLead } = await supabaseAdmin
                                         .from('leads')
-                                        .select('id, name')
+                                        .select('id, name, custom_fields, booked_time, pipeline_stage')
                                         .eq('user_id', ownerUserId)
                                         .ilike('phone', `%${cleanFrom.slice(-10)}%`)
                                         .order('created_at', { ascending: false, nullsFirst: false })
@@ -998,7 +999,7 @@ IMPORTANT RULES:
                                                 pipeline_stage: 'New',
                                                 created_at: new Date().toISOString()
                                             })
-                                            .select('id, name')
+                                            .select('id, name, custom_fields, booked_time, pipeline_stage')
                                             .single();
 
                                         if (createdLead) {
@@ -1663,437 +1664,28 @@ IMPORTANT RULES:
                                         }
                                     }
 
-                                    // STEP A: Name not yet provided — ask for name (unless responding to a button click)
-                                    if (!hasName && !isButtonClick) {
-                                        // Check if we already asked for the name by looking at outbound messages (exclude templates)
-                                        const { count: outboundCount } = await supabaseAdmin
-                                            .from('whatsapp_messages')
-                                            .select('id', { count: 'exact', head: true })
-                                            .eq('chat_id', chat.id)
-                                            .eq('direction', 'outbound')
-                                            .not('message_text', 'like', 'Sent Template:%');
+                                    // STEP A: Prepare conversational qualification context & answers
+                                    const existingAnswers = parseCustomFields(latestLead?.custom_fields || chat.flow_answers || {});
+                                    const allBusinessQuestions = (ownerQualifyingQuestions && ownerQualifyingQuestions.length > 0) 
+                                        ? ownerQualifyingQuestions 
+                                        : [];
 
-                                        if (!outboundCount || outboundCount === 0) {
-                                            // First message ever — ask for name
-                                            await sendWAMessage("Hi! 👋 Welcome! Before we get started, could you please share your name?");
-                                            return;
-                                        }
+                                    // Identify unanswered questions that haven't been asked/answered yet
+                                    const unansweredQuestions = allBusinessQuestions.filter((q: string) => {
+                                        const qClean = q.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+                                        const val = existingAnswers[q] || existingAnswers[qClean] || existingAnswers[`q_${qClean}`];
+                                        return val === undefined || val === null || String(val).trim().length === 0;
+                                    });
 
-                                        // They are responding with their name
-                                        const providedName = messageText.trim();
-                                        if (providedName.length < 1 || providedName.length > 100) {
-                                            await sendWAMessage("Please provide a valid name to continue.");
-                                            return;
-                                        }
+                                    const hasRealName = chat.recipient_name && 
+                                        !chat.recipient_name.startsWith('+') && 
+                                        !/^\d+$/.test(chat.recipient_name.replace(/\D/g, '')) &&
+                                        chat.recipient_name !== 'Customer' &&
+                                        chat.recipient_name !== 'Prospect' &&
+                                        chat.recipient_name.trim().length > 1;
 
-                                        // Get the response through LLM (Gemini) to extract clean name
-                                        let parsedName = providedName;
-                                        try {
-                                            const namePrompt = `
-You are an expert name parser. Your job is to extract a clean, professional recipient name from a user's conversational input to a WhatsApp chatbot.
+                                    console.log(`[WhatsApp AI Assistant] Processing message from customer ${cleanFrom} for owner ${ownerUserId}... (Unanswered Qs: ${unansweredQuestions.length}, Has Real Name: ${!!hasRealName})`);
 
-Guidelines:
-1. Extract the person's name accurately.
-2. If they provide a nickname alongside their real name (e.g. "Rahul, nick name is manu" or "my name is John but you can call me Johnny"), format it as: "RealName (Nickname)" (e.g., "Rahul (Manu)", "John (Johnny)").
-3. Remove conversational filler (e.g., "my name is", "I am", "this is", spaces, weird characters).
-4. If they give a full name, return the full name (e.g. "Rahul Chopra").
-5. CRITICAL: If the input is NOT a person's name (e.g. it is a system message, confirmation code, question, sentence, or random text like "17158 is your Facebook confirmation code", "what is the price", "hello", "hi"), output ONLY the string "INVALID_NAME".
-6. Return ONLY the clean extracted name string or "INVALID_NAME". Do not include any other text, explanation, or punctuation.
-
-User Input: "${providedName}"
-Clean Name:`;
-                                            const nameRes = await callGeminiWithUsage(namePrompt);
-                                            const cleanName = nameRes.text.trim();
-                                            if (cleanName === "INVALID_NAME" || /confirmation code|facebook code|verification code/i.test(cleanName)) {
-                                                await sendWAMessage("Please share your valid name to continue.");
-                                                return;
-                                            }
-                                            if (cleanName && cleanName.length > 0 && cleanName.length <= 100) {
-                                                parsedName = cleanName;
-                                            }
-                                            // Dynamic billing for name parse
-                                            const nameTokensCost = calculateLLMCost(nameRes.modelName, nameRes.promptTokens, nameRes.completionTokens);
-                                            const totalNameCost = 0.05 + nameTokensCost;
-                                            await deductCreditsByCost(supabaseAdmin, billingUserId, totalNameCost, 'whatsapp', 'WhatsApp Customer Flow - Name Parsing');
-                                        } catch (geminiErr) {
-                                            console.error("[Flow] Gemini name parsing failed, fallback to raw name:", geminiErr);
-                                            // Fallback billing for webhook processing
-                                            await deductCreditsByCost(supabaseAdmin, billingUserId, 0.05, 'whatsapp', 'WhatsApp Customer Flow - Name Parsing (Fallback)');
-                                        }
-
-                                        // Ensure parsedName is not a system verification string
-                                        if (/confirmation code|facebook code|verification code/i.test(parsedName)) {
-                                            await sendWAMessage("Please share your valid name to continue.");
-                                            return;
-                                        }
-
-                                        // Save the name
-                                        await supabaseAdmin
-                                            .from('whatsapp_chats')
-                                            .update({ recipient_name: parsedName })
-                                            .eq('id', chat.id);
-
-                                        chat.recipient_name = parsedName;
-                                        console.log(`[Flow] Name captured: ${providedName} for chat ${chat.id}`);
-
-                                        // Now find an active qualification flow
-                                        let selectedFlow: any = null;
-
-                                        // Try campaign-specific flow first
-                                        if (campaignSourceId) {
-                                            const { data: campFlow } = await supabaseAdmin
-                                                .from('whatsapp_question_flows')
-                                                .select('*')
-                                                .eq('user_id', ownerUserId)
-                                                .eq('linked_campaign_id', campaignSourceId)
-                                                .eq('is_active', true)
-                                                .maybeSingle();
-                                            if (campFlow) selectedFlow = campFlow;
-                                        }
-
-                                        // Fallback to default active flow
-                                        if (!selectedFlow) {
-                                            const { data: defaultFlow } = await supabaseAdmin
-                                                .from('whatsapp_question_flows')
-                                                .select('*')
-                                                .eq('user_id', ownerUserId)
-                                                .eq('is_active', true)
-                                                .is('linked_campaign_id', null)
-                                                .maybeSingle();
-                                            if (defaultFlow) selectedFlow = defaultFlow;
-                                        }
-
-                                        // If no default, try any active flow
-                                        if (!selectedFlow) {
-                                            const { data: anyFlow } = await supabaseAdmin
-                                                .from('whatsapp_question_flows')
-                                                .select('*')
-                                                .eq('user_id', ownerUserId)
-                                                .eq('is_active', true)
-                                                .limit(1);
-                                            if (anyFlow?.[0]) selectedFlow = anyFlow[0];
-                                        }
-
-                                        if (ownerQualifyingEnabled && ownerQualifyingQuestions && ownerQualifyingQuestions.length > 0) {
-                                            // Start the profile qualification flow
-                                            await supabaseAdmin
-                                                .from('whatsapp_chats')
-                                                .update({
-                                                    qualifying_flow_active: true,
-                                                    current_question_index: 0,
-                                                    flow_answers: {},
-                                                    flow_completed: false
-                                                })
-                                                .eq('id', chat.id);
-
-                                            const firstQ = ownerQualifyingQuestions[0];
-                                            await sendWAMessage(`Thank you, ${parsedName}! 🙏\n\n${firstQ}`);
-                                        } else if (selectedFlow && selectedFlow.questions && selectedFlow.questions.length > 0) {
-                                            // Start the flow — send first question
-                                            await supabaseAdmin
-                                                .from('whatsapp_chats')
-                                                .update({
-                                                    current_flow_id: selectedFlow.id,
-                                                    current_question_index: 0,
-                                                    flow_answers: {},
-                                                    flow_completed: false
-                                                })
-                                                .eq('id', chat.id);
-
-                                            const firstQ = selectedFlow.questions[0];
-                                            await sendWAMessage(`Thank you, ${parsedName}! 🙏\n\n${firstQ.question}`);
-                                        } else {
-                                            // No qualification flow — create lead with complete Meta Ad Origin & ask product follow-up question
-                                            await supabaseAdmin
-                                                .from('whatsapp_chats')
-                                                .update({ flow_completed: true })
-                                                .eq('id', chat.id);
-
-                                            const leadCustomFields: any = {};
-                                            if (metaAdOrigin) {
-                                                leadCustomFields.meta_ad_origin = metaAdOrigin;
-                                            }
-
-                                            // Create lead in CRM
-                                            const { data: newLead } = await supabaseAdmin
-                                                .from('leads')
-                                                .insert({
-                                                    user_id: ownerUserId,
-                                                    name: parsedName,
-                                                    phone: cleanFrom,
-                                                    source: metaAdOrigin ? 'WhatsApp Ad' : 'WhatsApp',
-                                                    pipeline_stage: 'New',
-                                                    campaign_id: metaAdOrigin?.campaign_id || campaignSourceId,
-                                                    ad_name: metaAdOrigin?.ad_name || metaAdOrigin?.headline || metaAdOrigin?.campaign_name || metaAdOrigin?.product_name || null,
-                                                    property_id: metaAdOrigin?.property_id || null,
-                                                    custom_fields: leadCustomFields,
-                                                    created_at: new Date().toISOString()
-                                                 })
-                                                 .select('id')
-                                                 .single();
-
-                                            if (newLead) {
-                                                await supabaseAdmin
-                                                     .from('whatsapp_chats')
-                                                     .update({ lead_id: newLead.id })
-                                                     .eq('id', chat.id);
-                                                 
-                                                 chat.lead_id = newLead.id;
-                                                 await logPastWhatsAppHistory(supabaseAdmin, chat.id, newLead.id, currentInboundMsgCreatedAt);
-
-                                                // Trigger automated Voice Dialing if enabled
-                                                if (ownerAutoCallNewLeads) {
-                                                    triggerOutboundCall(supabaseAdmin, newLead.id, ownerUserId!, true).catch(err => {
-                                                        console.error('[AUTO CALL] Auto voice call trigger failed:', err);
-                                                    });
-                                                }
-
-                                                // Send Product Details Card message to WhatsApp if mapped product details exist
-                                                const pDetails = metaAdOrigin?.product_details;
-                                                if (pDetails) {
-                                                    const productCardText = `Thank you, ${parsedName}! 🙏\n\n🏡 *Product Details for ${pDetails.title}:*\n📍 *Location:* ${pDetails.address || 'Prime Connectivity'}\n💰 *Price:* ${pDetails.price || 'Contact for Exclusive Pricing'}\n✨ *Highlights:* ${pDetails.description ? pDetails.description.substring(0, 180) + '...' : 'Luxury smart living, premium clubhouse & top-tier amenities.'}`;
-                                                    if (pDetails.image_url) {
-                                                        await sendWAMediaMessage(pDetails.image_url, 'image', productCardText);
-                                                    } else {
-                                                        await sendWAMessage(productCardText);
-                                                    }
-                                                    await new Promise(resolve => setTimeout(resolve, 1000));
-                                                }
-
-                                                // Generate natural, product-tailored follow-up question
-                                                let productText = pDetails?.title || metaAdOrigin?.headline || metaAdOrigin?.ad_name || metaAdOrigin?.body || 'our properties';
-                                                let followUpMessage = `What would you like to explore next regarding *${productText}*?\n1️⃣ Pricing & Offers\n2️⃣ Floor Plans & Layouts\n3️⃣ Site Visit & Location\n4️⃣ Connect with a Property Specialist`;
-
-                                                try {
-                                                    const followUpPrompt = `You are an expert real estate sales consultant responding on WhatsApp.
-Customer Name: ${parsedName}
-Product / Ad Title: "${productText}"
-
-Write a warm, engaging, and professional WhatsApp response asking ${parsedName} what specific information they would like to know about "${productText}".
-Provide 4 clear numbered options for them to pick from (e.g., 1️⃣ Pricing & Payment Plans, 2️⃣ Floor Plans, 3️⃣ Location & Amenities, 4️⃣ Speak with Specialist). Keep it clean, professional, and formatted for WhatsApp. Do not include any meta explanations.`;
-                                                    const aiRes = await callGeminiWithUsage(followUpPrompt);
-                                                    if (aiRes.text && aiRes.text.trim()) {
-                                                        followUpMessage = aiRes.text.trim();
-                                                    }
-                                                } catch (aiErr) {
-                                                    console.error('[Flow] Product follow-up question generation error:', aiErr);
-                                                }
-
-                                                await sendWAMessage(followUpMessage);
-
-                                                try {
-                                                    await sendPushNotification(ownerUserId!, `New WhatsApp Lead: ${parsedName}`, `Phone: ${cleanFrom} | Product: ${productText}`);
-                                                } catch (pushErr: any) {}
-                                            }
-                                        }
-                                        return;
-                                    }
-
-                                    // STEP B1: Profile Qualifying Questions in progress
-                                    if (chat.qualifying_flow_active && !flowCompleted) {
-                                        const questions = ownerQualifyingQuestions || [];
-                                        const currentIdx = chat.current_question_index || 0;
-                                        const currentAnswers = (chat.flow_answers || {}) as Record<string, string>;
-
-                                        // Save the answer to the current question
-                                        if (currentIdx < questions.length) {
-                                            const currentQ = questions[currentIdx];
-                                            currentAnswers[currentQ] = messageText.trim();
-                                        }
-
-                                        const nextIdx = currentIdx + 1;
-
-                                        if (nextIdx < questions.length) {
-                                            // More questions to ask
-                                            await supabaseAdmin
-                                                .from('whatsapp_chats')
-                                                .update({
-                                                    current_question_index: nextIdx,
-                                                    flow_answers: currentAnswers
-                                                })
-                                                .eq('id', chat.id);
-
-                                            const nextQ = questions[nextIdx];
-                                            await sendWAMessage(nextQ);
-                                        } else {
-                                            // Flow complete! Create lead in CRM
-                                            const leadName = chat.recipient_name || 'WhatsApp Lead';
-
-                                            // Extract email from answers if available
-                                            const emailField = Object.entries(currentAnswers).find(([key]) =>
-                                                key.toLowerCase().includes('email')
-                                            );
-
-                                            const { data: newLead } = await supabaseAdmin
-                                                .from('leads')
-                                                .insert({
-                                                    user_id: ownerUserId,
-                                                    name: leadName,
-                                                    phone: cleanFrom,
-                                                    email: emailField?.[1] || '',
-                                                    source: 'WhatsApp',
-                                                    pipeline_stage: 'New',
-                                                    custom_fields: currentAnswers,
-                                                    campaign_id: campaignSourceId,
-                                                    created_at: new Date().toISOString()
-                                                })
-                                                .select('id')
-                                                .single();
-
-                                            await supabaseAdmin
-                                                .from('whatsapp_chats')
-                                                .update({
-                                                    flow_completed: true,
-                                                    qualifying_flow_active: false,
-                                                    flow_answers: currentAnswers,
-                                                    lead_id: newLead?.id || null
-                                                })
-                                                .eq('id', chat.id);
-                                            chat.flow_completed = true;
-                                            chat.lead_id = newLead?.id || null;
-                                            chat.flow_answers = currentAnswers;
-
-                                            if (newLead) {
-                                                await logPastWhatsAppHistory(supabaseAdmin, chat.id, newLead.id, currentInboundMsgCreatedAt);
-                                            }
-
-                                            await sendWAMessage(`Thank you for your responses, ${leadName}! ✅ Our team will reach out to you very soon. Feel free to ask any questions in the meantime!`);
-
-                                            // Send push notification
-                                            try {
-                                                await sendPushNotification(ownerUserId!, `✅ New Qualified WhatsApp Lead: ${leadName}`, `Phone: ${cleanFrom} | Answers: ${Object.values(currentAnswers).join(', ').substring(0, 100)}`);
-                                            } catch (pushErr: any) {}
-
-                                            // Trigger welcome drip
-                                            if (newLead) {
-                                                try {
-                                                    await triggerWelcomeDrip(supabaseAdmin, newLead.id, leadName, cleanFrom, ownerUserId!, 'All');
-                                                } catch (dripErr) {
-                                                    console.error('[Flow] Welcome drip trigger failed:', dripErr);
-                                                }
-
-                                                if (ownerAutoCallNewLeads) {
-                                                    triggerOutboundCall(supabaseAdmin, newLead.id, ownerUserId!, true).catch(err => {
-                                                        console.error('[AUTO CALL] Auto voice call trigger failed:', err);
-                                                    });
-                                                }
-                                            }
-                                        }
-                                        return;
-                                    }
-
-                                    // STEP B: Name provided, flow in progress
-                                    if (chat.current_flow_id && !flowCompleted) {
-                                        // Load the flow
-                                        const { data: activeFlow } = await supabaseAdmin
-                                            .from('whatsapp_question_flows')
-                                            .select('*')
-                                            .eq('id', chat.current_flow_id)
-                                            .single();
-
-                                        if (!activeFlow || !activeFlow.questions || activeFlow.questions.length === 0) {
-                                            // Flow deleted/invalid, mark complete
-                                            await supabaseAdmin
-                                                .from('whatsapp_chats')
-                                                .update({ flow_completed: true, current_flow_id: null })
-                                                .eq('id', chat.id);
-                                            await sendWAMessage("Thank you! Our team will be in touch shortly. 🙏");
-                                            return;
-                                        }
-
-                                        const questions = activeFlow.questions as { question: string; field_name: string }[];
-                                        const currentIdx = chat.current_question_index || 0;
-                                        const currentAnswers = (chat.flow_answers || {}) as Record<string, string>;
-
-                                        // Save the answer to the current question
-                                        if (currentIdx < questions.length) {
-                                            const currentQ = questions[currentIdx];
-                                            currentAnswers[currentQ.field_name] = messageText.trim();
-                                        }
-
-                                        const nextIdx = currentIdx + 1;
-
-                                        if (nextIdx < questions.length) {
-                                            // More questions to ask
-                                            await supabaseAdmin
-                                                .from('whatsapp_chats')
-                                                .update({
-                                                    current_question_index: nextIdx,
-                                                    flow_answers: currentAnswers
-                                                })
-                                                .eq('id', chat.id);
-
-                                            const nextQ = questions[nextIdx];
-                                            await sendWAMessage(nextQ.question);
-                                        } else {
-                                            // Flow complete! Create lead in CRM
-                                            const leadName = chat.recipient_name || 'WhatsApp Lead';
-
-                                            // Extract email from answers if available
-                                            const emailField = Object.entries(currentAnswers).find(([key]) =>
-                                                key.toLowerCase().includes('email')
-                                            );
-
-                                            const { data: newLead } = await supabaseAdmin
-                                                .from('leads')
-                                                .insert({
-                                                    user_id: ownerUserId,
-                                                    name: leadName,
-                                                    phone: cleanFrom,
-                                                    email: emailField?.[1] || '',
-                                                    source: 'WhatsApp',
-                                                    pipeline_stage: 'New',
-                                                    custom_fields: currentAnswers,
-                                                    campaign_id: campaignSourceId || activeFlow.linked_campaign_id,
-                                                    created_at: new Date().toISOString()
-                                                })
-                                                .select('id')
-                                                .single();
-
-                                            await supabaseAdmin
-                                                .from('whatsapp_chats')
-                                                .update({
-                                                    flow_completed: true,
-                                                    flow_answers: currentAnswers,
-                                                    lead_id: newLead?.id || null
-                                                })
-                                                .eq('id', chat.id);
-                                            chat.flow_completed = true;
-                                            chat.lead_id = newLead?.id || null;
-                                            chat.flow_answers = currentAnswers;
-
-                                            if (newLead) {
-                                                await logPastWhatsAppHistory(supabaseAdmin, chat.id, newLead.id, currentInboundMsgCreatedAt);
-                                            }
-
-                                            await sendWAMessage(`Thank you for your responses, ${leadName}! ✅ Our team will reach out to you very soon. Feel free to ask any questions in the meantime!`);
-
-                                            // Send push notification
-                                            try {
-                                                await sendPushNotification(ownerUserId!, `✅ New Qualified WhatsApp Lead: ${leadName}`, `Phone: ${cleanFrom} | Answers: ${Object.values(currentAnswers).join(', ').substring(0, 100)}`);
-                                            } catch (pushErr: any) {}
-
-                                            // Trigger welcome drip
-                                            if (newLead) {
-                                                try {
-                                                    await triggerWelcomeDrip(supabaseAdmin, newLead.id, leadName, cleanFrom, ownerUserId!, 'All');
-                                                } catch (dripErr) {
-                                                    console.error('[Flow] Welcome drip trigger failed:', dripErr);
-                                                }
-
-                                                if (ownerAutoCallNewLeads) {
-                                                    triggerOutboundCall(supabaseAdmin, newLead.id, ownerUserId!, true).catch(err => {
-                                                        console.error('[AUTO CALL] Auto voice call trigger failed:', err);
-                                                    });
-                                                }
-                                            }
-                                        }
-                                        return;
-                                    }
-
-                                    // STEP C: Flow completed or no flow — AI assistant conversation
-                                    console.log(`[WhatsApp AI Assistant] Processing message from customer ${cleanFrom} for owner ${ownerUserId}...`);
-                                     
                                     // Run all independent context queries in parallel for speed
                                     const [profileResult, propertiesResult, historyResult, chatHistoryResult] = await Promise.all([
                                         // 1. Business profile
@@ -2187,10 +1779,10 @@ Provide 4 clear numbered options for them to pick from (e.g., 1️⃣ Pricing & 
                                             .join('\n');
                                     }
 
-                                    // 3. Prompt Gemini to generate dynamic reply and extract appointment schedule
-                                    const customerName = chat.recipient_name || 'Rahul';
+                                    // Prompt Gemini with natural conversational qualification
+                                    const customerName = hasRealName ? chat.recipient_name : null;
                                     const aiPrompt = `
-You are an AI sales and booking assistant for "${companyName}".
+You are an intelligent, friendly AI sales and booking assistant for "${companyName}".
 Here is information about our business:
 ${companyInfo}
 
@@ -2199,17 +1791,24 @@ ${propertiesText}
 
 Current Date & Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
 
-Guidelines:
-1. Speak in a natural, polite, and professional English language when responding.
-2. STRICT CLOSED-WORLD GROUNDING: Answer the user's queries accurately based ONLY on the provided business profile and active properties catalog. If a user asks a question about a property, project, or developer that is not explicitly answered in the catalog provided below, set "flag_unanswered_question" to the user's raw question, and politely state in your "reply" that you don't have that detail but would love to schedule a call to get it for them. If the information IS in the catalog, set "flag_unanswered_question" to null. Do NOT make up any details or mix details from different properties (such as builder/developer names, locations, or prices).
-3. If the user explicitly asks to be called right now, requests a voice call, says "call me", or asks to speak on the phone immediately, set "trigger_call" to true. Otherwise, set it to false.
-4. Gently encourage the user to book a meeting or consultation slot (e.g., "Would you like me to book a quick consultation call for you?").
-5. Keep all responses brief (under 50 words) and suitable for a WhatsApp text.
-6. If the user explicitly proposes, confirms, or agrees to a meeting time/day (e.g., "book for tomorrow at 2 pm", "yes 5 pm works", "sure let's talk at 3 tomorrow"), extract that timestamp as an ISO-8601 string. Otherwise, set it to null.
-7. The user's name is "${customerName}". Address them by name ONLY if this is the start of the conversation (i.e. first 1-2 messages in history). For subsequent replies, do NOT repeat greetings like "Hi [Name]" or "Hello [Name]" at the beginning of every message.
-8. If the user explicitly asks to be called after 7 PM, suggests a late call, or says it is okay to call them at night or at any time in general, set "allow_after_hours" to true. Otherwise, default it to false.
-9. If the user asks for details or information about a particular product/property in the active inventory (either explicitly by name or by referencing listings details), identify it and set the "send_product_id" in the output JSON to the exact UUID value of that property's <id>. Otherwise set it to null.
-10. ISOLATED PROPERTY ATTRIBUTION & NO CROSS-PROPERTY MIXING: Each <property> block in the catalog represents a distinct, completely isolated property. NEVER mix, blend, or cross-attribute prices, locations, addresses, configurations, or descriptions between different properties. When answering about a specific property or location (e.g. Mohali), state ONLY the exact facts listed inside that specific <property> block. If multiple properties have generic titles, differentiate them strictly using their location, address, and configuration.
+Customer Status:
+- Name: ${customerName ? customerName : "UNKNOWN (The customer has not shared their name yet)"}
+- Unanswered Qualification Questions:
+${unansweredQuestions.length > 0 ? unansweredQuestions.map((q: string, i: number) => `  ${i + 1}. "${q}"`).join('\n') : "  None (All qualification details have already been collected!)"}
+- Already Collected Details: ${JSON.stringify(existingAnswers)}
+
+CRITICAL CONVERSATIONAL GUIDELINES:
+1. ALWAYS DIRECTLY & WARMLY ANSWER THE CUSTOMER'S QUESTION/MESSAGE FIRST. Never ignore or delay answering what they asked.
+2. In the SAME response, conversationally and naturally weave in ONE unanswered qualification question (if any are listed above). Do NOT interrogate or force them; keep the tone friendly, helpful, and natural (e.g., "By the way, are you looking for 2 BHK or 3 BHK?" or "Also, what is your preferred move-in timeline?").
+3. If Customer Name is UNKNOWN, naturally introduce yourself/ask for their name while answering (e.g., "I'd be glad to help with that! May I know your good name?"). Never force or refuse to answer if they haven't given their name yet.
+4. DO NOT re-ask questions that are already answered in "Already Collected Details".
+5. STRICT CLOSED-WORLD GROUNDING: Answer based ONLY on the provided business profile and active properties catalog. If a detail is missing from catalog, politely state you will arrange a specialist to confirm.
+6. If the user explicitly asks to be called right now, requests a voice call, says "call me", or asks to speak on the phone immediately, set "trigger_call" to true. Otherwise, set it to false.
+7. Gently encourage booking a consultation or site visit slot when appropriate.
+8. If the user confirms or agrees to a meeting time, extract "booking_time" as an ISO-8601 string.
+9. If the user mentions their name in their message (e.g. "I am Aman", "My name is Priya", "Aman here"), extract it in "extracted_name". Otherwise set to null.
+10. If the user answers any qualification question in their message, extract their answer in the "answered_questions" map: { [exact_question_string]: "their answer" }.
+11. Keep responses concise, warm, and formatted cleanly for WhatsApp (under 60 words).
 
 Recent WhatsApp Chat History:
 ${chatHistory}
@@ -2219,9 +1818,11 @@ ${voiceCallHistory}
 
 Incoming User Message: "${messageText}"
 
-Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
+Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
 {
   "reply": "Your message reply in English",
+  "extracted_name": "Extracted customer name if they shared their name in this message, otherwise null",
+  "answered_questions": {},
   "booking_time": "ISO-8601 string of agreed meeting slot or null",
   "trigger_call": true/false,
   "allow_after_hours": true/false,
@@ -2236,6 +1837,8 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                     let extractedAllowAfterHours = false;
                                     let unansweredQuestionToFlag: string | null = null;
                                     let extractedProductId: string | null = null;
+                                    let extractedName: string | null = null;
+                                    let answeredQuestionsObj: Record<string, any> = {};
 
                                     let assistantUsage = { promptTokens: 0, completionTokens: 0, modelName: 'gemini-3.5-flash' };
                                     try {
@@ -2248,8 +1851,10 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                         extractedAllowAfterHours = !!parsed.allow_after_hours;
                                         unansweredQuestionToFlag = parsed.flag_unanswered_question || null;
                                         extractedProductId = parsed.send_product_id || null;
+                                        extractedName = parsed.extracted_name || null;
+                                        answeredQuestionsObj = parsed.answered_questions || {};
                                         assistantUsage = aiRes;
-                                        console.log('[WhatsApp AI Assistant] Gemini parsed response:', { replyText, extractedBookingTime, triggerCallRequested, extractedAllowAfterHours, unansweredQuestionToFlag, extractedProductId });
+                                        console.log('[WhatsApp AI Assistant] Gemini response:', { replyText, extractedName, answeredQuestionsObj, extractedBookingTime, triggerCallRequested, extractedProductId });
                                         
                                         // Dynamic billing for customer AI reply
                                         const aiTokensCost = calculateLLMCost(assistantUsage.modelName, assistantUsage.promptTokens, assistantUsage.completionTokens);
@@ -2257,8 +1862,59 @@ Format your output as a valid JSON object ONLY. Do not use markdown tags, ticks,
                                         await deductCreditsByCost(supabaseAdmin, billingUserId, totalAiCost, 'whatsapp', 'WhatsApp Customer AI Assistant response');
                                     } catch (geminiErr) {
                                         console.error('[WhatsApp AI Assistant] Gemini generation/parsing failed:', geminiErr);
-                                        // Fallback billing for webhook processing
                                         await deductCreditsByCost(supabaseAdmin, billingUserId, 0.05, 'whatsapp', 'WhatsApp Customer AI Assistant response (Fallback)');
+                                    }
+
+                                    // Update Name if extracted
+                                    if (extractedName && extractedName.trim().length > 1 && !/invalid|none|null/i.test(extractedName)) {
+                                        const cleanExtractedName = extractedName.trim();
+                                        await supabaseAdmin
+                                            .from('whatsapp_chats')
+                                            .update({ recipient_name: cleanExtractedName })
+                                            .eq('id', chat.id);
+                                        chat.recipient_name = cleanExtractedName;
+
+                                        if (latestLead) {
+                                            await supabaseAdmin
+                                                .from('leads')
+                                                .update({ name: cleanExtractedName })
+                                                .eq('id', latestLead.id);
+                                            latestLead.name = cleanExtractedName;
+                                        }
+                                    }
+
+                                    // Update Answered Qualification Questions in custom_fields & chat flow_answers
+                                    const updatedCustomFields = { ...existingAnswers };
+                                    let hasNewAnswers = false;
+                                    if (answeredQuestionsObj && typeof answeredQuestionsObj === 'object' && Object.keys(answeredQuestionsObj).length > 0) {
+                                        Object.entries(answeredQuestionsObj).forEach(([qKey, aVal]) => {
+                                            if (aVal !== undefined && aVal !== null && String(aVal).trim().length > 0) {
+                                                updatedCustomFields[qKey] = String(aVal).trim();
+                                                hasNewAnswers = true;
+                                            }
+                                        });
+                                    }
+
+                                    if (hasNewAnswers) {
+                                        await supabaseAdmin
+                                            .from('whatsapp_chats')
+                                            .update({ flow_answers: updatedCustomFields, updated_at: new Date().toISOString() })
+                                            .eq('id', chat.id);
+                                        chat.flow_answers = updatedCustomFields;
+
+                                        if (latestLead) {
+                                            await supabaseAdmin
+                                                .from('leads')
+                                                .update({ custom_fields: updatedCustomFields })
+                                                .eq('id', latestLead.id);
+                                        }
+                                    }
+
+                                    // Recalculate and persist dynamic Lead Score
+                                    if (latestLead?.id) {
+                                        updateLeadScoreInDB(supabaseAdmin, latestLead.id, ownerQualifyingQuestions).catch(err => {
+                                            console.error('[WhatsApp AI Assistant] Lead score update failed:', err);
+                                        });
                                     }
 
                                     // 4. Send the reply via WhatsApp

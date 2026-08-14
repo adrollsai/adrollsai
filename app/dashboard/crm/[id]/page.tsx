@@ -9,6 +9,7 @@ import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicke
 import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
 import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
+import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { PhoneOff, PhoneCall } from 'lucide-react'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 
@@ -987,7 +988,10 @@ END:VCARD`
                         <ArrowLeft size={18} />
                     </button>
                     <div className="min-w-0 flex-1">
-                        <h2 className="text-xl font-bold text-slate-900 break-words sm:truncate leading-tight">{lead.name}</h2>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h2 className="text-xl font-bold text-slate-900 break-words sm:truncate leading-tight">{lead.name}</h2>
+                            <LeadScoreBadge lead={lead} size="sm" showDetails />
+                        </div>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mt-1">
                             <p className="text-xs font-medium text-slate-500 break-all">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
                             

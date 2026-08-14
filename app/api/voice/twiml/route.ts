@@ -471,15 +471,14 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
         let qualifyingInstruction = ''
         if (isQualifyingActive) {
             qualifyingInstruction = `
-MANDATORY PRE-QUALIFICATION RULES:
-Before discussing booking/scheduling a call, you MUST ask the lead these qualifying questions one by one.
-Do NOT book the meeting until you have answers to these questions:
-${profile.qualifying_questions.map((q: string, i: number) => `- Question ${i + 1}: "${q}"`).join('\n')}
+NATURAL CONVERSATIONAL QUALIFICATION GUIDELINES:
+During the conversation, naturally and politely weave in these qualification questions if not already answered in the lead context below:
+${profile.qualifying_questions.map((q: string, i: number) => `- Question: "${q}"`).join('\n')}
 
-Guidelines for qualification:
-- Ask these questions one by one. Do not ask multiple questions at once.
-- Once the lead answers a question, politely acknowledge it and ask the next question.
-- After all questions are answered, proceed to the primary objective of scheduling the booking.
+Guidelines:
+- Always answer whatever the prospect asks directly and warmly first.
+- Weave in any missing qualification questions naturally during the conversation (e.g., "Waise aap 2 BHK dekh rahe hain ya 3 BHK?").
+- Do NOT interrogate or force the lead. If an answer is already known in 'Attributed Details' or answered during conversation, do not re-ask.
 `.trim()
         }
 
@@ -533,10 +532,7 @@ ${previousCallsHistory ? `Previous Call History:\n${previousCallsHistory}\n` : '
 ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
 `.trim()
 
-        let dynamicFirstMessage = `Hi ${firstName} ji, kaise ho aap?`
-        if (isQualifyingActive && profile.qualifying_questions[0]) {
-            dynamicFirstMessage = `Hi ${firstName}! Main ${companyName} se AI representative baat kar raha hoon. Maine dekha aapne query submit ki thi. Aage badhne se pehle kya main aap se ek quick detail clear kar sakta hoon? ${profile.qualifying_questions[0]}`
-        }
+        let dynamicFirstMessage = effectiveGreeting;
 
         let finalPrompt = customPrompt
         if (campaign?.custom_prompt) {

@@ -631,6 +631,14 @@ export async function bookAppointment(
 
         if (updateError) throw updateError
 
+        // Recalculate and persist boosted Lead Score for booked appointment
+        try {
+            const { updateLeadScoreInDB } = await import('./lead-scoring')
+            await updateLeadScoreInDB(supabaseAdmin, leadId)
+        } catch (sErr) {
+            console.error('[VOICE HELPER] Lead score update on booking failed:', sErr)
+        }
+
         // Trigger multi-channel alert to admin (Push, Free-form WhatsApp, Email)
         try {
             const { sendAdminMultiChannelNotification } = await import('./notification-helper')

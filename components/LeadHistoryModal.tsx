@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { X, History, Clock, User, Phone, MessageSquare, AlertCircle, RefreshCw, FileText } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
+import LeadScoreBadge from '@/components/LeadScoreBadge'
 
 interface LeadHistoryModalProps {
   isOpen: boolean
@@ -138,8 +139,9 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
               <History size={20} />
             </div>
             <div>
-              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2 flex-wrap">
                 <span>Timeline History for {lead.name || 'Lead'}</span>
+                <LeadScoreBadge lead={lead} size="sm" showDetails />
               </h3>
               <p className="text-slate-500 text-xs mt-0.5">
                 {lead.phone || 'No Phone'} • Status: <span className="font-semibold text-blue-600">{lead.pipeline_stage || 'New Lead'}</span>

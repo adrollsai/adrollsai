@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { callGemini } from '@/utils/external-apis'
 import { bookAppointment, dispatchNextCall } from '@/utils/voice-helper'
+import { updateLeadScoreInDB } from '@/utils/lead-scoring'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -758,6 +759,13 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                 } catch (bErr) {
                     console.error('[TWILIO STATUS CALLBACK] bookAppointment exception:', bErr)
                 }
+            }
+
+            if (!updateErr) {
+                // Recalculate and persist dynamic Lead Score after voice call completion
+                updateLeadScoreInDB(supabaseAdmin, leadId, profile?.qualifying_questions).catch(err => {
+                    console.error('[STATUS CALLBACK] Lead score update failed:', err)
+                })
             }
 
             if (updateErr) {

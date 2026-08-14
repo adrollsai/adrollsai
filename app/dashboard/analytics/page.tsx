@@ -46,6 +46,7 @@ import {
 } from 'lucide-react'
 import LeadHistoryModal from '@/components/LeadHistoryModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
+import LeadScoreBadge from '@/components/LeadScoreBadge'
 
 // Render simple markdown headers, bolding, and lists into JSX
 function MarkdownRenderer({ text }: { text: string }) {
@@ -2909,6 +2910,7 @@ export default function AnalyticsPage() {
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="font-extrabold text-sm text-slate-900">{lead.name || 'Unknown Prospect'}</h4>
+                            <LeadScoreBadge lead={lead} size="sm" showDetails />
                             <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-extrabold text-[10px]">
                               {lead.pipeline_stage || 'New'}
                             </span>

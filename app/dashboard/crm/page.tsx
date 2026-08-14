@@ -17,6 +17,7 @@ import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadHistoryModal from '@/components/LeadHistoryModal'
 import GroupLeadDistributionModal from '@/components/GroupLeadDistributionModal'
+import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
@@ -2679,7 +2680,10 @@ END:VCARD\n`
                                             )}
                                             <td className="p-4">
                                                 <div className="flex flex-col min-w-[160px]">
-                                                    <span className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors truncate">{lead.name || 'Unknown Lead'}</span>
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors truncate">{lead.name || 'Unknown Lead'}</span>
+                                                        <LeadScoreBadge lead={lead} size="sm" showDetails />
+                                                    </div>
                                                     <span className="text-xs font-semibold text-slate-500">{displayPhone || '--'}</span>
                                                 </div>
                                             </td>
@@ -2850,6 +2854,7 @@ END:VCARD\n`
                                         <h3 className="font-extrabold text-slate-900 text-base sm:text-lg leading-snug group-hover:text-blue-600 break-words" title={lead.name || 'Unknown Lead'}>
                                             {lead.name || 'Unknown Lead'}
                                         </h3>
+                                        <LeadScoreBadge lead={lead} size="sm" showDetails />
                                         {(lead.reopened_count > 0 || lead.custom_fields?.reopened_count > 0) && (
                                             <span 
                                                 onClick={(e) => { e.stopPropagation(); setHistoryLead(lead); }}
