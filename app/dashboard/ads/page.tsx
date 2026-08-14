@@ -700,10 +700,10 @@ export default function AdsPage() {
   }
 
   useEffect(() => { 
-    fetchAdsData() 
+    fetchAdsData(true) 
     const saved = localStorage.getItem('optimized_campaign_ids')
     if (saved) setOptimizedCampaigns(JSON.parse(saved))
-  }, [])
+  }, [impersonateId])
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
