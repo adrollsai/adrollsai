@@ -254,6 +254,62 @@ export default function CRMPage() {
   const [historyLead, setHistoryLead] = useState<any>(null)
   const [isGroupDistributionModalOpen, setIsGroupDistributionModalOpen] = useState(false)
   
+  // --- FILTERED BULK TRANSFER MODAL STATE ---
+  const [isFilteredBulkTransferModalOpen, setIsFilteredBulkTransferModalOpen] = useState(false)
+  const [filteredTransferFromIds, setFilteredTransferFromIds] = useState<string[]>(['ALL'])
+  const [filteredTransferStage, setFilteredTransferStage] = useState<string>('ALL')
+  const [filteredTransferDnp, setFilteredTransferDnp] = useState<string>('ALL')
+  const [filteredTransferDateRange, setFilteredTransferDateRange] = useState<string>('ALL')
+  const [filteredTransferCampaign, setFilteredTransferCampaign] = useState<string>('ALL')
+  const [filteredTransferForm, setFilteredTransferForm] = useState<string>('ALL')
+  const [filteredTransferTargetAgentId, setFilteredTransferTargetAgentId] = useState<string>('')
+  const [filteredTransferMaxLimit, setFilteredTransferMaxLimit] = useState<string>('')
+  const [filteredTransferDeleteHistory, setFilteredTransferDeleteHistory] = useState<boolean>(false)
+  const [filteredTransferKeepActions, setFilteredTransferKeepActions] = useState<boolean>(true)
+  const [isExecutingFilteredTransfer, setIsExecutingFilteredTransfer] = useState<boolean>(false)
+
+  const handleExecuteFilteredBulkTransfer = async () => {
+    if (!filteredTransferTargetAgentId) {
+      toast.error('Please select a target team member to reassign leads to.')
+      return
+    }
+
+    setIsExecutingFilteredTransfer(true)
+    try {
+      const res = await fetch('/api/crm/bulk-transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          useFilters: true,
+          targetAgentId: filteredTransferTargetAgentId,
+          fromAgentIds: filteredTransferFromIds,
+          filterStage: filteredTransferStage,
+          filterDnp: filteredTransferDnp,
+          filterDateRange: filteredTransferDateRange,
+          filterCampaign: filteredTransferCampaign,
+          filterForm: filteredTransferForm,
+          maxLimit: filteredTransferMaxLimit ? parseInt(filteredTransferMaxLimit, 10) : 0,
+          deleteHistory: filteredTransferDeleteHistory,
+          transferWithScheduledActions: filteredTransferKeepActions,
+          impersonateId
+        })
+      })
+
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toast.success(`Successfully transferred ${data.transferredCount} lead(s) to ${data.targetAgentName}!`)
+        setIsFilteredBulkTransferModalOpen(false)
+        fetchLeads(true)
+      } else {
+        toast.error(data.error || 'Failed to transfer leads')
+      }
+    } catch (err: any) {
+      toast.error('Error during transfer: ' + err.message)
+    } finally {
+      setIsExecutingFilteredTransfer(false)
+    }
+  }
+  
   const [currentPage, setCurrentPageState] = useState(() => {
     if (typeof window !== 'undefined') {
       const p = sessionStorage.getItem('crm_page')
@@ -2041,6 +2097,10 @@ END:VCARD\n`
                             <SlidersHorizontal size={16} />
                             <span className="font-bold text-[10px] sm:text-sm">Group Lead Distribution</span>
                         </button>
+                        <button onClick={() => setIsFilteredBulkTransferModalOpen(true)} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-purple-200 bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-500 hover:to-indigo-500 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 cursor-pointer shadow-md shadow-purple-600/20">
+                            <ArrowRightLeft size={16} />
+                            <span className="font-bold text-[10px] sm:text-sm">Bulk Transfer / Reassign</span>
+                        </button>
                         <button onClick={() => { 
                             setIsSyncModalOpen(true); 
                             const urlParams = new URLSearchParams(window.location.search);
@@ -3663,6 +3723,248 @@ END:VCARD\n`
            </div>
          </div>
        )}
+        {/* FILTERED BULK TRANSFER MODAL */}
+        {isFilteredBulkTransferModalOpen && (
+          <div className="fixed inset-0 z-[999999] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setIsFilteredBulkTransferModalOpen(false)}>
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+              
+              {/* Header */}
+              <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-indigo-950 to-purple-950 text-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-white/10 text-purple-300 backdrop-blur-xs border border-white/10">
+                    <ArrowRightLeft size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black tracking-tight flex items-center gap-2">
+                      Filtered Bulk Lead Transfer
+                    </h3>
+                    <p className="text-xs text-slate-300 font-medium">Reassign leads in bulk based on owner, stage, DNP status, date, campaign & form</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsFilteredBulkTransferModalOpen(false)} className="p-2 rounded-xl bg-white/10 text-slate-300 hover:text-white hover:bg-white/20 transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                
+                {/* Step 1: Filter Criteria */}
+                <div>
+                  <h4 className="text-xs font-black uppercase text-indigo-600 tracking-wider mb-3 flex items-center gap-1.5">
+                    <Filter size={14} /> 1. Select Filter Criteria (Source Leads)
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    
+                    {/* From Agent Filter */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 mb-1">From Owner / Agent</label>
+                      <select
+                        value={filteredTransferFromIds[0] || 'ALL'}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          if (val === 'ALL') setFilteredTransferFromIds(['ALL'])
+                          else setFilteredTransferFromIds([val])
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
+                      >
+                        <option value="ALL">🌐 All Team Members</option>
+                        <option value="UNASSIGNED">👤 Unassigned Only</option>
+                        {team.map(m => (
+                          <option key={m.id} value={m.id}>👤 {m.business_name || m.full_name || m.email}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Pipeline Stage Filter */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Pipeline Stage</label>
+                      <select
+                        value={filteredTransferStage}
+                        onChange={(e) => setFilteredTransferStage(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
+                      >
+                        <option value="ALL">ALL Stages</option>
+                        {STAGES.filter(s => s !== 'All Leads').map(stage => (
+                          <option key={stage} value={stage}>{stage}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* DNP / Call Status Filter */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 mb-1">DNP / Call Status</label>
+                      <select
+                        value={filteredTransferDnp}
+                        onChange={(e) => setFilteredTransferDnp(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
+                      >
+                        <option value="ALL">All Leads (No DNP Filter)</option>
+                        <option value="DNP_ONLY">⚠️ DNP Leads Only</option>
+                        <option value="NO_DNP">✅ Clean Leads (No DNP)</option>
+                        <option value="NO_CALLS">📞 No Calls Attempted Yet</option>
+                      </select>
+                    </div>
+
+                    {/* Date Range Filter */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Date Created</label>
+                      <select
+                        value={filteredTransferDateRange}
+                        onChange={(e) => setFilteredTransferDateRange(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
+                      >
+                        <option value="ALL">All Time</option>
+                        <option value="TODAY">📅 Created Today</option>
+                        <option value="LAST_7_DAYS">⚡ Last 7 Days</option>
+                        <option value="LAST_30_DAYS">🗓️ Last 30 Days</option>
+                      </select>
+                    </div>
+
+                    {/* Campaign Filter */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Campaign</label>
+                      <select
+                        value={filteredTransferCampaign}
+                        onChange={(e) => setFilteredTransferCampaign(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
+                      >
+                        <option value="ALL">All Campaigns</option>
+                        {campaigns.map((c: any) => (
+                          <option key={c.id || c.name} value={c.id || c.name}>{c.name || c.id}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Form Filter */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Lead Form</label>
+                      <select
+                        value={filteredTransferForm}
+                        onChange={(e) => setFilteredTransferForm(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
+                      >
+                        <option value="ALL">All Forms</option>
+                        {forms.map((f: any) => (
+                          <option key={f.id || f.name} value={f.id || f.name}>{f.name || f.id}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* Step 2: Target Assignee */}
+                <div className="pt-4 border-t border-slate-100">
+                  <h4 className="text-xs font-black uppercase text-indigo-600 tracking-wider mb-3 flex items-center gap-1.5">
+                    <UserPlus size={14} /> 2. Select Target Team Member (Assign To)
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Assign Leads To</label>
+                      <select
+                        value={filteredTransferTargetAgentId}
+                        onChange={(e) => setFilteredTransferTargetAgentId(e.target.value)}
+                        className="w-full bg-indigo-50/60 border border-indigo-200 text-indigo-950 text-xs font-extrabold rounded-xl py-3 px-3 outline-none focus:ring-4 focus:ring-indigo-500/20"
+                      >
+                        <option value="">-- Choose Target Team Member --</option>
+                        {team.map(m => (
+                          <option key={m.id} value={m.id}>👤 {m.business_name || m.full_name || m.email}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Max Count / Limit (Optional)</label>
+                      <input
+                        type="number"
+                        placeholder="Leave blank for ALL matching leads"
+                        value={filteredTransferMaxLimit}
+                        onChange={(e) => setFilteredTransferMaxLimit(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Additional Transfer Options */}
+                  <div className="mt-4 flex flex-wrap items-center gap-4 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={filteredTransferKeepActions}
+                        onChange={(e) => setFilteredTransferKeepActions(e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span>Keep scheduled next actions / followups intact</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={filteredTransferDeleteHistory}
+                        onChange={(e) => setFilteredTransferDeleteHistory(e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span>Reset lead history & move to New Lead stage</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Real-time Summary Box */}
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-wider block">Transfer Action Summary</span>
+                    <p className="text-xs font-bold text-slate-800 mt-0.5">
+                      Reassigning matching leads from <span className="font-extrabold text-indigo-700">
+                        {filteredTransferFromIds[0] === 'ALL' ? 'All Team Members' : filteredTransferFromIds[0] === 'UNASSIGNED' ? 'Unassigned Only' : (team.find(t=>t.id===filteredTransferFromIds[0])?.business_name || 'Selected Agent')}
+                      </span> to <span className="font-extrabold text-purple-700">
+                        {team.find(t=>t.id===filteredTransferTargetAgentId)?.business_name || 'Target Agent'}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="px-3 py-1 bg-indigo-600 text-white rounded-full text-xs font-black shadow-sm">
+                      Bulk Filter Action
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                <button
+                  onClick={() => setIsFilteredBulkTransferModalOpen(false)}
+                  className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-extrabold hover:bg-slate-100 transition-colors"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  disabled={!filteredTransferTargetAgentId || isExecutingFilteredTransfer}
+                  onClick={handleExecuteFilteredBulkTransfer}
+                  className="px-7 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl text-xs font-black hover:from-indigo-700 hover:to-purple-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-indigo-600/20 cursor-pointer"
+                >
+                  {isExecutingFilteredTransfer ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" />
+                      <span>Transferring Leads...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRightLeft size={15} />
+                      <span>Execute Bulk Transfer</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
+
         {/* FULL LAST REMARK MODAL */}
         {fullRemarkModal && (
             <div className="fixed inset-0 z-[999999] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150" onClick={() => setFullRemarkModal(null)}>

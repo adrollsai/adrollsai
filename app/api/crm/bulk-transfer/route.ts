@@ -48,11 +48,8 @@ export async function POST(req: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    const { leadIds, targetAgentId, deleteHistory, transferWithScheduledActions, fromAgentIds } = body
+    const { leadIds, targetAgentId, deleteHistory, transferWithScheduledActions, fromAgentIds, useFilters, filterStage, filterDnp, filterDateRange, filterCampaign, filterForm, maxLimit } = body
 
-    if (!Array.isArray(leadIds) || leadIds.length === 0) {
-      return NextResponse.json({ error: 'No leads selected for transfer.' }, { status: 400 })
-    }
     if (!targetAgentId) {
       return NextResponse.json({ error: 'Target team member is required.' }, { status: 400 })
     }
@@ -75,35 +72,105 @@ export async function POST(req: Request) {
 
     const senderName = senderProfile?.business_name || senderProfile?.full_name || senderProfile?.email || 'Admin'
 
-    // Fetch leads to transfer, applying "From Agent" filter if specified
     let query = supabaseAdmin
       .from('leads')
-      .select('id, name, phone, email, assigned_to, user_id, custom_fields')
-      .in('id', leadIds)
+      .select('id, name, phone, email, assigned_to, user_id, custom_fields, pipeline_stage, created_at, last_call_at')
 
-    if (Array.isArray(fromAgentIds) && fromAgentIds.length > 0) {
-      const hasUnassigned = fromAgentIds.includes('unassigned')
-      const validUuids = fromAgentIds.filter(id => id && id !== 'unassigned')
-
-      const conditions: string[] = []
-      if (hasUnassigned) {
-        conditions.push(`assigned_to.is.null`)
+    if (Array.isArray(leadIds) && leadIds.length > 0 && !useFilters) {
+      query = query.in('id', leadIds)
+    } else {
+      // Find workspace profiles to scope query
+      const workspaceOwnerId = senderProfile?.id || user.id
+      const { data: workspaceProfiles } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .or(`id.eq.${workspaceOwnerId},parent_id.eq.${workspaceOwnerId},agency_id.eq.${workspaceOwnerId}`)
+      
+      const workspaceIds = Array.from(new Set((workspaceProfiles || []).map(p => p.id)))
+      if (workspaceIds.length > 0) {
+        const workspaceOr = workspaceIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
+        query = query.or(workspaceOr)
+      } else {
+        query = query.eq('user_id', user.id)
       }
-      if (validUuids.length > 0) {
-        conditions.push(`assigned_to.in.(${validUuids.join(',')})`)
-        conditions.push(`user_id.in.(${validUuids.join(',')})`)
+
+      // Filter by From Agent IDs
+      if (Array.isArray(fromAgentIds) && fromAgentIds.length > 0 && !fromAgentIds.includes('ALL')) {
+        const hasUnassigned = fromAgentIds.includes('UNASSIGNED') || fromAgentIds.includes('unassigned')
+        const validAgentUuids = fromAgentIds.filter(id => id && !['ALL', 'UNASSIGNED', 'unassigned'].includes(id))
+
+        if (hasUnassigned && validAgentUuids.length === 0) {
+          query = query.is('assigned_to', null)
+        } else if (!hasUnassigned && validAgentUuids.length > 0) {
+          query = query.in('assigned_to', validAgentUuids)
+        } else if (hasUnassigned && validAgentUuids.length > 0) {
+          query = query.or(`assigned_to.is.null,assigned_to.in.(${validAgentUuids.join(',')})`)
+        }
       }
 
-      if (conditions.length > 0) {
-        query = query.or(conditions.join(','))
+      // Filter by Pipeline Stage
+      if (filterStage && filterStage !== 'ALL') {
+        query = query.eq('pipeline_stage', filterStage)
+      }
+
+      // Filter by Campaign
+      if (filterCampaign && filterCampaign !== 'ALL') {
+        query = query.or(`campaign_id.eq.${filterCampaign},ad_name.ilike.%${filterCampaign}%`)
+      }
+
+      // Filter by Form
+      if (filterForm && filterForm !== 'ALL') {
+        query = query.or(`form_id.eq.${filterForm},form_name.ilike.%${filterForm}%`)
+      }
+
+      // Filter by Date Range
+      if (filterDateRange && filterDateRange !== 'ALL') {
+        const now = new Date()
+        if (filterDateRange === 'TODAY') {
+          const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+          query = query.gte('created_at', startOfDay)
+        } else if (filterDateRange === 'LAST_7_DAYS') {
+          const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString()
+          query = query.gte('created_at', sevenDaysAgo)
+        } else if (filterDateRange === 'LAST_30_DAYS') {
+          const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString()
+          query = query.gte('created_at', thirtyDaysAgo)
+        }
+      }
+
+      if (maxLimit && typeof maxLimit === 'number' && maxLimit > 0) {
+        query = query.limit(maxLimit)
+      } else {
+        query = query.limit(5000)
       }
     }
 
-    const { data: targetLeads, error: fetchErr } = await query
+    const { data: rawFetchedLeads, error: fetchErr } = await query
 
-    if (fetchErr || !targetLeads || targetLeads.length === 0) {
+    if (fetchErr || !rawFetchedLeads || rawFetchedLeads.length === 0) {
       return NextResponse.json({ 
-        error: 'No leads matched the selected transfer and "From Agent" criteria.' 
+        error: 'No leads matched the selected transfer and filter criteria.' 
+      }, { status: 400 })
+    }
+
+    let targetLeads = rawFetchedLeads
+    if (filterDnp && filterDnp !== 'ALL') {
+      targetLeads = targetLeads.filter(lead => {
+        let cf = lead.custom_fields
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+        }
+        const isDnp = cf?.last_call_dnp === true || (lead.notes && lead.notes.toLowerCase().includes('dnp'))
+        if (filterDnp === 'DNP_ONLY') return isDnp
+        if (filterDnp === 'NO_DNP') return !isDnp
+        if (filterDnp === 'NO_CALLS') return !lead.last_call_at && !cf?.last_followup_at
+        return true
+      })
+    }
+
+    if (targetLeads.length === 0) {
+      return NextResponse.json({ 
+        error: 'No leads matched the selected DNP / filter criteria.' 
       }, { status: 400 })
     }
 
