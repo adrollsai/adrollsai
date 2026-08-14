@@ -133,7 +133,18 @@ export async function GET(request: Request) {
       throw new Error(data.error.message);
     }
 
-    const campaignList = data.data || [];
+    const campaignList = (data.data || []).map((c: any) => ({
+      id: c.id,
+      name: c.name || 'Untitled Campaign',
+      status: c.effective_status || c.status || 'ACTIVE',
+      objective: c.objective || 'OUTCOME_LEADS',
+      start_time: c.start_time,
+      created_time: c.created_time,
+      daily_budget: c.daily_budget,
+      lifetime_budget: c.lifetime_budget,
+      budget_remaining: c.budget_remaining
+    }));
+
     // Sort by created_time descending so newly created campaigns show first
     campaignList.sort((a: any, b: any) => {
       const timeA = new Date(a.created_time || a.start_time || 0).getTime();
