@@ -852,6 +852,21 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
         logToFile("=== [JOB PROCESSOR] COMPLETED ===", { jobId, campaignId, successfulAds });
 
+        // Send Push Notification on Success
+        try {
+            const uId = job?.user_id || payload?.userId;
+            if (uId) {
+                const { sendPushNotification } = await import('@/utils/notification-helper');
+                await sendPushNotification(
+                    uId,
+                    '🚀 Campaign Launched Live!',
+                    `Your campaign "${campaignName}" is now active on Meta.`,
+                    '/dashboard/ads',
+                    'campaign_success'
+                );
+            }
+        } catch (e) {}
+
         return { campaignId, message: finalMessage };
 
     } catch (error: any) {
@@ -875,6 +890,18 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 if (uId) {
                     const { refundLimit } = await import('@/utils/subscription-server');
                     await refundLimit(uId, 'campaign_launches');
+
+                    // Send Push Notification on Failure
+                    try {
+                        const { sendPushNotification } = await import('@/utils/notification-helper');
+                        await sendPushNotification(
+                            uId,
+                            '❌ Campaign Launch Failed',
+                            `Launch failed: ${error.message || 'Meta API rejected the request'}. Your launch credit has been refunded.`,
+                            '/dashboard/ads',
+                            'campaign_failure'
+                        );
+                    } catch (notifErr) {}
                 }
             } catch (e) { /* ignore refund errors */ }
 

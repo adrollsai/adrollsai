@@ -360,7 +360,10 @@ export default function AdsPage() {
         } else if (data.status === 'failed') {
           clearInterval(poll);
           setLaunchJobStatus('failed');
-          toast.error('Launch Failed: ' + (data.message || 'Unknown error'));
+          toast.error('❌ Campaign Launch Failed', { 
+            description: data.message || 'Meta rejected the campaign request. Your launch credit has been refunded.',
+            duration: 15000 
+          });
           setLaunchJobId(null);
         } else {
           setLaunchJobStatus(data.status === 'processing' ? 'processing' : 'queued');
