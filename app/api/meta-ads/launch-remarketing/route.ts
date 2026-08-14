@@ -1161,13 +1161,21 @@ export async function POST(request: Request) {
 
         // --- Parse Location Targeting ---
         logToFile("--- PREPARING LOCATION TARGETING ---");
-        let targetingConfig: any = { geo_locations: { countries: ['IN'] } }; 
+        let targetingConfig: any = { geo_locations: { countries: ['IN'], location_types: ['home'] } }; 
         
         if (metaLocationsStr) {
             try {
                 const locationsArray = JSON.parse(metaLocationsStr);
                 if (Array.isArray(locationsArray) && locationsArray.length > 0) {
-                    targetingConfig = { geo_locations: { cities: [], regions: [], countries: [], zips: [] } };
+                    targetingConfig = { 
+                        geo_locations: { 
+                            cities: [], 
+                            regions: [], 
+                            countries: [], 
+                            zips: [], 
+                            location_types: ['home'] 
+                        } 
+                    };
                     
                     locationsArray.forEach((locData: any) => {
                         const loc = locData.location;
@@ -1211,7 +1219,14 @@ export async function POST(request: Request) {
         } else {
             delete targetingConfig.age_max;
         }
-        targetingConfig.targeting_automation = { advantage_audience: 0 };
+        targetingConfig.targeting_automation = { 
+            advantage_audience: 0, 
+            advantage_detailed_targeting: 0 
+        };
+        targetingConfig.targeting_relaxation = {
+            detailed_targeting: 0,
+            lookalike: 0
+        };
         targetingConfig.device_platforms = ['mobile', 'desktop'];
         targetingConfig.publisher_platforms = ['facebook', 'instagram']; // Exclude messenger for higher lead quality
 
