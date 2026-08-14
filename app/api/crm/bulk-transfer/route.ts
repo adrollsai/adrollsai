@@ -74,7 +74,7 @@ export async function POST(req: Request) {
 
     let query = supabaseAdmin
       .from('leads')
-      .select('id, name, phone, email, assigned_to, user_id, custom_fields, pipeline_stage, created_at, last_call_at')
+      .select('id, name, phone, email, notes, assigned_to, user_id, custom_fields, pipeline_stage, created_at, last_call_at')
 
     if (Array.isArray(leadIds) && leadIds.length > 0 && !useFilters) {
       query = query.in('id', leadIds)
