@@ -946,7 +946,6 @@ export default function AnalyticsPage() {
       return isDateInRange(h)
     })
 
-    let totalCalls = 0, totalVisits = 0, totalMeetings = 0, totalDnp = 0
     const allCallLeadsSet = new Set<string>()
     const allVisitLeadsSet = new Set<string>()
     const allMeetingLeadsSet = new Set<string>()
@@ -955,9 +954,8 @@ export default function AnalyticsPage() {
 
     let rows = allSalesReps.map(rep => {
       const repLogs = historyList.filter(h => h.user_id === rep.id)
-      const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
+      const repLeads = leads.filter(l => rep.id === 'unassigned' ? (!l.assigned_to && !l.user_id) : (l.assigned_to === rep.id || l.user_id === rep.id))
 
-      let calls = 0, visits = 0, meetings = 0, dnp = 0
       const repCallLeadIds = new Set<string>()
       const repVisitLeadIds = new Set<string>()
       const repMeetingLeadIds = new Set<string>()
@@ -975,24 +973,24 @@ export default function AnalyticsPage() {
         if (h.lead_id) {
           repAttemptedLeadIds.add(h.lead_id)
           allAttemptLeadsSet.add(h.lead_id)
-        }
 
-        if (type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) {
-          dnp++
-          if (h.lead_id) { repDnpLeadIds.add(h.lead_id); allDnpLeadsSet.add(h.lead_id); }
-        } else if (desc.includes('visit') || desc.includes('revisit')) {
-          visits++
-          if (h.lead_id) { repVisitLeadIds.add(h.lead_id); allVisitLeadsSet.add(h.lead_id); }
-        } else if (desc.includes('meeting') || desc.includes('closing')) {
-          meetings++
-          if (h.lead_id) { repMeetingLeadIds.add(h.lead_id); allMeetingLeadsSet.add(h.lead_id); }
-        } else if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG'].includes(type) || desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) {
-          calls++
-          if (h.lead_id) { repCallLeadIds.add(h.lead_id); allCallLeadsSet.add(h.lead_id); }
+          if (type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) {
+            repDnpLeadIds.add(h.lead_id)
+            allDnpLeadsSet.add(h.lead_id)
+          } else if (desc.includes('visit') || desc.includes('revisit')) {
+            repVisitLeadIds.add(h.lead_id)
+            allVisitLeadsSet.add(h.lead_id)
+          } else if (desc.includes('meeting') || desc.includes('closing')) {
+            repMeetingLeadIds.add(h.lead_id)
+            allMeetingLeadsSet.add(h.lead_id)
+          } else if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG'].includes(type) || desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) {
+            repCallLeadIds.add(h.lead_id)
+            allCallLeadsSet.add(h.lead_id)
+          }
         }
       })
 
-      // Cross reference leads that have followup/call dates in range
+      // Cross reference leads that have followup/call dates in range (or all-time if duration === 'all')
       repLeads.forEach(l => {
         let cf: any = l.custom_fields
         if (typeof cf === 'string') {
@@ -1002,42 +1000,67 @@ export default function AnalyticsPage() {
         const isFollowupInRange = cf?.last_followup_at && isDateInRange(cf.last_followup_at)
         const isActionInRange = cf?.last_action_date && isDateInRange(cf.last_action_date)
         const isCallInRange = l.last_call_at && isDateInRange(l.last_call_at)
+        const isLeadDateInRange = isFollowupInRange || isActionInRange || isCallInRange
 
-        if (isFollowupInRange || isActionInRange || isCallInRange) {
+        const leadNotesLower = (l.notes || '').toLowerCase()
+        const leadStageLower = (l.pipeline_stage || l.status || '').toLowerCase()
+        const isDnpLead = cf?.last_call_dnp === true || (cf?.dnp_count > 0) || leadNotesLower.includes('dnp') || leadStageLower.includes('dnp')
+        const isVisitLead = leadNotesLower.includes('visit') || leadStageLower.includes('visit')
+        const isMeetingLead = leadNotesLower.includes('meeting') || leadStageLower.includes('meeting')
+
+        if (isLeadDateInRange) {
           repAttemptedLeadIds.add(l.id)
           allAttemptLeadsSet.add(l.id)
           
-          if (cf?.last_call_dnp || (cf?.dnp_count > 0 && isFollowupInRange)) {
+          if (isDnpLead) {
             repDnpLeadIds.add(l.id)
             allDnpLeadsSet.add(l.id)
+          } else if (isVisitLead) {
+            repVisitLeadIds.add(l.id)
+            allVisitLeadsSet.add(l.id)
+          } else if (isMeetingLead) {
+            repMeetingLeadIds.add(l.id)
+            allMeetingLeadsSet.add(l.id)
           } else {
             repCallLeadIds.add(l.id)
             allCallLeadsSet.add(l.id)
           }
+        } else if (!startCutoff && !endCutoff) {
+          // Duration is 'all': include all leads that have any recorded actions/remarks
+          const hasActionRecord = cf?.last_followup_at || cf?.last_action_date || l.last_call_at || l.notes || cf?.opening_comments || cf?.last_followup_remark
+          if (hasActionRecord) {
+            repAttemptedLeadIds.add(l.id)
+            allAttemptLeadsSet.add(l.id)
+
+            if (isDnpLead) {
+              repDnpLeadIds.add(l.id)
+              allDnpLeadsSet.add(l.id)
+            } else if (isVisitLead) {
+              repVisitLeadIds.add(l.id)
+              allVisitLeadsSet.add(l.id)
+            } else if (isMeetingLead) {
+              repMeetingLeadIds.add(l.id)
+              allMeetingLeadsSet.add(l.id)
+            } else {
+              repCallLeadIds.add(l.id)
+              allCallLeadsSet.add(l.id)
+            }
+          }
         }
       })
 
-      // Build lead arrays for drilldown
+      // Build strictly filtered lead arrays for drilldown (NO fallback to repLeads on empty!)
       const attemptedLeads = repLeads.filter(l => repAttemptedLeadIds.has(l.id))
       const callLeads = repLeads.filter(l => repCallLeadIds.has(l.id))
       const visitLeads = repLeads.filter(l => repVisitLeadIds.has(l.id))
       const meetingLeads = repLeads.filter(l => repMeetingLeadIds.has(l.id))
       const dnpLeads = repLeads.filter(l => repDnpLeadIds.has(l.id))
 
-      // If repLogs were empty but leads have range-filtered dates, sync counts
-      if (repLogs.length === 0) {
-        calls = callLeads.length
-        visits = visitLeads.length
-        meetings = meetingLeads.length
-        dnp = dnpLeads.length
-      }
-
-      const total = calls + visits + meetings + dnp
-
-      totalCalls += calls
-      totalVisits += visits
-      totalMeetings += meetings
-      totalDnp += dnp
+      const calls = callLeads.length
+      const visits = visitLeads.length
+      const meetings = meetingLeads.length
+      const dnp = dnpLeads.length
+      const total = attemptedLeads.length
 
       return {
         rep,
@@ -1046,11 +1069,11 @@ export default function AnalyticsPage() {
         meetings,
         dnp,
         total,
-        repLeads: attemptedLeads.length > 0 ? attemptedLeads : repLeads,
-        callLeads: callLeads.length > 0 ? callLeads : repLeads,
-        visitLeads: visitLeads.length > 0 ? visitLeads : repLeads,
-        meetingLeads: meetingLeads.length > 0 ? meetingLeads : repLeads,
-        dnpLeads: dnpLeads.length > 0 ? dnpLeads : repLeads
+        repLeads: attemptedLeads,
+        callLeads: callLeads,
+        visitLeads: visitLeads,
+        meetingLeads: meetingLeads,
+        dnpLeads: dnpLeads
       }
     }).sort((a, b) => b.total - a.total)
 
@@ -1067,17 +1090,23 @@ export default function AnalyticsPage() {
     const allDnpLeads = leads.filter(l => allDnpLeadsSet.has(l.id))
     const allAttemptLeads = leads.filter(l => allAttemptLeadsSet.has(l.id))
 
+    const totalCalls = rows.reduce((sum, r) => sum + r.calls, 0)
+    const totalVisits = rows.reduce((sum, r) => sum + r.visits, 0)
+    const totalMeetings = rows.reduce((sum, r) => sum + r.meetings, 0)
+    const totalDnp = rows.reduce((sum, r) => sum + r.dnp, 0)
+    const totalActions = rows.reduce((sum, r) => sum + r.total, 0)
+
     return {
       totalCalls,
       totalVisits,
       totalMeetings,
       totalDnp,
-      totalActions: totalCalls + totalVisits + totalMeetings + totalDnp,
-      allCallLeads: allCallLeads.length > 0 ? allCallLeads : leads,
-      allVisitLeads: allVisitLeads.length > 0 ? allVisitLeads : leads,
-      allMeetingLeads: allMeetingLeads.length > 0 ? allMeetingLeads : leads,
-      allDnpLeads: allDnpLeads.length > 0 ? allDnpLeads : leads,
-      allAttemptLeads: allAttemptLeads.length > 0 ? allAttemptLeads : leads,
+      totalActions,
+      allCallLeads,
+      allVisitLeads,
+      allMeetingLeads,
+      allDnpLeads,
+      allAttemptLeads,
       rows
     }
   }, [history, leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId])

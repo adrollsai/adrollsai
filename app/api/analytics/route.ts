@@ -315,11 +315,24 @@ export async function GET(req: Request) {
 
             const memberHistory = safeHistoryLogs.filter(h => h.user_id === member.id)
             const memberCallCount = memberHistory.filter(isActualCallAction).length
-            const totalDnpOnLeads = memberHistory.filter(h => {
-              const desc = (h.description || '').toLowerCase()
-              const type = (h.action_type || '').toUpperCase()
-              return type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')
+            const memberLeadsDnpCount = memberLeads.filter(l => {
+              let cf = l.custom_fields
+              if (typeof cf === 'string') {
+                try { cf = JSON.parse(cf) } catch(e) {}
+              }
+              const notesLower = (l.notes || '').toLowerCase()
+              const stageLower = (l.pipeline_stage || l.status || '').toLowerCase()
+              return cf?.last_call_dnp === true || (cf?.dnp_count > 0) || notesLower.includes('dnp') || stageLower.includes('dnp')
             }).length
+
+            const totalDnpOnLeads = Math.max(
+              memberHistory.filter(h => {
+                const desc = (h.description || '').toLowerCase()
+                const type = (h.action_type || '').toUpperCase()
+                return type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')
+              }).length,
+              memberLeadsDnpCount
+            )
 
             const conversionRate = memberLeads.length > 0 ? ((wonLeads / memberLeads.length) * 100).toFixed(1) : '0.0'
 
