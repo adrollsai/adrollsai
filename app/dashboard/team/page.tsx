@@ -13,7 +13,13 @@ import {
   MoreVertical,
   Mail,
   Calendar,
-  ArrowLeft
+  ArrowLeft,
+  ArrowRight,
+  UserCheck,
+  History,
+  Clock,
+  CheckCircle2,
+  X
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -37,6 +43,27 @@ export default function TeamPage() {
     email: '',
     password: '',
     role: 'agent'
+  })
+
+  // Offboard & Lead Reassignment Modal State
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    member: any | null;
+    assignedLeadsCount: number;
+    reassignTo: string;
+    deleteHistory: boolean;
+    transferWithScheduledActions: boolean;
+    isDeleting: boolean;
+    isLoadingCount: boolean;
+  }>({
+    isOpen: false,
+    member: null,
+    assignedLeadsCount: 0,
+    reassignTo: '',
+    deleteHistory: false,
+    transferWithScheduledActions: true,
+    isDeleting: false,
+    isLoadingCount: false
   })
 
   const fetchData = async () => {
@@ -163,8 +190,38 @@ export default function TeamPage() {
     }
   }
 
-  const handleDeleteMember = async (memberId: string) => {
-    if (!confirm("Are you sure you want to remove this team member? This will delete their account access.")) return
+  // Open rich Offboard & Lead Reassignment Modal
+  const openDeleteModal = async (member: any) => {
+    setDeleteModal({
+      isOpen: true,
+      member,
+      assignedLeadsCount: 0,
+      reassignTo: currentUser?.id || 'unassigned',
+      deleteHistory: false,
+      transferWithScheduledActions: true,
+      isDeleting: false,
+      isLoadingCount: true
+    })
+
+    try {
+      const { count } = await supabase
+        .from('leads')
+        .select('id', { count: 'exact', head: true })
+        .or(`assigned_to.eq.${member.id},user_id.eq.${member.id}`)
+
+      setDeleteModal(prev => ({
+        ...prev,
+        assignedLeadsCount: count || 0,
+        isLoadingCount: false
+      }))
+    } catch (e) {
+      setDeleteModal(prev => ({ ...prev, isLoadingCount: false }))
+    }
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteModal.member || !currentUser?.id) return
+    setDeleteModal(prev => ({ ...prev, isDeleting: true }))
 
     try {
       const response = await fetch('/api/team', {
@@ -172,19 +229,33 @@ export default function TeamPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           adminId: currentUser.id,
-          agentId: memberId
+          agentId: deleteModal.member.id,
+          reassignTo: deleteModal.reassignTo,
+          deleteHistory: deleteModal.deleteHistory,
+          transferWithScheduledActions: deleteModal.transferWithScheduledActions
         })
       })
 
+      const data = await response.json()
       if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.error || 'Failed to remove member')
+        throw new Error(data.error || 'Failed to remove member')
       }
 
-      toast.success("Member removed from team")
+      toast.success("Member offboarded", { description: data.message })
+      setDeleteModal({
+        isOpen: false,
+        member: null,
+        assignedLeadsCount: 0,
+        reassignTo: '',
+        deleteHistory: false,
+        transferWithScheduledActions: true,
+        isDeleting: false,
+        isLoadingCount: false
+      })
       fetchData()
     } catch (err: any) {
-      toast.error("Error", { description: err.message })
+      toast.error("Error offboarding member", { description: err.message })
+      setDeleteModal(prev => ({ ...prev, isDeleting: false }))
     }
   }
 
@@ -311,9 +382,9 @@ export default function TeamPage() {
                       </div>
 
                       <button 
-                          onClick={() => handleDeleteMember(member.id)}
-                          className="text-slate-300 hover:text-red-500 transition-colors p-1.5"
-                          title="Remove Member"
+                          onClick={() => openDeleteModal(member)}
+                          className="text-slate-300 hover:text-red-500 hover:bg-rose-50 rounded-lg transition-all p-1.5 cursor-pointer"
+                          title="Remove & Reassign Member"
                       >
                           <Trash2 size={16} />
                       </button>
@@ -334,6 +405,159 @@ export default function TeamPage() {
           </div>
         )}
       </div>
+
+      {/* Offboard & Reassign Leads Modal */}
+      {deleteModal.isOpen && deleteModal.member && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !deleteModal.isDeleting && setDeleteModal(prev => ({ ...prev, isOpen: false }))} />
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg relative shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 border border-slate-100">
+            <div className="p-6 sm:p-8">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-4 mb-6">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
+                    <Trash2 size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">Offboard Team Member</h3>
+                    <p className="text-xs text-slate-500 font-semibold">
+                      Reassign active leads before deleting <span className="font-bold text-slate-800">{deleteModal.member.full_name || deleteModal.member.business_name}</span>.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  disabled={deleteModal.isDeleting}
+                  onClick={() => setDeleteModal(prev => ({ ...prev, isOpen: false }))}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Member & Assigned Leads Summary Card */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 mb-5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-500">Member:</span>
+                  <span className="font-black text-slate-900">{deleteModal.member.full_name || deleteModal.member.business_name} ({deleteModal.member.email})</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-500">Role:</span>
+                  <span className="font-extrabold uppercase text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700">{deleteModal.member.role}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
+                  <span className="font-bold text-slate-700">Currently Assigned Leads:</span>
+                  <span className="font-black text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1">
+                    {deleteModal.isLoadingCount ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <><span>{deleteModal.assignedLeadsCount}</span> leads</>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Form Controls */}
+              <div className="space-y-4">
+                {/* 1. Reassign To Dropdown */}
+                <div>
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
+                    1. Reassign Leads To
+                  </label>
+                  <select
+                    disabled={deleteModal.isDeleting}
+                    value={deleteModal.reassignTo}
+                    onChange={(e) => setDeleteModal(prev => ({ ...prev, reassignTo: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 px-4 text-xs focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-slate-800"
+                  >
+                    {currentUser && (
+                      <option value={currentUser.id}>
+                        👑 {currentUser.business_name || currentUser.full_name || 'Workspace Owner'} (Workspace Admin)
+                      </option>
+                    )}
+                    {team
+                      .filter(m => m.id !== deleteModal.member?.id && m.id !== currentUser?.id)
+                      .map(m => (
+                        <option key={m.id} value={m.id}>
+                          👤 {m.business_name || m.full_name || m.email} ({m.role})
+                        </option>
+                      ))}
+                    <option value="unassigned">⚠️ Leave Leads Unassigned</option>
+                  </select>
+                </div>
+
+                {/* 2. Options / Checkboxes */}
+                <div className="space-y-2.5 pt-1">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1">
+                    2. Reassignment Rules
+                  </label>
+
+                  {/* Scheduled Actions Toggle */}
+                  <label className="flex items-start gap-3 p-3 bg-slate-50/80 hover:bg-slate-100/80 border border-slate-200 rounded-2xl cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={deleteModal.transferWithScheduledActions}
+                      disabled={deleteModal.isDeleting}
+                      onChange={(e) => setDeleteModal(prev => ({ ...prev, transferWithScheduledActions: e.target.checked }))}
+                      className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                    />
+                    <div className="flex-1 text-xs">
+                      <span className="font-extrabold text-slate-800 block">Transfer with Scheduled Pending Actions</span>
+                      <span className="text-slate-500 text-[11px] font-medium leading-relaxed">
+                        Keep scheduled next follow-up dates, reminders, and booking times intact for the new assignee.
+                      </span>
+                    </div>
+                  </label>
+
+                  {/* Past History Option */}
+                  <label className="flex items-start gap-3 p-3 bg-slate-50/80 hover:bg-slate-100/80 border border-slate-200 rounded-2xl cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={deleteModal.deleteHistory}
+                      disabled={deleteModal.isDeleting}
+                      onChange={(e) => setDeleteModal(prev => ({ ...prev, deleteHistory: e.target.checked }))}
+                      className="mt-0.5 rounded text-rose-600 focus:ring-rose-500 w-4 h-4 cursor-pointer"
+                    />
+                    <div className="flex-1 text-xs">
+                      <span className="font-extrabold text-slate-800 block">Hide Past History & Reset to "New Lead"</span>
+                      <span className="text-slate-500 text-[11px] font-medium leading-relaxed">
+                        Hides previous conversation logs from new assignee and moves these leads to "New Lead" stage for fresh outreach.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3 mt-6 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={deleteModal.isDeleting}
+                  onClick={() => setDeleteModal(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 px-4 rounded-2xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteModal.isDeleting}
+                  onClick={handleConfirmDelete}
+                  className="flex-[1.5] bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3.5 px-4 rounded-2xl text-xs transition-all shadow-lg shadow-rose-500/20 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {deleteModal.isDeleting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" /> Offboarding...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={15} /> Confirm & Reassign Leads
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create Modal */}
       {showCreateModal && (

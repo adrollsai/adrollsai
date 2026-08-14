@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getUserLimits } from '@/utils/subscription';
+import { sendPushNotification } from '@/utils/notification-helper';
+import { sendLeadTransferEmail } from '@/utils/email-helper';
 
 // We use the Service Role key to securely bypass RLS for administrative tasks
 const supabaseAdmin = createClient(
@@ -201,36 +203,185 @@ export async function POST(req: Request) {
   }
 }
 
-// --- REMOVE / OFFBOARD MEMBER OR SUB-ACCOUNT ---
+// --- REMOVE / OFFBOARD MEMBER OR SUB-ACCOUNT (WITH LEAD REASSIGNMENT) ---
 export async function DELETE(req: Request) {
   try {
-    const { adminId, agentId } = await req.json();
+    const { 
+      adminId, 
+      agentId, 
+      reassignTo = null, 
+      deleteHistory = false, 
+      transferWithScheduledActions = true 
+    } = await req.json();
 
     if (!adminId || !agentId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
     // 1. Verify authority
-    const { data: profile } = await supabaseAdmin
+    const { data: memberProfile } = await supabaseAdmin
       .from('profiles')
-      .select('parent_id, agency_id, role')
+      .select('id, full_name, business_name, email, parent_id, agency_id, role')
       .eq('id', agentId)
       .single();
+
+    const { data: adminProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name, business_name, email, role')
+      .eq('id', adminId)
+      .single();
       
-    const isAuthorized = profile?.parent_id === adminId || profile?.agency_id === adminId;
+    const isSuperAdmin = adminProfile?.role === 'super_admin';
+    const isAuthorized = isSuperAdmin || memberProfile?.parent_id === adminId || memberProfile?.agency_id === adminId || memberProfile?.id === adminId;
 
     if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized to remove this account' }, { status: 403 });
     }
 
-    // 2. Comprehensive data unlinking
+    const memberName = memberProfile?.full_name || memberProfile?.business_name || memberProfile?.email || 'Team Member';
+    const adminName = adminProfile?.full_name || adminProfile?.business_name || 'Admin';
+
+    // 2. Fetch all leads assigned to or created by the deleting agent
+    const { data: agentLeads } = await supabaseAdmin
+      .from('leads')
+      .select('id, custom_fields, notes, pipeline_stage, status')
+      .or(`assigned_to.eq.${agentId},user_id.eq.${agentId}`);
+
+    const targetLeads = agentLeads || [];
+    const validLeadIds = targetLeads.map(l => l.id);
+    let targetAgentName = 'Unassigned';
+
+    // 3. Process Lead Reassignment if leads exist
+    if (validLeadIds.length > 0) {
+      const targetAssigneeId = (reassignTo && reassignTo !== 'unassigned') ? reassignTo : null;
+
+      if (targetAssigneeId) {
+        const { data: targetProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('id, business_name, full_name, email')
+          .eq('id', targetAssigneeId)
+          .single();
+
+        targetAgentName = targetProfile?.full_name || targetProfile?.business_name || targetProfile?.email || 'Admin';
+      }
+
+      const cutoffTimestamp = new Date().toISOString();
+      const BATCH_SIZE = 250;
+
+      if (!deleteHistory && transferWithScheduledActions) {
+        // Ultra-fast parallel multi-row batch update
+        const updatePromises = [];
+        for (let i = 0; i < validLeadIds.length; i += BATCH_SIZE) {
+          const chunk = validLeadIds.slice(i, i + BATCH_SIZE);
+          updatePromises.push(
+            supabaseAdmin
+              .from('leads')
+              .update({ 
+                assigned_to: targetAssigneeId,
+                user_id: adminId 
+              })
+              .in('id', chunk)
+          );
+        }
+        await Promise.all(updatePromises);
+      } else {
+        // Individual custom field update in parallel batches of 50
+        const PARALLEL_GROUP = 50;
+        for (let i = 0; i < targetLeads.length; i += PARALLEL_GROUP) {
+          const group = targetLeads.slice(i, i + PARALLEL_GROUP);
+          await Promise.all(group.map(lead => {
+            let cf = lead.custom_fields || {};
+            if (typeof cf === 'string') {
+              try { cf = JSON.parse(cf); } catch (e) { cf = {}; }
+            }
+
+            const updatePayload: any = {
+              assigned_to: targetAssigneeId,
+              user_id: adminId
+            };
+
+            if (deleteHistory) {
+              cf.history_visible_from = cutoffTimestamp;
+              updatePayload.status = 'New Lead';
+              updatePayload.pipeline_stage = 'New Lead';
+            }
+
+            if (!transferWithScheduledActions) {
+              updatePayload.next_followup = null;
+              updatePayload.booked_time = null;
+              delete cf.next_action_date;
+              delete cf.next_action_type;
+              delete cf.next_action_notes;
+              delete cf.booked_time;
+              delete cf.last_followup_at;
+            }
+
+            updatePayload.custom_fields = cf;
+
+            return supabaseAdmin
+              .from('leads')
+              .update(updatePayload)
+              .eq('id', lead.id);
+          }));
+        }
+      }
+
+      // Log transfer history entries
+      const historyEntries = validLeadIds.map(leadId => ({
+        lead_id: leadId,
+        user_id: adminId,
+        action_type: 'TRANSFER',
+        description: deleteHistory 
+          ? `🔄 Lead reassigned from ${memberName} (Offboarded) to ${targetAgentName} (History Hidden & Moved to New Lead)`
+          : `🔄 Lead reassigned from ${memberName} (Offboarded) to ${targetAgentName}`
+      }));
+
+      const historyPromises = [];
+      for (let i = 0; i < historyEntries.length; i += BATCH_SIZE) {
+        const chunk = historyEntries.slice(i, i + BATCH_SIZE);
+        historyPromises.push(
+          supabaseAdmin.from('lead_history').insert(chunk)
+        );
+      }
+      await Promise.all(historyPromises);
+
+      // Send Notification to new assignee if assigned to a team member
+      if (targetAssigneeId) {
+        (async () => {
+          try {
+            const notifTitle = `🔄 ${validLeadIds.length} Lead(s) Reassigned to You!`;
+            const notifBody = `${adminName} reassigned ${validLeadIds.length} lead(s) from ${memberName} to your pipeline.`;
+            
+            await sendPushNotification(
+              targetAssigneeId,
+              notifTitle,
+              notifBody,
+              '/dashboard/crm',
+              'lead_transfer'
+            ).catch((err: any) => console.error('[Offboard Reassign Push Error]:', err));
+
+            const { data: targetProfile } = await supabaseAdmin.from('profiles').select('email').eq('id', targetAssigneeId).single();
+            if (targetProfile?.email) {
+              await sendLeadTransferEmail(
+                targetProfile.email,
+                targetAgentName,
+                adminName,
+                validLeadIds.length
+              ).catch((err: any) => console.error('[Offboard Reassign Email Error]:', err));
+            }
+          } catch (notifErr: any) {
+            console.error('[Offboard Reassign Notification Exception]:', notifErr);
+          }
+        })();
+      }
+    }
+
+    // 4. Comprehensive data ownership transfer for other workspace assets
     try {
         await Promise.all([
             supabaseAdmin.from('properties').update({ user_id: adminId }).eq('user_id', agentId),
             supabaseAdmin.from('assets').update({ user_id: adminId }).eq('user_id', agentId),
             supabaseAdmin.from('posts').update({ user_id: adminId }).eq('user_id', agentId),
-            supabaseAdmin.from('leads').update({ user_id: adminId, assigned_to: null }).eq('user_id', agentId),
-            supabaseAdmin.from('leads').update({ assigned_to: null }).eq('assigned_to', agentId),
             supabaseAdmin.from('lead_history').update({ user_id: adminId }).eq('user_id', agentId),
             supabaseAdmin.from('push_subscriptions').delete().eq('user_id', agentId),
             supabaseAdmin.from('automations').delete().eq('user_id', agentId),
@@ -242,15 +393,23 @@ export async function DELETE(req: Request) {
         console.error("Cleanup/Unlink Error Detail:", unlinkError);
     }
 
-    // 3. Delete from Auth
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(agentId);
-
-    if (error) {
-        console.error("Supabase Auth Delete Error:", error);
-        throw error;
+    // 5. Delete from Supabase Auth directory
+    const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(agentId);
+    if (authDeleteError) {
+        console.error("Supabase Auth Delete Error:", authDeleteError);
+        // Continue if profile was already deleted
     }
 
-    return NextResponse.json({ success: true, message: 'Account successfully removed.' });
+    const reassignedMsg = validLeadIds.length > 0 
+      ? ` Account removed and ${validLeadIds.length} lead(s) successfully reassigned to ${targetAgentName}.` 
+      : ' Account successfully removed.';
+
+    return NextResponse.json({ 
+      success: true, 
+      message: `${memberName} has been offboarded.${reassignedMsg}`,
+      reassignedCount: validLeadIds.length,
+      newAssignee: targetAgentName
+    });
   } catch (error: any) {
     console.error("Team DELETE Fatal Error:", error);
     return NextResponse.json({ error: error.message || "Failed to remove account" }, { status: 500 });
