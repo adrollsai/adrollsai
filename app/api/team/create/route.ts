@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerSupabase } from '@/utils/supabase/server'
+import { getUserLimits } from '@/utils/subscription'
 
 // Initialize a privileged client for admin actions
 const supabaseAdmin = createClient(
@@ -21,12 +22,36 @@ export async function POST(req: Request) {
     // 1. Verify the current user is an admin
     const { data: currentProfile } = await supabaseAdmin
         .from('profiles')
-        .select('role')
+        .select('*')
         .eq('id', user.id)
         .single()
 
-    if (currentProfile?.role !== 'admin') {
+    if (currentProfile?.role !== 'admin' && currentProfile?.role !== 'super_admin' && currentProfile?.role !== 'agency') {
         return NextResponse.json({ error: "Only admins can create team members" }, { status: 403 })
+    }
+
+    // Check team member limit
+    const rootParentId = currentProfile?.parent_id || user.id
+    let parentProfile = currentProfile
+    if (currentProfile?.parent_id) {
+      const { data: pProfile } = await supabaseAdmin.from('profiles').select('*').eq('id', currentProfile.parent_id).single()
+      if (pProfile) parentProfile = pProfile
+    }
+
+    const { count: teamCount } = await supabaseAdmin
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('parent_id', rootParentId)
+      .in('role', ['admin', 'agent'])
+    
+    const teamUsed = teamCount || 0
+    const limits = getUserLimits(parentProfile)
+    const teamLimit = limits.team_members
+
+    if (teamUsed >= teamLimit) {
+      return NextResponse.json({
+        error: `Your account limit is capped at a maximum of ${teamLimit} team members. Please contact support or upgrade your plan.`
+      }, { status: 403 })
     }
 
     // 2. Create the Auth User securely

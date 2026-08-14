@@ -187,11 +187,17 @@ export function getUserLimits(profile: any) {
     const addon_campaign_optimizations = profile?.addon_campaign_optimizations || 0;
     const addon_retargeting_campaigns = profile?.addon_retargeting_campaigns || 0;
 
-    const isUnlimitedTeam = isWhitelisted || 
+    const isKhushiram = userEmail === 'khushiramrealtor@gmail.com' || profile?.business_name?.toLowerCase()?.includes('khushiram');
+
+    const isUnlimitedTeam = (isWhitelisted && !isKhushiram) || 
         profile?.role === 'super_admin' || 
         profile?.role === 'agency' || 
         planKey === 'enterprise' || 
         base.team_members === 999999;
+
+    const teamMemberLimit = isKhushiram 
+        ? (3 + addon_team_members) 
+        : (isUnlimitedTeam ? 999999 : base.team_members + addon_team_members);
 
     return {
         videos: isWhitelisted ? 999999 : base.videos + addon_videos,
@@ -199,7 +205,7 @@ export function getUserLimits(profile: any) {
         seo_articles: isWhitelisted ? 999 : base.seo_articles,
         campaign_launches: isWhitelisted ? 999999 : base.campaign_launches + addon_campaign_launches,
         campaign_optimizations: isWhitelisted ? 999999 : base.campaign_optimizations + addon_campaign_optimizations,
-        team_members: isUnlimitedTeam ? 999999 : base.team_members + addon_team_members,
+        team_members: teamMemberLimit,
         retargeting_campaigns: isWhitelisted ? 999999 : base.retargeting_campaigns + addon_retargeting_campaigns,
         storage_gb: isWhitelisted ? 999 : base.storage_gb || 10
     };
