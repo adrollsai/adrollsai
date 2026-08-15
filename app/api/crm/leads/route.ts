@@ -14,8 +14,22 @@ const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, 
 
 export async function GET(req: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    let user: any = null
+    const authHeader = req.headers.get('authorization')
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace('Bearer ', '').trim()
+      const { data: userData } = await supabaseAdmin.auth.getUser(token)
+      if (userData?.user) user = userData.user
+    }
+
+    if (!user) {
+      try {
+        const supabase = await createClient()
+        const { data: sessionData } = await supabase.auth.getUser()
+        if (sessionData?.user) user = sessionData.user
+      } catch (e) {}
+    }
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

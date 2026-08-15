@@ -136,7 +136,34 @@ export async function POST(request: Request) {
         }
     }
 
-    // 2. Setup round robin pool and start index if distribution is enabled
+    // 2. Setup distribution: Group-Distribution automation rules first, then global round robin fallback
+    const { data: groupAutomations } = await supabase
+      .from('automations')
+      .select('*')
+      .eq('user_id', targetUserId)
+      .like('title', 'Group-Distribution:%')
+      .eq('is_active', true);
+
+    const parsedGroupRules: any[] = [];
+    if (groupAutomations && groupAutomations.length > 0) {
+      for (const aut of groupAutomations) {
+        try {
+          const parsed = JSON.parse(aut.description || '{}');
+          if (Array.isArray(parsed.members) && parsed.members.length > 0 && Array.isArray(parsed.campaigns) && parsed.campaigns.length > 0) {
+            parsedGroupRules.push({
+              id: aut.id,
+              group_name: parsed.group_name || aut.title.replace('Group-Distribution:', '').trim(),
+              members: parsed.members,
+              campaigns: parsed.campaigns,
+              last_assigned_user_id: parsed.last_assigned_user_id || null,
+              rawDesc: parsed,
+              isDirty: false
+            });
+          }
+        } catch (e) {}
+      }
+    }
+
     let agentIds: string[] = [];
     let currentAgentIndex = 0;
 
@@ -170,16 +197,74 @@ export async function POST(request: Request) {
         }
     }
 
+    const normalizeString = (str: string) => {
+      return (str || '')
+        .replace(/[\u2010-\u2015\u2212]/g, '-')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    const getAssignedAgentForLead = (lead: any) => {
+      const adNameNorm = normalizeString(lead.ad_name || '');
+      const formNameNorm = normalizeString(lead.form_name || '');
+      const campIdStr = String(lead.campaign_id || '');
+
+      // Check Group-Distribution rules first
+      for (const rule of parsedGroupRules) {
+        const matches = rule.campaigns.some((gc: string) => {
+          const gcNorm = normalizeString(gc);
+          if (!gcNorm) return false;
+          return (
+            (adNameNorm && (adNameNorm.includes(gcNorm) || gcNorm.includes(adNameNorm))) ||
+            (formNameNorm && (formNameNorm.includes(gcNorm) || gcNorm.includes(formNameNorm))) ||
+            (campIdStr && campIdStr === gc.trim())
+          );
+        });
+
+        if (matches) {
+          const weightedPool: any[] = [];
+          rule.members.forEach((m: any) => {
+            for (let w = 0; w < Math.max(1, m.weight || 1); w++) {
+              weightedPool.push(m);
+            }
+          });
+
+          if (weightedPool.length > 0) {
+            let nextIdx = 0;
+            if (rule.last_assigned_user_id) {
+              const lastIdx = weightedPool.findIndex((m: any) => m.userId === rule.last_assigned_user_id);
+              if (lastIdx !== -1) {
+                nextIdx = (lastIdx + 1) % weightedPool.length;
+              }
+            }
+            const chosenMember = weightedPool[nextIdx];
+            rule.last_assigned_user_id = chosenMember.userId;
+            rule.rawDesc.last_assigned_user_id = chosenMember.userId;
+            rule.rawDesc.last_assigned_user_name = chosenMember.name;
+            rule.rawDesc.last_assigned_at = new Date().toISOString();
+            rule.isDirty = true;
+            return chosenMember.userId;
+          }
+        }
+      }
+
+      // Global Round Robin Fallback
+      if (agentIds.length > 0) {
+        const fallbackAgent = agentIds[currentAgentIndex];
+        currentAgentIndex = (currentAgentIndex + 1) % agentIds.length;
+        return fallbackAgent;
+      }
+
+      return null;
+    };
+
     let newCount = 0;
     // Batch Insert for Performance (200 at a time)
     const BATCH_SIZE = 200;
     for (let i = 0; i < trulyNewLeads.length; i += BATCH_SIZE) {
         const chunk = trulyNewLeads.slice(i, i + BATCH_SIZE).map(lead => {
-            let assignedTo: string | null = null;
-            if (agentIds.length > 0) {
-                assignedTo = agentIds[currentAgentIndex];
-                currentAgentIndex = (currentAgentIndex + 1) % agentIds.length;
-            }
+            const assignedTo = getAssignedAgentForLead(lead);
 
             let leadCreatedAt = new Date().toISOString();
             if (lead.facebook_created_at) {
@@ -218,6 +303,20 @@ export async function POST(request: Request) {
         } else {
             newCount += chunk.length;
         }
+    }
+
+    // Persist updated group automation states
+    for (const rule of parsedGroupRules) {
+      if (rule.isDirty) {
+        try {
+          await supabase
+            .from('automations')
+            .update({ description: JSON.stringify(rule.rawDesc) })
+            .eq('id', rule.id);
+        } catch (rErr) {
+          console.error('[CRM Sync] Error updating automation rule state:', rErr);
+        }
+      }
     }
 
     // Retroactively backfill existing WhatsApp leads with meta_ad_origin & property mapping

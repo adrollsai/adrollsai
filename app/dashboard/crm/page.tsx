@@ -831,9 +831,12 @@ export default function CRMPage() {
 
       // Fetch leads and campaigns
       try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const authHeader: Record<string, string> = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
+
         const [leadsRes, campRes] = await Promise.all([
-          fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`).catch(e => null),
-          fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`).catch(e => null)
+          fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader }).catch(e => null),
+          fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader }).catch(e => null)
         ])
 
         if (campRes && campRes.ok) {
@@ -852,13 +855,58 @@ export default function CRMPage() {
             leadsJson = await leadsRes.json()
           } catch (e) {}
         }
-        if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads)) {
+        if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads) && leadsJson.leads.length > 0) {
           setLeads(leadsJson.leads)
           setLocalCache(cacheKey, leadsJson.leads.slice(0, 500))
           setLocalCache('crm_last_leads_cache', leadsJson.leads.slice(0, 500))
           const count = leadsJson.totalCount !== undefined ? leadsJson.totalCount : leadsJson.leads.length
           setTotalLeadsCount(count)
           if (typeof window !== 'undefined') localStorage.setItem('crm_total_count', count.toString())
+        } else {
+          // DIRECT SUPABASE FALLBACK ONLY IF API ROUTE EMPTY
+          const workspaceOwnerIds = Array.from(new Set([targetUserId, parentId, user.id].filter(Boolean)))
+          const orFilter = workspaceOwnerIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
+          const { count: directCount } = await supabase
+            .from('leads')
+            .select('*', { count: 'exact', head: true })
+            .or(orFilter)
+
+          const totalDirectCount = directCount || 0
+          const PAGE_SIZE = 1000
+          const totalPagesNeeded = Math.ceil(totalDirectCount / PAGE_SIZE) || 1
+
+          const pagePromises = Array.from({ length: totalPagesNeeded }, (_, pageIdx) => {
+            return supabase
+              .from('leads')
+              .select('*')
+              .or(orFilter)
+              .order('created_at', { ascending: false })
+              .range(pageIdx * PAGE_SIZE, (pageIdx + 1) * PAGE_SIZE - 1)
+          })
+
+          const pageResults = await Promise.all(pagePromises)
+          let allDirectLeads: any[] = []
+          for (const pr of pageResults) {
+            if (pr.data && pr.data.length > 0) {
+              allDirectLeads = allDirectLeads.concat(pr.data)
+            }
+          }
+
+          if (allDirectLeads && allDirectLeads.length > 0) {
+            const parsed = allDirectLeads.map((l: any) => {
+              let cf = l.custom_fields
+              if (cf && typeof cf === 'string') {
+                try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = {} }
+              }
+              return { ...l, custom_fields: cf }
+            })
+            setLeads(parsed)
+            setLocalCache(cacheKey, parsed.slice(0, 500))
+            setLocalCache('crm_last_leads_cache', parsed.slice(0, 500))
+            const cnt = parsed.length
+            setTotalLeadsCount(cnt)
+            if (typeof window !== 'undefined') localStorage.setItem('crm_total_count', cnt.toString())
+          }
         }
       } catch (err) {
         console.error('[CRM fetchLeads error]:', err)
@@ -2023,17 +2071,13 @@ END:VCARD\n`
 
   // 2. 4 Primary Section Counts (All, Fresh, Ongoing, Not Interested)
   const sectionCounts = useMemo(() => {
-    const isUnfiltered = !searchQuery && selectedAgentFilter === 'ALL' && selectedDateRange === 'ALL' && selectedDnpFilter === 'ALL' && selectedNextActionFilter === 'ALL' && !selectedCampaign && !selectedForm && !selectedCsvAudience && selectedSpecificStage === 'ALL'
-
     const fresh = leadsMatchingFilters.filter(l => categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'fresh').length
     const ongoing = leadsMatchingFilters.filter(l => categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'ongoing').length
     const not_interested = leadsMatchingFilters.filter(l => categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'not_interested').length
-    const all = isUnfiltered && totalLeadsCount > leadsMatchingFilters.length
-      ? totalLeadsCount
-      : leadsMatchingFilters.length
+    const all = fresh + ongoing + not_interested
 
     return { all, fresh, ongoing, not_interested }
-  }, [leadsMatchingFilters, totalLeadsCount, customStages, searchQuery, selectedAgentFilter, selectedDateRange, selectedDnpFilter, selectedNextActionFilter, selectedCampaign, selectedForm, selectedCsvAudience, selectedSpecificStage])
+  }, [leadsMatchingFilters, customStages])
 
   // Backward compatibility for stageCounts
   const stageCounts: Record<string, number> = useMemo(() => {

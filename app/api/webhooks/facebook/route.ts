@@ -2315,18 +2315,20 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
                   const parsedGroup = JSON.parse(aut.description || '{}');
                   const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
                   const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
-
                   if (groupMembers.length > 0 && groupCampaigns.length > 0) {
+                    const normalizeCampStr = (s: string) => (s || '').replace(/[\u2010-\u2015\u2212]/g, '-').toLowerCase().replace(/\s+/g, ' ').trim();
                     const matchesCamp = groupCampaigns.some(gc => {
-                      const gcClean = gc.trim().toLowerCase();
+                      const gcClean = normalizeCampStr(gc);
                       if (!gcClean) return false;
-                      const adClean = (adCampaignString || '').toLowerCase();
-                      const campClean = (campaignName || '').toLowerCase();
-                      const formClean = (formName || '').toLowerCase();
+                      const adClean = normalizeCampStr(adCampaignString);
+                      const campClean = normalizeCampStr(campaignName);
+                      const formClean = normalizeCampStr(formName);
+                      const campIdClean = String(campaignId || '').trim();
                       return (
                         (adClean && (adClean.includes(gcClean) || gcClean.includes(adClean))) ||
                         (campClean && (campClean.includes(gcClean) || gcClean.includes(campClean))) ||
-                        (formClean && (formClean.includes(gcClean) || gcClean.includes(formClean)))
+                        (formClean && (formClean.includes(gcClean) || gcClean.includes(formClean))) ||
+                        (campIdClean && campIdClean === gc.trim())
                       );
                     });
 
