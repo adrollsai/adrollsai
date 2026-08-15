@@ -874,12 +874,14 @@ IMPORTANT RULES:
 
                                     let ownerQualifyingEnabled = false;
                                     let ownerQualifyingQuestions: string[] = [];
+                                    let ownerBusinessName = 'our company';
+                                    let ownerEnableDistribution = false;
 
                                     // PRIMARY: Resolve from webhook phone_number_id (most reliable)
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -898,6 +900,8 @@ IMPORTANT RULES:
                                             ownerRole = selectedProfile.role || '';
                                             ownerQualifyingEnabled = selectedProfile.qualifying_enabled || false;
                                             ownerQualifyingQuestions = selectedProfile.qualifying_questions || [];
+                                            ownerBusinessName = selectedProfile.business_name || 'our company';
+                                            ownerEnableDistribution = !!selectedProfile.enable_distribution;
                                             console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
                                         }
                                     }
@@ -930,7 +934,7 @@ IMPORTANT RULES:
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role, business_name, enable_distribution')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
@@ -943,6 +947,8 @@ IMPORTANT RULES:
                                                 ownerRole = ownerProfile.role || '';
                                                 ownerQualifyingEnabled = ownerProfile.qualifying_enabled || false;
                                                 ownerQualifyingQuestions = ownerProfile.qualifying_questions || [];
+                                                ownerBusinessName = ownerProfile.business_name || 'our company';
+                                                ownerEnableDistribution = !!ownerProfile.enable_distribution;
                                             }
                                             console.log(`[Flow] Owner resolved from lead match: ${selectedLead.name} -> user ${ownerUserId}`);
                                         }
@@ -975,38 +981,227 @@ IMPORTANT RULES:
                                     const waContact = val.contacts && val.contacts[0];
                                     const waProfileName = waContact?.profile?.name || null;
 
-                                    // 2. Find or create CRM lead record
+                                    // 2. Find or create CRM lead record with Meta Ad Referral tracking & Group Distribution
+                                    const inboundReferral = message.referral || (message.context as any)?.referral || null;
+                                    const adId = inboundReferral?.source_id || inboundReferral?.ad_id || '';
+                                    const adHeadline = inboundReferral?.headline || '';
+                                    const adBody = inboundReferral?.body || '';
+                                    const adSourceUrl = inboundReferral?.source_url || '';
+
+                                    let campaignName = '';
+                                    let campaignId = '';
+                                    let adNameStr = adHeadline || 'WhatsApp Ad';
+                                    let adCampaignString = adNameStr;
+
+                                    if (adId && ownerWaToken) {
+                                        try {
+                                            const metaToken = ownerWaToken;
+                                            const adRes = await fetch(`https://graph.facebook.com/v20.0/${adId}?fields=id,name,adset{id,name},campaign{id,name}&access_token=${metaToken}`);
+                                            if (adRes.ok) {
+                                                const adDetails = await adRes.json();
+                                                campaignId = adDetails.campaign?.id || '';
+                                                campaignName = adDetails.campaign?.name || '';
+                                                adNameStr = adDetails.name || adHeadline || 'WhatsApp Ad';
+                                                adCampaignString = campaignName ? `${campaignName} / ${adNameStr}` : adNameStr;
+                                            }
+                                        } catch (adFetchErr) {
+                                            console.error('[WhatsApp Webhook] Error fetching ad details from Meta:', adFetchErr);
+                                        }
+                                    }
+
+                                    // Evaluate Group-Distribution automation rules
+                                    let assignedAgentId: string | null = null;
+                                    let assignedAgentName = '';
+
+                                    try {
+                                        const { data: groupAutomations } = await supabaseAdmin
+                                            .from('automations')
+                                            .select('*')
+                                            .eq('user_id', ownerUserId)
+                                            .like('title', 'Group-Distribution:%')
+                                            .eq('is_active', true);
+
+                                        if (groupAutomations && groupAutomations.length > 0) {
+                                            const normalizeCampStr = (s: string) => (s || '').replace(/[\u2010-\u2015\u2212]/g, '-').toLowerCase().replace(/\s+/g, ' ').trim();
+                                            for (const aut of groupAutomations) {
+                                                try {
+                                                    const parsedGroup = JSON.parse(aut.description || '{}');
+                                                    const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
+                                                    const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
+
+                                                    if (groupMembers.length > 0 && groupCampaigns.length > 0) {
+                                                        const matchesCamp = groupCampaigns.some(gc => {
+                                                            const gcClean = normalizeCampStr(gc);
+                                                            if (!gcClean) return false;
+                                                            const adClean = normalizeCampStr(adCampaignString);
+                                                            const campClean = normalizeCampStr(campaignName);
+                                                            const headClean = normalizeCampStr(adHeadline);
+                                                            const campIdClean = String(campaignId || '').trim();
+                                                            return (
+                                                                (adClean && (adClean.includes(gcClean) || gcClean.includes(adClean))) ||
+                                                                (campClean && (campClean.includes(gcClean) || gcClean.includes(campClean))) ||
+                                                                (headClean && (headClean.includes(gcClean) || gcClean.includes(headClean))) ||
+                                                                (campIdClean && campIdClean === gc.trim())
+                                                            );
+                                                        });
+
+                                                        if (matchesCamp) {
+                                                            const weightedPool: any[] = [];
+                                                            groupMembers.forEach(m => {
+                                                                for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
+                                                                    weightedPool.push(m);
+                                                                }
+                                                            });
+
+                                                            let currentIdx = 0;
+                                                            if (parsedGroup.last_assigned_user_id) {
+                                                                const lastIdx = weightedPool.findIndex(m => m.userId === parsedGroup.last_assigned_user_id);
+                                                                if (lastIdx !== -1) {
+                                                                    currentIdx = (lastIdx + 1) % weightedPool.length;
+                                                                }
+                                                            }
+
+                                                            const selectedMember = weightedPool[currentIdx];
+                                                            assignedAgentId = selectedMember.userId;
+                                                            assignedAgentName = selectedMember.name || '';
+
+                                                            parsedGroup.last_assigned_user_id = selectedMember.userId;
+                                                            parsedGroup.last_assigned_user_name = selectedMember.name;
+                                                            parsedGroup.last_assigned_at = new Date().toISOString();
+
+                                                            await supabaseAdmin
+                                                                .from('automations')
+                                                                .update({ description: JSON.stringify(parsedGroup) })
+                                                                .eq('id', aut.id);
+
+                                                            console.log(`[WhatsApp Lead] Group distribution assigned lead to ${selectedMember.name} (${selectedMember.userId}) for rule ${aut.title}`);
+                                                            break;
+                                                        }
+                                                    }
+                                                } catch (pErr) {
+                                                    console.error('[WhatsApp Lead] Error parsing group rule:', pErr);
+                                                }
+                                            }
+                                        }
+                                    } catch (distErr) {
+                                        console.error('[WhatsApp Lead] Error evaluating group distribution:', distErr);
+                                    }
+
+                                    if (!assignedAgentId && ownerEnableDistribution) {
+                                        try {
+                                            const { data: teamData } = await supabaseAdmin
+                                                .from('profiles')
+                                                .select('id')
+                                                .or(`agency_id.eq.${ownerUserId},parent_id.eq.${ownerUserId}`)
+                                                .in('role', ['admin', 'agent'])
+                                                .neq('id', ownerUserId);
+
+                                            if (teamData && teamData.length > 0) {
+                                                const agentIds = teamData.map(t => t.id);
+                                                const { data: lastAssignedLead } = await supabaseAdmin
+                                                    .from('leads')
+                                                    .select('assigned_to')
+                                                    .eq('user_id', ownerUserId)
+                                                    .not('assigned_to', 'is', null)
+                                                    .order('created_at', { ascending: false })
+                                                    .limit(1)
+                                                    .maybeSingle();
+
+                                                const lastAgentId = lastAssignedLead?.assigned_to;
+                                                const lastIndex = agentIds.indexOf(lastAgentId);
+                                                const nextIndex = (lastIndex + 1) % agentIds.length;
+                                                assignedAgentId = agentIds[nextIndex];
+                                            }
+                                        } catch (rrErr) {
+                                            console.error('[WhatsApp Lead] Error evaluating round robin:', rrErr);
+                                        }
+                                    }
+
                                     let { data: latestLead } = await supabaseAdmin
                                         .from('leads')
-                                        .select('id, name, custom_fields, booked_time, pipeline_stage')
+                                        .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id')
                                         .eq('user_id', ownerUserId)
                                         .ilike('phone', `%${cleanFrom.slice(-10)}%`)
                                         .order('created_at', { ascending: false, nullsFirst: false })
                                         .limit(1)
                                         .maybeSingle();
 
+                                    const formattedPhone = cleanFrom.startsWith('+') ? cleanFrom : `+${cleanFrom}`;
+                                    const defaultLeadName = (waProfileName && waProfileName.trim()) ? waProfileName.trim() : formattedPhone;
+
                                     if (!latestLead) {
-                                        const formattedPhone = cleanFrom.startsWith('+') ? cleanFrom : `+${cleanFrom}`;
-                                        const defaultLeadName = (waProfileName && waProfileName.trim()) ? waProfileName.trim() : formattedPhone;
+                                        const newLeadPayload: any = {
+                                            user_id: ownerUserId,
+                                            name: defaultLeadName,
+                                            phone: formattedPhone,
+                                            source: inboundReferral ? 'Facebook Ads (WhatsApp)' : 'WhatsApp Inbound',
+                                            pipeline_stage: 'New',
+                                            status: 'New',
+                                            ad_name: adCampaignString || null,
+                                            campaign_id: campaignId || null,
+                                            assigned_to: assignedAgentId || null,
+                                            created_at: new Date().toISOString()
+                                        };
+
+                                        if (inboundReferral) {
+                                            newLeadPayload.custom_fields = {
+                                                meta_ad_origin: {
+                                                    ad_id: adId,
+                                                    ad_name: adNameStr,
+                                                    campaign_id: campaignId,
+                                                    campaign_name: campaignName,
+                                                    headline: adHeadline,
+                                                    body: adBody,
+                                                    source_url: adSourceUrl
+                                                }
+                                            };
+                                        }
 
                                         const { data: createdLead, error: createLeadErr } = await supabaseAdmin
                                             .from('leads')
-                                            .insert({
-                                                user_id: ownerUserId,
-                                                name: defaultLeadName,
-                                                phone: formattedPhone,
-                                                source: 'WhatsApp Inbound',
-                                                pipeline_stage: 'New',
-                                                created_at: new Date().toISOString()
-                                            })
-                                            .select('id, name, custom_fields, booked_time, pipeline_stage')
+                                            .insert(newLeadPayload)
+                                            .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id')
                                             .single();
 
                                         if (createdLead) {
                                             latestLead = createdLead;
-                                            console.log(`[Flow] Created new CRM lead for incoming WhatsApp contact: ${defaultLeadName} (${formattedPhone})`);
+                                            console.log(`[Flow] Created new CRM lead for incoming WhatsApp contact: ${defaultLeadName} (${formattedPhone}), Assigned: ${assignedAgentId || 'Owner'}`);
+                                            
+                                            if (assignedAgentId && assignedAgentId !== ownerUserId) {
+                                                sendAdminMultiChannelNotification({
+                                                    ownerUserId: assignedAgentId,
+                                                    title: "🎯 WhatsApp Lead Assigned to You!",
+                                                    body: `Lead: ${defaultLeadName}\nPhone: ${formattedPhone}\nSource: ${adCampaignString || 'WhatsApp Inbound'}`,
+                                                    url: `/dashboard/crm/${createdLead.id}`,
+                                                    type: 'new_lead'
+                                                }).catch(err => console.error('[Notification] Error notifying assigned agent:', err));
+                                            }
                                         } else {
                                             console.error('[Flow] Error creating CRM lead for WhatsApp contact:', createLeadErr);
+                                        }
+                                    } else {
+                                        // If existing lead was unassigned and we now have an assigned agent from group rules, update it
+                                        if (!latestLead.assigned_to && assignedAgentId) {
+                                            await supabaseAdmin
+                                                .from('leads')
+                                                .update({
+                                                    assigned_to: assignedAgentId,
+                                                    ad_name: adCampaignString || latestLead.ad_name,
+                                                    campaign_id: campaignId || latestLead.campaign_id,
+                                                    updated_at: new Date().toISOString()
+                                                })
+                                                .eq('id', latestLead.id);
+                                            latestLead.assigned_to = assignedAgentId;
+
+                                            if (assignedAgentId !== ownerUserId) {
+                                                sendAdminMultiChannelNotification({
+                                                    ownerUserId: assignedAgentId,
+                                                    title: "🎯 WhatsApp Lead Assigned to You!",
+                                                    body: `Lead: ${latestLead.name || defaultLeadName}\nPhone: ${formattedPhone}\nSource: ${adCampaignString || 'WhatsApp Inbound'}`,
+                                                    url: `/dashboard/crm/${latestLead.id}`,
+                                                    type: 'new_lead'
+                                                }).catch(err => console.error('[Notification] Error notifying assigned agent:', err));
+                                            }
                                         }
                                     }
 
@@ -1180,13 +1375,13 @@ IMPORTANT RULES:
                                           return; // Stop processing real estate qualifying flows
                                       }
 
-                                     // Check if this was a click on "Connect with Expert" or "Get Nobogent System" button
-                                      const isConnectExpertClick = buttonReplyId === 'connect_expert' || buttonReplyId === 'get_nobogent_system' || /connect with expert|connect expert|get nobogent system|nobogent system/i.test(messageText);
+                                     // Check if this was a click on "Connect with Expert" or "Get System" button
+                                      const isConnectExpertClick = buttonReplyId === 'connect_expert' || buttonReplyId === 'get_nobogent_system' || /connect with expert|connect expert|speak with expert|talk to expert|call expert|get nobogent system|nobogent system/i.test(messageText);
                                       if (isConnectExpertClick) {
-                                          console.log(`[Flow] Lead ${cleanFrom} clicked Get Nobogent System / connect with expert! Sending high-priority alert to admin.`);
+                                          console.log(`[Flow] Lead ${cleanFrom} clicked Connect with Expert! Sending alert to admin.`);
                                           
                                           // 1. Reply to lead on WhatsApp
-                                          const leadReplyText = "Thank you! Our Nobogent AI System team has been notified and will reach out to you directly shortly. You can also pick your strategy session time slot using the link above! 🙏";
+                                          const leadReplyText = `Thank you! Our ${ownerBusinessName || 'team'} has been notified and our property expert will reach out to you directly shortly. You can also pick a convenient time slot using the link above! 🙏`;
                                           try {
                                               const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
                                               await fetch(metaUrl, {
@@ -1228,8 +1423,8 @@ IMPORTANT RULES:
                                           
                                           sendAdminMultiChannelNotification({
                                               ownerUserId,
-                                              title: '🚨 Get Nobogent System Requested!',
-                                              body: `High-intent lead ${leadName} (${leadPhone}) clicked "Get Nobogent System"! Please contact them immediately.`,
+                                              title: `🚨 Call with Expert Requested!`,
+                                              body: `High-intent lead ${leadName} (${leadPhone}) requested to connect with an expert for ${ownerBusinessName || 'your business'}! Please contact them immediately.`,
                                               url: targetUrl,
                                               type: 'connect_expert',
                                               leadPhone,

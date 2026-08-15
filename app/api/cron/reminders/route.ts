@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     // 1. Fetch leads due for CRM follow-up alert (within recent 2-hour window)
     const { data: leadsToRemind, error: followupErr } = await supabaseAdmin
       .from('leads')
-      .select('id, user_id, assigned_to')
+      .select('id, user_id, assigned_to, name, phone, next_followup')
       .not('next_followup', 'is', null)
       .gte('next_followup', twoHoursAgo)
       .lte('next_followup', nowUtcString)
@@ -55,50 +55,15 @@ export async function GET(request: Request) {
 
     if (bookingErr) throw bookingErr
 
-    const tasksToQueue: { id: string; type: 'followup' | 'booking_30m' }[] = []
-
-    if (leadsToRemind) {
-      leadsToRemind.forEach(lead => {
-        tasksToQueue.push({ id: lead.id, type: 'followup' })
-      })
+    if ((!leadsToRemind || leadsToRemind.length === 0) && (!bookingsToRemind || bookingsToRemind.length === 0)) {
+      return NextResponse.json({ success: true, message: 'No reminders due at this time.' })
     }
 
-    if (bookingsToRemind) {
-      bookingsToRemind.forEach(booking => {
-        tasksToQueue.push({ id: booking.id, type: 'booking_30m' })
-      })
-    }
-
-    // Asynchronously trigger the WhatsApp 24h followups scanner
-    try {
-      const followupUrl = `${url.origin}/api/cron/whatsapp-followup`
-      console.log(`[Reminders Dispatcher] Triggering WhatsApp followups scanner at ${followupUrl}`)
-      fetch(followupUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.CRON_SECRET || ''}`
-        }
-      }).catch(err => {
-        console.error('[Reminders Dispatcher] WhatsApp followup trigger failed:', err)
-      })
-    } catch (followupErr: any) {
-      console.error('[Reminders Dispatcher] Failed to trigger WhatsApp followups:', followupErr)
-    }
-
-    if (tasksToQueue.length === 0) {
-      return NextResponse.json({ success: true, message: 'No reminders or followups due at this time.' })
-    }
-
-    // Process due followup push notifications directly
-    for (const item of tasksToQueue) {
-      if (item.type === 'followup') {
-        const { data: lead } = await supabaseAdmin
-          .from('leads')
-          .select('id, user_id, assigned_to, name, phone, next_followup')
-          .eq('id', item.id)
-          .maybeSingle()
-
-        if (lead && lead.next_followup) {
+    // Process due followup push notifications directly without N+1 queries
+    const processedIds: string[] = []
+    if (leadsToRemind && leadsToRemind.length > 0) {
+      for (const lead of leadsToRemind) {
+        if (lead.next_followup) {
           const targetIds = Array.from(new Set([lead.assigned_to, lead.user_id].filter(Boolean)))
           for (const targetId of targetIds) {
             await sendPushNotification(
@@ -109,14 +74,16 @@ export async function GET(request: Request) {
               "reminder"
             ).catch((err: any) => console.error('[Reminders Dispatcher Push Error]:', err))
           }
-
-          // Clear next_followup after sending push alert
-          await supabaseAdmin.from('leads').update({ next_followup: null }).eq('id', lead.id)
+          processedIds.push(lead.id)
         }
+      }
+
+      if (processedIds.length > 0) {
+        await supabaseAdmin.from('leads').update({ next_followup: null }).in('id', processedIds)
       }
     }
 
-    return NextResponse.json({ success: true, processedCount: tasksToQueue.length })
+    return NextResponse.json({ success: true, processedCount: processedIds.length })
   } catch (error: any) {
     console.error('[Reminders Dispatcher] Error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })

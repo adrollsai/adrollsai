@@ -38,12 +38,13 @@ async function handleWhatsappFollowups(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Fetch chats active within the last 24 hours (if older than 24h, the customer service window is closed)
+        // Fetch chats active within the last 24 hours
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
         const { data: chats, error: chatsErr } = await supabaseAdmin
             .from('whatsapp_chats')
-            .select('*')
+            .select('id, user_id, recipient_phone, recipient_name, updated_at')
             .gte('updated_at', yesterday)
+            .limit(25)
 
         if (chatsErr) throw chatsErr
 
@@ -54,11 +55,15 @@ async function handleWhatsappFollowups(request: Request) {
         const now = Date.now()
         let sentCount = 0
 
+        // In-memory cache for profiles and properties to prevent duplicate DB queries
+        const profileCache = new Map<string, any>()
+        const propertiesCache = new Map<string, string>()
+
         for (const chat of chats) {
             // Fetch last 15 messages for chronological chat history and follow-up calculation
             const { data: messages, error: msgErr } = await supabaseAdmin
                 .from('whatsapp_messages')
-                .select('*')
+                .select('direction, message_text, created_at')
                 .eq('chat_id', chat.id)
                 .order('created_at', { ascending: false })
                 .limit(15)
@@ -130,12 +135,19 @@ async function handleWhatsappFollowups(request: Request) {
 
             if (!isDue) continue
 
-            // Fetch owner's WhatsApp credentials and business profile info
-            const { data: profile } = await supabaseAdmin
-                .from('profiles')
-                .select('whatsapp_access_token, whatsapp_phone_number_id, business_name, business_info, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain')
-                .eq('id', chat.user_id)
-                .maybeSingle()
+            // Fetch owner's WhatsApp credentials and business profile info (with cache)
+            let profile = profileCache.get(chat.user_id)
+            if (!profile) {
+                const { data: fetchedProfile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('whatsapp_access_token, whatsapp_phone_number_id, business_name, business_info, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain')
+                    .eq('id', chat.user_id)
+                    .maybeSingle()
+                if (fetchedProfile) {
+                    profile = fetchedProfile
+                    profileCache.set(chat.user_id, fetchedProfile)
+                }
+            }
 
             if (!profile || !profile.whatsapp_access_token || !profile.whatsapp_phone_number_id) {
                 continue
@@ -143,18 +155,22 @@ async function handleWhatsappFollowups(request: Request) {
 
             templateParams = [chat.recipient_name || 'there', profile.business_name || 'our team']
 
-            // Fetch active properties in owner's inventory to enrich the AI context
-            const { data: properties } = await supabaseAdmin
-                .from('properties')
-                .select('title, price, address, property_type, description')
-                .eq('user_id', chat.user_id)
-                .limit(8)
+            // Fetch active properties in owner's inventory to enrich the AI context (with cache)
+            let propertiesText = propertiesCache.get(chat.user_id)
+            if (!propertiesText) {
+                const { data: properties } = await supabaseAdmin
+                    .from('properties')
+                    .select('title, price, address, property_type, description')
+                    .eq('user_id', chat.user_id)
+                    .limit(5)
 
-            let propertiesText = 'No active listings in inventory.'
-            if (properties && properties.length > 0) {
-                propertiesText = properties
-                    .map(p => `- ${p.title} (${p.property_type || 'Listing'}): ${p.price || 'N/A'}, Address: ${p.address || 'N/A'}, Description: ${p.description || 'N/A'}`)
-                    .join('\n')
+                propertiesText = 'No active listings in inventory.'
+                if (properties && properties.length > 0) {
+                    propertiesText = properties
+                        .map(p => `- ${p.title} (${p.property_type || 'Listing'}): ${p.price || 'N/A'}, Address: ${p.address || 'N/A'}`)
+                        .join('\n')
+                }
+                propertiesCache.set(chat.user_id, propertiesText)
             }
 
             // Retrieve matching CRM lead to log history and get source attribution context
@@ -406,7 +422,22 @@ Guidelines:
             }
         }
 
-        return NextResponse.json({ success: true, processed: sentCount, diagnostics })
+        // Execute the full Universal 3-3-3 Follow-Up Engine across active leads
+        let engineResult = { scannedCount: 0, whatsappSentCount: 0, voiceScheduledCount: 0, skippedCount: 0 }
+        try {
+            const { run333FollowupEngine } = await import('@/utils/followup-333-engine')
+            engineResult = await run333FollowupEngine(supabaseAdmin)
+            console.log('[WhatsApp Followup Cron] 3-3-3 Engine Summary:', engineResult)
+        } catch (engineErr) {
+            console.error('[WhatsApp Followup Cron] 3-3-3 engine execution error:', engineErr)
+        }
+
+        return NextResponse.json({ 
+            success: true, 
+            processed: sentCount, 
+            engine333: engineResult,
+            diagnostics 
+        })
     } catch (error: any) {
         console.error('[WhatsApp Followup Cron] Error:', error)
         return NextResponse.json({ error: error.message || 'Internal server error', diagnostics }, { status: 500 })

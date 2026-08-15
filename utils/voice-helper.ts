@@ -125,8 +125,21 @@ export async function triggerOutboundCall(
         }
 
         if (activeCalls.length > 0 && activeCalls[0].id !== leadId) {
-            console.warn(`[VOICE HELPER] Outbound call aborted for lead ${leadId}: User ${profileId} already has an active call in progress.`);
-            return { success: false, error: 'ACTIVE_CALL_IN_PROGRESS' };
+            console.warn(`[VOICE HELPER] Outbound call queued for lead ${leadId}: User ${profileId} already has an active call on their line.`);
+            // Automatically queue this lead so dispatchNextCall dials them as soon as the line frees up
+            await supabaseAdmin
+                .from('leads')
+                .update({ 
+                    voice_call_status: 'queued',
+                    voice_call_scheduled_at: new Date().toISOString()
+                })
+                .eq('id', leadId);
+
+            return { 
+                success: true, 
+                scheduled: true, 
+                scheduledTime: new Date() 
+            };
         }
 
         if (isAutoTrigger) {

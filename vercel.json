@@ -2,7 +2,43 @@
   "crons": [
     {
       "path": "/api/cron/reminders",
-      "schedule": "* * * * *"
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/whatsapp-followup",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/booking-reminders",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/pending-leads",
+      "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/eod-report",
+      "schedule": "30 14 * * *"
+    },
+    {
+      "path": "/api/cron/optimize-ads",
+      "schedule": "0 */12 * * *"
+    },
+    {
+      "path": "/api/cron/meta-warmup",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/remind-post",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/recurring-debit",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/auto-generate",
+      "schedule": "0 4 * * *"
     }
   ]
 }

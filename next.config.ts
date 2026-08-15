@@ -27,6 +27,9 @@ const nextConfig: NextConfig = {
     '@remotion/lambda-client',
     '@remotion/serverless-client'
   ],
+  images: {
+    unoptimized: true,
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "50mb",

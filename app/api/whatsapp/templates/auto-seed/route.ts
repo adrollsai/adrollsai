@@ -65,6 +65,22 @@ const SEED_TEMPLATES = [
         example: {
             body_text: [['John Doe', '+919999999999']]
         }
+    },
+    {
+        name: 'universal_followup_v2',
+        category: 'MARKETING',
+        bodyText: 'Hi {{1}}, hope you\'re having a good day! Following up from {{2}} regarding {{3}}. {{4}} Would you like me to share more details or arrange a quick call?',
+        example: {
+            body_text: [['Aman', 'Sobha Realty', 'your inquiry', 'We have updated brochure and pricing available.']]
+        }
+    },
+    {
+        name: 'universal_breakup_followup',
+        category: 'MARKETING',
+        bodyText: 'Hi {{1}}, hope you\'re doing well! Following up from {{2}} regarding {{3}}. Should we keep your inquiry active, or are you all sorted for now?',
+        example: {
+            body_text: [['Aman', 'Sobha Realty', 'your inquiry']]
+        }
     }
 ]
 

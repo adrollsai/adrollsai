@@ -2071,13 +2071,16 @@ END:VCARD\n`
 
   // 2. 4 Primary Section Counts (All, Fresh, Ongoing, Not Interested)
   const sectionCounts = useMemo(() => {
-    const fresh = leadsMatchingFilters.filter(l => categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'fresh').length
-    const ongoing = leadsMatchingFilters.filter(l => categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'ongoing').length
-    const not_interested = leadsMatchingFilters.filter(l => categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'not_interested').length
+    const isStageFiltered = selectedSpecificStage && selectedSpecificStage !== 'ALL'
+    const matchStage = (l: any) => !isStageFiltered || matchLeadToStage(l, selectedSpecificStage)
+
+    const fresh = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'fresh').length
+    const ongoing = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'ongoing').length
+    const not_interested = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'not_interested').length
     const all = fresh + ongoing + not_interested
 
     return { all, fresh, ongoing, not_interested }
-  }, [leadsMatchingFilters, customStages])
+  }, [leadsMatchingFilters, selectedSpecificStage, customStages])
 
   // Backward compatibility for stageCounts
   const stageCounts: Record<string, number> = useMemo(() => {
@@ -2658,7 +2661,10 @@ END:VCARD\n`
                         </label>
                         <select 
                             value={selectedSpecificStage} 
-                            onChange={(e) => setSelectedSpecificStage(e.target.value)} 
+                            onChange={(e) => {
+                                setSelectedSpecificStage(e.target.value)
+                                setCurrentPage(1)
+                            }} 
                             className="w-full appearance-none bg-indigo-50/60 hover:bg-indigo-100/60 border border-indigo-200/80 text-indigo-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all cursor-pointer truncate"
                         >
                             <option value="ALL">All Stages in {activeSection === 'ongoing' ? 'Ongoing' : activeSection === 'not_interested' ? 'Not Interested' : activeSection === 'fresh' ? 'Fresh' : 'View'}</option>
@@ -2692,6 +2698,7 @@ END:VCARD\n`
                             type="button"
                             onClick={() => {
                                 setActiveSection(sec.id as any)
+                                setSelectedSpecificStage('ALL')
                                 setCurrentPage(1)
                             }} 
                             className={`px-4 sm:px-6 py-3 border-b-2 text-xs sm:text-sm transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${

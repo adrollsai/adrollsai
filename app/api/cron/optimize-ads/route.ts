@@ -8,10 +8,10 @@ import { z } from 'zod';
 const FB_GRAPH = "https://graph.facebook.com/v19.0";
 
 export async function GET(request: Request) {
-    // You should use a simple secret query param to secure this cron route.
-    // E.g., /api/cron/optimize-ads?secret=YOUR_CRON_SECRET
+    const authHeader = request.headers.get('authorization');
     const { searchParams } = new URL(request.url);
-    if (searchParams.get('secret') !== process.env.CRON_SECRET) {
+    const secret = searchParams.get('secret') || searchParams.get('cronSecret') || (authHeader ? authHeader.replace('Bearer ', '') : null);
+    if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
         return NextResponse.json({ error: 'Unauthorized Cron Trigger' }, { status: 401 });
     }
 

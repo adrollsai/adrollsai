@@ -117,6 +117,8 @@ export default function AutomationPage() {
     'auto_reminder_4h': 'Hi {{1}}, looking forward to our appointment today in 4 hours. Please let us know if you need to reschedule.',
     'auto_reminder_1h': 'Hi {{1}}, our meeting starts in 1 hour. We look forward to connecting with you shortly!',
     'auto_reminder_15m': 'Hi {{1}}, we are starting in 15 minutes! Please get ready for our call.',
+    'universal_followup_v2': 'Hi {{1}}, hope you\'re having a good day! Following up from {{2}} regarding {{3}}. {{4}} Would you like me to share more details or arrange a quick call?',
+    'universal_breakup_followup': 'Hi {{1}}, hope you\'re doing well! Following up from {{2}} regarding {{3}}. Should we keep your inquiry active, or are you all sorted for now?',
     'hello_world': 'Welcome and thank you for choosing {{2}}. How can we help you today?',
     'lead_auto_response': 'Thank you for reaching out to {{2}}! We have received your request and our team will connect with you shortly.'
   };

@@ -222,7 +222,7 @@ export async function sendInstantFormCatalogMessage(
     campaignName?: string
 ) {
     try {
-        console.log(`[INSTANT CATALOG WA] Dispatching instant form WhatsApp catalog template to lead: ${leadName} (${leadPhone}), owner: ${ownerId}`);
+        console.log(`[INSTANT CATALOG WA] Dispatching instant form WhatsApp welcome template to lead: ${leadName} (${leadPhone}), owner: ${ownerId}`);
 
         // Fetch owner's WhatsApp credentials & Business profile
         const { data: profile } = await supabaseAdmin
@@ -250,57 +250,156 @@ export async function sendInstantFormCatalogMessage(
         }
         if (!cleanPhone) return;
 
-        const companyName = profile.business_name || 'our company';
+        const companyName = profile?.business_name || 'our company';
         const catalogUrlParam = ownerId;
-
-        const messagePayload = {
-            messaging_product: 'whatsapp',
-            to: cleanPhone,
-            type: 'template',
-            template: {
-                name: 'instant_lead_catalog_welcome',
-                language: { code: 'en_US' },
-                components: [
-                    {
-                        type: 'body',
-                        parameters: [
-                            { type: 'text', text: leadName || 'Valued Lead' },
-                            { type: 'text', text: companyName }
-                        ]
-                    },
-                    {
-                        type: 'button',
-                        sub_type: 'url',
-                        index: '0',
-                        parameters: [
-                            { type: 'text', text: catalogUrlParam }
-                        ]
-                    }
-                ]
-            }
-        };
-
         const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
-        
-        console.log(`[INSTANT CATALOG WA] Sending template 'instant_lead_catalog_welcome' to ${cleanPhone}...`);
-        const metaRes = await fetch(metaUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(messagePayload)
-        });
 
-        const metaData = await metaRes.json();
-        if (metaData.error) {
-            console.error('[INSTANT CATALOG WA] Meta API send failed:', metaData.error);
-        } else {
-            console.log(`[INSTANT CATALOG WA] WhatsApp catalog message sent successfully to ${cleanPhone}: ${metaData.messages?.[0]?.id}`);
+        // 1. Try sending auto_lead_welcome (Utility category, highest deliverability)
+        let messageSent = false;
+        let sentMessageText = '';
+
+        try {
+            const welcomePayload = {
+                messaging_product: 'whatsapp',
+                to: cleanPhone,
+                type: 'template',
+                template: {
+                    name: 'auto_lead_welcome',
+                    language: { code: 'en_US' },
+                    components: [
+                        {
+                            type: 'body',
+                            parameters: [
+                                { type: 'text', text: leadName || 'Valued Client' },
+                                { type: 'text', text: companyName },
+                                { type: 'text', text: campaignName || 'our premium properties' }
+                            ]
+                        }
+                    ]
+                }
+            };
+
+            const autoRes = await fetch(metaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(welcomePayload)
+            });
+            const autoData = await autoRes.json();
+            if (autoRes.ok && autoData.messages?.[0]?.id) {
+                messageSent = true;
+                sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for reaching out to ${companyName}. We have received your inquiry regarding ${campaignName || 'our premium properties'} and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!`;
+                console.log(`[INSTANT CATALOG WA] Sent 'auto_lead_welcome' to ${cleanPhone}: ${autoData.messages[0].id}`);
+            } else {
+                console.warn('[INSTANT CATALOG WA] auto_lead_welcome failed, trying instant_lead_catalog_welcome fallback:', autoData);
+            }
+        } catch (autoErr) {
+            console.warn('[INSTANT CATALOG WA] auto_lead_welcome exception:', autoErr);
+        }
+
+        // 2. Fallback to instant_lead_catalog_welcome
+        if (!messageSent) {
+            const catalogPayload = {
+                messaging_product: 'whatsapp',
+                to: cleanPhone,
+                type: 'template',
+                template: {
+                    name: 'instant_lead_catalog_welcome',
+                    language: { code: 'en_US' },
+                    components: [
+                        {
+                            type: 'body',
+                            parameters: [
+                                { type: 'text', text: leadName || 'Valued Client' },
+                                { type: 'text', text: companyName }
+                            ]
+                        },
+                        {
+                            type: 'button',
+                            sub_type: 'url',
+                            index: '0',
+                            parameters: [
+                                { type: 'text', text: catalogUrlParam }
+                            ]
+                        }
+                    ]
+                }
+            };
+
+            const metaRes = await fetch(metaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(catalogPayload)
+            });
+            const metaData = await metaRes.json();
+            if (metaRes.ok && metaData.messages?.[0]?.id) {
+                messageSent = true;
+                sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for showing interest in ${companyName}! We have received your inquiry. Click the button below to view our complete inventory catalog and current listings:`;
+                console.log(`[INSTANT CATALOG WA] Sent 'instant_lead_catalog_welcome' to ${cleanPhone}: ${metaData.messages[0].id}`);
+            } else {
+                console.error('[INSTANT CATALOG WA] instant_lead_catalog_welcome also failed:', metaData);
+            }
+        }
+
+        if (messageSent) {
+            // Log to whatsapp_chats and whatsapp_messages
+            try {
+                let { data: existingChat } = await supabaseAdmin
+                    .from('whatsapp_chats')
+                    .select('id')
+                    .eq('user_id', ownerId)
+                    .eq('recipient_phone', cleanPhone)
+                    .maybeSingle();
+
+                let chatId = existingChat?.id;
+                if (!chatId) {
+                    const { data: newChat } = await supabaseAdmin
+                        .from('whatsapp_chats')
+                        .insert({
+                            user_id: ownerId,
+                            recipient_phone: cleanPhone,
+                            recipient_name: leadName || null,
+                            lead_id: leadId || null,
+                            last_message_text: sentMessageText,
+                            unread_count: 0
+                        })
+                        .select('id')
+                        .single();
+                    chatId = newChat?.id;
+                } else {
+                    await supabaseAdmin
+                        .from('whatsapp_chats')
+                        .update({
+                            last_message_text: sentMessageText,
+                            lead_id: leadId || undefined,
+                            recipient_name: leadName || undefined,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', chatId);
+                }
+
+                if (chatId) {
+                    await supabaseAdmin
+                        .from('whatsapp_messages')
+                        .insert({
+                            chat_id: chatId,
+                            direction: 'outbound',
+                            message_text: sentMessageText
+                        });
+                }
+            } catch (chatLogErr) {
+                console.error('[INSTANT CATALOG WA] Error logging welcome chat message:', chatLogErr);
+            }
+
             await supabaseAdmin.from('lead_history').insert({
                 lead_id: leadId,
                 action_type: 'REMARK',
-                description: `💬 Instant WhatsApp catalog welcome template sent ("View Listings" button)`
+                description: `💬 Instant WhatsApp welcome message sent to lead`
             });
         }
     } catch (err: any) {
