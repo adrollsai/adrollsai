@@ -91,26 +91,6 @@ export async function POST(request: Request) {
         }
     }
 
-    // 4. Sync reopened_count from lead_history
-    const { data: reopenHistory } = await supabase
-        .from('lead_history')
-        .select('lead_id')
-        .eq('action_type', 'REOPENED');
-
-    if (reopenHistory && reopenHistory.length > 0) {
-        const countsMap: Record<string, number> = {};
-        reopenHistory.forEach(h => {
-            if (h.lead_id) countsMap[h.lead_id] = (countsMap[h.lead_id] || 0) + 1;
-        });
-
-        for (const [leadId, cnt] of Object.entries(countsMap)) {
-            await supabase
-                .from('leads')
-                .update({ reopened_count: cnt })
-                .eq('id', leadId);
-        }
-    }
-
     return NextResponse.json({ success: true, updatedCount })
   } catch (err: any) {
     console.error("Backfill WhatsApp leads error:", err)

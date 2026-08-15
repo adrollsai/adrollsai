@@ -1837,9 +1837,38 @@ IMPORTANT RULES:
                                         if (chat.lead_id && metaAdOrigin) {
                                             try {
                                                 const adName = metaAdOrigin.ad_name || metaAdOrigin.headline || metaAdOrigin.campaign_name || metaAdOrigin.product_name;
-                                                const { data: existingLeadData } = await supabaseAdmin.from('leads').select('custom_fields').eq('id', chat.lead_id).single();
+                                                const { data: existingLeadData } = await supabaseAdmin.from('leads').select('id, name, pipeline_stage, custom_fields').eq('id', chat.lead_id).single();
                                                 let cf = existingLeadData?.custom_fields || {};
                                                 if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
+
+                                                const prevAdIdentifier = cf?.meta_ad_origin?.ad_id || cf?.meta_ad_origin?.ad_name;
+                                                const newAdIdentifier = metaAdOrigin.ad_id || metaAdOrigin.ad_name;
+                                                const isNewAdReopen = newAdIdentifier && prevAdIdentifier && prevAdIdentifier !== newAdIdentifier;
+
+                                                if (isNewAdReopen) {
+                                                    const reopenedCount = (cf.reopened_count || 0) + 1;
+                                                    cf.reopened_count = reopenedCount;
+                                                    cf.last_reopened_at = new Date().toISOString();
+
+                                                    const reopenDesc = `The lead was reopened from WhatsApp CTWA Ad Click\nLead Name : ${existingLeadData?.name || chat.recipient_name || 'Lead'}\nContact no : +${cleanFrom}\nLead Source : WhatsApp Ad\nSource Details : ${adName || 'Meta CTWA Ad'}\nCampaign : ${metaAdOrigin.campaign_name || 'N/A'}\nLead Status : ${existingLeadData?.pipeline_stage || 'New'}`;
+
+                                                    await supabaseAdmin.from('lead_history').insert({
+                                                        lead_id: chat.lead_id,
+                                                        action_type: 'REOPENED',
+                                                        performed_by: 'System / WhatsApp',
+                                                        actor_name: 'WhatsApp Ad',
+                                                        description: reopenDesc,
+                                                        details: {
+                                                            source: 'WhatsApp Ad',
+                                                            ad_name: adName,
+                                                            campaign_name: metaAdOrigin.campaign_name,
+                                                            reopened_count: reopenedCount,
+                                                            timestamp: new Date().toISOString()
+                                                        },
+                                                        created_at: new Date().toISOString()
+                                                    });
+                                                }
+
                                                 cf = { ...cf, meta_ad_origin: metaAdOrigin };
 
                                                 await supabaseAdmin
@@ -1852,7 +1881,7 @@ IMPORTANT RULES:
                                                         custom_fields: cf
                                                     })
                                                     .eq('id', chat.lead_id);
-                                                console.log(`[Referral] Updated lead ${chat.lead_id} with Meta Ad Origin: ${adName}`);
+                                                console.log(`[Referral] Updated lead ${chat.lead_id} with Meta Ad Origin: ${adName}${isNewAdReopen ? ' (Lead Reopened)' : ''}`);
                                             } catch (leadSyncErr) {
                                                 console.error("[Referral] Lead sync error:", leadSyncErr);
                                             }
@@ -2639,7 +2668,6 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
               await supabaseAdmin
                 .from('leads')
                 .update({
-                  reopened_count: reopenedCount,
                   custom_fields: cf,
                   updated_at: new Date().toISOString()
                 })

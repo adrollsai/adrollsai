@@ -77,13 +77,23 @@ export async function POST(request: Request) {
 
     const trulyNewLeads: any[] = [];
     const duplicateLeadsToReopen: any[] = [];
+    const processedFbIds = new Set<string>();
 
     leads.forEach(l => {
         if (!l) return;
+
+        // 1. If this exact Facebook lead submission ID was already imported or processed in this batch, SKIP IT completely.
+        if (l.facebook_lead_id && (existingFbidMap.has(l.facebook_lead_id) || processedFbIds.has(l.facebook_lead_id))) {
+            return;
+        }
+
+        if (l.facebook_lead_id) {
+            processedFbIds.add(l.facebook_lead_id);
+        }
+
+        // 2. Check if this is a NEW submission from an existing CRM contact (matching phone)
         let existing = null;
-        if (l.facebook_lead_id && existingFbidMap.has(l.facebook_lead_id)) {
-            existing = existingFbidMap.get(l.facebook_lead_id);
-        } else if (l.phone) {
+        if (l.phone) {
             const digits = l.phone.replace(/\D/g, '').slice(-10);
             if (digits.length >= 7 && existingPhoneMap.has(digits)) {
                 existing = existingPhoneMap.get(digits);
@@ -91,13 +101,21 @@ export async function POST(request: Request) {
         }
 
         if (existing) {
+            // Genuine Reopened Lead: existing contact submitting a brand new Facebook form
             duplicateLeadsToReopen.push({ lead: l, existing });
+            if (l.facebook_lead_id) existingFbidMap.set(l.facebook_lead_id, existing);
         } else {
+            // Truly new lead
             trulyNewLeads.push(l);
+            if (l.facebook_lead_id) existingFbidMap.set(l.facebook_lead_id, l);
+            if (l.phone) {
+                const digits = l.phone.replace(/\D/g, '').slice(-10);
+                if (digits.length >= 7) existingPhoneMap.set(digits, l);
+            }
         }
     });
 
-    console.log(`Filtered Meta Sync leads: ${trulyNewLeads.length} truly new, ${duplicateLeadsToReopen.length} existing duplicate submissions to process for reopening.`);
+    console.log(`Filtered Meta Sync leads: ${trulyNewLeads.length} truly new, ${duplicateLeadsToReopen.length} genuine reopens to process.`);
 
     // Process duplicate lead submissions to reopen lead & log history
     if (duplicateLeadsToReopen.length > 0) {
@@ -382,25 +400,6 @@ export async function POST(request: Request) {
                         })
                         .eq('id', lead.id);
                 }
-            }
-        }
-        // Sync reopened_count for leads based on REOPENED history events
-        const { data: reopenHistory } = await supabase
-            .from('lead_history')
-            .select('lead_id')
-            .eq('action_type', 'REOPENED');
-
-        if (reopenHistory && reopenHistory.length > 0) {
-            const countsMap: Record<string, number> = {};
-            reopenHistory.forEach(h => {
-                if (h.lead_id) countsMap[h.lead_id] = (countsMap[h.lead_id] || 0) + 1;
-            });
-
-            for (const [leadId, cnt] of Object.entries(countsMap)) {
-                await supabase
-                    .from('leads')
-                    .update({ reopened_count: cnt })
-                    .eq('id', leadId);
             }
         }
     } catch (backfillErr) {

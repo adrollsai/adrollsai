@@ -1735,12 +1735,37 @@ export default function CRMPage() {
         }).filter(Boolean)
 
         if (newLeads.length > 0) {
-            const BATCH = 500
-            for (let i = 0; i < newLeads.length; i += BATCH) {
-              await supabase.from('leads').insert(newLeads.slice(i, i + BATCH))
+            // Deduplicate against existing CRM leads and within batch
+            const existingPhoneSet = new Set<string>();
+            leads.forEach(l => {
+              const digits = (l.phone || '').replace(/\D/g, '').slice(-10);
+              if (digits.length >= 7) existingPhoneSet.add(digits);
+            });
+
+            const uniqueNewLeads: any[] = [];
+            const seenInBatch = new Set<string>();
+
+            for (const lead of newLeads) {
+              if (!lead) continue;
+              const digits = (lead.phone || '').replace(/\D/g, '').slice(-10);
+              if (digits.length >= 7) {
+                if (existingPhoneSet.has(digits) || seenInBatch.has(digits)) {
+                  continue;
+                }
+                seenInBatch.add(digits);
+              }
+              uniqueNewLeads.push(lead);
             }
-            toast.success(`Successfully imported ${newLeads.length} leads!`)
-            fetchLeads(true)
+
+            if (uniqueNewLeads.length > 0) {
+              const BATCH = 500;
+              for (let i = 0; i < uniqueNewLeads.length; i += BATCH) {
+                await supabase.from('leads').insert(uniqueNewLeads.slice(i, i + BATCH));
+              }
+            }
+            const skipped = newLeads.length - uniqueNewLeads.length;
+            toast.success(`Successfully imported ${uniqueNewLeads.length} new leads!${skipped > 0 ? ` (${skipped} existing duplicate contacts skipped)` : ''}`);
+            fetchLeads(true);
         }
     }
     reader.readAsText(file)

@@ -142,44 +142,86 @@ export async function POST(
             }
         }
 
-        // 4. Check for existing lead by phone to prevent duplicates (with robust formatting normalization)
+        // 4. Check for existing lead by phone to handle genuine reopens vs new leads
+        let existingLeadToReopen: any = null;
         if (phone) {
             const cleanPhone = phone.replace(/\D/g, '');
             const phoneSuffix = cleanPhone.slice(-10);
 
-            if (phoneSuffix.length === 10) {
-                // Fetch potential duplicates using suffix-friendly pattern matching
+            if (phoneSuffix.length >= 7) {
                 const { data: potentialDuplicates } = await supabaseAdmin
                     .from('leads')
-                    .select('id, phone')
+                    .select('id, name, phone, email, pipeline_stage, custom_fields, assigned_to')
                     .eq('user_id', profile.id)
                     .or(`phone.like.%${phoneSuffix},phone.eq.${phone}`);
 
                 if (potentialDuplicates && potentialDuplicates.length > 0) {
-                    const isDuplicate = potentialDuplicates.some(lead => {
+                    const matched = potentialDuplicates.find(lead => {
                         const leadClean = (lead.phone || '').replace(/\D/g, '');
-                        return leadClean.endsWith(phoneSuffix);
+                        return leadClean.endsWith(phoneSuffix) || lead.phone === phone;
                     });
-
-                    if (isDuplicate) {
-                        console.log(`[99acres Webhook] Lead with phone suffix ${phoneSuffix} already exists for user ${profile.id}. Skipping duplicate.`);
-                        return NextResponse.json({ success: true, message: 'Duplicate lead skipped' }, { status: 200 });
+                    if (matched) {
+                        existingLeadToReopen = matched;
                     }
                 }
-            } else {
-                // Fallback to exact match check
-                const { data: existingByPhone } = await supabaseAdmin
-                    .from('leads')
-                    .select('id')
-                    .eq('user_id', profile.id)
-                    .eq('phone', phone)
-                    .maybeSingle();
-
-                if (existingByPhone) {
-                    console.log(`[99acres Webhook] Lead with phone ${phone} already exists for user ${profile.id}. Skipping duplicate.`);
-                    return NextResponse.json({ success: true, message: 'Duplicate lead skipped' }, { status: 200 });
-                }
             }
+        }
+
+        if (existingLeadToReopen) {
+            console.log(`[99acres Webhook] Lead with phone ${phone} exists in CRM (ID: ${existingLeadToReopen.id}). Reopening lead.`);
+            let cf = existingLeadToReopen.custom_fields || {};
+            if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) { cf = {}; } }
+
+            const reopenedCount = (cf.reopened_count || 0) + 1;
+            cf = {
+                ...cf,
+                ...customFields,
+                reopened_count: reopenedCount,
+                last_reopened_at: new Date().toISOString()
+            };
+
+            await supabaseAdmin
+                .from('leads')
+                .update({
+                    custom_fields: cf,
+                    budget: budget ? (typeof budget === 'string' ? budget : String(budget)) : undefined,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', existingLeadToReopen.id);
+
+            const sourceLabel = projectName ? `99acres - ${projectName}` : '99acres';
+            const reopenDesc = `The lead was reopened from 99acres Inquiry\nLead Name : ${name || existingLeadToReopen.name}\nContact no : ${phone}\nEmail : ${email || existingLeadToReopen.email || 'N/A'}\nLead Source : ${sourceLabel}\nProject : ${projectName || 'N/A'}\nBudget : ${budget || 'N/A'}\nMessage : ${message || 'N/A'}\nLead Status : ${existingLeadToReopen.pipeline_stage || 'New'}`;
+
+            await supabaseAdmin.from('lead_history').insert({
+                lead_id: existingLeadToReopen.id,
+                action_type: 'REOPENED',
+                performed_by: 'System / 99acres',
+                actor_name: '99acres Portal',
+                description: reopenDesc,
+                details: {
+                    source: sourceLabel,
+                    project_name: projectName,
+                    budget,
+                    message,
+                    reopened_count: reopenedCount,
+                    timestamp: new Date().toISOString()
+                },
+                created_at: new Date().toISOString()
+            });
+
+            // Send notification for reopened lead
+            try {
+                await sendPushNotification(
+                    existingLeadToReopen.assigned_to || assignedAgentId || profile.id,
+                    "🔄 99acres Lead Reopened!",
+                    `${name || existingLeadToReopen.name} • ${phone} • ${projectName || city || '99acres'} (Reopened #${reopenedCount})`,
+                    `/dashboard/crm/${existingLeadToReopen.id}`
+                );
+            } catch (notifErr) {
+                console.error('[99acres Webhook] Push notification failed for reopen:', notifErr);
+            }
+
+            return NextResponse.json({ success: true, message: 'Lead reopened successfully', leadId: existingLeadToReopen.id }, { status: 200 });
         }
 
         // 5. Insert lead into CRM

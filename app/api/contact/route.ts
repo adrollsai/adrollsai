@@ -122,44 +122,118 @@ export async function POST(request: Request) {
         }
       }
 
-      // 2. Insert Lead directly into the CRM database
-      const { data: lead, error: leadError } = await supabaseAdmin
-        .from('leads')
-        .insert({
-          user_id: targetUserId,
-          name,
-          email,
-          phone,
-          notes: message,
-          source: 'Landing Page Contact',
-          pipeline_stage: 'New',
-          assigned_to: assignedAgentId,
-          budget: budget || '',
-          timeline: timeline || '',
-          custom_fields: {
-            custom_question_0: budget || '',
-            custom_question_1: timeline || ''
-          }
-        })
-        .select()
-        .single();
+      // 2. Check if lead already exists in CRM by phone to reopen instead of creating duplicates
+      const cleanPhoneDigits = phone.replace(/\D/g, '').slice(-10);
+      let existingLead: any = null;
+      if (cleanPhoneDigits.length >= 7) {
+        const { data: existingMatches } = await supabaseAdmin
+          .from('leads')
+          .select('id, name, phone, email, pipeline_stage, custom_fields, assigned_to')
+          .eq('user_id', targetUserId)
+          .or(`phone.like.%${cleanPhoneDigits},phone.eq.${phone}`)
+          .limit(1);
+        if (existingMatches && existingMatches.length > 0) {
+          existingLead = existingMatches[0];
+        }
+      }
 
-      if (leadError) {
-        console.error("[CONTACT API] Supabase CRM lead insert error:", leadError)
-      } else if (lead) {
-        leadId = lead.id;
-        console.log(`[CONTACT API] Lead created successfully: ${lead.id} assigned to ${assignedAgentId || targetUserId}`);
-        
-        // 3. Dispatch web push notification to the assigned agent or workspace owner
+      if (existingLead) {
+        leadId = existingLead.id;
+        console.log(`[CONTACT API] Contact exists in CRM (ID: ${existingLead.id}). Reopening lead.`);
+
+        let cf = existingLead.custom_fields || {};
+        if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) { cf = {}; } }
+
+        const reopenedCount = (cf.reopened_count || 0) + 1;
+        cf = {
+          ...cf,
+          custom_question_0: budget || cf.custom_question_0 || '',
+          custom_question_1: timeline || cf.custom_question_1 || '',
+          last_contact_message: message,
+          reopened_count: reopenedCount,
+          last_reopened_at: new Date().toISOString()
+        };
+
+        await supabaseAdmin
+          .from('leads')
+          .update({
+            custom_fields: cf,
+            budget: budget || undefined,
+            timeline: timeline || undefined,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingLead.id);
+
+        const reopenDesc = `The lead was reopened from Landing Page Contact Form\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Landing Page Contact\nMessage / Query : ${message}\nBudget : ${budget || 'N/A'}\nTimeline : ${timeline || 'N/A'}\nLead Status : ${existingLead.pipeline_stage || 'New'}`;
+
+        await supabaseAdmin.from('lead_history').insert({
+          lead_id: existingLead.id,
+          action_type: 'REOPENED',
+          performed_by: 'System / Landing Page',
+          actor_name: 'Landing Page Form',
+          description: reopenDesc,
+          details: {
+            source: 'Landing Page Contact',
+            message,
+            budget,
+            timeline,
+            reopened_count: reopenedCount,
+            timestamp: new Date().toISOString()
+          },
+          created_at: new Date().toISOString()
+        });
+
+        // Push notification for reopen
         try {
           await sendPushNotification(
-            assignedAgentId || targetUserId,
-            "🔥 New Landing Page Query!",
-            `${name} • ${phone} • Landing Page`,
-            `/dashboard/crm/${lead.id}`
-          )
+            existingLead.assigned_to || assignedAgentId || targetUserId,
+            "🔄 Landing Page Lead Reopened!",
+            `${name || existingLead.name} • ${phone} • Landing Page Query (Reopened #${reopenedCount})`,
+            `/dashboard/crm/${existingLead.id}`
+          );
         } catch (pushErr) {
-          console.error("[CONTACT API] Push Notification failed:", pushErr)
+          console.error("[CONTACT API] Push Notification failed for reopen:", pushErr);
+        }
+      } else {
+        // Insert new Lead directly into the CRM database
+        const { data: lead, error: leadError } = await supabaseAdmin
+          .from('leads')
+          .insert({
+            user_id: targetUserId,
+            name,
+            email,
+            phone,
+            notes: message,
+            source: 'Landing Page Contact',
+            pipeline_stage: 'New',
+            assigned_to: assignedAgentId,
+            budget: budget || '',
+            timeline: timeline || '',
+            custom_fields: {
+              custom_question_0: budget || '',
+              custom_question_1: timeline || ''
+            }
+          })
+          .select()
+          .single();
+
+        if (leadError) {
+          console.error("[CONTACT API] Supabase CRM lead insert error:", leadError)
+        } else if (lead) {
+          leadId = lead.id;
+          console.log(`[CONTACT API] Lead created successfully: ${lead.id} assigned to ${assignedAgentId || targetUserId}`);
+          
+          // Dispatch web push notification to the assigned agent or workspace owner
+          try {
+            await sendPushNotification(
+              assignedAgentId || targetUserId,
+              "🔥 New Landing Page Query!",
+              `${name} • ${phone} • Landing Page`,
+              `/dashboard/crm/${lead.id}`
+            )
+          } catch (pushErr) {
+            console.error("[CONTACT API] Push Notification failed:", pushErr)
+          }
         }
       }
     } else {
