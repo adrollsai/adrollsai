@@ -108,8 +108,9 @@ export async function POST(request: Request) {
         let buffer = Buffer.from(arrayBuffer);
 
         // Ensure voiceover audio is hard-stitched into MP4 video stream if audioUrl exists in metadata
-        const voiceoverUrl = asset.metadata?.audioUrl;
+        let voiceoverUrl = asset.metadata?.audioUrl;
         if (voiceoverUrl && typeof voiceoverUrl === 'string' && voiceoverUrl.startsWith('http')) {
+            voiceoverUrl = voiceoverUrl.replace('r2.dev/adrolls-storage/', 'r2.dev/');
             console.log(`[Lambda Callback] Baking voiceover audio from ${voiceoverUrl} into video...`);
             const tempDir = path.join(os.tmpdir(), `vo_${assetId}_${Date.now()}`);
             try {
@@ -131,7 +132,7 @@ export async function POST(request: Request) {
                         os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                     );
 
-                    const cmd = `"${ffmpegBinary}" -y -i "${videoFile}" -i "${audioFile}" -filter_complex "[1:a]volume=2.5[aout]" -map 0:v:0 -map "[aout]" -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputFile}"`;
+                    const cmd = `"${ffmpegBinary}" -nostdin -y -i "${videoFile}" -i "${audioFile}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputFile}"`;
                     const { exec: execCmd } = await import('child_process');
                     await new Promise<void>((res, rej) => {
                         execCmd(cmd, { maxBuffer: 1024 * 1024 * 50 }, (err) => err ? rej(err) : res());

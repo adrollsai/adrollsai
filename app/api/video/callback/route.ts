@@ -12,6 +12,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { generateAndUploadVideoThumbnail } from '@/utils/video-thumbnail-helper';
+import { resolveVoiceoverAudio } from '@/utils/video-voiceover-helper';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -379,29 +380,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: `Scene ${videoTask.current_index + 1} completed. Waiting for other clips.` });
         }
 
-        // Check if voiceover audio exists on task, asset metadata, or user profile voice settings
-        let hasVoiceover = false;
-        let candidateAudioUrl = videoTask.audio_url || null;
+        // Resolve voiceover audio (resolves async TTS, checks asset metadata, profile audio, or synthesizes fallback TTS)
+        const finalAudioUrl = await resolveVoiceoverAudio(videoTask, videoTask.asset_id);
+        const hasVoiceover = !!finalAudioUrl;
 
-        if (!candidateAudioUrl && videoTask.asset_id) {
-            const { data: assetRow } = await supabaseAdmin.from('assets').select('metadata').eq('id', videoTask.asset_id).single();
-            if (assetRow?.metadata?.audioUrl) {
-                candidateAudioUrl = assetRow.metadata.audioUrl;
-            }
-        }
-
-        if (!candidateAudioUrl && videoTask.user_id) {
-            const { data: userProfile } = await supabaseAdmin.from('profiles').select('character_audio_url, avatar_audio_url').eq('id', videoTask.user_id).single();
-            if (userProfile?.character_audio_url) {
-                candidateAudioUrl = userProfile.character_audio_url;
-            } else if (userProfile?.avatar_audio_url) {
-                candidateAudioUrl = userProfile.avatar_audio_url;
-            }
-        }
-
-        if (candidateAudioUrl) {
-            hasVoiceover = true;
-        }
+        console.log(`[Video Callback] Resolved voiceover audio for Asset ${videoTask.asset_id}: ${finalAudioUrl || 'None'}`);
 
         // If there is only 1 scene AND no voiceover audio attached, bypass the stitcher and finalize immediately
         if (siblings.length === 1 && !hasVoiceover) {
@@ -424,20 +407,6 @@ export async function POST(request: Request) {
                 if (!res.ok) throw new Error(`Failed to download scene for faststart`);
                 const buffer = Buffer.from(await res.arrayBuffer());
                 fs.writeFileSync(localPath, buffer);
-                
-                let audioPath: string | null = null;
-                if (candidateAudioUrl && typeof candidateAudioUrl === 'string' && candidateAudioUrl.startsWith('http')) {
-                    try {
-                        const audRes = await fetch(candidateAudioUrl);
-                        if (audRes.ok) {
-                            audioPath = path.join(tempDir, 'voiceover.mp3');
-                            fs.writeFileSync(audioPath, Buffer.from(await audRes.arrayBuffer()));
-                            console.log(`[Video Callback] Downloaded voiceover MP3 for single clip: ${candidateAudioUrl}`);
-                        }
-                    } catch (e) {
-                        console.warn(`[Video Callback] Failed to download single clip voiceover:`, e);
-                    }
-                }
 
                 const ffmpegBinary = path.join(
                     process.cwd(), 
@@ -446,18 +415,13 @@ export async function POST(request: Request) {
                     os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                 );
                 
-                const cmd = audioPath
-                    ? `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -filter_complex "[1:a]volume=2.5[aout]" -map 0:v:0 -map "[aout]" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
-                    : `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
-                console.log(`[Video Callback] Running FFmpeg command: ${cmd}`);
+                const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
+                console.log(`[Video Callback] Running FFmpeg faststart command: ${cmd}`);
                 
                 await new Promise<void>((resolvePromise, rejectPromise) => {
-                    exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
-                        if (execErr) {
-                            rejectPromise(execErr);
-                        } else {
-                            resolvePromise();
-                        }
+                    exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr) => {
+                        if (execErr) rejectPromise(execErr);
+                        else resolvePromise();
                     });
                 });
                 
@@ -514,7 +478,91 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: "Single scene video finalized successfully." });
         }
 
-        // Retrieve AWS configurations and dispatch stitching to AWS Lambda
+        // Single clip WITH voiceover: try fast FFmpeg mux, otherwise let Remotion Lambda stitch it cleanly
+        if (siblings.length === 1 && hasVoiceover && finalAudioUrl) {
+            const clipUrl = siblings[0].last_successful_task_id;
+            console.log(`[Video Callback] Single-clip video WITH voiceover detected (15s). Muxing audio: ${finalAudioUrl}`);
+            const tempDir = path.join(os.tmpdir(), `mux_${videoTask.asset_id}_${Date.now()}`);
+            let muxSuccess = false;
+            let finalUrl = clipUrl;
+            let thumbnailUrl = null;
+
+            try {
+                if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+                const localPath = path.join(tempDir, `input.mp4`);
+                const audioPath = path.join(tempDir, `voiceover.mp3`);
+                const outputPath = path.join(tempDir, `output.mp4`);
+
+                const [vRes, aRes] = await Promise.all([fetch(clipUrl), fetch(finalAudioUrl)]);
+                if (vRes.ok && aRes.ok) {
+                    fs.writeFileSync(localPath, Buffer.from(await vRes.arrayBuffer()));
+                    fs.writeFileSync(audioPath, Buffer.from(await aRes.arrayBuffer()));
+
+                    const ffmpegBinary = path.join(
+                        process.cwd(), 
+                        'node_modules', 
+                        'ffmpeg-static', 
+                        os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+                    );
+
+                    const cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                    console.log(`[Video Callback] Running FFmpeg single-clip voiceover mux command: ${cmd}`);
+
+                    await new Promise<void>((resolvePromise, rejectPromise) => {
+                        exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr) => {
+                            if (execErr) rejectPromise(execErr);
+                            else resolvePromise();
+                        });
+                    });
+
+                    if (fs.existsSync(outputPath)) {
+                        const muxBuffer = fs.readFileSync(outputPath);
+                        const finalFileName = `generated/${videoTask.user_id}/stitched_${Date.now()}.mp4`;
+                        await r2.send(new PutObjectCommand({
+                            Bucket: R2_BUCKET,
+                            Key: finalFileName,
+                            Body: muxBuffer,
+                            ContentType: 'video/mp4'
+                        }));
+                        finalUrl = `${R2_PUBLIC_URL}/${finalFileName}`;
+                        muxSuccess = true;
+                        console.log(`[Video Callback] Single-clip with voiceover successfully uploaded to R2: ${finalUrl}`);
+
+                        try {
+                            thumbnailUrl = await generateAndUploadVideoThumbnail(outputPath, videoTask.user_id, videoTask.asset_id);
+                        } catch (thumbErr) {}
+                    }
+                }
+            } catch (singleMuxErr: any) {
+                console.warn(`[Video Callback] Local single-clip mux failed, falling back to AWS Lambda:`, singleMuxErr.message);
+            } finally {
+                try { if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) {}
+            }
+
+            if (muxSuccess) {
+                if (videoTask.asset_id) {
+                    await supabaseAdmin.from('assets').update({
+                        url: finalUrl,
+                        status: 'Draft',
+                        metadata: {
+                            ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                            audioUrl: finalAudioUrl
+                        }
+                    }).eq('id', videoTask.asset_id);
+                }
+                await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
+                await sendPushNotification(
+                    videoTask.user_id, 
+                    `🎬 15s Video Creative Ready!`, 
+                    `Your 15-second AI video ad with voiceover has been generated successfully.`, 
+                    "/dashboard/assets", 
+                    "asset_ready"
+                );
+                return NextResponse.json({ success: true, message: "Single scene video with voiceover finalized successfully." });
+            }
+        }
+
+        // Multi-clip Stitching: Retrieve AWS configurations and dispatch stitching to AWS Lambda
         try {
             console.log(`[Video Callback] Offloading stitching for Asset ID ${videoTask.asset_id} to AWS Lambda StitchComposition...`);
             
@@ -551,11 +599,9 @@ export async function POST(request: Request) {
             const maxLambdas = 3;
             const framesPerLambda = Math.max(250, Math.ceil(totalFrames / maxLambdas));
 
-            console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
-
             // Probe actual clip durations to avoid freeze at end of short Grok clips
             let clipDurationsInSeconds: number[] | undefined = undefined;
-            const isGrokModel = !!videoTask.audio_url || videoTask.prompts?.[0]?.toLowerCase().includes('grok') || videoTask.prompts?.[0]?.toLowerCase().includes('identity lock');
+            const isGrokModel = !!finalAudioUrl || !!videoTask.audio_url || videoTask.prompts?.[0]?.toLowerCase().includes('grok') || videoTask.prompts?.[0]?.toLowerCase().includes('identity lock');
             if (isGrokModel) {
                 try {
                     const ffmpegBinary = path.join(
@@ -584,7 +630,7 @@ export async function POST(request: Request) {
                             } catch (probeErr) {
                                 console.warn(`[Video Callback] ffprobe failed for clip, defaulting to 15s:`, probeErr);
                             }
-                            return 15; // Grok clips are 15s when duration:15 is passed
+                            return 15;
                         })
                     );
                     console.log(`[Video Callback] Per-clip durations: ${clipDurationsInSeconds.join(', ')}s`);
@@ -600,135 +646,6 @@ export async function POST(request: Request) {
             const framesPerLambdaActual = Math.max(250, Math.ceil(actualTotalFrames / maxLambdas));
 
             console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambdaActual} frames per lambda (actual total frames: ${actualTotalFrames})`);
-
-            // Resolve TTS voiceover audio for Grok if a task ID or URL was attached
-            let finalAudioUrl = videoTask.audio_url || null;
-            if (!finalAudioUrl && videoTask.asset_id) {
-                const { data: assetRow } = await supabaseAdmin.from('assets').select('metadata').eq('id', videoTask.asset_id).single();
-                if (assetRow?.metadata?.audioUrl) {
-                    finalAudioUrl = assetRow.metadata.audioUrl;
-                    console.log(`[Video Callback] Resolved audioUrl from asset metadata fallback: ${finalAudioUrl}`);
-                }
-            }
-            if (finalAudioUrl && finalAudioUrl.startsWith('tts:')) {
-                const ttsTaskId = finalAudioUrl.replace(/^tts:/, '');
-                try {
-                    console.log(`[Video Callback] Polling asynchronous Gemini TTS task ${ttsTaskId}...`);
-                    const { queryKieTask } = await import('@/utils/external-apis');
-                    for (let t = 0; t < 20; t++) {
-                        const ttsStatus = await queryKieTask(ttsTaskId);
-                        if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
-                            try {
-                                const audioRes = await fetch(ttsStatus.resultUrl);
-                                if (audioRes.ok) {
-                                    const rawAudioBuffer = Buffer.from(await audioRes.arrayBuffer());
-                                    const { ensureMp3AudioBuffer } = await import('@/utils/audio-converter');
-                                    const audioBuffer = await ensureMp3AudioBuffer(rawAudioBuffer);
-                                    const r2Key = `voiceover/${Date.now()}_grok_async_tts.mp3`;
-                                    await r2.send(new PutObjectCommand({
-                                        Bucket: R2_BUCKET,
-                                        Key: r2Key,
-                                        Body: audioBuffer,
-                                        ContentType: 'audio/mpeg'
-                                    }));
-                                    finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
-                                    console.log(`[Video Callback] Async Gemini TTS voiceover resolved and persisted to R2: ${finalAudioUrl}`);
-                                } else {
-                                    finalAudioUrl = ttsStatus.resultUrl;
-                                }
-                            } catch (r2Err) {
-                                finalAudioUrl = ttsStatus.resultUrl;
-                            }
-                            break;
-                        }
-                        if (ttsStatus.state === 'fail') {
-                            console.warn(`[Video Callback] Gemini TTS task ${ttsTaskId} failed.`);
-                            finalAudioUrl = null;
-                            break;
-                        }
-                        await new Promise(r => setTimeout(r, 2000));
-                    }
-                } catch (ttsErr: any) {
-                    console.warn(`[Video Callback] Async Gemini TTS resolution error:`, ttsErr.message);
-                }
-            }
-
-            if (!finalAudioUrl || finalAudioUrl.startsWith('tts:')) {
-                try {
-                    const { data: assetRecord } = await supabaseAdmin
-                        .from('assets')
-                        .select('caption, metadata, voiceover_url, audio_url')
-                        .eq('id', videoTask.asset_id)
-                        .single();
-
-                    let candidateUrl = assetRecord?.voiceover_url || assetRecord?.audio_url || assetRecord?.metadata?.audioUrl;
-                    if (candidateUrl) {
-                        if (candidateUrl.startsWith('tts:')) {
-                            const ttsTaskId = candidateUrl.replace(/^tts:/, '');
-                            console.log(`[Video Callback] Resolving Gemini TTS task ${ttsTaskId} from asset metadata...`);
-                            const { queryKieTask } = await import('@/utils/external-apis');
-                            for (let t = 0; t < 15; t++) {
-                                const ttsStatus = await queryKieTask(ttsTaskId);
-                                if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
-                                    candidateUrl = ttsStatus.resultUrl;
-                                    break;
-                                }
-                                await new Promise(r => setTimeout(r, 2000));
-                            }
-                        }
-                        if (candidateUrl && (candidateUrl.startsWith('http://') || candidateUrl.startsWith('https://'))) {
-                            finalAudioUrl = candidateUrl;
-                        }
-                    }
-
-                    if (!finalAudioUrl || finalAudioUrl.startsWith('tts:')) {
-                        const voiceoverText = assetRecord?.caption || '';
-                        if (voiceoverText && voiceoverText.length > 10) {
-                            console.log(`[Video Callback] Generating fallback Grok voiceover for asset ${videoTask.asset_id}...`);
-                            const { createGeminiTTS, queryKieTask } = await import('@/utils/external-apis');
-                            const { taskId: ttsTaskId, error: ttsError } = await createGeminiTTS({
-                                dialogueText: voiceoverText,
-                                speakerName: 'Aoede',
-                                style: '',
-                                scene: 'Professional real estate commercial voiceover studio',
-                                sampleContext: 'High converting luxury real estate marketing video'
-                            });
-
-                            if (ttsTaskId && !ttsError) {
-                                for (let t = 0; t < 12; t++) {
-                                    await new Promise(r => setTimeout(r, 2500));
-                                    const ttsStatus = await queryKieTask(ttsTaskId);
-                                    if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
-                                        try {
-                                            const audioRes = await fetch(ttsStatus.resultUrl);
-                                            if (audioRes.ok) {
-                                                const rawAudioBuffer = Buffer.from(await audioRes.arrayBuffer());
-                                                const { ensureMp3AudioBuffer } = await import('@/utils/audio-converter');
-                                                const audioBuffer = await ensureMp3AudioBuffer(rawAudioBuffer);
-                                                const r2Key = `voiceover/${Date.now()}_grok_stitch.mp3`;
-                                                await r2.send(new PutObjectCommand({
-                                                    Bucket: R2_BUCKET,
-                                                    Key: r2Key,
-                                                    Body: audioBuffer,
-                                                    ContentType: 'audio/mpeg'
-                                                }));
-                                                finalAudioUrl = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
-                                                console.log(`[Video Callback] Grok voiceover generated and persisted: ${finalAudioUrl}`);
-                                            }
-                                        } catch (r2VoiceErr) {
-                                            finalAudioUrl = ttsStatus.resultUrl;
-                                        }
-                                        break;
-                                    }
-                                    if (ttsStatus.state === 'fail') break;
-                                }
-                            }
-                        }
-                    }
-                } catch (ttsErr) {
-                    console.warn('[Video Callback] Inline TTS generation failed, continuing without voiceover:', ttsErr);
-                }
-            }
 
             // --- HIGH-SPEED DIRECT FFMPEG STITCHING ENGINE ---
             // Bypasses AWS Lambda concurrency limits & rate exceeded errors for instant, zero-cost 2-second video stitching

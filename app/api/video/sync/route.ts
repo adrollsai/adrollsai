@@ -10,6 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { exec } from 'child_process';
+import { resolveVoiceoverAudio } from '@/utils/video-voiceover-helper';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -251,10 +252,16 @@ export async function POST(request: Request) {
                     // All scenes completed! Stitch them!
                     siblings.sort((a, b) => a.current_index - b.current_index);
 
-                    // If there is only 1 scene, bypass the stitcher and finalize the asset immediately on Vercel!
-                    if (siblings.length === 1) {
+                    // Resolve voiceover audio (resolves async TTS, checks asset metadata, profile audio, or synthesizes fallback TTS)
+                    const finalAudioUrl = await resolveVoiceoverAudio(task, task.asset_id);
+                    const hasVoiceover = !!finalAudioUrl;
+
+                    console.log(`[Sync Endpoint] Resolved voiceover audio for Asset ${task.asset_id}: ${finalAudioUrl || 'None'}`);
+
+                    // If there is only 1 scene AND no voiceover audio attached, bypass the stitcher and finalize the asset immediately on Vercel!
+                    if (siblings.length === 1 && !hasVoiceover) {
                         const clipUrl = siblings[0].last_successful_task_id;
-                        console.log(`[Sync Endpoint] Single-clip video detected (15s). Finalizing asset and applying faststart: ${clipUrl}`);
+                        console.log(`[Sync Endpoint] Single-clip video detected (15s) with no voiceover. Finalizing asset: ${clipUrl}`);
                         
                         let finalUrl = clipUrl;
                         
@@ -271,25 +278,6 @@ export async function POST(request: Request) {
                             if (!res.ok) throw new Error(`Failed to download scene for faststart`);
                             const buffer = Buffer.from(await res.arrayBuffer());
                             fs.writeFileSync(localPath, buffer);
-                            
-                            // Check if voiceover audio exists on asset metadata
-                            let audioPath: string | null = null;
-                            if (task.asset_id) {
-                                const { data: assetData } = await supabaseAdmin.from('assets').select('metadata').eq('id', task.asset_id).maybeSingle();
-                                const audioUrl = assetData?.metadata?.audioUrl;
-                                if (audioUrl && typeof audioUrl === 'string' && audioUrl.startsWith('http')) {
-                                    try {
-                                        const audRes = await fetch(audioUrl);
-                                        if (audRes.ok) {
-                                            audioPath = path.join(tempDir, 'voiceover.mp3');
-                                            fs.writeFileSync(audioPath, Buffer.from(await audRes.arrayBuffer()));
-                                            console.log(`[Sync Endpoint] Downloaded voiceover MP3 for single clip: ${audioUrl}`);
-                                        }
-                                    } catch (e) {
-                                        console.warn(`[Sync Endpoint] Failed to download single clip voiceover:`, e);
-                                    }
-                                }
-                            }
 
                             const ffmpegBinary = path.join(
                                 process.cwd(), 
@@ -298,13 +286,11 @@ export async function POST(request: Request) {
                                 os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                             );
 
-                            const cmd = audioPath
-                                ? `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -filter_complex "[1:a]volume=2.5[aout]" -map 0:v:0 -map "[aout]" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
-                                : `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
+                            const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
                             console.log(`[Sync Endpoint] Running FFmpeg command: ${cmd}`);
                             
                             await new Promise<void>((resolvePromise, rejectPromise) => {
-                                exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
+                                exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr) => {
                                     if (execErr) {
                                         rejectPromise(execErr);
                                     } else {
@@ -315,7 +301,7 @@ export async function POST(request: Request) {
                             
                             // Upload faststart file to R2
                             const faststartBuffer = fs.readFileSync(outputPath);
-                            const finalFileName = `adrolls-storage/generated/${task.user_id}/faststart_${Date.now()}.mp4`;
+                            const finalFileName = `generated/${task.user_id}/faststart_${Date.now()}.mp4`;
                             await r2.send(new PutObjectCommand({
                                 Bucket: R2_BUCKET,
                                 Key: finalFileName,
@@ -359,6 +345,85 @@ export async function POST(request: Request) {
                         continue;
                     }
 
+                    // Single clip WITH voiceover: try fast FFmpeg mux, otherwise let Remotion Lambda stitch it cleanly
+                    if (siblings.length === 1 && hasVoiceover && finalAudioUrl) {
+                        const clipUrl = siblings[0].last_successful_task_id;
+                        console.log(`[Sync Endpoint] Single-clip video WITH voiceover detected (15s). Muxing audio: ${finalAudioUrl}`);
+                        const tempDir = path.join(os.tmpdir(), `mux_${task.asset_id}_${Date.now()}`);
+                        let muxSuccess = false;
+                        let finalUrl = clipUrl;
+
+                        try {
+                            if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+                            const localPath = path.join(tempDir, `input.mp4`);
+                            const audioPath = path.join(tempDir, `voiceover.mp3`);
+                            const outputPath = path.join(tempDir, `output.mp4`);
+
+                            const [vRes, aRes] = await Promise.all([fetch(clipUrl), fetch(finalAudioUrl)]);
+                            if (vRes.ok && aRes.ok) {
+                                fs.writeFileSync(localPath, Buffer.from(await vRes.arrayBuffer()));
+                                fs.writeFileSync(audioPath, Buffer.from(await aRes.arrayBuffer()));
+
+                                const ffmpegBinary = path.join(
+                                    process.cwd(), 
+                                    'node_modules', 
+                                    'ffmpeg-static', 
+                                    os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+                                );
+
+                                const cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                                console.log(`[Sync Endpoint] Running FFmpeg single-clip voiceover mux command: ${cmd}`);
+
+                                await new Promise<void>((resolvePromise, rejectPromise) => {
+                                    exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr) => {
+                                        if (execErr) rejectPromise(execErr);
+                                        else resolvePromise();
+                                    });
+                                });
+
+                                if (fs.existsSync(outputPath)) {
+                                    const muxBuffer = fs.readFileSync(outputPath);
+                                    const finalFileName = `generated/${task.user_id}/stitched_${Date.now()}.mp4`;
+                                    await r2.send(new PutObjectCommand({
+                                        Bucket: R2_BUCKET,
+                                        Key: finalFileName,
+                                        Body: muxBuffer,
+                                        ContentType: 'video/mp4'
+                                    }));
+                                    finalUrl = `${R2_PUBLIC_URL}/${finalFileName}`;
+                                    muxSuccess = true;
+                                    console.log(`[Sync Endpoint] Single-clip with voiceover successfully uploaded to R2: ${finalUrl}`);
+                                }
+                            }
+                        } catch (singleMuxErr: any) {
+                            console.warn(`[Sync Endpoint] Local single-clip mux failed, falling back to AWS Lambda:`, singleMuxErr.message);
+                        } finally {
+                            try { if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) {}
+                        }
+
+                        if (muxSuccess) {
+                            if (task.asset_id) {
+                                await supabaseAdmin.from('assets').update({
+                                    url: finalUrl,
+                                    status: 'Draft',
+                                    metadata: {
+                                        audioUrl: finalAudioUrl
+                                    }
+                                }).eq('id', task.asset_id);
+                            }
+                            await supabaseAdmin.from('video_tasks').delete().eq('asset_id', task.asset_id);
+                            await sendPushNotification(
+                                task.user_id, 
+                                `🎬 15s Video Creative Ready!`, 
+                                `Your 15-second AI video ad with voiceover has been generated successfully.`, 
+                                "/dashboard/assets", 
+                                "asset_ready"
+                            ).catch(() => {});
+                            syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
+                            continue;
+                        }
+                    }
+
                     console.log(`[Sync Endpoint] All ${siblings.length} scenes completed. Initiating AWS Lambda stitching...`);
                     
                     try {
@@ -396,66 +461,6 @@ export async function POST(request: Request) {
 
                         console.log(`[Sync Endpoint] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambda} frames per lambda (total frames: ${totalFrames})`);
 
-                        // Fetch placeholder asset metadata to extract voiceover audioUrl if available
-                        let voiceoverAudioUrl: string | undefined = undefined;
-                        if (task.asset_id) {
-                            const { data: assetData } = await supabaseAdmin
-                                .from('assets')
-                                .select('metadata')
-                                .eq('id', task.asset_id)
-                                .maybeSingle();
-                            
-                            let rawAudio = assetData?.metadata?.audioUrl;
-
-                            // 1. If audioUrl is an async TTS task ID, poll and resolve it to HTTP R2 URL
-                            if (rawAudio && typeof rawAudio === 'string' && rawAudio.startsWith('tts:')) {
-                                const ttsTaskId = rawAudio.replace(/^tts:/, '');
-                                console.log(`[Sync Endpoint] Resolving async Gemini TTS task ${ttsTaskId}...`);
-                                try {
-                                    const { queryKieTask } = await import('@/utils/external-apis');
-                                    for (let t = 0; t < 15; t++) {
-                                        const ttsStatus = await queryKieTask(ttsTaskId);
-                                        if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
-                                            try {
-                                                const audioRes = await fetch(ttsStatus.resultUrl);
-                                                if (audioRes.ok) {
-                                                    const rawAudioBuffer = Buffer.from(await audioRes.arrayBuffer());
-                                                    const { ensureMp3AudioBuffer } = await import('@/utils/audio-converter');
-                                                    const audioBuffer = await ensureMp3AudioBuffer(rawAudioBuffer);
-                                                    const r2Key = `voiceover/${Date.now()}_${ttsTaskId}.mp3`;
-                                                    await r2.send(new PutObjectCommand({
-                                                        Bucket: R2_BUCKET,
-                                                        Key: r2Key,
-                                                        Body: audioBuffer,
-                                                        ContentType: 'audio/mpeg'
-                                                    }));
-                                                    rawAudio = `${R2_PUBLIC_URL}/${r2Key.replace(/^\//, '')}`;
-                                                    await supabaseAdmin.from('assets').update({
-                                                        metadata: { ...assetData?.metadata, audioUrl: rawAudio }
-                                                    }).eq('id', task.asset_id);
-                                                    console.log(`[Sync Endpoint] Gemini TTS resolved & persisted to R2: ${rawAudio}`);
-                                                } else {
-                                                    rawAudio = ttsStatus.resultUrl;
-                                                }
-                                            } catch (r2Err) {
-                                                rawAudio = ttsStatus.resultUrl;
-                                            }
-                                            break;
-                                        }
-                                        if (ttsStatus.state === 'fail') break;
-                                        await new Promise(r => setTimeout(r, 2000));
-                                    }
-                                } catch (e: any) {
-                                    console.warn(`[Sync Endpoint] TTS resolution error:`, e.message);
-                                }
-                            }
-
-                            // 2. Sanitize R2 URL (ensure r2.dev domain does NOT have redundant /adrolls-storage/ path segment)
-                            if (rawAudio && typeof rawAudio === 'string' && rawAudio.startsWith('http')) {
-                                voiceoverAudioUrl = rawAudio.replace('r2.dev/adrolls-storage/', 'r2.dev/');
-                            }
-                        }
-
                         const renderResult = await renderMediaOnLambda({
                             region,
                             functionName,
@@ -463,7 +468,7 @@ export async function POST(request: Request) {
                             composition: 'StitchComposition',
                             inputProps: {
                                 videoUrls: siblings.map(s => s.last_successful_task_id),
-                                ...(voiceoverAudioUrl ? { audioUrl: voiceoverAudioUrl } : {})
+                                ...(finalAudioUrl ? { audioUrl: finalAudioUrl } : {})
                             },
                             codec: 'h264',
                             imageFormat: 'jpeg',

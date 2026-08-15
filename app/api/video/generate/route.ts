@@ -749,6 +749,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
         creditsDeductedSuccess = true;
 
         // 4. Create Placeholder Asset (Spinning Card) in Supabase
+        const initialAudioUrl = body.audioUrl || null;
         const { data: newAsset, error: newAssetError } = await supabaseAdmin
             .from('assets')
             .insert({
@@ -758,6 +759,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                 status: 'Processing',
                 url: 'https://designs.adrolls.in/processing', // Temporary URL
                 caption: script.finalCaption || `${script.title}\n\n${script.dialogue}`,
+                metadata: initialAudioUrl ? { audioUrl: initialAudioUrl } : {},
                 created_at: new Date().toISOString()
             })
             .select()
