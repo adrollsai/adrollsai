@@ -3023,6 +3023,42 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* Pipeline & Lead Statuses Card */}
+            {isAdminLike && authRole !== 'agent' && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+                <div className="p-6 sm:p-7 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3.5">
+                      <div className="bg-indigo-100 text-indigo-600 p-3 rounded-full shadow-md shadow-indigo-500/5">
+                        <Layers size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-base text-slate-900">Pipeline & Lead Statuses</h4>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">
+                          Manage CRM pipeline stages & Meta Conversion API
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="pr-2">
+                      <span className="text-xs font-bold text-slate-700 block">Custom Stages & Meta CAPI Triggers</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Add required statuses, group into categories (Fresh, Ongoing, Not Interested), and map to Meta conversion events.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/dashboard/profile/stages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
+                      className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-sm shrink-0 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <Layers size={13} />
+                      <span>Manage Stages & CAPI</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                 <div className="p-6 sm:p-7">

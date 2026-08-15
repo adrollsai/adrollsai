@@ -2723,9 +2723,20 @@ END:VCARD\n`
 
                     {/* Specific Pipeline Stage Filter */}
                     <div className="relative flex-1">
-                        <label className="block text-[9px] font-black text-indigo-600 uppercase mb-1">
-                            {activeSection === 'ongoing' ? 'Filter Ongoing Stage' : activeSection === 'not_interested' ? 'Filter Not Interested Stage' : 'Specific Stage Filter'}
-                        </label>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="block text-[9px] font-black text-indigo-600 uppercase">
+                                {activeSection === 'ongoing' ? 'Filter Ongoing Stage' : activeSection === 'not_interested' ? 'Filter Not Interested Stage' : 'Specific Stage Filter'}
+                            </label>
+                            {isAdminLike && (
+                                <button
+                                    type="button"
+                                    onClick={() => router.push(`/dashboard/profile/stages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
+                                    className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                                >
+                                    ⚙️ Edit Stages
+                                </button>
+                            )}
+                        </div>
                         <select 
                             value={selectedSpecificStage} 
                             onChange={(e) => {
