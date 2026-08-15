@@ -19,7 +19,7 @@ import LeadHistoryModal from '@/components/LeadHistoryModal'
 import GroupLeadDistributionModal from '@/components/GroupLeadDistributionModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
-import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle } from '@/utils/pipeline-stages'
+import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle, extractStagesFromProfile } from '@/utils/pipeline-stages'
 
 
 
@@ -710,14 +710,12 @@ export default function CRMPage() {
       setUserId(user.id)
 
       // Fetch Fresh Profile Data first to get targetUserId
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads, custom_pipeline_stages').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads, badges').eq('id', user.id).single()
       const currentRole = profile?.role as any || 'admin'
       setRole(currentRole)
       setEnableDistribution(!!profile?.enable_distribution)
       setAutoCallNewLeads(!!profile?.auto_call_new_leads)
-      if (profile?.custom_pipeline_stages && Array.isArray(profile.custom_pipeline_stages) && profile.custom_pipeline_stages.length > 0) {
-        setCustomStages(profile.custom_pipeline_stages)
-      }
+      setCustomStages(extractStagesFromProfile(profile))
       
       const parentId = profile?.parent_id || profile?.agency_id
       if (parentId) setParentAdminId(parentId)

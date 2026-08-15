@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig } from '@/utils/pipeline-stages'
+import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, extractStagesFromProfile, encodeStagesToBadges } from '@/utils/pipeline-stages'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
 
     const { data: currentProfile } = await supabaseAdmin
       .from('profiles')
-      .select('id, role, parent_id, agency_id, custom_pipeline_stages')
+      .select('id, role, parent_id, agency_id')
       .eq('id', user.id)
       .single()
 
@@ -34,17 +34,17 @@ export async function GET(req: Request) {
       targetUserId = currentProfile.parent_id || currentProfile.agency_id || user.id
     }
 
-    const { data: targetProfile } = await supabaseAdmin
+    const { data: targetProfile, error: profErr } = await supabaseAdmin
       .from('profiles')
-      .select('custom_pipeline_stages')
+      .select('*')
       .eq('id', targetUserId)
       .single()
 
-    let stages: PipelineStageConfig[] = DEFAULT_PIPELINE_STAGES
-    if (targetProfile?.custom_pipeline_stages && Array.isArray(targetProfile.custom_pipeline_stages) && targetProfile.custom_pipeline_stages.length > 0) {
-      stages = targetProfile.custom_pipeline_stages
+    if (profErr) {
+      console.warn('[API Get Pipeline Stages] Profile fetch note:', profErr.message)
     }
 
+    const stages: PipelineStageConfig[] = extractStagesFromProfile(targetProfile)
     return NextResponse.json({ success: true, stages })
   } catch (error: any) {
     console.error('[API Get Pipeline Stages Error]:', error)
@@ -80,14 +80,40 @@ export async function POST(req: Request) {
       targetUserId = currentProfile.parent_id || currentProfile.agency_id || user.id
     }
 
-    const { error: updateErr } = await supabaseAdmin
+    // First, fetch current profile to obtain existing badges
+    const { data: targetProfile } = await supabaseAdmin
       .from('profiles')
-      .update({ custom_pipeline_stages: stages })
+      .select('id, badges')
+      .eq('id', targetUserId)
+      .single()
+
+    const updatedBadges = encodeStagesToBadges(targetProfile?.badges, stages)
+
+    // Attempt saving to custom_pipeline_stages first, with fallback to badges
+    let savedSuccessfully = false
+
+    try {
+      const { error: colErr } = await supabaseAdmin
+        .from('profiles')
+        .update({ custom_pipeline_stages: stages })
+        .eq('id', targetUserId)
+
+      if (!colErr) {
+        savedSuccessfully = true
+      }
+    } catch {
+      // Ignore column update error if column doesn't exist
+    }
+
+    // Always update badges as persistent backup / primary storage
+    const { error: badgeErr } = await supabaseAdmin
+      .from('profiles')
+      .update({ badges: updatedBadges })
       .eq('id', targetUserId)
 
-    if (updateErr) {
-      console.error('[API Save Pipeline Stages Error]:', updateErr)
-      return NextResponse.json({ error: updateErr.message }, { status: 500 })
+    if (badgeErr && !savedSuccessfully) {
+      console.error('[API Save Pipeline Stages Error]:', badgeErr)
+      return NextResponse.json({ error: badgeErr.message }, { status: 500 })
     }
 
     return NextResponse.json({ success: true, stages })

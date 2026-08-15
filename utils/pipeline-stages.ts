@@ -233,3 +233,42 @@ export function getStageBadgeStyle(stageName?: string | null, customStages: Pipe
   if (category === 'trash') return { badgeBg: 'bg-slate-100', badgeText: 'text-slate-600' }
   return { badgeBg: 'bg-indigo-100', badgeText: 'text-indigo-800' }
 }
+
+/**
+ * Extract configured stages from a Supabase profile record.
+ * Handles custom_pipeline_stages column as well as fallback badges storage.
+ */
+export function extractStagesFromProfile(profile?: any): PipelineStageConfig[] {
+  if (!profile) return DEFAULT_PIPELINE_STAGES
+
+  if (profile.custom_pipeline_stages && Array.isArray(profile.custom_pipeline_stages) && profile.custom_pipeline_stages.length > 0) {
+    return profile.custom_pipeline_stages
+  }
+
+  if (profile.badges && Array.isArray(profile.badges)) {
+    const stageBadge = profile.badges.find((b: string) => typeof b === 'string' && b.startsWith('__PIPELINE_STAGES__:'))
+    if (stageBadge) {
+      try {
+        const jsonStr = stageBadge.replace('__PIPELINE_STAGES__:', '')
+        const parsed = JSON.parse(jsonStr)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed
+        }
+      } catch (e) {
+        console.error('[extractStagesFromProfile] Failed to parse stages from badges:', e)
+      }
+    }
+  }
+
+  return DEFAULT_PIPELINE_STAGES
+}
+
+/**
+ * Encode pipeline stages into badges array
+ */
+export function encodeStagesToBadges(currentBadges: string[] | null | undefined, stages: PipelineStageConfig[]): string[] {
+  const existing = Array.isArray(currentBadges) ? currentBadges.filter(b => typeof b === 'string' && !b.startsWith('__PIPELINE_STAGES__:')) : []
+  const newBadge = `__PIPELINE_STAGES__:${JSON.stringify(stages)}`
+  return [...existing, newBadge]
+}
+

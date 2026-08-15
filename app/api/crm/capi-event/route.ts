@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { sendMetaCapiEvent } from '@/utils/meta-capi'
-import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig } from '@/utils/pipeline-stages'
+import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, extractStagesFromProfile } from '@/utils/pipeline-stages'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     // 2. Fetch Owner Profile for Facebook Token, Pixel ID & Custom Stages Config
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('id, parent_id, agency_id, pixel_id, facebook_token, custom_pipeline_stages, raw_user_meta_data')
+      .select('id, parent_id, agency_id, pixel_id, facebook_token, badges')
       .eq('id', ownerId)
       .single()
 
@@ -51,14 +51,15 @@ export async function POST(req: Request) {
     let pixelId = profile?.pixel_id
 
     // If subaccount without direct credentials, check parent admin
+    let parentProf: any = null
     if ((!facebookToken || !pixelId) && (profile?.parent_id || profile?.agency_id)) {
       const parentId = profile.parent_id || profile.agency_id
-      const { data: parentProf } = await supabaseAdmin
+      const { data: pData } = await supabaseAdmin
         .from('profiles')
-        .select('pixel_id, facebook_token, custom_pipeline_stages')
+        .select('pixel_id, facebook_token, badges')
         .eq('id', parentId)
         .single()
-
+      parentProf = pData
       if (parentProf?.facebook_token) facebookToken = parentProf.facebook_token
       if (parentProf?.pixel_id) pixelId = parentProf.pixel_id
     }
@@ -68,10 +69,7 @@ export async function POST(req: Request) {
     }
 
     // 3. Resolve Stages Config
-    let stagesConfig: PipelineStageConfig[] = DEFAULT_PIPELINE_STAGES
-    if (profile?.custom_pipeline_stages && Array.isArray(profile.custom_pipeline_stages) && profile.custom_pipeline_stages.length > 0) {
-      stagesConfig = profile.custom_pipeline_stages
-    }
+    const stagesConfig: PipelineStageConfig[] = extractStagesFromProfile(profile || parentProf)
 
     // 4. Check if current stage has CAPI enabled
     const matchedStage = stagesConfig.find(s => s.name.trim().toLowerCase() === stageName.trim().toLowerCase())

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { 
   ArrowLeft, Plus, Trash2, Check, Sparkles, RefreshCw, 
-  Activity, ShieldCheck, HelpCircle, Layers, Sliders, Save, AlertCircle 
+  Layers, Save, AlertCircle, CheckCircle2, ShieldCheck, Zap
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig } from '@/utils/pipeline-stages'
@@ -170,40 +170,40 @@ export default function PipelineStagesPage() {
   const capiActiveCount = stages.filter(s => s.enableCapi).length
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 sm:p-8 max-w-6xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#F8FAFC] pb-52 pt-8 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto space-y-6 text-slate-900">
       
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div>
           <div className="flex items-center gap-3">
             <Link
               href="/dashboard/profile"
-              className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+              className="p-2.5 rounded-2xl bg-white border border-slate-200 shadow-xs text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors"
             >
               <ArrowLeft size={18} />
             </Link>
-            <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2">
-              <Layers className="text-blue-500" /> Pipeline Stages & Meta CAPI
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 flex items-center gap-2.5 tracking-tight">
+              <Layers className="text-blue-600" /> Pipeline Stages & Meta CAPI
             </h1>
           </div>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1 pl-11">
-            Customize stages for your business, organize into <strong>Fresh</strong>, <strong>Ongoing</strong>, and <strong>Not Interested</strong>, and configure automatic <strong>Meta Conversion API (CAPI)</strong> events.
+          <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1 pl-12">
+            Customize lead statuses, categorize into <strong>Fresh</strong>, <strong>Ongoing</strong>, and <strong>Not Interested</strong>, and configure automatic <strong>Meta Conversion API (CAPI)</strong> events.
           </p>
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-auto">
           <button
             onClick={handleResetToDefaults}
-            className="px-3.5 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-xs font-bold text-slate-300 transition-colors flex items-center gap-1.5"
-            title="Reset to Real Estate Defaults"
+            className="px-4 py-2.5 rounded-xl border border-slate-200/80 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+            title="Reset to Standard Real Estate Defaults"
           >
-            <RefreshCw size={13} />
+            <RefreshCw size={13} className="text-slate-500" />
             <span>Reset Defaults</span>
           </button>
           <button
             onClick={() => handleSave()}
             disabled={saving}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-xs font-extrabold shadow-lg shadow-blue-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-xs font-extrabold shadow-md shadow-blue-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer active:scale-95"
           >
             <Save size={14} />
             <span>{saving ? 'Saving...' : 'Save Settings'}</span>
@@ -211,36 +211,36 @@ export default function PipelineStagesPage() {
         </div>
       </div>
 
-      {/* Summary KPI Badges */}
+      {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-2xl">
+        <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Stages</span>
-          <span className="text-2xl font-black text-white mt-0.5 block">{stages.length}</span>
+          <span className="text-2xl font-black text-slate-900 mt-0.5 block">{stages.length}</span>
         </div>
-        <div className="bg-blue-950/40 border border-blue-800/50 p-4 rounded-2xl">
-          <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">Fresh Bucket</span>
-          <span className="text-2xl font-black text-blue-300 mt-0.5 block">{freshCount}</span>
+        <div className="bg-blue-50/70 border border-blue-200/80 p-4 rounded-2xl shadow-xs">
+          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">Fresh Bucket</span>
+          <span className="text-2xl font-black text-blue-900 mt-0.5 block">{freshCount}</span>
         </div>
-        <div className="bg-indigo-950/40 border border-indigo-800/50 p-4 rounded-2xl">
-          <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Ongoing Bucket</span>
-          <span className="text-2xl font-black text-indigo-300 mt-0.5 block">{ongoingCount}</span>
+        <div className="bg-indigo-50/70 border border-indigo-200/80 p-4 rounded-2xl shadow-xs">
+          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Ongoing Bucket</span>
+          <span className="text-2xl font-black text-indigo-900 mt-0.5 block">{ongoingCount}</span>
         </div>
-        <div className="bg-emerald-950/40 border border-emerald-800/50 p-4 rounded-2xl">
-          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">Meta CAPI Triggers</span>
-          <span className="text-2xl font-black text-emerald-400 mt-0.5 block">{capiActiveCount} Active</span>
+        <div className="bg-emerald-50/70 border border-emerald-200/80 p-4 rounded-2xl shadow-xs">
+          <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">Meta CAPI Triggers</span>
+          <span className="text-2xl font-black text-emerald-900 mt-0.5 block">{capiActiveCount} Active</span>
         </div>
       </div>
 
       {/* Main Stages Table & Editor */}
-      <div className="bg-slate-800/90 border border-slate-700/80 rounded-3xl p-5 sm:p-7 shadow-xl space-y-5">
-        <div className="flex items-center justify-between">
+      <div className="bg-white border border-slate-200/80 rounded-3xl p-5 sm:p-7 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-base sm:text-lg font-extrabold text-white">Configured Stages</h2>
-            <p className="text-xs text-slate-400">Map stages to their primary section in CRM and set Meta CAPI dispatch rules.</p>
+            <h2 className="text-base sm:text-lg font-extrabold text-slate-900">Configured Stages</h2>
+            <p className="text-xs text-slate-500 font-medium">Map stages to their primary section in CRM and set Meta CAPI dispatch rules.</p>
           </div>
           <button
             onClick={() => setIsAddingNew(!isAddingNew)}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+            className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-95"
           >
             <Plus size={14} />
             <span>Add Custom Stage</span>
@@ -249,28 +249,28 @@ export default function PipelineStagesPage() {
 
         {/* Add Stage Form Drawer */}
         {isAddingNew && (
-          <div className="bg-slate-900 border border-blue-500/40 p-4 sm:p-5 rounded-2xl space-y-4 animate-in fade-in slide-in-from-top-2">
-            <h3 className="text-sm font-black text-blue-400 flex items-center gap-1.5">
-              <Plus size={14} /> Create New Pipeline Stage
+          <div className="bg-slate-50 border border-blue-300 p-4 sm:p-5 rounded-2xl space-y-4 animate-in fade-in slide-in-from-top-2 shadow-xs">
+            <h3 className="text-sm font-black text-blue-900 flex items-center gap-1.5">
+              <Plus size={14} className="text-blue-600" /> Create New Pipeline Stage
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Stage Name</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Stage Name</label>
                 <input
                   type="text"
                   placeholder="e.g. Virtual Demo Done"
                   value={newStageName}
                   onChange={(e) => setNewStageName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-xs font-bold text-white rounded-xl px-3 py-2.5 outline-none focus:border-blue-500"
+                  className="w-full bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-xl px-3 py-2.5 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-2xs"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">CRM Section</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">CRM Section</label>
                 <select
                   value={newStageCategory}
                   onChange={(e) => setNewStageCategory(e.target.value as any)}
-                  className="w-full bg-slate-800 border border-slate-700 text-xs font-bold text-white rounded-xl px-3 py-2.5 outline-none focus:border-blue-500 cursor-pointer"
+                  className="w-full bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-xl px-3 py-2.5 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-2xs cursor-pointer"
                 >
                   <option value="ongoing">Ongoing (Active Pipeline)</option>
                   <option value="fresh">Fresh (New Leads)</option>
@@ -279,9 +279,9 @@ export default function PipelineStagesPage() {
               </div>
 
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Meta CAPI Trigger</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Meta CAPI Trigger</label>
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1.5 text-xs text-slate-300 font-bold cursor-pointer py-2">
+                  <label className="flex items-center gap-1.5 text-xs text-slate-700 font-bold cursor-pointer py-2">
                     <input
                       type="checkbox"
                       checked={newStageEnableCapi}
@@ -293,26 +293,26 @@ export default function PipelineStagesPage() {
                   {newStageEnableCapi && (
                     <input
                       type="text"
-                      placeholder="Event Name"
+                      placeholder="Event Name (e.g. Schedule)"
                       value={newStageCapiEvent}
                       onChange={(e) => setNewStageCapiEvent(e.target.value)}
-                      className="flex-1 bg-slate-800 border border-slate-700 text-xs font-bold text-white rounded-xl px-3 py-2 outline-none focus:border-blue-500"
+                      className="flex-1 bg-white border border-slate-200 text-xs font-bold text-slate-800 rounded-xl px-3 py-2 outline-none focus:border-blue-500 shadow-2xs"
                     />
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
               <button
                 onClick={() => setIsAddingNew(false)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddStage}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-xl text-xs font-bold"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
               >
                 Save & Add Stage
               </button>
@@ -320,11 +320,11 @@ export default function PipelineStagesPage() {
           </div>
         )}
 
-        {/* Stages List */}
-        <div className="overflow-x-auto border border-slate-700/80 rounded-2xl bg-slate-900/60">
+        {/* Stages List Table */}
+        <div className="overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-2xs">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-800/80 border-b border-slate-700 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+              <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[10px] font-black text-slate-400 uppercase tracking-wider">
                 <th className="py-3 px-4">Stage Name</th>
                 <th className="py-3 px-4">CRM Primary Section</th>
                 <th className="py-3 px-4">Meta Conversion API (CAPI)</th>
@@ -332,53 +332,55 @@ export default function PipelineStagesPage() {
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-100">
               {stages.map((stage) => {
                 return (
-                  <tr key={stage.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3 px-4 font-bold text-white">
+                  <tr key={stage.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-slate-800">
                       <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                        <span className={`w-2.5 h-2.5 rounded-full ${
+                          stage.category === 'fresh' ? 'bg-emerald-500' : stage.category === 'not_interested' ? 'bg-rose-500' : 'bg-blue-500'
+                        }`}></span>
                         <span>{stage.name}</span>
                         {stage.isCustom && (
-                          <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-extrabold text-[9px]">Custom</span>
+                          <span className="px-1.5 py-0.5 rounded bg-purple-50 border border-purple-200 text-purple-700 font-extrabold text-[9px]">Custom</span>
                         )}
                       </div>
                     </td>
 
-                    <td className="py-3 px-4">
+                    <td className="py-3.5 px-4">
                       <select
                         value={stage.category}
                         onChange={(e) => handleUpdateCategory(stage.id, e.target.value as any)}
-                        className={`border rounded-lg text-xs font-black py-1 px-2 cursor-pointer outline-none ${
+                        className={`border rounded-lg text-xs font-extrabold py-1 px-2.5 cursor-pointer outline-none transition-colors ${
                           stage.category === 'fresh'
-                            ? 'bg-blue-500/10 border-blue-500/40 text-blue-300'
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                             : stage.category === 'ongoing'
-                            ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-300'
-                            : 'bg-rose-500/10 border-rose-500/40 text-rose-300'
+                            ? 'bg-blue-50 border-blue-200 text-blue-800'
+                            : 'bg-rose-50 border-rose-200 text-rose-800'
                         }`}
                       >
-                        <option value="fresh" className="bg-slate-900 text-white">Fresh Leads</option>
-                        <option value="ongoing" className="bg-slate-900 text-white">Ongoing Pipeline</option>
-                        <option value="not_interested" className="bg-slate-900 text-white">Not Interested / Lost</option>
+                        <option value="fresh">Fresh Leads</option>
+                        <option value="ongoing">Ongoing Pipeline</option>
+                        <option value="not_interested">Not Interested / Lost</option>
                       </select>
                     </td>
 
-                    <td className="py-3 px-4">
+                    <td className="py-3.5 px-4">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input
                           type="checkbox"
                           checked={!!stage.enableCapi}
                           onChange={() => handleToggleCapi(stage.id)}
-                          className="w-4 h-4 rounded text-emerald-500 focus:ring-0 cursor-pointer"
+                          className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
                         />
-                        <span className={`text-xs font-bold ${stage.enableCapi ? 'text-emerald-400' : 'text-slate-500'}`}>
-                          {stage.enableCapi ? '⚡ Enabled' : 'Disabled'}
+                        <span className={`text-xs font-bold flex items-center gap-1 ${stage.enableCapi ? 'text-blue-700' : 'text-slate-400'}`}>
+                          {stage.enableCapi ? <><Zap size={12} className="text-amber-500 fill-amber-500" /> Enabled</> : 'Disabled'}
                         </span>
                       </label>
                     </td>
 
-                    <td className="py-3 px-4">
+                    <td className="py-3.5 px-4">
                       {stage.enableCapi ? (
                         <div className="flex items-center gap-1.5">
                           <input
@@ -387,18 +389,18 @@ export default function PipelineStagesPage() {
                             onChange={(e) => handleUpdateCapiEventName(stage.id, e.target.value)}
                             onBlur={() => handleSave()}
                             placeholder="e.g. Schedule"
-                            className="bg-slate-800 border border-slate-700 text-xs font-bold text-emerald-300 rounded-lg px-2.5 py-1 outline-none focus:border-emerald-500 max-w-[150px]"
+                            className="bg-slate-50 border border-slate-200/80 text-xs font-bold text-blue-900 rounded-lg px-2.5 py-1 outline-none focus:border-blue-500 max-w-[160px] shadow-2xs"
                           />
                         </div>
                       ) : (
-                        <span className="text-slate-500 text-[11px] italic">Not Dispatched</span>
+                        <span className="text-slate-400 text-[11px] font-medium italic">Not Dispatched</span>
                       )}
                     </td>
 
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3.5 px-4 text-right">
                       <button
                         onClick={() => handleDeleteStage(stage.id)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                         title="Delete Stage"
                       >
                         <Trash2 size={14} />
