@@ -99,7 +99,7 @@ export async function GET(req: Request) {
     }
 
     const pageIndices = Array.from({ length: totalPagesNeeded }, (_, i) => i)
-    const pageChunks = chunkArray(pageIndices, 8)
+    const pageChunks = chunkArray(pageIndices, 16)
     let allLeads: any[] = []
 
     for (const chunk of pageChunks) {
@@ -110,6 +110,7 @@ export async function GET(req: Request) {
         const filteredQuery = applyFilters(baseQuery)
         return filteredQuery
           .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
           .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1)
       })
       const results = await Promise.all(chunkPromises)

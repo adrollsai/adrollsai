@@ -212,7 +212,7 @@ export async function GET(req: Request) {
         }
 
         const pageIndices = Array.from({ length: totalPages }, (_, i) => i)
-        const leadChunks = chunkArray(pageIndices, 8)
+        const leadChunks = chunkArray(pageIndices, 16)
         let rawLeadsBatch: any[] = []
 
         for (const chunk of leadChunks) {
@@ -221,6 +221,7 @@ export async function GET(req: Request) {
                     .from('leads')
                     .select(leadFields)
                     .order('created_at', { ascending: false })
+                    .order('id', { ascending: false })
                     .range(pageIdx * pageSize, (pageIdx + 1) * pageSize - 1)
                 return applyLeadFilters(q)
             })

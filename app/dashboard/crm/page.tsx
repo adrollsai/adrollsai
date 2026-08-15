@@ -21,7 +21,7 @@ import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle } from '@/utils/pipeline-stages'
 
-import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
+
 
 const STAGES = [
   'New Lead',
@@ -161,48 +161,29 @@ export default function CRMPage() {
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(role)
 
-  // --- CRM STATE ---
-  const [leads, setLeads] = useState<any[]>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getLocalCache<any>('crm_last_leads_cache')
-      if (cached && Array.isArray(cached) && cached.length > 0) return cached
-    }
-    return []
-  })
-  const [totalLeadsCount, setTotalLeadsCount] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const savedCount = localStorage.getItem('crm_total_count')
-      if (savedCount && !isNaN(parseInt(savedCount, 10))) return parseInt(savedCount, 10)
-      const cached = getLocalCache<any>('crm_last_leads_cache')
-      if (cached && Array.isArray(cached) && cached.length > 0) return cached.length
-    }
-    return 0
-  })
-  const [properties, setProperties] = useState<any[]>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getLocalCache<any>('crm_properties_cache')
-      if (cached && Array.isArray(cached) && cached.length > 0) return cached
-    }
-    return []
-  })
-  const [campaigns, setCampaigns] = useState<any[]>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getLocalCache<any>('crm_campaigns_cache')
-      if (cached && Array.isArray(cached) && cached.length > 0) return cached
-    }
-    return []
-  })
-  const [loading, setLoading] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = getLocalCache<any>('crm_last_leads_cache')
-      if (cached && Array.isArray(cached) && cached.length > 0) return false
-    }
-    return true
-  })
+  // --- CRM STATE (Direct Live Data - No Local Storage Caching) ---
+  const [leads, setLeads] = useState<any[]>([])
+  const [totalLeadsCount, setTotalLeadsCount] = useState<number>(0)
+  const [properties, setProperties] = useState<any[]>([])
+  const [campaigns, setCampaigns] = useState<any[]>([])
+  const [loading, setLoading] = useState<boolean>(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSyncingCalls, setIsSyncingCalls] = useState(false)
   const [showMobileCrmActions, setShowMobileCrmActions] = useState(false)
   const [enableDistribution, setEnableDistribution] = useState(false)
+
+  // Clean up legacy CRM cache keys from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const legacyKeys = ['crm_last_leads_cache', 'crm_total_count', 'crm_properties_cache', 'crm_campaigns_cache']
+        legacyKeys.forEach(k => localStorage.removeItem(k))
+        Object.keys(localStorage).forEach(k => {
+          if (k.startsWith('crm_cache_')) localStorage.removeItem(k)
+        })
+      } catch (e) {}
+    }
+  }, [])
   const [assignedCampaigns, setAssignedCampaigns] = useState<string[]>([])
   const [activeMediaModal, setActiveMediaModal] = useState<any>(null)
 
@@ -260,6 +241,25 @@ export default function CRMPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string; attemptDate?: Date | null } | null>(null)
   const [selectedCampaign, setSelectedCampaign] = useState('')
+  const [isCampaignFilterOpen, setIsCampaignFilterOpen] = useState(false)
+  const [campaignFilterSearch, setCampaignFilterSearch] = useState('')
+  const campaignFilterRef = useRef<HTMLDivElement>(null)
+
+  // Click outside listener to close campaign dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (campaignFilterRef.current && !campaignFilterRef.current.contains(event.target as Node)) {
+        setIsCampaignFilterOpen(false)
+      }
+    }
+    if (isCampaignFilterOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isCampaignFilterOpen])
+
   const [selectedForm, setSelectedForm] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [isMobileControlsCollapsed, setIsMobileControlsCollapsed] = useState(true)
@@ -742,8 +742,6 @@ export default function CRMPage() {
         const invData = await invRes.json()
         if (invData && invData.properties && Array.isArray(invData.properties)) {
           setProperties(invData.properties)
-          setLocalCache('crm_properties_cache', invData.properties)
-          try { localStorage.setItem(`properties_cache_${targetUserId}`, JSON.stringify(invData.properties)); } catch(e) {}
         } else {
           const workspaceOwnerIds = Array.from(new Set([targetUserId, parentId, user.id].filter(Boolean)))
           const { data: propsData } = await supabase
@@ -783,13 +781,7 @@ export default function CRMPage() {
       }
       setAssignedCampaigns(activeCampaigns)
 
-      const cacheKey = `crm_cache_${user.id}_${targetUserId}`;
-      const cachedLeads = force ? [] : getLocalCache<any>(cacheKey);
-
-      if (cachedLeads && cachedLeads.length > 0) {
-          setLeads(prev => prev.length === 0 ? cachedLeads : prev);
-          if (!silent) setLoading(false);
-      } else if (leads.length === 0 && !silent) {
+      if (!silent && leads.length === 0) {
           setLoading(true);
       }
       if (force && !silent) setIsRefreshing(true);
@@ -844,7 +836,6 @@ export default function CRMPage() {
             const campaignData = await campRes.json()
             if (campaignData && campaignData.campaigns) {
               setCampaigns(campaignData.campaigns)
-              setLocalCache('crm_campaigns_cache', campaignData.campaigns)
             }
           } catch (cErr) {}
         }
@@ -857,11 +848,8 @@ export default function CRMPage() {
         }
         if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads) && leadsJson.leads.length > 0) {
           setLeads(leadsJson.leads)
-          setLocalCache(cacheKey, leadsJson.leads.slice(0, 500))
-          setLocalCache('crm_last_leads_cache', leadsJson.leads.slice(0, 500))
           const count = leadsJson.totalCount !== undefined ? leadsJson.totalCount : leadsJson.leads.length
           setTotalLeadsCount(count)
-          if (typeof window !== 'undefined') localStorage.setItem('crm_total_count', count.toString())
         } else {
           // DIRECT SUPABASE FALLBACK ONLY IF API ROUTE EMPTY
           const workspaceOwnerIds = Array.from(new Set([targetUserId, parentId, user.id].filter(Boolean)))
@@ -901,11 +889,8 @@ export default function CRMPage() {
               return { ...l, custom_fields: cf }
             })
             setLeads(parsed)
-            setLocalCache(cacheKey, parsed.slice(0, 500))
-            setLocalCache('crm_last_leads_cache', parsed.slice(0, 500))
             const cnt = parsed.length
             setTotalLeadsCount(cnt)
-            if (typeof window !== 'undefined') localStorage.setItem('crm_total_count', cnt.toString())
           }
         }
       } catch (err) {
@@ -1193,11 +1178,6 @@ export default function CRMPage() {
                       // Prevent duplicates if manual add triggered exactly at same time
                       if (prev.find(l => l.id === newLead.id)) return prev;
                       const updated = [newLead, ...prev];
-                      
-                      // Update cache silently with size limit
-                      const cacheKey = `crm_cache_${userId}`
-                      setLocalCache(cacheKey, updated.slice(0, 150))
-                      
                       return updated;
                  })
             }
@@ -1220,22 +1200,12 @@ export default function CRMPage() {
                 if (index === -1) return prev;
                 const updated = [...prev]
                 updated[index] = { ...updated[index], ...updatedLead }
-                
-                // Update cache silently with size limit
-                const cacheKey = `crm_cache_${userId}`
-                setLocalCache(cacheKey, updated.slice(0, 150))
-                
                 return updated;
             })
         } else if (payload.eventType === 'DELETE') {
             const oldId = payload.old.id
             setLeads(prev => {
                 const updated = prev.filter(l => l.id !== oldId)
-                
-                // Update cache silently with size limit
-                const cacheKey = `crm_cache_${userId}`
-                setLocalCache(cacheKey, updated.slice(0, 150))
-                
                 return updated;
             })
         }
@@ -2634,14 +2604,111 @@ END:VCARD\n`
                         )}
                     </div>
 
-                    {/* Campaign Filter */}
-                    <div className="relative flex-1">
+                    {/* Searchable Campaign Filter */}
+                    <div className="relative flex-1" ref={campaignFilterRef}>
                         <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Campaign</label>
-                        <select value={selectedCampaign} onChange={(e) => setSelectedCampaign(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
-                            <option value="">All Campaigns</option>
-                            {uniqueCampaigns.map((camp, i) => <option key={i} value={camp}>{camp}</option>)}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsCampaignFilterOpen(!isCampaignFilterOpen)
+                                if (!isCampaignFilterOpen) setCampaignFilterSearch('')
+                            }}
+                            className={`w-full bg-slate-50 hover:bg-slate-100/80 border ${
+                                selectedCampaign ? 'border-blue-500 bg-blue-50/40 text-blue-900' : 'border-slate-200/60 text-slate-700'
+                            } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate flex items-center justify-between shadow-xs`}
+                        >
+                            <span className="truncate flex-1">
+                                {selectedCampaign ? selectedCampaign : 'All Campaigns'}
+                            </span>
+                            {selectedCampaign ? (
+                                <span
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedCampaign('')
+                                        setCurrentPage(1)
+                                    }}
+                                    className="p-0.5 hover:bg-blue-200/60 rounded-md text-blue-600 ml-1 transition-colors shrink-0"
+                                    title="Clear Campaign Filter"
+                                >
+                                    <X size={13} />
+                                </span>
+                            ) : (
+                                <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${isCampaignFilterOpen ? 'rotate-180' : ''}`} />
+                            )}
+                        </button>
+
+                        {isCampaignFilterOpen && (
+                            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200/80 rounded-2xl shadow-2xl z-50 p-2 space-y-1.5 min-w-[260px] animate-in fade-in zoom-in-95 duration-150">
+                                {/* Search input */}
+                                <div className="relative">
+                                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        autoFocus
+                                        placeholder="Search campaigns..."
+                                        value={campaignFilterSearch}
+                                        onChange={(e) => setCampaignFilterSearch(e.target.value)}
+                                        className="w-full pl-8 pr-7 py-2 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                                    />
+                                    {campaignFilterSearch && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setCampaignFilterSearch('')}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                                        >
+                                            <X size={12} />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Options List */}
+                                <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar pr-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedCampaign('')
+                                            setCurrentPage(1)
+                                            setIsCampaignFilterOpen(false)
+                                        }}
+                                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
+                                            !selectedCampaign ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <span>All Campaigns</span>
+                                        {!selectedCampaign && <CheckCircle2 size={13} />}
+                                    </button>
+
+                                    {uniqueCampaigns
+                                        .filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim()))
+                                        .map((camp, idx) => {
+                                            const isSelected = selectedCampaign === camp
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedCampaign(camp)
+                                                        setCurrentPage(1)
+                                                        setIsCampaignFilterOpen(false)
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                                                        isSelected ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                                                    }`}
+                                                >
+                                                    <span className="truncate pr-2">{camp}</span>
+                                                    {isSelected && <CheckCircle2 size={13} className="shrink-0" />}
+                                                </button>
+                                            )
+                                        })}
+
+                                    {uniqueCampaigns.filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim())).length === 0 && (
+                                        <div className="py-4 text-center text-xs font-semibold text-slate-400">
+                                            No matching campaigns found
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Form / Source Filter */}
