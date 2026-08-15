@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck, Eye } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck, Eye, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { toast } from 'sonner'
@@ -310,6 +310,25 @@ export default function AutomationPage() {
   const [selectedHeaderFormat, setSelectedHeaderFormat] = useState<'IMAGE' | 'VIDEO' | 'DOCUMENT' | null>(null)
   const [selectedHeaderMediaUrl, setSelectedHeaderMediaUrl] = useState('')
   const [templateVarValues, setTemplateVarValues] = useState<Record<string, string>>({})
+
+  // Resolve template body text and detected parameters
+  const getSelectedTemplateBody = () => {
+    if (selectedTemplate === 'custom') return ''
+    const tpl = templates.find(x => x.name === selectedTemplate)
+    const bodyComp = tpl?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')
+    if (bodyComp?.text) return bodyComp.text
+    return TEMPLATE_BODY_MAP[selectedTemplate] || ''
+  }
+
+  const detectedTemplateVars = useMemo<number[]>(() => {
+    const body = getSelectedTemplateBody()
+    if (!body) return []
+    const matches = body.match(/\{\{(\d+)\}\}/g) || []
+    const nums: number[] = matches.map((m: string) => parseInt(m.replace(/\D/g, ''), 10))
+    return Array.from(new Set(nums)).sort((a: number, b: number) => a - b)
+  }, [selectedTemplate, templates])
+
+  const selectedTemplateBody = getSelectedTemplateBody()
 
   // Admin & Billing Check states
   const [isAdmin, setIsAdmin] = useState(false)
@@ -824,6 +843,19 @@ export default function AutomationPage() {
       return
     }
 
+    const currentChat = chats.find(c => c.id === selectedChatId)
+    const recipientName = currentChat?.recipient_name && currentChat.recipient_name.trim() !== 'Customer' ? currentChat.recipient_name.trim() : (leadInfo?.name || 'there')
+    const bizName = profile?.business_name || 'our team'
+
+    const varArray = detectedTemplateVars.map(vNum => {
+      const val = templateVarValues[vNum.toString()]
+      if (val !== undefined && val !== null && val.trim() !== '') return val.trim()
+      if (vNum === 1) return recipientName
+      if (vNum === 2) return bizName
+      if (vNum === 3) return 'your inquiry'
+      return 'details'
+    })
+
     try {
       const res = await fetch(buildApiUrl('/api/whatsapp/chat'), {
         method: 'POST',
@@ -833,7 +865,7 @@ export default function AutomationPage() {
           templateName,
           language,
           headerMediaUrl: selectedHeaderMediaUrl,
-          variableValues: Object.values(templateVarValues)
+          variableValues: varArray
         })
       })
       const data = await res.json()
@@ -841,6 +873,7 @@ export default function AutomationPage() {
         setMessages(prev => [...prev, data.message])
         setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, last_message_text: `Sent Template: ${templateName}`, updated_at: new Date().toISOString() } : c))
         setCustomTemplateName('')
+        setShowTemplateInput(false)
       } else {
         alert("Failed to send template: " + data.error)
       }
@@ -1608,6 +1641,97 @@ export default function AutomationPage() {
                             onMediaSelect={(url: string) => setSelectedHeaderMediaUrl(url)}
                           />
                         )}
+
+                        {/* Template Variables Customizer */}
+                        {detectedTemplateVars.length > 0 && (
+                          <div className="bg-blue-50/60 border border-blue-200/80 p-3.5 rounded-2xl space-y-3">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-black text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                                <SlidersHorizontal size={13} className="text-blue-600" />
+                                Customize Variables ({detectedTemplateVars.length} Detected)
+                              </span>
+                              <span className="text-[9px] font-bold text-blue-600">Manual Field Values</span>
+                            </div>
+
+                            <div className="space-y-2.5">
+                              {detectedTemplateVars.map(vNum => {
+                                const vKey = vNum.toString()
+                                const currentVal = templateVarValues[vKey] !== undefined ? templateVarValues[vKey] : (
+                                  vNum === 1 ? (selectedChat?.recipient_name && selectedChat.recipient_name !== 'Customer' ? selectedChat.recipient_name : (leadInfo?.name || 'there')) :
+                                  vNum === 2 ? (profile?.business_name || 'our team') :
+                                  vNum === 3 ? 'your inquiry' : ''
+                                )
+                                return (
+                                  <div key={vNum} className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[10px] font-black text-blue-600 uppercase">
+                                        Variable {"{{" + vNum + "}}"} value:
+                                      </label>
+                                      {/* Quick Fill Preset Buttons */}
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <button
+                                          type="button"
+                                          onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: selectedChat?.recipient_name || leadInfo?.name || 'Customer' }))}
+                                          className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer"
+                                        >
+                                          👤 Name
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: profile?.business_name || 'Our Company' }))}
+                                          className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer"
+                                        >
+                                          🏢 Business
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: selectedChat?.recipient_phone || leadInfo?.phone || '' }))}
+                                          className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer"
+                                        >
+                                          📱 Phone
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: 'your inquiry' }))}
+                                          className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer"
+                                        >
+                                          💬 Inquiry
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <input
+                                      type="text"
+                                      value={currentVal}
+                                      onChange={(e) => setTemplateVarValues(prev => ({ ...prev, [vKey]: e.target.value }))}
+                                      placeholder={`Enter custom value for {{${vNum}}}...`}
+                                      className="w-full bg-slate-50 border border-slate-200/80 px-3 py-2 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+                                    />
+                                  </div>
+                                )
+                              })}
+                            </div>
+
+                            {/* Live Message Preview Snippet */}
+                            {selectedTemplateBody && (
+                              <div className="bg-white/80 p-3 rounded-xl border border-blue-100 text-xs text-slate-700 leading-relaxed space-y-1">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Live Message Preview:</span>
+                                <p className="whitespace-pre-wrap font-medium">
+                                  {(() => {
+                                    let preview = selectedTemplateBody
+                                    detectedTemplateVars.forEach(vNum => {
+                                      const defaultVal = vNum === 1 ? (selectedChat?.recipient_name || 'Customer') : vNum === 2 ? (profile?.business_name || 'our team') : `{{${vNum}}}`
+                                      const val = templateVarValues[vNum.toString()] || defaultVal
+                                      preview = preview.replace(new RegExp(`\\{\\{${vNum}\\}\\}`, 'g'), val)
+                                    })
+                                    return preview
+                                  })()}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {selectedTemplate === 'custom' && (
                           <>
                             <div className="flex-1">
