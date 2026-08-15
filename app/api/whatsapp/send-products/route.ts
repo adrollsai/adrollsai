@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 
 function isRealPublicImageUrl(url: string | null | undefined): boolean {
     if (!url) return false;
@@ -19,42 +20,49 @@ export async function GET(req: Request) {
         const url = new URL(req.url)
         const impersonateId = url.searchParams.get('impersonate')
 
-        // Resolve the owner user ID (for agents, use parent's credentials and inventory; for impersonation, use impersonated user)
-        let ownerUserId = user.id
-        if (impersonateId && impersonateId !== user.id) {
-            const { data: authProfile } = await supabase
-                .from('profiles')
-                .select('role')
-                .eq('id', user.id)
-                .single()
-            const authRole = authProfile?.role?.toLowerCase() || ''
-            if (['super_admin', 'agency', 'admin'].includes(authRole)) {
-                ownerUserId = impersonateId
-            }
-        } else {
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('role, parent_id, agency_id')
-                .eq('id', user.id)
-                .single()
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('agency_id, parent_id, role')
+            .eq('id', user.id)
+            .maybeSingle()
 
-            const role = profile?.role?.toLowerCase() || 'admin'
-            const parentId = profile?.parent_id || profile?.agency_id
-            ownerUserId = (role === 'agent' && parentId) ? parentId : user.id
+        const role = profile?.role?.toLowerCase() || 'admin'
+        const isTeamUser = role === 'agent' || role === 'team_member'
+
+        let targetUserId = user.id
+        if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined') {
+            targetUserId = impersonateId
+        } else if (isTeamUser && (profile?.agency_id || profile?.parent_id)) {
+            targetUserId = profile.agency_id || profile.parent_id || user.id
         }
 
-        // Fetch properties for the owner
-        const { data: properties, error: propErr } = await supabase
+        const supabaseAdmin = createSupabaseAdmin(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
+
+        // Resolve all associated team profile IDs for this workspace
+        const { data: teamProfiles } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .or(`parent_id.eq.${targetUserId},agency_id.eq.${targetUserId},id.eq.${targetUserId}`)
+
+        const ownerIds = (teamProfiles && teamProfiles.length > 0)
+            ? Array.from(new Set(teamProfiles.map(p => p.id)))
+            : [targetUserId]
+
+        // Fetch properties for the workspace
+        const { data: properties, error: propErr } = await supabaseAdmin
             .from('properties')
             .select('id, title, price, address, configurations, youtube_url, image_url, images, tags')
-            .eq('user_id', ownerUserId)
+            .in('user_id', ownerIds)
             .order('created_at', { ascending: false })
 
         if (propErr) {
             return NextResponse.json({ error: 'Failed to fetch products: ' + propErr.message }, { status: 500 })
         }
 
-        return NextResponse.json({ success: true, properties })
+        return NextResponse.json({ success: true, properties: properties || [] })
     } catch (e: any) {
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
     }
@@ -82,8 +90,13 @@ export async function POST(req: Request) {
         const parentId = profile?.parent_id || profile?.agency_id
         const ownerUserId = (role === 'agent' && parentId) ? parentId : user.id
 
-        // Fetch chat details — RLS handles access control
-        const { data: chat, error: chatErr } = await supabase
+        const supabaseAdmin = createSupabaseAdmin(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
+
+        // Fetch chat details
+        const { data: chat, error: chatErr } = await supabaseAdmin
             .from('whatsapp_chats')
             .select('*')
             .eq('id', chatId)
@@ -94,7 +107,7 @@ export async function POST(req: Request) {
         }
 
         // Fetch WABA credentials from the owner profile
-        const { data: ownerProfile } = await supabase
+        const { data: ownerProfile } = await supabaseAdmin
             .from('profiles')
             .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, custom_domain, email')
             .eq('id', ownerUserId)
@@ -108,12 +121,11 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'WhatsApp integration not configured.' }, { status: 400 })
         }
 
-        // Fetch the specific property/product
-        const { data: prop, error: propErr } = await supabase
+        // Fetch the specific property/product using admin client
+        const { data: prop, error: propErr } = await supabaseAdmin
             .from('properties')
-            .select('id, title, price, address, description, configurations, image_url, images, brochure_url, youtube_url')
+            .select('id, title, price, address, description, configurations, image_url, images, brochure_url, youtube_url, tags')
             .eq('id', propertyId)
-            .eq('user_id', ownerUserId)
             .single()
 
         if (propErr || !prop) {
