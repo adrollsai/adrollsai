@@ -406,6 +406,7 @@ export async function POST(request: Request) {
                                 await supabaseAdmin.from('assets').update({
                                     url: finalUrl,
                                     status: 'Draft',
+                                    created_at: new Date().toISOString(),
                                     metadata: {
                                         audioUrl: finalAudioUrl
                                     }

@@ -1022,7 +1022,13 @@ IMPORTANT RULES:
                                             .eq('is_active', true);
 
                                         if (groupAutomations && groupAutomations.length > 0) {
-                                            const normalizeCampStr = (s: string) => (s || '').replace(/[\u2010-\u2015\u2212]/g, '-').toLowerCase().replace(/\s+/g, ' ').trim();
+                                            const normalizeCampStr = (s: string) => (s || '')
+                                                .replace(/[\u2010-\u2015\u2212]/g, '-')
+                                                .toLowerCase()
+                                                .replace(/\bhaymten\b/g, 'hampton')
+                                                .replace(/\bhamyten\b/g, 'hampton')
+                                                .replace(/\s+/g, ' ')
+                                                .trim();
                                             for (const aut of groupAutomations) {
                                                 try {
                                                     const parsedGroup = JSON.parse(aut.description || '{}');
@@ -1037,12 +1043,17 @@ IMPORTANT RULES:
                                                             const campClean = normalizeCampStr(campaignName);
                                                             const headClean = normalizeCampStr(adHeadline);
                                                             const campIdClean = String(campaignId || '').trim();
-                                                            return (
-                                                                (adClean && (adClean.includes(gcClean) || gcClean.includes(adClean))) ||
-                                                                (campClean && (campClean.includes(gcClean) || gcClean.includes(campClean))) ||
-                                                                (headClean && (headClean.includes(gcClean) || gcClean.includes(headClean))) ||
-                                                                (campIdClean && campIdClean === gc.trim())
-                                                            );
+                                                            if (campIdClean && campIdClean === gc.trim()) return true;
+                                                            if (adClean && (adClean.includes(gcClean) || gcClean.includes(adClean))) return true;
+                                                            if (campClean && (campClean.includes(gcClean) || gcClean.includes(campClean))) return true;
+                                                            if (headClean && (headClean.includes(gcClean) || gcClean.includes(headClean))) return true;
+                                                            const segments = gcClean.split(/[-|/]/).map(seg => seg.trim()).filter(seg => seg.length >= 4 && !/^\d+$/.test(seg));
+                                                            for (const seg of segments) {
+                                                                if (adClean && adClean.includes(seg)) return true;
+                                                                if (campClean && campClean.includes(seg)) return true;
+                                                                if (headClean && headClean.includes(seg)) return true;
+                                                            }
+                                                            return false;
                                                         });
 
                                                         if (matchesCamp) {
@@ -2540,7 +2551,13 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
                   const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
                   const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
                   if (groupMembers.length > 0 && groupCampaigns.length > 0) {
-                    const normalizeCampStr = (s: string) => (s || '').replace(/[\u2010-\u2015\u2212]/g, '-').toLowerCase().replace(/\s+/g, ' ').trim();
+                    const normalizeCampStr = (s: string) => (s || '')
+                      .replace(/[\u2010-\u2015\u2212]/g, '-')
+                      .toLowerCase()
+                      .replace(/\bhaymten\b/g, 'hampton')
+                      .replace(/\bhamyten\b/g, 'hampton')
+                      .replace(/\s+/g, ' ')
+                      .trim();
                     const matchesCamp = groupCampaigns.some(gc => {
                       const gcClean = normalizeCampStr(gc);
                       if (!gcClean) return false;
@@ -2548,12 +2565,17 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
                       const campClean = normalizeCampStr(campaignName);
                       const formClean = normalizeCampStr(formName);
                       const campIdClean = String(campaignId || '').trim();
-                      return (
-                        (adClean && (adClean.includes(gcClean) || gcClean.includes(adClean))) ||
-                        (campClean && (campClean.includes(gcClean) || gcClean.includes(campClean))) ||
-                        (formClean && (formClean.includes(gcClean) || gcClean.includes(formClean))) ||
-                        (campIdClean && campIdClean === gc.trim())
-                      );
+                      if (campIdClean && campIdClean === gc.trim()) return true;
+                      if (adClean && (adClean.includes(gcClean) || gcClean.includes(adClean))) return true;
+                      if (campClean && (campClean.includes(gcClean) || gcClean.includes(campClean))) return true;
+                      if (formClean && (formClean.includes(gcClean) || gcClean.includes(formClean))) return true;
+                      const segments = gcClean.split(/[-|/]/).map(seg => seg.trim()).filter(seg => seg.length >= 4 && !/^\d+$/.test(seg));
+                      for (const seg of segments) {
+                        if (adClean && adClean.includes(seg)) return true;
+                        if (campClean && campClean.includes(seg)) return true;
+                        if (formClean && formClean.includes(seg)) return true;
+                      }
+                      return false;
                     });
 
                     if (matchesCamp) {

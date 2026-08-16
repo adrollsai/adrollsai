@@ -175,10 +175,11 @@ export default function ImagePreviewModal({ isOpen, onClose, imageUrl, title, ty
                                 !/\.(jpg|jpeg|png|webp|gif)/i.test(imageUrl.split('?')[0])
                             ))) ? (
                                 <video 
-                                    src={fixR2Url(imageUrl).includes('#') ? fixR2Url(imageUrl) : `${fixR2Url(imageUrl)}#t=0.001`} 
+                                    src={fixR2Url(imageUrl)} 
                                     controls 
                                     autoPlay
-                                    preload="metadata"
+                                    playsInline
+                                    preload="auto"
                                     className="max-w-[90vw] max-h-[80vh] object-contain select-none shadow-2xl rounded-lg bg-black"
                                 />
                             ) : (

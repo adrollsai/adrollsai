@@ -1374,13 +1374,22 @@ export default function AssetsPage() {
                         {filteredAssets.slice(0, displayLimit).map((asset) => (
                             <div
                                 key={asset.id}
-                                onClick={() => toggleSelection(asset.id)}
+                                onClick={() => {
+                                    if (selectedIds.size > 0) {
+                                        toggleSelection(asset.id);
+                                    } else if (!['Processing', 'Rendering', 'Failed'].includes(asset.status)) {
+                                        setPreviewImage({ isOpen: true, url: asset.url, title: 'Asset Preview', type: asset.type });
+                                    }
+                                }}
                                 className={`relative flex flex-col h-auto rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden bg-white shadow-sm border group cursor-pointer active:scale-95 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${selectedIds.has(asset.id) ? 'ring-4 ring-blue-500 border-transparent' : 'border-slate-200/40'}`}
                             >
                                 {/* Aspect Square wrapper for media content */}
                                 <div className="relative aspect-square w-full overflow-hidden flex-shrink-0 bg-slate-50">
                                     {/* Selection Checkbox */}
-                                    <div className={`absolute top-4 left-4 z-20 w-7 h-7 rounded-full flex items-center justify-center transition-all ${selectedIds.has(asset.id) ? 'bg-blue-600 scale-110 shadow-lg' : 'bg-white/40 backdrop-blur-md opacity-0 group-hover:opacity-100 border border-white/50'}`}>
+                                    <div 
+                                        onClick={(e) => { e.stopPropagation(); toggleSelection(asset.id); }}
+                                        className={`absolute top-4 left-4 z-20 w-7 h-7 rounded-full flex items-center justify-center transition-all ${selectedIds.has(asset.id) ? 'bg-blue-600 scale-110 shadow-lg' : 'bg-white/40 backdrop-blur-md opacity-0 group-hover:opacity-100 border border-white/50'}`}
+                                    >
                                         {selectedIds.has(asset.id) && <Check size={16} className="text-white" strokeWidth={4} />}
                                     </div>
 

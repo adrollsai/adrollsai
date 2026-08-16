@@ -544,6 +544,7 @@ export async function POST(request: Request) {
                     await supabaseAdmin.from('assets').update({
                         url: finalUrl,
                         status: 'Draft',
+                        created_at: new Date().toISOString(),
                         metadata: {
                             ...(thumbnailUrl ? { thumbnailUrl } : {}),
                             audioUrl: finalAudioUrl
@@ -731,6 +732,7 @@ export async function POST(request: Request) {
                     await supabaseAdmin.from('assets').update({
                         url: finalR2Url,
                         status: 'Draft',
+                        created_at: new Date().toISOString(),
                         metadata: {
                             ...(thumbnailUrl ? { thumbnailUrl } : {}),
                             ...(finalAudioUrl ? { audioUrl: finalAudioUrl } : {})

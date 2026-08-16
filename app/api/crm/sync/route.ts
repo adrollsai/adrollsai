@@ -219,6 +219,8 @@ export async function POST(request: Request) {
       return (str || '')
         .replace(/[\u2010-\u2015\u2212]/g, '-')
         .toLowerCase()
+        .replace(/\bhaymten\b/g, 'hampton')
+        .replace(/\bhamyten\b/g, 'hampton')
         .replace(/\s+/g, ' ')
         .trim();
     };
@@ -233,11 +235,15 @@ export async function POST(request: Request) {
         const matches = rule.campaigns.some((gc: string) => {
           const gcNorm = normalizeString(gc);
           if (!gcNorm) return false;
-          return (
-            (adNameNorm && (adNameNorm.includes(gcNorm) || gcNorm.includes(adNameNorm))) ||
-            (formNameNorm && (formNameNorm.includes(gcNorm) || gcNorm.includes(formNameNorm))) ||
-            (campIdStr && campIdStr === gc.trim())
-          );
+          if (campIdStr && campIdStr === gc.trim()) return true;
+          if (adNameNorm && (adNameNorm.includes(gcNorm) || gcNorm.includes(adNameNorm))) return true;
+          if (formNameNorm && (formNameNorm.includes(gcNorm) || gcNorm.includes(formNameNorm))) return true;
+          const segments = gcNorm.split(/[-|/]/).map((seg: string) => seg.trim()).filter((seg: string) => seg.length >= 4 && !/^\d+$/.test(seg));
+          for (const seg of segments) {
+            if (adNameNorm && adNameNorm.includes(seg)) return true;
+            if (formNameNorm && formNameNorm.includes(seg)) return true;
+          }
+          return false;
         });
 
         if (matches) {

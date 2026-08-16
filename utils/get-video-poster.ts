@@ -1,7 +1,9 @@
 export function fixR2Url(url: string): string {
     if (!url) return '';
-    if (url.startsWith('/api/fetch-image')) return url;
-    return `/api/fetch-image?url=${encodeURIComponent(url)}`;
+    if (url.includes('.r2.dev/adrolls-storage/')) {
+        return url.replace('.r2.dev/adrolls-storage/', '.r2.dev/');
+    }
+    return url;
 }
 
 export function getVideoPosterUrl(asset: { id?: string; url?: string; metadata?: any } | null | undefined): string {

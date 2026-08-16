@@ -195,7 +195,8 @@ export async function POST(request: Request) {
             .update({
                 url: r2Url,
                 status: 'Draft', // Turns spinning card into completed card
-                metadata: updatedMetadata
+                metadata: updatedMetadata,
+                created_at: new Date().toISOString()
             })
             .eq('id', assetId);
 
