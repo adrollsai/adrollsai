@@ -10,7 +10,7 @@ const supabaseAdmin = createSupabaseAdmin(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, lead_score'
+const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled'
 
 export async function GET(req: Request) {
   try {

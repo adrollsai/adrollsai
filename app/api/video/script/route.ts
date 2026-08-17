@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
+import { resolveImageDescriptions } from '@/utils/image-analysis';
+
+const supabaseAdmin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(request: Request) {
     try {
@@ -13,7 +20,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { propertyId, concept, userInstructions, images, imageDescriptions, variation = false, useCharacterVideo = true, duration = 15, language = 'hinglish' } = body;
+        const { propertyId, concept, userInstructions, images, imageDescriptions: initialImageDescriptions, variation = false, useCharacterVideo = true, duration = 15, language = 'hinglish' } = body;
 
         // 1. Fetch Context
         let property: any = null;
@@ -107,7 +114,7 @@ export async function POST(request: Request) {
                     
                     const { GoogleGenerativeAI } = require('@google/generative-ai');
                     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY!);
-                    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+                    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
                     
                     const visionPrompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.";
                     
@@ -124,19 +131,11 @@ export async function POST(request: Request) {
                     const desc = result.response.text()?.trim();
                     if (desc) {
                         console.log(`[Self-Healing Script] Vision analysis success: "${desc}"`);
-                        
-                        // Update Supabase using a service role client to bypass client RLS rules
-                        const { createClient: createAdminClient } = require('@supabase/supabase-js');
-                        const supabaseAdmin = createAdminClient(
-                            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                            process.env.SUPABASE_SERVICE_ROLE_KEY!
-                        );
                         await supabaseAdmin
                             .from('profiles')
                             .update({ character_description: desc })
                             .eq('id', targetUserId);
                         
-                        // Update current object in memory
                         profile.character_description = desc;
                     }
                 }
@@ -156,7 +155,7 @@ export async function POST(request: Request) {
                     
                     const { GoogleGenerativeAI } = require('@google/generative-ai');
                     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY!);
-                    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+                    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
                     
                     const visionPrompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.";
                     
@@ -173,19 +172,11 @@ export async function POST(request: Request) {
                     const desc = result.response.text()?.trim();
                     if (desc) {
                         console.log(`[Self-Healing Script] Avatar vision analysis success: "${desc}"`);
-                        
-                        // Update Supabase using a service role client to bypass client RLS rules
-                        const { createClient: createAdminClient } = require('@supabase/supabase-js');
-                        const supabaseAdmin = createAdminClient(
-                            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                            process.env.SUPABASE_SERVICE_ROLE_KEY!
-                        );
                         await supabaseAdmin
                             .from('profiles')
                             .update({ avatar_description: desc })
                             .eq('id', targetUserId);
                         
-                        // Update current object in memory
                         profile.avatar_description = desc;
                     }
                 }
@@ -214,7 +205,7 @@ Amenities/Features: ${property.amenities || "N/A"}
         const businessName = profile?.business_name || 'Your Business';
         const brandGuidelines = profile?.custom_prompt || '';
 
-        // Extract reference images (max 4) - Filter out invalid placeholders/empty strings
+        // Extract reference images (up to 7 images for Grok Imagine 1.5)
         let rawImages: string[] = [];
         if (images && Array.isArray(images) && images.length > 0) {
             rawImages = images;
@@ -228,7 +219,13 @@ Amenities/Features: ${property.amenities || "N/A"}
 
         const refImages = rawImages
             .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
-            .slice(0, 8);
+            .slice(0, 7);
+
+        // Resolve Image Descriptions from cache/DB if not already provided
+        let imageDescriptions = initialImageDescriptions;
+        if (!imageDescriptions || !Array.isArray(imageDescriptions) || imageDescriptions.length === 0) {
+            imageDescriptions = await resolveImageDescriptions(supabaseAdmin, refImages, propertyId);
+        }
 
         // Determine language based on the explicit language toggle first, then fall back to instruction text parsing
         const isEnglish = language === 'english';
@@ -287,13 +284,19 @@ Amenities/Features: ${property.amenities || "N/A"}
 4. THE WARM CALL TO ACTION (Scene 4: 0:45 - 1:00): Conclude with a friendly, welcoming, and low-friction invitation to take the next step.`;
         }
 
-        const targetWordCountMin = videoModel === 'grok' ? Math.round(duration * 2.2) : (numClips * 36);
-        const targetWordCountMax = videoModel === 'grok' ? Math.round(duration * 2.4) : (numClips * 44);
+        const isAvatarPresenter = presenterType === 'avatar' || (presenterType === 'video' && videoModel !== 'grok');
+
+        const targetWordCountMin = (videoModel === 'grok' && !isAvatarPresenter) ? Math.round(duration * 2.2) : (numClips * 28);
+        const targetWordCountMax = (videoModel === 'grok' && !isAvatarPresenter) ? Math.round(duration * 2.4) : (numClips * 34);
         const targetAudioDurationSec = Math.round(duration * 0.85);
 
-        const wordCountRule = videoModel === 'grok'
+        const wordCountRule = (videoModel === 'grok' && !isAvatarPresenter)
             ? `11. GROK BACKGROUND VOICEOVER WORD COUNT & PACING RULE: The full dialogue narration script MUST be written as a continuous, high-converting, energetic, and punchy background voiceover copy containing STRICTLY between ${targetWordCountMin} and ${targetWordCountMax} words total. This exact word count ensures that the generated TTS voiceover spans ${targetAudioDurationSec} seconds of the total ${duration}-second video duration. Do NOT write fluff or extra long sentences. Write tight, fast-flowing, punchy sentences weaving in specific, concrete product facts, features, pricing, location, and key selling points.`
-            : `11. Speech length & Word Count limits: Keep the dialogue for EACH scene strictly between 36 and 44 words so it can be naturally and comfortably spoken in 15 seconds, filling the scene time without feeling empty. Ensure dialogue is distributed proportionally to scene timestamps.`;
+            : `11. AVATAR SPOKEN DIALOGUE PACING & WORD COUNT: Keep the dialogue for EACH 15-second scene strictly between 28 and 34 words so the avatar presenter speaks naturally with organic pauses, clear articulation, and authentic expression, filling the scene time comfortably without rushing.`;
+
+        const speakerLayoutRule = isAvatarPresenter
+            ? `3. Speaker Character & Scenes Layout: UGC Presenter/Avatar (${characterDescription || "a highly professional, friendly, and charismatic UGC presenter"}) speaks directly into the camera from a medium chest-up distance, with expressive hand gestures and warm facial expressions, cutting dynamically to product B-rolls showcasing key features using matching reference image details.`
+            : `3. Speaker Character & Scenes Layout: Pure dynamic commercial B-rolls and product showcases using the reference images with high-converting background voiceover narration. No talking heads on screen.`;
 
         const masterPrompt = `You are a world-class Ad Copywriter and UGC Creative Director specializing in TikTok, Instagram Reels, and Meta UGC ads.
 Your goal is to write a deeply emotional, highly engaging, and highly converting ${duration}-second ad script split into EXACTLY ${numClips} sequential 15-second scenes, using the Emotional Storytelling UGC Framework.
@@ -329,8 +332,7 @@ CONSTRAINTS & RULES:
    - Scene 1 visuals MUST open with an instant, scroll-stopping visual hook.
 1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}). Deeply emotional, slow-paced, warm, and natural.
 2. Dialogue language: ${languageInstruction}
-3. Speaker Character & Scenes Layout: ${videoModel === 'grok' ? 'Background Voiceover Narration over dynamic 9:16 product collages and B-rolls.' : (presenterType !== 'none' ? (characterDescription || "a stunningly beautiful, highly attractive, charismatic, extremely charming, and appealing Indian female UGC content creator with a fair complexion") : "a highly professional, friendly, and charismatic UGC presenter speaking clearly and warmly to the camera")}
-   - Describe property/product B-rolls cuts showcasing key features using matching reference image details.
+${speakerLayoutRule}
 4. Spoken Dialogue Tone, Voice Quality & Deep Psychological Depth: The voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging.
    - ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or fast-talking hooks.
    - The script must have immense depth and empathy. You must dig deep into the psychological pain points of the business's target audience. E.g., if selling real estate, target the deep emotional anxiety of wastefully paying rent, landlord hassles, security and comfort for children/parents, the fear of delayed projects, wanting luxury/status, or needing peace of mind.
@@ -371,50 +373,76 @@ Output ONLY valid JSON. Do not include markdown code block tags around JSON.`;
         console.log(masterPrompt);
         console.log("===============================================================================\n");
 
+        let script: any = null;
         let scriptJson = "";
-        console.log("[Script API] Generating script with primary model: gemini-3.5-flash");
-        const res = await generateText({
-            model: google('gemini-3.5-flash'),
-            prompt: masterPrompt,
-        });
-        scriptJson = res.text;
 
         try {
-            const cleanJson = scriptJson.replace(/```json|```/g, '').trim();
-            const script = JSON.parse(cleanJson);
-            
-            // Dynamic clip count validation and padding/truncating
-            if (!script.scenes || !Array.isArray(script.scenes) || script.scenes.length === 0) {
-                script.scenes = [];
-                for (let i = 0; i < numClips; i++) {
+            console.log("[Script API] Generating script with primary model: gemini-3.5-flash");
+            const res = await generateText({
+                model: google('gemini-3.5-flash'),
+                prompt: masterPrompt,
+            });
+            scriptJson = res.text;
+
+            let cleanJson = scriptJson.trim();
+            const firstBrace = cleanJson.indexOf('{');
+            const lastBrace = cleanJson.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                cleanJson = cleanJson.slice(firstBrace, lastBrace + 1);
+            }
+            cleanJson = cleanJson.replace(/```json|```/g, '').trim();
+            script = JSON.parse(cleanJson);
+        } catch (initialErr: any) {
+            console.warn("[Script API] Primary script generation/parse failed, retrying with fallback prompt...", initialErr.message);
+            try {
+                const retryRes = await generateText({
+                    model: google('gemini-3.5-flash'),
+                    prompt: `${masterPrompt}\n\nCRITICAL: Respond ONLY with a valid raw JSON object. Do NOT wrap in markdown or commentary.`
+                });
+                let retryJson = retryRes.text.trim();
+                const fb = retryJson.indexOf('{');
+                const lb = retryJson.lastIndexOf('}');
+                if (fb !== -1 && lb !== -1) {
+                    retryJson = retryJson.slice(fb, lb + 1);
+                }
+                script = JSON.parse(retryJson);
+            } catch (retryErr: any) {
+                console.error("[Script API] Fallback script generation also failed:", retryErr.message);
+            }
+        }
+
+        if (!script || typeof script !== 'object') {
+            return NextResponse.json({ error: "Failed to generate script. Please click Retry Script Generation." }, { status: 500 });
+        }
+
+        // Dynamic clip count validation and padding/truncating
+        if (!script.scenes || !Array.isArray(script.scenes) || script.scenes.length === 0) {
+            script.scenes = [];
+            for (let i = 0; i < numClips; i++) {
+                script.scenes.push({
+                    dialogue: i === numClips - 1 ? "get in touch today" : "kya aap ready hain?",
+                    visuals: "Creator smiling and looking at the camera."
+                });
+            }
+        } else if (script.scenes.length !== numClips) {
+            if (script.scenes.length > numClips) {
+                script.scenes = script.scenes.slice(0, numClips);
+            } else {
+                while (script.scenes.length < numClips) {
                     script.scenes.push({
-                        dialogue: i === numClips - 1 ? "get in touch today" : "kya aap ready hain?",
-                        visuals: "Creator smiling and looking at the camera."
+                        dialogue: "get in touch today",
+                        visuals: "Creator smiling and waving at the camera."
                     });
                 }
-            } else if (script.scenes.length !== numClips) {
-                if (script.scenes.length > numClips) {
-                    script.scenes = script.scenes.slice(0, numClips);
-                } else {
-                    while (script.scenes.length < numClips) {
-                        script.scenes.push({
-                            dialogue: "get in touch today",
-                            visuals: "Creator smiling and waving at the camera."
-                        });
-                    }
-                }
             }
-
-            return NextResponse.json({
-                success: true,
-                ...script,
-                imageDescriptions: imageDescriptions || [],
-                refImages
-            });
-        } catch (e) {
-            console.error("Failed to parse script JSON:", scriptJson);
-            return NextResponse.json({ error: "Failed to generate Hinglish script." }, { status: 500 });
         }
+
+        return NextResponse.json({
+            success: true,
+            ...script,
+            imageDescriptions: imageDescriptions || [],
+            refImages
+        });
 
     } catch (error: any) {
         console.error("Video Script Error:", error);

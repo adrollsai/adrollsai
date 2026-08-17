@@ -17,22 +17,52 @@ const supabaseAdmin = createAdminClient(
 export async function resolveVoiceoverAudio(task: any, assetId?: string | null): Promise<string | null> {
     let candidateUrl: string | null = task?.audio_url || null;
 
+    // Explicit check for native audio flag (Avatar Mode)
+    if (candidateUrl === 'native' || candidateUrl === 'none') {
+        console.log('[Voiceover Helper] Task is flagged with native audio. Bypassing voiceover resolution.');
+        return null;
+    }
+
     // 1. Check Asset record metadata & columns
-    if (!candidateUrl && assetId) {
+    let assetMetadata: any = null;
+    if (assetId) {
         try {
             const { data: assetRow } = await supabaseAdmin
                 .from('assets')
                 .select('metadata, voiceover_url, audio_url, caption')
                 .eq('id', assetId)
                 .maybeSingle();
-            candidateUrl = assetRow?.metadata?.audioUrl || assetRow?.voiceover_url || assetRow?.audio_url || null;
+            assetMetadata = assetRow?.metadata;
+            
+            // If asset explicitly denotes an Avatar video, NEVER attach or generate external voiceover
+            if (assetMetadata?.isAvatar || assetMetadata?.presenterType === 'avatar' || assetMetadata?.audioUrl === 'native') {
+                console.log(`[Voiceover Helper] Asset ${assetId} is confirmed as an Avatar video. Native Grok audio preserved.`);
+                return null;
+            }
+
+            if (!candidateUrl) {
+                candidateUrl = assetMetadata?.audioUrl || assetRow?.voiceover_url || assetRow?.audio_url || null;
+            }
         } catch (e: any) {
             console.warn('[Voiceover Helper] Error fetching asset row:', e.message);
         }
     }
 
-    // 2. Check Profile voice samples if presenter mode
-    if (!candidateUrl && task?.user_id) {
+    if (candidateUrl === 'native' || candidateUrl === 'none') {
+        return null;
+    }
+
+    // Grok Avatar mode safeguard: If video_model is grok and prompt targets presenter in Image 1 without explicit external TTS
+    const isGrokAvatar = (task?.video_model === 'grok' || assetMetadata?.videoModel === 'grok') && 
+                         (task?.prompts?.[0]?.toLowerCase().includes('image 1') || task?.prompts?.[0]?.toLowerCase().includes('presenter') || !candidateUrl);
+
+    if (isGrokAvatar && (!candidateUrl || candidateUrl === 'native')) {
+        console.log('[Voiceover Helper] Detected Grok Avatar generation without external audio. Preserving native lip sync audio.');
+        return null;
+    }
+
+    // 2. Check Profile voice samples if presenter mode (Seedance only)
+    if (!candidateUrl && task?.user_id && task?.video_model !== 'grok') {
         try {
             const { data: userProfile } = await supabaseAdmin
                 .from('profiles')
@@ -88,13 +118,13 @@ export async function resolveVoiceoverAudio(task: any, assetId?: string | null):
         }
     }
 
-    // 4. Fallback: If still unresolved / tts: and we have dialogue or caption, synthesize TTS on-the-fly
-    if ((!candidateUrl || candidateUrl.startsWith('tts:')) && assetId) {
+    // 4. Fallback: ONLY for non-Grok and non-Avatar models if voiceover was intended
+    if ((!candidateUrl || candidateUrl.startsWith('tts:')) && assetId && task?.video_model !== 'grok' && !assetMetadata?.isAvatar) {
         try {
             const { data: assetRow } = await supabaseAdmin.from('assets').select('caption, metadata').eq('id', assetId).maybeSingle();
             const voiceText = assetRow?.caption || task?.final_caption || task?.prompts?.[0];
             if (voiceText && typeof voiceText === 'string' && voiceText.trim().length > 10) {
-                console.log(`[Voiceover Helper] Synthesizing on-the-fly Gemini TTS voiceover for asset ${assetId}...`);
+                console.log(`[Voiceover Helper] Synthesizing on-the-fly Gemini TTS voiceover for Seedance asset ${assetId}...`);
                 const { taskId: newTtsId, error: newTtsErr } = await createGeminiTTS({
                     dialogueText: voiceText.trim(),
                     speakerName: 'Aoede',

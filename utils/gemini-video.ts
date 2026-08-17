@@ -85,7 +85,7 @@ export async function transcribeVideoWithGemini(videoUrl: string, fallbackAudioU
                 { text: "Generate a precise transcript of this video/audio. For every segment of speech, provide the start time, end time, and text. Return the result in a clean JSON format matching the schema." },
             ],
             "gemini-3.5-flash",
-            "gemini-2.5-flash",
+            "gemini-3.5-flash",
             4,
             2000,
             {

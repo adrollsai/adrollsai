@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateObject } from 'ai';
 import { google } from '@ai-sdk/google';
 import { z } from 'zod';
+import { resolveImageDescriptions } from '@/utils/image-analysis';
+
+const supabaseAdmin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(request: Request) {
     try {
@@ -94,7 +101,7 @@ export async function POST(request: Request) {
 
         const profile = targetProfile || {} as any;
 
-        // Determine reference images (max 4) - Filter out invalid placeholders/empty strings
+        // Determine reference images (up to 7 images for Grok Imagine 1.5)
         let rawImages: string[] = [];
         if (customImages && Array.isArray(customImages) && customImages.length > 0) {
             rawImages = customImages;
@@ -108,7 +115,11 @@ export async function POST(request: Request) {
 
         const refImages = rawImages
             .filter(img => img && typeof img === 'string' && img.startsWith('http') && !img.includes('placeholder') && !img.includes('placehold') && img !== 'null' && img !== 'undefined')
-            .slice(0, 8);
+            .slice(0, 7);
+
+        // Resolve Image Descriptions from DB cache or analyze once with Gemini Vision
+        console.log(`[Concepts API] Resolving image descriptions for ${refImages.length} images...`);
+        const imageDescriptions = await resolveImageDescriptions(supabaseAdmin, refImages, propertyId);
 
         let productInfo = 'Generic product promotion';
         if (property) {
@@ -148,8 +159,10 @@ Amenities/Features: ${property.amenities || "N/A"}
             ? `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'Looking for your dream home in Mohali but worried about construction quality?')"`
             : `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'मोहाली में अपना dream home ढूंढ रहे हो?')"`;
 
+        const descriptionsText = imageDescriptions.map((desc, i) => `- Image ${i + 1} Visual Description: "${desc}"`).join('\n');
+
         const conceptPrompt = `You are a world-class Ad Creative Director specializing in hyper-engaging, high-converting Meta and TikTok video ads.
-Your task is to analyze the provided business details, product details, user guidelines, and any referenced image descriptions, then create 5 unique, ultra-hooky, ${durationText}.
+Your task is to analyze the provided business details, product details, user guidelines, and the reference image visual descriptions, then create 5 unique, ultra-hooky, ${durationText}.
 
 Business Info:
 - Name: ${businessName}
@@ -165,8 +178,8 @@ Creator Character (the person who will appear in the video):
 "${characterDescription}"
 All concept visuals and descriptions must be written for THIS specific creator character. Use their correct gender naturally in all visual descriptions and hooks.
 
-Reference Images available:
-${refImages.map((img, i) => `- Image Image_${i + 1}: ${img}`).join('\n')}
+Analyzed Reference Images available (with exact physical visual descriptions):
+${descriptionsText || 'No reference image descriptions available.'}
 
 INSTRUCTIONS:
 0. CRITICAL CUSTOM INSTRUCTIONS PRIORITIZATION RULE: You MUST strictly prioritize and adhere to the user's Custom Instructions: "${userInstructions || 'None'}". Every single concept angle, visual storyline, hook, and psychological positioning MUST be custom-tailored to follow these instructions first and foremost. Do not ignore them or generate generic real estate/e-commerce templates that do not reflect what the user has requested here.
@@ -183,7 +196,7 @@ ${hookLanguageRule}
 6. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any visual instruction, as the video AI generates garbled text and distorted logos. Keep the visual space completely clean of text.
 7. In the visual concepts, instead of referencing abstract placeholders like "@Image 1", write natural visual descriptions of what is shown in the image (e.g., "showcasing the cozy modern bedroom shown in the bedroom photo").
 ${languageScriptRule}
-9. Output EXACTLY a JSON object with keys: "concepts", "analyzedImageSummary", and "imageDescriptions". "imageDescriptions" must be an array of strings, where each string is a detailed visual description of the corresponding reference image in order (Image 1, Image 2, etc.).
+9. Output EXACTLY a JSON object with keys: "concepts" and "analyzedImageSummary".
 
 JSON SCHEMA:
 {
@@ -196,37 +209,10 @@ JSON SCHEMA:
       "visualConcept": "Brief visual flow description referencing the images by their content naturally (e.g. 'creator points to the luxurious marble kitchen shown in the kitchen photo')"
     }
   ],
-  "analyzedImageSummary": "Short explanation of the visual assets (what is shown in the images, color palette, product features).",
-  "imageDescriptions": [
-    "Detailed description of image 1 (e.g. A bright modern kitchen with white marble countertops)",
-    "Detailed description of image 2 (e.g. A spacious cozy living room with a green sofa)"
-  ]
+  "analyzedImageSummary": "Short explanation of the visual assets (what is shown in the images, color palette, product features)."
 }
 
 - Output ONLY a valid JSON structure matching the schema above. Do not wrap the JSON in markdown code blocks.`;
-
-        // If there are images, we can download and pass them to Gemini to analyze directly!
-        const messages: any[] = [];
-        if (refImages.length > 0) {
-            const contentParts: any[] = [{ type: 'text', text: conceptPrompt }];
-            for (let i = 0; i < refImages.length; i++) {
-                try {
-                    const imgUrl = refImages[i];
-                    const imgRes = await fetch(imgUrl);
-                    const imgBuffer = await imgRes.arrayBuffer();
-                    const mimeType = imgRes.headers.get('content-type') || 'image/jpeg';
-                    contentParts.push({
-                        type: 'image',
-                        image: new Uint8Array(imgBuffer)
-                    });
-                } catch (e: any) {
-                    console.error(`Failed to download image ${refImages[i]} for Gemini analysis:`, e.message);
-                }
-            }
-            messages.push({ role: 'user', content: contentParts });
-        } else {
-            messages.push({ role: 'user', content: conceptPrompt });
-        }
 
         console.log("\n===============================================================================");
         console.log("=== GEMINI VIDEO CONCEPTS GENERATION PROMPT ===");
@@ -243,14 +229,13 @@ JSON SCHEMA:
                 visualConcept: z.string(),
             })),
             analyzedImageSummary: z.string(),
-            imageDescriptions: z.array(z.string()),
         });
 
         console.log("[Concepts API] Generating concepts with primary model: gemini-3.5-flash");
         const res = await generateObject({
             model: google('gemini-3.5-flash'),
             schema,
-            messages,
+            prompt: conceptPrompt,
         });
         result = res.object;
 
@@ -258,7 +243,7 @@ JSON SCHEMA:
             success: true,
             concepts: result.concepts || [],
             analyzedImageSummary: result.analyzedImageSummary || "Product assets",
-            imageDescriptions: result.imageDescriptions || [],
+            imageDescriptions: imageDescriptions || [],
             refImages
         });
 

@@ -194,7 +194,7 @@ export async function GET(req: Request) {
         }
 
         // 1. Fetch CRM Leads across workspace using ultra-fast parallel batched queries
-        const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, custom_fields, dnp_count, last_call_at'
+        const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled'
 
         const countQuery = applyLeadFilters(
             supabaseAdmin.from('leads').select('*', { count: 'exact', head: true })

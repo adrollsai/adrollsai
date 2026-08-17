@@ -55,74 +55,78 @@ export async function middleware(request: NextRequest) {
   }
 
   // 4. AUTHENTICATION & REDIRECT LOGIC
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => {
+              request.cookies.set(name, value)
+            })
+            response = NextResponse.next({
+              request: {
+                headers: request.headers,
+              },
+            })
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options)
+            })
+          },
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => {
-            request.cookies.set(name, value)
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options)
-          })
-        },
-      },
+      }
+    )
+
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // AI Operations Protection for Demo Account
+    if (user && user.email === 'adrolls-realty-demo@adrolls.in' && url.pathname.startsWith('/api/')) {
+      const isAiOperation = 
+        request.nextUrl.pathname.startsWith('/api/chat') ||
+        request.nextUrl.pathname.startsWith('/api/background-worker') ||
+        request.nextUrl.pathname.startsWith('/api/landing-page/generate') ||
+        request.nextUrl.pathname.startsWith('/api/agent/strategy') ||
+        request.nextUrl.pathname.startsWith('/api/video/concepts') ||
+        request.nextUrl.pathname.startsWith('/api/video/script') ||
+        request.nextUrl.pathname.startsWith('/api/video/generate') ||
+        request.nextUrl.pathname.startsWith('/api/video/render') ||
+        request.nextUrl.pathname.startsWith('/api/video/captions/generate') ||
+        request.nextUrl.pathname.startsWith('/api/meta-ads/launch-campaign') ||
+        request.nextUrl.pathname.startsWith('/api/meta-ads/launch-remarketing') ||
+        request.nextUrl.pathname.startsWith('/api/meta-ads/optimize-campaign');
+
+      if (isAiOperation) {
+        return NextResponse.json(
+          { error: 'This is a demo account. No AI operations should run on this account.' },
+          { status: 400 }
+        );
+      }
     }
-  )
 
-  const { data: { user } } = await supabase.auth.getUser()
+    // --- REDIRECT RULES ---
 
-  // AI Operations Protection for Demo Account
-  if (user && user.email === 'adrolls-realty-demo@adrolls.in' && url.pathname.startsWith('/api/')) {
-    const isAiOperation = 
-      request.nextUrl.pathname.startsWith('/api/chat') ||
-      request.nextUrl.pathname.startsWith('/api/background-worker') ||
-      request.nextUrl.pathname.startsWith('/api/landing-page/generate') ||
-      request.nextUrl.pathname.startsWith('/api/agent/strategy') ||
-      request.nextUrl.pathname.startsWith('/api/video/concepts') ||
-      request.nextUrl.pathname.startsWith('/api/video/script') ||
-      request.nextUrl.pathname.startsWith('/api/video/generate') ||
-      request.nextUrl.pathname.startsWith('/api/video/render') ||
-      request.nextUrl.pathname.startsWith('/api/video/captions/generate') ||
-      request.nextUrl.pathname.startsWith('/api/meta-ads/launch-campaign') ||
-      request.nextUrl.pathname.startsWith('/api/meta-ads/launch-remarketing') ||
-      request.nextUrl.pathname.startsWith('/api/meta-ads/optimize-campaign');
-
-    if (isAiOperation) {
-      return NextResponse.json(
-        { error: 'This is a demo account. No AI operations should run on this account.' },
-        { status: 400 }
-      );
+    // Rule A: If user is logged in and hits root (/), send to dashboard
+    if (user && isRootRoute) {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     }
-  }
 
-  // --- REDIRECT RULES ---
+    // Rule B: Redirect to login ONLY if it's the APP subdomain (starts with 'app.')
+    const isAppSubdomain = hostname.startsWith('app.');
+    
+    if (!user && isRootRoute && isAppSubdomain) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
 
-  // Rule A: If user is logged in and hits root (/), send to dashboard
-  if (user && isRootRoute) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
-  // Rule B: Redirect to login ONLY if it's the APP subdomain (starts with 'app.')
-  const isAppSubdomain = hostname.startsWith('app.');
-  
-  if (!user && isRootRoute && isAppSubdomain) {
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
-
-  // Rule C: Standard protection for dashboard routes
-  if (!user && isDashboardRoute) {
-    return NextResponse.redirect(new URL('/login', request.url))
+    // Rule C: Standard protection for dashboard routes
+    if (!user && isDashboardRoute) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+  } catch (err: any) {
+    console.error('[Middleware Error]:', err.message);
   }
 
   return response

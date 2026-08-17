@@ -13,21 +13,24 @@ export async function ensureJpegImage(imageUrl: string, userId: string): Promise
         return imageUrl;
     }
 
+    const cleanPath = imageUrl.toLowerCase().split('?')[0];
+    if (cleanPath.endsWith('.jpg') || cleanPath.endsWith('.jpeg')) {
+        return imageUrl;
+    }
+
     let hash = crypto.createHash('md5').update(imageUrl).digest('hex');
 
     try {
-        const headRes = await fetch(imageUrl, { method: 'HEAD' });
+        const headRes = await fetch(imageUrl, { method: 'HEAD', signal: AbortSignal.timeout(4000) });
         const contentType = headRes.headers.get('content-type') || '';
         const contentLength = headRes.headers.get('content-length') || '';
         const lastModified = headRes.headers.get('last-modified') || '';
         const eTag = headRes.headers.get('etag') || '';
 
-        const lowercaseUrl = imageUrl.toLowerCase();
-        const isJpg = lowercaseUrl.includes('.jpg') || lowercaseUrl.includes('.jpeg');
         const isJpegContentType = contentType.toLowerCase().includes('jpeg') || contentType.toLowerCase().includes('jpg');
 
-        if (isJpg && isJpegContentType) {
-            console.log(`[Ensure JPEG] Image is already JPEG: ${imageUrl}`);
+        if (isJpegContentType) {
+            console.log(`[Ensure JPEG] Image content-type is already JPEG: ${imageUrl}`);
             return imageUrl;
         }
 

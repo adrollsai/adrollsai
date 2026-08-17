@@ -366,11 +366,17 @@ export async function POST(request: Request) {
         const { data: siblings, error: siblingsError } = await supabaseAdmin
             .from('video_tasks')
             .select('*')
-            .eq('asset_id', videoTask.asset_id);
+            .eq('asset_id', videoTask.asset_id)
+            .order('current_index', { ascending: true });
 
         if (siblingsError) {
             console.error("[Video Callback] Error fetching sibling tasks:", siblingsError);
             return NextResponse.json({ error: 'Failed to fetch sibling tasks' }, { status: 500 });
+        }
+
+        // Guarantee strict ascending chronological scene order (Scene 1, Scene 2, ...)
+        if (siblings && Array.isArray(siblings)) {
+            siblings.sort((a, b) => (a.current_index ?? 0) - (b.current_index ?? 0));
         }
 
         const allCompleted = siblings && siblings.length > 0 && siblings.every(s => s.status === 'Completed');

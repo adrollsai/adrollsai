@@ -1094,10 +1094,10 @@ export default function CreationPage() {
     }
   };
 
-  const handleApproveGrokVideo = async (messageId: number, script: any, refImages: string[], audioUrl: string) => {
+  const handleApproveGrokVideo = async (messageId: number, script: any, refImages: string[], audioUrl?: string, imageDescriptions?: string[], customPrompts?: string[]) => {
     if (isThinking) return;
     setIsThinking(true);
-    setCurrentStep(`Generating 9:16 collages and starting Grok Imagine 1.5 video task...`);
+    setCurrentStep(`Starting Grok Imagine 1.5 ${presenterMode === 'avatar' ? 'Avatar' : 'Voiceover'} video generation...`);
 
     try {
         const urlParams = new URLSearchParams(window.location.search);
@@ -1110,8 +1110,12 @@ export default function CreationPage() {
                 propertyId: selectedPropId || null,
                 script,
                 images: refImages,
+                imageDescriptions: imageDescriptions || script.imageDescriptions,
+                presenterType: presenterMode,
                 videoModel: 'grok',
-                audioUrl,
+                customInstructions: `${videoInstructions ? `${videoInstructions}\n\n` : ''}${script.concept?.description || script.concept?.visualConcept || ''}`.trim(),
+                prompts: customPrompts,
+                audioUrl: audioUrl || null,
                 duration: selectedDuration,
                 language: videoLanguage
             })
@@ -1141,7 +1145,7 @@ export default function CreationPage() {
         const aiMsg: Message = {
             id: Date.now(),
             role: 'ai',
-            text: "Grok Imagine 1.5 video generation launched in the background! 🎬\n\nGPT 2.0 9:16 grid collages are being processed and animated by Grok. The video and voiceover will be stitched on AWS Lambda. Check your **Assets** tab in 2-3 minutes!"
+            text: `Grok Imagine 1.5 ${presenterMode === 'avatar' ? 'Avatar' : 'Commercial'} video generation launched! 🎬\n\nHigh-res reference images are being animated directly by Grok Imagine 1.5. Check your **Assets** tab in 2-3 minutes!`
         };
         setMessages(prev => [...prev, aiMsg]);
     } catch (error: any) {
@@ -2207,8 +2211,8 @@ export default function CreationPage() {
                       </div>
                     </div>
 
-                    {/* Voice Selection & Audio Preview control for Grok Script Review */}
-                    {msg.grokStep === 'script_review' && (
+                    {/* Voice Selection & Audio Preview control for Grok Script Review (Voiceover Mode only) */}
+                    {msg.grokStep === 'script_review' && presenterMode !== 'avatar' && (
                       <div className="flex flex-col gap-2 bg-gradient-to-r from-purple-50/70 to-indigo-50/70 p-3.5 rounded-2xl border border-purple-200/80 mt-1 shadow-sm">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[10px] font-black text-purple-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -2246,6 +2250,17 @@ export default function CreationPage() {
                       </div>
                     )}
 
+                    {/* Avatar Direct Speech Notice for Grok Avatar Mode */}
+                    {msg.grokStep === 'script_review' && presenterMode === 'avatar' && (
+                      <div className="flex items-center gap-2.5 bg-gradient-to-r from-purple-50 to-pink-50 p-3 rounded-2xl border border-purple-200/70 mt-1">
+                        <Sparkles size={16} className="text-purple-600 flex-shrink-0" />
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wide">Avatar Video Mode</span>
+                          <span className="text-[11px] text-purple-700 font-medium leading-tight">Your Avatar model will speak the dialogue natively with full lip sync. No external voiceover delay!</span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Voiceover Preview Audio Player for Grok Model */}
                     {msg.audioUrl && (
                       <div className="bg-purple-50/70 border border-purple-200/60 rounded-2xl p-3.5 flex flex-col gap-2 animate-in fade-in mt-1">
@@ -2265,13 +2280,23 @@ export default function CreationPage() {
                     {msg.id === messages[messages.length - 1]?.id && (
                       <div className="flex gap-2 mt-2 border-t border-slate-100 pt-3">
                         {msg.grokStep === 'script_review' ? (
-                          <button
-                            onClick={() => handleGenerateGrokTTS(msg.id, msg.script.dialogue, msg.script, msg.refImages || [])}
-                            disabled={isThinking}
-                            className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-purple-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
-                          >
-                            <Mic size={14} /> Approve Script & Generate Voiceover 🎙️
-                          </button>
+                          presenterMode === 'avatar' ? (
+                            <button
+                              onClick={() => handleApproveGrokVideo(msg.id, msg.script, msg.refImages || [], undefined, msg.imageDescriptions, msg.prompts)}
+                              disabled={isThinking}
+                              className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-purple-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                            >
+                              <Sparkles size={14} /> Generate Grok Avatar Video 🎬
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleGenerateGrokTTS(msg.id, msg.script.dialogue, msg.script, msg.refImages || [])}
+                              disabled={isThinking}
+                              className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-purple-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                            >
+                              <Mic size={14} /> Approve Script & Generate Voiceover 🎙️
+                            </button>
+                          )
                         ) : msg.grokStep === 'tts_review' ? (
                           <>
                             <button
@@ -2282,7 +2307,7 @@ export default function CreationPage() {
                               ✏️ Tweak Script
                             </button>
                             <button
-                              onClick={() => handleApproveGrokVideo(msg.id, msg.script, msg.refImages || [], msg.audioUrl!)}
+                              onClick={() => handleApproveGrokVideo(msg.id, msg.script, msg.refImages || [], msg.audioUrl!, msg.imageDescriptions, msg.prompts)}
                               disabled={isThinking}
                               className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                             >

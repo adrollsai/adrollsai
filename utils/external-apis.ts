@@ -209,10 +209,12 @@ export async function createGeminiTTS({
 
 /**
  * Helper to create video task using Grok Imagine Video 1.5 Preview via Kie.ai
+ * Supports up to 7 input images simultaneously (image_urls array)
  */
 export async function createGrokVideoTask({
     prompt,
     collageImageUrl,
+    imageUrls,
     aspectRatio = "9:16",
     resolution = "480p",
     duration = 15,
@@ -220,6 +222,7 @@ export async function createGrokVideoTask({
 }: {
     prompt: string;
     collageImageUrl?: string;
+    imageUrls?: string[];
     aspectRatio?: string;
     resolution?: string;
     duration?: number;
@@ -233,7 +236,10 @@ export async function createGrokVideoTask({
         nsfw_checker: true
     };
 
-    if (collageImageUrl) {
+    if (imageUrls && Array.isArray(imageUrls) && imageUrls.length > 0) {
+        // Grok Imagine 1.5 allows up to 7 images in image_urls
+        inputPayload.image_urls = imageUrls.filter(u => u && typeof u === 'string' && u.startsWith('http')).slice(0, 7);
+    } else if (collageImageUrl) {
         inputPayload.image_urls = [collageImageUrl];
     }
 

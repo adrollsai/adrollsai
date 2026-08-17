@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createKieTask, createGrokVideoTask, createGeminiTTS, queryKieTask } from '@/utils/external-apis';
-import { createCollageImages } from '@/utils/collage-generator';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
@@ -14,6 +13,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { ensureJpegImage } from '@/utils/image-converter';
+import { resolveImageDescriptions } from '@/utils/image-analysis';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -239,21 +239,76 @@ function extrapolateEthnicity(profile: any, property: any, customInstructions?: 
         customInstructions
     ].filter(Boolean).join(' ').toLowerCase();
 
-    if (textToSearch.includes('india') || textToSearch.includes('mohali') || textToSearch.includes('chandigarh') || textToSearch.includes('zirakpur') || textToSearch.includes('delhi') || textToSearch.includes('mumbai') || textToSearch.includes('bangalore') || textToSearch.includes('gurgaon') || textToSearch.includes('punjab') || textToSearch.includes('panchkula')) {
+    // 1. South Asian / Indian
+    if (
+        textToSearch.includes('india') || textToSearch.includes('inr') || textToSearch.includes('crore') || 
+        textToSearch.includes('cr') || textToSearch.includes('lakh') || textToSearch.includes('mohali') || 
+        textToSearch.includes('chandigarh') || textToSearch.includes('zirakpur') || textToSearch.includes('panchkula') || 
+        textToSearch.includes('delhi') || textToSearch.includes('noida') || textToSearch.includes('gurgaon') || 
+        textToSearch.includes('gurugram') || textToSearch.includes('mumbai') || textToSearch.includes('bangalore') || 
+        textToSearch.includes('bengaluru') || textToSearch.includes('pune') || textToSearch.includes('hyderabad') || 
+        textToSearch.includes('chennai') || textToSearch.includes('kolkata') || textToSearch.includes('jaipur') || 
+        textToSearch.includes('punjab') || textToSearch.includes('haryana') || textToSearch.includes('ghaziabad') || 
+        textToSearch.includes('faridabad') || textToSearch.includes('bhk') || textToSearch.includes('rupee') || 
+        textToSearch.includes('rs.') || textToSearch.includes('rs ') || textToSearch.includes('kharar') || 
+        textToSearch.includes('aerocity') || textToSearch.includes('it city') || textToSearch.includes('sector') || 
+        textToSearch.includes('bluesquare') || textToSearch.includes('adrolls') || textToSearch.includes('nobogent')
+    ) {
         return "Indian";
     }
-    if (textToSearch.includes('dubai') || textToSearch.includes('uae') || textToSearch.includes('abudhabi') || textToSearch.includes('middle east') || textToSearch.includes('saudi') || textToSearch.includes('qatar') || textToSearch.includes('sharjah') || textToSearch.includes('marina') || textToSearch.includes('downtown')) {
-        return "Arab/Middle Eastern";
+
+    // 2. Middle Eastern / Arab
+    if (
+        textToSearch.includes('dubai') || textToSearch.includes('uae') || textToSearch.includes('abu dhabi') || 
+        textToSearch.includes('abudhabi') || textToSearch.includes('saudi') || textToSearch.includes('riyadh') || 
+        textToSearch.includes('qatar') || textToSearch.includes('doha') || textToSearch.includes('sharjah') || 
+        textToSearch.includes('aed') || textToSearch.includes('dirham') || textToSearch.includes('middle east') || 
+        textToSearch.includes('marina') || textToSearch.includes('jumeirah') || textToSearch.includes('downtown dubai')
+    ) {
+        return "Arab / Middle Eastern";
     }
-    if (textToSearch.includes('singapore') || textToSearch.includes('malaysia') || textToSearch.includes('china') || textToSearch.includes('japan') || textToSearch.includes('asia') || textToSearch.includes('hong kong')) {
+
+    // 3. East Asian
+    if (
+        textToSearch.includes('singapore') || textToSearch.includes('malaysia') || textToSearch.includes('hong kong') || 
+        textToSearch.includes('tokyo') || textToSearch.includes('japan') || textToSearch.includes('china') || 
+        textToSearch.includes('shanghai') || textToSearch.includes('beijing') || textToSearch.includes('korea') || 
+        textToSearch.includes('seoul') || textToSearch.includes('sgd') || textToSearch.includes('yen') || textToSearch.includes('cny')
+    ) {
         return "East Asian";
     }
-    if (textToSearch.includes('spain') || textToSearch.includes('mexico') || textToSearch.includes('colombia') || textToSearch.includes('latam') || textToSearch.includes('brazil') || textToSearch.includes('spanish') || textToSearch.includes('argentina') || textToSearch.includes('chile')) {
-        return "Hispanic/Latina";
+
+    // 4. Southeast Asian
+    if (
+        textToSearch.includes('thailand') || textToSearch.includes('bangkok') || textToSearch.includes('philippines') || 
+        textToSearch.includes('manila') || textToSearch.includes('vietnam') || textToSearch.includes('indonesia') || 
+        textToSearch.includes('jakarta') || textToSearch.includes('bali')
+    ) {
+        return "Southeast Asian";
     }
-    if (textToSearch.includes('usa') || textToSearch.includes('america') || textToSearch.includes('uk') || textToSearch.includes('london') || textToSearch.includes('canada') || textToSearch.includes('australia') || textToSearch.includes('europe')) {
+
+    // 5. Hispanic / Latin American
+    if (
+        textToSearch.includes('spain') || textToSearch.includes('madrid') || textToSearch.includes('barcelona') || 
+        textToSearch.includes('mexico') || textToSearch.includes('colombia') || textToSearch.includes('latam') || 
+        textToSearch.includes('brazil') || textToSearch.includes('spanish') || textToSearch.includes('argentina') || 
+        textToSearch.includes('chile') || textToSearch.includes('pesos')
+    ) {
+        return "Hispanic / Latino";
+    }
+
+    // 6. Western / Caucasian
+    if (
+        textToSearch.includes('usa') || textToSearch.includes('america') || textToSearch.includes('california') || 
+        textToSearch.includes('florida') || textToSearch.includes('new york') || textToSearch.includes('texas') || 
+        textToSearch.includes('london') || textToSearch.includes('uk') || textToSearch.includes('united kingdom') || 
+        textToSearch.includes('canada') || textToSearch.includes('toronto') || textToSearch.includes('vancouver') || 
+        textToSearch.includes('australia') || textToSearch.includes('sydney') || textToSearch.includes('melbourne') || 
+        textToSearch.includes('europe') || textToSearch.includes('germany') || textToSearch.includes('france')
+    ) {
         return "Caucasian";
     }
+
     return "Indian";
 }
 
@@ -589,41 +644,31 @@ export async function POST(request: Request) {
         
         if (avatarUrl) {
             console.log(`[Video Generate] Using custom uploaded character ${isCharacterVideo ? 'video' : 'photo'} from profile: ${avatarUrl}`);
-            if ((isCharacterVideo || isAvatarPhoto) && useUploadedAudio) {
-                // Ensure they have uploaded a voice sample first
-                if (!referenceAudioUrl) {
-                    return NextResponse.json({ 
-                        error: `Please upload a voice sample (up to 15s MP3/WAV) in your Profile Settings to enable voice cloning for your ${isCharacterVideo ? 'video character' : 'avatar character'}.` 
-                    }, { status: 400 });
-                }
-
-                if (isCharacterVideo) {
-                    try {
-                        // Always use local Vercel trimming to guarantee scaling down to 1080p max width (Kie.ai limit)
-                        avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
-                    } catch (delegateErr: any) {
-                        console.error("[Video Generate] Local video trimming failed:", delegateErr.message);
-                    }
-                }
-                
-                console.log(`[Video Generate] Using uploaded voice sample directly: ${referenceAudioUrl}`);
-            } else if (isCharacterVideo) {
-                // Still trim the video reference even if not cloning voice
+            if (isCharacterVideo) {
                 try {
+                    // Always use local Vercel trimming to guarantee scaling down to 1080p max width (Kie.ai limit)
                     avatarUrl = await getTrimmedReferenceVideo(avatarUrl, targetUserId);
                 } catch (delegateErr: any) {
                     console.error("[Video Generate] Local video trimming failed:", delegateErr.message);
                 }
             }
+            if (referenceAudioUrl) {
+                console.log(`[Video Generate] Using uploaded voice sample: ${referenceAudioUrl}`);
+            }
         } else {
             console.log(`[Video Generate] Speaker reference is disabled (presenterType=none). Using generic presenter.`);
         }
 
+        const isAvatarPresenter = presenterType === 'avatar';
+
         // Prepend the custom character avatar to the reference images (only if it's a photo, not a video)
-        const combinedRefImages = (avatarUrl && !isCharacterVideo) ? [avatarUrl, ...refImages] : [...refImages];
+        // Up to 7 images total for Grok Imagine 1.5
+        const maxProductImages = (avatarUrl && !isCharacterVideo) ? 6 : 7;
+        const slicedRefImages = refImages.slice(0, maxProductImages);
+        const combinedRefImages = (avatarUrl && !isCharacterVideo) ? [avatarUrl, ...slicedRefImages] : [...slicedRefImages];
         
         // Ensure all reference images are in JPEG format for Kie.ai compatibility
-        console.log(`[Video Generate] Ensuring all reference images are JPEG format for user: ${targetUserId}`);
+        console.log(`[Video Generate] Ensuring all reference images are JPEG format for user: ${targetUserId} (${combinedRefImages.length} images)`);
         const convertedRefImages = await Promise.all(
             combinedRefImages.map(imgUrl => ensureJpegImage(imgUrl, targetUserId))
         );
@@ -635,27 +680,142 @@ export async function POST(request: Request) {
         let prompts: string[] = [];
         const scenes = script.scenes || [{ dialogue: script.dialogue, visuals: script.visuals }];
         
-        // Prepare precise image mapping instructions to prevent any ambiguity for Kie.ai Seedance 2.0
+        // Resolve image descriptions from cache/DB if missing
+        let listingDescriptions = imageDescriptions || script.imageDescriptions;
+        if (!listingDescriptions || !Array.isArray(listingDescriptions) || listingDescriptions.length === 0) {
+            listingDescriptions = await resolveImageDescriptions(supabaseAdmin, slicedRefImages, propertyId);
+        }
+
+        // Prepare precise image mapping instructions
         let preciseImageMapping = [];
         let currentIndex = 1;
         if (avatarUrl && !isCharacterVideo) {
-            preciseImageMapping.push(`Image_1 (reference_image_urls[0]): Presenter Avatar Photo (used ONLY for character face/identity consistency, NOT for scenes background)`);
+            preciseImageMapping.push(`Image_1 (reference_image_urls[0]): Presenter Avatar Photo (used for creator identity, facial likeness, clothing, and speaking model)`);
             currentIndex = 2;
         }
         
-        const listingDescriptions = imageDescriptions || script.imageDescriptions || [];
-        for (let i = 0; i < refImages.length; i++) {
+        for (let i = 0; i < slicedRefImages.length; i++) {
             const desc = listingDescriptions[i] || `Property photo showing scene/features`;
-            preciseImageMapping.push(`Image_${currentIndex} (reference_image_urls[${currentIndex - 1}]): Property Listing Image ${i + 1} - Description: "${desc}"`);
+            preciseImageMapping.push(`Image_${currentIndex} (reference_image_urls[${currentIndex - 1}]): Product/Property Image ${i + 1} - Description: "${desc}"`);
             currentIndex++;
         }
         
         const descriptionsText = preciseImageMapping.join('\n') || 'No detailed image descriptions provided.';
+        const selectedDuration = body.duration || 30;
+        const requiredClips = Math.max(1, Math.round(selectedDuration / 15));
 
         if (body.prompts && Array.isArray(body.prompts) && body.prompts.length > 0) {
             console.log(`[Video Generate] Using user-provided custom prompts (length: ${body.prompts.length})`);
             prompts = body.prompts;
-        } else if (videoModel !== 'grok') {
+        } else if (videoModel === 'grok') {
+            console.log(`[Grok Pipeline] Synthesizing prompts for ${requiredClips} scene(s) in parallel (isAvatar: ${isAvatarPresenter})...`);
+            const promptPromises = Array.from({ length: requiredClips }, async (_, i) => {
+                const currentSceneObj = scenes[i % scenes.length];
+                const sceneDialogue = currentSceneObj?.dialogue || script.dialogue || '';
+                const sceneVisuals = currentSceneObj?.visuals || script.visuals || script.concept?.visualConcept || '';
+                const productTitle = script.title || property?.title || 'Featured Product/Business';
+                const productContext = property?.description || script.finalCaption || '';
+
+                if (isAvatarPresenter && avatarUrl) {
+                    const customInstructionsBlock = (customInstructions && customInstructions !== 'None') 
+                        ? `\nUSER CUSTOM INSTRUCTIONS & MANDATORY CREATIVE DIRECTION (HIGHEST PRIORITY):\n"${customInstructions}"\n[CRITICAL DIRECTIVE: You MUST strictly prioritize and weave the above user instructions into the presenter's delivery, action, environment, and camera focus!]\n`
+                        : '';
+
+                    const avatarScenePromptGen = `You are a world-class commercial ad director specializing in photorealistic live-action video generation with Grok Imagine 1.5.
+Write an ultra-realistic, highly human-like 9:16 portrait video prompt for Scene ${i + 1} of ${requiredClips}.
+${customInstructionsBlock}
+PRESENTER & CHARACTER DIRECTIVES:
+- Visual Identity: Image 1 is the exact presenter model. Maintain strict facial identity, hairstyle, ethnicity, and clothing from Image 1.
+- Lifelike Human Expressions & Body Language: The presenter must look completely natural and alive, with authentic warm smiles, subtle facial micro-expressions, natural eye contact, realistic blinking, and relaxed, fluid body posture (avoid all robotic, stiff, or frozen poses).
+- Expressive Natural Gestures: While speaking, the presenter uses lively, organic hand gestures and natural head movements to emphasize key points warmly to the viewer.
+- Authentic Human Voice & Delivery: The presenter speaks in an authentic, warm, natural human voice with rich tone, casual breathing pauses, lively conversational cadence, expressive pitch variations, and flawless lip synchronization saying: "${sceneDialogue}". Strictly NO robotic, artificial, or monotone voice synthesis.
+
+PRODUCT INTEGRATION & ENVIRONMENT:
+- Product/Property Title: "${productTitle}"
+- Scene Visual Action: "${sceneVisuals}"
+- Reference Product Photos:
+${descriptionsText}
+- Visual B-Roll Cuts: The camera transitions fluidly from the presenter to realistic dynamic B-roll angles showcasing the physical product/property features from reference photos (Images 2..${convertedRefImages.length}).
+
+CINEMATOGRAPHY & AUDIO:
+- 35mm anamorphic camera, shallow depth of field, natural soft ambient lighting, true-to-life skin textures with realistic micro-details. 9:16 vertical ratio.
+- High-fidelity natural human voice with realistic room acoustics and zero robotic distortion.
+- STRICT NO TEXT: Absolutely NO on-screen captions, NO text, NO titles, NO subtitles, NO watermarks.
+
+Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
+
+                    try {
+                        console.log(`[Grok Pipeline] Generating Hyper-Realistic Avatar prompt for scene ${i + 1} with gemini-3.5-flash...`);
+                        const res = await generateText({
+                            model: google('gemini-3.5-flash'),
+                            prompt: avatarScenePromptGen
+                        });
+                        let promptText = res.text.trim();
+                        if (!promptText.toLowerCase().includes('human voice') && !promptText.toLowerCase().includes('natural voice')) {
+                            promptText += ' Authentic, natural human speaking voice with warm conversational inflection and organic pauses, perfectly synced lips. Strictly NO robotic tone.';
+                        }
+                        return promptText;
+                    } catch (genErr) {
+                        console.warn(`[Grok Pipeline] Avatar prompt generation fallback for scene ${i + 1}:`, genErr);
+                        return `The presenter shown in Image 1 stands in a natural medium chest-up shot in an authentic, well-lit ambient setting. With warm, lifelike facial micro-expressions, fluid head motion, and expressive, natural hand gestures, she speaks directly into the camera in a warm, authentic human voice with natural conversational cadence, realistic pauses, and flawless lip sync saying: "${sceneDialogue}". The shot flows seamlessly with dynamic camera cuts highlighting ${sceneVisuals || productTitle} from the reference product photos. 35mm live-action cinema lighting, realistic skin texture, 9:16 portrait ratio, crisp natural human voice. Strictly NO robotic stiffness, NO artificial monotone speech, NO on-screen text, and NO subtitles.`;
+                    }
+                } else {
+                    const targetEthnicity = extrapolateEthnicity(profile, property, customInstructions);
+                    const customInstructionsBlock = (customInstructions && customInstructions !== 'None') 
+                        ? `\nUSER CUSTOM INSTRUCTIONS & MANDATORY CREATIVE DIRECTION (HIGHEST PRIORITY):\n"${customInstructions}"\n[CRITICAL DIRECTIVE: You MUST strictly prioritize and weave the above user instructions into the visual cuts, product demonstration, and pacing!]\n`
+                        : '';
+
+                    const showcaseScenePromptGen = `You are an elite commercial ad director specializing in fast-paced, high-converting commercial video ads.
+Write an ultra-realistic 9:16 commercial video prompt for Scene ${i + 1} of ${requiredClips} for Grok Imagine 1.5.
+${customInstructionsBlock}
+PRODUCT / BRAND CONTEXT:
+- Business/Product Title: "${productTitle}"
+- Product Description & Context: "${productContext.slice(0, 400)}"
+- Reference Images:
+${descriptionsText}
+
+SCRIPT SCENE ${i + 1} DIRECTIVES:
+- Visual Action: "${sceneVisuals}"
+
+TARGET DEMOGRAPHIC & CASTING (CRITICAL):
+- Target Market / Demographic: ${targetEthnicity}
+- Casting & People: Any people, buyers, residents, families, customers, or lifestyle models appearing in the video must strictly be of authentic ${targetEthnicity} ethnicity, with modern styling and attire matching the regional market context.
+
+MASTER AD PROMPTING RULES:
+1. HYPER-DYNAMIC RAPID CUTS DIRECTIVE: The prompt MUST strictly begin with: "The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where..."
+2. STRICT 2-SECOND MAXIMUM PER SHOT: No single shot, camera angle, or scene may stay on screen for longer than 2 seconds. The 15-second clip must progress through 6 to 8 rapid cinematic micro-shots (0-2s rapid hero reveal -> 2-4s dynamic whip-pan transition -> 4-6s macro feature closeup -> 6-8s ${targetEthnicity} lifestyle moment -> 8-10s wide architectural perspective -> 10-12s motion transition -> 12-15s grand climax).
+3. FAST KINETIC TRANSITIONS: Dynamic camera motion (whip pans, speed ramps, smooth push-in zooms, and rack focus) connecting each rapid cut seamlessly.
+4. STRICT NO VOICEOVER / NO SPOKEN DIALOGUE RULE: The video must contain STRICTLY ZERO voiceover, NO spoken speech, NO spoken dialogue, NO actors speaking, and NO talking heads. Pure visual commercial sequence.
+5. CINEMATOGRAPHY: 35mm anamorphic camera, dynamic commercial studio lighting, 9:16 portrait aspect ratio, macro focus transitions, upbeat background instrumental music track.
+6. NO ON-SCREEN TEXT: Absolutely NO text, NO titles, NO on-screen captions, NO text overlays.
+
+Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
+
+                    try {
+                        console.log(`[Grok Pipeline] Generating Non-Avatar prompt for scene ${i + 1} with gemini-3.5-flash (${targetEthnicity} demographic, rapid 2s cuts)...`);
+                        const res = await generateText({
+                            model: google('gemini-3.5-flash'),
+                            prompt: showcaseScenePromptGen
+                        });
+                        let synthesized = res.text.trim();
+                        if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
+                            synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where... ${synthesized}`;
+                        }
+                        if (!synthesized.toLowerCase().includes('no voiceover') && !synthesized.toLowerCase().includes('zero voiceover')) {
+                            synthesized += ` People show emotion but strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera.`;
+                        }
+                        if (!synthesized.toLowerCase().includes(targetEthnicity.toLowerCase())) {
+                            synthesized += ` Any featured people or residents are authentic ${targetEthnicity}.`;
+                        }
+                        return synthesized;
+                    } catch (genErr) {
+                        console.warn(`[Grok Pipeline] Non-Avatar prompt generation fallback for scene ${i + 1}:`, genErr);
+                        return `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where an opening hero shot showcases "${productTitle}", cutting instantly every 2 seconds to ${sceneVisuals || 'the featured product in action'} with authentic ${targetEthnicity} people interacting, ending on a sleek macro texture close-up. Cinematic 35mm anamorphic camera, dynamic lighting, 9:16 portrait aspect ratio, upbeat background instrumental music track. Strictly NO voiceover, NO spoken dialogue, NO speech, and NO talking to camera. Absolutely NO text, NO titles, or text overlays of any kind.`;
+                    }
+                }
+            });
+            prompts = await Promise.all(promptPromises);
+        } else {
             // Extrapolate ethnicity based on where the business is based
             const extrapolatedEthnicity = extrapolateEthnicity(profile, property, customInstructions);
             
@@ -666,9 +826,7 @@ export async function POST(request: Request) {
                 ? (profileDesc || `a stunningly beautiful, highly attractive, charismatic ${extrapolatedEthnicity} female UGC content creator with a fair complexion, smiling warmly`)
                 : `a stunningly beautiful, highly charismatic ${extrapolatedEthnicity} female UGC content creator, smiling warmly and speaking directly to the camera`;
 
-            for (let i = 0; i < scenes.length; i++) {
-                const scene = scenes[i];
-
+            const promptPromises = scenes.map(async (scene: any, i: number) => {
                 const characterAppearanceText = isCharacterVideo
                      ? `Use reference video ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`
                      : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
@@ -695,22 +853,21 @@ Dialogue
 
 Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or backticks.`;
 
-                let finalPrompt = "";
                 console.log(`[Generate API] Generating prompt for scene ${i + 1} with primary model: gemini-3.5-flash`);
                 try {
                     const res = await generateText({
                         model: google('gemini-3.5-flash'),
                         prompt: synthesisPrompt,
                     });
-                    finalPrompt = res.text.trim();
+                    return res.text.trim();
                 } catch (fallbackErr: any) {
                     console.error(`[Generate API] Prompt synthesis failed for scene ${i + 1}:`, fallbackErr);
                     const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
                     const cleanFallbackDialogue = scene.dialogue;
-                    finalPrompt = `${characterAppearanceText}\n\nThe video opens in a premium, warm real estate setting.\nA professional female UGC presenter stands in a detailed closeup shot looking directly into the camera.\nShe says:\n"${cleanFallbackDialogue}"\nThe camera slowly dollies toward the presenter's face.\nTransition to a wide scenic shot showing the product/property matching the supplied reference image 1 (${targetImageLabel}) from super far away so that no human face is visible or mutated.\nProfessional real estate home tour.\nPhotorealistic.\nUltra-realistic human motion.\nNatural body language.\nPerfect lip synchronization.\nLuxury property marketing video.\nSmooth steadycam movement.\nCinematic architectural videography.\nPremium lighting.\nNo AI artifacts.\nHigh-end commercial production quality.\n15-second continuous shot.`;
+                    return `${characterAppearanceText}\n\nThe video opens in a premium, warm real estate setting.\nA professional female UGC presenter stands in a detailed closeup shot looking directly into the camera.\nShe says:\n"${cleanFallbackDialogue}"\nThe camera slowly dollies toward the presenter's face.\nTransition to a wide scenic shot showing the product/property matching the supplied reference image 1 (${targetImageLabel}) from super far away so that no human face is visible or mutated.\nProfessional real estate home tour.\nPhotorealistic.\nUltra-realistic human motion.\nNatural body language.\nPerfect lip synchronization.\nLuxury property marketing video.\nSmooth steadycam movement.\nCinematic architectural videography.\nPremium lighting.\nNo AI artifacts.\nHigh-end commercial production quality.\n15-second continuous shot.`;
                 }
-                prompts.push(finalPrompt);
-            }
+            });
+            prompts = await Promise.all(promptPromises);
         }
 
         // Return early if preview mode is requested
@@ -749,7 +906,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
         creditsDeductedSuccess = true;
 
         // 4. Create Placeholder Asset (Spinning Card) in Supabase
-        const initialAudioUrl = body.audioUrl || null;
+        const initialAudioUrl = isAvatarPresenter ? 'native' : (body.audioUrl || null);
         const { data: newAsset, error: newAssetError } = await supabaseAdmin
             .from('assets')
             .insert({
@@ -759,7 +916,12 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                 status: 'Processing',
                 url: 'https://designs.adrolls.in/processing', // Temporary URL
                 caption: script.finalCaption || `${script.title}\n\n${script.dialogue}`,
-                metadata: initialAudioUrl ? { audioUrl: initialAudioUrl } : {},
+                metadata: {
+                    isAvatar: isAvatarPresenter,
+                    presenterType: presenterType,
+                    videoModel: videoModel,
+                    audioUrl: initialAudioUrl
+                },
                 created_at: new Date().toISOString()
             })
             .select()
@@ -782,7 +944,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
             baseUrl = `${forwardedProto}://${forwardedHost}`;
         } else if (!requestOrigin.includes('localhost')) {
             baseUrl = requestOrigin;
-        } else if (publicUrl && publicUrl.startsWith('http') && !publicUrl.includes('localhost')) {
+        } else if (publicUrl && publicUrl.startsWith('http')) {
             baseUrl = publicUrl;
         }
 
@@ -796,126 +958,53 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
         }
 
         const audioUrl = body.audioUrl || null;
-        const selectedDuration = body.duration || 30;
 
         // 5. Launch Tasks based on Model (Seedance vs Grok)
         const taskIds: string[] = [];
         const launchErrors: string[] = [];
 
         if (videoModel === 'grok') {
-            console.log(`[Video Generate] Running GROK IMAGINE 1.5 pipeline for target user ${targetUserId}...`);
+            console.log(`[Video Generate] Running GROK IMAGINE 1.5 pipeline for target user ${targetUserId}... (isAvatar: ${isAvatarPresenter})`);
 
-            // Generate TTS voiceover task asynchronously from script dialogue (without blocking HTTP response)
-            let grokAudioUrl: string | null = audioUrl;
-            if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
-                try {
-                    console.log(`[Video Generate] Launching asynchronous Gemini TTS task for Grok pipeline...`);
-                    const { taskId: ttsTaskId } = await createGeminiTTS({
-                        dialogueText: script.dialogue.trim(),
-                        speakerName: body.grokVoice || 'Aoede',
-                        style: '',
-                        scene: 'Professional real estate commercial voiceover studio',
-                        sampleContext: 'High converting luxury real estate marketing video'
-                    });
-                    if (ttsTaskId) {
-                        console.log(`[Video Generate] Gemini TTS task launched: ${ttsTaskId}`);
-                        // Store the TTS task ID format so callback can resolve audio URL if needed
-                        grokAudioUrl = `tts:${ttsTaskId}`;
-                        await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl } }).eq('id', newAsset.id);
+            let grokAudioUrl: string | null = null;
+
+            // In Avatar mode, Grok natively produces dialogue speech in the video - NO external TTS needed!
+            // In Non-Avatar mode, launch asynchronous Gemini TTS to generate background voiceover.
+            if (!isAvatarPresenter) {
+                grokAudioUrl = audioUrl;
+                if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
+                    try {
+                        console.log(`[Video Generate] Launching asynchronous Gemini TTS task for Grok Non-Avatar voiceover...`);
+                        const { taskId: ttsTaskId } = await createGeminiTTS({
+                            dialogueText: script.dialogue.trim(),
+                            speakerName: body.grokVoice || 'Aoede',
+                            style: '',
+                            scene: 'Professional commercial voiceover studio',
+                            sampleContext: 'High converting commercial marketing video'
+                        });
+                        if (ttsTaskId) {
+                            console.log(`[Video Generate] Gemini TTS task launched: ${ttsTaskId}`);
+                            grokAudioUrl = `tts:${ttsTaskId}`;
+                            await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl } }).eq('id', newAsset.id);
+                        }
+                    } catch (ttsErr: any) {
+                        console.warn('[Video Generate] Asynchronous TTS voiceover launch warning:', ttsErr.message);
                     }
-                } catch (ttsErr: any) {
-                    console.warn('[Video Generate] Asynchronous TTS voiceover launch warning:', ttsErr.message);
+                } else if (grokAudioUrl) {
+                    await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl } }).eq('id', newAsset.id);
                 }
-            } else if (grokAudioUrl) {
-                await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl } }).eq('id', newAsset.id);
+            } else {
+                console.log(`[Video Generate] Avatar mode active: Grok will speak dialogues natively. Bypassing external TTS generation.`);
             }
 
-            let grokPrompts: string[] = [];
-            let collageUrls: (string | undefined)[] = [];
+            console.log(`[Grok Pipeline] Launching ${prompts.length} Grok scene clips with ${convertedRefImages.length} input image(s)...`);
 
-            const requiredClips = Math.max(1, Math.round(selectedDuration / 15));
-            console.log(`[Grok Pipeline] Video duration: ${selectedDuration}s -> Generating ${requiredClips} Grok scene clips...`);
-
-            // Generate 9:16 collages if reference images are provided
-            let generatedCollages: string[] = [];
-            if (convertedRefImages.length > 0) {
-                console.log(`[Grok Pipeline] Creating 9:16 collages for ${convertedRefImages.length} input image(s) distributed across ${requiredClips} clip(s)...`);
-                generatedCollages = await createCollageImages(convertedRefImages, targetUserId, requiredClips);
-                console.log(`[Grok Pipeline] Created ${generatedCollages.length} collages:`, generatedCollages);
-            }
-
-            for (let i = 0; i < requiredClips; i++) {
-                const hasImageForClip = i < generatedCollages.length;
-                let colUrl: string | undefined = hasImageForClip ? generatedCollages[i] : undefined;
-
-                const currentSceneObj = scenes[i % scenes.length];
-                const sceneDialogue = currentSceneObj?.dialogue || script.dialogue || '';
-                const sceneVisuals = currentSceneObj?.visuals || script.visuals || script.concept?.visualConcept || '';
-                const productTitle = script.title || property?.title || 'Featured Product/Business';
-                const productContext = property?.description || script.finalCaption || '';
-
-                console.log(`[Grok Pipeline] Synthesizing Master Multi-Cut Grok prompt for Scene ${i + 1}/${requiredClips}...`);
-
-                const scenePromptGen = `You are an elite commercial ad director specializing in high-converting, fast-paced commercial ads across all industries (Real Estate, SaaS, E-Commerce, Hospitality, Health, Fashion, Automotive, etc.).
-
-Write an ultra-realistic 9:16 commercial video prompt for Scene ${i + 1} of ${requiredClips} for an AI video model (Grok Imagine 1.5).
-
-PRODUCT / BRAND / INDUSTRY CONTEXT:
-- Business/Product Title: "${productTitle}"
-- Product Description & Context: "${productContext.slice(0, 400)}"
-
-SCRIPT SCENE ${i + 1} DIRECTIVES:
-- Visual Action: "${sceneVisuals}"
-- Visual Concept Context: "${sceneDialogue}"
-
-MASTER AD PROMPTING RULES:
-1. SCENE START & DYNAMIC CUTS DIRECTIVE: The prompt MUST strictly begin with: "The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where..."
-2. MULTI-SHOT SEQUENCE STRUCTURE (Rapid Cuts Every 2 Seconds):
-   - Shot 1 (0-2s): Instant macro detail or hero product shot highlighting key benefits of "${productTitle}".
-   - Shot 2 (2-4s): Authentic human emotional reaction (e.g. customer gasping in delight, smiling warmly, nodding in approval, sharing a joyful moment, or experiencing relief).
-   - Shot 3 (4-6s): Dynamic action shot showcasing the product in use or sweeping visual environment (${sceneVisuals}).
-   - Shot 4 (6-8s+): Macro texture close-up or satisfying result sequence reflecting high value and satisfaction.
-3. STRICT NO VOICEOVER / NO SPOKEN DIALOGUE RULE: The video must contain STRICTLY ZERO voiceover, NO spoken speech, NO spoken dialogue, NO actors speaking, NO voiceover narration, and NO talking heads. People in the video show real human emotions, genuine expressions, and physical interactions, but strictly NO talking to camera, NO speaking lips, and NO voiceover speech of any kind.
-4. REFERENCE IMAGE INTEGRATION: ${hasImageForClip ? `"Reference 9:16 collage image as visual identity lock. Seamlessly integrate the colors, product design, architectural style, and visual aesthetics from the reference image across the fast-cut sequence."` : `"Create photorealistic 9:16 commercial visuals representing the product in action."`}
-5. CINEMATOGRAPHY: 35mm anamorphic camera, cinematic lighting, 9:16 portrait aspect ratio, dynamic camera whip pans, macro focus transitions, upbeat background instrumental music track with ZERO voiceover.
-6. NO ON-SCREEN TEXT: Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, NO text overlays, or subtitles of any kind.
-7. SILENT VOICEOVER DIRECTIVE: Strictly specify: "Completely mute voiceover, zero spoken dialogue, zero speech, no talking heads. Pure visual commercial sequence."
-
-Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
-
-                let finalGrokPrompt = "";
-                try {
-                    console.log(`[Grok Pipeline] Generating prompt for scene ${i + 1} with primary model: gemini-3.5-flash`);
-                    let text = "";
-                    const res = await generateText({
-                        model: google('gemini-3.5-flash'),
-                        prompt: scenePromptGen
-                    });
-                    text = res.text;
-                    let synthesized = text.trim();
-                    if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
-                        synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where... ${synthesized}`;
-                    }
-                    if (!synthesized.toLowerCase().includes('no voiceover') && !synthesized.toLowerCase().includes('zero voiceover')) {
-                        synthesized += ` People show emotion but strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera.`;
-                    }
-                    finalGrokPrompt = synthesized;
-                } catch (genErr) {
-                    console.warn(`[Grok Pipeline] Gemini master prompt synthesis failed for scene ${i + 1}, using intelligent multi-cut fallback:`, genErr);
-                    finalGrokPrompt = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 seconds where an opening hero macro shot showcases "${productTitle}", cutting instantly to an delighted customer smiling warmly with genuine excitement, followed by a dynamic tracking shot of ${sceneVisuals || 'the featured product in action'}, ending on a sleek macro texture close-up. Cinematic 35mm anamorphic camera, dynamic lighting, 9:16 portrait aspect ratio, upbeat background instrumental music track. People show emotion but strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera. Absolutely NO text, NO titles, NO on-screen captions, NO lower thirds, or text overlays of any kind.`;
-                }
-
-                grokPrompts.push(finalGrokPrompt);
-                collageUrls.push(colUrl);
-            }
-
-            const grokLaunchPromises = grokPrompts.map(async (promptText, index) => {
-                const colUrl = collageUrls[index];
-                console.log(`[Video Generate] Launching Grok Imagine task ${index + 1}/${grokPrompts.length}...`);
+            const grokLaunchPromises = prompts.map(async (promptText, index) => {
+                console.log(`[Video Generate] Launching Grok Imagine task ${index + 1}/${prompts.length}...`);
 
                 const { taskId, error: grokError } = await createGrokVideoTask({
                     prompt: promptText,
-                    collageImageUrl: colUrl,
+                    imageUrls: convertedRefImages,
                     aspectRatio: "9:16",
                     resolution: "480p",
                     duration: 15,
@@ -932,7 +1021,7 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
 
             await Promise.all(grokLaunchPromises);
 
-            if (launchErrors.length > 0 || taskIds.filter(Boolean).length !== grokPrompts.length) {
+            if (launchErrors.length > 0 || taskIds.filter(Boolean).length !== prompts.length) {
                 await supabaseAdmin.from('assets').delete().eq('id', newAsset.id);
                 await refundLimit(targetUserId, 'videos');
                 await addCredits(supabaseAdmin, targetUserId, totalCreditsRequired, 'ai_generation', `Refund: Grok Video Generation failed to launch`);
@@ -950,13 +1039,14 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                         user_id: targetUserId,
                         property_id: propertyId || null,
                         asset_id: newAsset.id,
-                        prompts: grokPrompts,
+                        prompts: prompts,
                         current_index: index,
                         last_task_id: taskId,
-                        last_successful_task_id: collageUrls[index] || null,
+                        last_successful_task_id: convertedRefImages[0] || null,
                         aspect_ratio: "9:16",
                         status: 'Processing',
-                        audio_url: grokAudioUrl || null,
+                        audio_url: isAvatarPresenter ? 'native' : (grokAudioUrl || null),
+                        video_model: 'grok',
                         final_caption: script.finalCaption || null
                     });
                 if (insertErr) {
@@ -970,7 +1060,7 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                 success: true,
                 assetId: newAsset.id,
                 taskIds,
-                message: `${grokPrompts.length}-clip Grok Imagine 1.5 video generation started.`
+                message: `${prompts.length}-clip Grok Imagine 1.5 ${isAvatarPresenter ? 'Avatar' : 'Voiceover'} video generation started.`
             });
 
         } else {
@@ -998,10 +1088,7 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                     payload.input.reference_video_urls = referenceVideoUrls;
                 }
 
-                if ((isCharacterVideo || isAvatarPhoto) && useUploadedAudio) {
-                    if (!referenceAudioUrl) {
-                        throw new Error("Reference audio extraction failed. Please ensure your Cloud Run service is deployed and running, and that your uploaded presenter asset has a valid, audible voice sample.");
-                    }
+                if ((isCharacterVideo || isAvatarPhoto) && useUploadedAudio && referenceAudioUrl) {
                     payload.input.reference_audio_urls = [referenceAudioUrl];
                 }
                 
