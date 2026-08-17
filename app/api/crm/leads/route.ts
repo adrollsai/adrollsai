@@ -86,57 +86,29 @@ export async function GET(req: Request) {
     }
     const totalCount = totalDbCount || 0
 
-    let leads: any[] = []
-    const page = pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1
-    const limit = limitParam ? Math.max(1, parseInt(limitParam, 10)) : 50
-
-    if (fetchAll) {
-      // Chunked fetch for bulk operations / exports
-      const PAGE_SIZE = 1000
-      const totalPagesNeeded = Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, 50)
-      const pageIndices = Array.from({ length: totalPagesNeeded }, (_, i) => i)
-      
-      const chunkArray = (arr: number[], size: number) => {
-        const chunks: number[][] = []
-        for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size))
-        return chunks
-      }
-      
-      const pageChunks = chunkArray(pageIndices, 20)
-      for (const chunk of pageChunks) {
-        const chunkPromises = chunk.map(pageIndex => {
-          const baseQuery = supabaseAdmin.from('leads').select(leadFields)
-          const filteredQuery = applyFilters(baseQuery)
-          return filteredQuery
-            .order('created_at', { ascending: false })
-            .order('id', { ascending: false })
-            .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1)
-        })
-        const results = await Promise.all(chunkPromises)
-        for (const r of results) {
-          if (r.data && r.data.length > 0) {
-            leads = leads.concat(r.data)
-          }
-        }
-      }
-    } else {
-      // Single fast paginated range query
-      const offset = (page - 1) * limit
+    const PAGE_SIZE = 1000
+    const totalPagesNeeded = Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, 20)
+    
+    // Fetch all pages in parallel
+    const pagePromises = Array.from({ length: totalPagesNeeded }, (_, pageIndex) => {
       const baseQuery = supabaseAdmin.from('leads').select(leadFields)
       const filteredQuery = applyFilters(baseQuery)
-      const { data: pageData, error: pageErr } = await filteredQuery
+      return filteredQuery
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
-        .range(offset, offset + limit - 1)
+        .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1)
+    })
 
-      if (pageErr) {
-        console.error('[API CRM Leads] Page query error:', pageErr)
+    const pageResults = await Promise.all(pagePromises)
+    let allLeads: any[] = []
+    for (const r of pageResults) {
+      if (r.data && r.data.length > 0) {
+        allLeads = allLeads.concat(r.data)
       }
-      leads = pageData || []
     }
 
     // Parse custom_fields quickly
-    const parsedLeads = leads.map(lead => {
+    const parsedLeads = allLeads.map(lead => {
       let cf = lead.custom_fields
       if (cf && typeof cf === 'string') {
         try {
@@ -151,10 +123,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       leads: parsedLeads,
-      totalCount: totalCount,
-      page,
-      limit,
-      totalPages: Math.max(1, Math.ceil(totalCount / limit))
+      totalCount: totalCount
     }, {
       headers: {
         'Cache-Control': 'private, max-age=5, stale-while-revalidate=15'

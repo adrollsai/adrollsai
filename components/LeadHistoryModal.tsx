@@ -92,7 +92,15 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
 
       const cutoff = cf?.history_visible_from
       if (cutoff && !isAdmin) {
-        items = items.filter(item => new Date(item.created_at) >= new Date(cutoff))
+        const cutoffDate = new Date(cutoff)
+        items = items.filter(item => {
+          const isSystem = item.action_type === 'REOPENED' || 
+                           item.action_type === 'LEAD_CREATED' || 
+                           item.action_type === 'SYSTEM' || 
+                           (item.description && (item.description.includes('Lead Source :') || item.description.includes('Facebook Ad Submission') || item.description.includes('Source Details :')))
+          if (isSystem) return true
+          return new Date(item.created_at) >= cutoffDate
+        })
       }
 
       setHistoryItems(items)
@@ -229,6 +237,19 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
                   <div><strong>Lead Source :</strong> {lead.source || 'Facebook'}</div>
                   <div><strong>Source Details :</strong> {lead.ad_name || lead.form_name || lead.campaign_name || 'Meta Ad'}</div>
                   <div><strong>Stage :</strong> {(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'New Lead')}</div>
+                  {(() => {
+                    let cf: any = lead.custom_fields
+                    if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) { cf = null } }
+                    if (cf?.opening_comments) {
+                      return (
+                        <div className="mt-2 pt-2 border-t border-slate-200">
+                          <strong className="text-slate-900 block mb-0.5">📋 Ad Requirements / Answers :</strong>
+                          <p className="whitespace-pre-wrap font-semibold text-slate-800 bg-white p-2 rounded-xl border border-slate-200/60">{cf.opening_comments}</p>
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
                 </div>
               </div>
             </div>

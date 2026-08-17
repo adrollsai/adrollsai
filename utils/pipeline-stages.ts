@@ -201,6 +201,33 @@ export function categorizeLeadStage(
   const normalizedList = candidates.map(c => c.trim().toLowerCase()).filter(Boolean)
   if (normalizedList.length === 0) return 'fresh'
 
+  // Check if lead has any DNP attempt or Agent remark / followup activity
+  let hasDnpOrAgentActivity = false
+  if (typeof rawStageOrLead === 'object' && rawStageOrLead !== null) {
+    let cf = rawStageOrLead.custom_fields
+    if (typeof cf === 'string') {
+      try { cf = JSON.parse(cf) } catch (e) { cf = null }
+    }
+
+    const dnpCount = rawStageOrLead.dnp_count || cf?.dnp_count || 0
+    const isDnp = rawStageOrLead.last_call_dnp === true || cf?.last_call_dnp === true
+    const hasCallAttempt = !!(rawStageOrLead.last_call_at || cf?.last_call_initiated_at)
+    const hasFollowupAt = !!(cf?.last_followup_at || cf?.last_action_date)
+    const hasFollowupRemark = !!(
+      (cf?.last_followup_remark && typeof cf.last_followup_remark === 'string' && cf.last_followup_remark.trim()) ||
+      (cf?.last_remark && typeof cf.last_remark === 'string' && cf.last_remark.trim()) ||
+      (rawStageOrLead.last_followup_remark && typeof rawStageOrLead.last_followup_remark === 'string' && rawStageOrLead.last_followup_remark.trim()) ||
+      (rawStageOrLead.last_call_remark && typeof rawStageOrLead.last_call_remark === 'string' && rawStageOrLead.last_call_remark.trim())
+    )
+    const notesStr = rawStageOrLead.notes && typeof rawStageOrLead.notes === 'string' ? rawStageOrLead.notes : ''
+    const hasAgentNote = notesStr.includes('[📝') || notesStr.includes('[⚠️') || notesStr.includes('[📞') || notesStr.toLowerCase().includes('followup') || notesStr.toLowerCase().includes('dnp')
+    const followupCount = cf?.followup_count || 0
+
+    if (dnpCount > 0 || isDnp || hasCallAttempt || hasFollowupAt || hasFollowupRemark || hasAgentNote || followupCount > 0) {
+      hasDnpOrAgentActivity = true
+    }
+  }
+
   // 1. Check for Trash
   for (const normalized of normalizedList) {
     if (normalized === 'trash' || normalized === 'deleted' || normalized === 'archived') {
@@ -236,6 +263,11 @@ export function categorizeLeadStage(
     }
   }
 
+  // If lead had any DNP or Agent followup/remark activity, it belongs in Ongoing (not Fresh)
+  if (hasDnpOrAgentActivity) {
+    return 'ongoing'
+  }
+
   // 4. Check for Ongoing across configured stages
   for (const normalized of normalizedList) {
     const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
@@ -244,7 +276,7 @@ export function categorizeLeadStage(
     }
   }
 
-  // 5. Check for Fresh
+  // 5. Check for Fresh (only untouched leads with no agent interaction)
   for (const normalized of normalizedList) {
     const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
     if (matched && matched.category === 'fresh') {
