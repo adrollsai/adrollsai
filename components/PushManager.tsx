@@ -82,17 +82,6 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
         }).catch(() => {})
       }
 
-      const permStatus = await PushNotifications.checkPermissions()
-      if (permStatus.receive === 'granted') {
-        setPermissionState('granted')
-        const savedToken = localStorage.getItem('nobogent_native_fcm_token')
-        if (savedToken) {
-          setSubscription({ fcmToken: savedToken })
-        }
-      } else if (permStatus.receive === 'denied') {
-        setPermissionState('denied')
-      }
-
       if (!isRegisteredRef.current) {
         isRegisteredRef.current = true
 
@@ -121,6 +110,24 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
             window.location.href = targetUrl
           }
         })
+      }
+
+      const permStatus = await PushNotifications.checkPermissions()
+      if (permStatus.receive === 'granted') {
+        setPermissionState('granted')
+        const savedToken = localStorage.getItem('nobogent_native_fcm_token')
+        if (savedToken) {
+          setSubscription({ fcmToken: savedToken })
+          syncNativeTokenWithBackend(savedToken)
+        }
+        // Always call register to keep token fresh & registered
+        await PushNotifications.register()
+      } else if (permStatus.receive === 'denied') {
+        setPermissionState('denied')
+        setSubscription(null)
+      } else {
+        setPermissionState('default')
+        setSubscription(null)
       }
     } catch (err) {
       console.warn('[Native Push] Init notice:', err)
@@ -267,7 +274,19 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       })
 
       try {
-          if (subscription) {
+          if (isNative) {
+            let permStatus = await PushNotifications.checkPermissions()
+            if (permStatus.receive !== 'granted') {
+              permStatus = await PushNotifications.requestPermissions()
+            }
+            if (permStatus.receive === 'granted') {
+              await PushNotifications.register()
+              const savedToken = localStorage.getItem('nobogent_native_fcm_token')
+              if (savedToken) {
+                await syncNativeTokenWithBackend(savedToken)
+              }
+            }
+          } else if (subscription) {
             await syncSubscriptionWithBackend(subscription)
           }
 
@@ -276,11 +295,12 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
               headers: { 'Content-Type': 'application/json' }
           })
 
-          if (res.ok) {
-            toast.success("Test Sent!", { description: "Notification dispatched to this device." })
+          const data = await res.json().catch(() => ({}))
+
+          if (res.ok && data.success) {
+            toast.success("Test Sent!", { description: data.message || "Notification dispatched to this device." })
           } else {
-            const data = await res.json().catch(() => ({}))
-            toast.error("Test failed: " + (data.error || "Server error"))
+            toast.error("Test notice: " + (data.error || "Server error"))
           }
       } catch (e: any) {
           toast.error("Test failed", { description: e.message || "Network error" })

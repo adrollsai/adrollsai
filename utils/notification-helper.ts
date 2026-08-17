@@ -166,7 +166,7 @@ export async function sendPushNotification(
 
   if (!subscriptions || subscriptions.length === 0) {
       console.log(`[PUSH] FAILED: 0 tokens found in database! User is not subscribed.`);
-      return;
+      return { success: false, count: 0, error: 'No subscribed devices found' };
   }
 
   console.log(`[PUSH] Found ${subscriptions.length} token(s). Dispatching to Apple/Google/Android...`);
@@ -209,6 +209,7 @@ export async function sendPushNotification(
   });
 
   await Promise.allSettled(sendPromises);
+  return { success: true, count: subscriptions.length };
 }
 
 export async function sendAdminMultiChannelNotification({
