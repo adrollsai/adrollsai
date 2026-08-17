@@ -75,23 +75,30 @@ async function getFcmAccessToken(): Promise<string | null> {
   }
 }
 
-async function sendFcmV1Notification(fcmToken: string, title: string, body: string, url: string, type: string) {
+async function sendFcmV1Notification(
+  fcmToken: string,
+  title: string,
+  body: string,
+  url: string = '/dashboard/crm',
+  type: string = 'general',
+  subId?: string
+) {
   try {
     const accessToken = await getFcmAccessToken();
     if (!accessToken) {
-      console.warn('[FCM v1] Skipping native push: No access token available');
+      console.warn('[FCM v1] No OAuth2 Access Token could be generated.');
       return;
     }
 
-    const projectId = 'nobogent-eca37';
+    const projectId = process.env.FIREBASE_PROJECT_ID || 'nobogent-eca37';
     const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
     const payload = {
       message: {
         token: fcmToken,
         notification: {
-          title,
-          body
+          title: String(title),
+          body: String(body)
         },
         data: {
           title: String(title),
@@ -124,6 +131,12 @@ async function sendFcmV1Notification(fcmToken: string, title: string, body: stri
     const data = await res.json();
     if (!res.ok) {
       console.error('[FCM v1 ERROR]', data);
+      if (data.error?.message === 'NotRegistered' || data.error?.code === 404 || data.error?.status === 'NOT_FOUND') {
+        if (subId) {
+          await getSupabaseAdmin().from('push_subscriptions').delete().eq('id', subId);
+          console.log('[FCM v1] Pruned stale device token:', subId);
+        }
+      }
     } else {
       console.log(`[FCM v1 SUCCESS] Native alert dispatched to token (${fcmToken.slice(0, 12)}...):`, data.name);
     }
