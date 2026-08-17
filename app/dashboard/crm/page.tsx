@@ -707,133 +707,101 @@ export default function CRMPage() {
     }
   }
 
-  // 1. SAFE FETCH WITH SERVER-SIDE PAGINATION
+  const isFetchingLeadsRef = useRef(false)
+
+  // 1. SAFE SUB-SECOND FETCH
   const fetchLeads = async (force = false, silent = false) => {
+    if (isFetchingLeadsRef.current && !force) return
+    isFetchingLeadsRef.current = true
+
+    if (!silent && leads.length === 0) setLoading(true)
+    if (force && !silent) setIsRefreshing(true)
+
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      setUserId(user.id)
-
-      // Fetch Fresh Profile Data first to get targetUserId
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads, badges').eq('id', user.id).single()
-      const currentRole = profile?.role as any || 'admin'
-      setRole(currentRole)
-      setEnableDistribution(!!profile?.enable_distribution)
-      setAutoCallNewLeads(!!profile?.auto_call_new_leads)
-      setCustomStages(extractStagesFromProfile(profile))
-      
-      const parentId = profile?.parent_id || profile?.agency_id
-      if (parentId) setParentAdminId(parentId)
-
-      // Impersonation & Hierarchy Logic
-      const urlParams = new URLSearchParams(window.location.search)
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
       const impersonateId = urlParams.get('impersonate')
-      let targetUserId = (['admin', 'agent', 'team_member'].includes(currentRole) && (profile?.parent_id || profile?.agency_id)) 
-        ? (profile.parent_id || profile.agency_id) 
-        : user.id
 
-      if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
-        if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
-          targetUserId = impersonateId
-        }
-      }
-      setTargetUserId(targetUserId)
-      // Priority 1: Fetch leads API immediately for instant sub-second render
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        const authHeader: Record<string, string> = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
+      const { data: { session } } = await supabase.auth.getSession()
+      const authHeader: Record<string, string> = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
 
-        const leadsFetchPromise = fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
-          .then(async (leadsRes) => {
-            if (leadsRes && leadsRes.ok) {
-              const leadsJson = await leadsRes.json()
-              if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads)) {
-                setLeads(leadsJson.leads)
-                const count = leadsJson.totalCount !== undefined ? leadsJson.totalCount : leadsJson.leads.length
-                setTotalLeadsCount(count)
-              }
+      // Priority 1: Instant parallel leads fetch from server API
+      const leadsPromise = fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
+        .then(async (res) => {
+          if (res && res.ok) {
+            const data = await res.json()
+            if (data && data.success && Array.isArray(data.leads)) {
+              setLeads(data.leads)
+              const count = data.totalCount !== undefined ? data.totalCount : data.leads.length
+              setTotalLeadsCount(count)
             }
-          })
-          .catch((err) => console.error('[CRM Leads Fetch Error]:', err))
-          .finally(() => {
-            if (!silent) {
-              setLoading(false)
-              setIsRefreshing(false)
+          }
+        })
+        .catch(err => console.error('[CRM Leads Fetch Error]:', err))
+        .finally(() => {
+          if (!silent) {
+            setLoading(false)
+            setIsRefreshing(false)
+          }
+          isFetchingLeadsRef.current = false
+        })
+
+      // Background non-blocking profile and secondary metadata resolution
+      ;(async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) return
+          setUserId(user.id)
+
+          const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads, badges').eq('id', user.id).single()
+          const currentRole = (profile?.role as any) || 'admin'
+          setRole(currentRole)
+          setEnableDistribution(!!profile?.enable_distribution)
+          setAutoCallNewLeads(!!profile?.auto_call_new_leads)
+          setCustomStages(extractStagesFromProfile(profile))
+
+          const parentId = profile?.parent_id || profile?.agency_id
+          if (parentId) setParentAdminId(parentId)
+
+          let targetUserId = (['admin', 'agent', 'team_member'].includes(currentRole) && parentId) ? parentId : user.id
+          if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
+            if (['super_admin', 'agency', 'admin'].includes(currentRole)) targetUserId = impersonateId
+          }
+          setTargetUserId(targetUserId)
+
+          // Secondary fetches
+          fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
+            .then(res => res.json())
+            .then(data => { if (data?.campaigns) setCampaigns(data.campaigns) })
+            .catch(() => {})
+
+          fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+            .then(res => res.json())
+            .then(invData => { if (invData?.properties && Array.isArray(invData.properties)) setProperties(invData.properties) })
+            .catch(() => {})
+
+          if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
+            const { data: teamData } = await supabase.from('profiles')
+              .select('id, business_name, full_name, role')
+              .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
+              .in('role', ['admin', 'agent', 'agency'])
+            
+            let finalTeam = teamData || []
+            if (!finalTeam.find(t => t.id === targetUserId)) {
+              const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, full_name, role').eq('id', targetUserId).single()
+              if (targetProfile) finalTeam.push(targetProfile)
             }
-          })
+            setTeam(finalTeam)
+          } else {
+            setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
+          }
+        } catch (bgErr) {}
+      })()
 
-        // Background non-blocking secondary fetches (Campaigns, Inventory, Team, Automations, Pixels)
-        fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
-          .then(res => res.json())
-          .then(data => {
-            if (data && data.campaigns) setCampaigns(data.campaigns)
-          })
-          .catch(() => {})
-
-        fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
-          .then(res => res.json())
-          .then(invData => {
-            if (invData && invData.properties && Array.isArray(invData.properties)) {
-              setProperties(invData.properties)
-            }
-          })
-          .catch(() => {})
-
-        if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
-          ;(async () => {
-            try {
-              const { data: teamData } = await supabase.from('profiles')
-                .select('id, business_name, full_name, role')
-                .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
-                .in('role', ['admin', 'agent', 'agency'])
-              
-              let finalTeam = teamData || []
-              if (!finalTeam.find(t => t.id === targetUserId)) {
-                const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, full_name, role').eq('id', targetUserId).single()
-                if (targetProfile) finalTeam.push(targetProfile)
-              }
-              setTeam(finalTeam)
-            } catch (e) {}
-          })()
-        }
-
-        if (currentRole === 'agent' && parentId) {
-          ;(async () => {
-            try {
-              const { data: automations } = await supabase.from('automations')
-                .select('title, description')
-                .eq('user_id', parentId)
-                .like('title', 'Campaign-Assignment:%')
-                .eq('is_active', true)
-              
-              if (automations) {
-                const activeCamps: string[] = []
-                for (const aut of automations) {
-                  try {
-                    const agentIds = JSON.parse(aut.description || '[]')
-                    if (Array.isArray(agentIds) && agentIds.includes(user.id)) {
-                      activeCamps.push(aut.title.replace('Campaign-Assignment:', '').trim())
-                    }
-                  } catch (e) {}
-                }
-                setAssignedCampaigns(activeCamps)
-              }
-            } catch (e) {}
-          })()
-        }
-
-        await leadsFetchPromise
-      } catch (err) {
-        console.error('[CRM fetchLeads error]:', err)
-      } finally {
-        if (!silent) {
-          setLoading(false)
-          setIsRefreshing(false)
-        }
-      }
+      await leadsPromise
     } catch (e: any) {
       console.error("[CRM fetchLeads Error]:", e?.message || e?.details || String(e), e)
     } finally {
+      isFetchingLeadsRef.current = false
       if (!silent) {
         setLoading(false)
         setIsRefreshing(false)
@@ -879,6 +847,31 @@ export default function CRMPage() {
       toast.error("Failed to update stage: " + (err.message || String(err)));
     }
   };
+
+  const handleUpdateFollowupSuccess = (updatedData?: { 
+    id: string; 
+    status?: string; 
+    pipeline_stage?: string;
+    next_followup?: string | null;
+    notes?: string;
+    custom_fields?: any;
+    last_call_remark?: string;
+    last_followup_remark?: string;
+    assigned_to?: string;
+  }) => {
+    if (updatedData && updatedData.id) {
+      setLeads(prev => prev.map(l => {
+        if (l.id === updatedData.id) {
+          const merged = { ...l, ...updatedData }
+          if (updatedData.status) merged.pipeline_stage = updatedData.status
+          if (updatedData.pipeline_stage) merged.status = updatedData.pipeline_stage
+          return merged
+        }
+        return l
+      }))
+    }
+    fetchLeads(true, true).catch(() => {})
+  }
 
   const handleAssignProduct = async (leadId: string, propertyId: string | null) => {
     try {
@@ -1031,43 +1024,10 @@ export default function CRMPage() {
     }
   }, [loading, leads.length])
 
-  // Trigger initial fetch & silent background auto-sync of WhatsApp & Facebook leads
+  // Trigger initial fetch on mount
   useEffect(() => { 
-    const initCRM = async () => {
-      await fetchLeads()
-      checkPushSubscription()
-      
-      // Auto-backfill WhatsApp leads & auto-sync Facebook leads in background silently
-      try {
-        const urlParams = new URLSearchParams(window.location.search)
-        const impersonateId = urlParams.get('impersonate')
-
-        fetch('/api/crm/backfill-whatsapp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ impersonateId })
-        }).then(res => res.ok ? res.json() : null).then(data => {
-          if (data && data.updatedCount > 0) {
-            fetchLeads(true);
-          }
-        }).catch(err => console.error("WhatsApp lead auto-backfill error:", err));
-
-        const syncRes = await fetch(`/api/crm/sync${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        })
-        if (syncRes.ok) {
-          const syncData = await syncRes.json().catch(() => null)
-          if (syncData && syncData.success && syncData.count > 0) {
-            fetchLeads(true)
-          }
-        }
-      } catch (e) {
-        console.error("Auto background CRM sync error:", e)
-      }
-    }
-    
-    initCRM()
+    fetchLeads()
+    checkPushSubscription()
   }, [])
 
   // Debounced database-level global search
