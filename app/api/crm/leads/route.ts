@@ -78,32 +78,37 @@ export async function GET(req: Request) {
       }
     }
 
-    // 1. Fast Total Count Query
-    const countQ = applyFilters(supabaseAdmin.from('leads').select('*', { count: 'exact', head: true }))
-    const { count: totalDbCount, error: countErr } = await countQ
-    if (countErr) {
-      console.error('[API CRM Leads] Count fetch error:', countErr)
-    }
-    const totalCount = totalDbCount || 0
+    // 1. Execute count query and primary leads query concurrently
+    const baseQuery = supabaseAdmin.from('leads').select(leadFields)
+    const firstPagePromise = applyFilters(baseQuery)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(0, 999)
 
-    const PAGE_SIZE = 1000
-    const totalPagesNeeded = Math.min(Math.ceil(totalCount / PAGE_SIZE) || 1, 20)
-    
-    // Fetch all pages in parallel
-    const pagePromises = Array.from({ length: totalPagesNeeded }, (_, pageIndex) => {
-      const baseQuery = supabaseAdmin.from('leads').select(leadFields)
-      const filteredQuery = applyFilters(baseQuery)
-      return filteredQuery
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false })
-        .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1)
-    })
+    const countPromise = applyFilters(supabaseAdmin.from('leads').select('*', { count: 'exact', head: true }))
 
-    const pageResults = await Promise.all(pagePromises)
-    let allLeads: any[] = []
-    for (const r of pageResults) {
-      if (r.data && r.data.length > 0) {
-        allLeads = allLeads.concat(r.data)
+    const [firstPageRes, countRes] = await Promise.all([firstPagePromise, countPromise])
+
+    const totalCount = countRes.count || (firstPageRes.data?.length || 0)
+    let allLeads: any[] = firstPageRes.data || []
+
+    // If more than 1000 leads, fetch remaining pages in parallel
+    if (totalCount > 1000) {
+      const remainingPagesNeeded = Math.min(Math.ceil(totalCount / 1000) - 1, 10)
+      const remainingPromises = Array.from({ length: remainingPagesNeeded }, (_, i) => {
+        const pageIdx = i + 1
+        const q = applyFilters(supabaseAdmin.from('leads').select(leadFields))
+        return q
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(pageIdx * 1000, (pageIdx + 1) * 1000 - 1)
+      })
+
+      const remainingResults = await Promise.all(remainingPromises)
+      for (const r of remainingResults) {
+        if (r.data && r.data.length > 0) {
+          allLeads = allLeads.concat(r.data)
+        }
       }
     }
 
@@ -126,7 +131,7 @@ export async function GET(req: Request) {
       totalCount: totalCount
     }, {
       headers: {
-        'Cache-Control': 'private, max-age=5, stale-while-revalidate=15'
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
       }
     })
   } catch (error: any) {

@@ -161,7 +161,7 @@ export default function CRMPage() {
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(role)
 
-  // --- CRM STATE (Direct Live Data - No Local Storage Caching) ---
+  // --- CRM STATE (100% Live Real-Time Database Data) ---
   const [leads, setLeads] = useState<any[]>([])
   const [totalLeadsCount, setTotalLeadsCount] = useState<number>(0)
   const [properties, setProperties] = useState<any[]>([])
@@ -172,15 +172,12 @@ export default function CRMPage() {
   const [showMobileCrmActions, setShowMobileCrmActions] = useState(false)
   const [enableDistribution, setEnableDistribution] = useState(false)
 
-  // Clean up legacy CRM cache keys from localStorage on mount
+  // Clean up any old cache keys on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        const legacyKeys = ['crm_last_leads_cache', 'crm_total_count', 'crm_properties_cache', 'crm_campaigns_cache']
-        legacyKeys.forEach(k => localStorage.removeItem(k))
-        Object.keys(localStorage).forEach(k => {
-          if (k.startsWith('crm_cache_')) localStorage.removeItem(k)
-        })
+        sessionStorage.removeItem('nobogent_crm_leads_cache')
+        sessionStorage.removeItem('nobogent_crm_total_count')
       } catch (e) {}
     }
   }, [])
