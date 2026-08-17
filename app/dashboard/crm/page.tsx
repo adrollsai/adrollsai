@@ -2420,10 +2420,32 @@ END:VCARD\n`
                         onChange={(e) => setSortOrder(e.target.value as 'last_attempted' | 'newest' | 'oldest')}
                         className="bg-white border border-slate-200/80 text-slate-800 font-extrabold text-xs rounded-2xl px-3.5 py-3.5 shadow-xs focus:outline-none focus:border-blue-500 cursor-pointer shrink-0"
                     >
-                        <option value="last_attempted">⚡ Sort: Recently Attempted First</option>
-                        <option value="newest">📅 Sort: Newest Created First</option>
+                        <option value="last_attempted">⚡ Sort: Recently Attempted</option>
+                        <option value="newest">📅 Sort: Newest Created</option>
                         <option value="oldest">📅 Sort: Oldest First</option>
                     </select>
+
+                    {/* Prominent Visible Stage Filter Outside Filter Button */}
+                    <div className="relative shrink-0 min-w-[150px] sm:min-w-[190px]">
+                        <select 
+                            value={selectedSpecificStage} 
+                            onChange={(e) => {
+                                setSelectedSpecificStage(e.target.value)
+                                setCurrentPage(1)
+                            }} 
+                            className={`w-full appearance-none font-extrabold text-xs rounded-2xl pl-3.5 pr-8 py-3.5 shadow-xs focus:outline-none cursor-pointer truncate transition-all border ${
+                                selectedSpecificStage !== 'ALL' 
+                                    ? 'bg-indigo-600 text-white border-indigo-600 focus:ring-4 focus:ring-indigo-500/20' 
+                                    : 'bg-white text-slate-800 border-slate-200/80 hover:bg-slate-50 focus:border-indigo-500'
+                            }`}
+                        >
+                            <option value="ALL" className="text-slate-800 bg-white">🏷️ All Stages ({activeSection === 'ongoing' ? 'Ongoing' : activeSection === 'not_interested' ? 'Not Interested' : activeSection === 'fresh' ? 'Fresh' : 'All'})</option>
+                            {availableStagesForSection.map(s => (
+                                <option key={s.id} value={s.name} className="text-slate-800 bg-white">📍 {s.name}</option>
+                            ))}
+                        </select>
+                        <ChevronDown size={14} className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${selectedSpecificStage !== 'ALL' ? 'text-white' : 'text-slate-400'}`} />
+                    </div>
 
                     <button 
                         onClick={() => setShowFilters(!showFilters)}

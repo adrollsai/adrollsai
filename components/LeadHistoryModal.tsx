@@ -17,6 +17,8 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
+  const [profilesMap, setProfilesMap] = useState<Map<string, string>>(new Map())
+
   useEffect(() => {
     if (isOpen && lead?.id) {
       fetchHistory()
@@ -42,6 +44,34 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
         try { cf = JSON.parse(cf) } catch (e) { cf = null }
       }
 
+      // Collect user_ids to resolve real agent names
+      const userIds = new Set<string>()
+      if (lead.assigned_to) userIds.add(lead.assigned_to)
+      if (lead.user_id) userIds.add(lead.user_id)
+      items.forEach(item => {
+        if (item.user_id) userIds.add(item.user_id)
+      })
+
+      if (userIds.size > 0) {
+        try {
+          const { data: profs } = await supabase
+            .from('profiles')
+            .select('id, full_name, business_name, email')
+            .in('id', Array.from(userIds))
+
+          if (profs && profs.length > 0) {
+            const pMap = new Map<string, string>()
+            profs.forEach(p => {
+              const name = p.full_name?.trim() || p.business_name?.trim() || (p.email ? p.email.split('@')[0] : '')
+              if (name) pMap.set(p.id, name)
+            })
+            setProfilesMap(pMap)
+          }
+        } catch (e) {
+          console.error("Failed to resolve actor profiles:", e)
+        }
+      }
+
       // Ensure initial / imported last remark is included in timeline if missing
       const lastRemark = (cf?.last_followup_remark || cf?.opening_comments || lead.notes || lead.summary || '').trim()
       if (lastRemark) {
@@ -52,7 +82,8 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
             lead_id: lead.id,
             action_type: 'LAST_FOLLOWUP_REMARK',
             description: lastRemark,
-            actor_name: lead.user_name || 'Agent',
+            actor_name: lead.user_name || undefined,
+            user_id: lead.assigned_to || lead.user_id,
             created_at: cf?.last_followup_at || lead.last_call_at || lead.created_at
           })
           items.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
@@ -204,7 +235,43 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
           ) : (
             <div className="relative pl-8 border-l-2 border-emerald-500/40 space-y-6 my-4">
               {historyItems.map((item, idx) => {
-                const actorName = item.actor_name || item.performed_by || lead.user_name || 'Agent';
+                const resolveActorName = (it: any): string => {
+                  if (it.actor_name && it.actor_name !== 'Agent') return it.actor_name;
+                  if (it.performed_by && it.performed_by !== 'Agent') return it.performed_by;
+                  if (it.user_id && profilesMap.has(it.user_id)) return profilesMap.get(it.user_id)!;
+
+                  const desc = it.description || ''
+                  const bracketMatch = desc.match(/\[[^\]]+?\bby\s+([^\]]+)\]/i)
+                  if (bracketMatch && bracketMatch[1]) {
+                    const rawName = bracketMatch[1].trim()
+                    if (rawName && !rawName.toLowerCase().includes('agent') && !rawName.toLowerCase().includes('system')) {
+                      return rawName
+                    }
+                  }
+                  const byMatch = desc.match(/\bby\s+([A-Za-z0-9\s._-]+?)(?:\:|\.|\s-\s|\n|$)/i)
+                  if (byMatch && byMatch[1]) {
+                    const rawName = byMatch[1].trim()
+                    if (rawName && rawName.length < 30 && !rawName.toLowerCase().includes('agent') && !rawName.toLowerCase().includes('system') && !rawName.toLowerCase().includes('facebook')) {
+                      return rawName
+                    }
+                  }
+
+                  if (it.action_type === 'REOPENED' || desc.includes('Facebook Ad Submission')) {
+                    return 'Meta Ads System'
+                  }
+
+                  if (lead.assigned_to && profilesMap.has(lead.assigned_to)) {
+                    return profilesMap.get(lead.assigned_to)!
+                  }
+
+                  if (lead.user_id && profilesMap.has(lead.user_id)) {
+                    return profilesMap.get(lead.user_id)!
+                  }
+
+                  return lead.user_name || 'Agent'
+                }
+
+                const actorName = resolveActorName(item);
                 const urlMatch = item.description?.match(/(https?:\/\/[^\s]+\.(mp3|m4a|wav|aac|ogg|3gp)|https?:\/\/[^\s]+\/call-recordings\/[^\s]+)/i)
                 const recordingUrl = item.metadata?.recording_url || item.recording_url || (urlMatch ? urlMatch[0] : null);
                 const displayActionType = item.action_type === 'STATUS_CHANGE'

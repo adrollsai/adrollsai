@@ -171,48 +171,98 @@ export const DEFAULT_PIPELINE_STAGES: PipelineStageConfig[] = [
 export const STANDARD_STAGE_NAMES = DEFAULT_PIPELINE_STAGES.map(s => s.name)
 
 /**
- * Categorize any raw lead stage/status into one of the 4 main buckets:
+ * Categorize any raw lead stage/status or lead record into one of the 4 main buckets:
  * 'fresh' | 'ongoing' | 'not_interested' | 'trash'
  */
-export function categorizeLeadStage(rawStage?: string | null, customStages: PipelineStageConfig[] = DEFAULT_PIPELINE_STAGES): 'fresh' | 'ongoing' | 'not_interested' | 'trash' {
-  if (!rawStage) return 'fresh'
-  const normalized = rawStage.trim().toLowerCase()
+export function categorizeLeadStage(
+  rawStageOrLead?: any,
+  customStages: PipelineStageConfig[] = DEFAULT_PIPELINE_STAGES
+): 'fresh' | 'ongoing' | 'not_interested' | 'trash' {
+  if (!rawStageOrLead) return 'fresh'
 
-  if (normalized === 'trash' || normalized === 'deleted' || normalized === 'archived') {
-    return 'trash'
+  let candidates: string[] = []
+
+  if (typeof rawStageOrLead === 'object' && rawStageOrLead !== null) {
+    // If a lead object was passed
+    if (rawStageOrLead.pipeline_stage) candidates.push(String(rawStageOrLead.pipeline_stage))
+    if (rawStageOrLead.status) candidates.push(String(rawStageOrLead.status))
+    let cf = rawStageOrLead.custom_fields
+    if (typeof cf === 'string') {
+      try { cf = JSON.parse(cf) } catch (e) { cf = null }
+    }
+    if (cf?.pipeline_stage) candidates.push(String(cf.pipeline_stage))
+    if (cf?.status) candidates.push(String(cf.status))
+  } else if (typeof rawStageOrLead === 'string') {
+    candidates.push(rawStageOrLead)
   }
 
-  // Check matching custom/configured stage first
-  const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
-  if (matched) return matched.category
+  if (candidates.length === 0) return 'fresh'
 
-  // Fallback heuristic for legacy or unlisted stages
-  if (
-    normalized === 'new' ||
-    normalized === 'new lead' ||
-    normalized === 'unprocessed' ||
-    normalized === 'fresh'
-  ) {
-    return 'fresh'
+  const normalizedList = candidates.map(c => c.trim().toLowerCase()).filter(Boolean)
+  if (normalizedList.length === 0) return 'fresh'
+
+  // 1. Check for Trash
+  for (const normalized of normalizedList) {
+    if (normalized === 'trash' || normalized === 'deleted' || normalized === 'archived') {
+      return 'trash'
+    }
   }
 
-  if (
-    normalized.includes('lost') ||
-    normalized.includes('ni') ||
-    normalized.includes('not interested') ||
-    normalized.includes('not_interested') ||
-    normalized.includes('junk') ||
-    normalized.includes('unqualified') ||
-    normalized.includes('dealer') ||
-    normalized.includes('postponed') ||
-    normalized.includes('already purchased') ||
-    normalized.includes('different requirement') ||
-    normalized.includes('wrong number') ||
-    normalized.includes('fake')
-  ) {
-    return 'not_interested'
+  // 2. Check for Not Interested / Lost across configured stages
+  for (const normalized of normalizedList) {
+    const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
+    if (matched && matched.category === 'not_interested') {
+      return 'not_interested'
+    }
   }
 
+  // 3. Fallback heuristic for Not Interested / Lost
+  for (const normalized of normalizedList) {
+    if (
+      normalized.includes('lost') ||
+      normalized.includes('ni') ||
+      normalized.includes('not interested') ||
+      normalized.includes('not_interested') ||
+      normalized.includes('junk') ||
+      normalized.includes('unqualified') ||
+      normalized.includes('dealer') ||
+      normalized.includes('postponed') ||
+      normalized.includes('already purchased') ||
+      normalized.includes('different requirement') ||
+      normalized.includes('wrong number') ||
+      normalized.includes('fake')
+    ) {
+      return 'not_interested'
+    }
+  }
+
+  // 4. Check for Ongoing across configured stages
+  for (const normalized of normalizedList) {
+    const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
+    if (matched && matched.category === 'ongoing') {
+      return 'ongoing'
+    }
+  }
+
+  // 5. Check for Fresh
+  for (const normalized of normalizedList) {
+    const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
+    if (matched && matched.category === 'fresh') {
+      return 'fresh'
+    }
+    if (
+      normalized === 'new' ||
+      normalized === 'new lead' ||
+      normalized === 'unprocessed' ||
+      normalized === 'fresh' ||
+      normalized === 'fresh lead' ||
+      normalized === 'uncontacted'
+    ) {
+      return 'fresh'
+    }
+  }
+
+  // 6. Default to Ongoing for any other stage
   return 'ongoing'
 }
 
@@ -236,23 +286,23 @@ export function getStageBadgeStyle(stageName?: string | null, customStages: Pipe
 
 /**
  * Extract configured stages from a Supabase profile record.
- * Handles custom_pipeline_stages column as well as fallback badges storage.
+ * Merges custom pipeline stages with DEFAULT_PIPELINE_STAGES so standard stages are never lost.
  */
 export function extractStagesFromProfile(profile?: any): PipelineStageConfig[] {
   if (!profile) return DEFAULT_PIPELINE_STAGES
 
-  if (profile.custom_pipeline_stages && Array.isArray(profile.custom_pipeline_stages) && profile.custom_pipeline_stages.length > 0) {
-    return profile.custom_pipeline_stages
-  }
+  let loadedStages: PipelineStageConfig[] | null = null
 
-  if (profile.badges && Array.isArray(profile.badges)) {
+  if (profile.custom_pipeline_stages && Array.isArray(profile.custom_pipeline_stages) && profile.custom_pipeline_stages.length > 0) {
+    loadedStages = profile.custom_pipeline_stages
+  } else if (profile.badges && Array.isArray(profile.badges)) {
     const stageBadge = profile.badges.find((b: string) => typeof b === 'string' && b.startsWith('__PIPELINE_STAGES__:'))
     if (stageBadge) {
       try {
         const jsonStr = stageBadge.replace('__PIPELINE_STAGES__:', '')
         const parsed = JSON.parse(jsonStr)
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed
+          loadedStages = parsed
         }
       } catch (e) {
         console.error('[extractStagesFromProfile] Failed to parse stages from badges:', e)
@@ -260,7 +310,24 @@ export function extractStagesFromProfile(profile?: any): PipelineStageConfig[] {
     }
   }
 
-  return DEFAULT_PIPELINE_STAGES
+  if (!loadedStages || loadedStages.length === 0) {
+    return DEFAULT_PIPELINE_STAGES
+  }
+
+  // Merge loaded stages with default stages to ensure standard categories (fresh, ongoing, not_interested) are always available
+  const stageMap = new Map<string, PipelineStageConfig>()
+  
+  // Add defaults first
+  DEFAULT_PIPELINE_STAGES.forEach(s => stageMap.set(s.name.toLowerCase().trim(), s))
+  
+  // Override or add custom stages
+  loadedStages.forEach(s => {
+    if (s && s.name) {
+      stageMap.set(s.name.toLowerCase().trim(), s)
+    }
+  })
+
+  return Array.from(stageMap.values())
 }
 
 /**
@@ -271,4 +338,5 @@ export function encodeStagesToBadges(currentBadges: string[] | null | undefined,
   const newBadge = `__PIPELINE_STAGES__:${JSON.stringify(stages)}`
   return [...existing, newBadge]
 }
+
 
