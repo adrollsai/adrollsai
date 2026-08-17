@@ -181,6 +181,7 @@ export function categorizeLeadStage(
   if (!rawStageOrLead) return 'fresh'
 
   let candidates: string[] = []
+  let hasDnpOrAgentActivity = false
 
   if (typeof rawStageOrLead === 'object' && rawStageOrLead !== null) {
     // If a lead object was passed
@@ -192,21 +193,32 @@ export function categorizeLeadStage(
     }
     if (cf?.pipeline_stage) candidates.push(String(cf.pipeline_stage))
     if (cf?.status) candidates.push(String(cf.status))
-  } else if (typeof rawStageOrLead === 'string') {
-    candidates.push(rawStageOrLead)
-  }
+    if (cf?.lead_status) candidates.push(String(cf.lead_status))
+    if (cf?.client_status) candidates.push(String(cf.client_status))
 
-  if (candidates.length === 0) return 'fresh'
+    const remarkText = [
+      cf?.last_remark,
+      cf?.last_followup_remark,
+      cf?.notes,
+      rawStageOrLead.last_call_remark,
+      rawStageOrLead.last_followup_remark,
+      rawStageOrLead.notes
+    ].filter(Boolean).map(String).join(' ').toLowerCase()
 
-  const normalizedList = candidates.map(c => c.trim().toLowerCase()).filter(Boolean)
-  if (normalizedList.length === 0) return 'fresh'
-
-  // Check if lead has any DNP attempt or Agent remark / followup activity
-  let hasDnpOrAgentActivity = false
-  if (typeof rawStageOrLead === 'object' && rawStageOrLead !== null) {
-    let cf = rawStageOrLead.custom_fields
-    if (typeof cf === 'string') {
-      try { cf = JSON.parse(cf) } catch (e) { cf = null }
+    if (
+      remarkText.includes('not interested') ||
+      remarkText.includes('having no interest') ||
+      remarkText.includes('no interest') ||
+      remarkText.includes('lost/ni') ||
+      remarkText.includes('wrong number') ||
+      remarkText.includes('dealer') ||
+      remarkText.includes('already purchased') ||
+      remarkText.includes('plan postponed') ||
+      remarkText.includes('different requirement') ||
+      remarkText.includes('unqualified') ||
+      remarkText.includes('fake')
+    ) {
+      candidates.push('lost/ni')
     }
 
     const dnpCount = rawStageOrLead.dnp_count || cf?.dnp_count || 0
@@ -220,13 +232,20 @@ export function categorizeLeadStage(
       (rawStageOrLead.last_call_remark && typeof rawStageOrLead.last_call_remark === 'string' && rawStageOrLead.last_call_remark.trim())
     )
     const notesStr = rawStageOrLead.notes && typeof rawStageOrLead.notes === 'string' ? rawStageOrLead.notes : ''
-    const hasAgentNote = notesStr.includes('[📝') || notesStr.includes('[⚠️') || notesStr.includes('[📞') || notesStr.toLowerCase().includes('followup') || notesStr.toLowerCase().includes('dnp')
+    const hasAgentNote = notesStr.includes('[📝') || notesStr.includes('[⚠️') || notesStr.includes('[📞') || notesStr.toLowerCase().includes('followup') || notesStr.toLowerCase().includes('dnp') || notesStr.toLowerCase().includes('call on')
     const followupCount = cf?.followup_count || 0
 
     if (dnpCount > 0 || isDnp || hasCallAttempt || hasFollowupAt || hasFollowupRemark || hasAgentNote || followupCount > 0) {
       hasDnpOrAgentActivity = true
     }
+  } else if (typeof rawStageOrLead === 'string') {
+    candidates.push(rawStageOrLead)
   }
+
+  if (candidates.length === 0) return 'fresh'
+
+  const normalizedList = candidates.map(c => c.trim().toLowerCase()).filter(Boolean)
+  if (normalizedList.length === 0) return 'fresh'
 
   // 1. Check for Trash
   for (const normalized of normalizedList) {

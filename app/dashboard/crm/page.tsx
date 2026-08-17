@@ -227,7 +227,12 @@ export default function CRMPage() {
   // Stages available for the active section filter
   const availableStagesForSection = useMemo(() => {
     if (activeSection === 'ongoing') {
-      return customStages.filter(s => s.category === 'ongoing')
+      const ongoingStages = customStages.filter(s => s.category === 'ongoing')
+      const hasNewLead = ongoingStages.some(s => s.id === 'new_lead' || s.name === 'New Lead')
+      if (!hasNewLead) {
+        return [{ id: 'new_lead', name: 'New Lead', category: 'ongoing' as any }, ...ongoingStages]
+      }
+      return ongoingStages
     }
     if (activeSection === 'not_interested') {
       return customStages.filter(s => s.category === 'not_interested')
@@ -733,164 +738,91 @@ export default function CRMPage() {
         }
       }
       setTargetUserId(targetUserId)
-
-      // Fetch properties via API
-      try {
-        const invRes = await fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
-        const invData = await invRes.json()
-        if (invData && invData.properties && Array.isArray(invData.properties)) {
-          setProperties(invData.properties)
-        } else {
-          const workspaceOwnerIds = Array.from(new Set([targetUserId, parentId, user.id].filter(Boolean)))
-          const { data: propsData } = await supabase
-            .from('properties')
-            .select('id, title, tags, configurations')
-            .in('user_id', workspaceOwnerIds)
-            .order('created_at', { ascending: false })
-
-          if (propsData && propsData.length > 0) {
-            setProperties(propsData)
-            try { localStorage.setItem(`properties_cache_${targetUserId}`, JSON.stringify(propsData)); } catch(e) {}
-          }
-        }
-      } catch (e) {}
-
-      // Get campaign assignment rules
-      let activeCampaigns: string[] = []
-      if (currentRole === 'agent' && parentId) {
-          const { data: automations } = await supabase
-            .from('automations')
-            .select('title, description')
-            .eq('user_id', parentId)
-            .like('title', 'Campaign-Assignment:%')
-            .eq('is_active', true)
-          
-          if (automations) {
-              for (const aut of automations) {
-                  try {
-                      const agentIds = JSON.parse(aut.description || '[]');
-                      if (Array.isArray(agentIds) && agentIds.includes(user.id)) {
-                          const campName = aut.title.replace('Campaign-Assignment:', '').trim();
-                          activeCampaigns.push(campName);
-                      }
-                  } catch (e) {}
-              }
-          }
-      }
-      setAssignedCampaigns(activeCampaigns)
-
-      if (!silent && leads.length === 0) {
-          setLoading(true);
-      }
-      if (force && !silent) setIsRefreshing(true);
-
-      // Fetch Meta Pixels for target account
-      try {
-        let adAccountId = profile?.ad_account_id
-        if (targetUserId !== user.id) {
-            const { data: targetProfile } = await supabase.from('profiles').select('ad_account_id').eq('id', targetUserId).single()
-            if (targetProfile?.ad_account_id) {
-                adAccountId = targetProfile.ad_account_id
-            }
-        }
-        if (adAccountId) {
-            fetchPixels(adAccountId, impersonateId)
-        }
-      } catch (e) {}
-
-      // Fetch team members
-      try {
-        if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
-            const { data: teamData } = await supabase.from('profiles')
-              .select('id, business_name, full_name, role')
-              .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
-              .in('role', ['admin', 'agent', 'agency'])
-            
-            let finalTeam = teamData || []
-            if (!finalTeam.find(t => t.id === targetUserId)) {
-                const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, full_name, role').eq('id', targetUserId).single()
-                if (targetProfile) finalTeam.push(targetProfile)
-            }
-            setTeam(finalTeam)
-        } else {
-            setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
-        }
-      } catch (e) {
-        setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
-      }
-
-      // Fetch leads and campaigns
+      // Priority 1: Fetch leads API immediately for instant sub-second render
       try {
         const { data: { session } } = await supabase.auth.getSession()
         const authHeader: Record<string, string> = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
 
-        const [leadsRes, campRes] = await Promise.all([
-          fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader }).catch(e => null),
-          fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader }).catch(e => null)
-        ])
-
-        if (campRes && campRes.ok) {
-          try {
-            const campaignData = await campRes.json()
-            if (campaignData && campaignData.campaigns) {
-              setCampaigns(campaignData.campaigns)
+        const leadsFetchPromise = fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
+          .then(async (leadsRes) => {
+            if (leadsRes && leadsRes.ok) {
+              const leadsJson = await leadsRes.json()
+              if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads)) {
+                setLeads(leadsJson.leads)
+                const count = leadsJson.totalCount !== undefined ? leadsJson.totalCount : leadsJson.leads.length
+                setTotalLeadsCount(count)
+              }
             }
-          } catch (cErr) {}
-        }
-
-        let leadsJson: any = null
-        if (leadsRes && leadsRes.ok) {
-          try {
-            leadsJson = await leadsRes.json()
-          } catch (e) {}
-        }
-        if (leadsJson && leadsJson.success && Array.isArray(leadsJson.leads) && leadsJson.leads.length > 0) {
-          setLeads(leadsJson.leads)
-          const count = leadsJson.totalCount !== undefined ? leadsJson.totalCount : leadsJson.leads.length
-          setTotalLeadsCount(count)
-        } else {
-          // DIRECT SUPABASE FALLBACK ONLY IF API ROUTE EMPTY
-          const workspaceOwnerIds = Array.from(new Set([targetUserId, parentId, user.id].filter(Boolean)))
-          const orFilter = workspaceOwnerIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
-          const { count: directCount } = await supabase
-            .from('leads')
-            .select('*', { count: 'exact', head: true })
-            .or(orFilter)
-
-          const totalDirectCount = directCount || 0
-          const PAGE_SIZE = 1000
-          const totalPagesNeeded = Math.ceil(totalDirectCount / PAGE_SIZE) || 1
-
-          const pagePromises = Array.from({ length: totalPagesNeeded }, (_, pageIdx) => {
-            return supabase
-              .from('leads')
-              .select('*')
-              .or(orFilter)
-              .order('created_at', { ascending: false })
-              .range(pageIdx * PAGE_SIZE, (pageIdx + 1) * PAGE_SIZE - 1)
+          })
+          .catch((err) => console.error('[CRM Leads Fetch Error]:', err))
+          .finally(() => {
+            if (!silent) {
+              setLoading(false)
+              setIsRefreshing(false)
+            }
           })
 
-          const pageResults = await Promise.all(pagePromises)
-          let allDirectLeads: any[] = []
-          for (const pr of pageResults) {
-            if (pr.data && pr.data.length > 0) {
-              allDirectLeads = allDirectLeads.concat(pr.data)
-            }
-          }
+        // Background non-blocking secondary fetches (Campaigns, Inventory, Team, Automations, Pixels)
+        fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.campaigns) setCampaigns(data.campaigns)
+          })
+          .catch(() => {})
 
-          if (allDirectLeads && allDirectLeads.length > 0) {
-            const parsed = allDirectLeads.map((l: any) => {
-              let cf = l.custom_fields
-              if (cf && typeof cf === 'string') {
-                try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = {} }
+        fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+          .then(res => res.json())
+          .then(invData => {
+            if (invData && invData.properties && Array.isArray(invData.properties)) {
+              setProperties(invData.properties)
+            }
+          })
+          .catch(() => {})
+
+        if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
+          ;(async () => {
+            try {
+              const { data: teamData } = await supabase.from('profiles')
+                .select('id, business_name, full_name, role')
+                .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
+                .in('role', ['admin', 'agent', 'agency'])
+              
+              let finalTeam = teamData || []
+              if (!finalTeam.find(t => t.id === targetUserId)) {
+                const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, full_name, role').eq('id', targetUserId).single()
+                if (targetProfile) finalTeam.push(targetProfile)
               }
-              return { ...l, custom_fields: cf }
-            })
-            setLeads(parsed)
-            const cnt = parsed.length
-            setTotalLeadsCount(cnt)
-          }
+              setTeam(finalTeam)
+            } catch (e) {}
+          })()
         }
+
+        if (currentRole === 'agent' && parentId) {
+          ;(async () => {
+            try {
+              const { data: automations } = await supabase.from('automations')
+                .select('title, description')
+                .eq('user_id', parentId)
+                .like('title', 'Campaign-Assignment:%')
+                .eq('is_active', true)
+              
+              if (automations) {
+                const activeCamps: string[] = []
+                for (const aut of automations) {
+                  try {
+                    const agentIds = JSON.parse(aut.description || '[]')
+                    if (Array.isArray(agentIds) && agentIds.includes(user.id)) {
+                      activeCamps.push(aut.title.replace('Campaign-Assignment:', '').trim())
+                    }
+                  } catch (e) {}
+                }
+                setAssignedCampaigns(activeCamps)
+              }
+            } catch (e) {}
+          })()
+        }
+
+        await leadsFetchPromise
       } catch (err) {
         console.error('[CRM fetchLeads error]:', err)
       } finally {
@@ -2067,9 +1999,9 @@ END:VCARD\n`
     const isStageFiltered = selectedSpecificStage && selectedSpecificStage !== 'ALL'
     const matchStage = (l: any) => !isStageFiltered || matchLeadToStage(l, selectedSpecificStage)
 
-    const fresh = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'fresh').length
-    const ongoing = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'ongoing').length
-    const not_interested = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l.pipeline_stage || l.status, customStages) === 'not_interested').length
+    const fresh = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l, customStages) === 'fresh').length
+    const ongoing = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l, customStages) === 'ongoing').length
+    const not_interested = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l, customStages) === 'not_interested').length
     const all = fresh + ongoing + not_interested
 
     return { all, fresh, ongoing, not_interested }
@@ -2099,7 +2031,7 @@ END:VCARD\n`
       if (activeSection === 'all') {
         return true
       }
-      return categorizeLeadStage(l.pipeline_stage || l.status, customStages) === activeSection
+      return categorizeLeadStage(l, customStages) === activeSection
     })
 
     return list.sort((a, b) => {
