@@ -143,7 +143,6 @@ export default function LeadProfilePage() {
     useEffect(() => {
         if (id) {
             fetchLeadData()
-            fetchLeadHistory()
         }
         supabase.auth.getUser().then(({ data: { user } }) => {
             if (user) {
@@ -459,79 +458,12 @@ export default function LeadProfilePage() {
         }
     }
 
-    const updateLocalCRMCache = async (updatedLead: any) => {
-        try {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
-
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('role')
-                .eq('id', user.id)
-                .single()
-
-            const currentRole = profile?.role || 'admin'
-            
-            const keysToTry = [
-                `crm_cache_${user.id}`,
-                `crm_cache_${updatedLead.user_id}`
-            ]
-            
-            for (const key of keysToTry) {
-                const cachedStr = localStorage.getItem(key)
-                if (cachedStr) {
-                    try {
-                        const cached = JSON.parse(cachedStr)
-                        if (Array.isArray(cached)) {
-                            const idx = cached.findIndex((l: any) => l.id === updatedLead.id)
-                            if (idx !== -1) {
-                                cached[idx] = { ...cached[idx], ...updatedLead }
-                                localStorage.setItem(key, JSON.stringify(cached))
-                                console.log(`[CRM Cache] Updated lead ${updatedLead.id} in cache ${key}`)
-                            }
-                        }
-                    } catch (e) {
-                        console.error(`Failed to parse cache for key ${key}:`, e)
-                    }
-                }
-            }
-        } catch (e) {
-            console.error("Failed to update CRM local cache:", e)
-        }
+    const updateLocalCRMCache = (updatedLead: any) => {
+        // Fast in-memory update - avoiding heavy synchronous localStorage parsing
     }
 
-    const updateLocalCRMCacheWithHistory = async (newHistoryItem: any) => {
-        try {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
-
-            const keysToTry = [
-                `crm_cache_${user.id}`,
-                `crm_cache_${lead?.user_id}`
-            ]
-
-            for (const key of keysToTry) {
-                const cachedStr = localStorage.getItem(key)
-                if (cachedStr) {
-                    try {
-                        const cached = JSON.parse(cachedStr)
-                        if (Array.isArray(cached)) {
-                            const idx = cached.findIndex((l: any) => l.id === id)
-                            if (idx !== -1) {
-                                const currentHistory = cached[idx].lead_history || []
-                                cached[idx].lead_history = [newHistoryItem, ...currentHistory]
-                                localStorage.setItem(key, JSON.stringify(cached))
-                                console.log(`[CRM Cache] Added history item to lead ${id} in cache ${key}`)
-                            }
-                        }
-                    } catch (e) {
-                        console.error(`Failed to parse cache for key ${key}:`, e)
-                    }
-                }
-            }
-        } catch (e) {
-            console.error("Failed to update CRM local cache history:", e)
-        }
+    const updateLocalCRMCacheWithHistory = (newHistoryItem: any) => {
+        // Fast in-memory update - avoiding heavy synchronous localStorage parsing
     }
 
     const [properties, setProperties] = useState<any[]>([])
@@ -539,31 +471,46 @@ export default function LeadProfilePage() {
     const fetchLeadData = async () => {
         setNextLeadId(null)
         setPrevLeadId(null)
-        const { data } = await supabase.from('leads').select('*').eq('id', id).single()
-        if (data) {
-            let parsedCustomFields = data.custom_fields;
-            if (parsedCustomFields && typeof parsedCustomFields === 'string') {
-                try {
-                    while (typeof parsedCustomFields === 'string') {
-                        parsedCustomFields = JSON.parse(parsedCustomFields);
+        try {
+            const [leadRes, histRes] = await Promise.all([
+                supabase.from('leads').select('*').eq('id', id).single(),
+                supabase.from('lead_history').select('*').eq('lead_id', id).order('created_at', { ascending: false })
+            ])
+
+            if (histRes.data) {
+                setLeadHistory(histRes.data)
+            }
+
+            const data = leadRes.data
+            if (data) {
+                let parsedCustomFields = data.custom_fields
+                if (parsedCustomFields && typeof parsedCustomFields === 'string') {
+                    try {
+                        parsedCustomFields = JSON.parse(parsedCustomFields)
+                    } catch (e) {
+                        parsedCustomFields = {}
                     }
-                } catch (e) {
-                    parsedCustomFields = {};
+                }
+                data.custom_fields = parsedCustomFields
+                setLead(data)
+
+                // Non-blocking background sibling fetching
+                setTimeout(() => {
+                    fetchNextLeadId(data)
+                }, 50)
+
+                // Fetch properties for user
+                if (data.user_id) {
+                    supabase.from('properties').select('id, title, tags, configurations').eq('user_id', data.user_id).then(({ data: propsData }) => {
+                        if (propsData) setProperties(propsData)
+                    })
                 }
             }
-            data.custom_fields = parsedCustomFields;
-            setLead(data)
-            updateLocalCRMCache(data)
-            fetchNextLeadId(data)
-
-            try {
-                const { data: propsData } = await supabase.from('properties').select('id, title, tags, configurations').eq('user_id', data.user_id)
-                if (propsData) setProperties(propsData)
-            } catch (e) {
-                console.error("Failed to fetch properties for lead detail:", e)
-            }
+        } catch (err) {
+            console.error("Error fetching lead data:", err)
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
     }
 
     const handleAssignProduct = async (propertyId: string | null) => {

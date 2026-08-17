@@ -144,7 +144,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
                 <LeadScoreBadge lead={lead} size="sm" showDetails />
               </h3>
               <p className="text-slate-500 text-xs mt-0.5">
-                {lead.phone || 'No Phone'} • Status: <span className="font-semibold text-blue-600">{lead.pipeline_stage || 'New Lead'}</span>
+                {lead.phone || 'No Phone'} • Stage: <span className="font-semibold text-blue-600">{(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'Requirement Taken')}</span>
               </p>
             </div>
           </div>
@@ -197,7 +197,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
                   {lead.email && <div><strong>Email :</strong> {lead.email}</div>}
                   <div><strong>Lead Source :</strong> {lead.source || 'Facebook'}</div>
                   <div><strong>Source Details :</strong> {lead.ad_name || lead.form_name || lead.campaign_name || 'Meta Ad'}</div>
-                  <div><strong>Lead Status :</strong> {lead.pipeline_stage || 'New Lead'}</div>
+                  <div><strong>Stage :</strong> {(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'New Lead')}</div>
                 </div>
               </div>
             </div>
@@ -207,6 +207,17 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
                 const actorName = item.actor_name || item.performed_by || lead.user_name || 'Agent';
                 const urlMatch = item.description?.match(/(https?:\/\/[^\s]+\.(mp3|m4a|wav|aac|ogg|3gp)|https?:\/\/[^\s]+\/call-recordings\/[^\s]+)/i)
                 const recordingUrl = item.metadata?.recording_url || item.recording_url || (urlMatch ? urlMatch[0] : null);
+                const displayActionType = item.action_type === 'STATUS_CHANGE'
+                  ? 'STAGE UPDATE'
+                  : item.action_type === 'FOLLOWUP'
+                  ? 'FOLLOWUP'
+                  : item.action_type || item.title || 'Followup Event';
+
+                const cleanedDescription = (item.description || '')
+                  .replace(/Status:\s*Ongoing/g, 'Stage: Requirement Taken')
+                  .replace(/Stage:\s*Ongoing/g, 'Stage: Requirement Taken')
+                  .replace(/Lead Status\s*:\s*Ongoing/g, 'Stage: Requirement Taken');
+
                 return (
                   <div key={item.id || idx} className="relative">
                     {/* Circle Bullet on Timeline */}
@@ -224,16 +235,16 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
                     {/* Event Detail Card */}
                     <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-1.5 text-xs text-slate-700 font-medium leading-relaxed">
                       <p className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                        <span>{item.action_type || item.title || 'Followup Event'}</span>
+                        <span>{displayActionType}</span>
                       </p>
 
-                      {item.description && (
+                      {cleanedDescription && (
                         <div className="mt-2 pt-2 border-t border-slate-200/80">
                           <span className="block text-[11px] font-extrabold uppercase text-slate-500 tracking-wider mb-1">
                             Remark / Details:
                           </span>
                           <p className="text-slate-800 text-xs font-semibold leading-relaxed whitespace-pre-wrap bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-2xs">
-                            {item.description}
+                            {cleanedDescription}
                           </p>
                         </div>
                       )}
@@ -267,7 +278,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
                         <div className="space-y-0.5 pt-1 text-slate-600">
                           <div><strong>Lead Name :</strong> {lead.name || 'N/A'}</div>
                           <div><strong>Contact no :</strong> {lead.phone || 'N/A'}</div>
-                          <div><strong>Lead Status :</strong> {item.new_stage || lead.pipeline_stage || 'New Lead'}</div>
+                          <div><strong>Stage :</strong> {(item.new_stage && item.new_stage !== 'Ongoing') ? item.new_stage : (lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : 'Requirement Taken'}</div>
                         </div>
                       )}
                     </div>

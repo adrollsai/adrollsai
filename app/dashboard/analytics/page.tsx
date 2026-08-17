@@ -415,14 +415,23 @@ export default function AnalyticsPage() {
       const categoryLeads: Record<string, any[]> = {
         new: repLeads.filter(l => l.pipeline_stage === 'New Lead' || l.pipeline_stage === 'New' || l.status === 'New Lead' || l.status === 'New'),
         ongoing: repLeads.filter(l => l.pipeline_stage === 'Ongoing' || l.status === 'Ongoing'),
-        contacted: repLeads.filter(l => l.pipeline_stage === 'Contacted' || l.pipeline_stage === 'Requirement Taken' || l.status === 'Contacted'),
+        contacted: repLeads.filter(l => l.pipeline_stage === 'Contacted' || l.pipeline_stage === 'Requirement Taken' || l.status === 'Contacted' || l.status === 'Requirement Taken'),
         appointment: repLeads.filter(l => l.pipeline_stage === 'Appointment Booked' || l.pipeline_stage === 'Appointment booked'),
-        booked: repLeads.filter(l => l.pipeline_stage === 'Visit Planned' || l.status === 'Visit Planned'),
+        booked: repLeads.filter(l => l.pipeline_stage === 'Visit Planned' || l.status === 'Visit Planned' || ((typeof l.custom_fields === 'object' ? l.custom_fields?.next_action_type : null) === 'Visit')),
         done: repLeads.filter(l => l.pipeline_stage === 'Visit Done' || l.pipeline_stage === 'Appointment done' || l.status === 'Visit Done'),
         revisit: repLeads.filter(l => l.pipeline_stage === 'Revisit Done' || l.custom_fields?.revisit === true),
-        qualified: repLeads.filter(l => l.pipeline_stage === 'Negotiation' || l.pipeline_stage === 'Deal/Token'),
-        unqualified: repLeads.filter(l => l.pipeline_stage === 'Lost/NI' || l.pipeline_stage === 'Closed'),
-        meeting_planned: repLeads.filter(l => l.status === 'Meeting Planned' || l.pipeline_stage === 'Meeting Planned'),
+        qualified: repLeads.filter(l => l.pipeline_stage === 'Negotiation' || l.pipeline_stage === 'Deal/Token' || l.status === 'Negotiation' || l.status === 'Deal/Token'),
+        unqualified: repLeads.filter(l => l.pipeline_stage === 'Lost/NI' || l.pipeline_stage === 'Closed' || l.status === 'Lost/NI' || l.pipeline_stage === 'Dealer' || l.pipeline_stage === 'Plan Postponed' || l.pipeline_stage === 'Already Purchased'),
+        meeting_planned: repLeads.filter(l => {
+          let cf: any = l.custom_fields;
+          if (typeof cf === 'string') {
+            try { cf = JSON.parse(cf); } catch (e) {}
+          }
+          const nextAct = (cf?.next_action_type || l.next_action_type || '').toLowerCase();
+          const lastAct = (cf?.last_followup_type || l.last_followup_type || '').toLowerCase();
+          const st = (l.pipeline_stage || l.status || '').toLowerCase();
+          return st.includes('meeting planned') || nextAct.includes('meeting') || nextAct.includes('closing') || nextAct.includes('home') || lastAct.includes('meeting') || lastAct.includes('closing') || lastAct.includes('home');
+        }),
         meeting_done: repLeads.filter(l => l.status === 'Meeting Done' || l.pipeline_stage === 'Meeting Done'),
         dnp: repLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)),
         total: repLeads
@@ -724,11 +733,22 @@ export default function AnalyticsPage() {
         const repLeads = leads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
         const m = member.metrics || {}
 
+        const closingMeetingsCount = repLeads.filter(l => {
+          let cf: any = l.custom_fields;
+          if (typeof cf === 'string') {
+            try { cf = JSON.parse(cf); } catch (e) {}
+          }
+          const nextAct = (cf?.next_action_type || l.next_action_type || '').toLowerCase();
+          const lastAct = (cf?.last_followup_type || l.last_followup_type || '').toLowerCase();
+          const st = (l.pipeline_stage || l.status || '').toLowerCase();
+          return st.includes('meeting') || st.includes('negotiation') || nextAct.includes('meeting') || nextAct.includes('closing') || nextAct.includes('home') || lastAct.includes('meeting') || lastAct.includes('closing') || lastAct.includes('home');
+        }).length;
+
         return {
           rep,
           repLeads,
           totalFollowups: m.callsCount !== undefined ? m.callsCount : (m.leadsCount || 0),
-          closingMeetings: m.negotiationCount !== undefined ? m.negotiationCount : (m.qualifiedCount || 0),
+          closingMeetings: closingMeetingsCount,
           visits: m.visitDoneCount !== undefined ? m.visitDoneCount : (m.wonCount || 0),
           dnp: m.dnpCount || 0,
           conversionRate: m.conversionRate || '0.0'
@@ -739,7 +759,16 @@ export default function AnalyticsPage() {
     return allSalesReps.map(rep => {
       const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
       const totalFollowups = repLeads.filter(l => l.last_followup_at || l.last_call_at || l.notes).length
-      const closingMeetings = repLeads.filter(l => l.status === 'Negotiation' || l.pipeline_stage === 'Qualified').length
+      const closingMeetings = repLeads.filter(l => {
+        let cf: any = l.custom_fields;
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf); } catch (e) {}
+        }
+        const nextAct = (cf?.next_action_type || l.next_action_type || '').toLowerCase();
+        const lastAct = (cf?.last_followup_type || l.last_followup_type || '').toLowerCase();
+        const st = (l.pipeline_stage || l.status || '').toLowerCase();
+        return st.includes('meeting') || st.includes('negotiation') || nextAct.includes('meeting') || nextAct.includes('closing') || nextAct.includes('home') || lastAct.includes('meeting') || lastAct.includes('closing') || lastAct.includes('home');
+      }).length
       const visits = repLeads.filter(l => l.status === 'Visit Done' || l.status === 'Revisit Done' || l.pipeline_stage === 'Appointment done').length
       const dnp = repLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)).length
       const won = repLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
@@ -2123,15 +2152,24 @@ export default function AnalyticsPage() {
                             key={s.key} 
                             onClick={() => {
                               const totalStageLeads = leads.filter(l => {
-                                if (s.key === 'new') return (l.pipeline_stage || 'New') === 'New'
-                                if (s.key === 'contacted') return l.pipeline_stage === 'Contacted'
-                                if (s.key === 'booked') return l.pipeline_stage === 'Appointment booked'
-                                if (s.key === 'done') return l.pipeline_stage === 'Appointment done'
-                                if (s.key === 'revisit') return l.pipeline_stage === 'Revisit Done' || l.custom_fields?.revisit === true
-                                if (s.key === 'qualified') return l.pipeline_stage === 'Qualified'
-                                if (s.key === 'unqualified') return l.pipeline_stage === 'Unqualified' || l.pipeline_stage === 'Closed'
-                                if (s.key === 'meeting_planned') return l.pipeline_stage === 'Meeting Planned'
-                                if (s.key === 'meeting_done') return l.pipeline_stage === 'Meeting Done'
+                                if (s.key === 'new') return l.pipeline_stage === 'New Lead' || l.pipeline_stage === 'New' || l.status === 'New Lead' || l.status === 'New'
+                                if (s.key === 'contacted') return l.pipeline_stage === 'Contacted' || l.pipeline_stage === 'Requirement Taken' || l.status === 'Contacted' || l.status === 'Requirement Taken'
+                                if (s.key === 'booked') return l.pipeline_stage === 'Visit Planned' || l.status === 'Visit Planned'
+                                if (s.key === 'done') return l.pipeline_stage === 'Visit Done' || l.status === 'Visit Done'
+                                if (s.key === 'revisit') return l.pipeline_stage === 'Revisit Done' || l.status === 'Revisit Done'
+                                if (s.key === 'qualified') return l.pipeline_stage === 'Negotiation' || l.pipeline_stage === 'Deal/Token' || l.status === 'Negotiation' || l.status === 'Deal/Token'
+                                if (s.key === 'unqualified') return l.pipeline_stage === 'Lost/NI' || l.pipeline_stage === 'Closed' || l.status === 'Lost/NI' || l.pipeline_stage === 'Dealer' || l.pipeline_stage === 'Plan Postponed' || l.pipeline_stage === 'Already Purchased'
+                                if (s.key === 'meeting_planned') {
+                                  let cf: any = l.custom_fields;
+                                  if (typeof cf === 'string') {
+                                    try { cf = JSON.parse(cf); } catch (e) {}
+                                  }
+                                  const nextAct = (cf?.next_action_type || l.next_action_type || '').toLowerCase();
+                                  const lastAct = (cf?.last_followup_type || l.last_followup_type || '').toLowerCase();
+                                  const st = (l.pipeline_stage || l.status || '').toLowerCase();
+                                  return st.includes('meeting planned') || nextAct.includes('meeting') || nextAct.includes('closing') || nextAct.includes('home') || lastAct.includes('meeting') || lastAct.includes('closing') || lastAct.includes('home');
+                                }
+                                if (s.key === 'meeting_done') return l.pipeline_stage === 'Meeting Done' || l.status === 'Meeting Done'
                                 if (s.key === 'dnp') return l.dnp_count > 0 || l.custom_fields?.dnp_count > 0
                                 return false
                               })

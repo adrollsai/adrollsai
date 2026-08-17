@@ -10,7 +10,7 @@ const supabaseAdmin = createSupabaseAdmin(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled, lead_score, lead_state, conversion_probability, next_action_recommendation, last_active_at'
+const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, lead_score'
 
 export async function GET(req: Request) {
   try {
@@ -99,7 +99,7 @@ export async function GET(req: Request) {
     }
 
     const pageIndices = Array.from({ length: totalPagesNeeded }, (_, i) => i)
-    const pageChunks = chunkArray(pageIndices, 16)
+    const pageChunks = chunkArray(pageIndices, 20)
     let allLeads: any[] = []
 
     for (const chunk of pageChunks) {
@@ -125,23 +125,27 @@ export async function GET(req: Request) {
       allLeads = allLeads.slice(0, requestedLimit)
     }
 
-    // Parse custom_fields
+    // Parse custom_fields quickly
     const parsedLeads = allLeads.map(lead => {
       let cf = lead.custom_fields
       if (cf && typeof cf === 'string') {
         try {
-          while (typeof cf === 'string') cf = JSON.parse(cf)
+          cf = JSON.parse(cf)
         } catch (e) {
           cf = {}
         }
       }
-      return { ...lead, custom_fields: cf }
+      return { ...lead, custom_fields: cf || {} }
     })
 
     return NextResponse.json({
       success: true,
       leads: parsedLeads,
       totalCount: totalCount
+    }, {
+      headers: {
+        'Cache-Control': 'private, max-age=5, stale-while-revalidate=15'
+      }
     })
   } catch (error: any) {
     console.error('[API CRM Leads] Server error:', error)

@@ -168,19 +168,23 @@ export async function POST(request: Request) {
     if (isDnp) {
       customFields.last_call_dnp = true
       customFields.dnp_count = (customFields.dnp_count || 0) + 1
-      // Automatically advance attempted lead from New Lead to Ongoing stage
-      const currentStage = lead.status || lead.pipeline_stage || 'New Lead'
-      if (currentStage === 'New Lead' || currentStage === 'New') {
-        updatePayload.status = 'Ongoing'
-        updatePayload.pipeline_stage = 'Ongoing'
+      const currentStage = (leadStatus || lead.pipeline_stage || lead.status || 'New Lead').trim()
+      if (leadStatus && leadStatus !== 'Ongoing') {
+        updatePayload.status = leadStatus
+        updatePayload.pipeline_stage = leadStatus
+      } else if (currentStage === 'New Lead' || currentStage === 'New' || currentStage === 'Ongoing') {
+        updatePayload.status = 'Never Picked'
+        updatePayload.pipeline_stage = 'Never Picked'
       }
     } else {
       customFields.last_call_dnp = false
-      // For non-DNP: auto-advance New Lead → Ongoing when a next action is set and no explicit stage change was made
-      const currentStage = (leadStatus || lead.status || lead.pipeline_stage || 'New Lead').trim()
-      if ((currentStage === 'New Lead' || currentStage === 'New') && nextActionDate) {
-        updatePayload.status = 'Ongoing'
-        updatePayload.pipeline_stage = 'Ongoing'
+      const currentStage = (leadStatus || lead.pipeline_stage || lead.status || 'New Lead').trim()
+      if (leadStatus && leadStatus !== 'Ongoing') {
+        updatePayload.status = leadStatus
+        updatePayload.pipeline_stage = leadStatus
+      } else if (currentStage === 'New Lead' || currentStage === 'New' || currentStage === 'Ongoing') {
+        updatePayload.status = 'Requirement Taken'
+        updatePayload.pipeline_stage = 'Requirement Taken'
       }
     }
 
@@ -192,6 +196,8 @@ export async function POST(request: Request) {
 
     updatePayload.custom_fields = customFields
 
+    const activeStage = updatePayload.pipeline_stage || lead.pipeline_stage || lead.status || 'Requirement Taken'
+
     // Prepend remarks to notes if provided
     let newNotes = lead.notes || ''
     const formattedDateStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
@@ -200,7 +206,7 @@ export async function POST(request: Request) {
       const dnpNote = `[⚠️ Call Not Picked - DNP (${formattedDateStr}) by ${callerName}]: Next action scheduled for ${nextActionDate || 'TBD'} (${nextActionType}). ${remarks ? `Remarks: ${remarks}` : ''}`
       newNotes = dnpNote + (newNotes ? `\n\n${newNotes}` : '')
     } else if (remarks) {
-      const remarkNote = `[📝 Followup (${followupType}) - ${formattedDateStr} by ${callerName}]: Status: ${leadStatus || lead.pipeline_stage}. ${remarks}`
+      const remarkNote = `[📝 Followup (${followupType}) - ${formattedDateStr} by ${callerName}]: Stage: ${activeStage}. ${remarks}`
       newNotes = remarkNote + (newNotes ? `\n\n${newNotes}` : '')
     }
 
@@ -230,12 +236,14 @@ export async function POST(request: Request) {
 
     const historyDesc = isDnp
       ? `⚠️ Call Not Picked (DNP) logged by ${callerName}. Next Action: ${nextActionType} on ${formattedNextActionText}. ${remarks ? `Remarks: ${remarks}` : ''}`
-      : `📝 Followup (${followupType}) updated by ${callerName}. Stage: ${leadStatus || lead.pipeline_stage}${clientStatus ? `, Rating: ${clientStatus}` : ''}. ${remarks ? `Remarks: ${remarks}` : ''}`
+      : `📝 Followup (${followupType}) updated by ${callerName}. Stage: ${activeStage}${clientStatus ? `, Rating: ${clientStatus}` : ''}. ${remarks ? `Remarks: ${remarks}` : ''}`
+
+    const isExplicitStageChange = Boolean(leadStatus && leadStatus !== lead.pipeline_stage && leadStatus !== 'Ongoing')
 
     await supabaseAdmin.from('lead_history').insert({
       lead_id: leadId,
       user_id: user.id,
-      action_type: isDnp ? 'REMARK' : 'STATUS_CHANGE',
+      action_type: isDnp ? 'REMARK' : (isExplicitStageChange ? 'STATUS_CHANGE' : 'FOLLOWUP'),
       description: historyDesc
     })
 

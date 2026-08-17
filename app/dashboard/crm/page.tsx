@@ -3323,10 +3323,15 @@ END:VCARD\n`
                                 </div>
                             )}
                             
-                            {/* Right Column */}
-                            <div className="flex flex-col gap-1 justify-center min-w-0">
+                            {/* Right Column - Lead Source & Source Details */}
+                            <div className="flex flex-col gap-0.5 justify-center min-w-0">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lead Source</span>
-                                <span className="text-xs font-bold text-slate-700 truncate block">{lead.source || '--'}</span>
+                                <span className="text-xs font-extrabold text-slate-800 truncate block" title={lead.source || '--'}>{lead.source || '--'}</span>
+                                {(lead.ad_name || getLeadCampaignName(lead)) && (
+                                    <span className="text-[10px] font-semibold text-slate-500 truncate block mt-0.5 bg-slate-100/80 px-1.5 py-0.5 rounded border border-slate-200/50" title={lead.ad_name || getLeadCampaignName(lead)}>
+                                        {lead.ad_name || getLeadCampaignName(lead)}
+                                    </span>
+                                )}
                             </div>
                         </div>
 

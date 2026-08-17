@@ -194,7 +194,7 @@ export async function GET(req: Request) {
         }
 
         // 1. Fetch CRM Leads across workspace using ultra-fast parallel batched queries
-        const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, facebook_lead_id, external_id, summary, value, next_followup, assigned_to, budget, timeline, priority_status, facebook_created_at, form_id, form_name, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience'
+        const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, custom_fields, dnp_count, last_call_at'
 
         const countQuery = applyLeadFilters(
             supabaseAdmin.from('leads').select('*', { count: 'exact', head: true })
@@ -212,7 +212,7 @@ export async function GET(req: Request) {
         }
 
         const pageIndices = Array.from({ length: totalPages }, (_, i) => i)
-        const leadChunks = chunkArray(pageIndices, 16)
+        const leadChunks = chunkArray(pageIndices, 20)
         let rawLeadsBatch: any[] = []
 
         for (const chunk of leadChunks) {
@@ -243,7 +243,7 @@ export async function GET(req: Request) {
             let cf = lead.custom_fields
             if (cf && typeof cf === 'string') {
                 try {
-                    while (typeof cf === 'string') cf = JSON.parse(cf)
+                    cf = JSON.parse(cf)
                 } catch (e) {
                     cf = {}
                 }
@@ -391,6 +391,10 @@ export async function GET(req: Request) {
             messages: [],
             history: safeHistoryLogs,
             team: teamData
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=5, stale-while-revalidate=15'
+            }
         })
 
     } catch (e: any) {
