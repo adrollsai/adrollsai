@@ -7,14 +7,26 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     
     const body = await request.json()
-    const { subscription, ownerId } = body
+    const { subscription, ownerId, fcmToken, platform } = body
     const { data: { user } } = await supabase.auth.getUser()
 
-    if (!subscription) {
-      return NextResponse.json({ error: 'Invalid subscription object' }, { status: 400 })
+    if (!subscription && !fcmToken) {
+      return NextResponse.json({ error: 'Invalid subscription or FCM token' }, { status: 400 })
     }
 
-    const { endpoint, keys } = subscription
+    let endpoint: string
+    let p256dh: string | null = null
+    let auth: string | null = null
+
+    if (fcmToken) {
+      endpoint = `fcm:${fcmToken}`
+      p256dh = platform || 'android'
+      auth = fcmToken
+    } else {
+      endpoint = subscription.endpoint
+      p256dh = subscription.keys?.p256dh || null
+      auth = subscription.keys?.auth || null
+    }
 
     // Use Admin Client to bypass RLS for push_subscriptions table
     const supabaseAdmin = createAdminClient(
@@ -32,8 +44,8 @@ export async function POST(request: Request) {
         user_id: user?.id || null,
         catalog_owner_id: ownerId || null,
         endpoint,
-        p256dh: keys.p256dh,
-        auth: keys.auth
+        p256dh,
+        auth
       })
 
     if (error) throw error

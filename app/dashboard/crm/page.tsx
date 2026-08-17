@@ -706,7 +706,9 @@ export default function CRMPage() {
 
   const isFetchingLeadsRef = useRef(false)
 
-  // 1. SAFE SUB-SECOND FETCH
+  const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled'
+
+  // 1. DIRECT SUPABASE PARALLEL FETCH — No API route middleman
   const fetchLeads = async (force = false, silent = false) => {
     if (isFetchingLeadsRef.current && !force) return
     isFetchingLeadsRef.current = true
@@ -715,57 +717,104 @@ export default function CRMPage() {
     if (force && !silent) setIsRefreshing(true)
 
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      setUserId(user.id)
+
       const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
       const impersonateId = urlParams.get('impersonate')
 
-      const { data: { session } } = await supabase.auth.getSession()
-      const authHeader: Record<string, string> = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
+      // Get profile for role resolution
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads, badges').eq('id', user.id).single()
+      const currentRole = (profile?.role as any) || 'admin'
+      setRole(currentRole)
+      setEnableDistribution(!!profile?.enable_distribution)
+      setAutoCallNewLeads(!!profile?.auto_call_new_leads)
+      setCustomStages(extractStagesFromProfile(profile))
 
-      // Priority 1: Instant parallel leads fetch from server API
-      const leadsPromise = fetch(`/api/crm/leads${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
-        .then(async (res) => {
-          if (res && res.ok) {
-            const data = await res.json()
-            if (data && data.success && Array.isArray(data.leads)) {
-              setLeads(data.leads)
-              const count = data.totalCount !== undefined ? data.totalCount : data.leads.length
-              setTotalLeadsCount(count)
-            }
-          }
-        })
-        .catch(err => console.error('[CRM Leads Fetch Error]:', err))
-        .finally(() => {
-          if (!silent) {
-            setLoading(false)
-            setIsRefreshing(false)
-          }
-          isFetchingLeadsRef.current = false
+      const parentId = profile?.parent_id || profile?.agency_id
+      if (parentId) setParentAdminId(parentId)
+
+      let targetUserId = (['admin', 'agent', 'team_member'].includes(currentRole) && parentId) ? parentId : user.id
+      if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
+        if (['super_admin', 'agency', 'admin'].includes(currentRole)) targetUserId = impersonateId
+      }
+      setTargetUserId(targetUserId)
+
+      // Build filter condition for direct Supabase queries
+      const isTeamUser = currentRole === 'agent' || currentRole === 'team_member'
+      let filterFn: (q: any) => any
+
+      if (isTeamUser) {
+        filterFn = (q: any) => q.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
+      } else {
+        // Get team members for workspace-level access
+        const { data: teamProfiles } = await supabase.from('profiles')
+          .select('id')
+          .or(`parent_id.eq.${targetUserId},agency_id.eq.${targetUserId},id.eq.${targetUserId}`)
+        
+        const teamIds = Array.from(new Set((teamProfiles || []).map(p => p.id)))
+        if (teamIds.length === 0) teamIds.push(targetUserId)
+        
+        const orConditions = teamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
+        filterFn = (q: any) => q.or(orConditions)
+      }
+
+      // Step 1: Get total count + first 1000 leads in parallel
+      const firstPageQ = filterFn(supabase.from('leads').select(leadFields))
+        .order('created_at', { ascending: false })
+        .range(0, 999)
+      const countQ = filterFn(supabase.from('leads').select('*', { count: 'exact', head: true }))
+
+      const [firstPageRes, countRes] = await Promise.all([firstPageQ, countQ])
+
+      const totalCount = countRes.count || (firstPageRes.data?.length || 0)
+      setTotalLeadsCount(totalCount)
+
+      // Parse custom_fields
+      const parseLeads = (rawLeads: any[]) => rawLeads.map(lead => {
+        let cf = lead.custom_fields
+        if (cf && typeof cf === 'string') {
+          try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = {} }
+        }
+        return { ...lead, custom_fields: cf || {} }
+      })
+
+      let allLeads = parseLeads(firstPageRes.data || [])
+
+      // Show first batch immediately
+      setLeads(allLeads)
+      if (!silent) {
+        setLoading(false)
+        setIsRefreshing(false)
+      }
+
+      // Step 2: If more pages needed, fetch remaining in parallel
+      if (totalCount > 1000) {
+        const remainingPages = Math.ceil(totalCount / 1000) - 1
+        const batchPromises = Array.from({ length: remainingPages }, (_, i) => {
+          const pageIdx = i + 1
+          return filterFn(supabase.from('leads').select(leadFields))
+            .order('created_at', { ascending: false })
+            .range(pageIdx * 1000, (pageIdx + 1) * 1000 - 1)
         })
 
-      // Background non-blocking profile and secondary metadata resolution
+        const batchResults = await Promise.all(batchPromises)
+        for (const r of batchResults) {
+          if (r.data && r.data.length > 0) {
+            allLeads = allLeads.concat(parseLeads(r.data))
+          }
+        }
+        setLeads(allLeads)
+        setTotalLeadsCount(allLeads.length > totalCount ? allLeads.length : totalCount)
+      }
+
+      // Background: fetch team, campaigns, inventory (non-blocking)
       ;(async () => {
         try {
-          const { data: { user } } = await supabase.auth.getUser()
-          if (!user) return
-          setUserId(user.id)
+          const { data: { session } } = await supabase.auth.getSession()
+          const authHeader: Record<string, string> = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
 
-          const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads, badges').eq('id', user.id).single()
-          const currentRole = (profile?.role as any) || 'admin'
-          setRole(currentRole)
-          setEnableDistribution(!!profile?.enable_distribution)
-          setAutoCallNewLeads(!!profile?.auto_call_new_leads)
-          setCustomStages(extractStagesFromProfile(profile))
-
-          const parentId = profile?.parent_id || profile?.agency_id
-          if (parentId) setParentAdminId(parentId)
-
-          let targetUserId = (['admin', 'agent', 'team_member'].includes(currentRole) && parentId) ? parentId : user.id
-          if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
-            if (['super_admin', 'agency', 'admin'].includes(currentRole)) targetUserId = impersonateId
-          }
-          setTargetUserId(targetUserId)
-
-          // Secondary fetches
           fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
             .then(res => res.json())
             .then(data => { if (data?.campaigns) setCampaigns(data.campaigns) })
@@ -794,7 +843,6 @@ export default function CRMPage() {
         } catch (bgErr) {}
       })()
 
-      await leadsPromise
     } catch (e: any) {
       console.error("[CRM fetchLeads Error]:", e?.message || e?.details || String(e), e)
     } finally {

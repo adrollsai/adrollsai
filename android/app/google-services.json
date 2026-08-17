@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "255511270991",
+    "project_id": "nobogent-eca37",
+    "storage_bucket": "nobogent-eca37.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:255511270991:android:f75534def28545d35cbc3a",
+        "android_client_info": {
+          "package_name": "com.nobogent.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB8t5U_CxLt5eUNtvU2Y3J80ZCTKkH_eoc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -724,18 +724,19 @@ export async function POST(request: Request) {
                     const avatarScenePromptGen = `You are a world-class commercial ad director specializing in photorealistic live-action video generation with Grok Imagine 1.5.
 Write an ultra-realistic, highly human-like 9:16 portrait video prompt for Scene ${i + 1} of ${requiredClips}.
 ${customInstructionsBlock}
-PRESENTER & CHARACTER DIRECTIVES:
-- Visual Identity: Image 1 is the exact presenter model. Maintain strict facial identity, hairstyle, ethnicity, and clothing from Image 1.
+AVATAR IDENTITY & PRESENTER DIRECTIVES (MANDATORY):
+- Visual Identity: Image 1 is the primary reference image for the presenter's exact face, identity, hair, facial features, skin tone, and styling. The presenter in the video MUST look identical to the person in Image 1 throughout the entire clip.
 - Lifelike Human Expressions & Body Language: The presenter must look completely natural and alive, with authentic warm smiles, subtle facial micro-expressions, natural eye contact, realistic blinking, and relaxed, fluid body posture (avoid all robotic, stiff, or frozen poses).
 - Expressive Natural Gestures: While speaking, the presenter uses lively, organic hand gestures and natural head movements to emphasize key points warmly to the viewer.
-- Authentic Human Voice & Delivery: The presenter speaks in an authentic, warm, natural human voice with rich tone, casual breathing pauses, lively conversational cadence, expressive pitch variations, and flawless lip synchronization saying: "${sceneDialogue}". Strictly NO robotic, artificial, or monotone voice synthesis.
+- Authentic Human Voice & Delivery Tonality: The presenter speaks in an authentic, warm, charismatic, and natural human voice with rich vocal texture, subtle breathing pauses, lively conversational cadence, expressive pitch variations, emotional conviction, and flawless lip synchronization saying: "${sceneDialogue}". Strictly NO robotic, artificial, or monotone voice synthesis.
 
-PRODUCT INTEGRATION & ENVIRONMENT:
+CONTINUOUS SPEECH & PRODUCT B-ROLL SYNCHRONIZATION:
 - Product/Property Title: "${productTitle}"
 - Scene Visual Action: "${sceneVisuals}"
 - Reference Product Photos:
 ${descriptionsText}
-- Visual B-Roll Cuts: The camera transitions fluidly from the presenter to realistic dynamic B-roll angles showcasing the physical product/property features from reference photos (Images 2..${convertedRefImages.length}).
+- Continuous Dialogue Flow: The spoken dialogue MUST span smoothly across the entire 15-second scene (from second 0 to second 14). NEVER stop speaking early leaving empty silent B-rolls at the tail end.
+- Visual B-Roll Motion: The camera transitions fluidly from the presenter to realistic dynamic B-roll angles showcasing the physical product/property features from reference photos (Images 2..${convertedRefImages.length}), while the presenter's speech continues seamlessly alongside the visual movement with ZERO dead air.
 
 CINEMATOGRAPHY & AUDIO:
 - 35mm anamorphic camera, shallow depth of field, natural soft ambient lighting, true-to-life skin textures with realistic micro-details. 9:16 vertical ratio.
@@ -751,13 +752,16 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                             prompt: avatarScenePromptGen
                         });
                         let promptText = res.text.trim();
+                        if (!promptText.toLowerCase().includes('image 1') && !promptText.toLowerCase().includes('image_1')) {
+                            promptText = `The presenter shown in Image 1 is the main character. ${promptText}`;
+                        }
                         if (!promptText.toLowerCase().includes('human voice') && !promptText.toLowerCase().includes('natural voice')) {
-                            promptText += ' Authentic, natural human speaking voice with warm conversational inflection and organic pauses, perfectly synced lips. Strictly NO robotic tone.';
+                            promptText += ' Authentic, natural human speaking voice with warm conversational inflection, organic pauses, and perfectly synced lips. Strictly NO robotic tone.';
                         }
                         return promptText;
                     } catch (genErr) {
                         console.warn(`[Grok Pipeline] Avatar prompt generation fallback for scene ${i + 1}:`, genErr);
-                        return `The presenter shown in Image 1 stands in a natural medium chest-up shot in an authentic, well-lit ambient setting. With warm, lifelike facial micro-expressions, fluid head motion, and expressive, natural hand gestures, she speaks directly into the camera in a warm, authentic human voice with natural conversational cadence, realistic pauses, and flawless lip sync saying: "${sceneDialogue}". The shot flows seamlessly with dynamic camera cuts highlighting ${sceneVisuals || productTitle} from the reference product photos. 35mm live-action cinema lighting, realistic skin texture, 9:16 portrait ratio, crisp natural human voice. Strictly NO robotic stiffness, NO artificial monotone speech, NO on-screen text, and NO subtitles.`;
+                        return `The presenter shown in Image 1 is the main character and stands in a natural medium chest-up shot in an authentic ambient setting. With warm, lifelike facial micro-expressions, fluid head motion, and expressive natural hand gestures, she speaks continuously directly into the camera in a warm, authentic human voice with natural conversational cadence and flawless lip sync saying: "${sceneDialogue}". The shot flows seamlessly with dynamic camera cuts highlighting ${sceneVisuals || productTitle} from the reference product photos while her speech continues without interruption. 35mm live-action cinema lighting, realistic skin texture, 9:16 portrait ratio, crisp natural human voice. Strictly NO robotic stiffness, NO artificial monotone speech, NO dead air, and NO on-screen text or subtitles.`;
                     }
                 } else {
                     const targetEthnicity = extrapolateEthnicity(profile, property, customInstructions);
@@ -829,22 +833,23 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
             const promptPromises = scenes.map(async (scene: any, i: number) => {
                 const characterAppearanceText = isCharacterVideo
                      ? `Use reference video ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`
-                     : `Use reference image ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
+                     : `Use Image 1 reference photo ONLY for character facial appearance, identity consistency, and styling.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
 
                 const synthesisPrompt = `You are a video generation prompt engineer for Bytedance/Kie.ai Seedance 2.0.
 Your task is to write a highly cohesive, concise prompt (around 120-150 words) for a 15-second UGC talking-head video scene.
 
 CREATOR CHARACTER:
+- Identity Reference: Image 1 is the exact avatar presenter photo. Faithfully clone and preserve their exact facial features, hair, skin tone, and persona from Image 1.
 - Description: "${characterDescription}"
 
 SCENE DETAILS:
 - Dialogue: "${scene.dialogue}"
-- Visuals/Camera: "${scene.visuals || 'closeup tracking shot looking directly at the camera'}"
+- Visuals/Camera: "${scene.visuals || 'medium chest-up shot looking directly at the camera with dynamic hand gestures'}"
 
 Write the prompt following this exact structure and length:
-1. Cloning: "Use the reference video to faithfully clone both the person's face and voice. Preserve the person's identity, facial features, hairstyle, skin tone, clothing style, body language, facial expressions, and speaking style exactly as seen in the reference. Clone the voice with the same accent, tone, pitch, pacing, pronunciation, and emotional delivery."
-2. Setting/Camera/Actions: Describe the scene setting and actions. You MUST strictly base this description on the scene visuals instruction: "${scene.visuals || 'closeup tracking shot'}". Do NOT make up default settings or generic offices if "${scene.visuals || ''}" specifies walking, a highstreet, B-rolls, or specific movements. Make the presenter walk, gesturate, or sit exactly as "${scene.visuals || ''}" describes, matching the character style.
-3. Video specifications: "There should be no text captions on screen. Generate a highly photorealistic talking-head video with accurate lip synchronization. The speaker should maintain direct eye contact with the camera, use natural blinking, subtle head movements, and realistic hand gestures. Deliver the dialogue confidently and naturally like a professional advisor. Keep the speech conversational, expressive, and human-like. Avoid robotic delivery or exaggerated acting."
+1. Cloning: "Use Image 1 to faithfully clone the person's face, identity, hairstyle, skin tone, clothing, and natural appearance. The presenter in the video must look identical to Image 1 throughout the entire clip. Deliver the speech in an authentic, warm, charismatic, and natural human voice with lively conversational cadence, organic pauses, and emotional conviction (strictly NO robotic AI tone)."
+2. Setting/Camera/Actions: Describe the scene setting and actions. You MUST strictly base this description on the scene visuals instruction: "${scene.visuals || 'medium chest-up shot'}". The presenter speaks continuously across the 15 seconds while gesturing naturally and interacting with the space. If product B-rolls are shown, the speech continues seamlessly over the visuals with zero dead air.
+3. Video specifications: "There should be no text captions on screen. Generate a highly photorealistic talking-head video with accurate lip synchronization. The speaker should maintain direct eye contact with the camera, use natural blinking, subtle head movements, and realistic hand gestures. Deliver the dialogue confidently and naturally like a professional advisor. Keep the speech conversational, expressive, and human-like throughout the entire 15 seconds. Avoid robotic delivery or exaggerated acting."
 4. Dialogue: Add a newline, then "Dialogue", then a newline, then print the exact dialogue wrapped in quotes.
 For example:
 Dialogue
@@ -864,7 +869,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                     console.error(`[Generate API] Prompt synthesis failed for scene ${i + 1}:`, fallbackErr);
                     const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
                     const cleanFallbackDialogue = scene.dialogue;
-                    return `${characterAppearanceText}\n\nThe video opens in a premium, warm real estate setting.\nA professional female UGC presenter stands in a detailed closeup shot looking directly into the camera.\nShe says:\n"${cleanFallbackDialogue}"\nThe camera slowly dollies toward the presenter's face.\nTransition to a wide scenic shot showing the product/property matching the supplied reference image 1 (${targetImageLabel}) from super far away so that no human face is visible or mutated.\nProfessional real estate home tour.\nPhotorealistic.\nUltra-realistic human motion.\nNatural body language.\nPerfect lip synchronization.\nLuxury property marketing video.\nSmooth steadycam movement.\nCinematic architectural videography.\nPremium lighting.\nNo AI artifacts.\nHigh-end commercial production quality.\n15-second continuous shot.`;
+                    return `${characterAppearanceText}\n\nThe presenter shown in Image 1 stands in a detailed medium chest-up shot looking directly into the camera in a warm, premium setting.\nShe speaks continuously throughout the scene in an authentic, warm human voice with natural conversational cadence saying:\n"${cleanFallbackDialogue}"\nThe camera dollies smoothly, transitioning dynamically to showcase the property features matching ${targetImageLabel} while her speech continues without interruption.\nPhotorealistic.\nUltra-realistic human motion.\nNatural body language.\nPerfect lip synchronization.\nContinuous dialogue with zero dead air.\nSmooth camera movement.\nCinematic lighting.\nNo AI artifacts.\nHigh-end commercial production quality.\n15-second continuous shot.`;
                 }
             });
             prompts = await Promise.all(promptPromises);

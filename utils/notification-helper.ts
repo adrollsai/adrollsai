@@ -1,5 +1,8 @@
 import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
+import { GoogleAuth } from 'google-auth-library';
+import fs from 'fs';
+import path from 'path';
 
 let isVapidInitialized = false;
 
@@ -35,6 +38,100 @@ function getSupabaseAdmin() {
   return _supabaseAdmin;
 }
 
+async function getFcmAccessToken(): Promise<string | null> {
+  try {
+    let credentials: any = null;
+
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      try {
+        credentials = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+      } catch {}
+    }
+
+    if (!credentials) {
+      const localKeyPath = path.join(process.cwd(), 'firebase-service-account.json');
+      if (fs.existsSync(localKeyPath)) {
+        try {
+          credentials = JSON.parse(fs.readFileSync(localKeyPath, 'utf8'));
+        } catch {}
+      }
+    }
+
+    if (!credentials) {
+      return null;
+    }
+
+    const auth = new GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/firebase.messaging']
+    });
+
+    const client = await auth.getClient();
+    const tokenResponse = await client.getAccessToken();
+    return tokenResponse?.token || null;
+  } catch (err: any) {
+    console.error('[FCM v1] Error getting access token:', err.message);
+    return null;
+  }
+}
+
+async function sendFcmV1Notification(fcmToken: string, title: string, body: string, url: string, type: string) {
+  try {
+    const accessToken = await getFcmAccessToken();
+    if (!accessToken) {
+      console.warn('[FCM v1] Skipping native push: No access token available');
+      return;
+    }
+
+    const projectId = 'nobogent-eca37';
+    const fcmUrl = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
+
+    const payload = {
+      message: {
+        token: fcmToken,
+        notification: {
+          title,
+          body
+        },
+        data: {
+          title: String(title),
+          body: String(body),
+          url: String(url),
+          type: String(type)
+        },
+        android: {
+          priority: 'HIGH',
+          notification: {
+            channel_id: 'nobogent_notifications',
+            sound: 'default',
+            default_vibrate_timings: true,
+            default_sound: true,
+            click_action: url
+          }
+        }
+      }
+    };
+
+    const res = await fetch(fcmUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      console.error('[FCM v1 ERROR]', data);
+    } else {
+      console.log(`[FCM v1 SUCCESS] Native alert dispatched to token (${fcmToken.slice(0, 12)}...):`, data.name);
+    }
+  } catch (err: any) {
+    console.error('[FCM v1 FATAL ERROR]', err.message);
+  }
+}
+
 export async function sendPushNotification(
     userId: string,
     title: string,
@@ -67,29 +164,34 @@ export async function sendPushNotification(
   });
   const subscriptions = Array.from(subscriptionsMap.values());
 
-  if (!ensureVapidDetails()) {
-    console.warn(`[PUSH] Skipping push dispatch: VAPID details not configured.`);
-    return;
-  }
-
   if (!subscriptions || subscriptions.length === 0) {
       console.log(`[PUSH] FAILED: 0 tokens found in database! User is not subscribed.`);
       return;
   }
 
-  console.log(`[PUSH] Found ${subscriptions.length} token(s). Dispatching to Apple/Google...`);
+  console.log(`[PUSH] Found ${subscriptions.length} token(s). Dispatching to Apple/Google/Android...`);
   const payload = JSON.stringify({ title, body, url, type });
 
-  // THE COLD-STATE FIX:
-  // 'urgency' must be a native root property, not inside a custom headers object.
-  // The web-push library automatically converts this into the strict Apple APNs headers
-  // required to wake a locked iPhone screen when the app is asleep.
   const options = {
     TTL: 86400,
     urgency: 'high' 
   } as webpush.RequestOptions;
 
   const sendPromises = subscriptions.map(async (sub: any) => {
+    if (!sub.endpoint) return;
+
+    // 1. Native FCM device token (Android / iOS app)
+    if (sub.endpoint.startsWith('fcm:') || sub.p256dh === 'android' || sub.p256dh === 'ios') {
+      const fcmToken = sub.auth || sub.endpoint.replace(/^fcm:/, '');
+      await sendFcmV1Notification(fcmToken, title, body, url, type);
+      return;
+    }
+
+    // 2. Standard Web Push (Browser / PWA)
+    if (!sub.endpoint.startsWith('http')) return;
+
+    if (!ensureVapidDetails()) return;
+
     const pushSubscription = {
       endpoint: sub.endpoint,
       keys: { p256dh: sub.p256dh, auth: sub.auth }
@@ -97,9 +199,9 @@ export async function sendPushNotification(
 
     try {
       await webpush.sendNotification(pushSubscription, payload, options);
-      console.log(`[PUSH] SUCCESS: Dispatched safely!`);
+      console.log(`[PUSH] SUCCESS: Dispatched safely via Web Push!`);
     } catch (error: any) {
-      console.error(`[PUSH] ERROR ${error.statusCode}`);
+      console.error(`[PUSH] ERROR ${error.statusCode || error.message}`);
       if (error.statusCode === 404 || error.statusCode === 410) {
         await getSupabaseAdmin().from('push_subscriptions').delete().eq('id', sub.id);
       }

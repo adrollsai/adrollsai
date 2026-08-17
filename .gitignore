@@ -43,3 +43,7 @@ next-env.d.ts
 
 # scratch directory
 /scratch/
+
+# firebase service accounts
+*firebase-adminsdk*.json
+firebase-service-account.json

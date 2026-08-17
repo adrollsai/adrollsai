@@ -48,11 +48,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No valid call log entries provided' }, { status: 400 })
     }
 
-    // Fetch user's leads to match by phone number
-    const { data: userLeads } = await adminSupabase
+    // Fetch user profile to identify role and workspace team/agency
+    const { data: userProfile } = await adminSupabase
+      .from('profiles')
+      .select('id, role, parent_id, agency_id')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const role = userProfile?.role?.toLowerCase() || 'admin'
+    const isTeamUser = role === 'agent' || role === 'team_member'
+    const agencyId = userProfile?.agency_id || userProfile?.parent_id
+
+    let leadsQuery = adminSupabase
       .from('leads')
-      .select('id, phone, name')
-      .eq('user_id', user.id)
+      .select('id, phone, name, user_id, assigned_to')
+
+    if (isTeamUser) {
+      // For agents: match leads assigned to them OR created by them OR in their agency workspace
+      const orClauses = [`assigned_to.eq.${user.id}`, `user_id.eq.${user.id}`]
+      if (agencyId) {
+        orClauses.push(`user_id.eq.${agencyId}`)
+      }
+      leadsQuery = leadsQuery.or(orClauses.join(','))
+    } else {
+      // For admins/agency owners: match all workspace leads
+      let workspaceOwnerIds = [user.id]
+      const { data: teamProfiles } = await adminSupabase
+        .from('profiles')
+        .select('id')
+        .or(`parent_id.eq.${user.id},agency_id.eq.${user.id},id.eq.${user.id}`)
+
+      if (teamProfiles && teamProfiles.length > 0) {
+        workspaceOwnerIds = Array.from(new Set(teamProfiles.map((p: any) => p.id)))
+      }
+      const workspaceOrConditions = workspaceOwnerIds.flatMap((id: string) => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
+      leadsQuery = leadsQuery.or(workspaceOrConditions)
+    }
+
+    const { data: userLeads } = await leadsQuery
 
     const leadPhoneMap = new Map<string, any>()
     if (userLeads) {
@@ -60,7 +93,14 @@ export async function POST(request: Request) {
         const norm = normalizePhone(lead.phone)
         if (norm) leadPhoneMap.set(norm, lead)
         const digits = (lead.phone || '').replace(/[^\d]/g, '')
-        if (digits) leadPhoneMap.set(digits, lead)
+        if (digits) {
+          leadPhoneMap.set(digits, lead)
+          if (digits.startsWith('91') && digits.length > 10) {
+            leadPhoneMap.set(digits.slice(2), lead)
+          } else if (digits.startsWith('0') && digits.length > 10) {
+            leadPhoneMap.set(digits.slice(1), lead)
+          }
+        }
       })
     }
 

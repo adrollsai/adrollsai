@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { BellRing, Check, Loader2, Send, AlertCircle, Share, Bell, X } from 'lucide-react'
+import { useEffect, useState, useRef } from 'react'
+import { BellRing, Check, Loader2, Send, AlertCircle, Share, Bell, X, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
+import { Capacitor } from '@capacitor/core'
+import { PushNotifications, Token, ActionPerformed, PushNotificationSchema } from '@capacitor/push-notifications'
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4)
@@ -26,37 +28,122 @@ interface PushManagerProps {
 
 export default function PushManager({ variant = 'inline', ownerId }: PushManagerProps) {
   const [isSupported, setIsSupported] = useState(false)
-  const [subscription, setSubscription] = useState<PushSubscription | null>(null)
+  const [isNative, setIsNative] = useState(false)
+  const [subscription, setSubscription] = useState<any>(null)
   const [loading, setLoading] = useState(false)
-  const [permissionState, setPermissionState] = useState<NotificationPermission>('default')
+  const [permissionState, setPermissionState] = useState<'default' | 'granted' | 'denied'>('default')
   const [isIOS, setIsIOS] = useState(false)
   const [isStandalone, setIsStandalone] = useState(false)
   const [isDismissed, setIsDismissed] = useState(false)
+  const isRegisteredRef = useRef(false)
 
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+    const isCapacitor = typeof window !== 'undefined' && Capacitor.isNativePlatform()
+    setIsNative(isCapacitor)
+
+    if (isCapacitor) {
       setIsSupported(true)
-      // Explicitly register your custom worker
+      initNativePush()
+    } else if (typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
+      setIsSupported(true)
       registerServiceWorker()
-      
       if ('Notification' in window) {
-          setPermissionState(Notification.permission)
+        setPermissionState(Notification.permission)
       }
     }
 
-    const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+    const isIosDevice = typeof window !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
     setIsIOS(isIosDevice)
     
-    const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
-                             (window.navigator as any).standalone === true
+    const isStandaloneMode = typeof window !== 'undefined' && (
+      window.matchMedia('(display-mode: standalone)').matches || 
+      (window.navigator as any).standalone === true
+    )
     setIsStandalone(isStandaloneMode)
 
-    if (variant === 'banner') {
+    if (variant === 'banner' && typeof window !== 'undefined') {
       const dismissed = localStorage.getItem('pushBannerDismissed') === 'true'
       setIsDismissed(dismissed)
     }
   }, [variant])
 
+  // --- NATIVE CAPACITOR PUSH HANDLERS ---
+  async function initNativePush() {
+    try {
+      if (Capacitor.getPlatform() === 'android') {
+        await PushNotifications.createChannel({
+          id: 'nobogent_notifications',
+          name: 'Nobogent Alerts',
+          description: 'Real-time alerts for incoming leads, calls, and campaigns',
+          importance: 5,
+          visibility: 1,
+          vibration: true,
+          sound: 'default'
+        }).catch(() => {})
+      }
+
+      const permStatus = await PushNotifications.checkPermissions()
+      if (permStatus.receive === 'granted') {
+        setPermissionState('granted')
+        const savedToken = localStorage.getItem('nobogent_native_fcm_token')
+        if (savedToken) {
+          setSubscription({ fcmToken: savedToken })
+        }
+      } else if (permStatus.receive === 'denied') {
+        setPermissionState('denied')
+      }
+
+      if (!isRegisteredRef.current) {
+        isRegisteredRef.current = true
+
+        PushNotifications.addListener('registration', async (token: Token) => {
+          console.log('[Native Push] Registered with token:', token.value)
+          localStorage.setItem('nobogent_native_fcm_token', token.value)
+          setSubscription({ fcmToken: token.value })
+          setPermissionState('granted')
+          await syncNativeTokenWithBackend(token.value)
+        })
+
+        PushNotifications.addListener('registrationError', (error: any) => {
+          console.warn('[Native Push] Registration error:', error)
+        })
+
+        PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
+          console.log('[Native Push] Push received in foreground:', notification)
+          toast.info(notification.title || 'Notification', {
+            description: notification.body
+          })
+        })
+
+        PushNotifications.addListener('pushNotificationActionPerformed', (action: ActionPerformed) => {
+          const targetUrl = action.notification.data?.url
+          if (targetUrl && typeof window !== 'undefined') {
+            window.location.href = targetUrl
+          }
+        })
+      }
+    } catch (err) {
+      console.warn('[Native Push] Init notice:', err)
+    }
+  }
+
+  async function syncNativeTokenWithBackend(fcmToken: string) {
+    try {
+      await fetch('/api/web-push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fcmToken,
+          platform: Capacitor.getPlatform(),
+          ownerId
+        })
+      })
+    } catch (e) {
+      console.warn('Failed to sync native push token:', e)
+    }
+  }
+
+  // --- WEB / PWA PUSH HANDLERS ---
   async function syncSubscriptionWithBackend(sub: PushSubscription) {
     try {
       await fetch('/api/web-push/subscribe', {
@@ -69,7 +156,6 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
     }
   }
 
-  // This function manually registers custom-sw.js
   async function registerServiceWorker() {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js', {
@@ -82,7 +168,6 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       const sub = await registration.pushManager.getSubscription()
       if (sub) {
         setSubscription(sub)
-        // Auto-sync this device's subscription with the logged-in user account
         syncSubscriptionWithBackend(sub)
       }
     } catch (error) {
@@ -93,21 +178,40 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
   async function subscribeToPush() {
     setLoading(true)
     try {
-      // THE iOS SAFARI FIX:
-      // Request permission explicitly FIRST before doing any async service worker tasks.
-      // This ensures the native OS prompt appears instantly linked to the tap event.
-      if (window.Notification && Notification.permission !== 'granted') {
-          const permission = await window.Notification.requestPermission()
-          setPermissionState(permission)
-          
-          if (permission !== 'granted') {
-              toast.error("Permission Denied")
-              setLoading(false)
-              return
-          }
+      if (isNative) {
+        // Native Capacitor Permission & Registration
+        let permStatus = await PushNotifications.checkPermissions()
+        if (permStatus.receive !== 'granted') {
+          permStatus = await PushNotifications.requestPermissions()
+        }
+
+        if (permStatus.receive === 'granted') {
+          setPermissionState('granted')
+          await PushNotifications.register()
+          toast.success("Notifications Enabled!", {
+            description: "You will now receive real-time alerts on your device."
+          })
+        } else {
+          setPermissionState('denied')
+          toast.error("Permission Denied", {
+            description: "Please allow notifications in your device Settings."
+          })
+        }
+        return
       }
 
-      // 2. Ensure active service worker registration
+      // Web / PWA Flow
+      if (window.Notification && Notification.permission !== 'granted') {
+        const permission = await window.Notification.requestPermission()
+        setPermissionState(permission)
+        
+        if (permission !== 'granted') {
+          toast.error("Permission Denied")
+          setLoading(false)
+          return
+        }
+      }
+
       let registration = await navigator.serviceWorker.getRegistration()
       if (!registration) {
         registration = await navigator.serviceWorker.register('/sw.js', {
@@ -126,7 +230,6 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       }
       vapidKey = vapidKey.replace(/^['"]|['"]$/g, '').trim();
 
-      // Get or create subscription
       let sub = await registration.pushManager.getSubscription()
       if (!sub) {
         sub = await registration.pushManager.subscribe({
@@ -137,8 +240,6 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
 
       setSubscription(sub)
       setPermissionState('granted')
-
-      // Sync with backend for current logged-in user
       await syncSubscriptionWithBackend(sub)
 
       toast.success("Notifications Enabled!", {
@@ -147,14 +248,14 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
 
     } catch (error: any) {
       console.error('Failed to subscribe:', error)
-      if (Notification.permission === 'denied') {
-          setPermissionState('denied')
-          toast.error("Permission Denied", { description: "Please enable notifications in your browser settings." })
+      if (typeof window !== 'undefined' && window.Notification && Notification.permission === 'denied') {
+        setPermissionState('denied')
+        toast.error("Permission Denied", { description: "Please enable notifications in your device/browser settings." })
       } else {
-          toast.error("Failed to enable notifications.", { description: error.message || "Push service error. Please try again." })
+        toast.error("Failed to enable notifications.", { description: error.message || "Push service error. Please try again." })
       }
     } finally {
-        setLoading(false)
+      setLoading(false)
     }
   }
 

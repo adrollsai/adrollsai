@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck, Eye, SlidersHorizontal, Sparkles, Tag } from 'lucide-react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck, Eye, SlidersHorizontal, Sparkles, Tag, Search } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { getPropertyTags } from '@/utils/property-tags'
@@ -283,10 +283,24 @@ export default function AutomationPage() {
     return []
   })
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
+  const [chatSearchQuery, setChatSearchQuery] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessageText, setNewMessageText] = useState('')
   const [loadingChats, setLoadingChats] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
+
+  // Filter chats in real-time by recipient name, phone number, or last message text
+  const filteredChats = useMemo(() => {
+    if (!chatSearchQuery.trim()) return chats
+    const q = chatSearchQuery.toLowerCase().trim()
+    const cleanNum = q.replace(/\D/g, '')
+    return chats.filter(c => {
+      const nameMatch = (c.recipient_name || '').toLowerCase().includes(q)
+      const phoneMatch = (c.recipient_phone || '').includes(q) || (cleanNum.length > 0 && (c.recipient_phone || '').replace(/\D/g, '').includes(cleanNum))
+      const msgMatch = (c.last_message_text || '').toLowerCase().includes(q)
+      return nameMatch || phoneMatch || msgMatch
+    })
+  }, [chats, chatSearchQuery])
   const [selectedTemplate, setSelectedTemplate] = useState('hello_world')
   const [customTemplateName, setCustomTemplateName] = useState('')
   const [customTemplateLang, setCustomTemplateLang] = useState('en_US')
@@ -1031,14 +1045,42 @@ export default function AutomationPage() {
           
           {/* Chats Sidebar */}
           <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-1/3 border-r border-slate-100 flex-col bg-slate-50/50`}>
-            <div className="p-4 border-b border-slate-100 bg-white flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Active Chats</span>
-              <button 
-                onClick={fetchChats}
-                className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-lg font-bold hover:bg-slate-200 transition-colors"
-              >
-                Refresh
-              </button>
+            <div className="p-3.5 border-b border-slate-100 bg-white flex flex-col gap-2.5">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <MessageCircle size={13} className="text-emerald-600" /> Active Chats
+                  {chatSearchQuery && (
+                    <span className="text-[10px] font-normal text-slate-400">({filteredChats.length})</span>
+                  )}
+                </span>
+                <button 
+                  onClick={fetchChats}
+                  className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-lg font-bold hover:bg-slate-200 transition-colors flex items-center gap-1"
+                >
+                  <RefreshCw size={10} /> Refresh
+                </button>
+              </div>
+
+              {/* Search Box for Leads or Numbers */}
+              <div className="relative flex items-center">
+                <Search size={13} className="absolute left-2.5 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={chatSearchQuery}
+                  onChange={(e) => setChatSearchQuery(e.target.value)}
+                  placeholder="Search leads or numbers..."
+                  className="w-full pl-8 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200/90 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                />
+                {chatSearchQuery && (
+                  <button
+                    onClick={() => setChatSearchQuery('')}
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5"
+                    title="Clear search"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
             </div>
             
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
@@ -1049,8 +1091,20 @@ export default function AutomationPage() {
                   <Inbox size={24} className="text-slate-300" />
                   <span>No active conversations yet</span>
                 </div>
+              ) : filteredChats.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400 flex flex-col items-center gap-2 mt-6">
+                  <Search size={22} className="text-slate-300" />
+                  <span className="font-semibold text-slate-500">No matching conversations</span>
+                  <span className="text-[11px] text-slate-400">No leads or numbers found for "{chatSearchQuery}"</span>
+                  <button 
+                    onClick={() => setChatSearchQuery('')}
+                    className="text-[11px] font-bold text-emerald-600 hover:underline mt-1"
+                  >
+                    Clear search filter
+                  </button>
+                </div>
               ) : (
-                chats.map((c) => {
+                filteredChats.map((c) => {
                   const isSelected = c.id === selectedChatId
                   return (
                     <div 

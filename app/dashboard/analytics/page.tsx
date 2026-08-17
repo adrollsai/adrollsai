@@ -242,50 +242,216 @@ export default function AnalyticsPage() {
     }
   }, [])
 
-  // Fetch Analytics & User Info — Direct Live API call
+  const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled'
+
+  // Fetch Analytics — Direct Supabase parallel queries (no API route middleman)
   const fetchAnalytics = async (forceRefresh = false) => {
     if (forceRefresh) setRefreshing(true)
     else if (leads.length === 0) setLoading(true)
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
         router.push('/login')
         return
       }
 
-      const activeUserId = impersonateId || session.user.id
+      const activeUserId = impersonateId || user.id
       const { data: userProfile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', activeUserId)
         .single()
 
-      if (userProfile) {
-        setProfile(userProfile)
+      if (userProfile) setProfile(userProfile)
+
+      const myRole = userProfile?.role?.toLowerCase() || 'admin'
+      const isTeamUser = myRole === 'agent' || myRole === 'team_member'
+
+      let targetOwnerId = user.id
+      if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
+        targetOwnerId = impersonateId
+      } else if (isTeamUser && (userProfile?.parent_id || userProfile?.agency_id)) {
+        targetOwnerId = userProfile.parent_id || userProfile.agency_id || user.id
       }
 
-      const queryParams = new URLSearchParams()
-      queryParams.set('duration', duration)
-      const userTz = userProfile?.timezone || (typeof window !== 'undefined' ? localStorage.getItem('nobogent_user_timezone') : null) || 'Asia/Kolkata'
-      queryParams.set('timezone', userTz)
-      if (selectedAgentId && selectedAgentId !== 'all') queryParams.set('agentId', selectedAgentId)
-      if (impersonateId) queryParams.set('impersonate', impersonateId)
-      if (customDate) queryParams.set('customDate', customDate)
-      if (startDate) queryParams.set('startDate', startDate)
-      if (endDate) queryParams.set('endDate', endDate)
+      // Get workspace team IDs
+      const { data: teamProfiles } = await supabase.from('profiles')
+        .select('id')
+        .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
+      const workspaceTeamIds = Array.from(new Set((teamProfiles || []).map(p => p.id)))
+      if (workspaceTeamIds.length === 0) workspaceTeamIds.push(targetOwnerId)
 
-      const res = await fetch(`/api/analytics?${queryParams.toString()}`)
-      const data = await res.json()
+      // Build filter function
+      const activeAgentId = (!isTeamUser && selectedAgentId && selectedAgentId !== 'all') ? selectedAgentId : (isTeamUser ? user.id : null)
 
-      if (data.success && Array.isArray(data.leads)) {
-        setLeads(data.leads)
-        if (data.team) setTeam(data.team)
-        if (data.history) setHistory(data.history)
-        if (data.totalCount !== undefined) setTotalServerCount(data.totalCount)
+      let filterFn: (q: any) => any
+      if (isTeamUser && activeAgentId) {
+        filterFn = (q: any) => q.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+      } else if (activeAgentId && activeAgentId !== 'unassigned') {
+        filterFn = (q: any) => q.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+      } else if (activeAgentId === 'unassigned') {
+        filterFn = (q: any) => q.is('assigned_to', null).in('user_id', workspaceTeamIds)
       } else {
-        toast.error('Failed to sync metrics', { description: data.error || 'Server error' })
+        const orConditions = workspaceTeamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
+        filterFn = (q: any) => q.or(orConditions)
       }
+
+      // Parse custom_fields helper
+      const parseLeads = (rawLeads: any[]) => rawLeads.map(lead => {
+        let cf = lead.custom_fields
+        if (cf && typeof cf === 'string') {
+          try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = {} }
+        }
+        return { ...lead, custom_fields: cf || {} }
+      })
+
+      // Step 1: First 1000 leads + count in parallel
+      const firstPageQ = filterFn(supabase.from('leads').select(leadFields))
+        .order('created_at', { ascending: false })
+        .range(0, 999)
+      const countQ = filterFn(supabase.from('leads').select('*', { count: 'exact', head: true }))
+
+      const [firstPageRes, countRes] = await Promise.all([firstPageQ, countQ])
+
+      const totalCount = countRes.count || (firstPageRes.data?.length || 0)
+      setTotalServerCount(totalCount)
+
+      let allLeads = parseLeads(firstPageRes.data || [])
+      setLeads(allLeads)
+      if (!forceRefresh) {
+        setLoading(false)
+      }
+
+      // Step 2: Fetch remaining lead pages in parallel
+      if (totalCount > 1000) {
+        const remainingPages = Math.ceil(totalCount / 1000) - 1
+        const batchPromises = Array.from({ length: remainingPages }, (_, i) => {
+          const pageIdx = i + 1
+          return filterFn(supabase.from('leads').select(leadFields))
+            .order('created_at', { ascending: false })
+            .range(pageIdx * 1000, (pageIdx + 1) * 1000 - 1)
+        })
+
+        const batchResults = await Promise.all(batchPromises)
+        for (const r of batchResults) {
+          if (r.data && r.data.length > 0) {
+            allLeads = allLeads.concat(parseLeads(r.data))
+          }
+        }
+        setLeads(allLeads)
+        setTotalServerCount(allLeads.length > totalCount ? allLeads.length : totalCount)
+      }
+
+      // Step 3: Fetch team profiles + lead_history in background
+      ;(async () => {
+        try {
+          // Team profiles
+          const { data: teamMembers } = await supabase.from('profiles')
+            .select('id, email, business_name, full_name, role, created_at')
+            .or(`parent_id.eq.${targetOwnerId},agency_id.eq.${targetOwnerId},id.eq.${targetOwnerId}`)
+            .order('created_at', { ascending: false })
+
+          // Lead history (for call tracking)
+          let historyLeads: any[] = []
+          const { count: historyCount } = await supabase.from('lead_history')
+            .select('*', { count: 'exact', head: true })
+            .in('user_id', workspaceTeamIds)
+          
+          const historyTotal = historyCount || 0
+          if (historyTotal > 0) {
+            const historyPages = Math.min(Math.ceil(historyTotal / 1000), 20)
+            const historyPromises = Array.from({ length: historyPages }, (_, i) => {
+              return supabase.from('lead_history')
+                .select('id, lead_id, user_id, action_type, description, created_at')
+                .in('user_id', workspaceTeamIds)
+                .order('created_at', { ascending: false })
+                .range(i * 1000, (i + 1) * 1000 - 1)
+            })
+            const historyResults = await Promise.all(historyPromises)
+            for (const r of historyResults) {
+              if (r.data && r.data.length > 0) historyLeads = historyLeads.concat(r.data)
+            }
+          }
+
+          setHistory(historyLeads)
+
+          // Compute team metrics
+          const rawTeam = teamMembers || []
+          const isActualCallAction = (h: any) => {
+            const type = (h.action_type || '').toUpperCase()
+            const desc = (h.description || '').toLowerCase()
+            if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT'].includes(type)) return false
+            if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return false
+            if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG', 'DNP'].includes(type)) return true
+            if (desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return true
+            if (desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) return true
+            return false
+          }
+
+          const teamData = rawTeam.map(member => {
+            const memberLeads = allLeads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
+            const wonLeads = memberLeads.filter(l => ['Won', 'Closed', 'Appointment done', 'Deal/Token'].includes(l.pipeline_stage) || ['Won', 'Closed', 'Appointment done', 'Deal/Token'].includes(l.status)).length
+            const qualifiedLeads = memberLeads.filter(l => ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won', 'Negotiation', 'Visit Done'].includes(l.pipeline_stage) || ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won', 'Negotiation', 'Visit Done'].includes(l.status)).length
+            const lostLeads = memberLeads.filter(l => ['Lost', 'Unqualified', 'Lost/NI', 'Different Requirement'].includes(l.pipeline_stage) || ['Lost', 'Unqualified', 'Lost/NI', 'Different Requirement'].includes(l.status)).length
+
+            const reqTakenCount = memberLeads.filter(l => l.status === 'Requirement Taken' || l.pipeline_stage === 'Contacted').length
+            const visitPlannedCount = memberLeads.filter(l => l.status === 'Visit Planned' || l.pipeline_stage === 'Appointment booked').length
+            const visitDoneCount = memberLeads.filter(l => l.status === 'Visit Done' || l.pipeline_stage === 'Appointment done').length
+            const revisitDoneCount = memberLeads.filter(l => l.status === 'Revisit Done').length
+            const negotiationCount = memberLeads.filter(l => l.status === 'Negotiation' || l.pipeline_stage === 'Qualified').length
+            const dealTokenCount = memberLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
+
+            const memberHistory = historyLeads.filter(h => h.user_id === member.id)
+            const memberCallCount = memberHistory.filter(isActualCallAction).length
+            const memberLeadsDnpCount = memberLeads.filter(l => {
+              let cf = l.custom_fields
+              if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch(e) {} }
+              const notesLower = (l.notes || '').toLowerCase()
+              const stageLower = (l.pipeline_stage || l.status || '').toLowerCase()
+              return cf?.last_call_dnp === true || (cf?.dnp_count > 0) || notesLower.includes('dnp') || stageLower.includes('dnp')
+            }).length
+
+            const totalDnpOnLeads = Math.max(
+              memberHistory.filter(h => {
+                const desc = (h.description || '').toLowerCase()
+                const type = (h.action_type || '').toUpperCase()
+                return type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')
+              }).length,
+              memberLeadsDnpCount
+            )
+
+            const conversionRate = memberLeads.length > 0 ? ((wonLeads / memberLeads.length) * 100).toFixed(1) : '0.0'
+
+            return {
+              id: member.id,
+              email: member.email,
+              business_name: member.business_name || member.full_name || member.email,
+              role: member.role,
+              metrics: {
+                leadsCount: memberLeads.length,
+                wonCount: wonLeads,
+                qualifiedCount: qualifiedLeads,
+                lostCount: lostLeads,
+                callsCount: memberCallCount,
+                dnpCount: totalDnpOnLeads,
+                conversionRate,
+                reqTakenCount,
+                visitPlannedCount,
+                visitDoneCount,
+                revisitDoneCount,
+                negotiationCount,
+                dealTokenCount
+              }
+            }
+          })
+
+          setTeam(teamData)
+        } catch (bgErr) {
+          console.error('[Analytics background fetch error]:', bgErr)
+        }
+      })()
+
     } catch (e: any) {
       console.error('[Analytics Fetch Error]:', e)
       toast.error('Connection error: ' + (e.message || String(e)))

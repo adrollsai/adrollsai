@@ -286,20 +286,20 @@ Amenities/Features: ${property.amenities || "N/A"}
 
         const isAvatarPresenter = presenterType === 'avatar' || (presenterType === 'video' && videoModel !== 'grok');
 
-        const targetWordCountMin = (videoModel === 'grok' && !isAvatarPresenter) ? Math.round(duration * 2.2) : (numClips * 28);
-        const targetWordCountMax = (videoModel === 'grok' && !isAvatarPresenter) ? Math.round(duration * 2.4) : (numClips * 34);
-        const targetAudioDurationSec = Math.round(duration * 0.85);
+        const targetWordCountMin = (videoModel === 'grok' && !isAvatarPresenter) ? Math.round(duration * 2.3) : (numClips * 34);
+        const targetWordCountMax = (videoModel === 'grok' && !isAvatarPresenter) ? Math.round(duration * 2.6) : (numClips * 42);
+        const targetAudioDurationSec = Math.round(duration * 0.90);
 
         const wordCountRule = (videoModel === 'grok' && !isAvatarPresenter)
-            ? `11. GROK BACKGROUND VOICEOVER WORD COUNT & PACING RULE: The full dialogue narration script MUST be written as a continuous, high-converting, energetic, and punchy background voiceover copy containing STRICTLY between ${targetWordCountMin} and ${targetWordCountMax} words total. This exact word count ensures that the generated TTS voiceover spans ${targetAudioDurationSec} seconds of the total ${duration}-second video duration. Do NOT write fluff or extra long sentences. Write tight, fast-flowing, punchy sentences weaving in specific, concrete product facts, features, pricing, location, and key selling points.`
-            : `11. AVATAR SPOKEN DIALOGUE PACING & WORD COUNT: Keep the dialogue for EACH 15-second scene strictly between 28 and 34 words so the avatar presenter speaks naturally with organic pauses, clear articulation, and authentic expression, filling the scene time comfortably without rushing.`;
+            ? `11. GROK BACKGROUND VOICEOVER WORD COUNT & PACING RULE: The full dialogue narration script MUST be written as a continuous, high-converting, energetic, and punchy background voiceover copy containing STRICTLY between ${targetWordCountMin} and ${targetWordCountMax} words total. This exact word count ensures that the voiceover spans ${targetAudioDurationSec} seconds of the total ${duration}-second video duration. Do NOT write fluff, fillers, or disconnected sentences. Write tight, fast-flowing, punchy sentences weaving in specific, concrete product facts, features, pricing, location, and key selling points.`
+            : `11. CONTINUOUS DIALOGUE & NO SILENT TAIL END RULE: Keep the dialogue for EACH 15-second scene strictly between 34 and 42 words. The presenter/voice MUST speak continuously across the full 15-second scene (from second 0 to second 14). NEVER finish the speech at second 5 or 6 leaving empty silent B-rolls. If B-rolls, walkthroughs, or product cutaways are shown, the speech MUST continue seamlessly throughout the visual motion. Speech and visuals must keep moving together with zero dead air.`;
 
         const speakerLayoutRule = isAvatarPresenter
-            ? `3. Speaker Character & Scenes Layout: UGC Presenter/Avatar (${characterDescription || "a highly professional, friendly, and charismatic UGC presenter"}) speaks directly into the camera from a medium chest-up distance, with expressive hand gestures and warm facial expressions, cutting dynamically to product B-rolls showcasing key features using matching reference image details.`
-            : `3. Speaker Character & Scenes Layout: Pure dynamic commercial B-rolls and product showcases using the reference images with high-converting background voiceover narration. No talking heads on screen.`;
+            ? `3. Speaker Character & Scenes Layout: Presenter/Avatar (${characterDescription || "a charismatic, professional UGC presenter"}) speaks directly and continuously with engaging hand gestures, natural facial micro-expressions, and authentic conversational cadence. The visuals dynamically showcase product features and B-rolls seamlessly while the presenter's speech continues without interruption.`
+            : `3. Speaker Character & Scenes Layout: Pure dynamic commercial B-rolls and product showcases using the reference images with continuous, high-converting background voiceover narration. No talking heads on screen.`;
 
-        const masterPrompt = `You are a world-class Ad Copywriter and UGC Creative Director specializing in TikTok, Instagram Reels, and Meta UGC ads.
-Your goal is to write a deeply emotional, highly engaging, and highly converting ${duration}-second ad script split into EXACTLY ${numClips} sequential 15-second scenes, using the Emotional Storytelling UGC Framework.
+        const masterPrompt = `You are a world-class Ad Copywriter and UGC Creative Director specializing in viral TikTok, Instagram Reels, and Meta UGC video ads.
+Your goal is to write a deeply engaging, high-retention, and high-converting ${duration}-second ad script split into EXACTLY ${numClips} sequential 15-second scenes, using the Emotional Storytelling UGC Framework.
 
 Business Name: ${businessName}
 Showcase Details: ${profile?.mission_statement || 'N/A'}
@@ -330,14 +330,14 @@ CONSTRAINTS & RULES:
    - The very first line of the spoken dialogue (Scene 1, first 2 seconds) MUST call out the target audience explicitly (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like: "Mohali mein apna dream home dhoondh rahe ho?").
    - ${isEnglish ? 'The script\'s spoken dialogue MUST be entirely in English from the very first word. No Hindi, Hinglish, or Devanagari script.' : 'The script\'s spoken dialogue MUST be written in Hinglish using standard Roman/English characters, EXCEPT for Indian proper nouns, location names, project names, and institution names (like मोहाली, चंडीगढ़, चितकारा, रयात बहरा, अमायरा स्काई सिटी) which MUST be written in native Hindi Devanagari script.'}
    - Scene 1 visuals MUST open with an instant, scroll-stopping visual hook.
-1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}). Deeply emotional, slow-paced, warm, and natural.
+1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}).
 2. Dialogue language: ${languageInstruction}
 ${speakerLayoutRule}
-4. Spoken Dialogue Tone, Voice Quality & Deep Psychological Depth: The voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging.
-   - ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, aggressive value-stacking, or fast-talking hooks.
-   - The script must have immense depth and empathy. You must dig deep into the psychological pain points of the business's target audience. E.g., if selling real estate, target the deep emotional anxiety of wastefully paying rent, landlord hassles, security and comfort for children/parents, the fear of delayed projects, wanting luxury/status, or needing peace of mind.
-   - Map the values of our product/service directly to these deep-seated emotional pain points. Explain exactly how our product delivers the ultimate comfort, relief, security, or wealth creation that they desire.
-   - Avoid surface-level marketing listicles or generic features. Write complete, smooth, conversational sentences that produce feelings of warmth, family comfort, safety, and deep emotional resonance.
+4. SPOKEN DIALOGUE TONE, VOICE QUALITY & DEEP PSYCHOLOGICAL DEPTH (NO FILLERS):
+   - The voice must sound warm, natural, charismatic, and emotionally engaging with organic cadence and expressive tonality. Strictly NO robotic AI monotone.
+   - NO generic surface-level fillers ("it is very nice", "check out this space", "khoobsurat ghar", "luxury living").
+   - The script must have substance and psychological depth: dive into real pain points (wasted rent, landlord frustrations, child safety, long-term wealth, sanctuary from crowded city life, lifestyle elevation).
+   - Map product advantages directly to these emotional triggers with concrete facts, real layouts, actual specifications, and unique amenities.
 4.3. CRITICAL CONCRETE PRODUCT DETAILS RULE (DO NOT BE VAGUE):
    - You MUST explicitly weave the actual, concrete facts, features, price, and specifications of the product/property (such as the specific location, name, price, unique layouts, or key amenities) directly into the spoken dialogue. Describe the features that actually matter to the viewer (e.g. only 2 apartments per floor, fully automated smart features, rooftop pool) to drive conversions.
    - Do NOT use vague marketing terms, generic placeholders (like "[price]", "[location]", "[insert details]"), or broad fluff. The script must communicate real, informative details about the product so that the video provides actual, concrete information to the viewer. Do NOT mention RERA IDs or registration numbers in the video dialogue.
