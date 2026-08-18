@@ -1817,8 +1817,9 @@ END:VCARD\n`
         return l.assigned_to === selectedAgentFilter || l.user_id === selectedAgentFilter
       })()
 
-      // DATE CREATED RANGE FILTER
-      const matchDate = selectedDateRange === 'ALL' || (() => {
+      // DATE CREATED PRESET FILTER (Only applied if NO custom date / range is active)
+      const hasCustomDate = !!crmCustomDate || (!!crmStartDate && !!crmEndDate)
+      const matchDate = hasCustomDate || selectedDateRange === 'ALL' || (() => {
         const rawDateStr = l.facebook_created_at || l.created_at
         if (!rawDateStr) return false
         const leadDate = new Date(rawDateStr)
@@ -1856,15 +1857,17 @@ END:VCARD\n`
         if (isNaN(leadDate.getTime())) return false
 
         if (crmCustomDate) {
-          const target = new Date(crmCustomDate)
-          return leadDate.getFullYear() === target.getFullYear() &&
-                 leadDate.getMonth() === target.getMonth() &&
-                 leadDate.getDate() === target.getDate()
+          const [tY, tM, tD] = crmCustomDate.split('-').map(Number)
+          if (!tY || !tM || !tD) return true
+          return leadDate.getFullYear() === tY &&
+                 (leadDate.getMonth() + 1) === tM &&
+                 leadDate.getDate() === tD
         } else if (crmStartDate && crmEndDate) {
-          const start = new Date(crmStartDate)
-          start.setHours(0, 0, 0, 0)
-          const end = new Date(crmEndDate)
-          end.setHours(23, 59, 59, 999)
+          const [sY, sM, sD] = crmStartDate.split('-').map(Number)
+          const [eY, eM, eD] = crmEndDate.split('-').map(Number)
+          if (!sY || !sM || !sD || !eY || !eM || !eD) return true
+          const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
+          const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
           return leadDate >= start && leadDate <= end
         }
         return true
@@ -1950,7 +1953,7 @@ END:VCARD\n`
       
       return matchAgent && matchDate && matchDnp && matchNextAction && matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
-  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
+  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, crmCustomDate, crmStartDate, crmEndDate, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
 
   const matchLeadToStage = (l: any, stageName: string): boolean => {
     if (!stageName || stageName === 'All Leads' || stageName === 'ALL') return true
@@ -2735,9 +2738,9 @@ END:VCARD\n`
                         <ChevronDown size={14} className="absolute right-3 bottom-3 text-indigo-400 pointer-events-none" />
                     </div>
 
-                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' || selectedSpecificStage !== 'ALL') && (
+                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || crmCustomDate || (crmStartDate && crmEndDate) || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' || selectedSpecificStage !== 'ALL') && (
                         <div className="col-span-full flex justify-end">
-                            <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setSelectedDnpFilter('ALL'); setSelectedNextActionFilter('ALL'); setSelectedNextActionType('ALL'); setSelectedSpecificStage('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors cursor-pointer">Clear All Filters</button>
+                            <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setCrmCustomDate(''); setCrmStartDate(''); setCrmEndDate(''); setSelectedDnpFilter('ALL'); setSelectedNextActionFilter('ALL'); setSelectedNextActionType('ALL'); setSelectedSpecificStage('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors cursor-pointer">Clear All Filters</button>
                         </div>
                     )}
                 </div>

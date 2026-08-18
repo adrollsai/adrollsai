@@ -47,6 +47,7 @@ import {
 import LeadHistoryModal from '@/components/LeadHistoryModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
+import { categorizeLeadStage } from '@/utils/pipeline-stages'
 
 // Render simple markdown headers, bolding, and lists into JSX
 function MarkdownRenderer({ text }: { text: string }) {
@@ -790,6 +791,14 @@ export default function AnalyticsPage() {
         if (typeof cf === 'string') {
           try { cf = JSON.parse(cf) } catch (e) {}
         }
+
+        // Exclude leads that belong to the 'not_interested' or 'trash' sections, or closed/won leads
+        const stageCat = categorizeLeadStage(l)
+        if (stageCat === 'not_interested' || stageCat === 'trash') return
+
+        const stageLower = (l.pipeline_stage || '').trim().toLowerCase()
+        const statusLower = (l.status || '').trim().toLowerCase()
+        if (['won', 'closed'].includes(stageLower) || ['won', 'closed'].includes(statusLower)) return
 
         const lastFollowupDateStr = getLocalDateStr(cf?.last_followup_at || l.last_call_at)
         const nextActionDateStr = getLocalDateStr(l.next_followup || cf?.next_action_date || l.booked_time)
@@ -2758,24 +2767,14 @@ export default function AnalyticsPage() {
 
                 <span className="text-xs font-black text-slate-500 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 shrink-0">
                   {drilldownModal.leads.filter(l => {
-                    let cf: any = l.custom_fields
-                    if (typeof cf === 'string') {
-                      try { cf = JSON.parse(cf) } catch (e) {}
-                    }
-                    const leadStatusStr = ((l.status || '') + ' ' + (l.pipeline_stage || '') + ' ' + (cf?.client_status || '')).toLowerCase().trim()
-                    if (
-                      leadStatusStr.includes('lost') ||
-                      leadStatusStr.includes('ni') ||
-                      leadStatusStr.includes('not interested') ||
-                      leadStatusStr.includes('junk') ||
-                      leadStatusStr.includes('unqualified') ||
-                      leadStatusStr.includes('closed')
-                    ) {
-                      return false
-                    }
                     if (!drilldownModal.searchFilter.trim()) return true
                     const q = drilldownModal.searchFilter.toLowerCase().trim()
-                    return (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q) || (l.pipeline_stage || '').toLowerCase().includes(q)
+                    return (
+                      (l.name || '').toLowerCase().includes(q) ||
+                      (l.phone || '').includes(q) ||
+                      (l.pipeline_stage || '').toLowerCase().includes(q) ||
+                      (l.status || '').toLowerCase().includes(q)
+                    )
                   }).length} leads
                 </span>
               </div>
@@ -2785,24 +2784,14 @@ export default function AnalyticsPage() {
             <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-2">
               {(() => {
                 const filtered = drilldownModal.leads.filter(l => {
-                  let cf: any = l.custom_fields
-                  if (typeof cf === 'string') {
-                    try { cf = JSON.parse(cf) } catch (e) {}
-                  }
-                  const leadStatusStr = ((l.status || '') + ' ' + (l.pipeline_stage || '') + ' ' + (cf?.client_status || '')).toLowerCase().trim()
-                  if (
-                    leadStatusStr.includes('lost') ||
-                    leadStatusStr.includes('ni') ||
-                    leadStatusStr.includes('not interested') ||
-                    leadStatusStr.includes('junk') ||
-                    leadStatusStr.includes('unqualified') ||
-                    leadStatusStr.includes('closed')
-                  ) {
-                    return false
-                  }
                   if (!drilldownModal.searchFilter.trim()) return true
                   const q = drilldownModal.searchFilter.toLowerCase().trim()
-                  return (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q) || (l.pipeline_stage || '').toLowerCase().includes(q)
+                  return (
+                    (l.name || '').toLowerCase().includes(q) ||
+                    (l.phone || '').includes(q) ||
+                    (l.pipeline_stage || '').toLowerCase().includes(q) ||
+                    (l.status || '').toLowerCase().includes(q)
+                  )
                 })
 
                 const sortedFiltered = [...filtered].sort((a, b) => {
