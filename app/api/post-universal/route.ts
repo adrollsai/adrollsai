@@ -39,32 +39,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No social platforms selected' }, { status: 400 })
     }
 
-    // 2. Dispatch to Cloud Run Worker (fire-and-forget — Cloud Run has no timeout)
-    // Cloud Run reads credentials from Supabase, posts to all platforms,
-    // records the post in DB, and sends a push notification when done.
+    // 2. Offload to Google Cloud Run Worker (0% dependence on Vercel timeouts)
+    // Cloud Run runs in the background indefinitely, polls status as long as needed,
+    // saves the post in DB, and triggers a web push notification when complete.
     const workerPayload = {
       targetUserId,
       imageUrl,
-      caption: caption || 'Automated Post via AdRolls AI 🚀',
+      caption: caption || 'Automated Post via Nobogent AI 🚀',
       type: type || 'image',
       platforms,
     };
 
-    console.log(`[Universal Post] Dispatching async social broadcast for user ${targetUserId} to Cloud Run:`, platforms.join(', '));
+    console.log(`[Universal Post] Offloading async broadcast for user ${targetUserId} to Cloud Run:`, platforms.join(', '));
 
+    // Fire-and-forget to Cloud Run
     fetch(`${CLOUD_RUN_WORKER_URL}/publish-social`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(workerPayload),
     }).catch(err => {
-      console.error('[Universal Post] Cloud Run dispatch failed:', err.message);
+      console.error('[Universal Post] Cloud Run dispatch error:', err.message);
     });
 
-    // 3. Return immediately — Cloud Run handles the rest
+    // 3. Immediate 202 Accepted response to client (instant UI, no timeout risk)
     return NextResponse.json({
       success: true,
       status: 'queued',
-      message: 'Your post is being published in the background. You\'ll receive a notification when it\'s done.',
+      message: 'Your broadcast has been queued in the background worker. You will receive a push notification once published across all platforms.',
       platforms,
     }, { status: 202 });
 
