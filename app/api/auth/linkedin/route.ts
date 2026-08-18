@@ -12,15 +12,13 @@ export async function GET(req: Request) {
   const primaryDomain = `${protocol}://${cleanHost}`
   const redirectUri = encodeURIComponent(`${primaryDomain}/api/auth/linkedin/callback`)
   
-  const type = searchParams.get('type') || 'personal'
   const customScope = searchParams.get('scope')
   
   // Exact scopes granted to this app in LinkedIn Developer Portal:
   // r_basicprofile, w_member_social, w_organization_social, rw_organization_admin, r_organization_social
-  const companyScopes = 'r_basicprofile w_member_social w_organization_social rw_organization_admin r_organization_social'
-  const personalScopes = 'r_basicprofile w_member_social'
+  const allScopes = 'r_basicprofile w_member_social w_organization_social rw_organization_admin r_organization_social'
   
-  const scopeList = customScope || (type === 'company' ? companyScopes : personalScopes)
+  const scopeList = customScope || allScopes
   const scope = encodeURIComponent(scopeList)
   
   const impersonate = searchParams.get('impersonate') || ''
@@ -29,7 +27,7 @@ export async function GET(req: Request) {
   const state = encodeURIComponent(JSON.stringify({ 
     origin: `${protocol}://${req.headers.get('host')}`,
     impersonate,
-    type
+    type: 'company'
   }))
   
   const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`

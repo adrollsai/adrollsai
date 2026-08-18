@@ -50,14 +50,12 @@ export async function GET(req: Request) {
     }
 
     const accessToken = profile.linkedin_token
-    const linkedinVersion = '202604'
 
-    // 1. Fetch organization ACLs
-    const aclRes = await fetch('https://api.linkedin.com/rest/organizationAcls?q=roleAssignee', {
+    // 1. Fetch organization ACLs using official v2 API
+    const aclRes = await fetch('https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee', {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'X-Restli-Protocol-Version': '2.0.0',
-        'Linkedin-Version': linkedinVersion,
       }
     })
 
@@ -78,16 +76,16 @@ export async function GET(req: Request) {
     const pages = []
 
     // 2. Fetch details for each organization
-    for (const acl of adminAcls) {
+    for (const acl of (aclData.elements || [])) {
       try {
-        const orgUrn = acl.organization
+        const orgUrn = acl.organizationalTarget || acl.organization
+        if (!orgUrn) continue
         const orgId = orgUrn.split(':').pop()
         
-        const orgRes = await fetch(`https://api.linkedin.com/rest/organizations/${orgId}`, {
+        const orgRes = await fetch(`https://api.linkedin.com/v2/organizations/${orgId}`, {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'X-Restli-Protocol-Version': '2.0.0',
-            'Linkedin-Version': linkedinVersion,
           }
         })
         
@@ -98,11 +96,9 @@ export async function GET(req: Request) {
             name: orgData.localizedName || orgData.vanityName || `Organization ${orgId}`
           })
         } else {
-          const errData = await orgRes.json().catch(() => ({}))
-          console.warn(`[LINKEDIN PAGES] Failed to fetch organization details for ${orgUrn}:`, errData)
           pages.push({
             id: orgUrn,
-            name: `Organization ${orgId} (Admin)`
+            name: `LinkedIn Organization (${orgId})`
           })
         }
       } catch (err) {
