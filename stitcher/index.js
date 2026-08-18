@@ -284,8 +284,11 @@ async function postToInstagram(accessToken, pageId, mediaUrl, caption, type = 'i
 
     let status = 'IN_PROGRESS';
     let attempts = 0;
-    const maxAttempts = isVideo ? 25 : 6;
-    const pollInterval = isVideo ? 5000 : 2000;
+    const maxAttempts = isVideo ? 40 : 8;
+    const pollInterval = isVideo ? 6000 : 2000;
+    let lastStatusDescription = '';
+
+    console.log(`[Stitcher Worker] Polling IG container ${creationId} status (max ${maxAttempts} attempts)...`);
 
     while (status !== 'FINISHED' && status !== 'FINISHED_DOWNLOADING' && attempts < maxAttempts) {
         await new Promise(r => setTimeout(r, pollInterval));
@@ -294,16 +297,28 @@ async function postToInstagram(accessToken, pageId, mediaUrl, caption, type = 'i
             const statusData = await statusRes.json();
             if (statusData.status_code) {
                 status = statusData.status_code;
+                lastStatusDescription = statusData.status_description || '';
             } else if (!isVideo) {
                 status = 'FINISHED';
             }
             if (status === 'ERROR') {
-                throw new Error(`Instagram processing failed: ${statusData.status_description || 'Meta processing error'}`);
+                throw new Error(`Instagram processing failed: ${lastStatusDescription || 'Meta processing error'}`);
+            }
+            if (status === 'FINISHED' || status === 'FINISHED_DOWNLOADING') {
+                break;
             }
         } catch (pollErr) {
-            if (!isVideo) status = 'FINISHED';
+            if (pollErr.message?.includes('Instagram processing failed')) throw pollErr;
+            if (!isVideo) { status = 'FINISHED'; break; }
         }
         attempts++;
+        if (isVideo && attempts % 5 === 0) {
+            console.log(`[Stitcher Worker] Polling Reel container ${creationId}... (${attempts}/${maxAttempts}, status: ${status})`);
+        }
+    }
+
+    if (status !== 'FINISHED' && status !== 'FINISHED_DOWNLOADING') {
+        throw new Error(`Instagram Reel processing timed out after ${attempts * pollInterval / 1000}s on container ${creationId}. Status: ${status}`);
     }
 
     console.log(`[Stitcher Worker] Publishing IG media container ${creationId}...`);
@@ -316,6 +331,7 @@ async function postToInstagram(accessToken, pageId, mediaUrl, caption, type = 'i
     if (publishData.error) {
         throw new Error(`Failed to publish to Instagram: ${publishData.error?.message || 'Unknown Error'}`);
     }
+    console.log(`[Stitcher Worker] IG published successfully: ${publishData.id}`);
     return publishData;
 }
 
@@ -324,61 +340,121 @@ async function postToLinkedin(accessToken, authorUrn, assetUrl, commentary, type
     if (!urn.startsWith('urn:li:')) urn = `urn:li:person:${urn}`;
 
     const linkedinVersion = '202604';
+    const linkedinHeaders = {
+        'Authorization': `Bearer ${accessToken}`,
+        'Linkedin-Version': linkedinVersion,
+        'X-Restli-Protocol-Version': '2.0.0',
+        'Content-Type': 'application/json'
+    };
     let assetUrn = null;
 
     if (assetUrl) {
         const isVideo = type === 'video' || !!assetUrl.toLowerCase().match(/\.(mp4|mov|avi|wmv)(\?|$)/) || assetUrl.includes('/video/');
-        const fileRes = await fetch(assetUrl);
-        const arrayBuffer = await fileRes.arrayBuffer();
-        const fileBuffer = Buffer.from(arrayBuffer);
-        const fileSizeBytes = fileBuffer.length;
+        try {
+            console.log(`[Stitcher Worker] Downloading media for LinkedIn: ${assetUrl}...`);
+            const fileRes = await fetch(assetUrl);
+            if (!fileRes.ok) throw new Error(`Failed to download media: ${fileRes.status}`);
+            const arrayBuffer = await fileRes.arrayBuffer();
+            const fileBuffer = Buffer.from(arrayBuffer);
+            const fileSizeBytes = fileBuffer.length;
 
-        if (isVideo) {
-            const initRes = await fetch('https://api.linkedin.com/rest/videos?action=initializeUpload', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Linkedin-Version': linkedinVersion,
-                    'X-Restli-Protocol-Version': '2.0.0',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ initializeUploadRequest: { owner: urn, fileSizeBytes } })
-            });
-            const initData = await initRes.json();
-            if (initRes.ok && initData.value?.video) {
+            if (isVideo) {
+                console.log(`[Stitcher Worker] Initializing LinkedIn video upload (${fileSizeBytes} bytes)...`);
+                const initRes = await fetch('https://api.linkedin.com/rest/videos?action=initializeUpload', {
+                    method: 'POST',
+                    headers: linkedinHeaders,
+                    body: JSON.stringify({ initializeUploadRequest: { owner: urn, fileSizeBytes } })
+                });
+                const initData = await initRes.json();
+                if (!initRes.ok || !initData.value?.video) {
+                    throw new Error(`LinkedIn video init failed: ${initData.message || JSON.stringify(initData)}`);
+                }
+
                 assetUrn = initData.value.video;
                 const instructions = initData.value.uploadInstructions || [];
-                for (const instr of instructions) {
+                const uploadToken = initData.value.uploadToken;
+                const uploadETags = [];
+
+                console.log(`[Stitcher Worker] Uploading ${instructions.length} video chunk(s) to LinkedIn...`);
+                for (let i = 0; i < instructions.length; i++) {
+                    const instr = instructions[i];
                     const chunk = fileBuffer.subarray(instr.firstByte, instr.lastByte + 1);
-                    await fetch(instr.uploadUrl, {
+                    const chunkRes = await fetch(instr.uploadUrl, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/octet-stream' },
                         body: chunk
                     });
+                    const etag = chunkRes.headers.get('etag') || '';
+                    uploadETags.push(etag);
+                    if (!chunkRes.ok) {
+                        throw new Error(`LinkedIn video chunk ${i + 1} upload failed: ${chunkRes.status}`);
+                    }
+                }
+
+                console.log(`[Stitcher Worker] Finalizing LinkedIn video upload...`);
+                const finalizeRes = await fetch('https://api.linkedin.com/rest/videos?action=finalizeUpload', {
+                    method: 'POST',
+                    headers: linkedinHeaders,
+                    body: JSON.stringify({
+                        finalizeUploadRequest: {
+                            video: assetUrn,
+                            uploadToken: uploadToken || undefined,
+                            uploadedPartIds: uploadETags.length > 0 ? uploadETags : undefined
+                        }
+                    })
+                });
+                if (!finalizeRes.ok && finalizeRes.status >= 400) {
+                    const finErr = await finalizeRes.json().catch(() => ({}));
+                    throw new Error(`LinkedIn finalizeUpload failed: ${finErr.message || finalizeRes.status}`);
+                }
+
+                // Poll for processing status
+                for (let poll = 0; poll < 20; poll++) {
+                    await new Promise(r => setTimeout(r, 5000));
+                    try {
+                        const sRes = await fetch(`https://api.linkedin.com/rest/videos/${encodeURIComponent(assetUrn)}`, {
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`,
+                                'Linkedin-Version': linkedinVersion,
+                                'X-Restli-Protocol-Version': '2.0.0'
+                            }
+                        });
+                        if (sRes.ok) {
+                            const sData = await sRes.json();
+                            const vStatus = (sData.status || '').toUpperCase();
+                            if (vStatus === 'AVAILABLE' || vStatus === 'PROCESSING_COMPLETE' || vStatus === 'READY') break;
+                            if (vStatus === 'FAILED' || vStatus === 'ERROR') throw new Error(`LinkedIn video processing failed: ${sData.status}`);
+                        } else if (sRes.status === 404) {
+                            break;
+                        }
+                    } catch (e) {
+                        if (e.message?.includes('processing failed')) throw e;
+                    }
+                }
+                console.log(`[Stitcher Worker] LinkedIn video upload complete. URN: ${assetUrn}`);
+            } else {
+                console.log(`[Stitcher Worker] Initializing LinkedIn image upload...`);
+                const initRes = await fetch('https://api.linkedin.com/rest/images?action=initializeUpload', {
+                    method: 'POST',
+                    headers: linkedinHeaders,
+                    body: JSON.stringify({ initializeUploadRequest: { owner: urn } })
+                });
+                const initData = await initRes.json();
+                if (initRes.ok && initData.value?.image) {
+                    assetUrn = initData.value.image;
+                    if (initData.value.uploadUrl) {
+                        await fetch(initData.value.uploadUrl, {
+                            method: 'PUT',
+                            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'image/jpeg' },
+                            body: fileBuffer
+                        });
+                    }
                 }
             }
-        } else {
-            const initRes = await fetch('https://api.linkedin.com/rest/images?action=initializeUpload', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Linkedin-Version': linkedinVersion,
-                    'X-Restli-Protocol-Version': '2.0.0',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ initializeUploadRequest: { owner: urn } })
-            });
-            const initData = await initRes.json();
-            if (initRes.ok && initData.value?.image) {
-                assetUrn = initData.value.image;
-                if (initData.value.uploadUrl) {
-                    await fetch(initData.value.uploadUrl, {
-                        method: 'PUT',
-                        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'image/jpeg' },
-                        body: fileBuffer
-                    });
-                }
-            }
+        } catch (mediaErr) {
+            console.error(`[Stitcher Worker] LinkedIn media upload error:`, mediaErr.message);
+            if (type === 'video') throw mediaErr;
+            assetUrn = null;
         }
     }
 
@@ -392,18 +468,20 @@ async function postToLinkedin(accessToken, authorUrn, assetUrl, commentary, type
         isReshareDisabledByAuthor: false
     };
 
+    console.log(`[Stitcher Worker] Creating LinkedIn post${assetUrn ? ' with media' : ''}...`);
     const postRes = await fetch('https://api.linkedin.com/rest/posts', {
         method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Linkedin-Version': linkedinVersion,
-            'X-Restli-Protocol-Version': '2.0.0',
-            'Content-Type': 'application/json'
-        },
+        headers: linkedinHeaders,
         body: JSON.stringify(postPayload)
     });
 
+    if (!postRes.ok) {
+        const errorData = await postRes.json().catch(() => ({ message: 'LinkedIn API error' }));
+        throw new Error(errorData.message || `LinkedIn error ${postRes.status}`);
+    }
+
     const postId = postRes.headers.get('x-restli-id') || postRes.headers.get('location');
+    console.log(`[Stitcher Worker] LinkedIn post created: ${postId}`);
     return { id: postId || 'success', status: 'published' };
 }
 
@@ -415,7 +493,7 @@ app.post('/publish-social', async (req, res) => {
         return res.status(400).json({ error: "Missing required payload fields." });
     }
 
-    // Immediately respond with 202 Accepted so Vercel & UI return instant response
+    // Immediately respond with 202 Accepted so caller returns instantly
     res.status(202).json({ success: true, message: "Social broadcast queued in background Cloud Run worker." });
 
     // Execute background worker publishing on Cloud Run
@@ -444,15 +522,27 @@ app.post('/publish-social', async (req, res) => {
 
             const fbToken = profile.selected_page_token || profile.facebook_token;
 
-            if (platforms.includes('facebook') && fbToken) {
-                promises.push(sendToPlatform('facebook', () => postToFacebook(fbToken, imageUrl, caption, type, profile.selected_page_id)));
+            if (platforms.includes('facebook')) {
+                if (fbToken) {
+                    promises.push(sendToPlatform('facebook', () => postToFacebook(fbToken, imageUrl, caption, type, profile.selected_page_id)));
+                } else {
+                    results['facebook'] = 'Skipped: No Facebook token configured';
+                }
             }
-            if (platforms.includes('instagram') && fbToken && profile.selected_page_id) {
-                promises.push(sendToPlatform('instagram', () => postToInstagram(fbToken, profile.selected_page_id, imageUrl, caption, type)));
+            if (platforms.includes('instagram')) {
+                if (fbToken && profile.selected_page_id) {
+                    promises.push(sendToPlatform('instagram', () => postToInstagram(fbToken, profile.selected_page_id, imageUrl, caption, type)));
+                } else {
+                    results['instagram'] = `Skipped: ${!fbToken ? 'No Facebook token' : 'No Page ID configured'}`;
+                }
             }
-            if (platforms.includes('linkedin') && profile.linkedin_token && profile.linkedin_id) {
-                const authorUrn = profile.linkedin_urn || `urn:li:person:${profile.linkedin_id}`;
-                promises.push(sendToPlatform('linkedin', () => postToLinkedin(profile.linkedin_token, authorUrn, imageUrl, caption, type)));
+            if (platforms.includes('linkedin')) {
+                if (profile.linkedin_token && profile.linkedin_id) {
+                    const authorUrn = profile.linkedin_urn || `urn:li:person:${profile.linkedin_id}`;
+                    promises.push(sendToPlatform('linkedin', () => postToLinkedin(profile.linkedin_token, authorUrn, imageUrl, caption, type)));
+                } else {
+                    results['linkedin'] = `Skipped: ${!profile.linkedin_token ? 'No LinkedIn token' : 'No LinkedIn ID'}`;
+                }
             }
 
             await Promise.allSettled(promises);
@@ -469,14 +559,23 @@ app.post('/publish-social', async (req, res) => {
             }
 
             const successCount = Object.values(results).filter(v => v === 'success' || v === 'scheduled' || v === 'published').length;
+            const failedList = Object.entries(results).filter(([_, v]) => v.startsWith('Failed:')).map(([k]) => k);
+            
+            let notifTitle = `📲 Social Broadcast Published!`;
+            let notifBody = `Your media post has been published to ${successCount} platform(s).`;
+            if (failedList.length > 0) {
+                notifTitle = `⚠️ Social Broadcast (${successCount}/${platforms.length} succeeded)`;
+                notifBody += ` Failed on: ${failedList.join(', ')}.`;
+            }
+
             await sendPushNotification(
                 targetUserId,
-                `📲 Social Broadcast Published!`,
-                `Your media post has been published to ${successCount} platform(s) via background worker.`,
+                notifTitle,
+                notifBody,
                 "/dashboard/assets",
                 "social_post"
             );
-            console.log(`[Stitcher Worker] Social broadcast finished for ${targetUserId}. Results:`, results);
+            console.log(`[Stitcher Worker] Social broadcast finished for ${targetUserId}. Results:`, JSON.stringify(results));
 
         } catch (bgErr) {
             console.error("[Stitcher Worker] Background social broadcast fatal error:", bgErr);

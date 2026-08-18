@@ -890,7 +890,7 @@ export default function AssetsPage() {
             }
 
             if (response.ok) {
-                const msg = data.message || (data.results ? `Broadcast Results:\n${JSON.stringify(data.results, null, 2)}` : 'Social Broadcast Queued! Your post is publishing asynchronously in the background.')
+                const msg = data.message || 'Your video/image is publishing asynchronously in the background. You will receive a notification once published across all platforms.'
                 toast.success('🚀 Social Broadcast Queued!', { description: msg })
                 setSelectedAsset(null)
                 fetchAssets(true) // Update status locally

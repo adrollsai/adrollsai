@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { postToFacebook, postToInstagram, postToLinkedin } from '@/utils/external-apis'
-import { sendPushNotification } from '@/utils/notification-helper'
 
-export const maxDuration = 300
-
-const CLOUD_RUN_WORKER_URL = process.env.CLOUD_RUN_WORKER_URL || 'https://adrolls-stitcher-worker-805895515412.us-central1.run.app/publish-social';
+const CLOUD_RUN_WORKER_URL = process.env.CLOUD_RUN_WORKER_URL || 'https://adrolls-stitcher-worker-805895515412.us-central1.run.app';
 
 export async function POST(request: Request) {
   try {
@@ -43,74 +39,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No social platforms selected' }, { status: 400 })
     }
 
-    // 1. Direct synchronous execution across all connected platforms for instant publishing
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('selected_page_token, selected_page_id, linkedin_token, linkedin_id, linkedin_urn, facebook_token')
-      .eq('id', targetUserId)
-      .single();
-
-    if (!profile) return NextResponse.json({ error: 'User profile or social credentials not found' }, { status: 404 });
-    const userProfile = profile;
-
-    const results: Record<string, string> = {};
-    const promises: Promise<void>[] = [];
-
-    const sendToPlatform = async (platform: string, fn: () => Promise<any>) => {
-      try {
-        const res = await fn();
-        results[platform] = res?.status || 'success';
-      } catch (error: any) {
-        const errorMessage = error.message || 'Unknown Error';
-        console.error(`[Universal Post] ${platform} failed:`, errorMessage);
-        results[platform] = `Failed: ${errorMessage.substring(0, 150)}`;
-      }
+    // 2. Dispatch to Cloud Run Worker (fire-and-forget — Cloud Run has no timeout)
+    // Cloud Run reads credentials from Supabase, posts to all platforms,
+    // records the post in DB, and sends a push notification when done.
+    const workerPayload = {
+      targetUserId,
+      imageUrl,
+      caption: caption || 'Automated Post via AdRolls AI 🚀',
+      type: type || 'image',
+      platforms,
     };
 
-    const fbToken = userProfile.selected_page_token || userProfile.facebook_token;
+    console.log(`[Universal Post] Dispatching async social broadcast for user ${targetUserId} to Cloud Run:`, platforms.join(', '));
 
-    if (platforms.includes('facebook') && fbToken) {
-      promises.push(sendToPlatform('facebook', () => postToFacebook(fbToken, imageUrl, caption, type, userProfile.selected_page_id || undefined)));
-    }
-    if (platforms.includes('instagram') && fbToken && userProfile.selected_page_id) {
-      promises.push(sendToPlatform('instagram', () => postToInstagram(fbToken, userProfile.selected_page_id!, imageUrl, caption, type)));
-    }
-    if (platforms.includes('linkedin') && userProfile.linkedin_token && userProfile.linkedin_id) {
-      const authorUrn = userProfile.linkedin_urn || `urn:li:person:${userProfile.linkedin_id}`;
-      promises.push(sendToPlatform('linkedin', () => postToLinkedin(userProfile.linkedin_token!, authorUrn, imageUrl, caption, type)));
-    }
-
-    await Promise.all(promises);
-
-    const hasSuccess = Object.values(results).some(val => val === 'success' || val === 'scheduled');
-    if (hasSuccess) {
-      try {
-        await supabase.from('posts').insert({
-          user_id: targetUserId,
-          title: 'Universal Social Post',
-          content: caption || '',
-          image_url: imageUrl || null,
-          status: 'social_published'
-        });
-      } catch (insertErr) {
-        console.error("[Universal Post Fallback] Insert post record error:", insertErr);
-      }
-    }
-
-    const successCount = Object.values(results).filter(v => v === 'success' || v === 'scheduled').length;
-    await sendPushNotification(
-      targetUserId,
-      `📲 Social Broadcast Published!`,
-      `Your media post has been published to ${successCount} platform(s).`,
-      "/dashboard/assets",
-      "social_post"
-    ).catch(() => {});
-
-    return NextResponse.json({ 
-      success: hasSuccess, 
-      results,
-      message: `Publish Everywhere finished! Successfully posted to ${successCount} platform(s).` 
+    fetch(`${CLOUD_RUN_WORKER_URL}/publish-social`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(workerPayload),
+    }).catch(err => {
+      console.error('[Universal Post] Cloud Run dispatch failed:', err.message);
     });
+
+    // 3. Return immediately — Cloud Run handles the rest
+    return NextResponse.json({
+      success: true,
+      status: 'queued',
+      message: 'Your post is being published in the background. You\'ll receive a notification when it\'s done.',
+      platforms,
+    }, { status: 202 });
+
   } catch (err: any) {
     console.error("[Universal Post Error]:", err);
     return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });
