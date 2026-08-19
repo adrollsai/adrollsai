@@ -326,16 +326,79 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
                         <span>{displayActionType}</span>
                       </p>
 
-                      {cleanedDescription && (
-                        <div className="mt-2 pt-2 border-t border-slate-200/80">
-                          <span className="block text-[11px] font-extrabold uppercase text-slate-500 tracking-wider mb-1">
-                            Remark / Details:
-                          </span>
-                          <p className="text-slate-800 text-xs font-semibold leading-relaxed whitespace-pre-wrap bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-2xs">
-                            {cleanedDescription}
-                          </p>
-                        </div>
-                      )}
+                      {cleanedDescription && (() => {
+                        if (cleanedDescription.startsWith('💬 WA_JSON:')) {
+                          try {
+                            const parsed = JSON.parse(cleanedDescription.replace('💬 WA_JSON:', ''))
+                            return (
+                              <div className="mt-2 pt-2 border-t border-slate-200/80 space-y-2">
+                                <span className="block text-[11px] font-extrabold uppercase text-emerald-600 tracking-wider">
+                                  💬 WhatsApp Chat:
+                                </span>
+                                <div className="space-y-2 bg-emerald-50/50 p-3 rounded-xl border border-emerald-200/60">
+                                  {parsed.user_msg && (
+                                    <div className="flex justify-end">
+                                      <div className="bg-slate-200 text-slate-800 px-3 py-1.5 rounded-2xl rounded-tr-xs text-xs font-medium max-w-[85%]">
+                                        {parsed.user_msg}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {parsed.bot_reply && (
+                                    <div className="flex justify-start">
+                                      <div className="bg-emerald-600 text-white px-3 py-1.5 rounded-2xl rounded-tl-xs text-xs font-medium max-w-[85%]">
+                                        {parsed.bot_reply}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          } catch (e) {}
+                        }
+
+                        if (cleanedDescription.startsWith('💬 WA_TEMPLATE:')) {
+                          try {
+                            const parsed = JSON.parse(cleanedDescription.replace('💬 WA_TEMPLATE:', ''))
+                            return (
+                              <div className="mt-2 pt-2 border-t border-slate-200/80 space-y-1.5">
+                                <span className="block text-[11px] font-extrabold uppercase text-emerald-600 tracking-wider">
+                                  💬 WhatsApp Template ({parsed.template_name}):
+                                </span>
+                                <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-200/60 text-xs text-slate-800 whitespace-pre-wrap font-medium">
+                                  {parsed.body_text}
+                                </div>
+                              </div>
+                            )
+                          } catch (e) {}
+                        }
+
+                        if (cleanedDescription.startsWith('🎙️ CALL_JSON:')) {
+                          try {
+                            const parsed = JSON.parse(cleanedDescription.replace('🎙️ CALL_JSON:', ''))
+                            return (
+                              <div className="mt-2 pt-2 border-t border-slate-200/80 space-y-1.5">
+                                <span className="block text-[11px] font-extrabold uppercase text-indigo-600 tracking-wider">
+                                  🎙️ AI Voice Call Summary:
+                                </span>
+                                <p className="text-slate-800 text-xs font-semibold bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-200/60">
+                                  {parsed.summary}
+                                </p>
+                              </div>
+                            )
+                          } catch (e) {}
+                        }
+
+                        return (
+                          <div className="mt-2 pt-2 border-t border-slate-200/80">
+                            <span className="block text-[11px] font-extrabold uppercase text-slate-500 tracking-wider mb-1">
+                              Remark / Details:
+                            </span>
+                            <p className="text-slate-800 text-xs font-semibold leading-relaxed whitespace-pre-wrap bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-2xs">
+                              {cleanedDescription}
+                            </p>
+                          </div>
+                        )
+                      })()}
 
                       {/* Call Audio Recording Player */}
                       {recordingUrl && (

@@ -710,74 +710,9 @@ export async function sendFollowupReminderEmail(
   followupDate: string,
   remarks: string
 ) {
-  try {
-    if (!toEmail) return { success: false, error: 'No recipient email provided' };
-
-    let formattedDate = followupDate;
-    try {
-      formattedDate = new Date(followupDate).toLocaleString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch (e) {}
-
-    const info = await transporter.sendMail({
-      from: `"Nobogent CRM" <no-reply@mail.nobogent.com>`,
-      to: toEmail,
-      subject: `⏰ Followup Scheduled: ${leadName} (${followupType})`,
-      html: `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-          <div style="background-color: #003D6F; color: #ffffff; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px;">
-            <h2 style="margin: 0; font-size: 20px;">⏰ Upcoming Followup Reminder</h2>
-            <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 13px;">Assigned Representative: <strong>${agentName}</strong></p>
-          </div>
-
-          <div style="background-color: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-              <tr>
-                <td style="padding: 6px 0; color: #64748b; font-weight: bold; width: 130px;">Lead Name:</td>
-                <td style="padding: 6px 0; color: #0f172a; font-weight: 700;">${leadName}</td>
-              </tr>
-              <tr>
-                <td style="padding: 6px 0; color: #64748b; font-weight: bold;">Lead Phone:</td>
-                <td style="padding: 6px 0; color: #0f172a; font-weight: 700;">
-                  <a href="tel:${leadPhone}" style="color: #2563eb; text-decoration: none;">${leadPhone}</a>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding: 6px 0; color: #64748b; font-weight: bold;">Followup Type:</td>
-                <td style="padding: 6px 0; color: #2563eb; font-weight: 800;">${followupType}</td>
-              </tr>
-              <tr>
-                <td style="padding: 6px 0; color: #64748b; font-weight: bold;">Date & Time:</td>
-                <td style="padding: 6px 0; color: #dc2626; font-weight: 800;">${formattedDate}</td>
-              </tr>
-            </table>
-          </div>
-
-          ${remarks ? `
-            <div style="background-color: #f1f5f9; padding: 14px; border-radius: 10px; font-size: 13px; color: #334155; margin-bottom: 20px;">
-              <strong>Key Discussion Points / Remarks:</strong>
-              <p style="margin: 6px 0 0 0; font-style: italic;">"${remarks}"</p>
-            </div>
-          ` : ''}
-
-          <div style="text-align: center; margin-top: 24px;">
-            <a href="https://local.nobogent.com/dashboard/crm" style="display: inline-block; padding: 12px 28px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 14px;">Open CRM Dashboard</a>
-          </div>
-        </div>
-      `
-    });
-    return { success: true, messageId: info.messageId };
-  } catch (error: any) {
-    console.error("Followup Email Error:", error);
-    return { success: false, error: error.message };
-  }
+  // Follow-up reminder emails to agents are disabled per system policy
+  console.log(`[Followup Email] Followup reminder emails to agents are disabled. Skipped sending email to ${toEmail} for lead ${leadName}.`);
+  return { success: true, message: 'Followup reminder emails are disabled' };
 }
 
 export async function sendLeadTransferEmail(to: string, agentName: string, senderName: string, leadCount: number) {

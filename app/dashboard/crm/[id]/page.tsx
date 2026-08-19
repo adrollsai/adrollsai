@@ -121,6 +121,13 @@ export default function LeadProfilePage() {
     const [selectedHeaderMediaUrl, setSelectedHeaderMediaUrl] = useState('')
     const [isSendingTemplate, setIsSendingTemplate] = useState(false)
 
+    // Full WhatsApp conversation state in CRM
+    const [activeSideTab, setActiveSideTab] = useState<'activity' | 'chat'>('activity')
+    const [whatsappMessages, setWhatsappMessages] = useState<any[]>([])
+    const [whatsappChat, setWhatsappChat] = useState<any>(null)
+    const [directMsgText, setDirectMsgText] = useState('')
+    const [isSendingDirectMsg, setIsSendingDirectMsg] = useState(false)
+
     const fixR2Url = (url: string) => {
         if (!url) return ''
         return url.replace('r2.dev/adrolls-storage/', 'r2.dev/')
@@ -494,6 +501,31 @@ export default function LeadProfilePage() {
                 data.custom_fields = parsedCustomFields
                 setLead(data)
 
+                // Fetch full WhatsApp conversation for this lead
+                const cleanPhone = (data.phone || '').replace(/\D/g, '').slice(-10)
+                if (cleanPhone) {
+                    supabase
+                        .from('whatsapp_chats')
+                        .select('*')
+                        .or(`lead_id.eq.${id},recipient_phone.ilike.%${cleanPhone}%`)
+                        .order('updated_at', { ascending: false })
+                        .limit(1)
+                        .then(async ({ data: chatData }) => {
+                            if (chatData && chatData.length > 0) {
+                                const foundChat = chatData[0]
+                                setWhatsappChat(foundChat)
+                                const { data: msgData } = await supabase
+                                    .from('whatsapp_messages')
+                                    .select('*')
+                                    .eq('chat_id', foundChat.id)
+                                    .order('created_at', { ascending: true })
+                                if (msgData) {
+                                    setWhatsappMessages(msgData)
+                                }
+                            }
+                        })
+                }
+
                 // Non-blocking background sibling fetching
                 setTimeout(() => {
                     fetchNextLeadId(data)
@@ -510,6 +542,62 @@ export default function LeadProfilePage() {
             console.error("Error fetching lead data:", err)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleSendDirectWhatsapp = async () => {
+        if (!directMsgText.trim() || isSendingDirectMsg) return
+        const displayPhone = lead?.phone || lead?.custom_fields?.whatsapp_number || ''
+        if (!displayPhone) return toast.error("Lead does not have a valid phone number")
+
+        setIsSendingDirectMsg(true)
+        try {
+            let targetChatId = whatsappChat?.id
+            if (!targetChatId) {
+                const cleanDigits = displayPhone.replace(/\D/g, '').slice(-10)
+                const { data: existing } = await supabase
+                    .from('whatsapp_chats')
+                    .select('id')
+                    .or(`lead_id.eq.${id},recipient_phone.ilike.%${cleanDigits}%`)
+                    .limit(1)
+                    .maybeSingle()
+
+                if (existing) {
+                    targetChatId = existing.id
+                }
+            }
+
+            if (!targetChatId) {
+                toast.error("No active WhatsApp conversation found. Please send an approved template first.")
+                setIsSendingDirectMsg(false)
+                setIsSendTemplateOpen(true)
+                return
+            }
+
+            const res = await fetch('/api/whatsapp/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chatId: targetChatId,
+                    messageText: directMsgText.trim()
+                })
+            })
+            const data = await res.json()
+            if (data.success) {
+                setWhatsappMessages(prev => [...prev, data.message])
+                setDirectMsgText('')
+                toast.success("WhatsApp message sent! 🚀")
+                const desc = `💬 Outbound WhatsApp message: "${directMsgText.trim()}"`
+                const newHist = { id: Date.now(), action_type: 'WHATSAPP_CHAT', description: desc, created_at: new Date().toISOString() }
+                setLeadHistory(prev => [newHist, ...prev])
+            } else {
+                toast.error(data.error || "Failed to send message")
+            }
+        } catch (e: any) {
+            console.error("Direct WA send error:", e)
+            toast.error("Error sending WhatsApp message")
+        } finally {
+            setIsSendingDirectMsg(false)
         }
     }
 
@@ -1799,205 +1887,322 @@ END:VCARD`
 
                 </div>
 
-                {/* Right Column: Activity Log & Notes */}
+                {/* Right Column: Activity Log & WhatsApp Chat */}
                 <div className="lg:col-span-5 xl:col-span-4 flex flex-col">
                     <div className="bg-white rounded-2xl sm:rounded-[2rem] shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden sticky top-24">
-                        {/* Activity Log Header */}
-                        <div className="p-5 border-b border-slate-100 bg-white">
-                            <h3 className="text-base font-bold text-slate-900">Activity Log</h3>
+                        {/* Tab Switcher */}
+                        <div className="p-3 border-b border-slate-100 bg-white">
+                            <div className="flex bg-slate-100 p-1 rounded-xl w-full">
+                                <button
+                                    onClick={() => setActiveSideTab('activity')}
+                                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                        activeSideTab === 'activity'
+                                            ? 'bg-white text-slate-900 shadow-xs'
+                                            : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                >
+                                    <Clock size={14} />
+                                    <span>Activity Log</span>
+                                    <span className="text-[10px] bg-slate-200 text-slate-700 font-extrabold px-1.5 py-0.2 rounded-full">
+                                        {leadHistory.length}
+                                    </span>
+                                </button>
+                                <button
+                                    onClick={() => setActiveSideTab('chat')}
+                                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                        activeSideTab === 'chat'
+                                            ? 'bg-white text-emerald-700 shadow-xs'
+                                            : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                >
+                                    <MessageCircle size={14} className="text-emerald-600" />
+                                    <span>WhatsApp Chat</span>
+                                    <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
+                                        whatsappMessages.length > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                                    }`}>
+                                        {whatsappMessages.length}
+                                    </span>
+                                </button>
+                            </div>
                         </div>
 
-                        {/* Timeline Log */}
-                        <div className="p-5 flex-1 overflow-y-auto max-h-[50vh] lg:max-h-[calc(100vh-350px)] custom-scrollbar">
-                            <div className="space-y-5 relative before:absolute before:inset-0 before:ml-[22px] before:-translate-x-px before:h-full before:w-[2px] before:bg-slate-200 before:rounded-full">
-                                {leadHistory.map((item, index) => {
-                                    const isRemark = item.action_type === 'REMARK'
-                                    const isReminder = item.action_type === 'REMINDER_SET'
-                                    const isWhatsApp = item.action_type === 'WHATSAPP_CHAT'
+                        {activeSideTab === 'activity' ? (
+                            <>
+                                {/* Timeline Log */}
+                                <div className="p-5 flex-1 overflow-y-auto max-h-[50vh] lg:max-h-[calc(100vh-350px)] custom-scrollbar">
+                                    <div className="space-y-5 relative before:absolute before:inset-0 before:ml-[22px] before:-translate-x-px before:h-full before:w-[2px] before:bg-slate-200 before:rounded-full">
+                                        {leadHistory.map((item, index) => {
+                                            const isRemark = item.action_type === 'REMARK'
+                                            const isReminder = item.action_type === 'REMINDER_SET'
+                                            const isWhatsApp = item.action_type === 'WHATSAPP_CHAT'
 
-                                    // WhatsApp chat bubble rendering
-                                    if (isWhatsApp && item.description?.startsWith('💬 WA_JSON:')) {
-                                        try {
-                                            const parsed = JSON.parse(item.description.replace('💬 WA_JSON:', ''))
+                                            // WhatsApp chat bubble rendering
+                                            if (isWhatsApp && item.description?.startsWith('💬 WA_JSON:')) {
+                                                try {
+                                                    const parsed = JSON.parse(item.description.replace('💬 WA_JSON:', ''))
+                                                    return (
+                                                        <div key={item.id} className="relative flex items-start gap-4">
+                                                            <div className="flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm bg-emerald-100 text-emerald-600">
+                                                                <MessageCircle size={16} />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/60 mt-0.5">
+                                                                <div className="flex items-center justify-between mb-2.5">
+                                                                    <div className="font-bold text-xs text-emerald-700 flex items-center gap-1.5">
+                                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.612.638l4.685-1.322A11.944 11.944 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.16 0-4.163-.67-5.813-1.813l-.406-.264-2.809.793.828-2.652-.287-.44A9.96 9.96 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+                                                                        WhatsApp Chat
+                                                                    </div>
+                                                                    <time className="text-[10px] font-bold text-emerald-500 bg-white px-1.5 py-0.5 rounded-md border border-emerald-100 shrink-0">{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    {/* User message bubble */}
+                                                                    <div className="flex justify-end">
+                                                                        <div className="bg-slate-200/80 text-slate-800 px-3 py-2 rounded-2xl rounded-tr-md max-w-[85%] text-[11px] leading-relaxed font-medium shadow-sm">
+                                                                            {parsed.user_msg}
+                                                                        </div>
+                                                                    </div>
+                                                                    {/* Bot reply bubble */}
+                                                                    <div className="flex justify-start">
+                                                                        <div className="bg-emerald-500 text-white px-3 py-2 rounded-2xl rounded-tl-md max-w-[85%] text-[11px] leading-relaxed font-medium shadow-sm">
+                                                                            {parsed.bot_reply}
+                                                                        </div>
+                                                                    </div>
+                                                                    {/* Booking badge */}
+                                                                    {parsed.booking_time && (
+                                                                        <div className="flex items-center gap-1.5 bg-emerald-600/10 border border-emerald-200 rounded-xl px-3 py-1.5 mt-1 w-fit">
+                                                                            <Clock size={12} className="text-emerald-600" />
+                                                                            <span className="text-[10px] font-extrabold text-emerald-700">
+                                                                                📅 Booked: {new Date(parsed.booking_time).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                } catch (e) {
+                                                    // fallthrough to default rendering
+                                                }
+                                            }
+
+                                            if (isWhatsApp && item.description?.startsWith('💬 WA_TEMPLATE:')) {
+                                                try {
+                                                    const parsed = JSON.parse(item.description.replace('💬 WA_TEMPLATE:', ''))
+                                                    const renderFormattedBody = (txt: string) => {
+                                                        if (!txt) return null;
+                                                        let clean = txt.replace(/\*{2,3}/g, '*');
+                                                        const lines = clean.split('\n');
+                                                        return lines.map((line, lIdx) => {
+                                                            const parts = line.split(/(\*[^*]+\*)/g);
+                                                            return (
+                                                                <div key={lIdx} className="min-h-[16px]">
+                                                                    {parts.map((p, pIdx) => {
+                                                                        if (p.startsWith('*') && p.endsWith('*') && p.length > 2) {
+                                                                            return <strong key={pIdx} className="font-bold text-slate-900">{p.slice(1, -1)}</strong>;
+                                                                        }
+                                                                        return <span key={pIdx}>{p}</span>;
+                                                                    })}
+                                                                </div>
+                                                            );
+                                                        });
+                                                    };
+
+                                                    return (
+                                                        <div key={item.id} className="relative flex items-start gap-3 sm:gap-4">
+                                                            <div className="flex items-center justify-center w-10 h-10 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm bg-emerald-100 text-emerald-600">
+                                                                <MessageCircle size={15} />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0 bg-emerald-50/70 p-3.5 sm:p-4 rounded-2xl border border-emerald-200/80 mt-0.5 space-y-2.5">
+                                                                <div className="flex flex-wrap items-center justify-between gap-1 pb-1.5 border-b border-emerald-200/60">
+                                                                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                                                        <span className="text-[11px] font-bold text-emerald-800">💬 Template:</span>
+                                                                        <span className="font-mono bg-emerald-100 text-emerald-950 px-2 py-0.5 rounded-md text-[10px] font-black break-all">{parsed.template_name}</span>
+                                                                    </div>
+                                                                    <time className="text-[9.5px] font-bold text-emerald-600 bg-white px-1.5 py-0.5 rounded-md border border-emerald-100 shrink-0">
+                                                                        {new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+                                                                    </time>
+                                                                </div>
+
+                                                                {parsed.header_media_url && (
+                                                                    <div className="rounded-xl overflow-hidden border border-emerald-200/80 bg-slate-950 w-full flex items-center justify-center relative shadow-sm">
+                                                                        {parsed.header_format === 'VIDEO' || parsed.header_media_url.match(/\.(mp4|mov|webm)$/i) ? (
+                                                                            <video src={parsed.header_media_url} controls className="w-full max-h-80 object-contain" />
+                                                                        ) : (
+                                                                            <img src={parsed.header_media_url} alt="Template Header" className="w-full max-h-80 object-contain bg-slate-900" />
+                                                                        )}
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="bg-white p-3 rounded-xl border border-slate-200/80 text-xs font-medium text-slate-800 leading-relaxed whitespace-pre-wrap shadow-2xs space-y-1">
+                                                                    {renderFormattedBody(parsed.body_text)}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                } catch (e) {}
+                                            }
+
                                             return (
                                                 <div key={item.id} className="relative flex items-start gap-4">
-                                                    <div className="flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm bg-emerald-100 text-emerald-600">
-                                                        <MessageCircle size={16} />
+                                                    <div className={`flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm ${isRemark ? 'bg-blue-100 text-blue-600' : isReminder ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
+                                                        {isRemark ? <MessageCircle size={16} /> : isReminder ? <Clock size={16} /> : <CheckCircle2 size={16} />}
                                                     </div>
-                                                    <div className="flex-1 min-w-0 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/60 mt-0.5">
-                                                        <div className="flex items-center justify-between mb-2.5">
-                                                            <div className="font-bold text-xs text-emerald-700 flex items-center gap-1.5">
-                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.612.638l4.685-1.322A11.944 11.944 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.16 0-4.163-.67-5.813-1.813l-.406-.264-2.809.793.828-2.652-.287-.44A9.96 9.96 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
-                                                                WhatsApp Chat
-                                                            </div>
-                                                            <time className="text-[10px] font-bold text-emerald-500 bg-white px-1.5 py-0.5 rounded-md border border-emerald-100 shrink-0">{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
+                                                    <div className="flex-1 min-w-0 bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-0.5">
+                                                        <div className="flex items-center justify-between mb-1.5">
+                                                            <div className="font-bold text-xs text-slate-900 capitalize truncate pr-2">{(item.action_type || '').replace('_', ' ')}</div>
+                                                            <time className="text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded-md border border-slate-100 shrink-0">{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
                                                         </div>
-                                                        <div className="space-y-2">
-                                                            {/* User message bubble */}
-                                                            <div className="flex justify-end">
-                                                                <div className="bg-slate-200/80 text-slate-800 px-3 py-2 rounded-2xl rounded-tr-md max-w-[85%] text-[11px] leading-relaxed font-medium shadow-sm">
-                                                                    {parsed.user_msg}
-                                                                </div>
-                                                            </div>
-                                                            {/* Bot reply bubble */}
-                                                            <div className="flex justify-start">
-                                                                <div className="bg-emerald-500 text-white px-3 py-2 rounded-2xl rounded-tl-md max-w-[85%] text-[11px] leading-relaxed font-medium shadow-sm">
-                                                                    {parsed.bot_reply}
-                                                                </div>
-                                                            </div>
-                                                            {/* Booking badge */}
-                                                            {parsed.booking_time && (
-                                                                <div className="flex items-center gap-1.5 bg-emerald-600/10 border border-emerald-200 rounded-xl px-3 py-1.5 mt-1 w-fit">
-                                                                    <Clock size={12} className="text-emerald-600" />
-                                                                    <span className="text-[10px] font-extrabold text-emerald-700">
-                                                                        📅 Booked: {new Date(parsed.booking_time).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
-                                                                    </span>
-                                                                </div>
-                                                            )}
+                                                        <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">
+                                                            {(() => {
+                                                                if (!item.description) return null
+
+                                                                if (item.description.startsWith('🎙️ CALL_JSON:')) {
+                                                                    try {
+                                                                        const parsed = JSON.parse(item.description.replace('🎙️ CALL_JSON:', ''))
+                                                                        return (
+                                                                            <div className="space-y-2">
+                                                                                <span className="font-extrabold text-indigo-600 block">🎙️ AI Voice Call Summary:</span>
+                                                                                <p className="font-semibold text-slate-700">{parsed.summary}</p>
+                                                                                {parsed.recording_url && (
+                                                                                    <div className="my-1.5">
+                                                                                        <audio controls src={parsed.recording_url} className="w-full h-8 outline-none" />
+                                                                                    </div>
+                                                                                )}
+                                                                                <button 
+                                                                                    onClick={() => {
+                                                                                        setSelectedHistoryCall(parsed)
+                                                                                        setIsHistoryModalOpen(true)
+                                                                                    }}
+                                                                                    className="text-xs text-indigo-600 hover:text-indigo-800 font-extrabold flex items-center gap-1 mt-1 underline transition-colors"
+                                                                                >
+                                                                                    Listen & View Transcript
+                                                                                </button>
+                                                                            </div>
+                                                                        )
+                                                                    } catch (e) {
+                                                                        return item.description
+                                                                    }
+                                                                }
+
+                                                                const audioUrlMatch = item.description.match(/(https?:\/\/[^\s]+\.(mp3|m4a|wav|aac|ogg|3gp)|https?:\/\/[^\s]+\/call-recordings\/[^\s]+)/i)
+                                                                
+                                                                if (audioUrlMatch) {
+                                                                    const audioUrl = audioUrlMatch[0]
+                                                                    const cleanText = item.description.replace(audioUrl, '').trim()
+                                                                    return (
+                                                                        <div className="space-y-2">
+                                                                            {cleanText && <p className="text-slate-800 whitespace-pre-wrap font-medium">{cleanText}</p>}
+                                                                            <div className="mt-2 p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs space-y-1">
+                                                                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-blue-700">
+                                                                                    <Phone size={13} />
+                                                                                    <span>Call Recording</span>
+                                                                                </div>
+                                                                                <audio controls src={audioUrl} className="w-full h-8 outline-none" />
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                }
+
+                                                                return <p className="whitespace-pre-wrap">{item.description}</p>
+                                                            })()}
                                                         </div>
                                                     </div>
                                                 </div>
                                             )
-                                        } catch (e) {
-                                            // fallthrough to default rendering
-                                        }
-                                    }
+                                        })}
+                                    </div>
+                                </div>
 
-                                    if (isWhatsApp && item.description?.startsWith('💬 WA_TEMPLATE:')) {
-                                        try {
-                                            const parsed = JSON.parse(item.description.replace('💬 WA_TEMPLATE:', ''))
-                                            const renderFormattedBody = (txt: string) => {
-                                                if (!txt) return null;
-                                                let clean = txt.replace(/\*{2,3}/g, '*');
-                                                const lines = clean.split('\n');
-                                                return lines.map((line, lIdx) => {
-                                                    const parts = line.split(/(\*[^*]+\*)/g);
-                                                    return (
-                                                        <div key={lIdx} className="min-h-[16px]">
-                                                            {parts.map((p, pIdx) => {
-                                                                if (p.startsWith('*') && p.endsWith('*') && p.length > 2) {
-                                                                    return <strong key={pIdx} className="font-bold text-slate-900">{p.slice(1, -1)}</strong>;
-                                                                }
-                                                                return <span key={pIdx}>{p}</span>;
-                                                            })}
-                                                        </div>
-                                                    );
-                                                });
-                                            };
-
+                                {/* Note Footer */}
+                                <div className="p-4 bg-white border-t border-slate-100 shrink-0 sticky bottom-0 z-10 pb-28 lg:pb-4">
+                                    <div className="flex gap-2">
+                                        <input type="text" value={remarkInput} onChange={e => setRemarkInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddRemark()} placeholder="Type a note or remark..." className="flex-1 bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 rounded-full px-5 text-sm outline-none transition-all" />
+                                        <button onClick={handleAddRemark} disabled={!remarkInput.trim()} className="w-12 h-12 rounded-full bg-slate-900 text-white flex items-center justify-center disabled:opacity-50 hover:bg-slate-800 active:scale-95 transition-all shadow-md shrink-0"><Send size={18} className="ml-1 -mt-0.5" /></button>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {/* WhatsApp Chat Messages View */}
+                                <div className="p-4 flex-1 overflow-y-auto max-h-[50vh] lg:max-h-[calc(100vh-350px)] custom-scrollbar space-y-3 bg-[#efeae2]/30">
+                                    {whatsappMessages.length === 0 ? (
+                                        <div className="text-center py-10 px-4 space-y-2">
+                                            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-2">
+                                                <MessageCircle size={24} />
+                                            </div>
+                                            <p className="text-sm font-bold text-slate-800">No Direct WhatsApp Messages Yet</p>
+                                            <p className="text-xs text-slate-500 max-w-xs mx-auto">
+                                                Send an approved template to start a 24-hour interactive WhatsApp conversation window with {lead?.name || 'this lead'}.
+                                            </p>
+                                            <button
+                                                onClick={() => setIsSendTemplateOpen(true)}
+                                                className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-95 cursor-pointer"
+                                            >
+                                                <Send size={13} />
+                                                Send WhatsApp Template
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        whatsappMessages.map((msg, mIdx) => {
+                                            const isInbound = msg.direction === 'inbound'
                                             return (
-                                                <div key={item.id} className="relative flex items-start gap-3 sm:gap-4">
-                                                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm bg-emerald-100 text-emerald-600">
-                                                        <MessageCircle size={15} />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0 bg-emerald-50/70 p-3.5 sm:p-4 rounded-2xl border border-emerald-200/80 mt-0.5 space-y-2.5">
-                                                        <div className="flex flex-wrap items-center justify-between gap-1 pb-1.5 border-b border-emerald-200/60">
-                                                            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                                                                <span className="text-[11px] font-bold text-emerald-800">💬 Template:</span>
-                                                                <span className="font-mono bg-emerald-100 text-emerald-950 px-2 py-0.5 rounded-md text-[10px] font-black break-all">{parsed.template_name}</span>
-                                                            </div>
-                                                            <time className="text-[9.5px] font-bold text-emerald-600 bg-white px-1.5 py-0.5 rounded-md border border-emerald-100 shrink-0">
-                                                                {new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
-                                                            </time>
-                                                        </div>
-
-                                                        {parsed.header_media_url && (
-                                                            <div className="rounded-xl overflow-hidden border border-emerald-200/80 bg-slate-950 w-full flex items-center justify-center relative shadow-sm">
-                                                                {parsed.header_format === 'VIDEO' || parsed.header_media_url.match(/\.(mp4|mov|webm)$/i) ? (
-                                                                    <video src={parsed.header_media_url} controls className="w-full max-h-80 object-contain" />
-                                                                ) : (
-                                                                    <img src={parsed.header_media_url} alt="Template Header" className="w-full max-h-80 object-contain bg-slate-900" />
-                                                                )}
+                                                <div key={msg.id || mIdx} className={`flex flex-col ${isInbound ? 'items-start' : 'items-end'}`}>
+                                                    <div className={`max-w-[85%] rounded-2xl p-3.5 shadow-2xs space-y-1.5 ${
+                                                        isInbound
+                                                            ? 'bg-white text-slate-800 rounded-tl-xs border border-slate-200/80'
+                                                            : 'bg-[#d9fdd3] text-slate-900 rounded-tr-xs border border-emerald-200/60'
+                                                    }`}>
+                                                        {msg.media_url && (
+                                                            <div className="rounded-xl overflow-hidden mb-1">
+                                                                <img src={msg.media_url} alt="Media" className="max-h-48 object-cover rounded-lg" />
                                                             </div>
                                                         )}
-
-                                                        <div className="bg-white p-3 rounded-xl border border-slate-200/80 text-xs font-medium text-slate-800 leading-relaxed whitespace-pre-wrap shadow-2xs space-y-1">
-                                                            {renderFormattedBody(parsed.body_text)}
+                                                        <p className="text-xs whitespace-pre-wrap leading-relaxed font-medium">
+                                                            {msg.message_text}
+                                                        </p>
+                                                        <div className={`flex items-center gap-1 text-[9.5px] font-bold ${isInbound ? 'text-slate-400' : 'text-emerald-700 justify-end'}`}>
+                                                            <span>
+                                                                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            </span>
+                                                            {!isInbound && <span>✓✓</span>}
                                                         </div>
                                                     </div>
                                                 </div>
                                             )
-                                        } catch (e) {}
-                                    }
+                                        })
+                                    )}
+                                </div>
 
-                                    return (
-                                        <div key={item.id} className="relative flex items-start gap-4">
-                                            <div className={`flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm ${isRemark ? 'bg-blue-100 text-blue-600' : isReminder ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
-                                                {isRemark ? <MessageCircle size={16} /> : isReminder ? <Clock size={16} /> : <CheckCircle2 size={16} />}
-                                            </div>
-                                            <div className="flex-1 min-w-0 bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-0.5">
-                                                <div className="flex items-center justify-between mb-1.5">
-                                                    <div className="font-bold text-xs text-slate-900 capitalize truncate pr-2">{(item.action_type || '').replace('_', ' ')}</div>
-                                                    <time className="text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded-md border border-slate-100 shrink-0">{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
-                                                </div>
-                                                <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">
-                                                    {(() => {
-                                                        if (!item.description) return null
-
-                                                        if (item.description.startsWith('🎙️ CALL_JSON:')) {
-                                                            try {
-                                                                const parsed = JSON.parse(item.description.replace('🎙️ CALL_JSON:', ''))
-                                                                return (
-                                                                    <div className="space-y-2">
-                                                                        <span className="font-extrabold text-indigo-600 block">🎙️ AI Voice Call Summary:</span>
-                                                                        <p className="font-semibold text-slate-700">{parsed.summary}</p>
-                                                                        {parsed.recording_url && (
-                                                                            <div className="my-1.5">
-                                                                                <audio controls src={parsed.recording_url} className="w-full h-8 outline-none" />
-                                                                            </div>
-                                                                        )}
-                                                                        <button 
-                                                                            onClick={() => {
-                                                                                setSelectedHistoryCall(parsed)
-                                                                                setIsHistoryModalOpen(true)
-                                                                            }}
-                                                                            className="text-xs text-indigo-600 hover:text-indigo-800 font-extrabold flex items-center gap-1 mt-1 underline transition-colors"
-                                                                        >
-                                                                            Listen & View Transcript
-                                                                        </button>
-                                                                    </div>
-                                                                )
-                                                            } catch (e) {
-                                                                return item.description
-                                                            }
-                                                        }
-
-                                                        const audioUrlMatch = item.description.match(/(https?:\/\/[^\s]+\.(mp3|m4a|wav|aac|ogg|3gp)|https?:\/\/[^\s]+\/call-recordings\/[^\s]+)/i)
-                                                        
-                                                        if (audioUrlMatch) {
-                                                            const audioUrl = audioUrlMatch[0]
-                                                            const cleanText = item.description.replace(audioUrl, '').trim()
-                                                            return (
-                                                                <div className="space-y-2">
-                                                                    {cleanText && <p className="text-slate-800 whitespace-pre-wrap font-medium">{cleanText}</p>}
-                                                                    <div className="mt-2 p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs space-y-1">
-                                                                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-blue-700">
-                                                                            <Phone size={13} />
-                                                                            <span>Call Recording</span>
-                                                                        </div>
-                                                                        <audio controls src={audioUrl} className="w-full h-8 outline-none" />
-                                                                    </div>
-                                                                </div>
-                                                            )
-                                                        }
-
-                                                        return <p className="whitespace-pre-wrap">{item.description}</p>
-                                                    })()}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </div>
-
-                        {/* Note Footer */}
-                        <div className="p-4 bg-white border-t border-slate-100 shrink-0 sticky bottom-0 z-10 pb-28 lg:pb-4">
-                            <div className="flex gap-2">
-                                <input type="text" value={remarkInput} onChange={e => setRemarkInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddRemark()} placeholder="Type a note or remark..." className="flex-1 bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 rounded-full px-5 text-sm outline-none transition-all" />
-                                <button onClick={handleAddRemark} disabled={!remarkInput.trim()} className="w-12 h-12 rounded-full bg-slate-900 text-white flex items-center justify-center disabled:opacity-50 hover:bg-slate-800 active:scale-95 transition-all shadow-md shrink-0"><Send size={18} className="ml-1 -mt-0.5" /></button>
-                            </div>
-                        </div>
+                                {/* Direct WhatsApp Quick Reply Footer */}
+                                <div className="p-3.5 bg-white border-t border-slate-100 shrink-0 sticky bottom-0 z-10 pb-28 lg:pb-3.5 space-y-2">
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={directMsgText}
+                                            onChange={e => setDirectMsgText(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleSendDirectWhatsapp()}
+                                            placeholder="Type direct WhatsApp message..."
+                                            className="flex-1 bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10 rounded-full px-4 text-xs outline-none transition-all font-medium"
+                                        />
+                                        <button
+                                            onClick={handleSendDirectWhatsapp}
+                                            disabled={!directMsgText.trim() || isSendingDirectMsg}
+                                            className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center disabled:opacity-50 hover:bg-emerald-700 active:scale-95 transition-all shadow-md shrink-0 cursor-pointer"
+                                        >
+                                            {isSendingDirectMsg ? <RefreshCw size={14} className="animate-spin" /> : <Send size={15} className="ml-0.5" />}
+                                        </button>
+                                    </div>
+                                    <div className="flex items-center justify-between px-2 text-[10px] text-slate-400 font-bold">
+                                        <span>💬 WhatsApp Direct Mode</span>
+                                        <button
+                                            onClick={() => setIsSendTemplateOpen(true)}
+                                            className="text-emerald-600 hover:text-emerald-700 underline cursor-pointer"
+                                        >
+                                            Send Template
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

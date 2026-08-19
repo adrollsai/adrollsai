@@ -80,6 +80,11 @@ async function handleWhatsappFollowups(request: Request) {
             const fortyEightHours = 48 * 60 * 60 * 1000
             const seventyTwoHours = 72 * 60 * 60 * 1000
 
+            // Guardrail: Skip if customer requested an expert/agent within last 24h
+            if (/connect|expert|call\s+me|speak\s+with|human|talk\s+to/i.test(lastInbound.message_text) && (now - inboundTime) < 24 * 60 * 60 * 1000) {
+                continue
+            }
+
             // Guardrail: Skip if the very last message in the chat (inbound or outbound) was sent less than 2 hours ago
             const lastMessage = messages[0]
             const timeSinceLastMessage = now - new Date(lastMessage.created_at).getTime()
@@ -118,14 +123,14 @@ async function handleWhatsappFollowups(request: Request) {
                     followupStage = 3
                 }
             } else if (timeSinceInbound <= fortyEightHours) {
-                if (numFollowups <= 3) {
+                if (numFollowups === 3) {
                     isDue = true
                     followupStage = 4
                     isTemplate = true
                     templateName = 'auto_drip_followup_24h'
                 }
             } else if (timeSinceInbound <= seventyTwoHours) {
-                if (numFollowups <= 4) {
+                if (numFollowups === 4) {
                     isDue = true
                     followupStage = 5
                     isTemplate = true

@@ -344,15 +344,45 @@ export async function run333FollowupEngine(supabaseAdmin: any): Promise<{
             .limit(10)
 
           if (messages && messages.length > 0) {
+            const lastMessage = messages[0]
+            const lastMsgTime = new Date(lastMessage.created_at).getTime()
+            // Strict Guardrail: Skip if ANY message (inbound or outbound) occurred in last 2 hours
+            if (now - lastMsgTime < 2 * 60 * 60 * 1000) {
+              skippedCount++
+              continue
+            }
+
             const lastInbound = messages.find((m: any) => m.direction === 'inbound')
             if (lastInbound) {
               recentInboundTime = new Date(lastInbound.created_at).getTime()
+              // Guardrail: If customer requested an expert or human agent within 24 hours, don't spam bot messages
+              if (/connect|expert|call\s+me|speak\s+with|human|talk\s+to/i.test(lastInbound.message_text) && (now - recentInboundTime) < 24 * 60 * 60 * 1000) {
+                skippedCount++
+                continue
+              }
             }
+
             chatHistory = [...messages]
               .reverse()
               .map((m: any) => `${m.direction === 'inbound' ? 'User' : 'Assistant'}: ${m.message_text}`)
               .join('\n')
           }
+        }
+      }
+
+      // Check lead_history to ensure no touchpoint was recorded in last 2 hours
+      const { data: recentHist } = await supabaseAdmin
+        .from('lead_history')
+        .select('created_at')
+        .eq('lead_id', lead.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (recentHist && recentHist.length > 0) {
+        const lastHistTime = new Date(recentHist[0].created_at).getTime()
+        if (now - lastHistTime < 2 * 60 * 60 * 1000) {
+          skippedCount++
+          continue
         }
       }
 
@@ -526,12 +556,15 @@ export async function run333FollowupEngine(supabaseAdmin: any): Promise<{
           followup_333_last_milestone: eligibleMilestone.name
         }
 
-        await supabaseAdmin.from('leads').update({
-          custom_fields: updatedCustomFields,
-          updated_at: new Date().toISOString()
+        const { error: saveErr } = await supabaseAdmin.from('leads').update({
+          custom_fields: updatedCustomFields
         }).eq('id', lead.id)
 
-        console.log(`[3-3-3 Engine] Executed ${eligibleMilestone.phase} for lead ${lead.name || lead.phone} (WhatsApp: ${whatsappDispatched}, Voice: ${voiceDispatched})`)
+        if (saveErr) {
+          console.error(`[3-3-3 Engine] Error saving milestone to lead ${lead.id}:`, saveErr)
+        } else {
+          console.log(`[3-3-3 Engine] Successfully recorded ${eligibleMilestone.phase} for lead ${lead.name || lead.phone} (WhatsApp: ${whatsappDispatched}, Voice: ${voiceDispatched})`)
+        }
       }
     } catch (leadProcessErr) {
       console.error(`[3-3-3 Engine] Error processing lead ${lead.id}:`, leadProcessErr)

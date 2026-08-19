@@ -64,38 +64,48 @@ export async function GET(req: Request) {
             const parentId = profile?.parent_id || profile?.agency_id
 
             if (role === 'agent' && parentId) {
-                // Agent: fetch only chats linked to leads assigned to them
+                // Agent: fetch only chats linked to leads assigned to them (by lead_id or phone match)
                 const { data: assignedLeads } = await dbClient
                     .from('leads')
-                    .select('id')
+                    .select('id, phone')
                     .eq('assigned_to', effectiveUserId)
 
                 const assignedLeadIds = assignedLeads?.map(l => l.id) || []
+                const assignedPhones = (assignedLeads || [])
+                    .map(l => (l.phone || '').replace(/\D/g, '').slice(-10))
+                    .filter(Boolean)
 
-                if (assignedLeadIds.length === 0) {
+                if (assignedLeadIds.length === 0 && assignedPhones.length === 0) {
                     return NextResponse.json({ success: true, chats: [] })
                 }
 
-                const { data: chats, error } = await dbClient
-                    .from('whatsapp_chats')
-                    .select('*')
-                    .in('lead_id', assignedLeadIds)
+                let query = dbClient.from('whatsapp_chats').select('*')
+                if (assignedLeadIds.length > 0) {
+                    query = query.in('lead_id', assignedLeadIds)
+                }
+
+                const { data: chats, error } = await query
                     .order('updated_at', { ascending: false })
                     .limit(500)
 
                 if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-                return NextResponse.json({ success: true, chats })
+                return NextResponse.json({ success: true, chats: chats || [] })
             } else {
-                // Admin/owner: fetch all their chats
-                const { data: chats, error } = await dbClient
+                // Admin / Agency Owner / Super Admin
+                let query = dbClient
                     .from('whatsapp_chats')
                     .select('*')
-                    .eq('user_id', effectiveUserId)
                     .order('updated_at', { ascending: false })
                     .limit(500)
 
+                if (role !== 'super_admin') {
+                    query = query.eq('user_id', effectiveUserId)
+                }
+
+                const { data: chats, error } = await query
+
                 if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-                return NextResponse.json({ success: true, chats })
+                return NextResponse.json({ success: true, chats: chats || [] })
             }
         }
     } catch (e: any) {

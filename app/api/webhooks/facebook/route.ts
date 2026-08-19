@@ -1198,8 +1198,7 @@ IMPORTANT RULES:
                                                 .update({
                                                     assigned_to: assignedAgentId,
                                                     ad_name: adCampaignString || latestLead.ad_name,
-                                                    campaign_id: campaignId || latestLead.campaign_id,
-                                                    updated_at: new Date().toISOString()
+                                                    campaign_id: campaignId || latestLead.campaign_id
                                                 })
                                                 .eq('id', latestLead.id);
                                             latestLead.assigned_to = assignedAgentId;
