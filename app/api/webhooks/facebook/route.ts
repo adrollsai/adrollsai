@@ -747,35 +747,67 @@ IMPORTANT RULES:
 
                                         let modelProvider: any;
                                         const hasDeepSeekKey = !!process.env.DEEPSEEK_API_KEY;
+                                        let successfulModelName = 'gemini-3.5-flash';
+
                                         if (hasDeepSeekKey && selectedModel !== 'gemini') {
-                                            console.log("🤖 Routing WhatsApp bot query to DEEPSEEK model");
-                                            const deepseek = createOpenAI({
-                                                baseURL: 'https://api.deepseek.com/v1',
-                                                apiKey: process.env.DEEPSEEK_API_KEY || ''
-                                            });
-                                            modelProvider = deepseek.chat('deepseek-v4-flash');
-                                        } else {
-                                            if (selectedModel === 'deepseek' && !hasDeepSeekKey) {
-                                                console.warn("⚠️ DEEPSEEK_API_KEY is missing in env. Falling back to GEMINI model.");
+                                            try {
+                                                console.log("🤖 Routing WhatsApp bot query to DEEPSEEK model");
+                                                const deepseek = createOpenAI({
+                                                    baseURL: 'https://api.deepseek.com/v1',
+                                                    apiKey: process.env.DEEPSEEK_API_KEY || ''
+                                                });
+                                                modelProvider = deepseek.chat('deepseek-chat');
+
+                                                const { text, usage } = await generateText({
+                                                    model: modelProvider,
+                                                    system: botPrompt,
+                                                    prompt: `User query: "${messageText}"`,
+                                                    tools: tools,
+                                                    stopWhen: stepCountIs(5)
+                                                });
+                                                botResponseText = text;
+                                                successfulModelName = 'deepseek-chat';
+                                                ownerUsage = {
+                                                    promptTokens: usage?.inputTokens || 0,
+                                                    completionTokens: usage?.outputTokens || 0,
+                                                    modelName: 'deepseek-chat'
+                                                };
+                                            } catch (dsErr: any) {
+                                                console.warn("⚠️ DeepSeek call failed (balance/network). Falling back to Gemini:", dsErr?.message || dsErr);
+                                                modelProvider = google.chat('gemini-3.5-flash');
+                                                const { text, usage } = await generateText({
+                                                    model: modelProvider,
+                                                    system: botPrompt,
+                                                    prompt: `User query: "${messageText}"`,
+                                                    tools: tools,
+                                                    stopWhen: stepCountIs(5)
+                                                });
+                                                botResponseText = text;
+                                                successfulModelName = 'gemini-3.5-flash';
+                                                ownerUsage = {
+                                                    promptTokens: usage?.inputTokens || 0,
+                                                    completionTokens: usage?.outputTokens || 0,
+                                                    modelName: 'gemini-3.5-flash'
+                                                };
                                             }
+                                        } else {
                                             console.log("🤖 Routing WhatsApp bot query to GEMINI model");
                                             modelProvider = google.chat('gemini-3.5-flash');
+                                            const { text, usage } = await generateText({
+                                                model: modelProvider,
+                                                system: botPrompt,
+                                                prompt: `User query: "${messageText}"`,
+                                                tools: tools,
+                                                stopWhen: stepCountIs(5)
+                                            });
+                                            botResponseText = text;
+                                            successfulModelName = 'gemini-3.5-flash';
+                                            ownerUsage = {
+                                                promptTokens: usage?.inputTokens || 0,
+                                                completionTokens: usage?.outputTokens || 0,
+                                                modelName: 'gemini-3.5-flash'
+                                            };
                                         }
-
-                                        const { text, usage } = await generateText({
-                                            model: modelProvider,
-                                            system: botPrompt,
-                                            prompt: `User query: "${messageText}"`,
-                                            tools: tools,
-                                            stopWhen: stepCountIs(5)
-                                        });
-
-                                        botResponseText = text;
-                                        ownerUsage = {
-                                            promptTokens: usage?.inputTokens || 0,
-                                            completionTokens: usage?.outputTokens || 0,
-                                            modelName: (hasDeepSeekKey && selectedModel !== 'gemini') ? 'deepseek-v4-flash' : 'gemini-3.5-flash'
-                                        };
                                     } catch (llmErr: any) {
                                         console.error("❌ Agentic LLM response generation failed:", llmErr?.message || llmErr);
                                         console.error("❌ Error details:", JSON.stringify({

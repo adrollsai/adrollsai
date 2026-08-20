@@ -599,7 +599,7 @@ export async function callDeepSeekWithUsage(prompt: string): Promise<{ text: str
             "Authorization": `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-            model: "deepseek-v4-flash",
+            model: "deepseek-chat",
             messages: [
                 { role: "user", content: prompt }
             ],
@@ -622,7 +622,7 @@ export async function callDeepSeekWithUsage(prompt: string): Promise<{ text: str
         text,
         promptTokens,
         completionTokens,
-        modelName: "deepseek-v4-flash"
+        modelName: "deepseek-chat"
     };
 }
 
