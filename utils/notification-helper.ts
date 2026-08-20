@@ -257,12 +257,15 @@ export async function sendAdminMultiChannelNotification({
   try {
     console.log(`[MULTI-CHANNEL] Processing notifications for owner: ${ownerUserId}`);
 
-    // Build absolute lead page URL for admin direct access
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
+    // Build absolute lead page URL for admin direct access (Always force production domain for external alerts)
+    const rawBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
+    const baseUrl = rawBaseUrl.includes('local.nobogent.com') || rawBaseUrl.includes('localhost') ? 'https://app.nobogent.com' : rawBaseUrl;
     let leadPageUrl = url.startsWith('http') ? url : `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
     if (leadId && !leadPageUrl.includes('leadId=')) {
       leadPageUrl = `${baseUrl}/dashboard/crm?leadId=${leadId}`;
     }
+    // Clean any local tunnel or localhost urls for external notifications to ensure they always point to production
+    leadPageUrl = leadPageUrl.replace(/^https?:\/\/(local\.nobogent\.com|localhost(:\d+)?)/i, 'https://app.nobogent.com');
 
     // Extract actual lead phone number (from parameter or body parsing)
     let targetLeadPhone = leadPhone ? leadPhone.trim() : '';

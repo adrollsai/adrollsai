@@ -2064,7 +2064,21 @@ END:VCARD`
                                                         {(() => {
                                                             const rawDesc = item.description || ''
                                                             const byMatch = rawDesc.match(/\[by\s+([^\]]+)\]/i)
-                                                            const actorName = byMatch ? byMatch[1].trim() : (lead?.assigned_to === item.user_id ? 'Shubha Baweja Gulati' : 'Agent')
+                                                            const isAiAutomation = rawDesc.startsWith('📱 [3-3-3') || 
+                                                                                   rawDesc.startsWith('🎙️ [3-3-3') || 
+                                                                                   rawDesc.startsWith('🤖') || 
+                                                                                   rawDesc.startsWith('🎙️ CALL_JSON') || 
+                                                                                   rawDesc.startsWith('📱 WA_JSON') || 
+                                                                                   rawDesc.startsWith('💬 WA_JSON') || 
+                                                                                   item.action_type === 'AUTO_ASSIGNED' || 
+                                                                                   item.action_type === 'SYSTEM';
+
+                                                            const actorName = byMatch 
+                                                                ? byMatch[1].trim() 
+                                                                : isAiAutomation 
+                                                                    ? 'Nobogent AI' 
+                                                                    : (item.actor_name || (lead as any)?.assigned_agent_name || (lead?.assigned_to ? 'Assigned Agent' : 'System'));
+
                                                             const displayAction = item.action_type === 'STATUS_CHANGE'
                                                                 ? 'Stage Update'
                                                                 : item.action_type === 'LEAD_CREATED'
@@ -2080,8 +2094,12 @@ END:VCARD`
                                                             return (
                                                                 <div className="flex flex-wrap items-center justify-between gap-1 pb-1.5 border-b border-slate-200/60">
                                                                     <div className="flex items-center gap-2 min-w-0">
-                                                                        <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 font-black text-[10px] flex items-center justify-center border border-amber-300 shrink-0">
-                                                                            {(actorName[0] || 'A').toUpperCase()}
+                                                                        <div className={`w-5 h-5 rounded-full font-black text-[10px] flex items-center justify-center border shrink-0 ${
+                                                                            actorName === 'Nobogent AI' 
+                                                                                ? 'bg-purple-100 text-purple-800 border-purple-300' 
+                                                                                : 'bg-amber-100 text-amber-800 border-amber-300'
+                                                                        }`}>
+                                                                            {actorName === 'Nobogent AI' ? '🤖' : (actorName[0] || 'A').toUpperCase()}
                                                                         </div>
                                                                         <span className="font-bold text-xs text-slate-800 truncate">{actorName}</span>
                                                                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700">{displayAction}</span>
