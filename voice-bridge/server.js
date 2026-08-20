@@ -23,11 +23,70 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 // Express Server setup
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 const prewarmedPool = new Map();
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'gemini-voice-bridge' });
+});
+
+// Vobiz Answer XML endpoint (Returns Stream XML directly to Vobiz)
+app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+    const wsProtocol = protocol === 'https' ? 'wss' : 'ws';
+    const leadId = req.query.leadId || req.body?.leadId || '';
+    const profileId = req.query.profileId || req.body?.profileId || '';
+    const campaignId = req.query.campaignId || req.body?.campaignId || '';
+
+    const wsUrl = `${wsProtocol}://${host}/gemini-live-stream?leadId=${leadId}&profileId=${profileId}&campaignId=${campaignId}&telephony=vobiz`;
+    const escapedWsUrl = wsUrl.replace(/&/g, '&amp;');
+    const statusUrl = `${protocol}://${host}/vobiz-status?leadId=${leadId}`;
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusUrl}">${escapedWsUrl}</Stream>
+</Response>`;
+
+    console.log(`[BRIDGE VOBIZ-XML] Served Voice XML to Vobiz for lead ${leadId}:\n${xml}`);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.send(xml);
+});
+
+// Vobiz Status Callback endpoint
+app.all(['/vobiz-status', '/api/voice/vobiz/status-callback'], async (req, res) => {
+    const leadId = req.query.leadId || req.body?.leadId;
+    const callStatus = (req.body?.CallStatus || req.body?.call_status || req.body?.Status || req.body?.event || '').toLowerCase();
+    const duration = req.body?.Duration || req.body?.duration || 0;
+    const callUuid = req.body?.CallUUID || req.body?.call_uuid || '';
+
+    console.log(`[BRIDGE VOBIZ-STATUS] Received status for lead ${leadId}: status=${callStatus}, duration=${duration}s, callUuid=${callUuid}`);
+
+    if (leadId) {
+        let updatedStatus = null;
+        if (['in-progress', 'answered'].includes(callStatus)) {
+            updatedStatus = 'calling';
+        } else if (['completed', 'hangup', 'stopped'].includes(callStatus)) {
+            updatedStatus = 'completed';
+        } else if (['busy', 'no-answer', 'timeout', 'rejected'].includes(callStatus)) {
+            updatedStatus = 'no_answer';
+        } else if (['failed', 'cancelled'].includes(callStatus)) {
+            updatedStatus = 'failed';
+        }
+
+        if (updatedStatus) {
+            try {
+                const updatePayload = { voice_call_status: updatedStatus };
+                if (duration > 0) updatePayload.voice_call_duration = parseInt(duration, 10);
+                await supabaseAdmin.from('leads').update(updatePayload).eq('id', leadId);
+            } catch (err) {
+                console.warn('[BRIDGE VOBIZ-STATUS] DB update error:', err);
+            }
+        }
+    }
+
+    res.json({ success: true });
 });
 
 app.post('/prewarm', async (req, res) => {
@@ -347,8 +406,23 @@ class NoiseSuppressedAudioProcessor {
 
 
 // WSS Handlers
-wss.on('connection', (wsConnection) => {
-    console.log('[BRIDGE] New WebSocket connection request from Twilio.');
+wss.on('connection', (wsConnection, req) => {
+    let urlObj = null;
+    try {
+        urlObj = new URL(req.url, 'http://localhost');
+    } catch (e) {}
+
+    const queryLeadId = urlObj?.searchParams?.get('leadId');
+    const queryProfileId = urlObj?.searchParams?.get('profileId');
+    const queryCampaignId = urlObj?.searchParams?.get('campaignId');
+    const queryTelephony = urlObj?.searchParams?.get('telephony');
+
+    let isVobiz = queryTelephony === 'vobiz';
+    let vobizStreamId = null;
+    let vobizCallId = null;
+    let vobizContentType = 'audio/x-l16';
+
+    console.log(`[BRIDGE] New WebSocket connection request. Telephony: ${isVobiz ? 'Vobiz' : 'Twilio/Standard'}, URL: ${req.url}`);
 
     let twilioStreamSid = null;
     let twilioCallSid = null;
@@ -356,8 +430,8 @@ wss.on('connection', (wsConnection) => {
     let geminiReady = false;
     let geminiApiKey = null;
     
-    let leadId = null;
-    let profileId = null;
+    let leadId = queryLeadId || null;
+    let profileId = queryProfileId || null;
     let profileData = null;
     let leadPhone = null;
     let leadName = 'there';
@@ -371,14 +445,13 @@ wss.on('connection', (wsConnection) => {
     let ringbackOffset = 0;
     let geminiGreetingStarted = false;
 
-
     // Connection health check (heartbeat to prevent lingering ghost connections)
     let isAlive = true;
     wsConnection.on('pong', () => { isAlive = true; });
 
     const pingInterval = setInterval(() => {
         if (!isAlive) {
-            console.log('[BRIDGE] Twilio WS connection timed out. Closing...');
+            console.log('[BRIDGE] WS connection timed out. Closing...');
             clearInterval(pingInterval);
             if (ringbackInterval) clearInterval(ringbackInterval);
             wsConnection.terminate();
@@ -440,21 +513,34 @@ wss.on('connection', (wsConnection) => {
         }
     }
 
-    // Handle incoming Twilio messages
+    // Handle incoming telephony stream messages (Vobiz or Twilio)
     wsConnection.on('message', async (message) => {
         try {
             const data = JSON.parse(message.toString());
 
             if (data.event === 'start') {
-                twilioStreamSid = data.start.streamSid;
-                twilioCallSid = data.start.callSid;
-                leadId = data.start.customParameters?.leadId;
-                profileId = data.start.customParameters?.profileId;
-                const campaignId = data.start.customParameters?.campaignId;
-                greetingPlayed = data.start.customParameters?.greetingPlayed === 'true';
-                voiceName = data.start.customParameters?.voiceName || 'Aoede';
-
-                console.log(`[BRIDGE] Twilio call started. StreamSid: ${twilioStreamSid}, CallSid: ${twilioCallSid}, leadId: ${leadId}, profileId: ${profileId}, campaignId: ${campaignId}, greetingPlayed: ${greetingPlayed}, voiceName: ${voiceName}`);
+                if (data.streamId || data.callId || queryTelephony === 'vobiz' || (!data.start && data.streamId)) {
+                    isVobiz = true;
+                    vobizStreamId = data.streamId || data.start?.streamId;
+                    vobizCallId = data.callId || data.callUuid || data.start?.callSid;
+                    vobizContentType = data.mediaFormat?.contentType || 'audio/x-l16';
+                    twilioStreamSid = vobizStreamId;
+                    leadId = data.customParameters?.leadId || data.start?.customParameters?.leadId || queryLeadId;
+                    profileId = data.customParameters?.profileId || data.start?.customParameters?.profileId || queryProfileId;
+                    var campaignId = data.customParameters?.campaignId || data.start?.customParameters?.campaignId || queryCampaignId;
+                    greetingPlayed = (data.customParameters?.greetingPlayed || data.start?.customParameters?.greetingPlayed) === 'true';
+                    voiceName = data.customParameters?.voiceName || data.start?.customParameters?.voiceName || 'Aoede';
+                    console.log(`[BRIDGE] Vobiz stream started. StreamId: ${vobizStreamId}, CallId: ${vobizCallId}, Format: ${vobizContentType}, leadId: ${leadId}, profileId: ${profileId}`);
+                } else {
+                    twilioStreamSid = data.start?.streamSid;
+                    twilioCallSid = data.start?.callSid;
+                    leadId = data.start?.customParameters?.leadId || queryLeadId;
+                    profileId = data.start?.customParameters?.profileId || queryProfileId;
+                    var campaignId = data.start?.customParameters?.campaignId || queryCampaignId;
+                    greetingPlayed = data.start?.customParameters?.greetingPlayed === 'true';
+                    voiceName = data.start?.customParameters?.voiceName || 'Aoede';
+                    console.log(`[BRIDGE] Twilio call started. StreamSid: ${twilioStreamSid}, CallSid: ${twilioCallSid}, leadId: ${leadId}, profileId: ${profileId}`);
+                }
 
                 if (!leadId || !profileId) {
                     console.error('[BRIDGE] Missing customParameters: leadId or profileId in start packet.');
@@ -466,23 +552,33 @@ wss.on('connection', (wsConnection) => {
                 if (!ringbackInterval) {
                     console.log('[BRIDGE] Playing instant phone ringback tone while connecting to Gemini...');
                     ringbackInterval = setInterval(() => {
-                        if (wsConnection.readyState === ws.OPEN && twilioStreamSid && !geminiGreetingStarted) {
+                        if (wsConnection.readyState === ws.OPEN && (twilioStreamSid || vobizStreamId) && !geminiGreetingStarted) {
                             const chunk = GLOBAL_RINGBACK_BUFFER.subarray(ringbackOffset, ringbackOffset + 160);
                             ringbackOffset += 160;
                             if (ringbackOffset >= GLOBAL_RINGBACK_BUFFER.length) ringbackOffset = 0;
-                            wsConnection.send(JSON.stringify({
-                                event: 'media',
-                                streamSid: twilioStreamSid,
-                                media: { payload: chunk.toString('base64') }
-                            }));
+                            if (isVobiz && vobizStreamId) {
+                                wsConnection.send(JSON.stringify({
+                                    event: 'playAudio',
+                                    streamId: vobizStreamId,
+                                    media: {
+                                        contentType: 'audio/x-mulaw',
+                                        sampleRate: 8000,
+                                        payload: chunk.toString('base64')
+                                    }
+                                }));
+                            } else if (twilioStreamSid) {
+                                wsConnection.send(JSON.stringify({
+                                    event: 'media',
+                                    streamSid: twilioStreamSid,
+                                    media: { payload: chunk.toString('base64') }
+                                }));
+                            }
                         } else if (geminiGreetingStarted && ringbackInterval) {
                             clearInterval(ringbackInterval);
                             ringbackInterval = null;
-                            console.log('[BRIDGE] Ringback tone stopped. AI greeting voice output took over.');
                         }
                     }, 20);
                 }
-
 
                 // 1. Fetch details from Supabase and connect to Gemini in parallel
                 let systemInstruction = 'You are a helpful representative. Focus on booking an appointment.';
@@ -929,15 +1025,21 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                           if (!serverMsg.serverContent?.modelTurn?.parts?.some(p => p.inlineData) && !serverMsg.serverContent?.outputTranscription) {
                               console.log('[BRIDGE] Received from Gemini:', JSON.stringify(serverMsg));
                           }
-                         
-                         // Handle user interruption (barge-in)
+                                          // Handle user interruption (barge-in)
                          if (serverMsg.serverContent?.interrupted) {
-                             console.log('[BRIDGE] Gemini detected user interruption. Clearing Twilio audio buffer...');
-                             if (wsConnection.readyState === ws.OPEN && twilioStreamSid) {
-                                 wsConnection.send(JSON.stringify({
-                                     event: 'clear',
-                                     streamSid: twilioStreamSid
-                                 }));
+                             console.log('[BRIDGE] Gemini detected user interruption. Clearing audio buffer...');
+                             if (wsConnection.readyState === ws.OPEN) {
+                                 if (isVobiz && vobizStreamId) {
+                                     wsConnection.send(JSON.stringify({
+                                         event: 'clearAudio',
+                                         streamId: vobizStreamId
+                                     }));
+                                 } else if (twilioStreamSid) {
+                                     wsConnection.send(JSON.stringify({
+                                         event: 'clear',
+                                         streamSid: twilioStreamSid
+                                     }));
+                                 }
                              }
                          }
                          
@@ -979,7 +1081,6 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                             }
                             audioProcessor.markAiSpeaking(1200);
 
-
                             for (const part of serverMsg.serverContent.modelTurn.parts) {
                                 // Record agent text transcription
                                 if (part.text) {
@@ -989,24 +1090,33 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                 
                                 if (part.inlineData && part.inlineData.data) {
                                     const base64PCM = part.inlineData.data;
-                                    const pcm24Bytes = Buffer.from(base64PCM, 'base64');
-                                    const pcm24 = new Int16Array(pcm24Bytes.length / 2);
-                                    for (let i = 0; i < pcm24.length; i++) {
-                                        pcm24[i] = pcm24Bytes.readInt16LE(i * 2);
-                                    }
 
-                                    // Downsample to 8kHz
-                                    const pcm8 = downsample24To8(pcm24);
+                                    if (isVobiz && wsConnection.readyState === ws.OPEN && vobizStreamId) {
+                                        // Direct high-quality 24kHz Linear PCM to Vobiz!
+                                        wsConnection.send(JSON.stringify({
+                                            event: 'playAudio',
+                                            streamId: vobizStreamId,
+                                            media: {
+                                                contentType: 'audio/x-l16',
+                                                sampleRate: 24000,
+                                                payload: base64PCM
+                                            }
+                                        }));
+                                    } else if (wsConnection.readyState === ws.OPEN && twilioStreamSid) {
+                                        // Downsample to 8kHz mu-law for Twilio
+                                        const pcm24Bytes = Buffer.from(base64PCM, 'base64');
+                                        const pcm24 = new Int16Array(pcm24Bytes.length / 2);
+                                        for (let i = 0; i < pcm24.length; i++) {
+                                            pcm24[i] = pcm24Bytes.readInt16LE(i * 2);
+                                        }
 
-                                    // Encode to mu-law
-                                    const muLawBytes = Buffer.alloc(pcm8.length);
-                                    for (let i = 0; i < pcm8.length; i++) {
-                                        muLawBytes[i] = encodeMuLaw(pcm8[i]);
-                                    }
-                                    const base64MuLaw = muLawBytes.toString('base64');
+                                        const pcm8 = downsample24To8(pcm24);
+                                        const muLawBytes = Buffer.alloc(pcm8.length);
+                                        for (let i = 0; i < pcm8.length; i++) {
+                                            muLawBytes[i] = encodeMuLaw(pcm8[i]);
+                                        }
+                                        const base64MuLaw = muLawBytes.toString('base64');
 
-                                    // Forward to Twilio
-                                    if (wsConnection.readyState === ws.OPEN && twilioStreamSid) {
                                         wsConnection.send(JSON.stringify({
                                             event: 'media',
                                             streamSid: twilioStreamSid,
@@ -1045,7 +1155,7 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                         if (serverMsg.toolCall?.functionCalls) {
                             for (const call of serverMsg.toolCall.functionCalls) {
                                 if (call.name === 'end_call') {
-                                    console.log('[BRIDGE] Gemini triggered tool: end_call. Hanging up Twilio...');
+                                    console.log(`[BRIDGE] Gemini triggered tool: end_call. Hanging up call (isVobiz: ${isVobiz})...`);
                                     
                                     // Send empty response back to Gemini
                                     geminiSocket.send(JSON.stringify({
@@ -1058,11 +1168,34 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                         }
                                     }));
 
-                                    // Trigger Twilio REST Call Termination & Close WebSocket with a 3-second delay
+                                    // Trigger Call Termination & Close WebSocket with a 3-second delay
                                     // to allow in-flight audio (like goodbye dialogue) to finish playing to the lead.
                                     console.log('[BRIDGE] Waiting 3 seconds for audio playout before hanging up...');
                                     setTimeout(async () => {
-                                        if (twilioCallSid && profileData) {
+                                        if (isVobiz) {
+                                            if (wsConnection.readyState === ws.OPEN && vobizStreamId) {
+                                                wsConnection.send(JSON.stringify({
+                                                    event: 'stop',
+                                                    streamId: vobizStreamId
+                                                }));
+                                            }
+                                            if (vobizCallId) {
+                                                const vobizAuthId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+                                                const vobizAuthToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+                                                try {
+                                                    await fetch(`https://api.vobiz.ai/api/v1/Account/${vobizAuthId}/Call/${vobizCallId}/`, {
+                                                        method: 'DELETE',
+                                                        headers: {
+                                                            'X-Auth-ID': vobizAuthId,
+                                                            'X-Auth-Token': vobizAuthToken
+                                                        }
+                                                    });
+                                                    console.log(`[BRIDGE] Vobiz call ${vobizCallId} hung up via REST.`);
+                                                } catch (hErr) {
+                                                    console.error('[BRIDGE] Vobiz REST hangup failed:', hErr);
+                                                }
+                                            }
+                                        } else if (twilioCallSid && profileData) {
                                             const twilioSid = process.env.MASTER_TWILIO_SID;
                                             const twilioToken = process.env.MASTER_TWILIO_TOKEN;
                                             
@@ -1122,34 +1255,52 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
             }
 
             if (data.event === 'media') {
-                const payload = data.media.payload;
-                if (geminiReady && geminiSocket && geminiSocket.readyState === ws.OPEN) {
-                    const muLawBytes = Buffer.from(payload, 'base64');
-                    const pcm8 = new Int16Array(muLawBytes.length);
-                    for (let i = 0; i < muLawBytes.length; i++) {
-                        pcm8[i] = decodeMuLaw(muLawBytes[i]);
+                const payload = data.media?.payload || data.payload;
+                if (geminiReady && geminiSocket && geminiSocket.readyState === ws.OPEN && payload) {
+                    let pcm16;
+                    if (isVobiz && vobizContentType && vobizContentType.includes('l16')) {
+                        // Linear 16-bit PCM (16kHz) directly from Vobiz
+                        const rawBytes = Buffer.from(payload, 'base64');
+                        pcm16 = new Int16Array(rawBytes.buffer, rawBytes.byteOffset, rawBytes.byteLength / 2);
+                    } else {
+                        // 8kHz mu-law from Twilio or Vobiz
+                        const muLawBytes = Buffer.from(payload, 'base64');
+                        const pcm8 = new Int16Array(muLawBytes.length);
+                        for (let i = 0; i < muLawBytes.length; i++) {
+                            pcm8[i] = decodeMuLaw(muLawBytes[i]);
+                        }
+                        pcm16 = upsample8To16(pcm8);
                     }
-                    const pcm16 = upsample8To16(pcm8);
+
                     const procRes = audioProcessor.processFrame(pcm16);
 
                     // Continuously send noise-suppressed 16kHz PCM audio stream to Gemini
                     sendPcmChunkToGemini(procRes.pcmOutput);
 
-                    // If caller speaks continuously for >1.0s, stream a real-time 160-byte chunked vocal backchannel ("ahaan"/"hmm"/"haan") into caller's ear while they talk
-                    if (procRes.shouldBackchannel && wsConnection.readyState === ws.OPEN && twilioStreamSid) {
+                    // If caller speaks continuously for >1.0s, stream a real-time vocal backchannel ("ahaan"/"hmm"/"haan")
+                    if (procRes.shouldBackchannel && wsConnection.readyState === ws.OPEN) {
                         const randomBuf = GLOBAL_BACKCHANNEL_POOL[Math.floor(Math.random() * GLOBAL_BACKCHANNEL_POOL.length)];
-                        console.log('[BRIDGE BACKCHANNEL] Playing real-time chunked mid-speech vocal backchannel ("ahaan"/"hmm"/"haan") to Twilio...');
-                        playBackchannelToTwilio(randomBuf, wsConnection, twilioStreamSid);
+                        console.log('[BRIDGE BACKCHANNEL] Playing real-time chunked mid-speech vocal backchannel...');
+                        if (isVobiz && vobizStreamId) {
+                            wsConnection.send(JSON.stringify({
+                                event: 'playAudio',
+                                streamId: vobizStreamId,
+                                media: {
+                                    contentType: 'audio/x-mulaw',
+                                    sampleRate: 8000,
+                                    payload: randomBuf.toString('base64')
+                                }
+                            }));
+                        } else if (twilioStreamSid) {
+                            playBackchannelToTwilio(randomBuf, wsConnection, twilioStreamSid);
+                        }
                     }
-
-
-
                 }
             }
 
 
             if (data.event === 'stop') {
-                console.log('[BRIDGE] Twilio call stopped.');
+                console.log(`[BRIDGE] Telephony stream stopped (${isVobiz ? 'Vobiz' : 'Twilio'}).`);
                 if (ringbackInterval) {
                     clearInterval(ringbackInterval);
                     ringbackInterval = null;
