@@ -114,13 +114,7 @@ async function handleRequest(req: Request) {
         // Generate Vobiz XML with bidirectional Linear PCM 16kHz stream
         const vobizXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Connect>
-        <Stream url="${wsStreamUrl}" bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusCallbackUrl}">
-            <Parameter name="leadId" value="${leadId}" />
-            <Parameter name="profileId" value="${effectiveProfileId}" />
-            ${effectiveCampaignId ? `<Parameter name="campaignId" value="${effectiveCampaignId}" />` : ''}
-        </Stream>
-    </Connect>
+    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusCallbackUrl}">${wsStreamUrl}</Stream>
 </Response>`
 
         console.log(`[VOBIZ XML] Returning Vobiz Stream XML for lead ${leadId}:`, vobizXml)

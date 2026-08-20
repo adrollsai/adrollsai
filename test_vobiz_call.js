@@ -91,40 +91,13 @@ async function testVobizCall() {
   const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
   const callerId = process.env.VOBIZ_TEST_NUMBER || '+911171366938';
 
-  let customTunnel = null;
+  let appUrl = 'https://local.nobogent.com';
   for (const arg of args) {
-    if (arg.startsWith('--tunnel=')) customTunnel = arg.split('=')[1].trim().replace(/\/$/, '');
-    if (arg.startsWith('--url=')) customTunnel = arg.split('=')[1].trim().replace(/\/$/, '');
+    if (arg.startsWith('--url=')) appUrl = arg.split('=')[1].trim().replace(/\/$/, '');
   }
 
-  if (!customTunnel) {
-    try {
-      const ngrokRes = await fetch('http://127.0.0.1:4040/api/tunnels');
-      if (ngrokRes.ok) {
-        const ngrokData = await ngrokRes.json();
-        const activeTunnel = ngrokData.tunnels?.find(t => t.public_url?.startsWith('https'));
-        if (activeTunnel?.public_url) {
-          customTunnel = activeTunnel.public_url.replace(/\/$/, '');
-          console.log(`[TUNNEL] Auto-detected active ngrok tunnel: ${customTunnel}`);
-        }
-      }
-    } catch (e) {}
-  }
-
-  let answerUrl;
-  let hangupUrl;
-
-  if (customTunnel) {
-    answerUrl = `${customTunnel}/vobiz-xml?leadId=${lead.id}&profileId=${userId}&campaignId=${campaignId}`;
-    hangupUrl = `${customTunnel}/vobiz-status?leadId=${lead.id}`;
-  } else {
-    let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
-    if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com')) {
-      appUrl = 'https://app.nobogent.com';
-    }
-    answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${lead.id}&profileId=${userId}&campaignId=${campaignId}`;
-    hangupUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${lead.id}`;
-  }
+  const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${lead.id}&profileId=${userId}&campaignId=${campaignId}`;
+  const hangupUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${lead.id}`;
 
   const payload = {
     from: callerId,
