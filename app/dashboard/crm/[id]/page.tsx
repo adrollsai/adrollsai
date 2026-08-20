@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight, Target } from 'lucide-react'
+import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight, Target, Sparkles, Building2, Users, PhoneOff, PhoneCall } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
@@ -10,7 +10,6 @@ import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
 import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
-import { PhoneOff, PhoneCall } from 'lucide-react'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 
 const STAGES = [
@@ -2042,16 +2041,60 @@ END:VCARD`
                                             }
 
                                             return (
-                                                <div key={item.id} className="relative flex items-start gap-4">
-                                                    <div className={`flex items-center justify-center w-11 h-11 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm ${isRemark ? 'bg-blue-100 text-blue-600' : isReminder ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
-                                                        {isRemark ? <MessageCircle size={16} /> : isReminder ? <Clock size={16} /> : <CheckCircle2 size={16} />}
+                                                <div key={item.id} className="relative flex items-start gap-3 sm:gap-4">
+                                                    <div className={`flex items-center justify-center w-10 h-10 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm ${
+                                                        isRemark ? 'bg-blue-100 text-blue-600' :
+                                                        isReminder ? 'bg-amber-100 text-amber-600' :
+                                                        item.action_type === 'DNP' ? 'bg-rose-100 text-rose-600' :
+                                                        item.action_type === 'LEAD_CREATED' ? 'bg-emerald-100 text-emerald-600' :
+                                                        item.action_type === 'SITE_VISIT' ? 'bg-purple-100 text-purple-600' :
+                                                        item.action_type === 'MEETING' ? 'bg-indigo-100 text-indigo-600' :
+                                                        'bg-slate-100 text-slate-600'
+                                                    }`}>
+                                                        {isRemark ? <MessageCircle size={15} /> :
+                                                         isReminder ? <Clock size={15} /> :
+                                                         item.action_type === 'DNP' ? <PhoneOff size={15} /> :
+                                                         item.action_type === 'LEAD_CREATED' ? <Sparkles size={15} /> :
+                                                         item.action_type === 'SITE_VISIT' ? <Building2 size={15} /> :
+                                                         item.action_type === 'MEETING' ? <Users size={15} /> :
+                                                         <CheckCircle2 size={15} />}
                                                     </div>
-                                                    <div className="flex-1 min-w-0 bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-0.5">
-                                                        <div className="flex items-center justify-between mb-1.5">
-                                                            <div className="font-bold text-xs text-slate-900 capitalize truncate pr-2">{(item.action_type || '').replace('_', ' ')}</div>
-                                                            <time className="text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded-md border border-slate-100 shrink-0">{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
-                                                        </div>
-                                                        <div className="text-xs text-slate-600 leading-relaxed break-words font-medium">
+                                                    <div className="flex-1 min-w-0 bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 mt-0.5 space-y-2">
+                                                        {/* Header: Actor Name, Action Badge, Time */}
+                                                        {(() => {
+                                                            const rawDesc = item.description || ''
+                                                            const byMatch = rawDesc.match(/\[by\s+([^\]]+)\]/i)
+                                                            const actorName = byMatch ? byMatch[1].trim() : (lead?.assigned_to === item.user_id ? 'Shubha Baweja Gulati' : 'Agent')
+                                                            const displayAction = item.action_type === 'STATUS_CHANGE'
+                                                                ? 'Stage Update'
+                                                                : item.action_type === 'LEAD_CREATED'
+                                                                ? 'New Lead Created'
+                                                                : item.action_type === 'DNP'
+                                                                ? 'Call Not Picked (DNP)'
+                                                                : item.action_type === 'CALL_FEEDBACK'
+                                                                ? 'Call Feedback'
+                                                                : item.action_type === 'SITE_VISIT'
+                                                                ? 'Site Visit'
+                                                                : (item.action_type || 'Activity').replace('_', ' ')
+
+                                                            return (
+                                                                <div className="flex flex-wrap items-center justify-between gap-1 pb-1.5 border-b border-slate-200/60">
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 font-black text-[10px] flex items-center justify-center border border-amber-300 shrink-0">
+                                                                            {(actorName[0] || 'A').toUpperCase()}
+                                                                        </div>
+                                                                        <span className="font-bold text-xs text-slate-800 truncate">{actorName}</span>
+                                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700">{displayAction}</span>
+                                                                    </div>
+                                                                    <time className="text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded-md border border-slate-100 shrink-0">
+                                                                        {new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                    </time>
+                                                                </div>
+                                                            )
+                                                        })()}
+
+                                                        {/* Body content */}
+                                                        <div className="text-xs text-slate-700 leading-relaxed font-medium">
                                                             {(() => {
                                                                 if (!item.description) return null
 
@@ -2087,7 +2130,7 @@ END:VCARD`
                                                                 
                                                                 if (audioUrlMatch) {
                                                                     const audioUrl = audioUrlMatch[0]
-                                                                    const cleanText = item.description.replace(audioUrl, '').trim()
+                                                                    const cleanText = item.description.replace(audioUrl, '').replace(/\[by\s+[^\]]+\]/i, '').trim()
                                                                     return (
                                                                         <div className="space-y-2">
                                                                             {cleanText && <p className="text-slate-800 whitespace-pre-wrap font-medium">{cleanText}</p>}
@@ -2102,7 +2145,29 @@ END:VCARD`
                                                                     )
                                                                 }
 
-                                                                return <p className="whitespace-pre-wrap">{item.description}</p>
+                                                                // Clean trailing [by Name] tag since shown in header
+                                                                const cleanText = item.description.replace(/\[by\s+[^\]]+\]/gi, '').trim()
+                                                                
+                                                                // Format key-value lines nicely
+                                                                const lines = cleanText.split('\n')
+                                                                return (
+                                                                    <div className="space-y-1 bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                                                                        {lines.map((line: string, lIdx: number) => {
+                                                                            const kvMatch = line.match(/^([^:]+?)\s*:\s*(.+)$/)
+                                                                            if (kvMatch && !line.startsWith('http') && kvMatch[1].length < 30) {
+                                                                                return (
+                                                                                    <div key={lIdx} className="flex items-start gap-1.5">
+                                                                                        <span className="font-bold text-slate-900 shrink-0">{kvMatch[1].trim()}:</span>
+                                                                                        <span className="text-slate-700 break-words">{kvMatch[2].trim()}</span>
+                                                                                    </div>
+                                                                                )
+                                                                            }
+                                                                            return line.trim() ? (
+                                                                                <p key={lIdx} className="text-slate-800 font-medium whitespace-pre-wrap leading-relaxed">{line}</p>
+                                                                            ) : <div key={lIdx} className="h-1" />
+                                                                        })}
+                                                                    </div>
+                                                                )
                                                             })()}
                                                         </div>
                                                     </div>

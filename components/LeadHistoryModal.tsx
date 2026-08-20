@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, History, Clock, User, Phone, MessageSquare, AlertCircle, RefreshCw, FileText } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { X, History, Clock, User, Phone, MessageSquare, AlertCircle, RefreshCw, FileText, ExternalLink } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 
@@ -13,6 +14,7 @@ interface LeadHistoryModalProps {
 }
 
 export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: LeadHistoryModalProps) {
+  const router = useRouter()
   const [historyItems, setHistoryItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
@@ -111,37 +113,6 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
     }
   }
 
-  const [uploadingRecording, setUploadingRecording] = useState(false)
-
-  const handleUploadRecording = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !lead?.id) return
-
-    setUploadingRecording(true)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('leadId', lead.id)
-      formData.append('phoneNumber', lead.phone || '')
-
-      const res = await fetch('/api/crm/call-recordings', {
-        method: 'POST',
-        body: formData
-      })
-
-      const data = await res.json()
-      if (data.success) {
-        fetchHistory()
-      } else {
-        console.error('Failed to upload call recording:', data.error)
-      }
-    } catch (err: any) {
-      console.error('Upload failed:', err)
-    } finally {
-      setUploadingRecording(false)
-    }
-  }
-
   if (!isOpen || !lead) return null
 
   // Format date/time
@@ -189,21 +160,23 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl cursor-pointer border border-blue-200 transition-colors flex items-center gap-1.5">
-              <Phone size={14} />
-              <span>{uploadingRecording ? 'Uploading...' : 'Attach Recording'}</span>
-              <input 
-                type="file" 
-                accept="audio/*" 
-                onChange={handleUploadRecording} 
-                disabled={uploadingRecording} 
-                className="hidden" 
-              />
-            </label>
+            {lead?.id && (
+              <button
+                onClick={() => {
+                  onClose()
+                  router.push(`/dashboard/crm/${lead.id}`)
+                }}
+                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl border border-blue-200 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Open Full Lead View in CRM"
+              >
+                <ExternalLink size={14} />
+                <span>Full Preview</span>
+              </button>
+            )}
 
             <button
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
+              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
             >
               <X size={18} />
             </button>
