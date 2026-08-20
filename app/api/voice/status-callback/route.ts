@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { callGemini } from '@/utils/external-apis'
+import { callGemini, callGeminiWithUsage } from '@/utils/external-apis'
 import { bookAppointment, dispatchNextCall } from '@/utils/voice-helper'
 import { updateLeadScoreInDB } from '@/utils/lead-scoring'
 
@@ -309,8 +309,8 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
   "unanswered_questions": ["array of raw question strings that the AI assistant was unable to answer because it lacked info in context, or empty array if none"]
 }
 `;
-                        const rawGeminiRes = await callGemini(geminiPrompt)
-                        const cleanJson = rawGeminiRes.replace(/```json/g, '').replace(/```/g, '').trim()
+                        const aiRes = await callGeminiWithUsage(geminiPrompt)
+                        const cleanJson = (aiRes.text || '').replace(/```json/g, '').replace(/```/g, '').trim()
                         const extracted = JSON.parse(cleanJson)
 
                         summary = extracted.summary || summary
@@ -330,10 +330,10 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                                 question: q
                             }));
                             await supabaseAdmin.from('flagged_questions').insert(inserts);
-                            console.log('[TWILIO STATUS CALLBACK] Inserted flagged questions from Gemini transcript:', inserts);
+                            console.log('[TWILIO STATUS CALLBACK] Inserted flagged questions from transcript analysis:', inserts);
                         }
                     } catch (err: any) {
-                        console.error('[TWILIO STATUS CALLBACK] Gemini transcript analysis failed:', err)
+                        console.error('[TWILIO STATUS CALLBACK] Transcript analysis failed:', err)
                     }
                 } else {
                     console.log('[TWILIO STATUS CALLBACK] Voice bridge transcript not yet available. Skipping analysis.')
@@ -381,56 +381,6 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                         }
                     } catch (audioErr) {
                         console.error('[TWILIO STATUS CALLBACK] Gemini audio download exception:', audioErr)
-                    }
-                }
-
-                // If bridge transcript was empty but we have a recording, use Gemini to analyze the audio
-                if (transcript.length === 0 && publicRecordingUrl) {
-                    console.log('[TWILIO STATUS CALLBACK] No bridge transcript available. Analyzing audio recording with Gemini...')
-                    try {
-                        const geminiPrompt = `
-You are analyzing a recorded phone call between our AI voice assistant and a lead.
-Listen to the audio recording carefully and extract the transcript, summary, and metadata.
-
-Generate a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks:
-{
-  "summary": "A concise, clean 2-3 sentence paragraph summarizing the call. Do NOT use markdown headers, bold, bullets, or lists.",
-  "transcript": [
-    { "role": "agent", "message": "agent spoken text" },
-    { "role": "user", "message": "user spoken text" }
-  ],
-  "callback_time": "ISO-8601 string of requested callback date/time. If the lead asked or agreed to a callback/meeting (including tentative agreement like 'call me Saturday', 'connect tomorrow', or 'call later') but no specific hour was finalized, generate a fallback time for that day at 10:00 AM local time (or 24 hours from now if no day was specified) so a follow-up reminder call is scheduled. Current system UTC time is: ${new Date().toISOString()}",
-  "booking_time": "ISO-8601 string of the agreed appointment/meeting/consultation slot, otherwise null. Current system UTC time is: ${new Date().toISOString()}",
-  "is_qualified": true/false,
-  "allow_after_hours": true/false (true if the prospect explicitly requested, suggested, agreed, or said it is okay to call them back after 7 PM local time, late, at night, or at any time in general, otherwise false),
-  "unanswered_questions": ["array of raw question strings that the AI assistant was unable to answer because it lacked info in context, or empty array if none"]
-}
-`
-                        const rawGeminiRes = await callGemini(geminiPrompt, [publicRecordingUrl])
-                        console.log('[TWILIO STATUS CALLBACK] Gemini recording analysis raw response:', rawGeminiRes)
-                        const cleanJson = rawGeminiRes.replace(/```json/g, '').replace(/```/g, '').trim()
-                        const extracted = JSON.parse(cleanJson)
-
-                        summary = extracted.summary || summary
-                        transcript = extracted.transcript || []
-                        callbackTime = extracted.callback_time || null
-                        bookingTime = extracted.booking_time || null
-                        isQualified = !!extracted.is_qualified
-                        extractedAllowAfterHours = !!extracted.allow_after_hours
-                        conversationId = conversationId || 'gemini-audio'
-
-                        if (extracted.unanswered_questions && Array.isArray(extracted.unanswered_questions) && extracted.unanswered_questions.length > 0) {
-                            const inserts = extracted.unanswered_questions.map((q: string) => ({
-                                user_id: lead.user_id,
-                                lead_id: leadId,
-                                channel: 'voice',
-                                question: q
-                            }));
-                            await supabaseAdmin.from('flagged_questions').insert(inserts);
-                            console.log('[TWILIO STATUS CALLBACK] Inserted flagged questions from Gemini audio analysis:', inserts);
-                        }
-                    } catch (err: any) {
-                        console.error('[TWILIO STATUS CALLBACK] Gemini audio analysis failed:', err)
                     }
                 }
             }
@@ -507,7 +457,7 @@ Generate a valid JSON object ONLY. Do not use markdown tags, ticks, or backticks
                 ? transcript
                 : ((lead as any)?.voice_call_transcript || []);
 
-            if (activeTranscript.length > 0) {
+            if (!summary && activeTranscript.length > 0) {
                 try {
                     const formattedTranscript = activeTranscript
                         .map((t: any) => `${(t.role === 'agent' || t.role === 'assistant') ? 'Agent' : 'Lead'}: ${t.message || t.text || ''}`)
@@ -530,8 +480,8 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 }
 `
 
-                    const rawGeminiRes = await callGemini(geminiPrompt)
-                    const cleanJson = rawGeminiRes.replace(/```json/g, '').replace(/```/g, '').trim()
+                    const aiRes = await callGeminiWithUsage(geminiPrompt)
+                    const cleanJson = (aiRes.text || '').replace(/```json/g, '').replace(/```/g, '').trim()
                     const extracted = JSON.parse(cleanJson)
 
                     summary = extracted.summary || summary

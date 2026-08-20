@@ -1238,16 +1238,45 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
 }
 `.trim();
 
-                    const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
-                    const summaryRes = await fetch(restUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: analysisPrompt }] }]
-                        })
-                    });
-                    const summaryData = await summaryRes.json();
-                    const rawText = summaryData.candidates?.[0]?.content?.parts?.[0]?.text;
+                    let rawText = '';
+                    const deepseekKey = (process.env.DEEPSEEK_API_KEY || '').replace(/^["']|["']$/g, '').trim();
+
+                    if (deepseekKey) {
+                        try {
+                            const dsRes = await fetch("https://api.deepseek.com/v1/chat/completions", {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    "Authorization": `Bearer ${deepseekKey}`
+                                },
+                                body: JSON.stringify({
+                                    model: "deepseek-chat",
+                                    messages: [{ role: "user", content: analysisPrompt }],
+                                    stream: false
+                                })
+                            });
+                            if (dsRes.ok) {
+                                const dsData = await dsRes.json();
+                                rawText = dsData.choices?.[0]?.message?.content || "";
+                            }
+                        } catch (dsErr) {
+                            console.warn('[BRIDGE] DeepSeek auto-analysis error, trying Gemini fallback:', dsErr?.message || dsErr);
+                        }
+                    }
+
+                    if (!rawText && geminiApiKey) {
+                        const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
+                        const summaryRes = await fetch(restUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts: [{ text: analysisPrompt }] }]
+                            })
+                        });
+                        const summaryData = await summaryRes.json();
+                        rawText = summaryData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    }
+
                     if (rawText) {
                         const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
                         try {

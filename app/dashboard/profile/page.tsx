@@ -2650,8 +2650,25 @@ export default function ProfilePage() {
                           type="button"
                           className="bg-white/95 p-1.5 rounded-full text-slate-700 hover:text-indigo-600 shadow-md"
                           onClick={(e) => { e.stopPropagation(); personalAvatarInputRef.current?.click(); }}
+                          title="Change Photo"
                         >
                           <Upload size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="bg-red-500/95 p-1.5 rounded-full text-white hover:bg-red-600 shadow-md"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setPersonalAvatarUrl('');
+                            const effectiveUserId = targetUserId || userId;
+                            if (effectiveUserId) {
+                              await supabase.from('profiles').update({ avatar_url: null }).eq('id', effectiveUserId);
+                              toast.success("Profile photo removed");
+                            }
+                          }}
+                          title="Remove Photo"
+                        >
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </div>
