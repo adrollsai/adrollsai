@@ -8,6 +8,8 @@
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     text-rendering: optimizeLegibility;
+    overscroll-behavior-y: none;
+    overscroll-behavior: none;
   }
 
   button, a, select, input, textarea, [role="button"] {
