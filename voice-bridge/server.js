@@ -1100,8 +1100,21 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                     console.error('[BRIDGE] Gemini Socket Error:', err);
                 });
 
-                geminiSocket.on('close', (code, reason) => {
-                    console.log(`[BRIDGE] Gemini Socket closed. Code: ${code}, Reason: ${reason ? reason.toString() : ''}`);
+                geminiSocket.on('close', async (code, reason) => {
+                    const reasonStr = reason ? reason.toString() : '';
+                    console.log(`[BRIDGE] Gemini Socket closed. Code: ${code}, Reason: ${reasonStr}`);
+                    if (code === 1011 || reasonStr.includes('prepayment credits') || reasonStr.includes('billing')) {
+                        console.error('[BRIDGE] CRITICAL: Google AI Studio prepayment credits are depleted for Gemini Live API!');
+                        try {
+                            if (leadId) {
+                                await supabaseAdmin.from('lead_history').insert({
+                                    lead_id: leadId,
+                                    action_type: 'REMARK',
+                                    description: `⚠️ AI Voice Call Error: Google AI Studio prepayment credits are depleted for the configured Gemini API key. Please recharge credits on Google AI Studio to resume Gemini Live voice calls.`
+                                });
+                            }
+                        } catch (e) {}
+                    }
                     if (wsConnection.readyState === ws.OPEN) {
                         wsConnection.close();
                     }

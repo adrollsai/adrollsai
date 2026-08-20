@@ -313,26 +313,42 @@ export default function GroupLeadDistributionModal({
       return toast.error(`Please assign at least one campaign to group "${group.group_name}".`);
     }
 
+    const normalizeCampStr = (s: string) => (s || '')
+      .replace(/[\u2010-\u2015\u2212]/g, '-')
+      .toLowerCase()
+      .replace(/\bhaymten\b/g, 'hampton')
+      .replace(/\bhamyten\b/g, 'hampton')
+      .replace(/\s+/g, ' ')
+      .trim();
+
     // Filter unassigned or workspace owner leads matching group's campaigns
     const matchingLeads = leads.filter(l => {
       // Include unassigned leads or leads assigned to target workspace owner
       const isUnassignedOrOwner = !l.assigned_to || l.assigned_to === targetUserId || l.user_id === targetUserId;
       if (!isUnassignedOrOwner) return false;
 
-      const leadCampName = (l.ad_name || l.campaign_name || l.form_name || l.source || '').trim().toLowerCase();
-      const customOriginAd = (l.custom_fields?.meta_ad_origin?.ad_name || '').trim().toLowerCase();
-      const customOriginCamp = (l.custom_fields?.meta_ad_origin?.campaign_name || '').trim().toLowerCase();
-      const formName = (l.form_name || '').trim().toLowerCase();
+      const leadCampName = normalizeCampStr(l.ad_name || l.campaign_name || l.form_name || l.source || '');
+      const customOriginAd = normalizeCampStr(l.custom_fields?.meta_ad_origin?.ad_name || '');
+      const customOriginCamp = normalizeCampStr(l.custom_fields?.meta_ad_origin?.campaign_name || '');
+      const formName = normalizeCampStr(l.form_name || '');
+      const campIdClean = String(l.campaign_id || '').trim();
 
       return group.campaigns.some(gc => {
-        const gcClean = gc.trim().toLowerCase();
+        const gcClean = normalizeCampStr(gc);
         if (!gcClean) return false;
-        return (
-          (leadCampName && (leadCampName.includes(gcClean) || gcClean.includes(leadCampName))) ||
-          (customOriginAd && (customOriginAd.includes(gcClean) || gcClean.includes(customOriginAd))) ||
-          (customOriginCamp && (customOriginCamp.includes(gcClean) || gcClean.includes(customOriginCamp))) ||
-          (formName && (formName.includes(gcClean) || gcClean.includes(formName)))
-        );
+        if (campIdClean && campIdClean === gc.trim()) return true;
+        if (leadCampName && (leadCampName.includes(gcClean) || gcClean.includes(leadCampName))) return true;
+        if (customOriginAd && (customOriginAd.includes(gcClean) || gcClean.includes(customOriginAd))) return true;
+        if (customOriginCamp && (customOriginCamp.includes(gcClean) || gcClean.includes(customOriginCamp))) return true;
+        if (formName && (formName.includes(gcClean) || gcClean.includes(formName))) return true;
+        const segments = gcClean.split(/[-|/]/).map(seg => seg.trim()).filter(seg => seg.length >= 4 && !/^\d+$/.test(seg));
+        for (const seg of segments) {
+          if (leadCampName && leadCampName.includes(seg)) return true;
+          if (customOriginAd && customOriginAd.includes(seg)) return true;
+          if (customOriginCamp && customOriginCamp.includes(seg)) return true;
+          if (formName && formName.includes(seg)) return true;
+        }
+        return false;
       });
     });
 
@@ -918,10 +934,11 @@ export default function GroupLeadDistributionModal({
                         setActivePickerGroupId(null);
                         setCampaignSearchQuery('');
                       }}
-                      className="w-full text-left bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200/80 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:text-emerald-900 transition-all flex items-center justify-between group cursor-pointer"
+                      title={camp}
+                      className="w-full text-left bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200/80 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:text-emerald-900 transition-all flex items-start justify-between gap-2.5 group cursor-pointer"
                     >
-                      <span className="truncate pr-2">{camp}</span>
-                      <Plus size={14} className="text-slate-400 group-hover:text-emerald-600 shrink-0" />
+                      <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{camp}</span>
+                      <Plus size={14} className="text-slate-400 group-hover:text-emerald-600 shrink-0 mt-0.5" />
                     </button>
                   ))
                 )}

@@ -264,7 +264,7 @@ export async function POST(req: Request) {
                 console.log('[TWILIO STATUS CALLBACK] Gemini provider detected. Waiting for voice bridge to save transcript...')
                 
                 let updatedLead: any = null
-                for (let attempt = 1; attempt <= 12; attempt++) {
+                for (let attempt = 1; attempt <= 4; attempt++) {
                     const { data } = await supabaseAdmin
                         .from('leads')
                         .select('voice_call_summary, voice_call_transcript, voice_recording_url')
@@ -275,7 +275,7 @@ export async function POST(req: Request) {
                         updatedLead = data
                         break
                     }
-                    console.log(`[TWILIO STATUS CALLBACK] Gemini transcript not ready yet. Attempt ${attempt}/12. Retrying in 1s...`)
+                    console.log(`[TWILIO STATUS CALLBACK] Gemini transcript not ready yet. Attempt ${attempt}/4. Retrying in 1s...`)
                     await delay(1000)
                 }
 

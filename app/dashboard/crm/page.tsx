@@ -2600,9 +2600,10 @@ END:VCARD\n`
                             }}
                             className={`w-full bg-slate-50 hover:bg-slate-100/80 border ${
                                 selectedCampaign ? 'border-blue-500 bg-blue-50/40 text-blue-900' : 'border-slate-200/60 text-slate-700'
-                            } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate flex items-center justify-between shadow-xs`}
+                            } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer flex items-center justify-between shadow-xs`}
+                            title={selectedCampaign || 'All Campaigns'}
                         >
-                            <span className="truncate flex-1">
+                            <span className="truncate flex-1" title={selectedCampaign || 'All Campaigns'}>
                                 {selectedCampaign ? selectedCampaign : 'All Campaigns'}
                             </span>
                             {selectedCampaign ? (
@@ -2623,7 +2624,7 @@ END:VCARD\n`
                         </button>
 
                         {isCampaignFilterOpen && (
-                            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200/80 rounded-2xl shadow-2xl z-50 p-2 space-y-1.5 min-w-[260px] animate-in fade-in zoom-in-95 duration-150">
+                            <div className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200/80 rounded-2xl shadow-2xl z-50 p-2 space-y-1.5 min-w-[320px] sm:min-w-[460px] md:min-w-[540px] max-w-[92vw] sm:max-w-2xl animate-in fade-in zoom-in-95 duration-150">
                                 {/* Search input */}
                                 <div className="relative">
                                     <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -2647,7 +2648,7 @@ END:VCARD\n`
                                 </div>
 
                                 {/* Options List */}
-                                <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar pr-0.5">
+                                <div className="max-h-72 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
                                     <button
                                         type="button"
                                         onClick={() => {
@@ -2655,7 +2656,7 @@ END:VCARD\n`
                                             setCurrentPage(1)
                                             setIsCampaignFilterOpen(false)
                                         }}
-                                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
+                                        className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
                                             !selectedCampaign ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100'
                                         }`}
                                     >
@@ -2676,12 +2677,13 @@ END:VCARD\n`
                                                         setCurrentPage(1)
                                                         setIsCampaignFilterOpen(false)
                                                     }}
-                                                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                                                    title={camp}
+                                                    className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-start justify-between gap-2.5 transition-all cursor-pointer ${
                                                         isSelected ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                                                     }`}
                                                 >
-                                                    <span className="truncate pr-2">{camp}</span>
-                                                    {isSelected && <CheckCircle2 size={13} className="shrink-0" />}
+                                                    <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{camp}</span>
+                                                    {isSelected && <CheckCircle2 size={14} className="shrink-0 mt-0.5" />}
                                                 </button>
                                             )
                                         })}

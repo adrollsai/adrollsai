@@ -1332,23 +1332,32 @@ export default function AnalyticsPage() {
         {/* CONTROLS & EMPLOYEE FILTER DROPDOWN */}
         <div className="flex items-center flex-wrap gap-2.5">
           
-          {/* Employee Filter Select */}
-          <div className="relative">
-            <select
-              value={selectedAgentId || ''}
-              onChange={(e) => setSelectedAgentId(e.target.value || null)}
-              className="appearance-none bg-white border border-slate-300 text-slate-900 text-xs font-black rounded-2xl pl-9 pr-8 py-2 hover:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-xs cursor-pointer"
-            >
-              <option value="">👥 All Sales Reps ({allSalesReps.length})</option>
-              <option value="unassigned">⚠️ Unassigned Leads ({leads.filter(l => !l.assigned_to).length})</option>
-              {allSalesReps.map(rep => (
-                <option key={rep.id} value={rep.id}>
-                  👤 {rep.name} ({leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id).length} leads)
-                </option>
-              ))}
-            </select>
-            <User size={14} className="absolute left-3 top-2.5 text-blue-600 pointer-events-none" />
-          </div>
+          {/* Employee Filter Select — hidden for agents who should only see their own data */}
+          {profile?.role && ['agent', 'team_member'].includes(profile.role.toLowerCase()) ? (
+            <div className="relative">
+              <div className="bg-white border border-slate-300 text-slate-900 text-xs font-black rounded-2xl pl-9 pr-4 py-2 shadow-xs">
+                👤 {profile.business_name || profile.full_name || 'My Leads'} ({leads.length} leads)
+              </div>
+              <User size={14} className="absolute left-3 top-2.5 text-blue-600 pointer-events-none" />
+            </div>
+          ) : (
+            <div className="relative">
+              <select
+                value={selectedAgentId || ''}
+                onChange={(e) => setSelectedAgentId(e.target.value || null)}
+                className="appearance-none bg-white border border-slate-300 text-slate-900 text-xs font-black rounded-2xl pl-9 pr-8 py-2 hover:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-xs cursor-pointer"
+              >
+                <option value="">👥 All Sales Reps ({allSalesReps.length})</option>
+                <option value="unassigned">⚠️ Unassigned Leads ({leads.filter(l => !l.assigned_to).length})</option>
+                {allSalesReps.map(rep => (
+                  <option key={rep.id} value={rep.id}>
+                    👤 {rep.name} ({leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id).length} leads)
+                  </option>
+                ))}
+              </select>
+              <User size={14} className="absolute left-3 top-2.5 text-blue-600 pointer-events-none" />
+            </div>
+          )}
 
           {/* Duration Selector */}
           <div className="bg-slate-100 border border-slate-200 p-1 rounded-2xl flex items-center shadow-inner overflow-x-auto">

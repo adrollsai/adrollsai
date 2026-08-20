@@ -203,7 +203,7 @@ export async function POST(req: Request) {
             }
         }
 
-        const voiceProvider = 'gemini' // Force Gemini 3.1 Flash Live API for all accounts
+        const voiceProvider = profile?.voice_provider || 'gemini'
 
         if (voiceProvider === 'gemini') {
             const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'
