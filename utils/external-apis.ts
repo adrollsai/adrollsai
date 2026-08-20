@@ -632,11 +632,11 @@ export async function callGeminiWithUsage(prompt: string, imageUrls?: string[]):
         return callGeminiWithUsageOriginal(prompt, imageUrls);
     }
 
-    // 2. Text-only queries: route based on super admin preference
-    const selectedModel = await getSuperAdminSelectedLLM();
-    if (selectedModel === 'deepseek') {
+    // 2. Text-only queries: route to DeepSeek v4-flash if DEEPSEEK_API_KEY is configured
+    const deepSeekKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.replace(/^["']|["']$/g, '').trim() : '';
+    if (deepSeekKey) {
         try {
-            console.log(`[LLM ROUTER] Routing text-only query to DeepSeek v4-flash`);
+            console.log(`[LLM ROUTER] Routing text query to DeepSeek v4-flash`);
             return await callDeepSeekWithUsage(prompt);
         } catch (err: any) {
             console.warn(`[LLM ROUTER] DeepSeek failed, falling back to Gemini. Error: ${err.message}`);

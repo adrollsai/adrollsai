@@ -747,7 +747,7 @@ IMPORTANT RULES:
 
                                         let modelProvider: any;
                                         const hasDeepSeekKey = !!process.env.DEEPSEEK_API_KEY;
-                                        if (selectedModel === 'deepseek' && hasDeepSeekKey) {
+                                        if (hasDeepSeekKey && selectedModel !== 'gemini') {
                                             console.log("🤖 Routing WhatsApp bot query to DEEPSEEK model");
                                             const deepseek = createOpenAI({
                                                 baseURL: 'https://api.deepseek.com/v1',
@@ -755,7 +755,7 @@ IMPORTANT RULES:
                                             });
                                             modelProvider = deepseek.chat('deepseek-v4-flash');
                                         } else {
-                                            if (selectedModel === 'deepseek') {
+                                            if (selectedModel === 'deepseek' && !hasDeepSeekKey) {
                                                 console.warn("⚠️ DEEPSEEK_API_KEY is missing in env. Falling back to GEMINI model.");
                                             }
                                             console.log("🤖 Routing WhatsApp bot query to GEMINI model");
@@ -774,7 +774,7 @@ IMPORTANT RULES:
                                         ownerUsage = {
                                             promptTokens: usage?.inputTokens || 0,
                                             completionTokens: usage?.outputTokens || 0,
-                                            modelName: (selectedModel === 'deepseek' && hasDeepSeekKey) ? 'deepseek-v4-flash' : 'gemini-3.5-flash'
+                                            modelName: (hasDeepSeekKey && selectedModel !== 'gemini') ? 'deepseek-v4-flash' : 'gemini-3.5-flash'
                                         };
                                     } catch (llmErr: any) {
                                         console.error("❌ Agentic LLM response generation failed:", llmErr?.message || llmErr);

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { callGemini } from '@/utils/external-apis'
+import { callGemini, callDeepSeekWithUsage } from '@/utils/external-apis'
 
 // Force dynamic execution to bypass Next.js static build cache
 export const dynamic = 'force-dynamic'
@@ -111,28 +111,26 @@ async function handleWhatsappFollowups(request: Request) {
             let templateName = ''
             let templateParams: string[] = []
 
+            // Spaced Follow-Up Schedule:
+            // Stage 1: Free-form follow-up after 6 hours if no reply (only 1 within 24h window)
+            // Stage 2: Template follow-up at 24-48 hours if still no reply
+            // Stage 3: Final template follow-up at 48-72 hours if still no reply
             if (timeSinceInbound <= twentyFourHours) {
-                if (numFollowups === 0 && timeSinceInbound >= 2 * 60 * 60 * 1000) {
+                if (numFollowups === 0 && timeSinceInbound >= 6 * 60 * 60 * 1000) {
                     isDue = true
                     followupStage = 1
-                } else if (numFollowups === 1 && timeSinceInbound >= 8 * 60 * 60 * 1000) {
-                    isDue = true
-                    followupStage = 2
-                } else if (numFollowups === 2 && timeSinceInbound >= 20 * 60 * 60 * 1000) {
-                    isDue = true
-                    followupStage = 3
                 }
             } else if (timeSinceInbound <= fortyEightHours) {
-                if (numFollowups === 3) {
+                if (numFollowups === 1) {
                     isDue = true
-                    followupStage = 4
+                    followupStage = 2
                     isTemplate = true
                     templateName = 'auto_drip_followup_24h'
                 }
             } else if (timeSinceInbound <= seventyTwoHours) {
-                if (numFollowups === 4) {
+                if (numFollowups === 2) {
                     isDue = true
-                    followupStage = 5
+                    followupStage = 3
                     isTemplate = true
                     templateName = 'auto_drip_followup_48h'
                 }
@@ -242,8 +240,24 @@ Guidelines:
                     }
                     logText = `Sent Template: ${templateName}`
                 } else {
-                    const aiRes = await callGemini(systemPrompt)
-                    const replyText = aiRes.trim().replace(/^"|"$/g, '')
+                    let replyText = ''
+                    try {
+                        if (process.env.DEEPSEEK_API_KEY) {
+                            const dsRes = await callDeepSeekWithUsage(systemPrompt)
+                            replyText = dsRes.text.trim().replace(/^"|"$/g, '')
+                        } else {
+                            const aiRes = await callGemini(systemPrompt)
+                            replyText = aiRes.trim().replace(/^"|"$/g, '')
+                        }
+                    } catch (llmErr) {
+                        console.warn('[WhatsApp Followup] DeepSeek error, trying Gemini fallback:', llmErr)
+                        try {
+                            const aiRes = await callGemini(systemPrompt)
+                            replyText = aiRes.trim().replace(/^"|"$/g, '')
+                        } catch (gErr) {
+                            console.error('[WhatsApp Followup] Both DeepSeek and Gemini failed:', gErr)
+                        }
+                    }
                     if (!replyText) continue
 
                     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
