@@ -72,11 +72,23 @@ function formatCallPhone(phoneRaw: string | null | undefined): string {
   return `+${digits}`;
 }
 
-function getLeadLastRemark(lead: any): string | null {
+function getLeadLastRemark(lead: any, currentRole?: string): string | null {
   if (!lead) return null;
   let cf = lead.custom_fields;
   if (cf && typeof cf === 'string') {
     try { while (typeof cf === 'string') cf = JSON.parse(cf); } catch (e) {}
+  }
+
+  // If history is hidden for this agent up to cutoff, don't show pre-transfer remarks
+  if (cf?.history_visible_from && currentRole === 'agent') {
+    const cutoffTime = new Date(cf.history_visible_from).getTime();
+    const tFollowup = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : 0;
+    const tAction = cf?.last_action_date ? new Date(cf.last_action_date).getTime() : 0;
+    const tLastCall = lead.last_call_at ? new Date(lead.last_call_at).getTime() : 0;
+    const latestActivity = Math.max(tFollowup, tAction, tLastCall);
+    if (latestActivity === 0 || latestActivity < cutoffTime) {
+      return null;
+    }
   }
   
   if (cf?.last_followup_remark && typeof cf.last_followup_remark === 'string' && cf.last_followup_remark.trim()) {
@@ -2926,7 +2938,7 @@ END:VCARD\n`
                                             </td>
                                             <td className="p-4 max-w-[240px]" onClick={e => e.stopPropagation()}>
                                                  {(() => {
-                                                     const remark = getLeadLastRemark(lead);
+                                                     const remark = getLeadLastRemark(lead, role);
                                                      if (!remark) return <span className="text-xs text-slate-400 font-medium italic">No remark</span>;
                                                      return (
                                                          <div className="flex items-center gap-1.5">
@@ -3245,7 +3257,7 @@ END:VCARD\n`
 
                         {/* Last Remarks Box */}
                         {(() => {
-                            const lastRemark = getLeadLastRemark(lead);
+                            const lastRemark = getLeadLastRemark(lead, role);
                             if (!lastRemark) return null;
                             return (
                                 <div className="mb-4 text-[11px] font-medium text-slate-700">

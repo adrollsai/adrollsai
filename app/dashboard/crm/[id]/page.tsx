@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight, Target, Sparkles, Building2, Users, PhoneOff, PhoneCall } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -88,12 +88,29 @@ export default function LeadProfilePage() {
     const [newFieldKey, setNewFieldKey] = useState('')
     const [newFieldValue, setNewFieldValue] = useState('')
     const [leadHistory, setLeadHistory] = useState<any[]>([])
+    const [currentUserRole, setCurrentUserRole] = useState<string>('admin')
+    const [isTeamMember, setIsTeamMember] = useState(false)
     const [loading, setLoading] = useState(true)
+
+    const visibleLeadHistory = useMemo(() => {
+        const cutoff = lead?.custom_fields?.history_visible_from
+        if (cutoff && (currentUserRole === 'agent' || isTeamMember)) {
+            const cutoffDate = new Date(cutoff)
+            return leadHistory.filter(item => {
+                const isSystem = item.action_type === 'REOPENED' || 
+                                 item.action_type === 'LEAD_CREATED' || 
+                                 item.action_type === 'SYSTEM' || 
+                                 (item.description && (item.description.includes('Lead Source :') || item.description.includes('Facebook Ad Submission') || item.description.includes('Source Details :')))
+                if (isSystem) return true
+                return new Date(item.created_at) >= cutoffDate
+            })
+        }
+        return leadHistory
+    }, [leadHistory, lead?.custom_fields?.history_visible_from, currentUserRole, isTeamMember])
     const [remarkInput, setRemarkInput] = useState('')
     const [reminderDate, setReminderDate] = useState('')
     const [pixels, setPixels] = useState<any[]>([])
     const [isLoadingPixels, setIsLoadingPixels] = useState(false)
-    const [isTeamMember, setIsTeamMember] = useState(false)
     const [isCalling, setIsCalling] = useState(false)
     const [showTranscript, setShowTranscript] = useState(false)
 
@@ -1408,7 +1425,7 @@ END:VCARD`
                                     <textarea
                                         className="w-full bg-slate-50 p-3 rounded-xl text-sm border border-slate-100 outline-none resize-none"
                                         rows={2}
-                                        defaultValue={lead.notes || ''}
+                                        defaultValue={(lead.custom_fields?.history_visible_from && (currentUserRole === 'agent' || isTeamMember)) ? '' : (lead.notes || '')}
                                         onBlur={(e) => handleNotesChange(e.target.value)}
                                     />
                                 </div>
@@ -1903,7 +1920,7 @@ END:VCARD`
                                     <Clock size={14} />
                                     <span>Activity Log</span>
                                     <span className="text-[10px] bg-slate-200 text-slate-700 font-extrabold px-1.5 py-0.2 rounded-full">
-                                        {leadHistory.length}
+                                        {visibleLeadHistory.length}
                                     </span>
                                 </button>
                                 <button
@@ -1930,7 +1947,7 @@ END:VCARD`
                                 {/* Timeline Log */}
                                 <div className="p-5 flex-1 overflow-y-auto max-h-[50vh] lg:max-h-[calc(100vh-350px)] custom-scrollbar">
                                     <div className="space-y-5 relative before:absolute before:inset-0 before:ml-[22px] before:-translate-x-px before:h-full before:w-[2px] before:bg-slate-200 before:rounded-full">
-                                        {leadHistory.map((item, index) => {
+                                        {visibleLeadHistory.map((item, index) => {
                                             const isRemark = item.action_type === 'REMARK'
                                             const isReminder = item.action_type === 'REMINDER_SET'
                                             const isWhatsApp = item.action_type === 'WHATSAPP_CHAT'
@@ -2520,7 +2537,7 @@ END:VCARD`
                         </div>
 
                         <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
-                            {leadHistory
+                            {visibleLeadHistory
                                 .filter(h => h.description && h.description.startsWith('🎙️ CALL_JSON:'))
                                 .map((item) => {
                                     let parsed: any = {}
