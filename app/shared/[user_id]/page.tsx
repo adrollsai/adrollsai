@@ -104,11 +104,19 @@ export default function SharedCataloguePage() {
 
   // --- 1. ID / DOMAIN EXTRACTION ---
   const getSafeIdentifier = () => {
-    if (params?.user_id) return params.user_id as string
-    if (params?.userId) return params.userId as string
-    if (params?.id) return params.id as string
-    if (params && Object.keys(params).length > 0) return Object.values(params)[0] as string
-    return null
+    let raw = ''
+    if (params?.user_id) raw = params.user_id as string
+    else if (params?.userId) raw = params.userId as string
+    else if (params?.id) raw = params.id as string
+    else if (params && Object.keys(params).length > 0) raw = Object.values(params)[0] as string
+
+    if (!raw) return null
+    raw = decodeURIComponent(raw).trim()
+    // If spaces were introduced in UUID, convert to hyphens
+    if (raw.includes(' ') && raw.replace(/\s+/g, '-').length === 36) {
+      raw = raw.replace(/\s+/g, '-')
+    }
+    return raw
   }
 
   // --- 2. DATA FETCHING ---
@@ -124,8 +132,23 @@ export default function SharedCataloguePage() {
     else if (properties.length === 0) setLoading(true)
 
     try {
+      // 1. Try dedicated fast server API route
+      const res = await fetch(`/api/shared/catalog?identifier=${encodeURIComponent(identifier)}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && data.profile) {
+          setProfile(data.profile)
+          setProperties(data.properties || [])
+          setHasBusinessLanding(!!data.hasBusinessLanding)
+          setPosts(data.posts || [])
+          setLoading(false)
+          setIsRefreshing(false)
+          return
+        }
+      }
+
+      // 2. Direct client query fallback
       let profileQuery = supabase.from('profiles').select('*')
-      
       if (identifier.includes('.')) {
           profileQuery = profileQuery.eq('custom_domain', identifier)
       } else {
@@ -156,8 +179,6 @@ export default function SharedCataloguePage() {
       if (props) {
           const activeProps = props.filter(p => p.status !== 'Archived' && p.status !== 'Sold')
           setProperties(activeProps)
-          
-          // Auto-switch to feed disabled
       }
 
       if (profileData.business_landing_enabled) {
