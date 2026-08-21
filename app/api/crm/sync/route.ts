@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { fetchFacebookLeads } from '@/utils/external-apis'
 import { logToFile } from '@/utils/logger'
+import { matchesCampaignRule } from '@/utils/campaign-matcher'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -155,12 +156,28 @@ export async function POST(request: Request) {
     }
 
     // 2. Setup distribution: Group-Distribution automation rules first, then global round robin fallback
-    const { data: groupAutomations } = await supabase
-      .from('automations')
-      .select('*')
-      .eq('user_id', targetUserId)
-      .like('title', 'Group-Distribution:%')
-      .eq('is_active', true);
+    const [{ data: groupAutomations }, { data: dbUserCampaigns }] = await Promise.all([
+      supabase
+        .from('automations')
+        .select('*')
+        .eq('user_id', targetUserId)
+        .like('title', 'Group-Distribution:%')
+        .eq('is_active', true),
+      supabase
+        .from('campaigns')
+        .select('id, name')
+        .eq('user_id', targetUserId)
+    ]);
+
+    const idToName: Record<string, string> = {};
+    const nameToId: Record<string, string> = {};
+    dbUserCampaigns?.forEach((c: any) => {
+      if (c.id && c.name) {
+        idToName[c.id] = c.name;
+        nameToId[c.name] = c.id;
+      }
+    });
+    const campaignsMap = { idToName, nameToId };
 
     const parsedGroupRules: any[] = [];
     if (groupAutomations && groupAutomations.length > 0) {
@@ -215,36 +232,18 @@ export async function POST(request: Request) {
         }
     }
 
-    const normalizeString = (str: string) => {
-      return (str || '')
-        .replace(/[\u2010-\u2015\u2212]/g, '-')
-        .toLowerCase()
-        .replace(/\bhaymten\b/g, 'hampton')
-        .replace(/\bhamyten\b/g, 'hampton')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
-
     const getAssignedAgentForLead = (lead: any) => {
-      const adNameNorm = normalizeString(lead.ad_name || '');
-      const formNameNorm = normalizeString(lead.form_name || '');
-      const campIdStr = String(lead.campaign_id || '');
+      const leadCtx = {
+        campaignId: lead.campaign_id,
+        campaignName: lead.campaign_name,
+        adName: lead.ad_name,
+        formName: lead.form_name,
+        adCampaignString: lead.ad_name
+      };
 
       // Check Group-Distribution rules first
       for (const rule of parsedGroupRules) {
-        const matches = rule.campaigns.some((gc: string) => {
-          const gcNorm = normalizeString(gc);
-          if (!gcNorm) return false;
-          if (campIdStr && campIdStr === gc.trim()) return true;
-          if (adNameNorm && (adNameNorm.includes(gcNorm) || gcNorm.includes(adNameNorm))) return true;
-          if (formNameNorm && (formNameNorm.includes(gcNorm) || gcNorm.includes(formNameNorm))) return true;
-          const segments = gcNorm.split(/[-|/]/).map((seg: string) => seg.trim()).filter((seg: string) => seg.length >= 4 && !/^\d+$/.test(seg));
-          for (const seg of segments) {
-            if (adNameNorm && adNameNorm.includes(seg)) return true;
-            if (formNameNorm && formNameNorm.includes(seg)) return true;
-          }
-          return false;
-        });
+        const matches = rule.campaigns.some((gc: string) => matchesCampaignRule(gc, leadCtx, campaignsMap));
 
         if (matches) {
           const weightedPool: any[] = [];

@@ -10,6 +10,7 @@ import { triggerWelcomeDrip, sendInstantFormCatalogMessage } from '@/utils/whats
 import { bookAppointment, triggerOutboundCall } from '@/utils/voice-helper'
 import { deductCreditsByCost, calculateLLMCost } from '@/utils/credits'
 import { updateLeadScoreInDB, parseCustomFields } from '@/utils/lead-scoring'
+import { matchesCampaignRule } from '@/utils/campaign-matcher'
 
 export const dynamic = 'force-dynamic'
 
@@ -2370,16 +2371,19 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
           try {
 
           // Find the User based on the Page ID using Admin Client
-          const { data: profile, error: profileErr } = await supabaseAdmin
+          const { data: profiles, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, email, business_name, selected_page_token, facebook_token, pixel_id, enable_distribution, auto_call_new_leads')
-            .eq('selected_page_id', page_id)
-            .single()
+            .select('id, email, business_name, selected_page_token, facebook_token, pixel_id, enable_distribution, auto_call_new_leads, role')
+            .eq('selected_page_id', page_id);
 
-          if (profileErr || !profile) {
-            console.error(`❌ No profile found for Page ID: ${page_id}. Error:`, profileErr)
+          if (profileErr || !profiles || profiles.length === 0) {
+            console.error(`❌ No profile found for Page ID: ${page_id}. Error:`, profileErr);
             continue;
           }
+
+          const profile = profiles.find((p: any) => p.selected_page_token && ['admin', 'agency', 'super_admin'].includes(p.role)) ||
+                          profiles.find((p: any) => p.selected_page_token) ||
+                          profiles[0];
 
           if (!profile.selected_page_token) {
             console.error(`❌ Profile found but NO Page Token for Page ID: ${page_id}`)
@@ -2568,12 +2572,36 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
           
           // 0. GROUP WEIGHTED DISTRIBUTION RULE (Primary Strategy)
           try {
-            const { data: groupAutomations } = await supabaseAdmin
-              .from('automations')
-              .select('*')
-              .eq('user_id', profile.id)
-              .like('title', 'Group-Distribution:%')
-              .eq('is_active', true);
+            const [{ data: groupAutomations }, { data: dbUserCampaigns }] = await Promise.all([
+              supabaseAdmin
+                .from('automations')
+                .select('*')
+                .eq('user_id', profile.id)
+                .like('title', 'Group-Distribution:%')
+                .eq('is_active', true),
+              supabaseAdmin
+                .from('campaigns')
+                .select('id, name')
+                .eq('user_id', profile.id)
+            ]);
+
+            const idToName: Record<string, string> = {};
+            const nameToId: Record<string, string> = {};
+            dbUserCampaigns?.forEach((c: any) => {
+              if (c.id && c.name) {
+                idToName[c.id] = c.name;
+                nameToId[c.name] = c.id;
+              }
+            });
+            const campaignsMap = { idToName, nameToId };
+
+            const leadCtx = {
+              campaignId,
+              campaignName,
+              adName: fbLead.ad_name,
+              formName,
+              adCampaignString
+            };
 
             if (groupAutomations && groupAutomations.length > 0) {
               for (const aut of groupAutomations) {
@@ -2582,32 +2610,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
                   const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
                   const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
                   if (groupMembers.length > 0 && groupCampaigns.length > 0) {
-                    const normalizeCampStr = (s: string) => (s || '')
-                      .replace(/[\u2010-\u2015\u2212]/g, '-')
-                      .toLowerCase()
-                      .replace(/\bhaymten\b/g, 'hampton')
-                      .replace(/\bhamyten\b/g, 'hampton')
-                      .replace(/\s+/g, ' ')
-                      .trim();
-                    const matchesCamp = groupCampaigns.some(gc => {
-                      const gcClean = normalizeCampStr(gc);
-                      if (!gcClean) return false;
-                      const adClean = normalizeCampStr(adCampaignString);
-                      const campClean = normalizeCampStr(campaignName);
-                      const formClean = normalizeCampStr(formName);
-                      const campIdClean = String(campaignId || '').trim();
-                      if (campIdClean && campIdClean === gc.trim()) return true;
-                      if (adClean && (adClean.includes(gcClean) || gcClean.includes(adClean))) return true;
-                      if (campClean && (campClean.includes(gcClean) || gcClean.includes(campClean))) return true;
-                      if (formClean && (formClean.includes(gcClean) || gcClean.includes(formClean))) return true;
-                      const segments = gcClean.split(/[-|/]/).map(seg => seg.trim()).filter(seg => seg.length >= 4 && !/^\d+$/.test(seg));
-                      for (const seg of segments) {
-                        if (adClean && adClean.includes(seg)) return true;
-                        if (campClean && campClean.includes(seg)) return true;
-                        if (formClean && formClean.includes(seg)) return true;
-                      }
-                      return false;
-                    });
+                    const matchesCamp = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx, campaignsMap));
 
                     if (matchesCamp) {
                       // Build weighted sequence pool

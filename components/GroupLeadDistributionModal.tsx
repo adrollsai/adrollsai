@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
+import { matchesCampaignRule } from '@/utils/campaign-matcher';
 
 export interface DistributionGroupMember {
   userId: string;
@@ -327,29 +328,15 @@ export default function GroupLeadDistributionModal({
       const isUnassignedOrOwner = !l.assigned_to || l.assigned_to === targetUserId || l.user_id === targetUserId;
       if (!isUnassignedOrOwner) return false;
 
-      const leadCampName = normalizeCampStr(l.ad_name || l.campaign_name || l.form_name || l.source || '');
-      const customOriginAd = normalizeCampStr(l.custom_fields?.meta_ad_origin?.ad_name || '');
-      const customOriginCamp = normalizeCampStr(l.custom_fields?.meta_ad_origin?.campaign_name || '');
-      const formName = normalizeCampStr(l.form_name || '');
-      const campIdClean = String(l.campaign_id || '').trim();
+      const leadCtx = {
+        campaignId: l.campaign_id,
+        campaignName: l.campaign_name || l.custom_fields?.meta_ad_origin?.campaign_name,
+        adName: l.ad_name || l.custom_fields?.meta_ad_origin?.ad_name,
+        formName: l.form_name,
+        adCampaignString: l.ad_name
+      };
 
-      return group.campaigns.some(gc => {
-        const gcClean = normalizeCampStr(gc);
-        if (!gcClean) return false;
-        if (campIdClean && campIdClean === gc.trim()) return true;
-        if (leadCampName && (leadCampName.includes(gcClean) || gcClean.includes(leadCampName))) return true;
-        if (customOriginAd && (customOriginAd.includes(gcClean) || gcClean.includes(customOriginAd))) return true;
-        if (customOriginCamp && (customOriginCamp.includes(gcClean) || gcClean.includes(customOriginCamp))) return true;
-        if (formName && (formName.includes(gcClean) || gcClean.includes(formName))) return true;
-        const segments = gcClean.split(/[-|/]/).map(seg => seg.trim()).filter(seg => seg.length >= 4 && !/^\d+$/.test(seg));
-        for (const seg of segments) {
-          if (leadCampName && leadCampName.includes(seg)) return true;
-          if (customOriginAd && customOriginAd.includes(seg)) return true;
-          if (customOriginCamp && customOriginCamp.includes(seg)) return true;
-          if (formName && formName.includes(seg)) return true;
-        }
-        return false;
-      });
+      return group.campaigns.some(gc => matchesCampaignRule(gc, leadCtx));
     });
 
     if (matchingLeads.length === 0) {
