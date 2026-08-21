@@ -55,7 +55,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   })
 
   const [connected, setConnected] = useState(false)
-  const [sources, setSources] = useState<string[]>(['Facebook', 'Manual', 'CSV Import', '99acres'])
+  const [sources, setSources] = useState<string[]>(['Facebook', 'Manual', 'CSV Import', '99acres', 'Housing.com'])
   const [pipelineStages, setPipelineStages] = useState<string[]>(['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified'])
   const [metaCampaigns, setMetaCampaigns] = useState<string[]>([])
   const [csvAudiences, setCsvAudiences] = useState<string[]>([])
@@ -122,7 +122,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
         setAllLeads(leads)
         // Collect unique sources and add defaults
         const uniqueSources = Array.from(new Set(leads.map(l => l.source).filter(Boolean))) as string[]
-        const defaultSources = ['Facebook', 'Manual', 'CSV Import', '99acres']
+        const defaultSources = ['Facebook', 'Manual', 'CSV Import', '99acres', 'Housing.com']
         const allSources = Array.from(new Set([...defaultSources, ...uniqueSources]))
 
         // Collect unique stages and add defaults
