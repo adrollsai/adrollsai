@@ -730,10 +730,17 @@ export default function CRMPage() {
       setRole(currentRole)
       setEnableDistribution(!!profile?.enable_distribution)
       setAutoCallNewLeads(!!profile?.auto_call_new_leads)
-      setCustomStages(extractStagesFromProfile(profile))
-
       const parentId = profile?.parent_id || profile?.agency_id
       if (parentId) setParentAdminId(parentId)
+
+      let activeStages = extractStagesFromProfile(profile)
+      if (parentId && (!profile?.badges || !profile.badges.some((b: string) => typeof b === 'string' && b.startsWith('__PIPELINE_STAGES__:')))) {
+        const { data: parentProfile } = await supabase.from('profiles').select('badges').eq('id', parentId).single()
+        if (parentProfile) {
+          activeStages = extractStagesFromProfile(parentProfile)
+        }
+      }
+      setCustomStages(activeStages)
 
       let targetUserId = (['admin', 'agent', 'team_member'].includes(currentRole) && parentId) ? parentId : user.id
       if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {

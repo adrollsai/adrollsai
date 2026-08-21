@@ -180,140 +180,81 @@ export function categorizeLeadStage(
 ): 'fresh' | 'ongoing' | 'not_interested' | 'trash' {
   if (!rawStageOrLead) return 'fresh'
 
-  let candidates: string[] = []
-  let hasDnpOrAgentActivity = false
+  let stageStr = ''
+  let cf: any = null
+  let hasDnpOrActiveFollowup = false
 
   if (typeof rawStageOrLead === 'object' && rawStageOrLead !== null) {
-    // If a lead object was passed
-    if (rawStageOrLead.pipeline_stage) candidates.push(String(rawStageOrLead.pipeline_stage))
-    if (rawStageOrLead.status) candidates.push(String(rawStageOrLead.status))
-    let cf = rawStageOrLead.custom_fields
+    stageStr = (rawStageOrLead.pipeline_stage || rawStageOrLead.status || '').trim()
+    cf = rawStageOrLead.custom_fields
     if (typeof cf === 'string') {
-      try { cf = JSON.parse(cf) } catch (e) { cf = null }
+      try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = null }
     }
-    if (cf?.pipeline_stage) candidates.push(String(cf.pipeline_stage))
-    if (cf?.status) candidates.push(String(cf.status))
-    if (cf?.lead_status) candidates.push(String(cf.lead_status))
-    if (cf?.client_status) candidates.push(String(cf.client_status))
-
-    const remarkText = [
-      cf?.last_remark,
-      cf?.last_followup_remark,
-      cf?.notes,
-      rawStageOrLead.last_call_remark,
-      rawStageOrLead.last_followup_remark,
-      rawStageOrLead.notes
-    ].filter(Boolean).map(String).join(' ').toLowerCase()
-
-    if (
-      remarkText.includes('not interested') ||
-      remarkText.includes('having no interest') ||
-      remarkText.includes('no interest') ||
-      remarkText.includes('lost/ni') ||
-      remarkText.includes('wrong number') ||
-      remarkText.includes('dealer') ||
-      remarkText.includes('already purchased') ||
-      remarkText.includes('plan postponed') ||
-      remarkText.includes('different requirement') ||
-      remarkText.includes('unqualified') ||
-      remarkText.includes('fake')
-    ) {
-      candidates.push('lost/ni')
+    if (!stageStr && cf) {
+      stageStr = (cf.pipeline_stage || cf.status || cf.lead_status || cf.client_status || '').trim()
     }
 
     const dnpCount = rawStageOrLead.dnp_count || cf?.dnp_count || 0
     const isDnp = rawStageOrLead.last_call_dnp === true || cf?.last_call_dnp === true
-    const hasCallAttempt = !!(rawStageOrLead.last_call_at || cf?.last_call_initiated_at)
-    const hasFollowupAt = !!(cf?.last_followup_at || cf?.last_action_date)
-    const hasFollowupRemark = !!(
-      (cf?.last_followup_remark && typeof cf.last_followup_remark === 'string' && cf.last_followup_remark.trim()) ||
-      (cf?.last_remark && typeof cf.last_remark === 'string' && cf.last_remark.trim()) ||
-      (rawStageOrLead.last_followup_remark && typeof rawStageOrLead.last_followup_remark === 'string' && rawStageOrLead.last_followup_remark.trim()) ||
-      (rawStageOrLead.last_call_remark && typeof rawStageOrLead.last_call_remark === 'string' && rawStageOrLead.last_call_remark.trim())
-    )
-    const notesStr = rawStageOrLead.notes && typeof rawStageOrLead.notes === 'string' ? rawStageOrLead.notes : ''
-    const hasAgentNote = notesStr.includes('[📝') || notesStr.includes('[⚠️') || notesStr.includes('[📞') || notesStr.toLowerCase().includes('followup') || notesStr.toLowerCase().includes('dnp') || notesStr.toLowerCase().includes('call on')
-    const followupCount = cf?.followup_count || 0
+    const hasNextFollowup = !!rawStageOrLead.next_followup || !!cf?.next_action_date
 
-    if (dnpCount > 0 || isDnp || hasCallAttempt || hasFollowupAt || hasFollowupRemark || hasAgentNote || followupCount > 0) {
-      hasDnpOrAgentActivity = true
+    if (dnpCount > 0 || isDnp || hasNextFollowup) {
+      hasDnpOrActiveFollowup = true
     }
   } else if (typeof rawStageOrLead === 'string') {
-    candidates.push(rawStageOrLead)
+    stageStr = rawStageOrLead.trim()
   }
 
-  if (candidates.length === 0) return 'fresh'
-
-  const normalizedList = candidates.map(c => c.trim().toLowerCase()).filter(Boolean)
-  if (normalizedList.length === 0) return 'fresh'
+  if (!stageStr) return 'fresh'
+  const normalized = stageStr.toLowerCase()
 
   // 1. Check for Trash
-  for (const normalized of normalizedList) {
-    if (normalized === 'trash' || normalized === 'deleted' || normalized === 'archived') {
-      return 'trash'
-    }
+  if (normalized === 'trash' || normalized === 'deleted' || normalized === 'archived') {
+    return 'trash'
   }
 
-  // 2. Check for Not Interested / Lost across configured stages
-  for (const normalized of normalizedList) {
+  // 2. Match against configured customStages
+  if (Array.isArray(customStages) && customStages.length > 0) {
     const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
-    if (matched && matched.category === 'not_interested') {
-      return 'not_interested'
+    if (matched) {
+      if (matched.category === 'fresh') {
+        return hasDnpOrActiveFollowup ? 'ongoing' : 'fresh'
+      }
+      return matched.category
     }
   }
 
-  // 3. Fallback heuristic for Not Interested / Lost
-  for (const normalized of normalizedList) {
-    if (
-      normalized.includes('lost') ||
-      normalized.includes('ni') ||
-      normalized.includes('not interested') ||
-      normalized.includes('not_interested') ||
-      normalized.includes('junk') ||
-      normalized.includes('unqualified') ||
-      normalized.includes('dealer') ||
-      normalized.includes('postponed') ||
-      normalized.includes('already purchased') ||
-      normalized.includes('different requirement') ||
-      normalized.includes('wrong number') ||
-      normalized.includes('fake')
-    ) {
-      return 'not_interested'
-    }
+  // 3. Check for Not Interested / Lost heuristic
+  if (
+    normalized.includes('lost') ||
+    normalized.includes('ni') ||
+    normalized.includes('not interested') ||
+    normalized.includes('not_interested') ||
+    normalized.includes('junk') ||
+    normalized.includes('unqualified') ||
+    normalized.includes('dealer') ||
+    normalized.includes('postponed') ||
+    normalized.includes('already purchased') ||
+    normalized.includes('different requirement') ||
+    normalized.includes('wrong number') ||
+    normalized.includes('fake')
+  ) {
+    return 'not_interested'
   }
 
-  // If lead had any DNP or Agent followup/remark activity, it belongs in Ongoing (not Fresh)
-  if (hasDnpOrAgentActivity) {
-    return 'ongoing'
+  // 4. Check for Fresh (New Lead, Fresh, New, Unprocessed, Uncontacted)
+  if (
+    normalized === 'new' ||
+    normalized === 'new lead' ||
+    normalized === 'unprocessed' ||
+    normalized === 'fresh' ||
+    normalized === 'fresh lead' ||
+    normalized === 'uncontacted'
+  ) {
+    return hasDnpOrActiveFollowup ? 'ongoing' : 'fresh'
   }
 
-  // 4. Check for Ongoing across configured stages
-  for (const normalized of normalizedList) {
-    const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
-    if (matched && matched.category === 'ongoing') {
-      return 'ongoing'
-    }
-  }
-
-  // 5. Check for Fresh (only untouched leads with no agent interaction)
-  for (const normalized of normalizedList) {
-    const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
-    if (matched && matched.category === 'fresh') {
-      return 'fresh'
-    }
-    if (
-      normalized === 'new' ||
-      normalized === 'new lead' ||
-      normalized === 'unprocessed' ||
-      normalized === 'fresh' ||
-      normalized === 'fresh lead' ||
-      normalized === 'uncontacted'
-    ) {
-      return 'fresh'
-    }
-  }
-
-  // 6. Default to Ongoing for any other stage
+  // 5. Default to Ongoing for any other stage (Requirement Taken, Visit Planned, Meeting Done, etc.)
   return 'ongoing'
 }
 
