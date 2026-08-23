@@ -296,7 +296,40 @@ export default function ProfilePage() {
 
   // --- STATE ---
   const [loading, setLoading] = useState(true)
-  const [activeSection, setActiveSection] = useState<'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal' | 'call_settings'>('main')
+  const initialSection = (searchParams.get('section') || searchParams.get('tab')) as any
+  const [activeSection, setActiveSection] = useState<'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal' | 'call_settings'>(() => {
+    if (initialSection && ['whatsapp', 'voice', 'calendar', 'flagged', 'legal', 'call_settings'].includes(initialSection)) {
+      return initialSection
+    }
+    return 'main'
+  })
+
+  useEffect(() => {
+    const sec = (searchParams.get('section') || searchParams.get('tab')) as any
+    if (sec && ['whatsapp', 'voice', 'calendar', 'flagged', 'legal', 'call_settings'].includes(sec)) {
+      setActiveSection(sec)
+    } else if (!sec) {
+      setActiveSection('main')
+    }
+  }, [searchParams])
+
+  const navigateToSection = (section: 'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal' | 'call_settings') => {
+    if (section === 'voice') {
+      router.push(`/dashboard/voice-agent${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+      return
+    }
+    if (section === 'whatsapp') {
+      router.push(`/dashboard/whatsapp-automation${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+      return
+    }
+    setActiveSection(section)
+    if (section === 'main') {
+      router.push(`/dashboard/profile${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+    } else {
+      router.push(`/dashboard/profile?section=${section}${impersonateId ? `&impersonate=${impersonateId}` : ''}`)
+    }
+  }
+
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
@@ -1720,12 +1753,12 @@ export default function ProfilePage() {
         {activeSection === 'whatsapp' ? (
           <WhatsAppSettings 
             userId={targetUserId || userId || ''} 
-            onBack={() => setActiveSection('main')} 
+            onBack={() => navigateToSection('main')} 
           />
         ) : activeSection === 'voice' ? (
           <VoiceAgentSettings 
             userId={targetUserId || userId || ''} 
-            onBack={() => setActiveSection('main')} 
+            onBack={() => navigateToSection('main')} 
           />
         ) : activeSection === 'call_settings' ? (
           <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200/60 max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -1740,8 +1773,8 @@ export default function ProfilePage() {
                 </div>
               </div>
               <button 
-                onClick={() => setActiveSection('main')}
-                className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest px-2"
+                onClick={() => navigateToSection('main')}
+                className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest px-2 cursor-pointer"
               >
                 Back
               </button>
@@ -2097,8 +2130,8 @@ export default function ProfilePage() {
                 </div>
               </div>
               <button 
-                onClick={() => setActiveSection('main')}
-                className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest px-2"
+                onClick={() => navigateToSection('main')}
+                className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest px-2 cursor-pointer"
               >
                 Back
               </button>
@@ -2156,20 +2189,20 @@ export default function ProfilePage() {
             </div>
           </div>
         ) : activeSection === 'flagged' ? (
-          <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200/60 max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200/60 max-w-3xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="bg-amber-100 text-amber-600 p-3 rounded-2xl">
                   <AlertCircle size={22} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Flagged Questions</h2>
+                  <h2 className="text-xl font-bold text-slate-900">Unanswered / Flagged Questions</h2>
                   <p className="text-xs text-slate-500 font-medium">Questions the AI could not answer. Update your Business Info context with these answers to train the AI.</p>
                 </div>
               </div>
               <button 
-                onClick={() => setActiveSection('main')}
-                className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest"
+                onClick={() => navigateToSection('main')}
+                className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest cursor-pointer"
               >
                 Back
               </button>
@@ -3551,8 +3584,8 @@ export default function ProfilePage() {
                 </button>
 
                 <button 
-                  onClick={() => setActiveSection('whatsapp')} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
+                  onClick={() => navigateToSection('whatsapp')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100 cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-emerald-100 text-emerald-600 p-3 rounded-2xl">
@@ -3564,8 +3597,8 @@ export default function ProfilePage() {
                 </button>
 
                 <button 
-                  onClick={() => setActiveSection('voice')} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
+                  onClick={() => navigateToSection('voice')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100 cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl">
@@ -3577,8 +3610,8 @@ export default function ProfilePage() {
                 </button>
 
                 <button 
-                  onClick={() => setActiveSection('calendar')} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
+                  onClick={() => navigateToSection('calendar')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100 cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-red-50 text-red-600 p-3 rounded-2xl">
@@ -3590,8 +3623,8 @@ export default function ProfilePage() {
                 </button>
 
                 <button 
-                  onClick={() => setActiveSection('call_settings')} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
+                  onClick={() => navigateToSection('call_settings')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100 cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
@@ -3606,8 +3639,8 @@ export default function ProfilePage() {
                 </button>
 
                 <button 
-                  onClick={() => setActiveSection('legal')} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
+                  onClick={() => navigateToSection('legal')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100 cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-blue-50 text-blue-600 p-3 rounded-2xl relative">
@@ -3625,7 +3658,7 @@ export default function ProfilePage() {
 
                 <button 
                   onClick={() => router.push(`/dashboard/qualifying${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100"
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100 cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-purple-100 text-purple-600 p-3 rounded-2xl">
@@ -3637,8 +3670,8 @@ export default function ProfilePage() {
                 </button>
 
                 <button 
-                  onClick={() => setActiveSection('flagged')} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all"
+                  onClick={() => navigateToSection('flagged')} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
                     <div className="bg-amber-50 text-amber-600 p-3 rounded-2xl relative">

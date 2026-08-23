@@ -63,16 +63,24 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Failed to fetch user profile.' }, { status: 500 })
         }
 
-        const twilioSid = profile.voice_twilio_sid || process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
-        const twilioToken = profile.voice_twilio_token || process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
-        
+        const telephonyProvider = profile.voice_telephony_provider || 'vobiz'
         const isMasterDefaultUser = profile.email === 'rchopra489@gmail.com' || profile.email === 'infobluesquareinfra@gmail.com'
-        const voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
+        const voiceNumber = profile.voice_vobiz_number || profile.voice_twilio_number || process.env.VOBIZ_TEST_NUMBER || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.VOBIZ_TEST_NUMBER : null)
 
-        if (!twilioSid || !twilioToken || !voiceNumber) {
-            return NextResponse.json({ 
-                error: 'Voice calling credentials or phone number are not configured. Please provision a phone number in Voice settings.' 
-            }, { status: 400 })
+        if (telephonyProvider === 'twilio') {
+            const twilioSid = profile.voice_twilio_sid || process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
+            const twilioToken = profile.voice_twilio_token || process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
+            if (!twilioSid || !twilioToken || !voiceNumber) {
+                return NextResponse.json({ 
+                    error: 'Twilio calling credentials or phone number are not configured. Please check Voice Settings.' 
+                }, { status: 400 })
+            }
+        } else {
+            if (!voiceNumber && !isMasterDefaultUser) {
+                return NextResponse.json({ 
+                    error: 'No calling number assigned. Please assign a calling number in Voice settings.' 
+                }, { status: 400 })
+            }
         }
 
         const isAuto = !!isAutoTrigger

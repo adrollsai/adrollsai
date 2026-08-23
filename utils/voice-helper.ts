@@ -2,6 +2,7 @@ import { refreshGoogleAccessToken, getCalendarTimezone } from '@/utils/google-ca
 import { sendCAPIEvent } from '@/utils/external-apis'
 import { sendBookingConfirmationEmail } from '@/utils/email-helper'
 import { hasEnoughCredits } from '@/utils/credits'
+import { triggerVobizOutboundCall } from '@/utils/vobiz-helper'
 
 /**
  * Warms up the Cloud Run Voice Bridge container & pre-warms Gemini session context before Twilio dials.
@@ -100,7 +101,8 @@ export async function triggerOutboundCall(
             return { success: false, error: 'SUBSCRIPTION_EXPIRED' }
         }
 
-        // Concurrency Check: Only allow one active call at a time per user (with 7-min stale auto-recovery)
+        // Concurrency Check: Limit active calls according to account capacity (default 1 concurrent call per user)
+        const maxConcurrent = profile.voice_concurrency_limit || 1
         const { data: activeLeads } = await supabaseAdmin
             .from('leads')
             .select('id, last_called_at, voice_call_scheduled_at, created_at')
@@ -124,8 +126,8 @@ export async function triggerOutboundCall(
             }
         }
 
-        if (activeCalls.length > 0 && activeCalls[0].id !== leadId) {
-            console.warn(`[VOICE HELPER] Outbound call queued for lead ${leadId}: User ${profileId} already has an active call on their line.`);
+        if (activeCalls.length >= maxConcurrent && !activeCalls.some(c => c.id === leadId)) {
+            console.warn(`[VOICE HELPER] Max concurrency limit (${maxConcurrent}) reached for user ${profileId}. Queuing call for lead ${leadId}.`);
             // Automatically queue this lead so dispatchNextCall dials them as soon as the line frees up
             await supabaseAdmin
                 .from('leads')
@@ -267,6 +269,25 @@ export async function triggerOutboundCall(
                 console.error('[VOICE HELPER] Failed to write out-of-credits history entry:', hErr)
             }
             return { success: false, error: 'Insufficient credits' }
+        }
+
+        const telephonyProvider = profile.voice_telephony_provider || 'vobiz'
+
+        // If telephony provider is Vobiz (default)
+        if (telephonyProvider === 'vobiz') {
+            const vobizRes = await triggerVobizOutboundCall(supabaseAdmin, {
+                leadId: lead.id,
+                profileId: effectiveProfileId,
+                toPhone: lead.phone,
+                campaignId
+            })
+            return {
+                success: vobizRes.success,
+                callSid: vobizRes.callUuid,
+                error: vobizRes.error,
+                scheduled: vobizRes.scheduled,
+                scheduledTime: vobizRes.scheduledTime
+            }
         }
 
         const twilioSid = profile.voice_twilio_sid || process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
@@ -1187,16 +1208,22 @@ export async function cancelAppointment(
 export async function dispatchNextCall(supabaseAdmin: any, userId: string): Promise<any> {
     console.log(`[CALL DISPATCHER] Dispatching next call for user ${userId}...`);
 
-    // 1. Check if there is already an active call in progress for this user
-    // Since leads table doesn't have updated_at, we select id and check if any lead has voice_call_status = 'calling'
+    // 1. Check if there is already an active call in progress for this user (respecting voice_concurrency_limit)
+    const { data: userProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('voice_concurrency_limit')
+        .eq('id', userId)
+        .single()
+    const maxConcurrent = userProfile?.voice_concurrency_limit || 1
+
     const { data: activeLeads } = await supabaseAdmin
         .from('leads')
         .select('id')
         .eq('user_id', userId)
         .eq('voice_call_status', 'calling');
 
-    if (activeLeads && activeLeads.length > 0) {
-        console.log(`[CALL DISPATCHER] Call deferred: Lead ${activeLeads[0].id} is currently in progress.`);
+    if (activeLeads && activeLeads.length >= maxConcurrent) {
+        console.log(`[CALL DISPATCHER] Call deferred: User ${userId} has reached max concurrent channels (${activeLeads.length}/${maxConcurrent}).`);
         return { deferred: true, activeLeadId: activeLeads[0].id };
     }
 

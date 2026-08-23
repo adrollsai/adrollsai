@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
 export const CREDIT_COSTS = {
-  VOICE_CALL_MINUTE: 7,       // 7 credits per minute (rounded up to nearest minute)
+  VOICE_CALL_MINUTE: 5,       // 5 credits per minute (rounded up to nearest minute)
   AI_VIDEO_15SEC_CHUNK: 50,  // 50 credits per 15-second video (e.g. 45s = 150 credits)
   AI_IMAGE_GENERATION: 10,   // 10 credits per image generated
   WHATSAPP_INBOUND: 0.2,      // Rs. 0.20 priced to customer (2x markup of Rs. 0.10 cost)

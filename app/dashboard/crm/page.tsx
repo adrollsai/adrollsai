@@ -3034,15 +3034,20 @@ END:VCARD\n`
                                                             >
                                                                 <Phone size={14} />
                                                             </button>
-                                                            <a 
-                                                                href={`https://wa.me/${displayPhone.replace(/[^0-9]/g, '')}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="p-2 bg-emerald-50 text-emerald-600 hover:bg-[#25D366] hover:text-white rounded-xl transition-all border border-emerald-200"
-                                                                title="Chat on WhatsApp"
+                                                            <button 
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const impersonateId = searchParams.get('impersonate');
+                                                                    const cleanPhone = (displayPhone || lead.phone || '').replace(/\D/g, '');
+                                                                    const targetUrl = `/dashboard/whatsapp?leadId=${lead.id}&phone=${encodeURIComponent(cleanPhone)}${impersonateId ? `&impersonate=${impersonateId}` : ''}`;
+                                                                    router.push(targetUrl);
+                                                                }}
+                                                                className="p-2 bg-emerald-50 text-emerald-600 hover:bg-[#25D366] hover:text-white rounded-xl transition-all border border-emerald-200 cursor-pointer shadow-xs"
+                                                                title="Open WhatsApp Chat"
                                                             >
                                                                 <MessageCircle size={14} />
-                                                            </a>
+                                                            </button>
                                                         </>
                                                     )}
                                                     <button 
@@ -3169,16 +3174,15 @@ END:VCARD\n`
                                             type="button"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                handleToggleWhatsAppEnabled(lead.id, lead.whatsapp_enabled === false);
+                                                const impersonateId = searchParams.get('impersonate');
+                                                const cleanPhone = (displayPhone || lead.phone || '').replace(/\D/g, '');
+                                                const targetUrl = `/dashboard/whatsapp?leadId=${lead.id}&phone=${encodeURIComponent(cleanPhone)}${impersonateId ? `&impersonate=${impersonateId}` : ''}`;
+                                                router.push(targetUrl);
                                             }}
-                                            className={`p-2 rounded-xl transition-all border shadow-xs ${
-                                                lead.whatsapp_enabled !== false 
-                                                    ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100' 
-                                                    : 'bg-red-50 text-red-500 border-red-200 hover:bg-red-100'
-                                            }`}
-                                            title={lead.whatsapp_enabled !== false ? 'WhatsApp Auto: Active' : 'WhatsApp Auto: Paused'}
+                                            className="p-2 bg-emerald-50 text-emerald-600 hover:bg-[#25D366] hover:text-white rounded-xl transition-all border border-emerald-200 shadow-xs cursor-pointer"
+                                            title="Open WhatsApp Chat"
                                         >
-                                            <MessageCircle size={14} className={lead.whatsapp_enabled === false ? 'line-through opacity-70' : ''} />
+                                            <MessageCircle size={14} />
                                         </button>
                                          <a 
                                              href={`tel:${formatCallPhone(displayPhone)}`} 

@@ -775,11 +775,19 @@ export async function fetchLeadForms(accessToken: string, pageId: string): Promi
  */
 export async function fetchFacebookLeads(accessToken: string, pageId: string, specificFormId?: string): Promise<any[]> {
     try {
-        const formsRes = await fetch(`${FACEBOOK_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name&limit=500&access_token=${accessToken}`);
-        const formsData = await formsRes.json();
-        if (formsData.error) throw new Error(formsData.error.message);
+        let formsToProcess: any[] = [];
+        let formsUrl: string | null = `${FACEBOOK_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name&limit=100&access_token=${accessToken}`;
         
-        let formsToProcess = formsData.data || [];
+        while (formsUrl && formsToProcess.length < 500) {
+            const formsRes: any = await fetch(formsUrl);
+            const formsData: any = await formsRes.json();
+            if (formsData.error) throw new Error(formsData.error.message);
+            if (formsData.data && formsData.data.length > 0) {
+                formsToProcess.push(...formsData.data);
+            }
+            formsUrl = formsData.paging?.next || null;
+        }
+        
         if (specificFormId) {
             formsToProcess = formsToProcess.filter((f: any) => f.id === specificFormId);
         }

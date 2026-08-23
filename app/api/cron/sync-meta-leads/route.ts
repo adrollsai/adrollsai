@@ -19,16 +19,6 @@ const supabaseAdmin = createClient(
   }
 )
 
-function normalizeString(str: string): string {
-  return (str || '')
-    .replace(/[\u2010-\u2015\u2212]/g, '-')
-    .toLowerCase()
-    .replace(/\bhaymten\b/g, 'hampton')
-    .replace(/\bhamyten\b/g, 'hampton')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 async function getNextRoundRobinAgent(supabase: any, agentIds: string[]): Promise<string | null> {
   if (!agentIds || agentIds.length === 0) return null;
   if (agentIds.length === 1) return agentIds[0];
@@ -74,6 +64,7 @@ async function handleSync(request: Request) {
   const diagnostics: Record<string, any> = {
     timestamp: new Date().toISOString(),
     profilesProcessed: 0,
+    formsScanned: 0,
     newLeadsInserted: 0,
     reopenedLeads: 0,
     errors: []
@@ -91,7 +82,7 @@ async function handleSync(request: Request) {
     // 1. Fetch all active profiles with connected Meta Pages
     const { data: profiles, error: profileErr } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, business_name, selected_page_id, selected_page_token, facebook_token, enable_distribution, auto_call_new_leads')
+      .select('id, email, business_name, selected_page_id, selected_page_token, facebook_token, ad_account_id, enable_distribution, auto_call_new_leads')
       .not('selected_page_id', 'is', null)
       .not('selected_page_token', 'is', null);
 
@@ -107,20 +98,31 @@ async function handleSync(request: Request) {
       const batch = profiles.slice(i, i + BATCH_SIZE);
       await Promise.allSettled(batch.map(async (profile) => {
         const pageId = profile.selected_page_id;
-        const pageToken = profile.selected_page_token;
+        const pageToken = profile.selected_page_token || profile.facebook_token;
         if (!pageId || !pageToken) return;
 
         try {
-          // Fetch Leadgen Forms for this Page (5s timeout)
-          const formsRes = await fetch(`https://graph.facebook.com/v20.0/${pageId}/leadgen_forms?access_token=${pageToken}`, {
-            signal: AbortSignal.timeout(6000)
-          });
-          if (!formsRes.ok) return;
-          const formsData = await formsRes.json();
-          const formsList = formsData.data || [];
-          if (formsList.length === 0) return;
+          // 1. Fetch ALL Leadgen Forms with full pagination (limit 100 per page)
+          const formsList: any[] = [];
+          let formsUrl: string | null = `https://graph.facebook.com/v20.0/${pageId}/leadgen_forms?fields=id,name,status,created_time&limit=100&access_token=${pageToken}`;
+          
+          while (formsUrl && formsList.length < 500) {
+            try {
+              const formsRes: any = await fetch(formsUrl, { signal: AbortSignal.timeout(8000) });
+              if (!formsRes.ok) break;
+              const formsData: any = await formsRes.json();
+              if (formsData.data && formsData.data.length > 0) {
+                formsList.push(...formsData.data);
+              }
+              formsUrl = formsData.paging?.next || null;
+            } catch (e) {
+              break;
+            }
+          }
 
-          // Fetch Automations, Group Distribution Rules, and DB Campaigns for this profile
+          diagnostics.formsScanned += formsList.length;
+
+          // 2. Fetch Automations, Group Distribution Rules, and DB Campaigns for this profile
           const [{ data: groupAutomations }, { data: campAutomations }, { data: userProps }, { data: dbUserCampaigns }] = await Promise.all([
             supabaseAdmin.from('automations').select('*').eq('user_id', profile.id).like('title', 'Group-Distribution:%').eq('is_active', true),
             supabaseAdmin.from('automations').select('*').eq('user_id', profile.id).like('title', 'Campaign-Assignment:%').eq('is_active', true),
@@ -138,7 +140,7 @@ async function handleSync(request: Request) {
           });
           const campaignsMap = { idToName, nameToId };
 
-          // Fetch Team Members for Round Robin
+          // 3. Fetch Team Members for Round Robin
           let teamAgentIds: string[] = [];
           if (profile.enable_distribution) {
             const { data: teamData } = await supabaseAdmin
@@ -152,18 +154,37 @@ async function handleSync(request: Request) {
             }
           }
 
-          for (const form of formsList) {
-            const formId = form.id;
-            const formName = form.name || 'Meta Form';
+          // 4. Also collect any active ads directly from Ad Account if available
+          const activeAdForms = new Set<string>();
+          if (profile.ad_account_id && profile.facebook_token) {
+            try {
+              const adRes = await fetch(`https://graph.facebook.com/v20.0/${profile.ad_account_id}/ads?fields=id,name,status,effective_status,campaign_id,campaign{id,name}&effective_status=['ACTIVE']&limit=50&access_token=${profile.facebook_token}`, {
+                signal: AbortSignal.timeout(6000)
+              });
+              if (adRes.ok) {
+                const adData = await adRes.json();
+                if (adData.data) {
+                  // Direct fetch for leads from active ads
+                  for (const ad of adData.data) {
+                    try {
+                      const adLeadsRes = await fetch(`https://graph.facebook.com/v20.0/${ad.id}/leads?fields=id,created_time,field_data,form_id,ad_id,ad_name,campaign_id,campaign_name&limit=25&access_token=${pageToken}`, {
+                        signal: AbortSignal.timeout(6000)
+                      });
+                      if (adLeadsRes.ok) {
+                        const adLeadsData = await adLeadsRes.json();
+                        if (adLeadsData.data && adLeadsData.data.length > 0) {
+                          await processFbLeadsBatch(adLeadsData.data, ad.name, ad.campaign?.name || '', ad.campaign_id || ad.campaign?.id || null);
+                        }
+                      }
+                    } catch (e) {}
+                  }
+                }
+              }
+            } catch (adErr) {}
+          }
 
-            // Fetch recent 20 leads for this form (5s timeout)
-            const leadsRes = await fetch(`https://graph.facebook.com/v20.0/${formId}/leads?fields=id,created_time,field_data,ad_id,ad_name,campaign_id,campaign_name&limit=20&access_token=${pageToken}`, {
-              signal: AbortSignal.timeout(6000)
-            });
-            if (!leadsRes.ok) continue;
-            const leadsData = await leadsRes.json();
-            const fbLeads = leadsData.data || [];
-
+          // 5. Helper to process any batch of Meta leads
+          async function processFbLeadsBatch(fbLeads: any[], fallbackFormOrAdName: string, fallbackCampName = '', fallbackCampId: string | null = null, formIdParam?: string) {
             for (const fbLead of fbLeads) {
               const leadgenId = fbLead.id;
               if (!leadgenId) continue;
@@ -180,7 +201,7 @@ async function handleSync(request: Request) {
               }
 
               // Extract Name, Phone, Email, Custom Fields
-              let name = '', phone = '', email = '';
+              let name = '', phone = '', email = '', city = '';
               const customFields: Record<string, any> = {};
               let firstName = '', lastName = '';
 
@@ -194,6 +215,7 @@ async function handleSync(request: Request) {
                 else if (fieldName.includes('last_name') || fieldName.includes('lastname') || fieldName.includes('last name')) lastName = fieldValue;
                 else if (fieldName.includes('email') || fieldName.includes('e-mail')) email = fieldValue;
                 else if (fieldName.includes('phone') || fieldName.includes('mobile') || fieldName.includes('contact') || fieldName.includes('whatsapp') || fieldName.includes('tel')) phone = fieldValue;
+                else if (fieldName === 'city') city = fieldValue;
                 else customFields[field.name] = fieldValue;
               });
 
@@ -204,9 +226,12 @@ async function handleSync(request: Request) {
                 name = email ? email.split('@')[0] : (phone || 'Lead');
               }
 
-              const adCampaignString = fbLead.ad_name ? `${fbLead.campaign_name || formName} / ${fbLead.ad_name}` : (fbLead.campaign_name || formName);
-              const campaignName = fbLead.campaign_name || '';
-              const campaignId = fbLead.campaign_id || null;
+              const formName = fbLead.form_name || fallbackFormOrAdName || 'Meta Form';
+              const campaignName = fbLead.campaign_name || fallbackCampName || '';
+              const campaignId = fbLead.campaign_id || fallbackCampId || null;
+              const adName = fbLead.ad_name || '';
+              const adCampaignString = adName ? `${campaignName || formName} / ${adName}` : (campaignName || formName);
+              const formId = fbLead.form_id || formIdParam || null;
 
               // Attribution & Property Matching
               let matchedPropertyId: string | null = null;
@@ -222,7 +247,7 @@ async function handleSync(request: Request) {
 
               customFields.meta_ad_origin = {
                 ad_id: fbLead.ad_id || '',
-                ad_name: fbLead.ad_name || formName,
+                ad_name: adName || formName,
                 campaign_id: campaignId || '',
                 campaign_name: campaignName || formName,
                 headline: matchedPropertyTitle || adCampaignString,
@@ -233,6 +258,7 @@ async function handleSync(request: Request) {
                 product_name: matchedPropertyTitle || null,
                 product_id: matchedPropertyId || null
               };
+              if (city) customFields.city = city;
 
               // Evaluate Assignment: Group-Distribution First, then Campaign-Assignment, then Round Robin
               let assignedAgentId: string | null = null;
@@ -249,7 +275,7 @@ async function handleSync(request: Request) {
                       const leadCtx = {
                         campaignId,
                         campaignName,
-                        adName: fbLead.ad_name,
+                        adName,
                         formName,
                         adCampaignString
                       };
@@ -294,7 +320,8 @@ async function handleSync(request: Request) {
               if (!assignedAgentId && campAutomations && campAutomations.length > 0) {
                 const ruleTitle = `Campaign-Assignment: ${adCampaignString}`;
                 const ruleTitleCamp = `Campaign-Assignment: ${campaignName}`;
-                const matchedAut = campAutomations.find(a => a.title === ruleTitle || a.title === ruleTitleCamp);
+                const ruleTitleForm = `Campaign-Assignment: ${formName}`;
+                const matchedAut = campAutomations.find(a => a.title === ruleTitle || a.title === ruleTitleCamp || a.title === ruleTitleForm);
                 if (matchedAut) {
                   try {
                     const agentIds = JSON.parse(matchedAut.description || '[]');
@@ -330,7 +357,7 @@ async function handleSync(request: Request) {
 
                   await supabaseAdmin
                     .from('leads')
-                    .update({ custom_fields: cf, updated_at: new Date().toISOString() })
+                    .update({ custom_fields: cf })
                     .eq('id', existingLead.id);
 
                   const reopenDesc = `The lead was reopened from Meta Ads Sync\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nSource : Facebook Ads\nDetails : ${adCampaignString || formName}`;
@@ -360,7 +387,8 @@ async function handleSync(request: Request) {
                 form_id: formId,
                 form_name: formName,
                 custom_fields: customFields,
-                pipeline_stage: 'New',
+                pipeline_stage: 'New Lead',
+                status: 'New Lead',
                 ad_name: adCampaignString,
                 assigned_to: assignedAgentId,
                 campaign_id: campaignId,
@@ -423,6 +451,24 @@ async function handleSync(request: Request) {
                 triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true).catch(() => {});
               }
             }
+          }
+
+          // 6. Iterate through all leadgen forms
+          for (const form of formsList) {
+            const formId = form.id;
+            const formName = form.name || 'Meta Form';
+
+            try {
+              const leadsRes = await fetch(`https://graph.facebook.com/v20.0/${formId}/leads?fields=id,created_time,field_data,ad_id,ad_name,campaign_id,campaign_name&limit=30&access_token=${pageToken}`, {
+                signal: AbortSignal.timeout(6000)
+              });
+              if (!leadsRes.ok) continue;
+              const leadsData = await leadsRes.json();
+              const fbLeads = leadsData.data || [];
+              if (fbLeads.length > 0) {
+                await processFbLeadsBatch(fbLeads, formName, '', null, formId);
+              }
+            } catch (e) {}
           }
         } catch (profErr: any) {
           console.error(`[Meta Leads Sync] Error for profile ${profile.id}:`, profErr);

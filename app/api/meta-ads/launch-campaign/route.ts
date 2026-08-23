@@ -151,6 +151,11 @@ export async function POST(request: Request) {
         );
     }
 
+    // Guarantee Page is subscribed to Meta webhooks for real-time lead ingestion
+    fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=leadgen&access_token=${facebookToken}`, {
+        method: 'POST'
+    }).catch(() => {});
+
     if (inventoryIds.length === 0 && assetIds.length === 0) {
         await refundLimit(user.id, 'campaign_launches');
         return NextResponse.json(

@@ -2724,8 +2724,7 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
               await supabaseAdmin
                 .from('leads')
                 .update({
-                  custom_fields: cf,
-                  updated_at: new Date().toISOString()
+                  custom_fields: cf
                 })
                 .eq('id', existingLead.id);
 
@@ -2764,13 +2763,13 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
             facebook_created_at: fbLead.created_time,
             form_id: fbLead.form_id,
             form_name: formName,
-            custom_fields: customFields,
-            pipeline_stage: 'New',
+            pipeline_stage: 'New Lead',
+            status: 'New Lead',
             ad_name: adCampaignString,
             assigned_to: assignedAgentId,
             campaign_id: campaignId,
             property_id: matchedPropertyId || null,
-            created_at: new Date().toISOString()
+            created_at: fbLead.created_time || new Date().toISOString()
           }).select().single()
 
           if (error) continue;

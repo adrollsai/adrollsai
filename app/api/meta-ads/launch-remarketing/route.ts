@@ -166,6 +166,11 @@ export async function POST(request: Request) {
         );
     }
 
+    // Guarantee Page is subscribed to Meta webhooks for real-time lead ingestion
+    fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=leadgen&access_token=${facebookToken}`, {
+        method: 'POST'
+    }).catch(() => {});
+
     // --- Step 00. Check Meta Custom Audience Terms of Service ---
     logToFile("--- Checking Meta Custom Audience Terms of Service ---");
     const targetActId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;

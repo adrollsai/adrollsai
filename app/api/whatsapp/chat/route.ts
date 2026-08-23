@@ -10,6 +10,8 @@ export async function GET(req: Request) {
 
         const url = new URL(req.url)
         const chatId = url.searchParams.get('chatId')
+        const leadId = url.searchParams.get('leadId')
+        const phone = url.searchParams.get('phone')
         const impersonateId = url.searchParams.get('impersonate')
 
         // Resolve the effective user ID and the appropriate DB client
@@ -33,6 +35,62 @@ export async function GET(req: Request) {
         const dbClient = isImpersonating
             ? createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
             : supabase
+
+        // If requesting or creating a chat for a specific lead / phone
+        if (!chatId && (leadId || phone)) {
+            let cleanPhone = (phone || '').replace(/\D/g, '')
+            let targetLead: any = null
+
+            if (leadId) {
+                const { data: l } = await dbClient
+                    .from('leads')
+                    .select('id, name, phone, user_id')
+                    .eq('id', leadId)
+                    .maybeSingle()
+                if (l) {
+                    targetLead = l
+                    if (!cleanPhone && l.phone) cleanPhone = l.phone.replace(/\D/g, '')
+                }
+            }
+
+            // Search for existing chat
+            let existingChatQuery = dbClient.from('whatsapp_chats').select('*')
+            if (leadId) {
+                existingChatQuery = existingChatQuery.or(`lead_id.eq.${leadId},recipient_phone.eq.${cleanPhone},recipient_phone.eq.+${cleanPhone},recipient_phone.ilike.%${cleanPhone.slice(-10)}%`)
+            } else if (cleanPhone) {
+                existingChatQuery = existingChatQuery.or(`recipient_phone.eq.${cleanPhone},recipient_phone.eq.+${cleanPhone},recipient_phone.ilike.%${cleanPhone.slice(-10)}%`)
+            }
+
+            const { data: existingChats } = await existingChatQuery.limit(1)
+            let activeChat = existingChats?.[0] || null
+
+            if (!activeChat && (cleanPhone || targetLead)) {
+                // Auto create new chat thread
+                const recipientName = targetLead?.name || (cleanPhone ? `+${cleanPhone}` : 'Lead')
+                const insertPayload: any = {
+                    user_id: targetLead?.user_id || effectiveUserId,
+                    lead_id: targetLead?.id || leadId || null,
+                    recipient_phone: cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`,
+                    recipient_name: recipientName,
+                    unread_count: 0,
+                    last_message_text: ''
+                }
+
+                const { data: createdChat, error: createErr } = await dbClient
+                    .from('whatsapp_chats')
+                    .insert(insertPayload)
+                    .select()
+                    .single()
+
+                if (!createErr && createdChat) {
+                    activeChat = createdChat
+                }
+            }
+
+            if (activeChat) {
+                return NextResponse.json({ success: true, chat: activeChat, chatId: activeChat.id })
+            }
+        }
 
         if (chatId) {
             // Fetch messages for a specific chat (limit to recent 500)

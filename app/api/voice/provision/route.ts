@@ -1,21 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
+import { VOBIZ_NUMBER_CATALOG } from '@/utils/vobiz-catalog'
+
+const supabaseAdmin = createSupabaseAdmin(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(req: Request) {
     try {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-        // Retrieve master Twilio credentials from environment variables
-        const masterSid = process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
-        const masterToken = process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
-
-        if (!masterSid || !masterToken) {
-            return NextResponse.json({ 
-                error: 'SaaS Platform Twilio credentials are not configured on the server. Please add MASTER_TWILIO_SID to environment variables.' 
-            }, { status: 501 })
-        }
 
         const url = new URL(req.url)
         const impersonateId = url.searchParams.get('impersonate')
@@ -32,205 +29,81 @@ export async function POST(req: Request) {
             }
         }
 
-        // Fetch user's previous voice twilio configuration to support recovery
-        const { data: targetProfile } = await supabase
+        let body: any = {}
+        try {
+            body = await req.json()
+        } catch {
+            // Empty body for default 1-click assignment
+        }
+
+        // Fetch user's profile to verify KYC status
+        const { data: targetProfile, error: profErr } = await supabaseAdmin
             .from('profiles')
-            .select('voice_twilio_number, old_voice_twilio_number')
+            .select('*')
             .eq('id', targetId)
             .single()
 
-        const oldNumber = targetProfile?.voice_twilio_number || targetProfile?.old_voice_twilio_number
-        let selectedNumber = ''
-        const basicAuth = Buffer.from(`${masterSid}:${masterToken}`).toString('base64')
+        if (profErr || !targetProfile) {
+            return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 })
+        }
 
-        if (oldNumber) {
-            // 1. Check if we already own it in Twilio
-            try {
-                const checkUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(oldNumber)}`
-                const checkRes = await fetch(checkUrl, {
-                    headers: { 'Authorization': `Basic ${basicAuth}` }
-                })
-                if (checkRes.ok) {
-                    const checkData = await checkRes.json()
-                    const incomingNumbers = checkData.incoming_phone_numbers || []
-                    if (incomingNumbers.length > 0) {
-                        const existingNumberSid = incomingNumbers[0].sid
-                        // We already own this number! Update its webhook configurations on Twilio
-                        const updateUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers/${existingNumberSid}.json`
-                        const updateParams = new URLSearchParams()
-                        let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
-                        if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com')) {
-                            appUrl = 'https://app.nobogent.com'
-                        }
-                        updateParams.append('VoiceUrl', `${appUrl}/api/voice/twiml`)
-                        updateParams.append('VoiceMethod', 'POST')
-                        updateParams.append('StatusCallback', `${appUrl}/api/voice/status-callback`)
-                        updateParams.append('StatusCallbackMethod', 'POST')
+        const isWhitelisted = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(targetProfile.email || '')
+        const kycStatus = targetProfile.kyc_status
 
-                        const updateRes = await fetch(updateUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Basic ${basicAuth}`,
-                                'Content-Type': 'application/x-www-form-urlencoded'
-                            },
-                            body: updateParams
-                        })
+        // Verify KYC requirement before number buying/assignment
+        if (kycStatus !== 'verified' && !isWhitelisted) {
+            return NextResponse.json({
+                error: 'KYC Verification Required: Please complete your Aadhaar/PAN or Company GST verification before provisioning a phone number.',
+                requiresKyc: true
+            }, { status: 403 })
+        }
 
-                        if (!updateRes.ok) {
-                            console.error('[PROVISION] Failed to update webhook for existing number:', await updateRes.text())
-                        } else {
-                            console.log('[PROVISION] Successfully configured webhook for existing number:', oldNumber)
-                        }
+        // Choose number: specific requested number or default Vobiz number from catalog
+        let requestedNumber = body.phoneNumber || body.number
+        if (!requestedNumber) {
+            // 1-Click Provision: Assign first popular available number or default Vobiz test number
+            const popular = VOBIZ_NUMBER_CATALOG.find(n => n.isPopular) || VOBIZ_NUMBER_CATALOG[0]
+            requestedNumber = popular?.phoneNumber || process.env.VOBIZ_TEST_NUMBER || '+911171366938'
+        }
 
-                        // We already own this number! Restoring connection.
-                        await supabase
-                            .from('profiles')
-                            .update({ 
-                                voice_twilio_number: oldNumber,
-                                old_voice_twilio_number: null
-                            })
-                            .eq('id', targetId)
-                        return NextResponse.json({ success: true, phoneNumber: oldNumber, message: 'Number restored successfully.' })
-                    }
-                }
-            } catch (checkErr) {
-                console.error('[PROVISION] Error checking number ownership:', checkErr)
-            }
-
-            // 2. Try to reclaim from Twilio AvailablePhoneNumbers
-            try {
-                const cleanOldNumber = oldNumber.replace(/\D/g, '')
-                const reclaimUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/AvailablePhoneNumbers/US/Local.json?Contains=${cleanOldNumber}&Limit=1`
-                const reclaimRes = await fetch(reclaimUrl, {
-                    headers: { 'Authorization': `Basic ${basicAuth}` }
-                })
-                if (reclaimRes.ok) {
-                    const reclaimData = await reclaimRes.json()
-                    const availableReclaim = reclaimData.available_phone_numbers || []
-                    if (availableReclaim.length > 0) {
-                        selectedNumber = availableReclaim[0].phone_number
-                    }
-                }
-            } catch (reclaimErr) {
-                console.error('[PROVISION] Error attempting number reclaim search:', reclaimErr)
+        // Format number to E.164
+        let cleanNumber = requestedNumber.replace(/\D/g, '')
+        if (!cleanNumber.startsWith('+')) {
+            if (cleanNumber.length === 10) {
+                cleanNumber = '+91' + cleanNumber
+            } else {
+                cleanNumber = '+' + cleanNumber
             }
         }
 
-        // If old number is not reclaimable, search for a new available local US number
-        if (!selectedNumber) {
-            const searchUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/AvailablePhoneNumbers/US/Local.json?Limit=1`
-            const searchRes = await fetch(searchUrl, {
-                headers: { 'Authorization': `Basic ${basicAuth}` }
-            })
+        console.log(`[PROVISION] Assigning Vobiz number ${cleanNumber} to user ${targetId}...`)
 
-            if (!searchRes.ok) {
-                const searchErr = await searchRes.json()
-                console.error('[PROVISION] Twilio number search failed:', searchErr)
-                return NextResponse.json({ error: searchErr.message || 'Failed to search available numbers.' }, { status: 400 })
-            }
-
-            const searchData = await searchRes.json()
-            const availableNumbers = searchData.available_phone_numbers || []
-
-            if (availableNumbers.length === 0) {
-                return NextResponse.json({ error: 'No available phone numbers found to provision.' }, { status: 404 })
-            }
-
-            selectedNumber = availableNumbers[0].phone_number
+        // Update profile with the assigned Vobiz calling number
+        const updatePayload: any = {
+            voice_vobiz_number: cleanNumber,
+            voice_twilio_number: cleanNumber, // keep in sync for backwards compatibility
+            voice_telephony_provider: 'vobiz',
+            old_voice_twilio_number: null
         }
 
-        // 3. Purchase the selected number
-        const purchaseUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers.json`
-        const params = new URLSearchParams()
-        params.append('PhoneNumber', selectedNumber)
-
-        let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
-        if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com')) {
-            appUrl = 'https://app.nobogent.com'
-        }
-        params.append('VoiceUrl', `${appUrl}/api/voice/twiml`)
-        params.append('VoiceMethod', 'POST')
-        params.append('StatusCallback', `${appUrl}/api/voice/status-callback`)
-        params.append('StatusCallbackMethod', 'POST')
-
-        const purchaseRes = await fetch(purchaseUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Basic ${basicAuth}`,
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: params
-        })
-
-        if (!purchaseRes.ok) {
-            const purchaseErr = await purchaseRes.json()
-            console.error('[PROVISION] Twilio number purchase failed:', purchaseErr)
-            return NextResponse.json({ error: purchaseErr.message || 'Failed to purchase phone number.' }, { status: 400 })
-        }
-
-        const purchaseData = await purchaseRes.json()
-        const provisionedNumber = purchaseData.phone_number
-
-        // 4. Save the purchased number to the user's profile and clear backup
-        const { error: dbErr } = await supabase
+        const { error: updateErr } = await supabaseAdmin
             .from('profiles')
-            .update({ 
-                voice_twilio_number: provisionedNumber,
-                old_voice_twilio_number: null
-            })
+            .update(updatePayload)
             .eq('id', targetId)
 
-        if (dbErr) {
-            return NextResponse.json({ error: 'Number purchased but database save failed.' }, { status: 500 })
+        if (updateErr) {
+            console.error('[PROVISION] Failed to save assigned number:', updateErr)
+            return NextResponse.json({ error: 'Failed to update assigned number in database: ' + updateErr.message }, { status: 500 })
         }
 
-        return NextResponse.json({ success: true, phoneNumber: provisionedNumber })
+        return NextResponse.json({
+            success: true,
+            phoneNumber: cleanNumber,
+            message: `Number ${cleanNumber} assigned successfully! Ready to make AI calls.`
+        })
     } catch (e: any) {
+        console.error('[PROVISION ERROR]', e)
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
-    }
-}
-
-async function releaseTwilioNumber(masterSid: string, masterToken: string, phoneNumber: string): Promise<boolean> {
-    try {
-        const basicAuth = Buffer.from(`${masterSid}:${masterToken}`).toString('base64');
-        
-        // 1. Search for the IncomingPhoneNumber SID matching the phone number
-        const searchUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`;
-        const searchRes = await fetch(searchUrl, {
-            headers: { 'Authorization': `Basic ${basicAuth}` }
-        });
-        
-        if (!searchRes.ok) {
-            console.error(`[RELEASE] Failed to search number ${phoneNumber} in Twilio:`, await searchRes.text());
-            return false;
-        }
-        
-        const searchData = await searchRes.json();
-        const incomingNumbers = searchData.incoming_phone_numbers || [];
-        if (incomingNumbers.length === 0) {
-            console.log(`[RELEASE] Phone number ${phoneNumber} not found in Twilio account.`);
-            return true; // Already released or not owned by us
-        }
-        
-        const sid = incomingNumbers[0].sid;
-        
-        // 2. Delete the phone number from Twilio account to stop being charged
-        const deleteUrl = `https://api.twilio.com/2010-04-01/Accounts/${masterSid}/IncomingPhoneNumbers/${sid}.json`;
-        const deleteRes = await fetch(deleteUrl, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Basic ${basicAuth}` }
-        });
-        
-        if (!deleteRes.ok) {
-            console.error(`[RELEASE] Failed to delete number ${phoneNumber} (SID: ${sid}) from Twilio:`, await deleteRes.text());
-            return false;
-        }
-        
-        console.log(`[RELEASE] Successfully released Twilio number ${phoneNumber} (SID: ${sid}).`);
-        return true;
-    } catch (err) {
-        console.error(`[RELEASE] Exception while releasing number ${phoneNumber}:`, err);
-        return false;
     }
 }
 
@@ -240,9 +113,6 @@ export async function DELETE(req: Request) {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-        const masterSid = process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
-        const masterToken = process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
-
         const url = new URL(req.url)
         const impersonateId = url.searchParams.get('impersonate')
 
@@ -258,38 +128,31 @@ export async function DELETE(req: Request) {
             }
         }
 
-        // Fetch user's voice twilio number
-        const { data: targetProfile } = await supabase
+        const { data: targetProfile } = await supabaseAdmin
             .from('profiles')
-            .select('voice_twilio_number, voice_twilio_sid')
+            .select('voice_vobiz_number, voice_twilio_number')
             .eq('id', targetId)
             .single()
 
-        const phoneNumber = targetProfile?.voice_twilio_number
-        const customSid = targetProfile?.voice_twilio_sid
+        const currentNum = targetProfile?.voice_vobiz_number || targetProfile?.voice_twilio_number
 
-        // If they had a SaaS virtual line (and not custom credentials), release it from the platform Twilio account
-        if (phoneNumber && !customSid && masterSid && masterToken) {
-            await releaseTwilioNumber(masterSid, masterToken, phoneNumber)
-        }
+        console.log(`[PROVISION] Disconnecting voice number for user ${targetId}...`)
 
-        // Clear settings in DB (both SaaS and custom configuration is reset)
-        const { error: dbErr } = await supabase
+        await supabaseAdmin
             .from('profiles')
-            .update({ 
+            .update({
+                voice_vobiz_number: null,
                 voice_twilio_number: null,
-                voice_twilio_sid: null,
-                voice_twilio_token: null,
-                old_voice_twilio_number: null
+                old_voice_twilio_number: currentNum
             })
             .eq('id', targetId)
 
-        if (dbErr) {
-            return NextResponse.json({ error: 'Failed to clear settings in database.' }, { status: 500 })
-        }
-
-        return NextResponse.json({ success: true, message: 'Voice line disconnected successfully.' })
+        return NextResponse.json({
+            success: true,
+            message: 'Voice calling number disconnected successfully.'
+        })
     } catch (e: any) {
+        console.error('[PROVISION DELETE ERROR]', e)
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
     }
 }

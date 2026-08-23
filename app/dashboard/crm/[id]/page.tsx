@@ -1133,7 +1133,19 @@ END:VCARD`
                                     <MessageCircle size={16} />
                                     <span>Send Template</span>
                                 </button>
-                                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors shrink-0" title="Direct WhatsApp Chat"><MessageCircle size={16} /></a>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const impersonateId = searchParams.get('impersonate');
+                                        const cleanPhone = (lead.phone || '').replace(/\D/g, '');
+                                        const targetUrl = `/dashboard/whatsapp?leadId=${lead.id}&phone=${encodeURIComponent(cleanPhone)}${impersonateId ? `&impersonate=${impersonateId}` : ''}`;
+                                        router.push(targetUrl);
+                                    }}
+                                    className="p-2.5 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors shrink-0 cursor-pointer"
+                                    title="Open WhatsApp Chat"
+                                >
+                                    <MessageCircle size={16} />
+                                </button>
                                 <button 
                                     onClick={async () => {
                                         const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';

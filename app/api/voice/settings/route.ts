@@ -24,18 +24,39 @@ export async function GET(req: Request) {
 
         const { data: profile } = await supabase
             .from('profiles')
-            .select('voice_twilio_number, email')
+            .select('*')
             .eq('id', targetId)
             .single()
 
-        const saasMode = !!(process.env.MASTER_TWILIO_SID && process.env.MASTER_TWILIO_TOKEN)
+        const saasMode = true
         const isMasterDefaultUser = profile?.email === 'rchopra489@gmail.com' || profile?.email === 'infobluesquareinfra@gmail.com'
-        const voiceNumber = profile?.voice_twilio_number || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : '')
+        
+        const telephonyProvider = profile?.voice_telephony_provider || 'vobiz'
+        let voiceNumber = ''
+        if (telephonyProvider === 'vobiz') {
+            if (profile?.voice_twilio_number && profile.voice_twilio_number.startsWith('+91')) {
+                voiceNumber = profile.voice_twilio_number
+            } else if (profile?.voice_vobiz_number) {
+                voiceNumber = profile.voice_vobiz_number
+            } else if (isMasterDefaultUser) {
+                voiceNumber = process.env.VOBIZ_TEST_NUMBER || '+911171366938'
+            } else {
+                voiceNumber = process.env.VOBIZ_TEST_NUMBER || '+911171366938'
+            }
+        } else {
+            voiceNumber = profile?.voice_twilio_number || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : '')
+        }
 
         return NextResponse.json({
             success: true,
             saasMode,
-            voiceNumber
+            voiceNumber,
+            telephonyProvider,
+            concurrencyLimit: profile?.voice_concurrency_limit || 1,
+            cpsLimit: profile?.voice_cps_limit || 1,
+            kycStatus: profile?.kyc_status || 'not_submitted',
+            kycType: profile?.kyc_type || 'individual',
+            credits: profile?.credits || 0
         })
     } catch (e: any) {
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })

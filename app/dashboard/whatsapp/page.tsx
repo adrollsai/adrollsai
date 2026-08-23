@@ -445,6 +445,35 @@ export default function AutomationPage() {
       fetchProperties(),
       fetchProfileAndBilling()
     ]).catch(err => console.error('[WhatsApp Page Initial Load Error]:', err))
+
+    // Handle direct lead/chat navigation from CRM (?leadId=... or ?phone=... or ?chatId=...)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const targetChatId = params.get('chatId')
+      const targetLeadId = params.get('leadId')
+      const targetPhone = params.get('phone')
+
+      if (targetChatId) {
+        setSelectedChatId(targetChatId)
+      } else if (targetLeadId || targetPhone) {
+        const extraParams: Record<string, string> = {}
+        if (targetLeadId) extraParams.leadId = targetLeadId
+        if (targetPhone) extraParams.phone = targetPhone
+
+        fetch(buildApiUrl('/api/whatsapp/chat', extraParams))
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && data.chat) {
+              setChats(prev => {
+                if (prev.some(c => c.id === data.chat.id)) return prev
+                return [data.chat, ...prev]
+              })
+              setSelectedChatId(data.chat.id)
+            }
+          })
+          .catch(e => console.warn('[WhatsApp URL Param Load Error]:', e))
+      }
+    }
   }, [])
 
   // Fetch messages (and load cache first) when a chat is selected
