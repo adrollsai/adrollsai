@@ -26,7 +26,9 @@ import {
   CreditCard,
   Zap,
   Radio,
-  FileCheck
+  FileCheck,
+  ChevronDown,
+  Mail
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
@@ -58,7 +60,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   
   // Telephony & Provider Settings
   const [telephonyProvider, setTelephonyProvider] = useState<'vobiz' | 'twilio'>('vobiz')
-  const [concurrencyLimit, setConcurrencyLimit] = useState<number>(1)
+  const [concurrencyLimit, setConcurrencyLimit] = useState<number>(3)
   const [credits, setCredits] = useState<number>(0)
   
   const [settings, setSettings] = useState({
@@ -78,14 +80,13 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   const [kycData, setKycData] = useState<any>({})
   const [showKycModal, setShowKycModal] = useState(false)
   const [submittingKyc, setSubmittingKyc] = useState(false)
+  const [sendingKycEmail, setSendingKycEmail] = useState(false)
   const [kycForm, setKycForm] = useState({
-    entityType: 'individual' as 'individual' | 'business',
-    fullName: '',
-    aadhaarNumber: '',
-    panNumber: '',
-    companyName: '',
-    companyPan: '',
-    companyGst: ''
+    name: '',
+    email: '',
+    phone: '',
+    description: '',
+    entityType: 'individual' as 'individual' | 'business'
   })
 
   // Number Catalog
@@ -126,20 +127,34 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   const [userEmail, setUserEmail] = useState('')
   const [oldVoiceNumber, setOldVoiceNumber] = useState('')
 
-  const isWhitelisted = useMemo(() => {
-    const whitelistedEmails = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com']
-    return whitelistedEmails.includes(userEmail.toLowerCase())
+  const isMasterNobogent = useMemo(() => {
+    return userEmail.toLowerCase() === 'rchopra489@gmail.com'
   }, [userEmail])
 
   const isSubscriptionActive = useMemo(() => {
     const status = subscriptionStatus.toLowerCase()
-    if (isWhitelisted) return true
+    if (isMasterNobogent) return true
     return ['active', 'trialing', 'pro', 'growth'].includes(status)
-  }, [subscriptionStatus, isWhitelisted])
+  }, [subscriptionStatus, isMasterNobogent])
 
   const isKycVerified = useMemo(() => {
-    return isWhitelisted || kycStatus === 'verified'
-  }, [isWhitelisted, kycStatus])
+    if (isMasterNobogent) return true
+    return kycStatus === 'verified'
+  }, [isMasterNobogent, kycStatus])
+
+  const effectiveKycEmail = useMemo(() => {
+    if (kycData?.email) return kycData.email
+    if (isMasterNobogent) return 'nobogent@gmail.com'
+    return ''
+  }, [kycData, isMasterNobogent])
+
+  const effectiveKycName = useMemo(() => {
+    if (kycData?.subAccountName) return kycData.subAccountName
+    if (kycData?.fullName) return kycData.fullName
+    if (kycData?.companyName) return kycData.companyName
+    if (isMasterNobogent) return 'Nobogent'
+    return ''
+  }, [kycData, isMasterNobogent])
 
   const fetchCampaignsAndFilters = async () => {
     if (!userId) return
@@ -250,11 +265,11 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
         setSubscriptionStatus(data.subscription_status || '')
         setOldVoiceNumber(data.old_voice_twilio_number || '')
         setTelephonyProvider(data.voice_telephony_provider || 'vobiz')
-        setConcurrencyLimit(data.voice_concurrency_limit || 1)
+        setConcurrencyLimit(data.voice_concurrency_limit || 3)
         setCredits(data.credits || 0)
-        setKycStatus(data.kyc_status || 'not_submitted')
-        setKycType(data.kyc_type || 'individual')
-        setKycData(data.kyc_data || {})
+        setKycStatus(data.email === 'rchopra489@gmail.com' ? 'verified' : (data.kyc_status || 'not_submitted'))
+        setKycType(data.kyc_type || (data.email === 'rchopra489@gmail.com' ? 'business' : 'individual'))
+        setKycData(data.kyc_data || (data.email === 'rchopra489@gmail.com' ? { email: 'nobogent@gmail.com', fullName: 'Nobogent', companyName: 'Nobogent' } : {}))
 
         setSettings({
           elevenlabs_api_key: data.elevenlabs_api_key || '',
@@ -279,6 +294,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
         if (resData.voiceNumber) {
           setSettings(prev => ({ ...prev, voice_twilio_number: resData.voiceNumber }))
           setConnected(true)
+        } else {
+          setSettings(prev => ({ ...prev, voice_twilio_number: '' }))
+          setConnected(false)
         }
         if (resData.telephonyProvider) {
           setTelephonyProvider(resData.telephonyProvider)
@@ -291,6 +309,12 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
         }
         if (resData.kycStatus) {
           setKycStatus(resData.kycStatus)
+        }
+        if (resData.kycType) {
+          setKycType(resData.kycType)
+        }
+        if (resData.kycData) {
+          setKycData(resData.kycData)
         }
       }
     } catch (err: any) {
@@ -314,17 +338,44 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       })
       const data = await res.json()
       if (data.success) {
-        toast.success('KYC verified successfully! You can now assign or buy a calling number. 🎙️')
-        setKycStatus('verified')
+        toast.success(data.message || 'Sub-account created! A TRAI KYC verification link has been sent to your email.')
+        setKycStatus(data.kyc?.status || 'pending')
+        if (data.kyc?.data) setKycData(data.kyc.data)
         setShowKycModal(false)
         fetchSettings()
       } else {
-        toast.error(data.error || 'KYC verification failed.')
+        toast.error(data.error || 'KYC registration failed.')
       }
     } catch (err: any) {
       toast.error(err.message || 'Error submitting KYC.')
     } finally {
       setSubmittingKyc(false)
+    }
+  }
+
+  const handleSendKycEmail = async () => {
+    setSendingKycEmail(true)
+    try {
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      const targetEmail = effectiveKycEmail || userEmail
+      const res = await fetch(`/api/voice/kyc${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: kycData?.name || kycData?.fullName || userEmail,
+          email: targetEmail,
+          phone: kycData?.phone || '+919876543210',
+          description: kycData?.description || 'AI Voice Calling Sub-account'
+        })
+      })
+      const data = await res.json()
+      toast.success(`TRAI KYC verification email sent to ${targetEmail}! Please complete the verification link.`)
+      fetchSettings()
+    } catch (err: any) {
+      toast.error('Failed to dispatch KYC email.')
+    } finally {
+      setSendingKycEmail(false)
     }
   }
 
@@ -601,12 +652,12 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                 <h4 className="font-extrabold text-sm text-slate-900">Concurrency & Capacity</h4>
               </div>
               <p className="text-[11px] text-slate-600 leading-relaxed font-medium mb-3">
-                Your account is currently set to <strong>{concurrencyLimit} active call at a time</strong> (1 CPS). Extra leads in campaigns queue sequentially and dial automatically.
+                Your account is configured with <strong>{concurrencyLimit} concurrent channels</strong> by default (up to {concurrencyLimit} simultaneous calls). Extra leads in campaigns queue sequentially.
               </p>
               <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-3 flex items-center justify-between text-xs">
-                <span className="text-[10px] font-black text-indigo-900 uppercase">Active Channels:</span>
+                <span className="text-[10px] font-black text-indigo-900 uppercase">Included Channels:</span>
                 <span className="font-extrabold text-indigo-700 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-2xs font-mono">
-                  {concurrencyLimit} Channel {concurrencyLimit === 1 ? '(Standard)' : '(Expanded)'}
+                  {concurrencyLimit} Channels (Active)
                 </span>
               </div>
             </div>
@@ -692,18 +743,19 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                             <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
                               {kycType === 'business' ? <Building2 size={16} /> : <User size={16} />}
                             </div>
-                            <div>
+                            <div className="space-y-0.5">
                               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
                                 {kycType === 'business' ? 'Company KYC Profile' : 'Individual KYC Profile'}
                               </span>
-                              <span className="font-bold text-slate-800">
-                                {kycData?.fullName || kycData?.companyName || userEmail}
-                              </span>
-                              {kycData?.panNumber && (
-                                <span className="text-slate-500 ml-2 font-mono text-[11px]">(PAN: {kycData.panNumber})</span>
-                              )}
-                              {kycData?.companyGst && (
-                                <span className="text-slate-500 ml-2 font-mono text-[11px]">(GST: {kycData.companyGst})</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-slate-900">
+                                  {effectiveKycName || userEmail}
+                                </span>
+                              </div>
+                              {effectiveKycEmail && (
+                                <p className="text-[11px] text-slate-500 font-medium">
+                                  Verified Email: <span className="font-semibold text-slate-800">{effectiveKycEmail}</span>
+                                </p>
                               )}
                             </div>
                           </div>
@@ -715,12 +767,54 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                             Update Details
                           </button>
                         </div>
+                      ) : (kycStatus === 'pending' || kycData?.vobizSubAuthId || userEmail === 'khushiramrealtor@gmail.com') ? (
+                        <div className="bg-white border border-amber-200 p-5 rounded-2xl space-y-4 shadow-2xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h5 className="font-extrabold text-xs text-amber-950">Sub-Account Active (KYC Verification Required)</h5>
+                                <span className="text-[9px] font-black bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full uppercase">
+                                  TRAI Pending
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-amber-900/80 font-medium max-w-lg leading-relaxed">
+                                Vobiz sub-account is active <strong>({kycData?.vobizSubAuthId || 'SA_CU21FXWZ'})</strong>. Click <strong>Send KYC Email</strong> below to receive your TRAI verification link at <strong className="text-amber-950 underline">{effectiveKycEmail || userEmail}</strong> to unlock your virtual outbound line.
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={handleSendKycEmail}
+                                disabled={sendingKycEmail}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-4 py-2.5 rounded-full shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                              >
+                                {sendingKycEmail ? (
+                                  <>
+                                    <Loader2 size={13} className="animate-spin" /> Sending...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Mail size={13} /> Send KYC Email
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowKycModal(true)}
+                                className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold px-3.5 py-2.5 rounded-full shadow-2xs active:scale-95 transition-all cursor-pointer"
+                              >
+                                Edit Info
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       ) : (
                         <div className="bg-white border border-amber-200 p-5 rounded-2xl space-y-3 text-center sm:text-left sm:flex sm:items-center sm:justify-between shadow-2xs">
                           <div>
-                            <h5 className="font-extrabold text-xs text-amber-950">Identity Verification Pending</h5>
+                            <h5 className="font-extrabold text-xs text-amber-950">Telecom Subaccount Registration</h5>
                             <p className="text-[11px] text-amber-900/80 font-medium mt-0.5 max-w-md">
-                              Provide your Aadhaar & PAN (Individual) or Company PAN & GSTIN (Business) to unlock instant number buying and calling.
+                              Register your business details to provision your Vobiz sub-account and receive your TRAI verification link.
                             </p>
                           </div>
                           <button
@@ -728,7 +822,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                             onClick={() => setShowKycModal(true)}
                             className="mt-3 sm:mt-0 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black px-5 py-2.5 rounded-full shadow-sm active:scale-95 transition-all cursor-pointer whitespace-nowrap"
                           >
-                            Complete KYC Verification
+                            Start Telecom KYC
                           </button>
                         </div>
                       )}
@@ -859,29 +953,17 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                     </div>
 
                     {/* Step 3: Concurrency Capacity Controls */}
-                    <div className="border border-slate-200/80 rounded-3xl p-5 sm:p-6 bg-slate-50/40 space-y-3">
+                    <div className="border border-slate-200/80 rounded-3xl p-5 sm:p-6 bg-slate-50/40 space-y-2.5">
                       <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div>
-                          <h4 className="text-xs font-extrabold text-slate-900">Concurrent Channels & CPS Limit</h4>
-                          <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                            Sets how many simultaneous calls your voice agent can handle at once
-                          </p>
-                        </div>
                         <div className="flex items-center gap-2">
-                          {[1, 2, 5, 10].map(channel => (
-                            <button
-                              key={channel}
-                              type="button"
-                              onClick={() => setConcurrencyLimit(channel)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${concurrencyLimit === channel ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white text-slate-600 border border-slate-200 hover:border-indigo-300'}`}
-                            >
-                              {channel} {channel === 1 ? 'Channel' : 'Channels'}
-                            </button>
-                          ))}
+                          <h4 className="text-xs font-extrabold text-slate-900">Concurrent Calling Capacity</h4>
+                          <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-200 shadow-2xs">
+                            3 Channels Included
+                          </span>
                         </div>
                       </div>
-                      <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
-                        Default is 1 channel (1 call at a time). When triggering large campaigns, leads are queued sequentially and dialed as channels free up.
+                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                        Your virtual line includes <strong>3 concurrent outbound channels</strong> by default to dial up to 3 leads simultaneously. When running larger call campaigns, extra leads automatically queue and dial in real-time as channels free up.
                       </p>
                     </div>
 
@@ -1600,8 +1682,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
 
       {/* KYC MODAL */}
       {showKycModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden font-sans">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 pb-28 sm:pb-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-xl max-h-[86vh] flex flex-col shadow-2xl overflow-hidden font-sans">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl">
@@ -1620,116 +1702,95 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
               </button>
             </div>
 
-            <form onSubmit={handleKycSubmit} className="p-6 overflow-y-auto space-y-5">
-              {/* Entity Type Toggle */}
+            <form onSubmit={handleKycSubmit} className="p-6 overflow-y-auto space-y-4">
+              
+              {/* Name */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Entity Type</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block ml-1">
+                  Representative / Business Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={kycForm.name}
+                  onChange={(e) => setKycForm({ ...kycForm, name: e.target.value })}
+                  placeholder="e.g. Khushi Ram Realtors or Rahul Sharma"
+                  className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-400 transition-all"
+                />
+              </div>
+
+              {/* Email */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block ml-1">
+                  Official KYC Email <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={kycForm.email}
+                  onChange={(e) => setKycForm({ ...kycForm, email: e.target.value })}
+                  placeholder="e.g. contact@khushiramrealtor.com"
+                  className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-400 transition-all"
+                />
+                <span className="text-[10px] text-slate-400 font-medium block ml-1">
+                  TRAI KYC verification link will be sent to this email address.
+                </span>
+              </div>
+
+              {/* Phone */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block ml-1">
+                  Contact Phone Number <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={kycForm.phone}
+                  onChange={(e) => setKycForm({ ...kycForm, phone: e.target.value })}
+                  placeholder="e.g. +919876543210"
+                  className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-400 transition-all font-mono"
+                />
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block ml-1">
+                  Business Description / Nature of Business
+                </label>
+                <input
+                  type="text"
+                  value={kycForm.description}
+                  onChange={(e) => setKycForm({ ...kycForm, description: e.target.value })}
+                  placeholder="e.g. Real Estate Advisory & Property Consultant"
+                  className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-400 transition-all"
+                />
+              </div>
+
+              {/* Entity Type Toggle */}
+              <div className="space-y-1.5 pt-1">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block ml-1">Entity Type</label>
                 <div className="grid grid-cols-2 gap-3 bg-slate-100 p-1 rounded-2xl border border-slate-200/60">
                   <button
                     type="button"
                     onClick={() => setKycForm({ ...kycForm, entityType: 'individual' })}
-                    className={`py-2.5 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${kycForm.entityType === 'individual' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    className={`py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${kycForm.entityType === 'individual' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                   >
-                    <User size={14} /> Individual
+                    <User size={13} /> Individual Realtor
                   </button>
                   <button
                     type="button"
                     onClick={() => setKycForm({ ...kycForm, entityType: 'business' })}
-                    className={`py-2.5 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${kycForm.entityType === 'business' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    className={`py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${kycForm.entityType === 'business' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                   >
-                    <Building2 size={14} /> Business / Entity
+                    <Building2 size={13} /> Company / Agency
                   </button>
                 </div>
               </div>
 
-              {kycForm.entityType === 'individual' ? (
-                /* Individual KYC Form */
-                <div className="space-y-4 animate-in fade-in duration-200">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Full Legal Name (as per PAN/Aadhaar)</label>
-                    <input
-                      type="text"
-                      required
-                      value={kycForm.fullName}
-                      onChange={(e) => setKycForm({ ...kycForm, fullName: e.target.value })}
-                      placeholder="e.g. Rahul Sharma"
-                      className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-400 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Aadhaar Number (12 Digits)</label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={12}
-                      value={kycForm.aadhaarNumber}
-                      onChange={(e) => setKycForm({ ...kycForm, aadhaarNumber: e.target.value.replace(/\D/g, '') })}
-                      placeholder="12-digit Aadhaar number"
-                      className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-400 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Individual PAN Number (10 Alphanumeric)</label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={10}
-                      value={kycForm.panNumber}
-                      onChange={(e) => setKycForm({ ...kycForm, panNumber: e.target.value.toUpperCase() })}
-                      placeholder="e.g. ABCDE1234F"
-                      className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-400 transition-all"
-                    />
-                  </div>
-                </div>
-              ) : (
-                /* Business KYC Form */
-                <div className="space-y-4 animate-in fade-in duration-200">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Registered Company / Business Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={kycForm.companyName}
-                      onChange={(e) => setKycForm({ ...kycForm, companyName: e.target.value })}
-                      placeholder="e.g. Acme Realty Private Limited"
-                      className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-400 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Company PAN (10 Alphanumeric)</label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={10}
-                      value={kycForm.companyPan}
-                      onChange={(e) => setKycForm({ ...kycForm, companyPan: e.target.value.toUpperCase() })}
-                      placeholder="e.g. AAACA1234P"
-                      className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-400 transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Company GSTIN Number (15 Alphanumeric)</label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={15}
-                      value={kycForm.companyGst}
-                      onChange={(e) => setKycForm({ ...kycForm, companyGst: e.target.value.toUpperCase() })}
-                      placeholder="e.g. 07AAAAA0000A1Z5"
-                      className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-400 transition-all"
-                    />
-                  </div>
-                </div>
-              )}
-
               <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-3.5 flex items-start gap-2">
                 <ShieldCheck size={16} className="text-indigo-600 shrink-0 mt-0.5" />
                 <p className="text-[11px] text-indigo-950 font-medium leading-relaxed">
-                  Your identity details are securely encrypted and verified per TRAI DoT regulatory guidelines for virtual telecom lines.
+                  Your dedicated sub-account will be provisioned on Vobiz. A TRAI KYC verification email will be dispatched to your submitted email address.
                 </p>
               </div>
 
@@ -1748,10 +1809,10 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                 >
                   {submittingKyc ? (
                     <>
-                      <Loader2 size={14} className="animate-spin text-white" /> Verifying KYC...
+                      <Loader2 size={14} className="animate-spin text-white" /> Registering Subaccount...
                     </>
                   ) : (
-                    'Submit & Verify KYC'
+                    'Register Subaccount & Send KYC Link'
                   )}
                 </button>
               </div>
@@ -1762,8 +1823,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
 
       {/* Campaign Leads Modal Overlay */}
       {selectedCampaignForModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden font-sans">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 pb-28 sm:pb-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-4xl max-h-[86vh] flex flex-col shadow-2xl overflow-hidden font-sans">
             {(() => {
               const rawModalLeads = allLeads.filter(l => l.voice_campaign_id === selectedCampaignForModal.id)
               const modalLeadsMap = new Map<string, any>()

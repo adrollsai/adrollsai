@@ -57,8 +57,8 @@ export async function triggerVobizOutboundCall(
         return { success: false, error: 'SUBSCRIPTION_EXPIRED' }
     }
 
-    // 3. Concurrency check (default: 1 concurrent call per account, unless upgraded)
-    const maxConcurrent = profile.voice_concurrency_limit || 1
+    // 3. Concurrency check (default: 3 concurrent calls per account)
+    const maxConcurrent = profile.voice_concurrency_limit || 3
     const { data: activeLeads } = await supabaseAdmin
         .from('leads')
         .select('id, last_called_at, voice_call_scheduled_at, created_at')
@@ -283,49 +283,95 @@ export function getAvailableVobizNumbers(): VobizAvailableNumber[] {
 /**
  * Provisions a customer sub-account under the master partner account on Vobiz.
  * Endpoint: POST https://api.vobiz.ai/api/v1/accounts/{auth_id}/sub-accounts/
+ * Uses HTTP Basic Authentication (VOBIZ_AUTH_ID : VOBIZ_AUTH_TOKEN)
  */
 export async function createVobizSubAccount(params: {
     name: string
     email: string
-    entityType: 'individual' | 'business'
-}): Promise<{ success: boolean; subAuthId?: string; subAuthToken?: string; error?: string }> {
+    phone?: string
+    description?: string
+    kycMode?: 'personal_use' | 'customer_use'
+    entityType?: 'individual' | 'business'
+    pan?: string
+    gstin?: string
+}): Promise<{ success: boolean; subAuthId?: string; subAuthToken?: string; subAccount?: any; error?: string }> {
     const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
     const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+    const basicAuth = Buffer.from(`${authId}:${authToken}`).toString('base64')
+
+    const kycMode = params.kycMode || 'customer_use'
+    const payload: any = {
+        name: params.name,
+        email: params.email,
+        phone: params.phone || '',
+        description: params.description || `Sub-account for ${params.name}`,
+        kyc_mode: kycMode,
+        business_type: params.entityType === 'business' ? 'private_limited' : 'individual'
+    }
+
+    if (params.pan) payload.pan = params.pan
+    if (params.gstin) payload.gstin = params.gstin
+
+    const url = `https://api.vobiz.ai/api/v1/accounts/${authId}/sub-accounts/`
 
     try {
-        const url = `https://api.vobiz.ai/api/v1/accounts/${authId}/sub-accounts/`
         const res = await fetch(url, {
             method: 'POST',
             headers: {
-                'X-Auth-ID': authId,
-                'X-Auth-Token': authToken,
+                'Authorization': `Basic ${basicAuth}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                name: params.name,
-                email: params.email,
-                kyc_mode: 'customer_use',
-                business_type: params.entityType === 'business' ? 'private_limited' : 'individual'
-            })
+            body: JSON.stringify(payload)
         })
 
         const data = await res.json().catch(() => ({}))
-        if (res.ok) {
-            console.log(`[VOBIZ SUBACCOUNT] Successfully created sub-account for ${params.email}:`, data.auth_id || data.id)
+
+        if (res.ok || res.status === 201) {
+            const sub = data.sub_account || data
+            const subAuthId = sub.auth_id || sub.id
+            const subAuthToken = sub.auth_token || sub.token
+            console.log(`[VOBIZ SUBACCOUNT] Successfully created subaccount under ${authId}:`, subAuthId)
             return {
                 success: true,
-                subAuthId: data.auth_id || data.sub_auth_id || data.id,
-                subAuthToken: data.auth_token || data.sub_auth_token || data.token
-            }
-        } else {
-            console.warn('[VOBIZ SUBACCOUNT] Sub-account provisioning response:', data)
-            return {
-                success: false,
-                error: data.error || data.message || `HTTP ${res.status}`
+                subAuthId,
+                subAuthToken,
+                subAccount: sub
             }
         }
+
+        // If email already in use (409 Conflict), fetch the existing subaccount details
+        if (res.status === 409) {
+            console.log(`[VOBIZ SUBACCOUNT] Subaccount ${params.email} already exists on Vobiz. Retrieving...`)
+            const listRes = await fetch(url, {
+                headers: {
+                    'Authorization': `Basic ${basicAuth}`,
+                    'Content-Type': 'application/json'
+                }
+            })
+            const listData = await listRes.json().catch(() => ({}))
+            const subAccounts = listData.sub_accounts || []
+            const matching = subAccounts.find((s: any) => s.email?.toLowerCase() === params.email.toLowerCase())
+            if (matching) {
+                console.log(`[VOBIZ SUBACCOUNT] Found existing subaccount on Vobiz:`, matching.auth_id)
+                return {
+                    success: true,
+                    subAuthId: matching.auth_id || matching.id,
+                    subAuthToken: matching.auth_token || matching.token,
+                    subAccount: matching
+                }
+            }
+        }
+
+        console.warn(`[VOBIZ SUBACCOUNT] Creation error from Vobiz:`, data)
+        return {
+            success: false,
+            error: data.message || data.error || `HTTP ${res.status}: Failed to create Vobiz subaccount.`
+        }
     } catch (err: any) {
-        console.warn('[VOBIZ SUBACCOUNT] Error creating sub-account:', err.message)
-        return { success: false, error: err.message }
+        console.error(`[VOBIZ SUBACCOUNT] Network error:`, err.message)
+        return {
+            success: false,
+            error: err.message || 'Unable to connect to Vobiz subaccount API.'
+        }
     }
 }
