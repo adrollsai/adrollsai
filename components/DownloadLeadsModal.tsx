@@ -407,10 +407,15 @@ export default function DownloadLeadsModal({
 
   // Extract unique campaigns and forms from leads
   const uniqueCampaigns = useMemo(() => {
-    const dbNames = campaigns.map(c => c.name).filter(Boolean)
-    const leadNames = leads.map(l => l.ad_name || l.campaign_name).filter(Boolean)
-    return Array.from(new Set([...dbNames, ...leadNames])).sort()
-  }, [campaigns, leads])
+    const list: string[] = []
+    leads.forEach(l => {
+      const campName = getLeadCampaignName(l)
+      if (campName && campName.trim()) list.push(campName.trim())
+      if (l.ad_name && l.ad_name.trim()) list.push(l.ad_name.trim())
+      if (l.campaign_name && l.campaign_name.trim()) list.push(l.campaign_name.trim())
+    })
+    return Array.from(new Set(list)).filter(c => c && c !== 'null' && c !== 'undefined').sort()
+  }, [leads, getLeadCampaignName])
 
   const uniqueForms = useMemo(() => {
     const list: string[] = []

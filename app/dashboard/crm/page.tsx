@@ -756,9 +756,9 @@ export default function CRMPage() {
       }
       setCustomStages(activeStages)
 
-      let targetUserId = (['admin', 'agent', 'team_member'].includes(currentRole) && parentId) ? parentId : user.id
+      let targetUserId = user.id
       if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
-        if (['super_admin', 'agency', 'admin'].includes(currentRole)) targetUserId = impersonateId
+        if (['super_admin', 'agency'].includes(currentRole)) targetUserId = impersonateId
       }
       setTargetUserId(targetUserId)
 
@@ -768,11 +768,23 @@ export default function CRMPage() {
 
       if (isTeamUser) {
         filterFn = (q: any) => q.or(`assigned_to.eq.${user.id},user_id.eq.${user.id}`)
-      } else {
-        // Get team members for workspace-level access
+      } else if (currentRole === 'agency' && (!impersonateId || impersonateId === user.id)) {
+        // Agency root view: can see agency owner leads + client sub-accounts
         const { data: teamProfiles } = await supabase.from('profiles')
           .select('id')
-          .or(`parent_id.eq.${targetUserId},agency_id.eq.${targetUserId},id.eq.${targetUserId}`)
+          .or(`parent_id.eq.${user.id},agency_id.eq.${user.id},id.eq.${user.id}`)
+        
+        const teamIds = Array.from(new Set((teamProfiles || []).map(p => p.id)))
+        if (teamIds.length === 0) teamIds.push(user.id)
+        
+        const orConditions = teamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
+        filterFn = (q: any) => q.or(orConditions)
+      } else {
+        // Admin workspace (or agency impersonating specific client):
+        // STRICT ISOLATION: Only fetch leads belonging to THIS specific workspace and its direct team members
+        const { data: teamProfiles } = await supabase.from('profiles')
+          .select('id')
+          .or(`parent_id.eq.${targetUserId},id.eq.${targetUserId}`)
         
         const teamIds = Array.from(new Set((teamProfiles || []).map(p => p.id)))
         if (teamIds.length === 0) teamIds.push(targetUserId)
@@ -846,10 +858,23 @@ export default function CRMPage() {
             .then(invData => { if (invData?.properties && Array.isArray(invData.properties)) setProperties(invData.properties) })
             .catch(() => {})
 
-          if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
+          if (currentRole === 'agency' && (!impersonateId || impersonateId === user.id)) {
             const { data: teamData } = await supabase.from('profiles')
               .select('id, business_name, full_name, role')
-              .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
+              .or(`agency_id.eq.${user.id},parent_id.eq.${user.id}`)
+              .in('role', ['admin', 'agent', 'agency'])
+            
+            let finalTeam = teamData || []
+            if (!finalTeam.find(t => t.id === user.id)) {
+              const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, full_name, role').eq('id', user.id).single()
+              if (targetProfile) finalTeam.push(targetProfile)
+            }
+            setTeam(finalTeam)
+          } else if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
+            // Strict Workspace Isolation: Only fetch staff/agents belonging directly to this workspace
+            const { data: teamData } = await supabase.from('profiles')
+              .select('id, business_name, full_name, role')
+              .eq('parent_id', targetUserId)
               .in('role', ['admin', 'agent', 'agency'])
             
             let finalTeam = teamData || []
@@ -1788,23 +1813,17 @@ END:VCARD\n`
   }, [campaigns])
 
   // --- DYNAMIC FILTER EXTRACTION ---
-  // Hybrid: use campaigns DB table names + lead ad_name values as fallback
+  // Strictly isolate campaigns to the current workspace's loaded leads
   const uniqueCampaigns = useMemo(() => {
-    // 1. Campaign names from the campaigns DB table
-    const dbNames = campaigns.map(c => c.name).filter(Boolean);
-    // 2. Ad names extracted from leads (fallback for users without DB campaigns)
-    const leadNames = leads
-      .map(l => {
-        // If this lead has a campaign_id that matches a DB campaign, skip it (already covered)
-        if (l.campaign_id) {
-          const camp = campaigns.find(c => c.id === l.campaign_id);
-          if (camp) return null; // already in dbNames
-        }
-        return l.ad_name || l.campaign_name;
-      })
-      .filter(c => c && c !== 'null' && c !== 'undefined' && typeof c === 'string')
-    return [...new Set([...dbNames, ...leadNames])] as string[]
-  }, [campaigns, leads])
+    const list: string[] = []
+    leads.forEach(l => {
+      const campName = getLeadCampaignName(l)
+      if (campName && campName.trim()) list.push(campName.trim())
+      if (l.ad_name && l.ad_name.trim()) list.push(l.ad_name.trim())
+      if (l.campaign_name && l.campaign_name.trim()) list.push(l.campaign_name.trim())
+    })
+    return Array.from(new Set(list)).filter(c => c && c !== 'null' && c !== 'undefined').sort()
+  }, [leads, getLeadCampaignName])
 
   const uniqueForms = useMemo(() => {
     const formNames = leads
@@ -3048,13 +3067,15 @@ END:VCARD\n`
                                                                 type="button"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    const impersonateId = searchParams.get('impersonate');
-                                                                    const cleanPhone = (displayPhone || lead.phone || '').replace(/\D/g, '');
-                                                                    const targetUrl = `/dashboard/whatsapp?leadId=${lead.id}&phone=${encodeURIComponent(cleanPhone)}${impersonateId ? `&impersonate=${impersonateId}` : ''}`;
-                                                                    router.push(targetUrl);
+                                                                    const rawPhone = displayPhone || lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
+                                                                    let cleanPhone = rawPhone.replace(/\D/g, '');
+                                                                    if (cleanPhone) {
+                                                                        if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+                                                                        window.open(`https://wa.me/${cleanPhone}`, '_blank');
+                                                                    }
                                                                 }}
                                                                 className="p-2 bg-emerald-50 text-emerald-600 hover:bg-[#25D366] hover:text-white rounded-xl transition-all border border-emerald-200 cursor-pointer shadow-xs"
-                                                                title="Open WhatsApp Chat"
+                                                                title="Open WhatsApp Direct Chat"
                                                             >
                                                                 <MessageCircle size={14} />
                                                             </button>
@@ -3184,13 +3205,15 @@ END:VCARD\n`
                                             type="button"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                const impersonateId = searchParams.get('impersonate');
-                                                const cleanPhone = (displayPhone || lead.phone || '').replace(/\D/g, '');
-                                                const targetUrl = `/dashboard/whatsapp?leadId=${lead.id}&phone=${encodeURIComponent(cleanPhone)}${impersonateId ? `&impersonate=${impersonateId}` : ''}`;
-                                                router.push(targetUrl);
+                                                const rawPhone = displayPhone || lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
+                                                let cleanPhone = rawPhone.replace(/\D/g, '');
+                                                if (cleanPhone) {
+                                                    if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+                                                    window.open(`https://wa.me/${cleanPhone}`, '_blank');
+                                                }
                                             }}
                                             className="p-2 bg-emerald-50 text-emerald-600 hover:bg-[#25D366] hover:text-white rounded-xl transition-all border border-emerald-200 shadow-xs cursor-pointer"
-                                            title="Open WhatsApp Chat"
+                                            title="Open WhatsApp Direct Chat"
                                         >
                                             <MessageCircle size={14} />
                                         </button>

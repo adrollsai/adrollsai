@@ -1146,13 +1146,15 @@ END:VCARD`
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        const impersonateId = searchParams.get('impersonate');
-                                        const cleanPhone = (lead.phone || '').replace(/\D/g, '');
-                                        const targetUrl = `/dashboard/whatsapp?leadId=${lead.id}&phone=${encodeURIComponent(cleanPhone)}${impersonateId ? `&impersonate=${impersonateId}` : ''}`;
-                                        router.push(targetUrl);
+                                        const rawPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
+                                        let cleanPhone = rawPhone.replace(/\D/g, '');
+                                        if (cleanPhone) {
+                                            if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+                                            window.open(`https://wa.me/${cleanPhone}`, '_blank');
+                                        }
                                     }}
                                     className="p-2.5 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white rounded-full shadow-sm transition-colors shrink-0 cursor-pointer"
-                                    title="Open WhatsApp Chat"
+                                    title="Open WhatsApp Direct Chat"
                                 >
                                     <MessageCircle size={16} />
                                 </button>
