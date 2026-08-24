@@ -116,7 +116,7 @@ export async function POST(req: Request) {
       userId,
       creditsToDeduct,
       'calling',
-      `Outbound AI call to ${leadName} (${leadPhone}) - Duration: ${durationMinutes} min(s) (5 credits/min) [Carrier Cost: Rs. ${finalCostInr.toFixed(2)}]`
+      `Outbound AI call to ${leadName} (${leadPhone}) - Duration: ${durationMinutes} min(s) (5 credits/min)`
     )
 
     return NextResponse.json({ success, finalCostInr, durationMinutes, billingMethod })

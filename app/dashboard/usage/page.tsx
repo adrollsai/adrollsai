@@ -244,31 +244,26 @@ export default function UsagePage() {
                             <ShieldCheck className="text-indigo-400" size={20} />
                             <h3 className="text-sm font-black uppercase tracking-wider text-indigo-400">Prepaid Usage Rate Card</h3>
                         </div>
-                        <div className="relative z-10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                        <div className="relative z-10 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
                             <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
-                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">Voice Call</span>
-                                <span className="text-lg font-black mt-1 block">₹10/min</span>
+                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">Voice Calls</span>
+                                <span className="text-lg font-black mt-1 block">5 Credits/min</span>
                                 <span className="text-[9px] text-slate-400 block mt-0.5">Prepaid outbound dials</span>
                             </div>
                             <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
-                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">AI Image</span>
-                                <span className="text-lg font-black mt-1 block">₹30/gen</span>
-                                <span className="text-[9px] text-slate-400 block mt-0.5">Image creative builds</span>
+                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">AI Images</span>
+                                <span className="text-lg font-black mt-1 block">10 Credits/image</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">High-res creative builds</span>
                             </div>
                             <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
-                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">AI Video</span>
-                                <span className="text-lg font-black mt-1 block">₹250/15s</span>
+                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">AI Videos</span>
+                                <span className="text-lg font-black mt-1 block">50 Credits/15s</span>
                                 <span className="text-[9px] text-slate-400 block mt-0.5">AI presenter clips</span>
                             </div>
                             <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
-                                <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold">Video Render</span>
-                                <span className="text-lg font-black mt-1 block">₹20/render</span>
-                                <span className="text-[9px] text-slate-400 block mt-0.5">Media edit outputs</span>
-                            </div>
-                            <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm col-span-2 sm:col-span-1">
                                 <span className="text-[9px] text-slate-400 uppercase tracking-wider block font-bold font-black">Other Tasks</span>
                                 <span className="text-lg font-black mt-1 block">As Per Actual</span>
-                                <span className="text-[9px] text-slate-400 block mt-0.5">Chatbot/Campaigns at 2x cost</span>
+                                <span className="text-[9px] text-slate-400 block mt-0.5">Automations & background ops</span>
                             </div>
                         </div>
                     </div>

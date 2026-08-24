@@ -6,7 +6,7 @@ import {
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, Eye,
   Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, ChevronUp, SlidersHorizontal, FileText, Send, HelpCircle, Target, Calendar,
-  LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw, History, ArrowRightLeft, Layers
+  LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw, History, ArrowRightLeft, Layers, FileSpreadsheet
 } from 'lucide-react'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
@@ -17,6 +17,7 @@ import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadHistoryModal from '@/components/LeadHistoryModal'
 import GroupLeadDistributionModal from '@/components/GroupLeadDistributionModal'
+import DownloadLeadsModal from '@/components/DownloadLeadsModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle, extractStagesFromProfile } from '@/utils/pipeline-stages'
@@ -303,6 +304,7 @@ export default function CRMPage() {
   const [updateFollowupLead, setUpdateFollowupLead] = useState<any>(null)
   const [historyLead, setHistoryLead] = useState<any>(null)
   const [isGroupDistributionModalOpen, setIsGroupDistributionModalOpen] = useState(false)
+  const [isDownloadLeadsModalOpen, setIsDownloadLeadsModalOpen] = useState(false)
   
   // --- FILTERED BULK TRANSFER MODAL STATE ---
   const [isFilteredBulkTransferModalOpen, setIsFilteredBulkTransferModalOpen] = useState(false)
@@ -2268,6 +2270,14 @@ END:VCARD\n`
                         >
                             <Phone size={16} className={isSyncingCalls ? 'animate-spin text-blue-600' : 'text-blue-600'} />
                             <span className="font-bold text-[10px] sm:text-sm">{isSyncingCalls ? 'Syncing...' : 'Sync Calls'}</span>
+                        </button>
+                        <button 
+                            onClick={() => setIsDownloadLeadsModalOpen(true)} 
+                            className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 cursor-pointer font-bold"
+                            title="Download Leads to CSV based on custom filters & selected fields"
+                        >
+                            <FileSpreadsheet size={16} className="text-emerald-700" />
+                            <span className="font-bold text-[10px] sm:text-sm">Download Leads</span>
                         </button>
                         <button onClick={downloadAllVCard} className="flex-1 md:flex-none p-3 rounded-2xl shadow-sm border border-slate-200/60 bg-white hover:bg-slate-50 active:scale-95 transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2" title="Export All Contacts to Phone">
                             <Download size={16} className="text-slate-600" />
@@ -4339,6 +4349,32 @@ END:VCARD\n`
                 </div>
             </div>
         )}
+
+        {/* DOWNLOAD LEADS MODAL */}
+        <DownloadLeadsModal
+          isOpen={isDownloadLeadsModalOpen}
+          onClose={() => setIsDownloadLeadsModalOpen(false)}
+          leads={leads}
+          team={team}
+          campaigns={campaigns}
+          customStages={customStages}
+          getLeadCampaignName={getLeadCampaignName}
+          initialFilters={{
+            searchQuery,
+            selectedSpecificStage,
+            selectedAgentFilter,
+            selectedDateRange,
+            crmCustomDate,
+            crmStartDate,
+            crmEndDate,
+            selectedCampaign,
+            selectedForm,
+            selectedCsvAudience,
+            selectedDnpFilter,
+            selectedNextActionFilter,
+            selectedNextActionType
+          }}
+        />
         </div>
       </div>
     )

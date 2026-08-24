@@ -5,18 +5,33 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { getCachedValue, setCachedValue } from '@/utils/client-cache';
 import {
-    X,
-    Check,
     ShieldCheck,
     Loader2,
     CalendarDays,
     Crown,
     Sparkles,
     CheckCircle,
+    CheckCircle2,
     ShoppingBag,
     Coins,
-    Percent,
-    LogOut
+    LogOut,
+    Image as ImageIcon,
+    Video,
+    Users,
+    PhoneCall,
+    PhoneForwarded,
+    Bot,
+    MessageSquare,
+    Database,
+    Megaphone,
+    Building2,
+    Globe,
+    Layout,
+    Cloud,
+    BarChart3,
+    Headphones,
+    RotateCw,
+    Star
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -63,7 +78,14 @@ export default function BillingPage() {
             const res = await fetch('/api/subscription/usage');
             if (res.ok) {
                 const data = await res.json();
-                setActivePlanName(data.planName);
+                
+                // Normalize plan name to never show Early Bird
+                let resolvedPlanName = data.planName || 'Free Plan';
+                if (resolvedPlanName.toLowerCase().includes('early bird')) {
+                    resolvedPlanName = 'Pro Plan';
+                }
+
+                setActivePlanName(resolvedPlanName);
                 setCreditsBalance(data.credits || 0);
                 setIsUnlimited(!!data.isUnlimited);
 
@@ -91,7 +113,7 @@ export default function BillingPage() {
                 // Persist billing data to localStorage
                 setCachedValue('billing_cache', {
                     activePlan: plan,
-                    activePlanName: data.planName,
+                    activePlanName: resolvedPlanName,
                     renewalDate: formattedDate,
                     creditsBalance: data.credits || 0,
                     isUnlimited: !!data.isUnlimited
@@ -108,11 +130,111 @@ export default function BillingPage() {
         fetchBillingData();
     }, [router, supabase]);
 
-    const handlePurchase = (planName: string, amount: number, period: string) => {
-        toast.info(`Redirecting to secure WhatsApp payment desk for ${planName}...`);
-        const message = encodeURIComponent(`Hi! I would like to subscribe to the Nobo Pro Plan (${planName} - Rs. ${amount.toLocaleString('en-IN')} for ${period}). Please help me activate this plan.`);
+    const handlePurchase = (planTitle: string, amount: number, period: string, savingsText?: string) => {
+        toast.info(`Redirecting to secure WhatsApp payment desk for ${planTitle}...`);
+        const savingsNote = savingsText ? ` (${savingsText})` : '';
+        const message = encodeURIComponent(`Hi! I would like to subscribe to the Nobogent ${planTitle} (Rs. ${amount.toLocaleString('en-IN')} + 18% GST for ${period}${savingsNote}). Please help me activate this plan.`);
         window.open(`https://wa.me/919872669935?text=${message}`, '_blank');
     };
+
+    const cleanActivePlanDisplay = activePlanName.toLowerCase().includes('early bird')
+        ? 'Pro Plan'
+        : activePlanName;
+
+    const featuresList = [
+        { name: "50 AI Images", subtext: null, icon: ImageIcon },
+        { name: "10 AI Videos", subtext: null, icon: Video },
+        { name: "5 Users", subtext: null, icon: Users },
+        { name: "Virtual Phone Number", subtext: "(In case they use AI Calling)", icon: PhoneCall },
+        { name: "AI Calling", subtext: "(Recharge for minutes separately)", icon: PhoneForwarded },
+        { name: "WhatsApp AI Chatbot", subtext: null, icon: Bot },
+        { name: "WhatsApp Business API", subtext: null, icon: MessageSquare },
+        { name: "Advanced CRM", subtext: null, icon: Database },
+        { name: "Meta Ads Management", subtext: null, icon: Megaphone },
+        { name: "Inventory Management", subtext: null, icon: Building2 },
+        { name: "Business Website", subtext: null, icon: Globe },
+        { name: "AI Landing Page Generator", subtext: null, icon: Layout },
+        { name: "Free Hosting", subtext: null, icon: Cloud },
+        { name: "WhatsApp Bot Analytics", subtext: null, icon: BarChart3 },
+    ];
+
+    const planTiers = [
+        {
+            id: '1-month',
+            title: "1 MONTH PLAN",
+            duration: "1 Month",
+            price: 9999,
+            displayPrice: "₹9,999",
+            gst: "+ 18% GST",
+            badge: null,
+            savings: null,
+            headerBg: "bg-[#0A1128]",
+            headerTextColor: "text-white",
+            btnStyle: "bg-slate-900 text-white hover:bg-slate-800",
+            cardBorder: "border-slate-200"
+        },
+        {
+            id: '6-months',
+            title: "6 MONTHS PLAN",
+            duration: "6 Months",
+            price: 54999,
+            displayPrice: "₹54,999",
+            gst: "+ 18% GST",
+            badge: "MOST POPULAR",
+            savings: {
+                label: "You Save",
+                amount: "₹5,001",
+                discount: "(8% OFF)"
+            },
+            headerBg: "bg-gradient-to-r from-[#312E81] via-[#4338CA] to-[#6366F1]",
+            headerTextColor: "text-white",
+            savingsBoxBg: "bg-[#F3E8FF] border border-[#E9D5FF] text-[#6B21A8]",
+            btnStyle: "bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] text-white hover:opacity-95 shadow-lg shadow-indigo-500/20",
+            cardBorder: "border-purple-300 ring-2 ring-purple-500/10 shadow-xl"
+        },
+        {
+            id: '12-months',
+            title: "12 MONTHS PLAN",
+            duration: "12 Months",
+            price: 99999,
+            displayPrice: "₹99,999",
+            gst: "+ 18% GST",
+            badge: "BEST VALUE",
+            savings: {
+                label: "You Save",
+                amount: "₹20,001",
+                discount: "(17% OFF)"
+            },
+            headerBg: "bg-[#0A1128]",
+            headerTextColor: "text-white",
+            savingsBoxBg: "bg-[#DCFCE7] border border-[#BBF7D0] text-[#166534]",
+            btnStyle: "bg-slate-900 text-white hover:bg-slate-800",
+            cardBorder: "border-slate-200"
+        }
+    ];
+
+    const guaranteeBadges = [
+        {
+            title: "No Setup Fees",
+            desc: "Get started instantly",
+            icon: ShieldCheck
+        },
+        {
+            title: "100% Secure Hosting",
+            desc: "Reliable. Fast. Secure.",
+            icon: Cloud
+        },
+        {
+            title: "Priority Support",
+            desc: "We're here to help you grow",
+            icon: Headphones
+        },
+        {
+            title: "Cancel Anytime",
+            desc: "No long-term lock-in",
+            icon: RotateCw
+        }
+    ];
 
     if (loading) {
         return (
@@ -123,67 +245,30 @@ export default function BillingPage() {
         );
     }
 
-    const planTiers = [
-        {
-            id: 'monthly',
-            name: "Pro Plan - Monthly",
-            price: 9999,
-            displayPrice: "₹9,999",
-            period: "month",
-            credits: 10000,
-            desc: "Ideal for month-to-month flexibility and complete access.",
-            savings: null,
-            badge: "Flexible"
-        },
-        {
-            id: 'quarterly',
-            name: "Pro Plan - Quarterly",
-            price: 24999,
-            displayPrice: "₹24,999",
-            period: "3 months",
-            credits: 25000,
-            desc: "Popular option balancing value with active dials and chat.",
-            savings: "Save 17%",
-            badge: "Best Value",
-            highlight: true
-        },
-        {
-            id: 'yearly',
-            name: "Pro Plan - Yearly",
-            price: 99999,
-            displayPrice: "₹99,999",
-            period: "year",
-            credits: 100000,
-            desc: "The absolute best value plan for committed real estate businesses.",
-            savings: "Save 17% (Save ₹19,989/yr)",
-            badge: "Ultimate Savings"
-        }
-    ];
-
     return (
-        <div className="min-h-screen bg-[#F8FAFC] pb-32 font-sans overflow-x-hidden">
+        <div className="min-h-screen bg-[#F8FAFC] pb-28 font-sans overflow-x-hidden">
 
-            {/* Premium Top Navigation */}
-            <div className="bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-slate-200 shadow-sm">
-                <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+            {/* Top Navigation */}
+            <div className="bg-white/90 backdrop-blur-md sticky top-0 z-40 border-b border-slate-200 shadow-sm">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                        <Crown size={22} className="text-blue-600" />
+                        <Crown size={22} className="text-indigo-600" />
                         <h1 className="text-lg font-black text-slate-900 tracking-tight">SaaS Membership Subscription</h1>
                     </div>
 
                     <div className="flex items-center gap-3">
                         <button
                             onClick={() => router.push('/dashboard/profile')}
-                            className="text-slate-600 hover:text-slate-900 font-extrabold text-xs px-3 py-1.5 rounded-xl hover:bg-slate-100 transition-all cursor-pointer"
+                            className="text-slate-600 hover:text-slate-900 font-extrabold text-xs px-3.5 py-2 rounded-xl hover:bg-slate-100 transition-all cursor-pointer"
                         >
                             Profile / Settings
                         </button>
                         <button
                             onClick={async () => {
-                                await supabase.auth.signOut()
-                                router.push('/login')
+                                await supabase.auth.signOut();
+                                router.push('/login');
                             }}
-                            className="bg-red-50 hover:bg-red-100 text-red-600 font-extrabold text-xs px-3 py-1.5 rounded-xl border border-red-200 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                            className="bg-red-50 hover:bg-red-100 text-red-600 font-extrabold text-xs px-3.5 py-2 rounded-xl border border-red-200 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
                         >
                             <LogOut size={14} />
                             <span>Sign Out</span>
@@ -192,184 +277,347 @@ export default function BillingPage() {
                 </div>
             </div>
 
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-10 sm:pt-16">
-
-                {/* Page Intro */}
-                <div className="text-center mb-12">
-                    <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-wider mb-4 border border-blue-100">
-                        <Sparkles size={12} fill="currentColor" /> Unified Scale
-                    </div>
-                    <h2 className="text-4xl font-black text-slate-900 tracking-tight mb-3">
-                        Choose your subscription plan
-                    </h2>
-                    <p className="text-slate-500 text-sm max-w-lg mx-auto font-medium leading-relaxed">
-                        To unlock calling, smart auto-reply agents, and landing page builds, subscribe to an active base plan package. Extra usage is billed live from Nobo Credits.
-                    </p>
-                </div>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-10">
 
                 {/* Account Status Card */}
-                <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm mb-12 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-sm mb-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                     <div>
                         <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-full border border-blue-100">Current Status</span>
-                            {activePlan !== 'free' && <CheckCircle size={16} className="text-green-500" fill="currentColor" />}
+                            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
+                                Current Status
+                            </span>
+                            {activePlan !== 'free' && <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />}
                         </div>
-                        <h3 className="text-2xl font-black text-slate-800 mt-2">
-                            {activePlanName}
+                        <h3 className="text-2xl font-black text-slate-900 mt-2">
+                            {cleanActivePlanDisplay}
                         </h3>
                     </div>
                     
-                    <div className="flex gap-4">
-                        <div className="flex items-center gap-3 bg-slate-50 px-4 py-3 rounded-2xl border border-slate-100">
-                            <Coins className="text-indigo-600" size={20} />
+                    <div className="flex flex-wrap gap-4">
+                        <div className="flex items-center gap-3 bg-slate-50 px-5 py-3.5 rounded-2xl border border-slate-100 shadow-inner">
+                            <Coins className="text-indigo-600" size={22} />
                             <div>
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Credits Balance</span>
-                                <span className="text-sm font-black text-slate-800">{isUnlimited ? '∞' : `${creditsBalance.toLocaleString()} Credits`}</span>
+                                <span className="text-base font-black text-slate-800">{isUnlimited ? '∞' : `${creditsBalance.toLocaleString()} Credits`}</span>
                             </div>
                         </div>
 
                         {renewalDate && activePlan !== 'free' && (
-                            <div className="flex items-center gap-3 bg-slate-50 px-4 py-3 rounded-2xl border border-slate-100">
-                                <CalendarDays className="text-blue-500" size={20} />
+                            <div className="flex items-center gap-3 bg-slate-50 px-5 py-3.5 rounded-2xl border border-slate-100 shadow-inner">
+                                <CalendarDays className="text-blue-500" size={22} />
                                 <div>
                                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Next Renewal</span>
-                                    <span className="text-sm font-black text-slate-800">{renewalDate}</span>
+                                    <span className="text-base font-black text-slate-800">{renewalDate}</span>
                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* Rate Card Grid */}
-                <div className="bg-white rounded-[2.5rem] border border-slate-200 p-6 sm:p-8 shadow-sm mb-12 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50/40 rounded-full blur-2xl pointer-events-none" />
-                    <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
-                        <Sparkles className="text-blue-600 animate-pulse" size={20} />
-                        <h3 className="text-sm font-black uppercase tracking-wider text-slate-800">Prepaid Usage Rate Card</h3>
+                {/* Prepaid Usage Rate Card */}
+                <div className="bg-white rounded-[2.5rem] border border-slate-200 p-6 sm:p-8 shadow-sm mb-14 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-50/50 rounded-full blur-3xl pointer-events-none" />
+                    <div className="flex items-center gap-2.5 mb-6 border-b border-slate-100 pb-4">
+                        <Sparkles className="text-indigo-600" size={20} />
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Prepaid Usage Rate Card</h3>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30">
-                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Voice Calls</span>
-                            <span className="text-base font-black text-slate-800 mt-1 block">₹10/min</span>
-                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">Prepaid outbound dials</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/70 transition-all hover:bg-slate-100/60">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Voice Calls</span>
+                            <span className="text-xl font-black text-slate-900 mt-1 block">5 Credits/min</span>
+                            <span className="text-[10px] text-slate-500 block mt-1 font-medium">Prepaid outbound dials</span>
                         </div>
-                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30">
-                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">AI Images</span>
-                            <span className="text-base font-black text-slate-800 mt-1 block">₹30/gen</span>
-                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">Image creative builds</span>
+                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/70 transition-all hover:bg-slate-100/60">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">AI Images</span>
+                            <span className="text-xl font-black text-slate-900 mt-1 block">10 Credits/image</span>
+                            <span className="text-[10px] text-slate-500 block mt-1 font-medium">High-res creative builds</span>
                         </div>
-                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30">
-                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">AI Videos</span>
-                            <span className="text-base font-black text-slate-800 mt-1 block">₹250/15s</span>
-                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">AI presenter clips</span>
+                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/70 transition-all hover:bg-slate-100/60">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">AI Videos</span>
+                            <span className="text-xl font-black text-slate-900 mt-1 block">50 Credits/15 sec</span>
+                            <span className="text-[10px] text-slate-500 block mt-1 font-medium">AI presenter clips</span>
                         </div>
-                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30">
-                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Video Renders</span>
-                            <span className="text-base font-black text-slate-800 mt-1 block">₹20/render</span>
-                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">Media edit outputs</span>
-                        </div>
-                        <div className="bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100/85 transition-all hover:bg-slate-100/30 col-span-2 sm:col-span-1">
-                            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block font-black">Other Tasks</span>
-                            <span className="text-base font-black text-slate-800 mt-1 block">As Per Actual</span>
-                            <span className="text-[9px] text-slate-400 block mt-0.5 font-medium">Chatbot/Campaigns at 2x cost</span>
+                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/70 transition-all hover:bg-slate-100/60">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Other Tasks</span>
+                            <span className="text-xl font-black text-slate-900 mt-1 block">As Per Actual</span>
+                            <span className="text-[10px] text-slate-500 block mt-1 font-medium">Standard usage operations & automations</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Subscriptions Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch mb-12">
-                    {planTiers.map((tier) => {
-                        return (
-                            <div
-                                key={tier.id}
-                                className={`bg-white rounded-[2.5rem] border overflow-hidden flex flex-col justify-between hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 relative ${tier.highlight
-                                        ? 'border-blue-600 ring-2 ring-blue-600/10 shadow-lg md:scale-105 z-10'
-                                        : 'border-slate-200'
-                                    }`}
+                {/* Main Plans Section (Matching Screenshot 2) */}
+                <div className="bg-white rounded-[2.5rem] border border-slate-200/90 p-6 sm:p-10 shadow-xl relative overflow-hidden">
+                    
+                    {/* Header Block with Brand */}
+                    <div className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-slate-100">
+                        <div>
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-black text-base shadow-sm">
+                                    N
+                                </span>
+                                <span className="text-xl font-black tracking-wider text-slate-900 uppercase">NOBOGENT</span>
+                            </div>
+                            <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mt-3">
+                                All-in-One <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">AI Marketing & Sales</span> Platform
+                            </h2>
+                            <p className="text-slate-500 text-sm font-semibold mt-2">
+                                Everything you need to grow, manage and scale your business.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Desktop Comparison Table (lg+) */}
+                    <div className="hidden lg:block overflow-x-auto">
+                        <table className="w-full border-collapse">
+                            <thead>
+                                <tr>
+                                    {/* Left feature header column */}
+                                    <th className="w-1/4 pb-6 text-left align-bottom">
+                                        <div className="text-xs font-black uppercase tracking-wider text-slate-400">
+                                            Included Features
+                                        </div>
+                                    </th>
+
+                                    {/* Plan Columns */}
+                                    {planTiers.map((plan) => (
+                                        <th key={plan.id} className="w-1/4 pb-6 px-3 align-top">
+                                            <div className={`relative rounded-3xl overflow-hidden border ${plan.cardBorder} transition-all duration-300`}>
+                                                
+                                                {/* Yellow Tag / Ribbon */}
+                                                {plan.badge && (
+                                                    <div className="absolute top-0 right-0 bg-[#FACC15] text-[#713F12] text-[9px] font-black uppercase px-3.5 py-1 rounded-bl-xl shadow-sm z-20">
+                                                        {plan.badge}
+                                                    </div>
+                                                )}
+
+                                                {/* Card Header */}
+                                                <div className={`${plan.headerBg} ${plan.headerTextColor} p-5 text-center flex flex-col items-center justify-center min-h-[90px]`}>
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <CalendarDays size={18} className="text-white/80" />
+                                                        <span className="text-sm font-black uppercase tracking-wider text-white">
+                                                            {plan.title}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Pricing Block */}
+                                                <div className="bg-white p-6 text-center border-t border-slate-100 flex flex-col items-center">
+                                                    <div className="text-4xl font-black text-slate-900 tracking-tight">
+                                                        {plan.displayPrice}
+                                                    </div>
+                                                    <div className="text-xs font-bold text-slate-400 mt-1">
+                                                        {plan.gst}
+                                                    </div>
+
+                                                    {/* Savings Box if any */}
+                                                    <div className="h-16 flex items-center justify-center w-full mt-3">
+                                                        {plan.savings ? (
+                                                            <div className={`w-full py-2 px-3 rounded-2xl ${plan.savingsBoxBg} text-center`}>
+                                                                <span className="text-[10px] font-bold block uppercase tracking-wider">{plan.savings.label}</span>
+                                                                <div className="flex items-center justify-center gap-1.5">
+                                                                    <span className="text-lg font-black">{plan.savings.amount}</span>
+                                                                    <span className="text-[11px] font-extrabold">{plan.savings.discount}</span>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="h-full" />
+                                                        )}
+                                                    </div>
+
+                                                    <button
+                                                        onClick={() => handlePurchase(plan.title, plan.price, plan.duration, plan.savings ? `Save ${plan.savings.amount}` : undefined)}
+                                                        className={`w-full mt-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 ${plan.btnStyle}`}
+                                                    >
+                                                        <ShoppingBag size={14} /> Subscribe Now
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                {featuresList.map((feat, idx) => (
+                                    <tr 
+                                        key={idx} 
+                                        className={`border-b border-slate-100 hover:bg-slate-50/50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20'}`}
+                                    >
+                                        {/* Feature label with icon */}
+                                        <td className="py-4 pr-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 border border-purple-100">
+                                                    <feat.icon size={16} />
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs font-black text-slate-800 block">
+                                                        {feat.name}
+                                                    </span>
+                                                    {feat.subtext && (
+                                                        <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                                                            {feat.subtext}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        {/* Checkmark for Plan 1 */}
+                                        <td className="py-4 text-center">
+                                            <div className="flex justify-center items-center">
+                                                <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-sm">
+                                                    <CheckCircle2 size={16} strokeWidth={2.5} />
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        {/* Checkmark for Plan 2 */}
+                                        <td className="py-4 text-center">
+                                            <div className="flex justify-center items-center">
+                                                <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-sm">
+                                                    <CheckCircle2 size={16} strokeWidth={2.5} />
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        {/* Checkmark for Plan 3 */}
+                                        <td className="py-4 text-center">
+                                            <div className="flex justify-center items-center">
+                                                <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-sm">
+                                                    <CheckCircle2 size={16} strokeWidth={2.5} />
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Mobile & Tablet Card Layout (below lg) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 lg:hidden items-stretch">
+                        {planTiers.map((plan) => (
+                            <div 
+                                key={plan.id}
+                                className={`bg-white rounded-3xl border overflow-hidden flex flex-col justify-between shadow-lg relative ${plan.cardBorder}`}
                             >
-                                <div className="p-8">
-                                    <div className="flex justify-between items-start mb-4">
-                                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${tier.highlight ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
-                                            {tier.badge}
-                                        </span>
-                                        {tier.savings && (
-                                            <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-0.5">
-                                                <Percent size={10} /> {tier.savings}
+                                {/* Yellow Ribbon Tag */}
+                                {plan.badge && (
+                                    <div className="absolute top-0 right-0 bg-[#FACC15] text-[#713F12] text-[10px] font-black uppercase px-4 py-1.5 rounded-bl-2xl shadow-sm z-20">
+                                        {plan.badge}
+                                    </div>
+                                )}
+
+                                <div>
+                                    {/* Card Top */}
+                                    <div className={`${plan.headerBg} ${plan.headerTextColor} p-6 text-center flex flex-col items-center justify-center`}>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <CalendarDays size={20} className="text-white/80" />
+                                            <span className="text-base font-black uppercase tracking-wider text-white">
+                                                {plan.title}
                                             </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Price & Savings */}
+                                    <div className="p-6 text-center border-b border-slate-100">
+                                        <div className="text-4xl font-black text-slate-900 tracking-tight">
+                                            {plan.displayPrice}
+                                        </div>
+                                        <div className="text-xs font-bold text-slate-400 mt-1">
+                                            {plan.gst}
+                                        </div>
+
+                                        {plan.savings && (
+                                            <div className={`mt-4 py-2.5 px-4 rounded-2xl ${plan.savingsBoxBg} text-center`}>
+                                                <span className="text-[10px] font-bold block uppercase tracking-wider">{plan.savings.label}</span>
+                                                <div className="flex items-center justify-center gap-1.5">
+                                                    <span className="text-xl font-black">{plan.savings.amount}</span>
+                                                    <span className="text-xs font-extrabold">{plan.savings.discount}</span>
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
 
-                                    <h3 className="text-lg font-black text-slate-900 mt-2">{tier.name}</h3>
-
-                                    <div className="my-6">
-                                        <div className="flex items-baseline leading-none">
-                                            <span className="text-4xl font-black text-slate-900 tracking-tight">{tier.displayPrice}</span>
-                                            <span className="text-xs text-slate-400 font-bold ml-1">/ {tier.period}</span>
+                                    {/* Features Checklist */}
+                                    <div className="p-6">
+                                        <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-4">
+                                            Included in this plan:
                                         </div>
-                                        <p className="text-[9px] text-slate-400 font-bold mt-1.5">Inclusive of GST</p>
+                                        <ul className="space-y-3.5">
+                                            {featuresList.map((feat, i) => (
+                                                <li key={i} className="flex items-center gap-3">
+                                                    <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                                                        <CheckCircle2 size={13} strokeWidth={2.5} />
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-xs font-bold text-slate-700 block">
+                                                            {feat.name}
+                                                        </span>
+                                                        {feat.subtext && (
+                                                            <span className="text-[10px] text-slate-400 font-semibold block">
+                                                                {feat.subtext}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
-
-                                    <p className="text-slate-500 text-xs font-semibold leading-relaxed mb-6">
-                                        {tier.desc}
-                                    </p>
-
-                                    <ul className="space-y-3.5 border-t border-slate-100 pt-6">
-                                        <li className="flex items-center gap-2">
-                                            <div className="shrink-0 w-4 h-4 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100">
-                                                <Check size={10} strokeWidth={4} />
-                                            </div>
-                                            <span className="text-xs text-slate-700 font-black">{tier.credits.toLocaleString()} Nobo Credits included</span>
-                                        </li>
-                                        {[
-                                            "ai website creation",
-                                            "ai image gen",
-                                            "ai video gen",
-                                            "graphic generations",
-                                            "video generations",
-                                            "bulk gen",
-                                            "ad launches",
-                                            "remarketing campaigns",
-                                            "click to whatsapp ads",
-                                            "ai whatsapp bot",
-                                            "ai whatsapp followups",
-                                            "ai voice calling and followups",
-                                            "calendar booking system",
-                                            "ai video editing",
-                                            "one click social media posting",
-                                            "advanced crm",
-                                            "whatsapp chat interface",
-                                            "inventory management",
-                                            "fully autonomous"
-                                        ].map((feat, i) => (
-                                            <li key={i} className="flex items-center gap-2">
-                                                <div className="shrink-0 w-4 h-4 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-                                                    <Check size={10} strokeWidth={4} />
-                                                </div>
-                                                <span className="text-xs text-slate-600 font-bold">{feat}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
                                 </div>
 
-                                <div className="p-8 border-t border-slate-50 bg-slate-50/50">
+                                {/* Subscribe Action */}
+                                <div className="p-6 bg-slate-50/60 border-t border-slate-100">
                                     <button
-                                        onClick={() => handlePurchase(tier.name, tier.price, tier.period)}
-                                        className={`w-full py-3.5 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer ${tier.highlight
-                                                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/10'
-                                                : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50'
-                                            }`}
+                                        onClick={() => handlePurchase(plan.title, plan.price, plan.duration, plan.savings ? `Save ${plan.savings.amount}` : undefined)}
+                                        className={`w-full py-4 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 ${plan.btnStyle}`}
                                     >
-                                        <ShoppingBag size={14} /> Subscribe Now
+                                        <ShoppingBag size={16} /> Subscribe Now
                                     </button>
                                 </div>
-
                             </div>
-                        );
-                    })}
+                        ))}
+                    </div>
+
+                    {/* Guarantee & Trust Badges (Screenshot 2 Bottom) */}
+                    <div className="mt-14 pt-10 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-6">
+                        {guaranteeBadges.map((badge, idx) => (
+                            <div key={idx} className="flex items-center gap-3.5">
+                                <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center shrink-0 shadow-sm">
+                                    <badge.icon size={22} />
+                                </div>
+                                <div>
+                                    <div className="text-xs sm:text-sm font-black text-slate-900">
+                                        {badge.title}
+                                    </div>
+                                    <div className="text-[10px] sm:text-xs text-slate-400 font-semibold mt-0.5">
+                                        {badge.desc}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Bottom Dark Navy Bar (Screenshot 2) */}
+                    <div className="mt-10 bg-[#0A1026] text-white rounded-2xl px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left shadow-lg">
+                        <div className="flex items-center gap-2 text-xs font-black">
+                            <span className="bg-amber-400/20 text-amber-300 p-1.5 rounded-lg flex items-center justify-center">
+                                <Star size={14} className="fill-amber-400 text-amber-400" />
+                            </span>
+                            <span>One Platform. Endless Possibilities.</span>
+                        </div>
+                        <div className="text-xs text-slate-300 font-medium">
+                            Save more with longer plans and power your business with AI.
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                            All prices exclusive of 18% GST
+                        </div>
+                    </div>
+
                 </div>
 
                 <div className="text-center text-xs text-slate-400 font-bold mt-10">
-                    Need support? Contact us directly via WhatsApp at +91 98726 69935.
+                    Need support or custom package? Contact us directly via WhatsApp at +91 98726 69935.
                 </div>
 
             </div>

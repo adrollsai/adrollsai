@@ -17,6 +17,17 @@ export async function POST(req: Request) {
         const body = await req.json()
         const { leadId, leadIds, isAutoTrigger, impersonate } = body
 
+        // Check if caller is an agent account
+        const { data: callerProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('role, parent_id, agency_id')
+            .eq('id', user.id)
+            .single()
+
+        if (!isAutoTrigger && (callerProfile?.role === 'agent' || callerProfile?.role === 'team_member')) {
+            return NextResponse.json({ error: 'Agent accounts are not permitted to initiate AI calls.' }, { status: 403 })
+        }
+
         const url = new URL(req.url)
         let impersonateId = url.searchParams.get('impersonate') || impersonate
 

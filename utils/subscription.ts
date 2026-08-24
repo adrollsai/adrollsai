@@ -1,16 +1,58 @@
 export const PLANS = {
-    'early bird plan': {
-        name: "Early Bird Plan",
-        price: 1,
+    '1 month': {
+        name: "1 Month Plan",
+        price: 9999,
         limits: {
-            videos: 1,
-            images: 10,
-            seo_articles: 2,
-            campaign_launches: 1,
-            campaign_optimizations: 1,
-            team_members: 1,
+            videos: 10,
+            images: 50,
+            seo_articles: 30,
+            campaign_launches: 10,
+            campaign_optimizations: 10,
+            team_members: 5,
             retargeting_campaigns: 0,
-            storage_gb: 5
+            storage_gb: 10
+        }
+    },
+    '6 months': {
+        name: "6 Months Plan",
+        price: 54999,
+        limits: {
+            videos: 10,
+            images: 50,
+            seo_articles: 30,
+            campaign_launches: 10,
+            campaign_optimizations: 10,
+            team_members: 5,
+            retargeting_campaigns: 0,
+            storage_gb: 10
+        }
+    },
+    '12 months': {
+        name: "12 Months Plan",
+        price: 99999,
+        limits: {
+            videos: 10,
+            images: 50,
+            seo_articles: 30,
+            campaign_launches: 10,
+            campaign_optimizations: 10,
+            team_members: 5,
+            retargeting_campaigns: 0,
+            storage_gb: 10
+        }
+    },
+    'early bird plan': {
+        name: "Pro Plan",
+        price: 9999,
+        limits: {
+            videos: 10,
+            images: 50,
+            seo_articles: 30,
+            campaign_launches: 10,
+            campaign_optimizations: 10,
+            team_members: 5,
+            retargeting_campaigns: 0,
+            storage_gb: 10
         }
     },
     growth: {

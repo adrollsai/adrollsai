@@ -169,8 +169,14 @@ export default function LeadProfilePage() {
         }
         supabase.auth.getUser().then(({ data: { user } }) => {
             if (user) {
-                supabase.from('profiles').select('business_name').eq('id', user.id).single().then(({ data }) => {
-                    if (data?.business_name) setUserBusinessName(data.business_name)
+                supabase.from('profiles').select('role, parent_id, agency_id, business_name').eq('id', user.id).single().then(({ data }) => {
+                    if (data) {
+                        if (data.business_name) setUserBusinessName(data.business_name)
+                        if (data.role) setCurrentUserRole(data.role)
+                        if (data.role === 'agent' || data.role === 'team_member' || data.parent_id || data.agency_id) {
+                            setIsTeamMember(true)
+                        }
+                    }
                 })
             }
         })
@@ -974,6 +980,10 @@ export default function LeadProfilePage() {
     }
 
     const handleTriggerCall = async () => {
+        if (currentUserRole === 'agent' || isTeamMember) {
+            toast.error("Agent accounts are not permitted to initiate AI calls.")
+            return
+        }
         setIsCalling(true)
         try {
             const res = await fetch(`/api/voice/call${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
@@ -1708,21 +1718,23 @@ END:VCARD`
                                                     <History size={12} /> Call History
                                                 </button>
                                             )}
-                                            <button 
-                                                onClick={handleTriggerCall}
-                                                disabled={isCalling || lead.voice_call_status === 'calling'}
-                                                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-black px-4 py-2 rounded-full transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
-                                            >
-                                                {isCalling || lead.voice_call_status === 'calling' ? (
-                                                    <>
-                                                        <Loader2 size={12} className="animate-spin text-white" /> Calling...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Phone size={12} /> Call via AI
-                                                    </>
-                                                )}
-                                            </button>
+                                            {currentUserRole !== 'agent' && !isTeamMember && (
+                                                <button 
+                                                    onClick={handleTriggerCall}
+                                                    disabled={isCalling || lead.voice_call_status === 'calling'}
+                                                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-black px-4 py-2 rounded-full transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
+                                                >
+                                                    {isCalling || lead.voice_call_status === 'calling' ? (
+                                                        <>
+                                                            <Loader2 size={12} className="animate-spin text-white" /> Calling...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Phone size={12} /> Call via AI
+                                                        </>
+                                                    )}
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
