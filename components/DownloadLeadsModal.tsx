@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   X,
   Download,
@@ -17,7 +17,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Hash,
-  ChevronDown
+  ChevronDown,
+  Megaphone,
+  FileText,
+  UserCheck,
+  Check
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -54,6 +58,271 @@ export const AVAILABLE_FIELDS: DownloadFieldOption[] = [
   { id: 'id', label: 'Lead System ID', category: 'other', defaultSelected: false }
 ]
 
+interface SearchableOption {
+  id: string
+  label: string
+  count?: number
+  subLabel?: string
+}
+
+interface SearchableMultiSelectProps {
+  label: string
+  icon?: any
+  options: SearchableOption[]
+  selectedValues: string[]
+  onChange: (values: string[]) => void
+  allOptionLabel: string
+  placeholder?: string
+}
+
+function SearchableMultiSelect({
+  label,
+  icon: Icon,
+  options,
+  selectedValues,
+  onChange,
+  allOptionLabel,
+  placeholder = 'Search options...'
+}: SearchableMultiSelectProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const isAllSelected = selectedValues.includes('ALL') || selectedValues.length === 0 || (options.length > 0 && selectedValues.length === options.length)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  const filteredOptions = useMemo(() => {
+    if (!search.trim()) return options
+    const q = search.toLowerCase().trim()
+    return options.filter(
+      opt => opt.label.toLowerCase().includes(q) || (opt.subLabel && opt.subLabel.toLowerCase().includes(q))
+    )
+  }, [options, search])
+
+  const toggleOption = (id: string) => {
+    if (id === 'ALL') {
+      onChange(['ALL'])
+      return
+    }
+    let current = selectedValues.filter(v => v !== 'ALL')
+    if (current.includes(id)) {
+      current = current.filter(v => v !== id)
+      if (current.length === 0) {
+        onChange(['ALL'])
+      } else {
+        onChange(current)
+      }
+    } else {
+      current.push(id)
+      if (current.length === options.length) {
+        onChange(['ALL'])
+      } else {
+        onChange(current)
+      }
+    }
+  }
+
+  const handleSelectAllFiltered = () => {
+    if (!search.trim()) {
+      onChange(['ALL'])
+    } else {
+      const filteredIds = filteredOptions.map(o => o.id)
+      const current = selectedValues.filter(v => v !== 'ALL')
+      const merged = Array.from(new Set([...current, ...filteredIds]))
+      if (merged.length >= options.length) {
+        onChange(['ALL'])
+      } else {
+        onChange(merged)
+      }
+    }
+  }
+
+  const handleClear = () => {
+    onChange(['ALL'])
+  }
+
+  // Summary Text
+  let summaryText = allOptionLabel
+  if (!isAllSelected) {
+    if (selectedValues.length === 1) {
+      const match = options.find(o => o.id === selectedValues[0])
+      summaryText = match ? match.label : selectedValues[0]
+    } else {
+      summaryText = `${selectedValues.length} Selected`
+    }
+  }
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between">
+        <span className="flex items-center gap-1">
+          {Icon && <Icon size={12} className="text-slate-400 shrink-0" />}
+          <span className="truncate">{label}</span>
+        </span>
+        {!isAllSelected && (
+          <span className="text-[9px] font-black text-indigo-700 bg-indigo-100 px-1.5 py-0.2 rounded-md shrink-0">
+            {selectedValues.length} active
+          </span>
+        )}
+      </label>
+
+      {/* TRIGGER BUTTON */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full text-left border text-xs font-bold rounded-xl py-2.5 pl-3 pr-8 transition-all flex items-center justify-between cursor-pointer ${
+          !isAllSelected 
+            ? 'border-indigo-300 bg-indigo-50/70 text-indigo-950 ring-1 ring-indigo-500/20 shadow-xs' 
+            : 'border-slate-200 bg-slate-50 hover:bg-slate-100/80 text-slate-800'
+        }`}
+      >
+        <span className="truncate pr-2">{summaryText}</span>
+        <ChevronDown 
+          size={14} 
+          className={`text-slate-400 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180 text-indigo-600' : ''}`} 
+        />
+      </button>
+
+      {/* DROPDOWN POPOVER */}
+      {isOpen && (
+        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-2.5 animate-in fade-in zoom-in-95 duration-150 min-w-[260px]">
+          
+          {/* SEARCH INPUT */}
+          <div className="relative mb-2">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+            <input
+              type="text"
+              autoFocus
+              placeholder={placeholder}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white pl-8 pr-7 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 focus:border-indigo-500 outline-none"
+            />
+            {search && (
+              <button 
+                type="button" 
+                onClick={() => setSearch('')} 
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* ACTION BAR */}
+          <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100 text-[10px] font-bold text-slate-500 px-1">
+            <span>{filteredOptions.length} of {options.length} options</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSelectAllFiltered}
+                className="text-indigo-600 hover:text-indigo-800 hover:underline font-extrabold cursor-pointer"
+              >
+                Select All
+              </button>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={handleClear}
+                className="text-slate-400 hover:text-slate-600 hover:underline cursor-pointer"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          {/* OPTIONS LIST */}
+          <div className="max-h-52 overflow-y-auto space-y-0.5 scrollbar-thin">
+            {/* "ALL" OPTION */}
+            {!search.trim() && (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  toggleOption('ALL')
+                }}
+                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer select-none ${
+                  isAllSelected ? 'bg-indigo-50 text-indigo-900' : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                  isAllSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs' : 'border-slate-300 bg-white'
+                }`}>
+                  {isAllSelected && <Check size={11} strokeWidth={3.5} />}
+                </div>
+                <span className="truncate">{allOptionLabel}</span>
+              </div>
+            )}
+
+            {/* FILTERED OPTIONS */}
+            {filteredOptions.length === 0 ? (
+              <div className="text-center py-4 text-xs text-slate-400 font-semibold">
+                No matching options found
+              </div>
+            ) : (
+              filteredOptions.map(opt => {
+                const isChecked = !isAllSelected && selectedValues.includes(opt.id)
+                return (
+                  <div
+                    key={opt.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      toggleOption(opt.id)
+                    }}
+                    className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer select-none ${
+                      isChecked
+                        ? 'bg-indigo-50/80 font-black text-indigo-950'
+                        : 'font-semibold text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 truncate min-w-0">
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                        isChecked ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs' : 'border-slate-300 bg-white'
+                      }`}>
+                        {isChecked && <Check size={11} strokeWidth={3.5} />}
+                      </div>
+                      <div className="truncate">
+                        <span className="truncate block">{opt.label}</span>
+                        {opt.subLabel && (
+                          <span className="text-[10px] text-slate-400 font-normal truncate block">{opt.subLabel}</span>
+                        )}
+                      </div>
+                    </div>
+                    {opt.count !== undefined && (
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full shrink-0">
+                        {opt.count}
+                      </span>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface DownloadLeadsModalProps {
   isOpen: boolean
   onClose: () => void
@@ -89,15 +358,17 @@ export default function DownloadLeadsModal({
   getLeadCampaignName,
   initialFilters
 }: DownloadLeadsModalProps) {
-  // Filter States inside Modal
-  const [filterStage, setFilterStage] = useState<string>('ALL')
-  const [filterAgent, setFilterAgent] = useState<string>('ALL')
+  // Multi-select Filter States inside Modal
+  const [filterStages, setFilterStages] = useState<string[]>(['ALL'])
+  const [filterAgents, setFilterAgents] = useState<string[]>(['ALL'])
+  const [filterCampaigns, setFilterCampaigns] = useState<string[]>(['ALL'])
+  const [filterForms, setFilterForms] = useState<string[]>(['ALL'])
+  const [filterCsvAudience, setFilterCsvAudience] = useState<string>('ALL')
+
+  // Date & other filter states
   const [filterDateRange, setFilterDateRange] = useState<string>('ALL')
   const [filterStartDate, setFilterStartDate] = useState<string>('')
   const [filterEndDate, setFilterEndDate] = useState<string>('')
-  const [filterCampaign, setFilterCampaign] = useState<string>('ALL')
-  const [filterForm, setFilterForm] = useState<string>('ALL')
-  const [filterCsvAudience, setFilterCsvAudience] = useState<string>('ALL')
   const [filterDnp, setFilterDnp] = useState<string>('ALL')
   const [filterNextAction, setFilterNextAction] = useState<string>('ALL')
   const [filterNextActionType, setFilterNextActionType] = useState<string>('ALL')
@@ -117,13 +388,13 @@ export default function DownloadLeadsModal({
   useEffect(() => {
     if (isOpen) {
       if (initialFilters) {
-        setFilterStage(initialFilters.selectedSpecificStage || 'ALL')
-        setFilterAgent(initialFilters.selectedAgentFilter || 'ALL')
+        setFilterStages(initialFilters.selectedSpecificStage && initialFilters.selectedSpecificStage !== 'ALL' && initialFilters.selectedSpecificStage !== 'All Leads' ? [initialFilters.selectedSpecificStage] : ['ALL'])
+        setFilterAgents(initialFilters.selectedAgentFilter && initialFilters.selectedAgentFilter !== 'ALL' ? [initialFilters.selectedAgentFilter] : ['ALL'])
+        setFilterCampaigns(initialFilters.selectedCampaign && initialFilters.selectedCampaign !== 'ALL' ? [initialFilters.selectedCampaign] : ['ALL'])
+        setFilterForms(initialFilters.selectedForm && initialFilters.selectedForm !== 'ALL' ? [initialFilters.selectedForm] : ['ALL'])
         setFilterDateRange(initialFilters.selectedDateRange || 'ALL')
         setFilterStartDate(initialFilters.crmStartDate || '')
         setFilterEndDate(initialFilters.crmEndDate || '')
-        setFilterCampaign(initialFilters.selectedCampaign ? initialFilters.selectedCampaign : 'ALL')
-        setFilterForm(initialFilters.selectedForm ? initialFilters.selectedForm : 'ALL')
         setFilterCsvAudience(initialFilters.selectedCsvAudience ? initialFilters.selectedCsvAudience : 'ALL')
         setFilterDnp(initialFilters.selectedDnpFilter || 'ALL')
         setFilterNextAction(initialFilters.selectedNextActionFilter || 'ALL')
@@ -179,9 +450,77 @@ export default function DownloadLeadsModal({
     ]
   }, [customStages])
 
+  // Prepare searchable option lists with counts
+  const stageOptions = useMemo<SearchableOption[]>(() => {
+    return allStages.map(st => {
+      const sLower = st.toLowerCase()
+      const count = leads.filter(l => {
+        const leadStatus = (l.status || '').toLowerCase().trim()
+        const leadStage = (l.pipeline_stage || '').toLowerCase().trim()
+        return leadStatus === sLower || leadStage === sLower || (
+          sLower === 'new lead' && ['new lead', 'new', 'fresh', 'uncontacted', ''].includes(leadStatus || leadStage)
+        ) || (
+          sLower === 'requirement taken' && ['requirement taken', 'requirement', 'contacted', 'qualified'].includes(leadStatus || leadStage)
+        ) || (
+          sLower === 'visit done' && ['visit done', 'visited', 'site visit done'].includes(leadStatus || leadStage)
+        ) || (
+          sLower === 'lost/ni' && ['lost/ni', 'lost', 'ni', 'not interested', 'unqualified'].includes(leadStatus || leadStage)
+        )
+      }).length
+      return { id: st, label: st, count }
+    })
+  }, [allStages, leads])
+
+  const agentOptions = useMemo<SearchableOption[]>(() => {
+    const unassignedCount = leads.filter(l => !l.assigned_to).length
+    const list: SearchableOption[] = [
+      { id: 'UNASSIGNED', label: 'Unassigned Leads', count: unassignedCount }
+    ]
+    team.forEach(m => {
+      const count = leads.filter(l => l.assigned_to === m.id).length
+      list.push({
+        id: m.id,
+        label: m.business_name || m.full_name || m.email || 'Team Member',
+        subLabel: m.email || '',
+        count
+      })
+    })
+    return list
+  }, [team, leads])
+
+  const campaignOptions = useMemo<SearchableOption[]>(() => {
+    return uniqueCampaigns.map(c => {
+      const target = c.trim().toLowerCase()
+      const count = leads.filter(l => {
+        const leadCamp = (getLeadCampaignName(l) || '').trim().toLowerCase()
+        const adName = (l.ad_name || '').trim().toLowerCase()
+        const campName = (l.campaign_name || '').trim().toLowerCase()
+        return leadCamp === target || adName === target || campName === target
+      }).length
+      return { id: c, label: c, count }
+    })
+  }, [uniqueCampaigns, leads, getLeadCampaignName])
+
+  const formOptions = useMemo<SearchableOption[]>(() => {
+    return uniqueForms.map(f => {
+      const target = f.trim().toLowerCase()
+      const count = leads.filter(l => {
+        const fName = (l.form_name || '').trim().toLowerCase()
+        const src = (l.source || '').trim().toLowerCase()
+        return fName === target || src === target
+      }).length
+      return { id: f, label: f, count }
+    })
+  }, [uniqueForms, leads])
+
   // Filter matching leads computation (Optimized in-memory filtering)
   const matchingLeads = useMemo(() => {
     if (!leads || leads.length === 0) return []
+
+    const isAllAgents = filterAgents.includes('ALL') || filterAgents.length === 0
+    const isAllStages = filterStages.includes('ALL') || filterStages.length === 0
+    const isAllCampaigns = filterCampaigns.includes('ALL') || filterCampaigns.length === 0
+    const isAllForms = filterForms.includes('ALL') || filterForms.length === 0
 
     return leads.filter(l => {
       // 1. Search Query
@@ -193,30 +532,32 @@ export default function DownloadLeadsModal({
         if (!matchName && !matchPhone && !matchEmail) return false
       }
 
-      // 2. Assigned Agent
-      if (filterAgent !== 'ALL') {
-        if (filterAgent === 'UNASSIGNED') {
-          if (l.assigned_to) return false
+      // 2. Assigned Agent Multi-Select
+      if (!isAllAgents) {
+        if (!l.assigned_to) {
+          if (!filterAgents.includes('UNASSIGNED')) return false
         } else {
-          if (l.assigned_to !== filterAgent) return false
+          if (!filterAgents.includes(l.assigned_to)) return false
         }
       }
 
-      // 3. Pipeline Stage
-      if (filterStage !== 'ALL') {
-        const sLower = filterStage.toLowerCase()
+      // 3. Pipeline Stage Multi-Select
+      if (!isAllStages) {
         const leadStatus = (l.status || '').toLowerCase().trim()
         const leadStage = (l.pipeline_stage || '').toLowerCase().trim()
-        const matches = leadStatus === sLower || leadStage === sLower || (
-          sLower === 'new lead' && ['new lead', 'new', 'fresh', 'uncontacted', ''].includes(leadStatus || leadStage)
-        ) || (
-          sLower === 'requirement taken' && ['requirement taken', 'requirement', 'contacted', 'qualified'].includes(leadStatus || leadStage)
-        ) || (
-          sLower === 'visit done' && ['visit done', 'visited', 'site visit done'].includes(leadStatus || leadStage)
-        ) || (
-          sLower === 'lost/ni' && ['lost/ni', 'lost', 'ni', 'not interested', 'unqualified'].includes(leadStatus || leadStage)
-        )
-        if (!matches) return false
+        const stageMatch = filterStages.some(st => {
+          const sLower = st.toLowerCase()
+          return leadStatus === sLower || leadStage === sLower || (
+            sLower === 'new lead' && ['new lead', 'new', 'fresh', 'uncontacted', ''].includes(leadStatus || leadStage)
+          ) || (
+            sLower === 'requirement taken' && ['requirement taken', 'requirement', 'contacted', 'qualified'].includes(leadStatus || leadStage)
+          ) || (
+            sLower === 'visit done' && ['visit done', 'visited', 'site visit done'].includes(leadStatus || leadStage)
+          ) || (
+            sLower === 'lost/ni' && ['lost/ni', 'lost', 'ni', 'not interested', 'unqualified'].includes(leadStatus || leadStage)
+          )
+        })
+        if (!stageMatch) return false
       }
 
       // 4. Date Range Filter
@@ -260,23 +601,27 @@ export default function DownloadLeadsModal({
         }
       }
 
-      // 5. Campaign Filter
-      if (filterCampaign !== 'ALL') {
-        const leadCamp = getLeadCampaignName(l)?.trim() || ''
-        const adName = (l.ad_name || '').trim()
-        const campName = (l.campaign_name || '').trim()
-        const targetCamp = filterCampaign.trim()
-        if (leadCamp !== targetCamp && adName !== targetCamp && campName !== targetCamp) {
-          return false
-        }
+      // 5. Campaign Multi-Select Filter
+      if (!isAllCampaigns) {
+        const leadCamp = (getLeadCampaignName(l) || '').trim().toLowerCase()
+        const adName = (l.ad_name || '').trim().toLowerCase()
+        const campName = (l.campaign_name || '').trim().toLowerCase()
+        const campMatch = filterCampaigns.some(c => {
+          const target = c.trim().toLowerCase()
+          return leadCamp === target || adName === target || campName === target
+        })
+        if (!campMatch) return false
       }
 
-      // 6. Form / Source Filter
-      if (filterForm !== 'ALL') {
-        const targetForm = filterForm.trim()
-        const fName = (l.form_name || '').trim()
-        const src = (l.source || '').trim()
-        if (fName !== targetForm && src !== targetForm) return false
+      // 6. Form / Source Multi-Select Filter
+      if (!isAllForms) {
+        const fName = (l.form_name || '').trim().toLowerCase()
+        const src = (l.source || '').trim().toLowerCase()
+        const formMatch = filterForms.some(f => {
+          const target = f.trim().toLowerCase()
+          return fName === target || src === target
+        })
+        if (!formMatch) return false
       }
 
       // 7. CSV Audience Filter
@@ -344,13 +689,13 @@ export default function DownloadLeadsModal({
   }, [
     leads,
     filterSearch,
-    filterAgent,
-    filterStage,
+    filterAgents,
+    filterStages,
     filterDateRange,
     filterStartDate,
     filterEndDate,
-    filterCampaign,
-    filterForm,
+    filterCampaigns,
+    filterForms,
     filterCsvAudience,
     filterDnp,
     filterNextAction,
@@ -385,13 +730,13 @@ export default function DownloadLeadsModal({
 
   // Reset filters inside modal
   const handleClearAllFilters = () => {
-    setFilterStage('ALL')
-    setFilterAgent('ALL')
+    setFilterStages(['ALL'])
+    setFilterAgents(['ALL'])
     setFilterDateRange('ALL')
     setFilterStartDate('')
     setFilterEndDate('')
-    setFilterCampaign('ALL')
-    setFilterForm('ALL')
+    setFilterCampaigns(['ALL'])
+    setFilterForms(['ALL'])
     setFilterCsvAudience('ALL')
     setFilterDnp('ALL')
     setFilterNextAction('ALL')
@@ -403,13 +748,13 @@ export default function DownloadLeadsModal({
   // Restore current CRM view filters
   const handleResetToCurrentCrmView = () => {
     if (initialFilters) {
-      setFilterStage(initialFilters.selectedSpecificStage || 'ALL')
-      setFilterAgent(initialFilters.selectedAgentFilter || 'ALL')
+      setFilterStages(initialFilters.selectedSpecificStage && initialFilters.selectedSpecificStage !== 'ALL' && initialFilters.selectedSpecificStage !== 'All Leads' ? [initialFilters.selectedSpecificStage] : ['ALL'])
+      setFilterAgents(initialFilters.selectedAgentFilter && initialFilters.selectedAgentFilter !== 'ALL' ? [initialFilters.selectedAgentFilter] : ['ALL'])
+      setFilterCampaigns(initialFilters.selectedCampaign && initialFilters.selectedCampaign !== 'ALL' ? [initialFilters.selectedCampaign] : ['ALL'])
+      setFilterForms(initialFilters.selectedForm && initialFilters.selectedForm !== 'ALL' ? [initialFilters.selectedForm] : ['ALL'])
       setFilterDateRange(initialFilters.selectedDateRange || 'ALL')
       setFilterStartDate(initialFilters.crmStartDate || '')
       setFilterEndDate(initialFilters.crmEndDate || '')
-      setFilterCampaign(initialFilters.selectedCampaign ? initialFilters.selectedCampaign : 'ALL')
-      setFilterForm(initialFilters.selectedForm ? initialFilters.selectedForm : 'ALL')
       setFilterCsvAudience(initialFilters.selectedCsvAudience ? initialFilters.selectedCsvAudience : 'ALL')
       setFilterDnp(initialFilters.selectedDnpFilter || 'ALL')
       setFilterNextAction(initialFilters.selectedNextActionFilter || 'ALL')
@@ -431,9 +776,7 @@ export default function DownloadLeadsModal({
       case 'name':
         return lead.name || ''
       case 'phone': {
-        const p = lead.phone || ''
-        // Ensure phone starts with quote or is clean format so Excel doesn't scramble it
-        return p
+        return lead.phone || ''
       }
       case 'email':
         return lead.email || ''
@@ -566,14 +909,23 @@ export default function DownloadLeadsModal({
       const activeHeaders = AVAILABLE_FIELDS.filter(f => selectedFields.includes(f.id))
       const headerRow = activeHeaders.map(h => `"${h.label.replace(/"/g, '""')}"`).join(',')
 
-      // Build Data Rows
+      // Build Data Rows with Excel scientific notation protection
       const dataRows = finalExportLeads.map(lead => {
         return activeHeaders
           .map(h => {
             const rawVal = resolveFieldValue(lead, h.id)
-            const cleanVal = String(rawVal ?? '').replace(/"/g, '""')
-            // If phone number, prepend tab or wrap in string formula if needed, or standard double quotes
-            return `"${cleanVal}"`
+            const strVal = String(rawVal ?? '')
+
+            // Phone Number protection: format as Excel formula string ="917350604412"
+            // This prevents Excel from converting 10-12 digit numbers to scientific notation (9.17E+11)
+            if (h.id === 'phone') {
+              const cleanPhone = strVal.trim()
+              if (!cleanPhone) return '""'
+              return `"=""${cleanPhone.replace(/"/g, '""')}"""`
+            }
+
+            // Standard CSV cell formatting with escaped quotes
+            return `"${strVal.replace(/"/g, '""')}"`
           })
           .join(',')
       })
@@ -608,26 +960,26 @@ export default function DownloadLeadsModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 pb-24 sm:pb-6 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-2 sm:p-6 pb-28 sm:pb-6 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
-        className="bg-white w-full max-w-4xl rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[86vh] animate-in zoom-in-95 duration-200"
+        className="bg-white w-full max-w-4xl rounded-3xl sm:rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[88vh] sm:max-h-[86vh] animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         
         {/* MODAL HEADER */}
-        <div className="px-6 py-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400 shadow-inner">
-              <FileSpreadsheet size={22} />
+        <div className="px-4 sm:px-6 py-4 sm:py-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400 shadow-inner shrink-0">
+              <FileSpreadsheet size={20} className="sm:w-[22px] sm:h-[22px]" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-black tracking-tight">Export CRM Leads</h3>
-                <span className="bg-indigo-500/30 text-indigo-300 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-indigo-400/20 uppercase tracking-wider">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base sm:text-lg font-black tracking-tight truncate">Export CRM Leads</h3>
+                <span className="bg-indigo-500/30 text-indigo-300 text-[9px] sm:text-[10px] font-extrabold px-2 sm:px-2.5 py-0.5 rounded-full border border-indigo-400/20 uppercase tracking-wider shrink-0">
                   CSV / Excel
                 </span>
               </div>
-              <p className="text-xs text-slate-300 font-medium mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-300 font-medium mt-0.5 truncate">
                 Download filtered leads with custom field selection & quantity limits
               </p>
             </div>
@@ -635,14 +987,14 @@ export default function DownloadLeadsModal({
 
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-all cursor-pointer shrink-0 ml-2"
           >
-            <X size={18} />
+            <X size={16} className="sm:w-[18px] sm:h-[18px]" />
           </button>
         </div>
 
         {/* MODAL BODY (SCROLLABLE) */}
-        <div className="p-6 overflow-y-auto space-y-6 text-slate-800 divide-y divide-slate-100">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 sm:space-y-6 text-slate-800 divide-y divide-slate-100">
           
           {/* SECTION 1: LIVE STATS & QUICK ACTIONS */}
           <div className="flex flex-wrap items-center justify-between gap-3 pb-2">
@@ -706,51 +1058,55 @@ export default function DownloadLeadsModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               
-              {/* Pipeline Stage */}
-              <div className="relative">
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                  Pipeline Stage
-                </label>
-                <select
-                  value={filterStage}
-                  onChange={(e) => setFilterStage(e.target.value)}
-                  className="w-full appearance-none bg-slate-50 hover:bg-slate-100/70 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 pl-3 pr-8 outline-none focus:border-indigo-500 cursor-pointer truncate"
-                >
-                  <option value="ALL">All Pipeline Stages</option>
-                  {allStages.map((st, i) => (
-                    <option key={i} value={st}>
-                      {st}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
-              </div>
+              {/* Pipeline Stage Multi-Select with Search */}
+              <SearchableMultiSelect
+                label="Pipeline Stage"
+                icon={Layers}
+                options={stageOptions}
+                selectedValues={filterStages}
+                onChange={setFilterStages}
+                allOptionLabel="All Pipeline Stages"
+                placeholder="Search pipeline stages..."
+              />
 
-              {/* Assigned Agent */}
-              <div className="relative">
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                  Assigned Agent
-                </label>
-                <select
-                  value={filterAgent}
-                  onChange={(e) => setFilterAgent(e.target.value)}
-                  className="w-full appearance-none bg-slate-50 hover:bg-slate-100/70 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 pl-3 pr-8 outline-none focus:border-indigo-500 cursor-pointer truncate"
-                >
-                  <option value="ALL">All Team Members</option>
-                  <option value="UNASSIGNED">Unassigned Only</option>
-                  {team.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.business_name || m.full_name || m.email || 'Team Member'}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
-              </div>
+              {/* Assigned Agent Multi-Select with Search */}
+              <SearchableMultiSelect
+                label="Assigned Agent"
+                icon={UserCheck}
+                options={agentOptions}
+                selectedValues={filterAgents}
+                onChange={setFilterAgents}
+                allOptionLabel="All Team Members"
+                placeholder="Search teammates by name or email..."
+              />
+
+              {/* Campaign Multi-Select with Search */}
+              <SearchableMultiSelect
+                label="Campaign / Ad"
+                icon={Megaphone}
+                options={campaignOptions}
+                selectedValues={filterCampaigns}
+                onChange={setFilterCampaigns}
+                allOptionLabel="All Campaigns & Ads"
+                placeholder="Search campaigns & ads..."
+              />
+
+              {/* Form / Source Multi-Select with Search */}
+              <SearchableMultiSelect
+                label="Lead Source / Form"
+                icon={FileText}
+                options={formOptions}
+                selectedValues={filterForms}
+                onChange={setFilterForms}
+                allOptionLabel="All Sources & Forms"
+                placeholder="Search lead forms & sources..."
+              />
 
               {/* Date Range Preset */}
               <div className="relative">
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                  Created Date Range
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <Calendar size={12} className="text-slate-400 shrink-0" />
+                  <span>Created Date Range</span>
                 </label>
                 <select
                   value={filterDateRange}
@@ -797,46 +1153,6 @@ export default function DownloadLeadsModal({
                 </>
               )}
 
-              {/* Campaign / Ad */}
-              <div className="relative">
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                  Campaign / Ad
-                </label>
-                <select
-                  value={filterCampaign}
-                  onChange={(e) => setFilterCampaign(e.target.value)}
-                  className="w-full appearance-none bg-slate-50 hover:bg-slate-100/70 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 pl-3 pr-8 outline-none focus:border-indigo-500 cursor-pointer truncate"
-                >
-                  <option value="ALL">All Campaigns</option>
-                  {uniqueCampaigns.map((c, i) => (
-                    <option key={i} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
-              </div>
-
-              {/* Form / Source */}
-              <div className="relative">
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                  Lead Source / Form
-                </label>
-                <select
-                  value={filterForm}
-                  onChange={(e) => setFilterForm(e.target.value)}
-                  className="w-full appearance-none bg-slate-50 hover:bg-slate-100/70 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 pl-3 pr-8 outline-none focus:border-indigo-500 cursor-pointer truncate"
-                >
-                  <option value="ALL">All Sources & Forms</option>
-                  {uniqueForms.map((f, i) => (
-                    <option key={i} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
-              </div>
-
               {/* CSV Audience Tag */}
               {uniqueCsvAudiences.length > 0 && (
                 <div className="relative">
@@ -859,19 +1175,19 @@ export default function DownloadLeadsModal({
                 </div>
               )}
 
-              {/* DNP Filter */}
+              {/* DNP / Call Status */}
               <div className="relative">
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                  DNP (Missed Calls)
+                  DNP (Missed Call) Status
                 </label>
                 <select
                   value={filterDnp}
                   onChange={(e) => setFilterDnp(e.target.value)}
                   className="w-full appearance-none bg-slate-50 hover:bg-slate-100/70 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 pl-3 pr-8 outline-none focus:border-indigo-500 cursor-pointer truncate"
                 >
-                  <option value="ALL">All DNP Counts</option>
-                  <option value="NO_DNP">No DNP (0 missed)</option>
-                  <option value="DNP_ONLY">Any DNP (1+ missed)</option>
+                  <option value="ALL">All Leads (No DNP Filter)</option>
+                  <option value="NO_DNP">✅ Clean Leads (0 DNPs)</option>
+                  <option value="DNP_ONLY">⚠️ Any DNP (1+ Missed Calls)</option>
                   <option value="DNP_1">1 DNP</option>
                   <option value="DNP_2">2 DNPs</option>
                   <option value="DNP_3PLUS">3+ DNPs</option>
@@ -879,22 +1195,41 @@ export default function DownloadLeadsModal({
                 <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
               </div>
 
-              {/* Next Action Schedule */}
+              {/* Next Action Scheduled Filter */}
               <div className="relative">
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                  Next Action Schedule
+                  Scheduled Next Action
                 </label>
                 <select
                   value={filterNextAction}
                   onChange={(e) => setFilterNextAction(e.target.value)}
                   className="w-full appearance-none bg-slate-50 hover:bg-slate-100/70 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 pl-3 pr-8 outline-none focus:border-indigo-500 cursor-pointer truncate"
                 >
-                  <option value="ALL">All Next Actions</option>
-                  <option value="TODAY">📅 Due Today</option>
-                  <option value="OVERDUE">⚠️ Overdue Actions</option>
-                  <option value="UPCOMING">⚡ Upcoming / Future</option>
-                  <option value="HAS_ACTION">🔔 Any Action Scheduled</option>
-                  <option value="NO_ACTION">❌ No Action Scheduled</option>
+                  <option value="ALL">All Leads</option>
+                  <option value="TODAY">⏰ Action Due Today</option>
+                  <option value="OVERDUE">🚨 Overdue Actions</option>
+                  <option value="UPCOMING">📅 Upcoming Actions</option>
+                  <option value="HAS_ACTION">📌 Has Any Scheduled Action</option>
+                  <option value="NO_ACTION">⚪ No Scheduled Action</option>
+                </select>
+                <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+              </div>
+
+              {/* Next Action Type Filter */}
+              <div className="relative">
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                  Action Type
+                </label>
+                <select
+                  value={filterNextActionType}
+                  onChange={(e) => setFilterNextActionType(e.target.value)}
+                  className="w-full appearance-none bg-slate-50 hover:bg-slate-100/70 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 pl-3 pr-8 outline-none focus:border-indigo-500 cursor-pointer truncate"
+                >
+                  <option value="ALL">All Action Types</option>
+                  <option value="Call">📞 Call</option>
+                  <option value="Meeting">🤝 Meeting</option>
+                  <option value="Visit">🏡 Site Visit</option>
+                  <option value="Follow-up">💬 Follow-up</option>
                 </select>
                 <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
               </div>
@@ -904,58 +1239,57 @@ export default function DownloadLeadsModal({
 
           {/* SECTION 3: QUANTITY LIMIT SELECTION */}
           <div className="pt-6 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
               <div className="flex items-center gap-2">
                 <Hash size={16} className="text-indigo-600" />
                 <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
                   2. Number of Leads to Download
                 </h4>
               </div>
-              <span className="text-[11px] font-semibold text-slate-400">
+              <span className="text-[11px] font-medium text-slate-400">
                 Leave blank or 0 to export all matching ({matchingLeads.length.toLocaleString()})
               </span>
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
-              <div className="relative flex-1 min-w-[200px] max-w-xs">
-                <input
-                  type="number"
-                  min="0"
-                  max={matchingLeads.length || undefined}
-                  placeholder={`All (${matchingLeads.length.toLocaleString()} leads)`}
-                  value={maxDownloadLimit}
-                  onChange={(e) => setMaxDownloadLimit(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
-                />
-              </div>
+              <input
+                type="number"
+                min="0"
+                max={matchingLeads.length}
+                placeholder={`All (${matchingLeads.length.toLocaleString()} leads)`}
+                value={maxDownloadLimit}
+                onChange={(e) => setMaxDownloadLimit(e.target.value)}
+                className="w-48 bg-slate-50 hover:bg-slate-100/50 focus:bg-white px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 focus:border-indigo-500 outline-none transition-all"
+              />
 
-              {/* Quick limit chips */}
+              {/* Quick Limit Buttons */}
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setMaxDownloadLimit('')}
-                  className={`text-xs font-bold px-3 py-2 rounded-xl border transition-all cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
                     !maxDownloadLimit
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                      : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200/80'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                   }`}
                 >
                   All ({matchingLeads.length.toLocaleString()})
                 </button>
-                {[50, 100, 250, 500, 1000].map((count) => {
-                  if (count > matchingLeads.length && matchingLeads.length > 0 && count > 100) return null
+                {[50, 100, 250, 500, 1000].map(qty => {
+                  if (qty > matchingLeads.length && matchingLeads.length > 0) return null
+                  const isSelected = parsedLimit === qty
                   return (
                     <button
-                      key={count}
+                      key={qty}
                       type="button"
-                      onClick={() => setMaxDownloadLimit(String(count))}
-                      className={`text-xs font-bold px-3 py-2 rounded-xl border transition-all cursor-pointer ${
-                        maxDownloadLimit === String(count)
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200/80'
+                      onClick={() => setMaxDownloadLimit(String(qty))}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                       }`}
                     >
-                      Top {count}
+                      Top {qty.toLocaleString()}
                     </button>
                   )
                 })}
@@ -963,9 +1297,9 @@ export default function DownloadLeadsModal({
             </div>
           </div>
 
-          {/* SECTION 4: SELECT FIELDS TO INCLUDE */}
-          <div className="pt-6 space-y-4">
-            <div className="flex items-center justify-between">
+          {/* SECTION 4: FIELD SELECTION MULTI-CHECKBOXES */}
+          <div className="pt-6 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Layers size={16} className="text-indigo-600" />
                 <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
@@ -980,43 +1314,50 @@ export default function DownloadLeadsModal({
                 <button
                   type="button"
                   onClick={handleToggleAllFields}
-                  className="text-xs font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                  className="text-xs font-extrabold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   {selectedFields.length === AVAILABLE_FIELDS.length ? (
                     <>
-                      <Square size={13} /> Deselect All
+                      <Square size={13} />
+                      <span>Deselect All</span>
                     </>
                   ) : (
                     <>
-                      <CheckSquare size={13} /> Select All
+                      <CheckSquare size={13} />
+                      <span>Select All</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Checkbox grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80">
+            {/* Fields Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-2.5 p-2.5 sm:p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80">
               {AVAILABLE_FIELDS.map((field) => {
                 const isChecked = selectedFields.includes(field.id)
                 return (
-                  <label
+                  <div
                     key={field.id}
-                    onClick={() => toggleField(field.id)}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none ${
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      toggleField(field.id)
+                    }}
+                    className={`flex items-center gap-2.5 p-2 sm:p-2.5 rounded-xl border text-xs font-bold transition-all select-none cursor-pointer ${
                       isChecked
                         ? 'bg-white border-indigo-300 text-indigo-950 shadow-xs ring-1 ring-indigo-500/10'
                         : 'bg-white/60 border-slate-200/70 text-slate-500 hover:bg-white hover:text-slate-700'
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => {}} // Handled by label click
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none"
-                    />
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                      isChecked ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs' : 'border-slate-300 bg-white'
+                    }`}>
+                      {isChecked && <Check size={11} strokeWidth={3.5} />}
+                    </div>
                     <span className="truncate">{field.label}</span>
-                  </label>
+                  </div>
                 )
               })}
             </div>
@@ -1025,18 +1366,18 @@ export default function DownloadLeadsModal({
         </div>
 
         {/* MODAL FOOTER */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-slate-500 font-semibold text-center sm:text-left">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+          <div className="text-xs text-slate-500 font-semibold text-center sm:text-left w-full sm:w-auto">
             Ready to download{' '}
             <strong className="text-slate-900 font-black">{finalExportLeads.length.toLocaleString()}</strong> leads with{' '}
             <strong className="text-slate-900 font-black">{selectedFields.length}</strong> columns.
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 transition-all cursor-pointer"
+              className="flex-1 sm:flex-initial px-4 sm:px-5 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-100 border border-slate-200 transition-all cursor-pointer text-center"
             >
               Cancel
             </button>
@@ -1044,7 +1385,7 @@ export default function DownloadLeadsModal({
               type="button"
               onClick={handleExecuteDownload}
               disabled={isExporting || finalExportLeads.length === 0 || selectedFields.length === 0}
-              className="flex-1 sm:flex-initial px-6 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-500 hover:to-blue-500 shadow-md shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-2 sm:flex-initial px-5 sm:px-6 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-500 hover:to-blue-500 shadow-md shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
             >
               <Download size={15} />
               <span>{isExporting ? 'Exporting...' : `Download CSV (${finalExportLeads.length.toLocaleString()})`}</span>
