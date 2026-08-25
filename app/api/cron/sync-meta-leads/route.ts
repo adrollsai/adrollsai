@@ -304,9 +304,12 @@ async function handleSync(request: Request) {
                         parsedGroup.last_assigned_user_name = selectedMember.name;
                         parsedGroup.last_assigned_at = new Date().toISOString();
 
+                        const updatedGroupJson = JSON.stringify(parsedGroup);
+                        aut.description = updatedGroupJson;
+
                         await supabaseAdmin
                           .from('automations')
-                          .update({ description: JSON.stringify(parsedGroup) })
+                          .update({ description: updatedGroupJson })
                           .eq('id', aut.id);
 
                         break;

@@ -1069,25 +1069,14 @@ IMPORTANT RULES:
                                                     const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
 
                                                     if (groupMembers.length > 0 && groupCampaigns.length > 0) {
-                                                        const matchesCamp = groupCampaigns.some(gc => {
-                                                            const gcClean = normalizeCampStr(gc);
-                                                            if (!gcClean) return false;
-                                                            const adClean = normalizeCampStr(adCampaignString);
-                                                            const campClean = normalizeCampStr(campaignName);
-                                                            const headClean = normalizeCampStr(adHeadline);
-                                                            const campIdClean = String(campaignId || '').trim();
-                                                            if (campIdClean && campIdClean === gc.trim()) return true;
-                                                            if (adClean && (adClean.includes(gcClean) || gcClean.includes(adClean))) return true;
-                                                            if (campClean && (campClean.includes(gcClean) || gcClean.includes(campClean))) return true;
-                                                            if (headClean && (headClean.includes(gcClean) || gcClean.includes(headClean))) return true;
-                                                            const segments = gcClean.split(/[-|/]/).map(seg => seg.trim()).filter(seg => seg.length >= 4 && !/^\d+$/.test(seg));
-                                                            for (const seg of segments) {
-                                                                if (adClean && adClean.includes(seg)) return true;
-                                                                if (campClean && campClean.includes(seg)) return true;
-                                                                if (headClean && headClean.includes(seg)) return true;
-                                                            }
-                                                            return false;
-                                                        });
+                                                        const leadCtx = {
+                                                            campaignId: campaignId || null,
+                                                            campaignName: campaignName || null,
+                                                            adName: adName || null,
+                                                            adCampaignString: adCampaignString || null,
+                                                            formName: adHeadline || null
+                                                        };
+                                                        const matchesCamp = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx));
 
                                                         if (matchesCamp) {
                                                             const weightedPool: any[] = [];
@@ -1113,10 +1102,17 @@ IMPORTANT RULES:
                                                             parsedGroup.last_assigned_user_name = selectedMember.name;
                                                             parsedGroup.last_assigned_at = new Date().toISOString();
 
+                                                            const updatedGroupJson = JSON.stringify(parsedGroup);
+                                                            aut.description = updatedGroupJson;
+
                                                             await supabaseAdmin
                                                                 .from('automations')
-                                                                .update({ description: JSON.stringify(parsedGroup) })
+                                                                .update({ description: updatedGroupJson })
                                                                 .eq('id', aut.id);
+
+                                                            break;
+                                                        }
+                                                    }
 
                                                             console.log(`[WhatsApp Lead] Group distribution assigned lead to ${selectedMember.name} (${selectedMember.userId}) for rule ${aut.title}`);
                                                             break;
@@ -2637,9 +2633,12 @@ Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
                       parsedGroup.last_assigned_user_name = selectedMember.name;
                       parsedGroup.last_assigned_at = new Date().toISOString();
 
+                      const updatedGroupJson = JSON.stringify(parsedGroup);
+                      aut.description = updatedGroupJson;
+
                       await supabaseAdmin
                         .from('automations')
-                        .update({ description: JSON.stringify(parsedGroup) })
+                        .update({ description: updatedGroupJson })
                         .eq('id', aut.id);
 
                       break;

@@ -305,7 +305,7 @@ export default function GroupLeadDistributionModal({
     }));
   };
 
-  // Distribute Unassigned Leads for a group using weighted ratio algorithm
+  // Distribute All Matching Leads for a group using weighted ratio algorithm
   const handleDistributeGroupLeads = async (group: DistributionGroup) => {
     if (group.members.length === 0) {
       return toast.error(`Please add at least one team member to group "${group.group_name}".`);
@@ -314,37 +314,37 @@ export default function GroupLeadDistributionModal({
       return toast.error(`Please assign at least one campaign to group "${group.group_name}".`);
     }
 
-    const normalizeCampStr = (s: string) => (s || '')
-      .replace(/[\u2010-\u2015\u2212]/g, '-')
-      .toLowerCase()
-      .replace(/\bhaymten\b/g, 'hampton')
-      .replace(/\bhamyten\b/g, 'hampton')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    // Filter unassigned or workspace owner leads matching group's campaigns
-    const matchingLeads = leads.filter(l => {
-      // Include unassigned leads or leads assigned to target workspace owner
-      const isUnassignedOrOwner = !l.assigned_to || l.assigned_to === targetUserId || l.user_id === targetUserId;
-      if (!isUnassignedOrOwner) return false;
-
-      const leadCtx = {
-        campaignId: l.campaign_id,
-        campaignName: l.campaign_name || l.custom_fields?.meta_ad_origin?.campaign_name,
-        adName: l.ad_name || l.custom_fields?.meta_ad_origin?.ad_name,
-        formName: l.form_name,
-        adCampaignString: l.ad_name
-      };
-
-      return group.campaigns.some(gc => matchesCampaignRule(gc, leadCtx));
-    });
-
-    if (matchingLeads.length === 0) {
-      return toast.error(`No eligible unassigned/owner leads found matching group "${group.group_name}" campaigns.`);
-    }
-
     setIsDistributing(group.id);
     try {
+      // 1. Fetch ALL leads from DB for this workspace to ensure full coverage
+      const { data: dbLeads, error: fetchErr } = await supabase
+        .from('leads')
+        .select('id, name, phone, assigned_to, user_id, campaign_id, ad_name, form_name, custom_fields')
+        .eq('user_id', targetUserId)
+        .order('created_at', { ascending: true });
+
+      if (fetchErr) throw fetchErr;
+
+      const allWorkspaceLeads = dbLeads || [];
+
+      // 2. Filter leads matching group's campaigns
+      const matchingLeads = allWorkspaceLeads.filter(l => {
+        const leadCtx = {
+          campaignId: l.campaign_id,
+          campaignName: l.custom_fields?.meta_ad_origin?.campaign_name || l.ad_name,
+          adName: l.ad_name || l.custom_fields?.meta_ad_origin?.ad_name,
+          formName: l.form_name,
+          adCampaignString: l.ad_name
+        };
+
+        return group.campaigns.some(gc => matchesCampaignRule(gc, leadCtx));
+      });
+
+      if (matchingLeads.length === 0) {
+        return toast.error(`No leads found matching group "${group.group_name}" campaigns.`);
+      }
+
+      // 3. Build weighted sequence pool
       const weightedPool: DistributionGroupMember[] = [];
       group.members.forEach(m => {
         for (let i = 0; i < Math.max(1, m.weight); i++) {
@@ -361,20 +361,33 @@ export default function GroupLeadDistributionModal({
       }
 
       let lastAssignedMember: DistributionGroupMember = weightedPool[currentPointer];
+      const updatesByAgent: Record<string, string[]> = {};
+      group.members.forEach(m => { updatesByAgent[m.userId] = []; });
 
       for (const lead of matchingLeads) {
         const assignedMember = weightedPool[currentPointer];
-        
-        await supabase
-          .from('leads')
-          .update({ assigned_to: assignedMember.userId })
-          .eq('id', lead.id);
+        updatesByAgent[assignedMember.userId].push(lead.id);
 
         lastAssignedMember = assignedMember;
         currentPointer = (currentPointer + 1) % weightedPool.length;
       }
 
-      // Update group rule with last assigned user
+      // 4. Batch update leads in database by agent
+      const updatePromises = Object.entries(updatesByAgent).map(async ([agentId, leadIds]) => {
+        if (leadIds.length === 0) return;
+        // Chunk into batches of 100
+        for (let i = 0; i < leadIds.length; i += 100) {
+          const chunk = leadIds.slice(i, i + 100);
+          await supabase
+            .from('leads')
+            .update({ assigned_to: agentId })
+            .in('id', chunk);
+        }
+      });
+
+      await Promise.all(updatePromises);
+
+      // 5. Update group rule with last assigned user
       const updatedGroup: DistributionGroup = {
         ...group,
         last_assigned_user_id: lastAssignedMember.userId,
@@ -385,9 +398,10 @@ export default function GroupLeadDistributionModal({
       await saveGroupRuleToDb(updatedGroup);
       setGroups(prev => prev.map(g => g.id === group.id ? updatedGroup : g));
 
-      toast.success(`Distributed ${matchingLeads.length} leads across group "${group.group_name}"!`);
+      toast.success(`Distributed ${matchingLeads.length} leads across ${group.members.length} agents in "${group.group_name}"!`);
       onLeadsUpdated();
     } catch (err: any) {
+      console.error('Failed to distribute group leads:', err);
       toast.error('Failed to distribute group leads: ' + (err.message || String(err)));
     } finally {
       setIsDistributing(null);

@@ -873,8 +873,18 @@ export default function ProfilePage() {
         if (profileData.facebook_token && isValidFacebookToken(profileData.facebook_token)) {
           setIsFacebookConnected(true)
           setFacebookToken(profileData.facebook_token);
-          if (profileData.selected_page_id) setSelectedPageId(profileData.selected_page_id)
-          else parallelFetches.push(fetchPages())
+          if (profileData.selected_page_id) {
+            setSelectedPageId(profileData.selected_page_id)
+            if (profileData.selected_page_name) {
+              setFbPages([{
+                id: profileData.selected_page_id,
+                name: profileData.selected_page_name,
+                access_token: profileData.selected_page_token || profileData.facebook_token,
+                category: 'General'
+              }])
+            }
+          }
+          parallelFetches.push(fetchPages())
 
           if (profileData.ad_account_id) {
             setSelectedAdAccountId(profileData.ad_account_id)
