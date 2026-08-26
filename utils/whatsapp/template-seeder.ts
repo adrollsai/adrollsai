@@ -270,6 +270,52 @@ export async function registerDefaultTemplates(
             results.push({ name: 'instant_lead_catalog_welcome', success: true, cached: true });
         }
 
+        // E. real_estate_tailored_inventory
+        if (!existingNames.has('real_estate_tailored_inventory')) {
+            console.log('[TEMPLATE SEEDER] Registering real_estate_tailored_inventory template...');
+            const qualifyPayload = {
+                name: 'real_estate_tailored_inventory',
+                category: 'MARKETING',
+                language: 'en_US',
+                components: [
+                    {
+                        type: 'BODY',
+                        text: 'Hi! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢'
+                    },
+                    {
+                        type: 'BUTTONS',
+                        buttons: [
+                            {
+                                type: 'QUICK_REPLY',
+                                text: 'Answer Questions'
+                            },
+                            {
+                                type: 'QUICK_REPLY',
+                                text: 'View Properties'
+                            },
+                            {
+                                type: 'QUICK_REPLY',
+                                text: 'Talk to Expert'
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            const qRes = await fetch(postMetaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${whatsappToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(qualifyPayload)
+            });
+            const qData = await qRes.json();
+            results.push({ name: 'real_estate_tailored_inventory', success: !qData.error, error: qData.error?.message || null });
+        } else {
+            results.push({ name: 'real_estate_tailored_inventory', success: true, cached: true });
+        }
+
         return { success: true, results };
     } catch (err: any) {
         console.error('[TEMPLATE SEEDER] Seeding failed:', err);

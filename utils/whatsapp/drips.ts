@@ -254,49 +254,125 @@ export async function sendInstantFormCatalogMessage(
         const catalogUrlParam = ownerId;
         const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
 
-        // 1. Try sending auto_lead_welcome (Utility category, highest deliverability)
         let messageSent = false;
         let sentMessageText = '';
 
+        // 1. Primary: Send real_estate_tailored_inventory qualification lead magnet template
         try {
-            const welcomePayload = {
+            const qualifyPayload = {
                 messaging_product: 'whatsapp',
                 to: cleanPhone,
                 type: 'template',
                 template: {
-                    name: 'auto_lead_welcome',
-                    language: { code: 'en_US' },
-                    components: [
-                        {
-                            type: 'body',
-                            parameters: [
-                                { type: 'text', text: leadName || 'Valued Client' },
-                                { type: 'text', text: companyName },
-                                { type: 'text', text: campaignName || 'our premium properties' }
-                            ]
-                        }
-                    ]
+                    name: 'real_estate_tailored_inventory',
+                    language: { code: 'en_US' }
                 }
             };
 
-            const autoRes = await fetch(metaUrl, {
+            const qRes = await fetch(metaUrl, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(welcomePayload)
+                body: JSON.stringify(qualifyPayload)
             });
-            const autoData = await autoRes.json();
-            if (autoRes.ok && autoData.messages?.[0]?.id) {
+            const qData = await qRes.json();
+            if (qRes.ok && qData.messages?.[0]?.id) {
                 messageSent = true;
-                sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for reaching out to ${companyName}. We have received your inquiry regarding ${campaignName || 'our premium properties'} and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!`;
-                console.log(`[INSTANT CATALOG WA] Sent 'auto_lead_welcome' to ${cleanPhone}: ${autoData.messages[0].id}`);
+                sentMessageText = `Hi! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢`;
+                console.log(`[INSTANT CATALOG WA] Sent 'real_estate_tailored_inventory' to ${cleanPhone}: ${qData.messages[0].id}`);
             } else {
-                console.warn('[INSTANT CATALOG WA] auto_lead_welcome failed, trying instant_lead_catalog_welcome fallback:', autoData);
+                console.log('[INSTANT CATALOG WA] real_estate_tailored_inventory not yet active/sent, trying lead_inventory_survey fallback:', qData);
             }
-        } catch (autoErr) {
-            console.warn('[INSTANT CATALOG WA] auto_lead_welcome exception:', autoErr);
+        } catch (qErr) {
+            console.warn('[INSTANT CATALOG WA] real_estate_tailored_inventory exception:', qErr);
+        }
+
+        // 2. Secondary: Try lead_inventory_survey (personalized version)
+        if (!messageSent) {
+            try {
+                const persPayload = {
+                    messaging_product: 'whatsapp',
+                    to: cleanPhone,
+                    type: 'template',
+                    template: {
+                        name: 'lead_inventory_survey',
+                        language: { code: 'en_US' },
+                        components: [
+                            {
+                                type: 'body',
+                                parameters: [
+                                    { type: 'text', text: leadName || 'there' }
+                                ]
+                            }
+                        ]
+                    }
+                };
+
+                const pRes = await fetch(metaUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(persPayload)
+                });
+                const pData = await pRes.json();
+                if (pRes.ok && pData.messages?.[0]?.id) {
+                    messageSent = true;
+                    sentMessageText = `Hi ${leadName || ''}! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢`;
+                    console.log(`[INSTANT CATALOG WA] Sent 'lead_inventory_survey' to ${cleanPhone}: ${pData.messages[0].id}`);
+                } else {
+                    console.log('[INSTANT CATALOG WA] lead_inventory_survey not yet active, falling back to auto_lead_welcome:', pData);
+                }
+            } catch (pErr) {
+                console.warn('[INSTANT CATALOG WA] lead_inventory_survey exception:', pErr);
+            }
+        }
+
+        // 3. Fallback: auto_lead_welcome (Utility category, guaranteed delivery)
+        if (!messageSent) {
+            try {
+                const welcomePayload = {
+                    messaging_product: 'whatsapp',
+                    to: cleanPhone,
+                    type: 'template',
+                    template: {
+                        name: 'auto_lead_welcome',
+                        language: { code: 'en_US' },
+                        components: [
+                            {
+                                type: 'body',
+                                parameters: [
+                                    { type: 'text', text: leadName || 'Valued Client' },
+                                    { type: 'text', text: companyName },
+                                    { type: 'text', text: campaignName || 'our premium properties' }
+                                ]
+                            }
+                        ]
+                    }
+                };
+
+                const autoRes = await fetch(metaUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(welcomePayload)
+                });
+                const autoData = await autoRes.json();
+                if (autoRes.ok && autoData.messages?.[0]?.id) {
+                    messageSent = true;
+                    sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for reaching out to ${companyName}. We have received your inquiry regarding ${campaignName || 'our premium properties'} and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!`;
+                    console.log(`[INSTANT CATALOG WA] Sent 'auto_lead_welcome' to ${cleanPhone}: ${autoData.messages[0].id}`);
+                } else {
+                    console.warn('[INSTANT CATALOG WA] auto_lead_welcome failed, trying instant_lead_catalog_welcome fallback:', autoData);
+                }
+            } catch (autoErr) {
+                console.warn('[INSTANT CATALOG WA] auto_lead_welcome exception:', autoErr);
+            }
         }
 
         // 2. Fallback to instant_lead_catalog_welcome

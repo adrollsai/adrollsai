@@ -67,29 +67,55 @@ export function calculateLeadScore(
   const cf = parseCustomFields(lead.custom_fields);
   
   // Default 3 standard questions for Real Estate if none configured
-  const effectiveQuestions = (qualifyingQuestions && qualifyingQuestions.length > 0)
+  const rawQuestions = (qualifyingQuestions && qualifyingQuestions.length > 0)
     ? qualifyingQuestions
     : ['property_type', 'budget', 'timeline'];
   
-  const totalQuestions = effectiveQuestions.length;
+  const effectiveQuestions: { key: string; text: string }[] = [];
+  rawQuestions.forEach((item: any, idx: number) => {
+    if (typeof item === 'string') {
+      const qClean = item.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+      const defaultKey = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
+      effectiveQuestions.push({ key: defaultKey, text: item });
+      if (!effectiveQuestions.some(e => e.key === qClean)) {
+        effectiveQuestions.push({ key: qClean, text: item });
+      }
+    } else if (typeof item === 'object' && item !== null) {
+      const qText = item.question || item.text || `Question ${idx + 1}`;
+      const defaultKey = item.field_name || (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
+      effectiveQuestions.push({ key: defaultKey, text: qText });
+    }
+  });
+
+  const totalQuestions = rawQuestions.length || 3;
   let answeredCount = 0;
 
-  // 1. Questions Answered (Up to 40 points)
-  effectiveQuestions.forEach(q => {
-    const qClean = q.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
-    const val = cf[q] || cf[qClean] || cf[`q_${qClean}`] || 
-                (qClean.includes('property') ? (cf.property_type || cf.interested_property || lead.property_id) : undefined) ||
-                (qClean.includes('budget') ? (cf.budget || lead.budget) : undefined) ||
-                (qClean.includes('timeline') ? cf.timeline : undefined);
+  // Check how many questions from rawQuestions have answers in cf or lead
+  rawQuestions.forEach((item: any, idx: number) => {
+    const defaultKey = typeof item === 'object' && item?.field_name 
+      ? item.field_name 
+      : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
+    
+    const itemText = typeof item === 'string' ? item : (item?.question || item?.text || '');
+    const qClean = itemText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+
+    const val = cf[defaultKey] || cf[qClean] || cf[`q_${qClean}`] || 
+                (qClean.includes('property') || defaultKey.includes('property') ? (cf.property_type || cf.interested_property || lead.property_id) : undefined) ||
+                (qClean.includes('budget') || defaultKey.includes('budget') ? (cf.budget || lead.budget) : undefined) ||
+                (qClean.includes('timeline') || defaultKey.includes('timeline') ? (cf.timeline || lead.timeline) : undefined);
 
     if (val !== undefined && val !== null && String(val).trim().length > 0) {
       answeredCount++;
     }
   });
 
-  const questionScore = totalQuestions > 0 
-    ? Math.round((Math.min(answeredCount, totalQuestions) / totalQuestions) * 40)
-    : 0;
+  // Full 40 points awarded upon answering all questions, or if marked completed
+  const isAllAnswered = totalQuestions > 0 && answeredCount >= totalQuestions;
+  const isMarkedCompleted = !!(cf.qualification_completed || cf.is_qualified);
+
+  const questionScore = (isAllAnswered || isMarkedCompleted)
+    ? 40 
+    : (totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 40) : 0);
 
   // 2. Appointment Booked (30 points)
   const hasBookedTime = !!lead.booked_time || !!cf.booked_time || !!cf.appointment_time || !!cf.meeting_time;

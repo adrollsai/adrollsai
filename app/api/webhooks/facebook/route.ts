@@ -2018,6 +2018,39 @@ IMPORTANT RULES:
                                             await sendMCQButtons(qObj.question, buttons);
                                         };
 
+                                        // Check if we are waiting for the lead's name after qualification questions
+                                        if (currentCustomFields?.awaiting_lead_name && messageText && messageText.trim().length > 1 && !buttonReplyId) {
+                                            const cleanedName = messageText.trim()
+                                                .replace(/^(my name is|i am|this is|name:)\s*/i, '')
+                                                .split('\n')[0]
+                                                .slice(0, 50);
+
+                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} provided their name: "${cleanedName}". Updating CRM lead record.`);
+
+                                            if (latestLead?.id) {
+                                                await supabaseAdmin.from('leads').update({ name: cleanedName }).eq('id', latestLead.id);
+                                            }
+                                            await supabaseAdmin.from('whatsapp_chats').update({ recipient_name: cleanedName }).eq('id', chat.id);
+
+                                            await syncFieldsAndScore({
+                                                awaiting_lead_name: false,
+                                                lead_name_captured: true,
+                                                qualification_completed: true,
+                                                full_name: cleanedName
+                                            });
+
+                                            // Send tailored lead magnet catalog link
+                                            await sendCtaUrlMessage(
+                                                `🎁 Tailored Catalog for ${cleanedName}`,
+                                                `Thank you, ${cleanedName}! 🎉 Based on your requirements, here is your customized properties & inventory list with pricing and floor plans:`,
+                                                "View Properties 🏢",
+                                                catalogueLink
+                                            );
+                                            await new Promise(r => setTimeout(r, 800));
+                                            await sendThreeButtons("What would you like to do next?");
+                                            return;
+                                        }
+
                                         // Dynamic MCQ button clicks (q_opt_{qIndex}_{optIndex})
                                         if (buttonReplyId?.startsWith('q_opt_')) {
                                             const parts = buttonReplyId.split('_');
@@ -2036,10 +2069,23 @@ IMPORTANT RULES:
                                                     await askQuestionMCQ(nextIdx);
                                                     return;
                                                 } else {
-                                                    await sendTextMessage("Thank you for sharing your preferences! 🎉 We have saved your requirements.");
-                                                    await new Promise(r => setTimeout(r, 600));
-                                                    await sendThreeButtons("What would you like to do?");
-                                                    return;
+                                                    // All qualification questions answered -> Ask for lead name to complete tailored catalog
+                                                    if (!currentCustomFields?.lead_name_captured) {
+                                                        await syncFieldsAndScore({ awaiting_lead_name: true });
+                                                        await sendTextMessage("Great! 🎉 To instantly receive your tailored inventory list & brochure matched to your preferences, may I know your good name please?");
+                                                        return;
+                                                    } else {
+                                                        await syncFieldsAndScore({ qualification_completed: true });
+                                                        await sendCtaUrlMessage(
+                                                            "🏢 Your Curated Properties",
+                                                            "Thank you! 🎉 Here is your customized property catalog based on your requirements:",
+                                                            "View Properties 🏢",
+                                                            catalogueLink
+                                                        );
+                                                        await new Promise(r => setTimeout(r, 800));
+                                                        await sendThreeButtons("What would you like to do next?");
+                                                        return;
+                                                    }
                                                 }
                                             }
                                         }
@@ -2085,17 +2131,33 @@ IMPORTANT RULES:
                                             console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Timeline: ${selectedTime}`);
                                             await syncFieldsAndScore({ timeline: selectedTime });
 
-                                            await sendTextMessage("Thank you for sharing your preferences! 🎉 We have saved your requirements.");
-                                            await new Promise(r => setTimeout(r, 600));
-                                            await sendThreeButtons("What would you like to do?");
-                                            return;
+                                            if (!currentCustomFields?.lead_name_captured) {
+                                                await syncFieldsAndScore({ awaiting_lead_name: true });
+                                                await sendTextMessage("Great! 🎉 To instantly send you our tailored inventory list & brochure matched to your preferences, may I know your good name please?");
+                                                return;
+                                            } else {
+                                                await sendThreeButtons("What would you like to do?");
+                                                return;
+                                            }
                                         }
 
                                         // 6. Default Fallback for New or In-Progress Leads:
                                         // Check if any configured question is unanswered
                                         const unansweredQ = parsedQuestionsList.find(q => !currentCustomFields[q.key]);
                                         if (unansweredQ) {
+                                            // If starting question 1, send encouraging lead magnet intro
+                                            if (unansweredQ.index === 0 && Object.keys(currentCustomFields).filter(k => k !== 'lead_score' && k !== 'lead_tier').length === 0) {
+                                                await sendTextMessage("Hi! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢");
+                                                await new Promise(r => setTimeout(r, 600));
+                                            }
                                             await askQuestionMCQ(unansweredQ.index);
+                                            return;
+                                        }
+
+                                        // If all questions are answered but name not yet asked
+                                        if (!currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
+                                            await syncFieldsAndScore({ awaiting_lead_name: true });
+                                            await sendTextMessage("Great! 🎉 To receive your tailored inventory list & brochure matched to your preferences, may I know your good name please?");
                                             return;
                                         }
 

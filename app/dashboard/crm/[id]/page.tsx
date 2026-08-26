@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight, Target, Sparkles, Building2, Users, PhoneOff, PhoneCall } from 'lucide-react'
+import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight, Target, Sparkles, Building2, Users, PhoneOff, PhoneCall, Pencil, Check, Edit2 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
@@ -91,6 +91,14 @@ export default function LeadProfilePage() {
     const [currentUserRole, setCurrentUserRole] = useState<string>('admin')
     const [isTeamMember, setIsTeamMember] = useState(false)
     const [loading, setLoading] = useState(true)
+
+    // Flow Questions & Name editing states
+    const [flowQuestions, setFlowQuestions] = useState<any[]>([])
+    const [linkedFlowName, setLinkedFlowName] = useState<string>('')
+    const [isEditingName, setIsEditingName] = useState(false)
+    const [nameInput, setNameInput] = useState('')
+    const [isSavingName, setIsSavingName] = useState(false)
+    const [savingQuestionKey, setSavingQuestionKey] = useState<string | null>(null)
 
     const visibleLeadHistory = useMemo(() => {
         const cutoff = lead?.custom_fields?.history_visible_from
@@ -557,13 +565,154 @@ export default function LeadProfilePage() {
                 if (data.user_id) {
                     supabase.from('properties').select('id, title, tags, configurations').eq('user_id', data.user_id).then(({ data: propsData }) => {
                         if (propsData) setProperties(propsData)
-                    })
+                    });
+
+                    // Fetch linked qualification flow or default flow
+                    (async () => {
+                        try {
+                            const targetCampaignId = data.campaign_id || data.custom_fields?.campaign_id || data.custom_fields?.meta_ad_origin?.campaign_id;
+                            let loadedQuestions: any[] = [];
+                            let flowTitle = 'Standard Real Estate Qualification';
+
+                            if (targetCampaignId) {
+                                const { data: campaignFlow } = await supabase
+                                    .from('whatsapp_question_flows')
+                                    .select('*')
+                                    .eq('user_id', data.user_id)
+                                    .eq('linked_campaign_id', targetCampaignId)
+                                    .maybeSingle();
+
+                                if (campaignFlow && Array.isArray(campaignFlow.questions) && campaignFlow.questions.length > 0) {
+                                    loadedQuestions = campaignFlow.questions;
+                                    flowTitle = campaignFlow.name;
+                                }
+                            }
+
+                            if (loadedQuestions.length === 0) {
+                                const { data: defaultFlow } = await supabase
+                                    .from('whatsapp_question_flows')
+                                    .select('*')
+                                    .eq('user_id', data.user_id)
+                                    .or('is_active.eq.true,linked_campaign_id.is.null')
+                                    .order('created_at', { ascending: false })
+                                    .limit(1)
+                                    .maybeSingle();
+
+                                if (defaultFlow && Array.isArray(defaultFlow.questions) && defaultFlow.questions.length > 0) {
+                                    loadedQuestions = defaultFlow.questions;
+                                    flowTitle = defaultFlow.name;
+                                } else {
+                                    const { data: prof } = await supabase
+                                        .from('profiles')
+                                        .select('qualifying_questions')
+                                        .eq('id', data.user_id)
+                                        .single();
+                                    if (prof?.qualifying_questions && Array.isArray(prof.qualifying_questions) && prof.qualifying_questions.length > 0) {
+                                        loadedQuestions = prof.qualifying_questions;
+                                    }
+                                }
+                            }
+
+                            if (loadedQuestions.length === 0) {
+                                loadedQuestions = [
+                                    { question: 'What type of property are you interested in?', field_name: 'property_type', options: ['Residential', 'Commercial', 'Plots / Land'] },
+                                    { question: 'What is your budget range?', field_name: 'budget', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
+                                    { question: 'What is your timeline to purchase?', field_name: 'timeline', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
+                                ];
+                            }
+
+                            setFlowQuestions(loadedQuestions);
+                            setLinkedFlowName(flowTitle);
+                        } catch (fErr) {
+                            console.error('[CRM Lead Page] Error fetching question flow:', fErr);
+                        }
+                    })();
                 }
             }
         } catch (err) {
             console.error("Error fetching lead data:", err)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleSaveLeadName = async () => {
+        if (!nameInput.trim() || !lead) return
+        const isAdmin = ['admin', 'super_admin', 'agency'].includes(currentUserRole) && !isTeamMember
+        if (!isAdmin) {
+            toast.error("Only administrators can edit lead names.")
+            return
+        }
+
+        setIsSavingName(true)
+        try {
+            const cleanName = nameInput.trim()
+            const { error: updateErr } = await supabase
+                .from('leads')
+                .update({ name: cleanName })
+                .eq('id', lead.id)
+
+            if (updateErr) throw updateErr
+
+            const nextLead = { ...lead, name: cleanName }
+            setLead(nextLead)
+            updateLocalCRMCache(nextLead)
+            setIsEditingName(false)
+            toast.success("Lead name updated successfully! 🎉")
+        } catch (e: any) {
+            toast.error(e.message || "Failed to update lead name")
+        } finally {
+            setIsSavingName(false)
+        }
+    }
+
+    const handleUpdateQualificationAnswer = async (key: string, value: string) => {
+        if (!lead) return
+        setSavingQuestionKey(key)
+        try {
+            const currentCf = typeof lead.custom_fields === 'object' && lead.custom_fields !== null ? { ...lead.custom_fields } : {}
+            currentCf[key] = value
+            if (key === 'property_type') currentCf.interested_property = value
+            if (key === 'budget') lead.budget = value
+
+            // Check if all questions in flow are completed
+            let allCompleted = true
+            flowQuestions.forEach((q: any, idx: number) => {
+                const qKey = typeof q === 'object' && q.field_name ? q.field_name : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`)
+                const qText = typeof q === 'string' ? q : (q.question || q.text || '')
+                const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30)
+                const val = currentCf[qKey] || currentCf[qClean] || (qKey.includes('property') ? currentCf.property_type : undefined) || (qKey.includes('budget') ? currentCf.budget : undefined)
+                if (!val || String(val).trim().length === 0) {
+                    allCompleted = false
+                }
+            })
+
+            if (allCompleted) {
+                currentCf.qualification_completed = true
+            }
+
+            const nextLead = { ...lead, custom_fields: currentCf, budget: currentCf.budget || lead.budget }
+            setLead(nextLead)
+            updateLocalCRMCache(nextLead)
+
+            await supabase
+                .from('leads')
+                .update({ custom_fields: currentCf, budget: currentCf.budget || lead.budget })
+                .eq('id', lead.id)
+
+            // Recalculate lead score
+            await fetch('/api/crm/recalculate-score', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ leadId: lead.id, qualifyingQuestions: flowQuestions })
+            }).catch(() => {})
+
+            toast.success(allCompleted ? 'Saved! All questions answered (+40 pts awarded) 🎉' : 'Answer updated successfully')
+            fetchLeadData()
+        } catch (e: any) {
+            toast.error('Failed to update answer')
+        } finally {
+            setSavingQuestionKey(null)
         }
     }
 
@@ -1055,7 +1204,53 @@ END:VCARD`
                     </button>
                     <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                            <h2 className="text-xl font-bold text-slate-900 break-words sm:truncate leading-tight">{lead.name}</h2>
+                            {isEditingName ? (
+                                <div className="flex items-center gap-1.5 bg-white border border-blue-400 rounded-xl px-2 py-1 shadow-sm">
+                                    <input
+                                        type="text"
+                                        value={nameInput}
+                                        onChange={(e) => setNameInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleSaveLeadName();
+                                            if (e.key === 'Escape') setIsEditingName(false);
+                                        }}
+                                        autoFocus
+                                        placeholder="Enter lead name..."
+                                        className="text-base font-bold text-slate-900 outline-none w-44 sm:w-60"
+                                    />
+                                    <button
+                                        onClick={handleSaveLeadName}
+                                        disabled={isSavingName}
+                                        className="p-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-xs font-bold flex items-center gap-1"
+                                        title="Save name"
+                                    >
+                                        <Check size={14} />
+                                    </button>
+                                    <button
+                                        onClick={() => setIsEditingName(false)}
+                                        className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg transition-colors text-xs"
+                                        title="Cancel"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2 group">
+                                    <h2 className="text-xl font-bold text-slate-900 break-words sm:truncate leading-tight">{lead.name}</h2>
+                                    {['admin', 'super_admin', 'agency'].includes(currentUserRole) && !isTeamMember && (
+                                        <button
+                                            onClick={() => {
+                                                setNameInput(lead.name || '');
+                                                setIsEditingName(true);
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition-colors opacity-80 group-hover:opacity-100"
+                                            title="Edit Lead Name (Admin only)"
+                                        >
+                                            <Pencil size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                             <LeadScoreBadge lead={lead} size="sm" showDetails />
                         </div>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mt-1">
@@ -1613,6 +1808,109 @@ END:VCARD`
                                         </div>
                                     </div>
                                 )}
+
+                                 {/* Interactive Qualification Questions (Linked Campaign / Default Flow) */}
+                                {flowQuestions && flowQuestions.length > 0 && (() => {
+                                    const cf = lead.custom_fields || {};
+                                    let answeredCount = 0;
+                                    flowQuestions.forEach((q: any, idx: number) => {
+                                        const qKey = typeof q === 'object' && q.field_name ? q.field_name : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
+                                        const qText = typeof q === 'string' ? q : (q.question || q.text || '');
+                                        const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+                                        const val = cf[qKey] || cf[qClean] || (qKey.includes('property') ? cf.property_type : undefined) || (qKey.includes('budget') ? cf.budget : undefined);
+                                        if (val && String(val).trim().length > 0) answeredCount++;
+                                    });
+                                    const isAllDone = answeredCount >= flowQuestions.length || cf.qualification_completed;
+
+                                    return (
+                                        <div className="bg-gradient-to-r from-emerald-50/70 via-teal-50/50 to-slate-50 border border-emerald-200/80 rounded-2xl p-4 space-y-3.5 shadow-xs">
+                                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <span className="p-1.5 bg-emerald-600 text-white rounded-lg text-xs font-black shrink-0">🎯</span>
+                                                    <div>
+                                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">{linkedFlowName || 'Qualification Questions'}</h4>
+                                                        <p className="text-[10px] text-slate-500 font-medium">Update prospect answers directly to recalculate lead score</p>
+                                                    </div>
+                                                </div>
+                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border shadow-xs ${
+                                                    isAllDone 
+                                                        ? 'bg-emerald-500 text-white border-emerald-600' 
+                                                        : 'bg-amber-100 text-amber-800 border-amber-300'
+                                                }`}>
+                                                    {isAllDone ? '✅ Complete (+40 pts)' : `${answeredCount}/${flowQuestions.length} Answered`}
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                                                {flowQuestions.map((q: any, idx: number) => {
+                                                    const qKey = typeof q === 'object' && q.field_name ? q.field_name : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
+                                                    const qText = typeof q === 'string' ? q : (q.question || q.text || `Question ${idx + 1}`);
+                                                    const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+                                                    const rawVal = cf[qKey] || cf[qClean] || (qKey.includes('property') ? cf.property_type : undefined) || (qKey.includes('budget') ? cf.budget : undefined) || '';
+                                                    const options: string[] = Array.isArray(q.options) ? q.options : [];
+                                                    const isSaving = savingQuestionKey === qKey;
+
+                                                    return (
+                                                        <div key={idx} className="bg-white p-3 rounded-xl border border-slate-200/90 shadow-xs space-y-2">
+                                                            <div className="flex items-start justify-between gap-1">
+                                                                <span className="text-[10px] font-extrabold text-slate-700 leading-snug">
+                                                                    <span className="text-emerald-600 font-black mr-1">Q{idx + 1}.</span> {qText}
+                                                                </span>
+                                                                {rawVal ? (
+                                                                    <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">Answered</span>
+                                                                ) : (
+                                                                    <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">Pending</span>
+                                                                )}
+                                                            </div>
+
+                                                            {options.length > 0 ? (
+                                                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                                                    {options.map((opt, oIdx) => {
+                                                                        const isSelected = String(rawVal).toLowerCase().trim() === opt.toLowerCase().trim();
+                                                                        return (
+                                                                            <button
+                                                                                key={oIdx}
+                                                                                type="button"
+                                                                                disabled={isSaving}
+                                                                                onClick={() => handleUpdateQualificationAnswer(qKey, opt)}
+                                                                                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                                                                                    isSelected
+                                                                                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs scale-102'
+                                                                                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                                                                                }`}
+                                                                            >
+                                                                                {isSelected && '✓ '} {opt}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex items-center gap-1.5 pt-1">
+                                                                    <input
+                                                                        type="text"
+                                                                        defaultValue={rawVal}
+                                                                        placeholder="Type prospect answer..."
+                                                                        onBlur={(e) => {
+                                                                            if (e.target.value !== rawVal) {
+                                                                                handleUpdateQualificationAnswer(qKey, e.target.value.trim());
+                                                                            }
+                                                                        }}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                handleUpdateQualificationAnswer(qKey, (e.target as HTMLInputElement).value.trim());
+                                                                            }
+                                                                        }}
+                                                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:bg-white focus:border-emerald-500"
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Custom Fields Grid & Meta Ad Origin */}
                                 {(() => {
