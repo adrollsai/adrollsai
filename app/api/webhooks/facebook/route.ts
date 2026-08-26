@@ -2543,19 +2543,31 @@ IMPORTANT RULES:
 
             if (existingByPhone && existingByPhone.length > 0) {
               const existingLead = existingByPhone[0];
-              const reopenedCount = (existingLead.reopened_count || existingLead.custom_fields?.reopened_count || 0) + 1;
               let cf = existingLead.custom_fields || {};
               if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
-              cf = { ...cf, reopened_count: reopenedCount, last_reopened_at: new Date().toISOString() };
+
+              // Always count as reopened — every repeat submission increments the count
+              const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
+              const reopenedCount = (cf.reopened_count || 0) + 1;
+
+              // Track sources for audit (append even if same source)
+              const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
+              const updatedSources = [...previousSources, currentSourceId];
+
+              cf = {
+                ...cf,
+                reopened_count: reopenedCount,
+                reopened_sources: updatedSources,
+                last_reopened_at: new Date().toISOString(),
+                last_reopened_source: currentSourceId
+              };
 
               await supabaseAdmin
                 .from('leads')
-                .update({
-                  custom_fields: cf
-                })
+                .update({ custom_fields: cf })
                 .eq('id', existingLead.id);
 
-              const reopenDesc = `The lead was reopened from Facebook\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${adCampaignString || formName || 'Meta Ad'}\nLead Status : ${existingLead.pipeline_stage || 'New'}`;
+              const reopenDesc = `The lead was reopened from Facebook\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${currentSourceId}\nReopen Count : ${reopenedCount}\nLead Status : ${existingLead.pipeline_stage || 'New'}`;
 
               await supabaseAdmin.from('lead_history').insert({
                 lead_id: existingLead.id,
@@ -2569,12 +2581,13 @@ IMPORTANT RULES:
                   form_name: formName,
                   campaign_id: campaignId,
                   reopened_count: reopenedCount,
+                  all_sources: updatedSources,
                   timestamp: new Date().toISOString()
                 },
                 created_at: new Date().toISOString()
               });
 
-              console.log(`[Facebook Webhook] Lead ${existingLead.id} reopened (${reopenedCount} times) from ad ${adCampaignString}`);
+              console.log(`[Facebook Webhook] Lead ${existingLead.id} reopened (${reopenedCount} times) from ${currentSourceId}`);
               continue;
             }
           }

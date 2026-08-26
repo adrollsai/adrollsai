@@ -198,7 +198,7 @@ export default function CRMPage() {
   const [activeMediaModal, setActiveMediaModal] = useState<any>(null)
 
   // --- FILTER STATE ---
-  const [sortOrder, setSortOrder] = useState<'last_attempted' | 'newest' | 'oldest'>('last_attempted')
+  const [sortOrder, setSortOrder] = useState<'last_attempted' | 'received_newest' | 'received_oldest' | 'crm_newest' | 'score_highest' | 'newest' | 'oldest'>('received_newest')
   const [customStages, setCustomStages] = useState<PipelineStageConfig[]>(DEFAULT_PIPELINE_STAGES)
   
   // 4 Primary Sections: all | fresh | ongoing | not_interested
@@ -2101,9 +2101,29 @@ END:VCARD\n`
         }
         return getAttemptTime(b) - getAttemptTime(a)
       }
-      const timeA = new Date(a.facebook_created_at || a.created_at).getTime()
-      const timeB = new Date(b.facebook_created_at || b.created_at).getTime()
-      return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA
+
+      if (sortOrder === 'crm_newest') {
+        const crmTimeA = new Date(a.created_at || 0).getTime()
+        const crmTimeB = new Date(b.created_at || 0).getTime()
+        return crmTimeB - crmTimeA
+      }
+
+      if (sortOrder === 'score_highest') {
+        const scoreA = typeof a.lead_score === 'number' ? a.lead_score : 0
+        const scoreB = typeof b.lead_score === 'number' ? b.lead_score : 0
+        return scoreB - scoreA
+      }
+
+      // Default: sort by Lead Reception / Arrival Date
+      const receivedTimeA = new Date(a.facebook_created_at || a.created_at || 0).getTime()
+      const receivedTimeB = new Date(b.facebook_created_at || b.created_at || 0).getTime()
+
+      if (sortOrder === 'received_oldest' || sortOrder === 'oldest') {
+        return receivedTimeA - receivedTimeB
+      }
+
+      // 'received_newest' or 'newest'
+      return receivedTimeB - receivedTimeA
     })
   }, [leadsMatchingFilters, activeSection, selectedSpecificStage, customStages, searchQuery, sortOrder])
 
@@ -2405,12 +2425,14 @@ END:VCARD\n`
 
                     <select
                         value={sortOrder}
-                        onChange={(e) => setSortOrder(e.target.value as 'last_attempted' | 'newest' | 'oldest')}
+                        onChange={(e) => setSortOrder(e.target.value as any)}
                         className="bg-white border border-slate-200/80 text-slate-800 font-extrabold text-xs rounded-2xl px-3.5 py-3.5 shadow-xs focus:outline-none focus:border-blue-500 cursor-pointer shrink-0"
                     >
+                        <option value="received_newest">📥 Sort: Lead Received (Newest)</option>
+                        <option value="received_oldest">📥 Sort: Lead Received (Oldest)</option>
+                        <option value="crm_newest">🆕 Sort: Added to CRM (Newest)</option>
                         <option value="last_attempted">⚡ Sort: Recently Attempted</option>
-                        <option value="newest">📅 Sort: Newest Created</option>
-                        <option value="oldest">📅 Sort: Oldest First</option>
+                        <option value="score_highest">⭐ Sort: Highest Score</option>
                     </select>
 
                     {/* Prominent Visible Stage Filter Outside Filter Button */}

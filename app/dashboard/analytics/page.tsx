@@ -898,43 +898,35 @@ export default function AnalyticsPage() {
 
   // --- LEADERBOARD COMPUTATIONS (WorkVeu Screenshot 3) ---
   const followupBoardRows = useMemo(() => {
-    if (team && team.length > 0) {
-      return team.map(member => {
-        const rep = {
+    // Always compute from leads (date-filtered) for consistency across all tabs
+    const isActualCallAction = (h: any) => {
+      const type = (h.action_type || '').toUpperCase()
+      const desc = (h.description || '').toLowerCase()
+      if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT'].includes(type)) return false
+      if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return false
+      if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG', 'DNP'].includes(type)) return true
+      if (desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return true
+      if (desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) return true
+      return false
+    }
+
+    const reps = (team && team.length > 0)
+      ? team.map(member => ({
           id: member.id,
           name: member.business_name || member.full_name || member.email || 'Sales Rep',
           email: member.email,
           role: member.role || 'agent'
-        }
-        const repLeads = leads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
-        const m = member.metrics || {}
+        }))
+      : allSalesReps
 
-        const closingMeetingsCount = repLeads.filter(l => {
-          let cf: any = l.custom_fields;
-          if (typeof cf === 'string') {
-            try { cf = JSON.parse(cf); } catch (e) {}
-          }
-          const nextAct = (cf?.next_action_type || l.next_action_type || '').toLowerCase();
-          const lastAct = (cf?.last_followup_type || l.last_followup_type || '').toLowerCase();
-          const st = (l.pipeline_stage || l.status || '').toLowerCase();
-          return st.includes('meeting') || st.includes('negotiation') || nextAct.includes('meeting') || nextAct.includes('closing') || nextAct.includes('home') || lastAct.includes('meeting') || lastAct.includes('closing') || lastAct.includes('home');
-        }).length;
-
-        return {
-          rep,
-          repLeads,
-          totalFollowups: m.callsCount !== undefined ? m.callsCount : (m.leadsCount || 0),
-          closingMeetings: closingMeetingsCount,
-          visits: m.visitDoneCount !== undefined ? m.visitDoneCount : (m.wonCount || 0),
-          dnp: m.dnpCount || 0,
-          conversionRate: m.conversionRate || '0.0'
-        }
-      }).sort((a, b) => b.totalFollowups - a.totalFollowups)
-    }
-
-    return allSalesReps.map(rep => {
+    return reps.map(rep => {
       const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
-      const totalFollowups = repLeads.filter(l => l.last_followup_at || l.last_call_at || l.notes).length
+      const repLeadIds = new Set(repLeads.map(l => l.id))
+
+      // Count call attempts from history for this rep's leads
+      const repHistory = history.filter(h => h.user_id === rep.id || repLeadIds.has(h.lead_id))
+      const totalFollowups = repHistory.filter(isActualCallAction).length
+
       const closingMeetings = repLeads.filter(l => {
         let cf: any = l.custom_fields;
         if (typeof cf === 'string') {
@@ -945,9 +937,25 @@ export default function AnalyticsPage() {
         const st = (l.pipeline_stage || l.status || '').toLowerCase();
         return st.includes('meeting') || st.includes('negotiation') || nextAct.includes('meeting') || nextAct.includes('closing') || nextAct.includes('home') || lastAct.includes('meeting') || lastAct.includes('closing') || lastAct.includes('home');
       }).length
-      const visits = repLeads.filter(l => l.status === 'Visit Done' || l.status === 'Revisit Done' || l.pipeline_stage === 'Appointment done').length
-      const dnp = repLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)).length
-      const won = repLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
+
+      // Include both Visit Done AND Revisit Done
+      const visits = repLeads.filter(l => {
+        const st = (l.status || l.pipeline_stage || '').toLowerCase()
+        return st === 'visit done' || st === 'revisit done' || st === 'appointment done'
+      }).length
+
+      const dnp = repLeads.filter(l => {
+        let cf: any = l.custom_fields;
+        if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
+        const notesLower = (l.notes || '').toLowerCase()
+        const stageLower = (l.pipeline_stage || l.status || '').toLowerCase()
+        return cf?.last_call_dnp === true || (cf?.dnp_count > 0) || (l.dnp_count > 0) || notesLower.includes('dnp') || stageLower.includes('dnp')
+      }).length
+
+      const won = repLeads.filter(l => {
+        const st = (l.status || l.pipeline_stage || '').toLowerCase()
+        return st === 'deal/token' || st === 'closed' || st === 'won'
+      }).length
       const conversionRate = repLeads.length > 0 ? ((won / repLeads.length) * 100).toFixed(1) : '0.0'
 
       return {
@@ -960,41 +968,33 @@ export default function AnalyticsPage() {
         conversionRate
       }
     }).sort((a, b) => b.totalFollowups - a.totalFollowups)
-  }, [team, allSalesReps, leads])
+  }, [team, allSalesReps, leads, history])
 
   const statusBoardRows = useMemo(() => {
-    if (team && team.length > 0) {
-      return team.map(member => {
-        const rep = {
+    // Always compute from leads for consistency with date filters
+    const reps = (team && team.length > 0)
+      ? team.map(member => ({
           id: member.id,
           name: member.business_name || member.full_name || member.email || 'Sales Rep',
           email: member.email,
           role: member.role || 'agent'
-        }
-        const repLeads = leads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
-        const m = member.metrics || {}
+        }))
+      : allSalesReps
 
-        return {
-          rep,
-          repLeads,
-          reqTaken: m.reqTakenCount || 0,
-          visitPlanned: m.visitPlannedCount || 0,
-          visitDone: m.visitDoneCount || 0,
-          revisitDone: m.revisitDoneCount || 0,
-          negotiation: m.negotiationCount || 0,
-          dealToken: m.dealTokenCount || 0
-        }
-      }).sort((a, b) => b.dealToken - a.dealToken || b.negotiation - a.negotiation)
-    }
-
-    return allSalesReps.map(rep => {
+    return reps.map(rep => {
       const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
-      const reqTaken = repLeads.filter(l => l.status === 'Requirement Taken' || l.pipeline_stage === 'Contacted').length
-      const visitPlanned = repLeads.filter(l => l.status === 'Visit Planned' || l.pipeline_stage === 'Appointment booked').length
-      const visitDone = repLeads.filter(l => l.status === 'Visit Done' || l.pipeline_stage === 'Appointment done').length
-      const revisitDone = repLeads.filter(l => l.status === 'Revisit Done').length
-      const negotiation = repLeads.filter(l => l.status === 'Negotiation' || l.pipeline_stage === 'Qualified').length
-      const dealToken = repLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
+
+      const matchStatus = (l: any, ...targets: string[]) => {
+        const st = (l.status || l.pipeline_stage || '').toLowerCase()
+        return targets.some(t => st === t.toLowerCase())
+      }
+
+      const reqTaken = repLeads.filter(l => matchStatus(l, 'Requirement Taken', 'Contacted')).length
+      const visitPlanned = repLeads.filter(l => matchStatus(l, 'Visit Planned', 'Appointment booked')).length
+      const visitDone = repLeads.filter(l => matchStatus(l, 'Visit Done', 'Appointment done')).length
+      const revisitDone = repLeads.filter(l => matchStatus(l, 'Revisit Done')).length
+      const negotiation = repLeads.filter(l => matchStatus(l, 'Negotiation', 'Qualified')).length
+      const dealToken = repLeads.filter(l => matchStatus(l, 'Deal/Token', 'Closed', 'Won')).length
 
       return {
         rep,
@@ -1280,15 +1280,99 @@ export default function AnalyticsPage() {
     const grandTotal = rows.reduce((sum, r) => sum + r.total, 0)
     const grandTotalLeads = rows.flatMap(r => r.repLeads || [])
 
+    // --- Agent Action Attempt Totals from lead_history ---
+    const ACTION_TYPES = [
+      { key: 'calls', label: 'Call Attempts', icon: '📞', color: 'blue' },
+      { key: 'site_visits', label: 'Site Visit Attempts', icon: '🏠', color: 'purple' },
+      { key: 'whatsapp', label: 'WhatsApp Followups', icon: '💬', color: 'green' },
+      { key: 'meetings', label: 'Meeting Attempts', icon: '🤝', color: 'teal' },
+      { key: 'dnp', label: 'DNP (Did Not Pick)', icon: '📵', color: 'rose' },
+    ]
+
+    const classifyAction = (h: any) => {
+      const type = (h.action_type || '').toUpperCase()
+      const desc = (h.description || '').toLowerCase()
+      // Exclude system events
+      if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT', 'STAGE_CHANGE', 'ASSIGNMENT', 'NOTE'].includes(type)) return null
+      if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return null
+
+      if (type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return 'dnp'
+      if (type === 'SITE_VISIT' || desc.includes('site visit') || desc.includes('visit done') || desc.includes('revisit')) return 'site_visits'
+      if (type === 'MEETING' || desc.includes('meeting')) return 'meetings'
+      if (type === 'WHATSAPP' || desc.includes('whatsapp') || desc.includes('message sent')) return 'whatsapp'
+      if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG'].includes(type) || desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) return 'calls'
+      return null
+    }
+
+    // Filter history by date range
+    const filteredHistory = history.filter(h => {
+      if (!startCutoff && !endCutoff) return true
+      return isDateInRange(h)
+    })
+
+    // Build lead lookup for drilldown
+    const leadLookup: Record<string, any> = {}
+    leads.forEach(l => { leadLookup[l.id] = l })
+
+    const actionAttemptRows = rows.map(row => {
+      const repHistoryEntries = filteredHistory.filter(h => h.user_id === row.rep.id)
+
+      const actionCounts: Record<string, number> = {}
+      const actionLeadIds: Record<string, Set<string>> = {}
+      ACTION_TYPES.forEach(a => { actionCounts[a.key] = 0; actionLeadIds[a.key] = new Set() })
+
+      repHistoryEntries.forEach(h => {
+        const cat = classifyAction(h)
+        if (cat && actionCounts[cat] !== undefined) {
+          actionCounts[cat]++
+          if (h.lead_id) actionLeadIds[cat].add(h.lead_id)
+        }
+      })
+
+      const totalAttempts = Object.values(actionCounts).reduce((s, v) => s + v, 0)
+
+      // Convert lead IDs to actual lead objects for drilldown
+      const actionLeads: Record<string, any[]> = {}
+      ACTION_TYPES.forEach(a => {
+        actionLeads[a.key] = Array.from(actionLeadIds[a.key]).map(id => leadLookup[id]).filter(Boolean)
+      })
+
+      return {
+        rep: row.rep,
+        actionCounts,
+        actionLeads,
+        totalAttempts,
+        repLeads: row.repLeads
+      }
+    }).sort((a, b) => b.totalAttempts - a.totalAttempts)
+
+    const actionTotals: Record<string, number> = {}
+    const actionTotalLeads: Record<string, any[]> = {}
+    ACTION_TYPES.forEach(a => {
+      actionTotals[a.key] = actionAttemptRows.reduce((sum, r) => sum + (r.actionCounts[a.key] || 0), 0)
+      const allIds = new Set<string>()
+      actionAttemptRows.forEach(r => {
+        r.actionLeads[a.key]?.forEach((l: any) => { if (l?.id) allIds.add(l.id) })
+      })
+      actionTotalLeads[a.key] = Array.from(allIds).map(id => leadLookup[id]).filter(Boolean)
+    })
+    const grandTotalAttempts = actionAttemptRows.reduce((sum, r) => sum + r.totalAttempts, 0)
+
     return {
       stages: REPORT_STAGES,
       rows,
       stageTotals,
       stageTotalLeads,
       grandTotal,
-      grandTotalLeads
+      grandTotalLeads,
+      // Action attempt data
+      actionTypes: ACTION_TYPES,
+      actionAttemptRows,
+      actionTotals,
+      actionTotalLeads,
+      grandTotalAttempts
     }
-  }, [leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId])
+  }, [leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId, history])
 
   // Open interactive drilldown drawer for leads
   const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[], defaultSort?: string) => {
@@ -2139,6 +2223,120 @@ export default function AnalyticsPage() {
                           className="py-3.5 px-5 text-center font-black text-sm bg-slate-200/80 cursor-pointer hover:bg-slate-300 transition-colors"
                         >
                           {actionReportData.grandTotal}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {/* Agent Action Attempts Matrix */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">Agent Action Attempts</h3>
+                    <p className="text-xs text-slate-500">Total action attempts by each sales rep (calls, visits, meetings, WhatsApp, DNP) — click numbers to view leads list</p>
+                  </div>
+                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-xl border border-indigo-200">
+                    {actionReportData.grandTotalAttempts} Total Attempts
+                  </span>
+                </div>
+
+                {/* KPI Summary Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                  {actionReportData.actionTypes.map(at => {
+                    const total = actionReportData.actionTotals[at.key] || 0
+                    const colorMap: Record<string, string> = {
+                      blue: 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-600 hover:text-white',
+                      purple: 'text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-600 hover:text-white',
+                      green: 'text-green-700 bg-green-50 border-green-200 hover:bg-green-600 hover:text-white',
+                      teal: 'text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-600 hover:text-white',
+                      rose: 'text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-600 hover:text-white',
+                    }
+                    return (
+                      <button
+                        key={at.key}
+                        type="button"
+                        onClick={() => total > 0 && openLeadsDrilldown(`${at.label}`, `${total} total ${at.label.toLowerCase()} across all agents`, actionReportData.actionTotalLeads[at.key] || [])}
+                        className={`p-3 rounded-2xl border transition-all cursor-pointer text-left ${colorMap[at.color] || colorMap.blue}`}
+                      >
+                        <p className="text-[10px] font-black uppercase tracking-wider">{at.icon} {at.label}</p>
+                        <p className="text-xl font-black mt-1">{total}</p>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs whitespace-nowrap">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase tracking-wider text-[10px]">
+                      <tr>
+                        <th className="py-3.5 px-5 sticky left-0 bg-slate-50 z-10 shadow-xs">Sales Rep</th>
+                        {actionReportData.actionTypes.map(at => (
+                          <th key={at.key} className="py-3.5 px-3 text-center">{at.icon} {at.label}</th>
+                        ))}
+                        <th className="py-3.5 px-5 text-center font-black text-slate-900 bg-slate-100">Total Attempts</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {actionReportData.actionAttemptRows.map(row => (
+                        <tr key={row.rep.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3.5 px-5 sticky left-0 bg-white z-10 shadow-xs">
+                            <div className="font-extrabold text-slate-900">{row.rep.name}</div>
+                          </td>
+                          {actionReportData.actionTypes.map(at => {
+                            const count = row.actionCounts[at.key] || 0
+                            const actionColorMap: Record<string, string> = {
+                              blue: 'bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white',
+                              purple: 'bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white',
+                              green: 'bg-green-50 text-green-700 hover:bg-green-600 hover:text-white',
+                              teal: 'bg-teal-50 text-teal-700 hover:bg-teal-600 hover:text-white',
+                              rose: 'bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white',
+                            }
+                            return (
+                              <td key={at.key} className="py-3.5 px-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => count > 0 && openLeadsDrilldown(`${row.rep.name} - ${at.label}`, `${count} ${at.label.toLowerCase()} by ${row.rep.name}`, row.actionLeads[at.key] || [])}
+                                  className={`px-2.5 py-1 rounded-xl font-black text-xs transition-all ${count > 0 ? `${actionColorMap[at.color] || actionColorMap.blue} cursor-pointer hover:shadow-xs` : 'bg-slate-50 text-slate-300 cursor-default'}`}
+                                >
+                                  {count}
+                                </button>
+                              </td>
+                            )
+                          })}
+                          <td className="py-3.5 px-5 text-center bg-slate-50/60">
+                            <button
+                              type="button"
+                              onClick={() => row.totalAttempts > 0 && openLeadsDrilldown(`${row.rep.name} - All Action Attempts`, `Total ${row.totalAttempts} action attempts`, row.repLeads)}
+                              className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all ${row.totalAttempts > 0 ? 'bg-slate-900 text-white hover:bg-blue-600 cursor-pointer hover:shadow-xs' : 'bg-slate-50 text-slate-300 cursor-default'}`}
+                            >
+                              {row.totalAttempts}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100/90 border-t-2 border-slate-300 text-xs font-black text-slate-900">
+                        <td className="py-3.5 px-5 uppercase tracking-wider sticky left-0 bg-slate-100 z-10 shadow-xs">TOTAL</td>
+                        {actionReportData.actionTypes.map(at => {
+                          const total = actionReportData.actionTotals[at.key] || 0
+                          return (
+                            <td
+                              key={at.key}
+                              onClick={() => total > 0 && openLeadsDrilldown(`All Agents - ${at.label}`, `Total ${total} ${at.label.toLowerCase()} across all agents`, actionReportData.actionTotalLeads[at.key] || [])}
+                              className="py-3.5 px-3 text-center cursor-pointer hover:bg-slate-200 transition-colors"
+                            >
+                              {total}
+                            </td>
+                          )
+                        })}
+                        <td
+                          onClick={() => actionReportData.grandTotalAttempts > 0 && openLeadsDrilldown('All Action Attempts', `Total ${actionReportData.grandTotalAttempts} action attempts across all agents`, actionReportData.grandTotalLeads)}
+                          className="py-3.5 px-5 text-center font-black text-sm bg-slate-200/80 cursor-pointer hover:bg-slate-300 transition-colors"
+                        >
+                          {actionReportData.grandTotalAttempts}
                         </td>
                       </tr>
                     </tfoot>
