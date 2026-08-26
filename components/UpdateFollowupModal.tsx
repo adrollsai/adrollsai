@@ -93,7 +93,6 @@ export default function UpdateFollowupModal({
   const [assignedTo, setAssignedTo] = useState('')
   const [nextRemarks, setNextRemarks] = useState('')
   const [remindMe, setRemindMe] = useState(true)
-  const [showNextActionForClosed, setShowNextActionForClosed] = useState(false)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -142,7 +141,6 @@ export default function UpdateFollowupModal({
     if (lead && isOpen) {
       setError(null)
       setIsDnp(false)
-      setShowNextActionForClosed(false)
       const currentStage = lead.status || lead.pipeline_stage || 'New Lead'
       setLeadStage(currentStage)
       setClientStatus(lead.client_status || 'Warm')
@@ -161,11 +159,34 @@ export default function UpdateFollowupModal({
       
       setFollowupDate(formatLocalIso(now))
       
-      // Default next action date to tomorrow 11:00 AM
-      const tomorrow = new Date(now)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      tomorrow.setHours(11, 0, 0, 0)
-      setNextActionDate(formatLocalIso(tomorrow))
+      const isClosed = isNotInterestedOrLostStage(currentStage)
+      if (isClosed) {
+        if (lead.next_followup || lead.custom_fields?.next_action_date) {
+          try {
+            setNextActionDate(formatLocalIso(new Date(lead.next_followup || lead.custom_fields?.next_action_date)))
+          } catch (e) {
+            setNextActionDate('')
+          }
+        } else {
+          setNextActionDate('')
+        }
+      } else {
+        if (lead.next_followup || lead.custom_fields?.next_action_date) {
+          try {
+            setNextActionDate(formatLocalIso(new Date(lead.next_followup || lead.custom_fields?.next_action_date)))
+          } catch (e) {
+            const tomorrow = new Date(now)
+            tomorrow.setDate(tomorrow.getDate() + 1)
+            tomorrow.setHours(11, 0, 0, 0)
+            setNextActionDate(formatLocalIso(tomorrow))
+          }
+        } else {
+          const tomorrow = new Date(now)
+          tomorrow.setDate(tomorrow.getDate() + 1)
+          tomorrow.setHours(11, 0, 0, 0)
+          setNextActionDate(formatLocalIso(tomorrow))
+        }
+      }
     }
   }, [lead, isOpen])
 
@@ -177,7 +198,13 @@ export default function UpdateFollowupModal({
     setError(null)
 
     const isClosedStatus = isNotInterestedOrLostStage(leadStage)
-    const shouldIncludeNextAction = !isClosedStatus || showNextActionForClosed
+    const hasNextAction = !!nextActionDate
+
+    if (!isClosedStatus && !hasNextAction) {
+      setError('Next Action Date & Time is required for active/ongoing leads.')
+      setLoading(false)
+      return
+    }
 
     try {
       const res = await fetch('/api/crm/followup', {
@@ -195,10 +222,10 @@ export default function UpdateFollowupModal({
           propertyId: selectedPropertyId || null,
           budget: budget || null,
           remarks: isDnp ? nextRemarks : remarks,
-          nextActionDate: shouldIncludeNextAction && nextActionDate ? new Date(nextActionDate).toISOString() : null,
-          nextActionType: shouldIncludeNextAction ? nextActionType : null,
+          nextActionDate: hasNextAction ? new Date(nextActionDate).toISOString() : null,
+          nextActionType: hasNextAction ? nextActionType : null,
           assignedTo: assignedTo || null,
-          remindMe: shouldIncludeNextAction ? remindMe : false
+          remindMe: hasNextAction ? remindMe : false
         })
       })
 
@@ -306,11 +333,7 @@ export default function UpdateFollowupModal({
                   <select
                     value={leadStage}
                     onChange={(e) => {
-                      const newStage = e.target.value
-                      setLeadStage(newStage)
-                      if (isNotInterestedOrLostStage(newStage)) {
-                        setShowNextActionForClosed(false)
-                      }
+                      setLeadStage(e.target.value)
                     }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-extrabold text-blue-700 focus:outline-none focus:border-blue-500 focus:bg-white"
                   >
@@ -411,50 +434,23 @@ export default function UpdateFollowupModal({
             </div>
           )}
 
-          {/* Section: Next Action (Hidden by default for Not Interested/Lost/Dealer stages unless checkbox is checked) */}
+          {/* Section: Next Action (Always visible, optional for Not Interested / Closed stages, required for active stages) */}
           {(() => {
             const isClosedStatus = isNotInterestedOrLostStage(leadStage)
-            
-            if (isClosedStatus && !showNextActionForClosed) {
-              return (
-                <div className="pt-4 border-t border-slate-100">
-                  <label className="flex items-center space-x-3 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl cursor-pointer select-none hover:bg-slate-100/80 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={showNextActionForClosed}
-                      onChange={(e) => setShowNextActionForClosed(e.target.checked)}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    />
-                    <div className="flex-1">
-                      <span className="text-xs font-extrabold text-slate-800">Add Next Action / Future Reminder (Optional)</span>
-                      <p className="text-[11px] text-slate-500 font-medium">This lead is in a closed/not interested stage ({leadStage}). Next action is not required unless you check this.</p>
-                    </div>
-                  </label>
-                </div>
-              )
-            }
 
             return (
               <div className="pt-4 border-t border-slate-100 space-y-4">
-                {isClosedStatus && (
-                  <div className="flex items-center justify-between pb-2">
-                    <label className="flex items-center space-x-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={showNextActionForClosed}
-                        onChange={(e) => setShowNextActionForClosed(e.target.checked)}
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                      />
-                      <span className="text-xs font-bold text-slate-700">Add Next Action / Future Reminder</span>
-                    </label>
-                  </div>
-                )}
-
                 <div className="flex items-center space-x-2">
                   <Clock className="w-4 h-4 text-blue-600" />
                   <h4 className="text-sm font-extrabold text-slate-900">Next Action Schedule</h4>
-                  {isClosedStatus && (
-                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">Optional</span>
+                  {isClosedStatus ? (
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                      Optional for {leadStage}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                      Required
+                    </span>
                   )}
                 </div>
 
@@ -470,6 +466,9 @@ export default function UpdateFollowupModal({
                       onChange={(e) => setNextActionDate(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-medium focus:outline-none focus:border-blue-500 focus:bg-white"
                     />
+                    {isClosedStatus && (
+                      <p className="text-[11px] text-slate-500 font-medium mt-1">Optional: Leave blank if no future follow-up is planned.</p>
+                    )}
                   </div>
 
                   <div>
