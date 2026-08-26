@@ -5,10 +5,10 @@
  */
 
 export interface LeadScoreBreakdown {
-  appointment: number; // Max 40 pts
-  expert_request: number; // Max 25 pts
-  qualification: number; // Max 25 pts
-  contact_info: number; // Max 10 pts
+  questions_answered: number; // Max 40 pts
+  appointment_booked: number; // Max 30 pts
+  expert_clicked: number; // Max 15 pts
+  view_products_clicked: number; // Max 15 pts
 }
 
 export interface LeadScoreResult {
@@ -40,7 +40,12 @@ export function parseCustomFields(customFields: any): Record<string, any> {
 }
 
 /**
- * Calculates dynamic lead score across all businesses & industries
+ * Deterministic Real Estate Lead Scoring Engine (100% Zero-AI)
+ * Calculated strictly based on:
+ * 1. How many qualification questions they've answered (Max 40 pts)
+ * 2. Whether they have booked an appointment till now (Max 30 pts)
+ * 3. Whether they've clicked on "Talk to an expert" (Max 15 pts)
+ * 4. Whether they've clicked on "View products / properties" (Max 15 pts)
  */
 export function calculateLeadScore(
   lead: any,
@@ -53,19 +58,40 @@ export function calculateLeadScore(
       label: 'Cold',
       color: 'slate',
       badgeEmoji: '❄️',
-      breakdown: { appointment: 0, expert_request: 0, qualification: 0, contact_info: 0 },
+      breakdown: { questions_answered: 0, appointment_booked: 0, expert_clicked: 0, view_products_clicked: 0 },
       answeredQuestionsCount: 0,
-      totalQuestionsCount: qualifyingQuestions.length
+      totalQuestionsCount: qualifyingQuestions.length || 3
     };
   }
 
   const cf = parseCustomFields(lead.custom_fields);
-  let appointmentScore = 0;
-  let expertScore = 0;
-  let qualificationScore = 0;
-  let contactScore = 0;
+  
+  // Default 3 standard questions for Real Estate if none configured
+  const effectiveQuestions = (qualifyingQuestions && qualifyingQuestions.length > 0)
+    ? qualifyingQuestions
+    : ['property_type', 'budget', 'timeline'];
+  
+  const totalQuestions = effectiveQuestions.length;
+  let answeredCount = 0;
 
-  // 1. Appointment Booked (Highest Intent Signal: up to 40 points)
+  // 1. Questions Answered (Up to 40 points)
+  effectiveQuestions.forEach(q => {
+    const qClean = q.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+    const val = cf[q] || cf[qClean] || cf[`q_${qClean}`] || 
+                (qClean.includes('property') ? (cf.property_type || cf.interested_property || lead.property_id) : undefined) ||
+                (qClean.includes('budget') ? (cf.budget || lead.budget) : undefined) ||
+                (qClean.includes('timeline') ? cf.timeline : undefined);
+
+    if (val !== undefined && val !== null && String(val).trim().length > 0) {
+      answeredCount++;
+    }
+  });
+
+  const questionScore = totalQuestions > 0 
+    ? Math.round((Math.min(answeredCount, totalQuestions) / totalQuestions) * 40)
+    : 0;
+
+  // 2. Appointment Booked (30 points)
   const hasBookedTime = !!lead.booked_time || !!cf.booked_time || !!cf.appointment_time || !!cf.meeting_time;
   const isAppointmentStage = [
     'appointment booked',
@@ -76,58 +102,18 @@ export function calculateLeadScore(
     'negotiation'
   ].includes((lead.pipeline_stage || '').toLowerCase().trim());
 
-  if (hasBookedTime || isAppointmentStage) {
-    appointmentScore = 40;
-  } else if ((lead.pipeline_stage || '').toLowerCase().includes('requirement')) {
-    appointmentScore = 15;
-  }
+  const appointmentScore = (hasBookedTime || isAppointmentStage) ? 30 : 0;
 
-  // 2. Connect with Expert / Hand-Raise / Inbound Call (Up to 25 points)
-  const hasExpertClicked = cf.connect_expert_clicked || cf.hand_raise || cf.requested_callback || cf.trigger_call;
-  const isHighIntentSource = (lead.source || '').toLowerCase().includes('inbound') || (lead.source || '').toLowerCase().includes('whatsapp');
-  if (hasExpertClicked) {
-    expertScore = 25;
-  } else if (isHighIntentSource) {
-    expertScore = 15;
-  } else if (cf.meta_ad_origin) {
-    expertScore = 10;
-  }
+  // 3. Talk to an expert clicked (15 points)
+  const hasExpertClicked = !!(cf.connect_expert_clicked || cf.talk_to_expert_clicked || cf.hand_raise || cf.requested_callback);
+  const expertScore = hasExpertClicked ? 15 : 0;
 
-  // 3. Qualification Questions Completion (Up to 25 points proportional)
-  const totalQuestions = qualifyingQuestions && qualifyingQuestions.length > 0 ? qualifyingQuestions.length : 0;
-  let answeredCount = 0;
+  // 4. View products / properties clicked (15 points)
+  const hasViewProductsClicked = !!(cf.view_properties_clicked || cf.view_products_clicked || cf.catalog_viewed || cf.website_visited);
+  const viewProductsScore = hasViewProductsClicked ? 15 : 0;
 
-  if (totalQuestions > 0) {
-    qualifyingQuestions.forEach(q => {
-      const qClean = q.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
-      const val = cf[q] || cf[qClean] || cf[`q_${qClean}`];
-      if (val !== undefined && val !== null && String(val).trim().length > 0) {
-        answeredCount++;
-      }
-    });
-
-    const completionRatio = Math.min(answeredCount / totalQuestions, 1);
-    qualificationScore = Math.round(completionRatio * 25);
-  } else {
-    // If business has 0 qualification questions configured, score basic qualifying fields (budget, property, requirement)
-    let generalFieldsAnswered = 0;
-    if (lead.budget || cf.budget) generalFieldsAnswered++;
-    if (lead.property_id || cf.property_id || cf.interested_property) generalFieldsAnswered++;
-    if (lead.notes || cf.requirement || cf.notes) generalFieldsAnswered++;
-    qualificationScore = Math.min(generalFieldsAnswered * 8, 25);
-    answeredCount = generalFieldsAnswered;
-  }
-
-  // 4. Contact Details & Identity (Up to 10 points)
-  const hasRealName = lead.name && !lead.name.startsWith('+') && !/^\d+$/.test(lead.name.replace(/\D/g, '')) && lead.name !== 'Customer' && lead.name !== 'Prospect' && lead.name.length > 2;
-  if (hasRealName) {
-    contactScore += 7;
-  }
-  if (lead.email && lead.email.includes('@')) {
-    contactScore += 3;
-  }
-
-  const rawScore = appointmentScore + expertScore + qualificationScore + contactScore;
+  // Total Score (0 - 100)
+  const rawScore = questionScore + appointmentScore + expertScore + viewProductsScore;
   const score = Math.min(Math.max(rawScore, 0), 100);
 
   let tier: 'hot' | 'warm' | 'cold' = 'cold';
@@ -154,10 +140,10 @@ export function calculateLeadScore(
     color,
     badgeEmoji,
     breakdown: {
-      appointment: appointmentScore,
-      expert_request: expertScore,
-      qualification: qualificationScore,
-      contact_info: contactScore
+      questions_answered: questionScore,
+      appointment_booked: appointmentScore,
+      expert_clicked: expertScore,
+      view_products_clicked: viewProductsScore
     },
     answeredQuestionsCount: answeredCount,
     totalQuestionsCount: totalQuestions

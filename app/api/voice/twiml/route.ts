@@ -165,7 +165,7 @@ export async function POST(req: Request) {
 
         const { data: lead } = await supabaseAdmin
             .from('leads')
-            .select('id, user_id, name, phone, email, source, custom_fields, voice_call_summary, voice_call_transcript, property_id, notes, voice_campaign_id')
+            .select('id, user_id, name, phone, email, source, custom_fields, voice_call_summary, voice_call_transcript, property_id, notes, voice_campaign_id, campaign_id')
             .eq('id', leadId)
             .single()
 
@@ -440,79 +440,114 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
         const companyName = profile?.business_name || 'our company'
         const leadName = lead.name || 'there'
         const firstName = leadName.split(' ')[0] || 'there'
-        const isFirstCall = !previousCallsHistory && !whatsappHistory
 
-        // Build proactive context instruction for after-greeting conversation step
-        let contextInstruction = ''
-        if (isFirstCall) {
-            if (lead.source) {
-                const cleanSource = lead.source.toLowerCase()
-                if (cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('instagram') || cleanSource.includes('ad')) {
-                    contextInstruction = `After the lead responds to your greeting, proactively establish context. Say something like: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar raha hoon." Then naturally ask about their availability.`
-                } else if (cleanSource.includes('manual') || cleanSource.includes('direct') || cleanSource.includes('import')) {
-                    contextInstruction = `After the lead responds to your greeting, proactively establish context. Introduce yourself from ${companyName}. CRITICAL RULE: NEVER repeat raw CRM log notes or third-person phrases verbatim (e.g. NEVER say "mai 'he needs a flat' ke regarding call kar rahi hoon"). Say something natural like: "Main ${companyName} se call kar rahi hoon, aapki property requirement ke regarding." Then naturally ask about their availability.`
-                } else {
-                    contextInstruction = `After the lead responds to your greeting, proactively establish context. CRITICAL RULE: NEVER repeat raw CRM log notes or third-person phrases verbatim (e.g. NEVER say "mai 'he needs a flat' ke regarding call kar rahi hoon"). Say something natural like: "Main ${companyName} se call kar rahi hoon, aapki property inquiry ke regarding." Then naturally ask about their availability.`
+        // Check for campaign-specific or active question flows
+        const targetLeadCampId = lead.campaign_id || lead.voice_campaign_id || campaignId;
+        let activeQualifyingQuestions = profile?.qualifying_questions || [];
+
+        try {
+            if (targetLeadCampId) {
+                const { data: matchedFlow } = await supabaseAdmin
+                    .from('whatsapp_question_flows')
+                    .select('questions, name')
+                    .eq('user_id', profileId)
+                    .eq('linked_campaign_id', targetLeadCampId)
+                    .maybeSingle();
+
+                if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
+                    console.log(`[TWIML VOICE] Using campaign question flow "${matchedFlow.name}" for lead ${lead.id}`);
+                    activeQualifyingQuestions = matchedFlow.questions;
                 }
-            } else {
-                contextInstruction = `After the lead responds to your greeting, introduce yourself from ${companyName}. CRITICAL RULE: NEVER repeat raw CRM log notes or third-person phrases verbatim (e.g. NEVER say "mai 'he needs a flat' ke regarding call kar rahi hoon"). Say something natural like: "Main ${companyName} se call kar rahi hoon, aapki property requirement ke regarding." Then naturally ask about their availability.`
             }
-        } else {
-            if (previousCallsHistory) {
-                contextInstruction = `After the lead responds to your greeting, reference the previous conversation to establish recognition. Say something like: "Humne pichli baar baat ki thi..." and briefly mention what was discussed based on the Previous Call History provided below. Keep it natural and brief so the prospect remembers. Then ask about their availability.`
-            } else if (whatsappHistory) {
-                contextInstruction = `After the lead responds to your greeting, reference the WhatsApp conversation to establish recognition. Say something like: "Aapki WhatsApp par humse baat hui thi, ussi ke regarding follow-up call kar raha hoon." Briefly reference what was discussed. Then ask about their availability.`
-            } else {
-                contextInstruction = `After the lead responds to your greeting, say: "Humne pichli baar baat ki thi ${companyName} ke regarding, ussi ke follow-up mein call kar raha hoon." Then naturally ask about their availability.`
-            }
+        } catch (fErr) {
+            console.warn('[TWIML VOICE] Error fetching campaign flow:', fErr);
         }
 
-        const isQualifyingActive = profile?.qualifying_enabled && profile?.qualifying_questions && profile.qualifying_questions.length > 0
-        let qualifyingInstruction = ''
-        if (isQualifyingActive) {
-            qualifyingInstruction = `
-NATURAL CONVERSATIONAL QUALIFICATION GUIDELINES:
-During the conversation, naturally and politely weave in these qualification questions if not already answered in the lead context below:
-${profile.qualifying_questions.map((q: string, i: number) => `- Question: "${q}"`).join('\n')}
+        const voiceGender = (profile?.voice_gender || profile?.gender || '').toLowerCase();
+        const elevenVoice = (profile?.elevenlabs_agent_id || profile?.elevenlabs_voice_id || '').toLowerCase();
+        const isFemale = voiceGender === 'female' || elevenVoice.includes('female') || elevenVoice.includes('sarah') || elevenVoice.includes('jessica') || elevenVoice.includes('priya') || elevenVoice.includes('aarti') || elevenVoice.includes('natasha') || elevenVoice.includes('rachel') || elevenVoice.includes('alice') || elevenVoice.includes('lily');
+
+        const genderGrammarInstruction = isFemale
+            ? `GENDER IDENTITY (FEMALE): You are a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon", "Main check kar KE BATA DETI hoon", "Call kar RAHI thi"). NEVER use masculine endings like "raha hoon", "sakta hoon", or "karta hoon".`
+            : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHA hoon", "Main aapki help kar SAKTA hoon", "Main check kar KE BATA DETA hoon", "Call kar RAHA tha").`;
+
+        // Direct context instruction
+        const contextInstruction = `After the lead responds to your greeting, say: "Aapne ${companyName} ka ek ad dekha tha, usi ke regarding call kiya hai." Then naturally ask about their requirement.`
+
+        let parsedQuestions: { question: string; options: string[] }[] = [];
+        if (Array.isArray(activeQualifyingQuestions) && activeQualifyingQuestions.length > 0) {
+            parsedQuestions = activeQualifyingQuestions.map((item: any) => {
+                if (typeof item === 'string') {
+                    const match = item.match(/\(([^)]+)\)/);
+                    const qText = item.replace(/\s*\([^)]+\)/, '').trim();
+                    const options = match ? match[1].split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+                    return { question: qText || item, options };
+                }
+                if (typeof item === 'object' && item !== null) {
+                    return {
+                        question: item.question || item.text || '',
+                        options: Array.isArray(item.options) ? item.options : []
+                    };
+                }
+                return { question: String(item), options: [] };
+            }).filter((q: { question: string; options: string[] }) => q.question.trim().length > 0);
+        }
+
+        if (parsedQuestions.length === 0) {
+            parsedQuestions = [
+                { question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
+                { question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
+                { question: 'What is your purchase timeline?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
+            ];
+        }
+
+        const formattedQuestionsList = parsedQuestions.map((q: { question: string; options: string[] }, i: number) => {
+            const optStr = q.options.length > 0 ? ` (Options: ${q.options.join(', ')})` : '';
+            return `   ${i + 1}. "${q.question}"${optStr}`;
+        }).join('\n');
+
+        const qualifyingInstruction = `
+NATURAL CONVERSATIONAL QUALIFICATION:
+During the call, your objective is strictly to:
+1. Collect answers to the following qualification questions naturally:
+${formattedQuestionsList}
+2. Assist the lead in scheduling / booking an appointment or site visit slot.
+3. Answer any questions the lead has about our company, projects, and active property inventory.
 
 Guidelines:
-- Always answer whatever the prospect asks directly and warmly first.
-- Weave in any missing qualification questions naturally during the conversation (e.g., "Waise aap 2 BHK dekh rahe hain ya 3 BHK?").
-- Do NOT interrogate or force the lead. If an answer is already known in 'Attributed Details' or answered during conversation, do not re-ask.
+- DO NOT read questions mechanically like a survey. Ask them conversationally and naturally.
+- Politely clarify any missing qualification details in friendly conversational Hinglish.
+- If an answer is already known in 'Attributed Details' or 'CRM Notes', do not re-ask.
 `.trim()
-        }
 
-        const effectiveGreeting = campaign?.audience_filter?.greeting
-            ? campaign.audience_filter.greeting
-                .replace(/\{name\}/gi, firstName)
-                .replace(/\{firstname\}/gi, firstName)
-                .replace(/\{leadname\}/gi, leadName)
-            : `Namaste ${firstName} ji! Kaise ho aap?`
+        const effectiveGreeting = `Hi ${firstName}, kaise hain aap?`
 
         const customPrompt = `
 You are a professional, helpful outbound AI calling assistant calling on behalf of ${companyName}.
 Your name is a booking representative.
 Your primary objective is to make the lead, ${leadName}, book an appointment/consultation with the business.
 
+${genderGrammarInstruction}
+
 ${qualifyingInstruction}
 
 CRITICAL RULES:
 1. ONLY speak about the provided business profile info, catalog, and the lead's own previous conversation history/CRM notes.
-2. DO NOT make up, assume, or hallucinate any details. Under no circumstances mention unrelated businesses (such as cafes, unrelated locations like "Sarah's Cafe in Mohali", etc.). If asked a question about the business profile or catalog that you don't have details for, say: "That is a great question. I don't have that detail on hand, but let's book a quick consultation call so our representative can answer that for you."
-3. Be polite, friendly, and brief in your responses. Keep all answers extremely short (under 50 words) and direct. Never speak long paragraphs, as shorter responses improve audio streaming speed and prevent robotic stutter.
-4. Your single goal is to find a suitable date and time slot for a meeting.
-5. LANGUAGE STYLE: MANDATORY: You MUST speak in natural, friendly, warm Hindi / Hinglish. Never speak in pure English unless the prospect explicitly speaks English first.
-6. PAST CALLS AND SCHEDULES: If the lead asks about when they requested a callback, how much time they asked to be called back in, or what you talked about in the last call, read the '--- LEAD CRM NOTES & SCHEDULE HISTORY ---' and 'Previous Call History' sections to answer them accurately in Hinglish (e.g. 'Aapne mujhe 1 minute baad call karne ko bola tha').
-7. ENDING THE CALL: Once the call objective is met (e.g. appointment is booked, callback is scheduled) or the lead wants to end the conversation, say a brief polite goodbye and immediately trigger your "End conversation" tool to hang up the call. Do not wait for the user to respond after your goodbye.
-8. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting, answering machine message, or any automated message (such as "please leave a message", "after the beep", or an automated robot voice), you must immediately trigger your "End conversation" tool to hang up the call. Do NOT speak, say hello, or say goodbye; just trigger the hangup tool instantly.
-9. STRICT PROJECT DISAMBIGUATION & INVENTORY ISOLATION: Each project or inventory product listed in the catalog is a COMPLETELY SEPARATE and INDEPENDENT real estate project. NEVER mix, blend, or cross-combine the locations, prices, plot sizes, rental yields, or amenities of one project with another. 
-10. PRIMARY INTEREST PRIORITY: If the lead inquired about a specific project (shown under 'PRIMARY INTEREST PRODUCT'), focus strictly on that specific project. Only discuss details, amenities, and location of THAT project. Do NOT introduce or describe features of other catalog projects unless the prospect explicitly asks to explore other inventory options.
+2. DO NOT make up, assume, or hallucinate any details. Under no circumstances mention unrelated businesses.
+3. Be polite, friendly, and brief in your responses. Keep all answers short (under 50 words) and direct.
+4. Your single goal is to qualify the lead and find a suitable date and time slot for a meeting/visit.
+5. LANGUAGE STYLE: MANDATORY: You MUST speak in natural, friendly, warm Hindi / Hinglish.
+6. MULTILINGUAL ADAPTATION: If the lead asks to speak in Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, Hindi, English, or any other regional language (e.g. "Telugu lo matladandi", "Can we speak in English?", "Tamil la pesunga"), you MUST IMMEDIATELY adapt and converse fluently in their requested language.
+7. PAST CALLS AND SCHEDULES: If the lead asks about when they requested a callback or previous conversations, answer accurately in Hinglish.
+8. ENDING THE CALL: Once the call objective is met (e.g. appointment is booked, callback is scheduled) or the lead wants to end the conversation, say a brief polite goodbye and immediately trigger your "End conversation" tool to hang up.
+9. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting or answering machine message, immediately trigger your "End conversation" tool to hang up.
+10. PRIMARY INTEREST PRIORITY: If the lead inquired about a specific project (shown under 'PRIMARY INTEREST PRODUCT'), focus strictly on that specific project.
 
 CONVERSATION FLOW:
 1. Your opening greeting is: "${effectiveGreeting}". Speak this exact greeting.
-2. Once the lead responds to your greeting, your NEXT response must proactively establish context and recognition:
-${contextInstruction}
-3. After establishing context, proceed with the conversation (guide them to schedule a consultation/appointment with ${companyName}).
+2. Once the lead responds to your greeting, your NEXT response must establish context:
+"${contextInstruction}"
+3. Proceed with natural conversational qualification and guide them to schedule a consultation/appointment with ${companyName}.
 
 --- LEAD & BUSINESS CONTEXT ---
 Lead Name: ${leadName}

@@ -20,6 +20,59 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     }
 });
 
+function computeValidCallingSlot(targetDate = new Date(), timeZone = 'Asia/Kolkata') {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false
+    });
+    const formattedStr = formatter.format(targetDate);
+    const [hStr, mStr] = formattedStr.split(':');
+    const hourVal = parseInt(hStr, 10);
+    const minuteVal = parseInt(mStr, 10);
+    
+    const timeInMinutes = hourVal * 60 + minuteVal;
+    const startMinutes = 9 * 60;     // 9:00 AM
+    const endMinutes = 19 * 60;      // 7:00 PM (19:00)
+
+    const isWithinWindow = timeInMinutes >= startMinutes && timeInMinutes < endMinutes;
+    if (isWithinWindow) {
+        return { isWithinWindow: true, scheduledTime: targetDate };
+    }
+
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        hour12: false
+    }).formatToParts(targetDate);
+    const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    
+    const year = parseInt(partMap.year, 10);
+    const month = parseInt(partMap.month, 10) - 1;
+    let targetDay = parseInt(partMap.day, 10);
+    const hour = parseInt(partMap.hour, 10);
+    
+    if (hour >= 19) {
+        targetDay += 1;
+    }
+
+    const localUtcTs = Date.UTC(year, month, targetDay, 9, 0, 0, 0);
+    const getOffset = (tz, d) => {
+        const tzStr = d.toLocaleString('en-US', { timeZone: tz });
+        const locD = new Date(tzStr);
+        const utcD = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
+        return (locD.getTime() - utcD.getTime()) / 60000;
+    };
+    const offsetMin = getOffset(timeZone, new Date(localUtcTs));
+    const nextSlot = new Date(localUtcTs - offsetMin * 60000);
+
+    return { isWithinWindow: false, scheduledTime: nextSlot };
+}
+
 // Express Server setup
 const app = express();
 app.use(express.json());
@@ -858,45 +911,99 @@ wss.on('connection', (wsConnection, req) => {
                             }
                         }
 
-                        let resolvedQuestionsInstruction = "";
-                        if (resolvedQuestions && resolvedQuestions.length > 0) {
-                            resolvedQuestionsInstruction = `\n\n--- RECENTLY RESOLVED QUESTIONS ---
-The prospect recently asked the following questions which we have now resolved. Please proactively bring them up and clear their doubts:
-`;
-                            resolvedQuestions.forEach((q, idx) => {
-                                resolvedQuestionsInstruction += `\nQuestion ${idx+1}: "${q.question}"\nAnswer: "${q.answer}"\n`;
-                            });
-                            resolvedQuestionsInstruction += `\nGreet the user and clear their doubts regarding these questions first.`;
+                        // Check for campaign-specific or active question flows
+                        let activeQualifyingQuestions = profile?.qualifying_questions || [];
+                        const targetLeadCampId = lead?.campaign_id || lead?.voice_campaign_id || campaignId;
+                        try {
+                            if (targetLeadCampId) {
+                                const { data: matchedFlow } = await supabaseAdmin
+                                    .from('whatsapp_question_flows')
+                                    .select('questions, name')
+                                    .eq('user_id', effectiveProfileId)
+                                    .eq('linked_campaign_id', targetLeadCampId)
+                                    .maybeSingle();
+
+                                if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
+                                    console.log(`[BRIDGE] Using campaign question flow "${matchedFlow.name}" for lead ${leadId}`);
+                                    activeQualifyingQuestions = matchedFlow.questions;
+                                }
+                            }
+                        } catch (fErr) {
+                            console.warn('[BRIDGE] Error fetching campaign flow:', fErr);
                         }
 
-                        // Parse campaign greeting if available, otherwise default to warm Hindi greeting
-                        let rawGreeting = campaign?.audience_filter?.greeting || null;
-                        greetingMessage = '';
+                        // Determine voice gender from voiceName / profile
+                        const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
+                        const isFemale = vLower.includes('aoede') || vLower.includes('kore') || vLower.includes('female') || vLower.includes('sarah') || vLower.includes('priya') || vLower.includes('aarti') || vLower.includes('jessica');
 
-                        if (isInbound) {
-                            greetingMessage = `Namaste! ${companyName} mein call karne ke liye dhanyawad. Main aapki kya madad kar sakti hoon?`;
-                        } else if (rawGreeting) {
-                            greetingMessage = rawGreeting
-                                .replace(/\{name\}/gi, firstName)
-                                .replace(/\{firstname\}/gi, firstName)
-                                .replace(/\{leadname\}/gi, leadName);
-                        } else if (resolvedQuestions.length > 0) {
-                            greetingMessage = `Hi ${firstName} ji! Main assistant baat kar rahi hoon. Aapne pichli call mein jo sawal pucha tha, uska answer humare paas aa gaya hai. Main aapke doubts clear karne ke liye call kar rahi hoon. Kaise hain aap?`;
-                        } else {
-                            greetingMessage = `Hi ${firstName} ji, kaise ho aap?`;
+                        const genderGrammarInstruction = isFemale
+                            ? `GENDER IDENTITY (FEMALE): You are a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon", "Main check kar KE BATA DETI hoon", "Call kar RAHI thi"). NEVER use masculine endings like "raha hoon", "sakta hoon", or "karta hoon".`
+                            : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHA hoon", "Main aapki help kar SAKTA hoon", "Main check kar KE BATA DETA hoon", "Call kar RAHA tha").`;
+
+                        // Direct context instruction
+                        contextInstruction = `After the lead responds to your greeting, say: "Aapne ${companyName} ka ek ad dekha tha, usi ke regarding call kiya hai." Then naturally ask about their requirement.`;
+
+                        let parsedQuestions = [];
+                        if (Array.isArray(activeQualifyingQuestions) && activeQualifyingQuestions.length > 0) {
+                            parsedQuestions = activeQualifyingQuestions.map((item) => {
+                                if (typeof item === 'string') {
+                                    const match = item.match(/\(([^)]+)\)/);
+                                    const qText = item.replace(/\s*\([^)]+\)/, '').trim();
+                                    const options = match ? match[1].split(',').map(s => s.trim()).filter(Boolean) : [];
+                                    return { question: qText || item, options };
+                                }
+                                if (typeof item === 'object' && item !== null) {
+                                    return {
+                                        question: item.question || item.text || '',
+                                        options: Array.isArray(item.options) ? item.options : []
+                                    };
+                                }
+                                return { question: String(item), options: [] };
+                            }).filter(q => q.question.trim().length > 0);
                         }
+
+                        if (parsedQuestions.length === 0) {
+                            parsedQuestions = [
+                                { question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
+                                { question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
+                                { question: 'What is your purchase timeline?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
+                            ];
+                        }
+
+                        const formattedQuestionsList = parsedQuestions.map((q, i) => {
+                            const optStr = q.options.length > 0 ? ` (Options: ${q.options.join(', ')})` : '';
+                            return `   ${i + 1}. "${q.question}"${optStr}`;
+                        }).join('\n');
+
+                        const qualifyingInstruction = `
+NATURAL CONVERSATIONAL QUALIFICATION:
+During the call, your objective is strictly to:
+1. Collect answers to the following qualification questions naturally:
+${formattedQuestionsList}
+2. Assist the lead in scheduling / booking an appointment or site visit slot.
+3. Answer any questions the lead has about our company, projects, and active property inventory.
+
+Guidelines:
+- DO NOT read questions mechanically like a survey. Ask them conversationally and naturally.
+- Politely clarify any missing qualification details in friendly conversational Hinglish.
+- If an answer is already known in 'Attributed Details' or 'CRM Notes', do not re-ask.
+`.trim();
+
+                        greetingMessage = `Hi ${firstName}, kaise hain aap?`;
 
                         const languageDirective = `
 MANDATORY LANGUAGE & GREETING RULES:
 1. You MUST speak in natural, warm, polite Hindi / Hinglish.
-2. Default to Hindi / Hinglish for all responses. NEVER speak in pure English unless the user explicitly speaks to you in pure English first.
-3. Your ONLY opening greeting is: "${greetingMessage}". Speak this exact greeting clearly and warmly.
-4. DO NOT say "Hi", "Hello", "Good morning", or any extra greetings before or after "${greetingMessage}". NEVER repeat greetings or say multiple greetings in one turn.
+2. Default to Hindi / Hinglish for all responses.
+3. MULTILINGUAL ADAPTATION: If the lead asks to speak in Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, Hindi, English, or any other regional language (e.g. "Telugu lo matladandi", "Can we speak in English?", "Tamil la pesunga"), you MUST IMMEDIATELY adapt and converse fluently in their requested language.
+4. Your ONLY opening greeting is: "${greetingMessage}". Speak this exact greeting clearly and warmly.
 `.trim();
 
                         if (campaign && campaign.custom_prompt) {
                             systemInstruction = `
 ${languageDirective}
+${genderGrammarInstruction}
+${qualifyingInstruction}
 
 ${campaign.custom_prompt}
 
@@ -918,29 +1025,27 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                         } else {
                             systemInstruction = `
 You are a professional, helpful AI representative calling on behalf of "${companyName}".
-Your primary objective is to assist the lead, ${leadName}, regarding ${lead?.notes ? `"${lead.notes}"` : (targetProduct || 'their inquiry for ' + companyName)}, answer their questions thoroughly based on the business info below, and schedule a consultation or demo if they are interested.
+Your primary objective is to qualify the lead, ${leadName}, answer their questions based on the business info below, and schedule a consultation or site visit slot.
+
+${genderGrammarInstruction}
+${qualifyingInstruction}
 
 CONVERSATION FLOW:
 1. Your opening greeting is: "${greetingMessage}".
-2. Once the lead responds to your greeting, your NEXT response must proactively establish context:
-${contextInstruction}
-3. After establishing context, act as a helpful advisor. Focus on answering their queries and explaining the features/offerings based on the business info below.
+2. Once the lead responds to your greeting, your NEXT response must establish context:
+"${contextInstruction}"
+3. Proceed with natural conversational qualification and guide them to schedule a consultation/appointment with ${companyName}.
 
 CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
 1. STRICT CLOSED-WORLD ASSUMPTION: You must ONLY speak about the facts explicitly provided in the business profile info, catalog, and lead details.
 2. NO HALLUCINATIONS: Do NOT assume, extrapolate, guess, or invent any information if not explicitly written in the context below.
-3. NATURAL HELPFUL AGENT (NO AGGRESSIVE PITCHING): You are a friendly, helpful representative for "${companyName}". Focus on helping the lead and answering their questions first. DO NOT ask to book an appointment/consultation in every single response. Only suggest a consultation or demo naturally when they express interest.
-4. UNANSWERABLE QUESTIONS: If a user asks a question about the business or offerings that is not explicitly answered in the context provided below, reply naturally: "That is a great question. I don't have that specific detail right now, but let's book a quick consultation call so our team can get that exact info for you."
-5. Be polite, friendly, warm, and concise. Keep responses under 40 words.
-6. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish) when responding to the user.
-7. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
-8. GENDER & PRONOUNS: You are a female representative calling on behalf of ${companyName}. Always use female grammar and pronouns in Hinglish (e.g. "kar rahi hoon", "karti hoon", "baat kar rahi hoon", "bata sakti hoon"). NEVER say "raha" or refer to yourself as a generic assistant.
-9. APPLE LIVE VOICEMAIL & CALL SCREENING PROTOCOL: If you detect that an automated screening robot is speaking:
-   - State your name & reason clearly once: "Hi, I am calling from ${companyName} regarding ${lead?.notes || targetProduct || 'your inquiry'} for ${firstName}. Please connect the call."
-   - Then WAIT silently for the human prospect to press answer and speak before resuming your normal conversation.
-10. VOICEMAIL DETECTION: If you hear an automated machine prompt to leave a message after the beep, trigger "end_call" to hang up.
-11. SPECIFICITY RULE: When the prospect asks "Aap kiske regarding call kar rahe ho?", "Kiska call hai?", or "What is this call about?", state the reason clearly: ${lead?.notes ? `"Main ${companyName} se aapke note / inquiry (${lead.notes}) ke regarding call kar rahi hoon."` : (targetProduct ? `"Main ${companyName} se ${targetProduct} ke regarding call kar rahi hoon."` : `"Main ${companyName} se aapki inquiry ke regarding call kar rahi hoon."`)}
-12. NATURAL BACKCHANNELING & HUMAN FILLERS: You MUST naturally use short Hinglish backchannels such as "Hmm", "Haan", "Ahaan", "Ji", "Hmm-mm" to acknowledge the lead while listening or at the start of your response turns (e.g., "Hmm, right", "Ahaan, samjha", "Haan ji").
+3. Be polite, friendly, warm, and concise. Keep responses under 40 words.
+4. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish).
+5. MULTILINGUAL ADAPTATION: If the lead asks to speak in Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, Hindi, English, or any other regional language, you MUST IMMEDIATELY switch and converse fluently in their requested language.
+6. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
+7. APPLE LIVE VOICEMAIL & CALL SCREENING PROTOCOL: If you detect that an automated screening robot is speaking, state your name and wait silently.
+8. VOICEMAIL DETECTION: If you hear an automated machine prompt to leave a message, trigger "end_call" to hang up.
+9. NATURAL BACKCHANNELING: You MUST naturally use short Hinglish backchannels such as "Hmm", "Haan", "Ahaan", "Ji" to acknowledge the lead while listening.
 
 ${sourceInstructions}
 ${resolvedQuestionsInstruction}
@@ -1423,6 +1528,19 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                     updatePayload.status = 'Appointment Booked';
                     updatePayload.pipeline_stage = 'Appointment Booked';
                     updatePayload.booked_time = bookingTime;
+                } else if (callbackTime) {
+                    console.log(`[BRIDGE] Detected prospect requested callback time: ${callbackTime}`);
+                    try {
+                        const reqDate = new Date(callbackTime);
+                        if (!isNaN(reqDate.getTime())) {
+                            const { scheduledTime } = computeValidCallingSlot(reqDate, 'Asia/Kolkata');
+                            updatePayload.voice_call_scheduled_at = scheduledTime.toISOString();
+                            updatePayload.voice_next_retry_at = scheduledTime.toISOString();
+                            updatePayload.voice_call_status = 'scheduled_callback';
+                        }
+                    } catch (cbErr) {
+                        console.error('[BRIDGE] Error parsing callback time:', cbErr);
+                    }
                 } else {
                     if (!lead || !lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.status === 'New Lead' || lead.status === 'New') {
                         updatePayload.status = 'Ongoing';
@@ -1438,6 +1556,23 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                     console.log('[BRIDGE] Leads table summary, transcript, and pipeline stage updated successfully!');
                 } catch (leadErr) {
                     console.error('[BRIDGE] Failed to save transcript/summary to lead:', leadErr);
+                }
+
+                if (callbackTime) {
+                    try {
+                        const reqDate = new Date(callbackTime);
+                        if (!isNaN(reqDate.getTime())) {
+                            const { scheduledTime } = computeValidCallingSlot(reqDate, 'Asia/Kolkata');
+                            await supabaseAdmin.from('lead_history').insert({
+                                lead_id: leadId,
+                                action_type: 'REMARK',
+                                description: `🕒 Prospect requested callback. Scheduled automated AI call for ${scheduledTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} (IST).`
+                            });
+                            console.log(`[BRIDGE] Successfully logged scheduled callback for lead ${leadId} at ${scheduledTime.toISOString()}`);
+                        }
+                    } catch (histCbErr) {
+                        console.error('[BRIDGE] Failed to log callback history:', histCbErr);
+                    }
                 }
 
                 if (bookingTime && (profileData?.id || profileId)) {

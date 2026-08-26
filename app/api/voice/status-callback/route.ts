@@ -97,11 +97,15 @@ export async function POST(req: Request) {
             if (currentRetries < 3) {
                 const nextRetryCount = currentRetries + 1
                 let delayMinutes = 30
-                if (nextRetryCount === 2) delayMinutes = 120
-                if (nextRetryCount === 3) delayMinutes = 360
+                if (nextRetryCount === 2) delayMinutes = 90
+                if (nextRetryCount === 3) delayMinutes = 180
 
-                const scheduledTime = new Date(Date.now() + delayMinutes * 60000).toISOString()
-                let updatedNotes = `[⚠️ Call Rescheduled]: Call retry #${nextRetryCount} scheduled for ${new Date(scheduledTime).toLocaleString()} (Reason: ${callStatus})`
+                const { computeValidCallingSlot } = await import('@/utils/voice-helper')
+                const targetRawDate = new Date(Date.now() + delayMinutes * 60000)
+                const { scheduledTime: validSlot } = computeValidCallingSlot(targetRawDate, 'Asia/Kolkata')
+                const scheduledTime = validSlot.toISOString()
+
+                let updatedNotes = `[⚠️ Call Rescheduled]: Call retry #${nextRetryCount} scheduled for ${validSlot.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })} (Reason: ${callStatus})`
                 if (leadData?.notes) {
                     updatedNotes += `\n\n${leadData.notes}`
                 }
@@ -121,10 +125,10 @@ export async function POST(req: Request) {
                     .insert({
                         lead_id: leadId,
                         action_type: 'REMARK',
-                        description: `⚠️ Outbound call was unanswered/busy (${callStatus}). Scheduled retry #${nextRetryCount} in ${delayMinutes} minutes.`
+                        description: `⚠️ Outbound call was unanswered/busy (${callStatus}). Scheduled retry #${nextRetryCount} at ${validSlot.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })}.`
                     })
 
-                console.log(`[TWILIO STATUS CALLBACK] Rescheduled lead ${leadId} to retry #${nextRetryCount} in ${delayMinutes} mins.`)
+                console.log(`[TWILIO STATUS CALLBACK] Rescheduled lead ${leadId} to retry #${nextRetryCount} at ${scheduledTime}.`)
             } else {
                 let updatedNotes = `[❌ Call Failed]: Max calling retry limit reached (3 attempts). Auto-calling stopped.`
                 if (leadData?.notes) {
@@ -545,7 +549,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 
             // 5. Update the Lead Details in CRM
             const currentRetryCount = lead.voice_call_retry_count || 0
-            const MAX_TOTAL_ATTEMPTS = 5
+            const MAX_TOTAL_ATTEMPTS = 3
 
             let extractedAnswers: Record<string, string> = {}
             if (profile?.qualifying_enabled && profile?.qualifying_questions && profile.qualifying_questions.length > 0 && transcript && transcript.length > 0) {
@@ -632,11 +636,15 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
 
                 // Schedule callback if requested, otherwise clear the past scheduled time
                 if (callbackTime && currentRetryCount + 1 < MAX_TOTAL_ATTEMPTS) {
-                    // Callback requested and we haven't hit the total attempt cap
-                    updateData.voice_call_scheduled_at = callbackTime
+                    const { computeValidCallingSlot } = await import('@/utils/voice-helper')
+                    const rawCallbackDate = new Date(callbackTime)
+                    const { scheduledTime: validSlot } = computeValidCallingSlot(rawCallbackDate, 'Asia/Kolkata')
+                    const scheduledIso = validSlot.toISOString()
+
+                    updateData.voice_call_scheduled_at = scheduledIso
                     updateData.voice_call_status = 'scheduled_callback'
                     updateData.voice_call_retry_count = currentRetryCount + 1 // Preserve & increment across callback chains
-                    updateData.notes = `[⚠️ Scheduled Callback]: For ${new Date(callbackTime).toLocaleString()}\n\n` + updateData.notes
+                    updateData.notes = `[⚠️ Scheduled Callback]: For ${validSlot.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })}\n\n` + updateData.notes
                     console.log(`[TWILIO STATUS CALLBACK] Callback scheduled for lead ${leadId}. Total attempt count: ${currentRetryCount + 1}/${MAX_TOTAL_ATTEMPTS}`)
                 } else if (callbackTime) {
                     // Callback requested but max total attempts reached — stop calling
@@ -662,19 +670,23 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                         if (currentRetryCount + 1 < MAX_TOTAL_ATTEMPTS) {
                             const nextRetryCount = currentRetryCount + 1
                             let delayMinutes = 30
-                            if (nextRetryCount === 2) delayMinutes = 120
-                            if (nextRetryCount === 3) delayMinutes = 360
+                            if (nextRetryCount === 2) delayMinutes = 90
+                            if (nextRetryCount === 3) delayMinutes = 180
                             
-                            const scheduledTime = new Date(Date.now() + delayMinutes * 60000).toISOString()
+                            const { computeValidCallingSlot } = await import('@/utils/voice-helper')
+                            const targetRawDate = new Date(Date.now() + delayMinutes * 60000)
+                            const { scheduledTime: validSlot } = computeValidCallingSlot(targetRawDate, 'Asia/Kolkata')
+                            const scheduledTime = validSlot.toISOString()
+
                             updateData.voice_call_scheduled_at = scheduledTime
                             updateData.voice_call_status = 'scheduled_retry'
                             updateData.voice_call_retry_count = nextRetryCount
-                            updateData.notes = `[⚠️ Call Rescheduled]: Call retry #${nextRetryCount} scheduled for ${new Date(scheduledTime).toLocaleString()} (Reason: Connected but lead hung up within 15s without speaking)\n\n` + updateData.notes
-                            console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} connected but hung up without speaking. Scheduled retry #${nextRetryCount} in ${delayMinutes} mins.`)
+                            updateData.notes = `[⚠️ Call Rescheduled]: Call retry #${nextRetryCount} scheduled for ${validSlot.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })} (Reason: Connected but lead hung up within 15s without speaking)\n\n` + updateData.notes
+                            console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} connected but hung up without speaking. Scheduled retry #${nextRetryCount} at ${scheduledTime}.`)
                         } else {
                             updateData.voice_call_scheduled_at = null
                             updateData.voice_call_status = 'failed'
-                            updateData.notes = `[❌ Call Failed]: Max calling retry limit reached (5 attempts). Auto-calling stopped.\n\n` + updateData.notes
+                            updateData.notes = `[❌ Call Failed]: Max calling retry limit reached (3 attempts). Auto-calling stopped.\n\n` + updateData.notes
                             console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} connected but hung up without speaking, and max attempts reached. Auto-calling stopped.`)
                         }
                     } else {

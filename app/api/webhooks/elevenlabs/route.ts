@@ -216,7 +216,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 
         // 4. Update the Lead Details in CRM
         const currentRetryCount = lead.voice_call_retry_count || 0
-        const MAX_TOTAL_ATTEMPTS = 5
+        const MAX_TOTAL_ATTEMPTS = 3
 
         let customFieldsObj: any = {}
         if (lead?.custom_fields) {
@@ -261,11 +261,15 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 
         // Schedule callback if requested, otherwise clear the past scheduled time
         if (callbackTime && currentRetryCount + 1 < MAX_TOTAL_ATTEMPTS) {
-            // Callback requested and we haven't hit the total attempt cap
-            updateData.voice_call_scheduled_at = callbackTime
+            const { computeValidCallingSlot } = await import('@/utils/voice-helper')
+            const rawCallbackDate = new Date(callbackTime)
+            const { scheduledTime: validSlot } = computeValidCallingSlot(rawCallbackDate, 'Asia/Kolkata')
+            const scheduledIso = validSlot.toISOString()
+
+            updateData.voice_call_scheduled_at = scheduledIso
             updateData.voice_call_status = 'scheduled_callback'
             updateData.voice_call_retry_count = currentRetryCount + 1 // Preserve & increment across callback chains
-            updateData.notes = `[⚠️ Scheduled Callback]: For ${new Date(callbackTime).toLocaleString()}\n\n` + updateData.notes
+            updateData.notes = `[⚠️ Scheduled Callback]: For ${validSlot.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })}\n\n` + updateData.notes
             console.log(`[ELEVENLABS WEBHOOK] Callback scheduled for lead ${leadId}. Total attempt count: ${currentRetryCount + 1}/${MAX_TOTAL_ATTEMPTS}`)
         } else if (callbackTime) {
             // Callback requested but max total attempts reached — stop calling
@@ -291,19 +295,23 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                 if (currentRetryCount + 1 < MAX_TOTAL_ATTEMPTS) {
                     const nextRetryCount = currentRetryCount + 1
                     let delayMinutes = 30
-                    if (nextRetryCount === 2) delayMinutes = 120
-                    if (nextRetryCount === 3) delayMinutes = 360
+                    if (nextRetryCount === 2) delayMinutes = 90
+                    if (nextRetryCount === 3) delayMinutes = 180
                     
-                    const scheduledTime = new Date(Date.now() + delayMinutes * 60000).toISOString()
+                    const { computeValidCallingSlot } = await import('@/utils/voice-helper')
+                    const targetRawDate = new Date(Date.now() + delayMinutes * 60000)
+                    const { scheduledTime: validSlot } = computeValidCallingSlot(targetRawDate, 'Asia/Kolkata')
+                    const scheduledTime = validSlot.toISOString()
+
                     updateData.voice_call_scheduled_at = scheduledTime
                     updateData.voice_call_status = 'scheduled_retry'
                     updateData.voice_call_retry_count = nextRetryCount
-                    updateData.notes = `[⚠️ Call Rescheduled]: Call retry #${nextRetryCount} scheduled for ${new Date(scheduledTime).toLocaleString()} (Reason: Connected but lead hung up without speaking)\n\n` + updateData.notes
-                    console.log(`[ELEVENLABS WEBHOOK] Lead ${leadId} connected but hung up without speaking. Scheduled retry #${nextRetryCount} in ${delayMinutes} mins.`)
+                    updateData.notes = `[⚠️ Call Rescheduled]: Call retry #${nextRetryCount} scheduled for ${validSlot.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })} (Reason: Connected but lead hung up without speaking)\n\n` + updateData.notes
+                    console.log(`[ELEVENLABS WEBHOOK] Lead ${leadId} connected but hung up without speaking. Scheduled retry #${nextRetryCount} at ${scheduledTime}.`)
                 } else {
                     updateData.voice_call_scheduled_at = null
                     updateData.voice_call_status = 'failed'
-                    updateData.notes = `[❌ Call Failed]: Max calling retry limit reached (5 attempts). Auto-calling stopped.\n\n` + updateData.notes
+                    updateData.notes = `[❌ Call Failed]: Max calling retry limit reached (3 attempts). Auto-calling stopped.\n\n` + updateData.notes
                     console.log(`[ELEVENLABS WEBHOOK] Lead ${leadId} connected but hung up without speaking, and max attempts reached. Auto-calling stopped.`)
                 }
             } else {

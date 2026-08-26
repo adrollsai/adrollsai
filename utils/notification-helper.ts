@@ -282,7 +282,7 @@ export async function sendAdminMultiChannelNotification({
     // Fetch owner profile
     const { data: ownerProfile } = await getSupabaseAdmin()
       .from('profiles')
-      .select('id, email, business_name, whatsapp_personal_number, contact_number, whatsapp_phone_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
+      .select('id, email, business_name, whatsapp_personal_number, contact_number, whatsapp_phone_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_info')
       .eq('id', ownerUserId)
       .maybeSingle();
 
@@ -335,7 +335,6 @@ export async function sendAdminMultiChannelNotification({
               // Template for actual appointment bookings
               payload = {
                 messaging_product: 'whatsapp',
-                recipient_type: 'individual',
                 to: cleanPhone,
                 type: 'template',
                 template: {
@@ -402,46 +401,50 @@ export async function sendAdminMultiChannelNotification({
     }
 
     // 3. Email Notification to Admin (Restricted strictly to High Priority events: Meeting Booked, Connect with Expert)
-    if (!skipEmail && ownerProfile.email) {
-      const HIGH_PRIORITY_TYPES = [
-        'meeting_booked',
-        'appointment_booked',
-        'connect_with_expert',
-        'expert_requested',
-        'expert_escalation',
-        'expert_connection',
-        'urgent_alert'
-      ];
-      
-      const isHighPriorityEvent = (
-        HIGH_PRIORITY_TYPES.includes((type || '').toLowerCase()) ||
-        /meeting|appointment|expert|escalat|connect with expert|urgent/i.test(title || '') ||
-        /meeting|appointment|expert|escalat|connect with expert|urgent/i.test(emailSubject || '')
-      );
+    if (!skipEmail) {
+      const { sendGenericEmail, resolveNotificationRecipients } = await import('@/utils/email-helper');
+      const { toEmail, bccEmail } = resolveNotificationRecipients(ownerProfile);
 
-      if (!isHighPriorityEvent) {
-        console.log(`[MULTI-CHANNEL EMAIL SKIP] Skipping email for non-priority event "${type}" ("${title}"). Email notifications are restricted to high-priority events (meeting booked, connect with expert).`);
-      } else {
-        try {
-          const subject = emailSubject || title;
-          const defaultHtml = `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-              <div style="text-align: center; margin-bottom: 20px;">
-                <h2 style="color: #0f172a; margin: 0; font-size: 22px; font-weight: bold; border-bottom: 2px solid #2563eb; padding-bottom: 10px;">${title}</h2>
+      if (toEmail) {
+        const HIGH_PRIORITY_TYPES = [
+          'meeting_booked',
+          'appointment_booked',
+          'connect_with_expert',
+          'expert_requested',
+          'expert_escalation',
+          'expert_connection',
+          'urgent_alert'
+        ];
+        
+        const isHighPriorityEvent = (
+          HIGH_PRIORITY_TYPES.includes((type || '').toLowerCase()) ||
+          /meeting|appointment|expert|escalat|connect with expert|urgent/i.test(title || '') ||
+          /meeting|appointment|expert|escalat|connect with expert|urgent/i.test(emailSubject || '')
+        );
+
+        if (!isHighPriorityEvent) {
+          console.log(`[MULTI-CHANNEL EMAIL SKIP] Skipping email for non-priority event "${type}" ("${title}"). Email notifications are restricted to high-priority events (meeting booked, connect with expert).`);
+        } else {
+          try {
+            const subject = emailSubject || title;
+            const defaultHtml = `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <h2 style="color: #0f172a; margin: 0; font-size: 22px; font-weight: bold; border-bottom: 2px solid #2563eb; padding-bottom: 10px;">${title}</h2>
+                </div>
+                <p style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${body}</p>
+                <div style="margin-top: 24px; text-align: center;">
+                  <a href="${leadPageUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">View Lead in CRM</a>
+                </div>
+                <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 24px;" />
+                <p style="font-size: 11px; color: #94a3b8; text-align: center; text-transform: uppercase; letter-spacing: 0.05em;">Nobogent Priority Alert</p>
               </div>
-              <p style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${body}</p>
-              <div style="margin-top: 24px; text-align: center;">
-                <a href="${leadPageUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">View Lead in CRM</a>
-              </div>
-              <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 24px;" />
-              <p style="font-size: 11px; color: #94a3b8; text-align: center; text-transform: uppercase; letter-spacing: 0.05em;">Nobogent Priority Alert</p>
-            </div>
-          `;
-          const { sendGenericEmail } = await import('@/utils/email-helper');
-          await sendGenericEmail(ownerProfile.email, subject, emailHtml || defaultHtml);
-          console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Priority notification email sent to admin: ${ownerProfile.email}`);
-        } catch (emailErr: any) {
-          console.error(`[MULTI-CHANNEL EMAIL ERROR]`, emailErr.message);
+            `;
+            await sendGenericEmail(toEmail, subject, emailHtml || defaultHtml, bccEmail);
+            console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Priority notification email sent to: ${toEmail} (BCC: ${bccEmail || 'none'})`);
+          } catch (emailErr: any) {
+            console.error(`[MULTI-CHANNEL EMAIL ERROR]`, emailErr.message);
+          }
         }
       }
     }

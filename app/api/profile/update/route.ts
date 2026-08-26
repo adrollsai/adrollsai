@@ -330,6 +330,29 @@ export async function POST(request: Request) {
       }
     }
 
+    // Sync notification_email into business_info JSON for 100% fail-safe persistence
+    if (updates.notification_email !== undefined) {
+      try {
+        let bInfo: any = {};
+        if (allowedUpdates.business_info) {
+          bInfo = typeof allowedUpdates.business_info === 'string' && allowedUpdates.business_info.startsWith('{')
+            ? JSON.parse(allowedUpdates.business_info)
+            : { bio: allowedUpdates.business_info };
+        } else {
+          const { data: curProf } = await supabaseAdmin.from('profiles').select('business_info').eq('id', targetUserId).maybeSingle();
+          if (curProf?.business_info) {
+            bInfo = typeof curProf.business_info === 'string' && curProf.business_info.startsWith('{')
+              ? JSON.parse(curProf.business_info)
+              : { bio: curProf.business_info };
+          }
+        }
+        bInfo.notification_email = updates.notification_email ? updates.notification_email.trim() : null;
+        allowedUpdates.business_info = JSON.stringify(bInfo);
+      } catch (bErr) {
+        console.warn("[Profile Update API] Failed to serialize notification_email into business_info:", bErr);
+      }
+    }
+
     let { data, error } = await supabaseAdmin
       .from('profiles')
       .upsert({ id: targetUserId, ...allowedUpdates }, { onConflict: 'id' })
@@ -337,21 +360,29 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (error) {
-      // Self-healing database update retry: if missing new avatar or timezone columns, retry without them
-      const isMissingCustomColumn = error.message?.includes('avatar_url') || error.message?.includes('avatar_description') || error.message?.includes('avatar_audio_url') || error.message?.includes('timezone')
+      // Self-healing database update retry: if missing custom columns, retry without them
+      const isMissingCustomColumn = error.message?.includes('avatar_url') || 
+                                    error.message?.includes('avatar_description') || 
+                                    error.message?.includes('avatar_audio_url') || 
+                                    error.message?.includes('timezone') ||
+                                    error.message?.includes('notification_email')
       if (isMissingCustomColumn) {
-        console.warn("[Profile Update API] Database is missing columns. Retrying update with base columns...")
+        console.warn("[Profile Update API] Database is missing custom columns. Retrying update with safe columns...")
         const healedUpdates = { ...allowedUpdates }
-        delete healedUpdates.avatar_url
-        delete healedUpdates.avatar_description
-        delete healedUpdates.avatar_audio_url
-        delete healedUpdates.timezone
+        if (error.message?.includes('avatar_url')) delete healedUpdates.avatar_url
+        if (error.message?.includes('avatar_description')) delete healedUpdates.avatar_description
+        if (error.message?.includes('avatar_audio_url')) delete healedUpdates.avatar_audio_url
+        if (error.message?.includes('timezone')) delete healedUpdates.timezone
+        if (error.message?.includes('notification_email')) delete healedUpdates.notification_email
 
-        // Also sync timezone to user_metadata as persistent fallback
-        if (allowedUpdates.timezone) {
+        // Also sync timezone and notification_email to user_metadata as persistent fallback
+        const metaUpdates: any = {}
+        if (allowedUpdates.timezone) metaUpdates.timezone = allowedUpdates.timezone
+        if (allowedUpdates.notification_email) metaUpdates.notification_email = allowedUpdates.notification_email
+        if (Object.keys(metaUpdates).length > 0) {
           try {
             await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
-              user_metadata: { timezone: allowedUpdates.timezone }
+              user_metadata: metaUpdates
             })
           } catch (metaErr) {}
         }
@@ -365,8 +396,11 @@ export async function POST(request: Request) {
 
           return NextResponse.json({ 
             success: true, 
-            profile: { ...currentProfile, timezone: allowedUpdates.timezone || 'Asia/Kolkata' },
-            warning: "Migration pending: Please run the SQL in Supabase editor:\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Asia/Kolkata';"
+            profile: { 
+              ...currentProfile, 
+              timezone: allowedUpdates.timezone || 'Asia/Kolkata',
+              notification_email: allowedUpdates.notification_email || null
+            }
           })
         }
 
@@ -379,8 +413,11 @@ export async function POST(request: Request) {
         if (!retryResult.error) {
           return NextResponse.json({ 
             success: true, 
-            profile: { ...retryResult.data, timezone: allowedUpdates.timezone || 'Asia/Kolkata' },
-            warning: "Migration pending: Please run the SQL in Supabase editor:\nALTER TABLE profiles ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Asia/Kolkata';"
+            profile: { 
+              ...retryResult.data, 
+              timezone: allowedUpdates.timezone || 'Asia/Kolkata',
+              notification_email: allowedUpdates.notification_email || null
+            }
           })
         }
         error = retryResult.error

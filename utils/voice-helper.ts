@@ -40,6 +40,75 @@ export async function warmupVoiceBridge(leadId?: string, profileId?: string, cam
 
 
 /**
+ * Computes whether a target time is within the allowed calling window (9:00 AM - 7:00 PM local time).
+ * If outside the window, returns the next valid 9:00 AM working morning slot.
+ */
+export function computeValidCallingSlot(
+    targetDate: Date = new Date(),
+    timeZone: string = 'Asia/Kolkata',
+    allowAfterHours: boolean = false
+): { isWithinWindow: boolean; scheduledTime: Date } {
+    if (allowAfterHours) {
+        return { isWithinWindow: true, scheduledTime: targetDate };
+    }
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false
+    });
+    const formattedStr = formatter.format(targetDate);
+    const [hStr, mStr] = formattedStr.split(':');
+    const hourVal = parseInt(hStr, 10);
+    const minuteVal = parseInt(mStr, 10);
+    
+    const timeInMinutes = hourVal * 60 + minuteVal;
+    const startMinutes = 9 * 60;     // 9:00 AM
+    const endMinutes = 19 * 60;      // 7:00 PM (19:00)
+
+    const isWithinWindow = timeInMinutes >= startMinutes && timeInMinutes < endMinutes;
+    if (isWithinWindow) {
+        return { isWithinWindow: true, scheduledTime: targetDate };
+    }
+
+    // Outside 9 AM - 7 PM -> schedule for next valid 9:00 AM
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        hour12: false
+    }).formatToParts(targetDate);
+    const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    
+    const year = parseInt(partMap.year, 10);
+    const month = parseInt(partMap.month, 10) - 1;
+    const day = parseInt(partMap.day, 10);
+    const hour = parseInt(partMap.hour, 10);
+    
+    let targetDay = day;
+    if (hour >= 19) {
+        // After 7 PM -> schedule for tomorrow 9 AM
+        targetDay += 1;
+    }
+    // Before 9 AM -> schedule for today 9 AM
+
+    const localUtcTs = Date.UTC(year, month, targetDay, 9, 0, 0, 0);
+    const getOffset = (tz: string, d: Date) => {
+        const tzStr = d.toLocaleString('en-US', { timeZone: tz });
+        const locD = new Date(tzStr);
+        const utcD = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
+        return (locD.getTime() - utcD.getTime()) / 60000;
+    };
+    const offsetMin = getOffset(timeZone, new Date(localUtcTs));
+    const nextSlot = new Date(localUtcTs - offsetMin * 60000);
+
+    return { isWithinWindow: false, scheduledTime: nextSlot };
+}
+
+/**
  * Triggers an automated outbound AI call for a lead via Twilio and ElevenLabs.
  */
 export async function triggerOutboundCall(
@@ -158,25 +227,6 @@ export async function triggerOutboundCall(
             }
 
             // Check if within window (9 AM to 7 PM business local time)
-            const now = new Date()
-            const formatter = new Intl.DateTimeFormat('en-US', {
-                timeZone,
-                hour: 'numeric',
-                minute: 'numeric',
-                hour12: false
-            })
-            const formattedStr = formatter.format(now)
-            const [hStr, mStr] = formattedStr.split(':')
-            const hourVal = parseInt(hStr, 10)
-            const minuteVal = parseInt(mStr, 10)
-            
-            const timeInMinutes = hourVal * 60 + minuteVal
-            const startMinutes = 9 * 60     // 9:00 AM
-            const endMinutes = 19 * 60       // 7:00 PM
-
-            const isWithinWindow = timeInMinutes >= startMinutes && timeInMinutes < endMinutes
-
-            // Check if explicitly allowed after hours (asked on whatsapp or call)
             let allowAfterHours = false
             if (lead && lead.custom_fields) {
                 try {
@@ -189,42 +239,9 @@ export async function triggerOutboundCall(
                 }
             }
 
-            if (!isWithinWindow && !allowAfterHours) {
-                // Calculate next valid 9 AM slot in local time and convert to UTC Date
-                const parts = new Intl.DateTimeFormat('en-US', {
-                    timeZone,
-                    year: 'numeric',
-                    month: 'numeric',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    hour12: false
-                }).formatToParts(now)
-                const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]))
-                
-                const year = parseInt(partMap.year, 10)
-                const month = parseInt(partMap.month, 10) - 1
-                const day = parseInt(partMap.day, 10)
-                const hour = parseInt(partMap.hour, 10)
-                
-                let targetDay = day
-                if (hour >= 19) {
-                    // After 7 PM -> schedule for tomorrow at 9 AM
-                    targetDay += 1
-                }
-                // Before 9 AM -> schedule for today at 9 AM (targetDay stays same)
+            const { isWithinWindow, scheduledTime } = computeValidCallingSlot(new Date(), timeZone, allowAfterHours)
 
-                const localUtcTs = Date.UTC(year, month, targetDay, 9, 0, 0, 0)
-                
-                const getOffset = (tz: string, d: Date) => {
-                    const tzStr = d.toLocaleString('en-US', { timeZone: tz })
-                    const locD = new Date(tzStr)
-                    const utcD = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }))
-                    return (locD.getTime() - utcD.getTime()) / 60000
-                }
-                
-                const offsetMin = getOffset(timeZone, new Date(localUtcTs))
-                const scheduledTime = new Date(localUtcTs - offsetMin * 60000)
-
+            if (!isWithinWindow) {
                 // Update lead in DB
                 await supabaseAdmin
                     .from('leads')
@@ -239,13 +256,13 @@ export async function triggerOutboundCall(
                     await supabaseAdmin.from('lead_history').insert({
                         lead_id: leadId,
                         action_type: 'REMARK',
-                        description: `🕒 Auto-call scheduled for ${scheduledTime.toLocaleString('en-US', { timeZone })} (${timeZone}) because the lead arrived outside business hours (9 AM - 7 PM).`
+                        description: `🕒 Auto-call queued for ${scheduledTime.toLocaleString('en-US', { timeZone })} (${timeZone}) because the lead arrived outside calling hours (9 AM - 7 PM).`
                     })
                 } catch (histErr) {
                     console.error('[VOICE HELPER] Failed to insert lead history for scheduling outside hours:', histErr)
                 }
 
-                console.log(`[VOICE HELPER] Lead ${leadId} call scheduled for ${scheduledTime.toISOString()} due to outside hours (9 AM - 7 PM).`)
+                console.log(`[VOICE HELPER] Lead ${leadId} call queued for ${scheduledTime.toISOString()} due to outside calling hours (9 AM - 7 PM).`)
                 return { success: true, scheduled: true, scheduledTime }
             }
         }

@@ -68,7 +68,7 @@ export default function LeadScoreBadge({
       label,
       color,
       badgeEmoji,
-      breakdown: { appointment: 0, expert_request: 0, qualification: 0, contact_info: 0 },
+      breakdown: { questions_answered: 0, appointment_booked: 0, expert_clicked: 0, view_products_clicked: 0 },
       answeredQuestionsCount: 0,
       totalQuestionsCount: 0
     }
@@ -129,20 +129,20 @@ export default function LeadScoreBadge({
           </div>
           <div className="space-y-1.5 text-slate-300">
             <div className="flex justify-between">
-              <span>📅 Appointment / Visit:</span>
-              <span className="font-semibold text-white">+{breakdown.appointment} pts</span>
-            </div>
-            <div className="flex justify-between">
-              <span>📞 Connect with Expert:</span>
-              <span className="font-semibold text-white">+{breakdown.expert_request} pts</span>
-            </div>
-            <div className="flex justify-between">
               <span>📋 Questions Answered:</span>
-              <span className="font-semibold text-white">+{breakdown.qualification} pts</span>
+              <span className="font-semibold text-white">+{breakdown.questions_answered ?? 0} pts</span>
             </div>
             <div className="flex justify-between">
-              <span>👤 Contact Info:</span>
-              <span className="font-semibold text-white">+{breakdown.contact_info} pts</span>
+              <span>📅 Appointment Booked:</span>
+              <span className="font-semibold text-white">+{breakdown.appointment_booked ?? 0} pts</span>
+            </div>
+            <div className="flex justify-between">
+              <span>📞 Talk to Expert:</span>
+              <span className="font-semibold text-white">+{breakdown.expert_clicked ?? 0} pts</span>
+            </div>
+            <div className="flex justify-between">
+              <span>🏢 View Properties:</span>
+              <span className="font-semibold text-white">+{breakdown.view_products_clicked ?? 0} pts</span>
             </div>
           </div>
         </div>

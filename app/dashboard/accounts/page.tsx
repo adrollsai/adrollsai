@@ -283,6 +283,9 @@ export default function AccountsPage() {
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-indigo-100 text-indigo-700 tracking-tighter">
                         {root.role}
                       </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60 tracking-tight flex items-center gap-1">
+                        🏢 Real Estate Template
+                      </span>
                     </div>
                     <p className="text-xs text-slate-500 truncate max-w-[250px] sm:max-w-md">{root.email}</p>
                     {isSuperAdmin && costingData[root.id] && (
@@ -362,6 +365,9 @@ export default function AccountsPage() {
                               child.role === 'client' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                             }`}>
                               {child.role}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60 tracking-tight shrink-0">
+                              Real Estate Template
                             </span>
                           </div>
                           <p className="text-[10px] text-slate-400 font-medium truncate">{child.email}</p>

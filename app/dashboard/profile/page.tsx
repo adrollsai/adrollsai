@@ -487,6 +487,7 @@ export default function ProfilePage() {
     timezone: 'Asia/Kolkata',
     industry: '',
     whatsappPersonalNumber: '',
+    notificationEmail: '',
     email: ''
   })
 
@@ -846,6 +847,16 @@ export default function ProfilePage() {
           status: profileData.whitelabel_verify_status
         })
 
+        let parsedNotificationEmail = profileData.notification_email || '';
+        if (!parsedNotificationEmail && profileData.business_info) {
+          try {
+            const parsed = typeof profileData.business_info === 'string' && profileData.business_info.startsWith('{')
+              ? JSON.parse(profileData.business_info)
+              : profileData.business_info;
+            if (parsed?.notification_email) parsedNotificationEmail = parsed.notification_email;
+          } catch {}
+        }
+
         setFormData({
           businessName: profileData.business_name || '',
           mission: profileData.mission_statement || '',
@@ -865,6 +876,7 @@ export default function ProfilePage() {
           timezone: profileData.timezone || (typeof window !== 'undefined' ? localStorage.getItem('nobogent_user_timezone') : null) || 'Asia/Kolkata',
           industry: profileData.industry || '',
           whatsappPersonalNumber: profileData.whatsapp_personal_number || '',
+          notificationEmail: parsedNotificationEmail,
           email: profileData.email || ''
         })
 
@@ -1704,6 +1716,7 @@ export default function ProfilePage() {
       currency: formData.currency,
       timezone: formData.timezone || 'Asia/Kolkata',
       whatsapp_personal_number: formData.whatsappPersonalNumber,
+      notification_email: formData.notificationEmail,
       selected_text_llm: selectedTextLlm
     }
 
@@ -2838,6 +2851,24 @@ export default function ProfilePage() {
                 <div>
                   <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">
                     <span className="flex items-center gap-1.5">
+                      <Mail size={14} className="text-blue-600" />
+                      Notification Email (Lead Alerts & Updates)
+                    </span>
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.notificationEmail}
+                    onChange={(e) => setFormData({ ...formData, notificationEmail: e.target.value })}
+                    disabled={authRole === 'agent'}
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                    placeholder="e.g. ceo@deccanrealtors.com (Leave blank to use registered email)"
+                  />
+                  <p className="text-[10px] text-slate-400 font-medium mt-1.5 ml-2">All email alerts (leads, bookings, expert callbacks, daily reports) will be delivered to this address with your registered email BCC&apos;d.</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">
+                    <span className="flex items-center gap-1.5">
                       <MessageCircle size={14} className="text-[#25D366]" />
                       WhatsApp Number (for AI Bot)
                     </span>
@@ -3674,7 +3705,10 @@ export default function ProfilePage() {
                     <div className="bg-purple-100 text-purple-600 p-3 rounded-2xl">
                       <Sparkles size={20} />
                     </div>
-                    <span className="font-bold text-sm text-slate-900">AI Qualification Questions</span>
+                    <div className="text-left">
+                      <span className="font-bold text-sm text-slate-900 block">AI Qualification Questions</span>
+                      <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">Real Estate Template (Active)</span>
+                    </div>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>

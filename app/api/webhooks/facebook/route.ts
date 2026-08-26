@@ -1055,13 +1055,6 @@ IMPORTANT RULES:
                                             .eq('is_active', true);
 
                                         if (groupAutomations && groupAutomations.length > 0) {
-                                            const normalizeCampStr = (s: string) => (s || '')
-                                                .replace(/[\u2010-\u2015\u2212]/g, '-')
-                                                .toLowerCase()
-                                                .replace(/\bhaymten\b/g, 'hampton')
-                                                .replace(/\bhamyten\b/g, 'hampton')
-                                                .replace(/\s+/g, ' ')
-                                                .trim();
                                             for (const aut of groupAutomations) {
                                                 try {
                                                     const parsedGroup = JSON.parse(aut.description || '{}');
@@ -1072,7 +1065,7 @@ IMPORTANT RULES:
                                                         const leadCtx = {
                                                             campaignId: campaignId || null,
                                                             campaignName: campaignName || null,
-                                                            adName: adName || null,
+                                                            adName: adNameStr || null,
                                                             adCampaignString: adCampaignString || null,
                                                             formName: adHeadline || null
                                                         };
@@ -1109,10 +1102,6 @@ IMPORTANT RULES:
                                                                 .from('automations')
                                                                 .update({ description: updatedGroupJson })
                                                                 .eq('id', aut.id);
-
-                                                            break;
-                                                        }
-                                                    }
 
                                                             console.log(`[WhatsApp Lead] Group distribution assigned lead to ${selectedMember.name} (${selectedMember.userId}) for rule ${aut.title}`);
                                                             break;
@@ -1687,30 +1676,112 @@ IMPORTANT RULES:
                                         }
                                     };
 
-                                    // Quick Reply & Interactive Button Click Action Handlers
-                                    const isViewPropertiesClick = buttonReplyId === 'view_properties' || /view properties|view property|view products|view product|view listing|explore properties/i.test(messageText);
-                                    if (isViewPropertiesClick) {
-                                        console.log(`[Flow] Lead ${cleanFrom} clicked "View Properties"! Sending product catalogue link.`);
-                                        const catalogueMsg = "Here are our featured property listings and projects! 🏢✨ Click the button below to view complete details:";
-                                        await sendWAMessage(catalogueMsg);
-                                        return;
-                                    }
+                                    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
+                                    const catalogueLink = ownerCustomDomain 
+                                        ? `https://${ownerCustomDomain}` 
+                                        : `${appUrl}/shared/${ownerUserId}`;
+                                    const bookingLink = ownerCustomDomain 
+                                        ? `https://${ownerCustomDomain}?book=1` 
+                                        : `${appUrl}/shared/${ownerUserId}?book=1`;
 
-                                    const isRealEstateInterestedClick = buttonReplyId === 're_interested' || /looking for property|property investment|buy property/i.test(messageText);
-                                    if (isRealEstateInterestedClick) {
-                                        console.log(`[Flow] Lead ${cleanFrom} clicked "Interested" on property inquiry! Sending property options.`);
-                                        const responseText = "Awesome! 🎉 We have incredible residential & commercial investment opportunities available right now in top locations.\n\nWhich type of property are you interested in?\n1️⃣ Residential Apartments / Villas\n2️⃣ Commercial / Retail Spaces\n3️⃣ Residential / Commercial Plots\n4️⃣ Talk to a Property Specialist";
-                                        await sendWAMessage(responseText);
-                                        return;
-                                    }
-
-                                    const isNotInterestedClick = buttonReplyId === 'not_interested' || /not interested|not right now|no thanks|maybe later/i.test(messageText);
-                                    if (isNotInterestedClick) {
-                                        console.log(`[Flow] Lead ${cleanFrom} clicked "Not Right Now / Not Interested".`);
-                                        const responseText = "Thank you for letting us know! 🙏 We won't disturb you further. If your plans change, feel free to message us anytime.";
+                                    // Helper: Send 3-Button Standard Action Menu (1. View properties, 2. Talk to an expert, 3. Book an appointment)
+                                    const sendThreeButtons = async (promptText = "What would you like to do?") => {
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
-                                            await fetch(metaUrl, {
+                                            const payload = {
+                                                messaging_product: 'whatsapp',
+                                                recipient_type: 'individual',
+                                                to: cleanFrom,
+                                                type: 'interactive',
+                                                interactive: {
+                                                    type: 'button',
+                                                    body: { text: promptText },
+                                                    action: {
+                                                        buttons: [
+                                                            { type: 'reply', reply: { id: 'view_properties', title: 'View properties' } },
+                                                            { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to an expert' } },
+                                                            { type: 'reply', reply: { id: 'book_appointment', title: 'Book an appointment' } }
+                                                        ]
+                                                    }
+                                                }
+                                            };
+                                            const res = await fetch(metaUrl, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${ownerWaToken}`,
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify(payload)
+                                            });
+                                            if (res.ok) {
+                                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                                    chat_id: chat.id,
+                                                    direction: 'outbound',
+                                                    message_text: `${promptText} [Buttons: View properties | Talk to an expert | Book an appointment]`
+                                                });
+                                                await supabaseAdmin.from('whatsapp_chats').update({
+                                                    last_message_text: promptText,
+                                                    updated_at: new Date().toISOString()
+                                                }).eq('id', chat.id);
+                                            } else {
+                                                console.error('[WhatsApp Bot] Failed to send 3-button menu:', await res.json());
+                                            }
+                                        } catch (err) {
+                                            console.error('[WhatsApp Bot] Error sending 3-button menu:', err);
+                                        }
+                                    };
+
+                                    // Helper: Send Interactive MCQ Question Buttons (up to 3 options)
+                                    const sendMCQButtons = async (questionText: string, buttons: { id: string; title: string }[]) => {
+                                        try {
+                                            const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                            const payload = {
+                                                messaging_product: 'whatsapp',
+                                                recipient_type: 'individual',
+                                                to: cleanFrom,
+                                                type: 'interactive',
+                                                interactive: {
+                                                    type: 'button',
+                                                    body: { text: questionText },
+                                                    action: {
+                                                        buttons: buttons.slice(0, 3).map(b => ({
+                                                            type: 'reply',
+                                                            reply: { id: b.id, title: b.title.slice(0, 20) }
+                                                        }))
+                                                    }
+                                                }
+                                            };
+                                            const res = await fetch(metaUrl, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${ownerWaToken}`,
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify(payload)
+                                            });
+                                            if (res.ok) {
+                                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                                    chat_id: chat.id,
+                                                    direction: 'outbound',
+                                                    message_text: `${questionText} [Options: ${buttons.map(b => b.title).join(', ')}]`
+                                                });
+                                                await supabaseAdmin.from('whatsapp_chats').update({
+                                                    last_message_text: questionText,
+                                                    updated_at: new Date().toISOString()
+                                                }).eq('id', chat.id);
+                                            } else {
+                                                console.error('[WhatsApp Bot] Failed to send MCQ buttons:', await res.json());
+                                            }
+                                        } catch (err) {
+                                            console.error('[WhatsApp Bot] Error sending MCQ buttons:', err);
+                                        }
+                                    };
+
+                                    // Helper: Send Free-form Text Message
+                                    const sendTextMessage = async (text: string) => {
+                                        try {
+                                            const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                            const res = await fetch(metaUrl, {
                                                 method: 'POST',
                                                 headers: {
                                                     'Authorization': `Bearer ${ownerWaToken}`,
@@ -1721,621 +1792,316 @@ IMPORTANT RULES:
                                                     recipient_type: 'individual',
                                                     to: cleanFrom,
                                                     type: 'text',
-                                                    text: { body: responseText }
+                                                    text: { body: text }
                                                 })
                                             });
-                                            await supabaseAdmin.from('whatsapp_messages').insert({
-                                                chat_id: chat.id,
-                                                direction: 'outbound',
-                                                message_text: responseText
-                                            });
+                                            if (res.ok) {
+                                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                                    chat_id: chat.id,
+                                                    direction: 'outbound',
+                                                    message_text: text
+                                                });
+                                                await supabaseAdmin.from('whatsapp_chats').update({
+                                                    last_message_text: text,
+                                                    updated_at: new Date().toISOString()
+                                                }).eq('id', chat.id);
+                                            }
                                         } catch (err) {
-                                            console.error('[Flow] Error sending not interested response:', err);
+                                            console.error('[WhatsApp Bot] Error sending text message:', err);
                                         }
+                                    };
+
+                                    // Helper: Send Interactive CTA URL Button Message (with fallback to direct text link)
+                                    const sendCtaUrlMessage = async (headerText: string, bodyText: string, buttonText: string, url: string) => {
+                                        try {
+                                            const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                            const payload = {
+                                                messaging_product: 'whatsapp',
+                                                recipient_type: 'individual',
+                                                to: cleanFrom,
+                                                type: 'interactive',
+                                                interactive: {
+                                                    type: 'cta_url',
+                                                    header: { type: 'text', text: headerText.slice(0, 60) },
+                                                    body: { text: bodyText },
+                                                    footer: { text: (ownerBusinessName || 'Property Advisory').slice(0, 60) },
+                                                    action: {
+                                                        name: 'cta_url',
+                                                        parameters: {
+                                                            display_text: buttonText.slice(0, 20),
+                                                            url: url
+                                                        }
+                                                    }
+                                                }
+                                            };
+                                            const res = await fetch(metaUrl, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${ownerWaToken}`,
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify(payload)
+                                            });
+                                            if (res.ok) {
+                                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                                    chat_id: chat.id,
+                                                    direction: 'outbound',
+                                                    message_text: `${bodyText} [Button: ${buttonText} -> ${url}]`
+                                                });
+                                                await supabaseAdmin.from('whatsapp_chats').update({
+                                                    last_message_text: bodyText,
+                                                    updated_at: new Date().toISOString()
+                                                }).eq('id', chat.id);
+                                            } else {
+                                                console.warn('[WhatsApp Bot] CTA URL button response not ok, sending direct text link:', await res.json());
+                                                await sendTextMessage(`${bodyText}\n\n👉 ${url}`);
+                                            }
+                                        } catch (err) {
+                                            console.error('[WhatsApp Bot] Error sending CTA URL button:', err);
+                                            await sendTextMessage(`${bodyText}\n\n👉 ${url}`);
+                                        }
+                                    };
+
+                                    // Load existing lead custom fields
+                                    let currentCustomFields = parseCustomFields(latestLead?.custom_fields || chat.flow_answers || {});
+
+                                    // Helper: Sync Custom Fields and Recalculate Lead Score
+                                    const syncFieldsAndScore = async (fieldsToMerge: Record<string, any>) => {
+                                        currentCustomFields = { ...currentCustomFields, ...fieldsToMerge };
+                                        await supabaseAdmin
+                                            .from('whatsapp_chats')
+                                            .update({ flow_answers: currentCustomFields, updated_at: new Date().toISOString() })
+                                            .eq('id', chat.id);
+                                        
+                                        if (latestLead?.id) {
+                                            await supabaseAdmin
+                                                .from('leads')
+                                                .update({ custom_fields: currentCustomFields })
+                                                .eq('id', latestLead.id);
+                                            
+                                            await updateLeadScoreInDB(supabaseAdmin, latestLead.id, ['property_type', 'budget', 'timeline']);
+                                        }
+                                    };
+
+                                    // 1. Check for Opt-Out / Stop / Not Interested
+                                    const isOptOut = buttonReplyId === 'not_interested' || /^(stop|unsubscribe|not interested|no thanks|cancel)$/i.test(messageText.trim());
+                                    if (isOptOut) {
+                                        console.log(`[WhatsApp Bot] Lead ${cleanFrom} requested opt-out.`);
+                                        await syncFieldsAndScore({ opt_out: true, unsubscribed_at: new Date().toISOString() });
+                                        if (latestLead?.id) {
+                                            await supabaseAdmin.from('leads').update({ pipeline_stage: 'Lost/NI' }).eq('id', latestLead.id);
+                                        }
+                                        await sendTextMessage("Thank you for letting us know! 🙏 We have paused automated follow-ups. You can message us anytime if you need assistance.");
                                         return;
                                     }
 
-                                    const isExpertClick = buttonReplyId === 'connect_expert' || /connect with expert|speak to expert|talk to expert|call expert/i.test(messageText);
-                                    const isButtonClick = isInteractive || isButton || isViewPropertiesClick || isInterestedClick || isNotInterestedClick || isExpertClick;
-
-                                    // 3. FLOW STATE MACHINE
-                                    // Check if AI Bot is PAUSED for human agent chat
-                                    const chatFlowAnswers = chat.flow_answers || {};
-                                    if (chatFlowAnswers.ai_disabled) {
-                                        if (chatFlowAnswers.ai_paused_until) {
-                                            const pausedUntilTime = new Date(chatFlowAnswers.ai_paused_until).getTime();
-                                            if (Date.now() > pausedUntilTime) {
-                                                // 2-hour timeout expired -> auto-resume AI bot!
-                                                chatFlowAnswers.ai_disabled = false;
-                                                chatFlowAnswers.ai_paused_until = null;
-                                                await supabaseAdmin.from('whatsapp_chats').update({ flow_answers: chatFlowAnswers }).eq('id', chat.id);
-                                                console.log(`[Flow] 2-hour AI pause expired for chat ${chat.id}. Auto-resuming AI Bot!`);
-                                            } else {
-                                                console.log(`[Flow] AI Bot is currently PAUSED for chat ${chat.id}. Message logged, skipping AI response.`);
-                                                return;
-                                            }
-                                        } else {
-                                            console.log(`[Flow] AI Bot is manually PAUSED for chat ${chat.id}. Message logged, skipping AI response.`);
-                                            return;
-                                        }
+                                    // 2. Action Button 1: "View properties"
+                                    const isViewProperties = buttonReplyId === 'view_properties' || /view propert|view product|explore propert|catalog|listings/i.test(messageText);
+                                    if (isViewProperties) {
+                                        console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "View properties".`);
+                                        await syncFieldsAndScore({ view_properties_clicked: true });
+                                        await sendCtaUrlMessage(
+                                            "🏢 Available Properties",
+                                            "Explore our latest premium properties catalog with pricing, layouts, and amenities:",
+                                            "View Properties 🏢",
+                                            catalogueLink
+                                        );
+                                        await new Promise(r => setTimeout(r, 800));
+                                        await sendThreeButtons("What would you like to do next?");
+                                        return;
                                     }
 
-                                    const hasName = !!chat.recipient_name;
-                                    const flowCompleted = chat.flow_completed || false;
-
-                                    // Check for campaign-specific flow via referral
-                                    const referral = message.referral;
-                                    let campaignSourceId = referral?.source_id || null;
-                                    let metaAdOrigin: any = chat.flow_answers?.meta_ad_origin || null;
-
-                                    if (referral && !metaAdOrigin) {
-                                        metaAdOrigin = {
-                                            source_id: referral.source_id || '',
-                                            source_type: referral.source_type || 'ad',
-                                            source_url: (referral.source_url && referral.source_url !== 'https://facebook.com' && referral.source_url !== 'https://facebook.com/') 
-                                                ? referral.source_url 
-                                                : (referral.source_id ? `https://www.facebook.com/ads/library/?id=${referral.source_id}` : ''),
-                                            headline: referral.headline || '',
-                                            body: referral.body || '',
-                                            media_type: referral.media_type || '',
-                                            image_url: referral.image_url || '',
-                                            video_url: referral.video_url || '',
-                                            ctwa_clid: referral.ctwa_clid || ''
-                                        };
-
-                                        if (referral.source_id && ownerWaToken) {
-                                            try {
-                                                const adRes = await fetch(`https://graph.facebook.com/v20.0/${referral.source_id}?fields=id,name,adset{id,name},campaign{id,name},creative{id,name,image_url,thumbnail_url,effective_object_story_id,object_story_spec}&access_token=${ownerWaToken}`);
-                                                const adData = await adRes.json();
-                                                if (adData && !adData.error) {
-                                                    metaAdOrigin.ad_id = adData.id || referral.source_id;
-                                                    metaAdOrigin.ad_name = adData.name || referral.headline || 'Meta Ad';
-                                                    metaAdOrigin.adset_id = adData.adset?.id || '';
-                                                    metaAdOrigin.adset_name = adData.adset?.name || 'Smart AdSet';
-                                                    metaAdOrigin.campaign_id = adData.campaign?.id || '';
-                                                    metaAdOrigin.campaign_name = adData.campaign?.name || 'Meta Campaign';
-                                                    if (adData.creative?.effective_object_story_id) {
-                                                        metaAdOrigin.source_url = `https://www.facebook.com/${adData.creative.effective_object_story_id}`;
-                                                    }
-                                                    
-                                                    const spec = adData.creative?.object_story_spec;
-                                                    if (spec?.video_data?.image_url) {
-                                                        metaAdOrigin.image_url = spec.video_data.image_url;
-                                                        if (spec.video_data.title) metaAdOrigin.headline = spec.video_data.title;
-                                                        if (spec.video_data.message) metaAdOrigin.body = spec.video_data.message;
-                                                    } else if (spec?.link_data?.picture) {
-                                                        metaAdOrigin.image_url = spec.link_data.picture;
-                                                        if (spec.link_data.name) metaAdOrigin.headline = spec.link_data.name;
-                                                        if (spec.link_data.message) metaAdOrigin.body = spec.link_data.message;
-                                                    } else if (adData.creative?.image_url) {
-                                                        metaAdOrigin.image_url = adData.creative.image_url;
-                                                    } else if (adData.creative?.thumbnail_url) {
-                                                        metaAdOrigin.image_url = adData.creative.thumbnail_url;
-                                                    }
-                                                }
-                                            } catch (adErr) {
-                                                console.error("[Referral] Failed to fetch Graph API ad metadata:", adErr);
-                                            }
-                                        }
-
-                                        // Match inventory property
-                                        try {
-                                            const { data: userProps } = await supabaseAdmin
-                                                .from('properties')
-                                                .select('*')
-                                                .eq('user_id', ownerUserId);
-
-                                            if (userProps && userProps.length > 0) {
-                                                const searchText = (metaAdOrigin.headline + ' ' + metaAdOrigin.ad_name + ' ' + metaAdOrigin.body + ' ' + metaAdOrigin.campaign_name).toLowerCase();
-                                                
-                                                let matchedProp = userProps.find((p: any) => {
-                                                    const pTitle = (p.title || '').toLowerCase();
-                                                    return pTitle && (searchText.includes(pTitle) || pTitle.includes(searchText));
-                                                });
-
-                                                if (!matchedProp) {
-                                                    if (searchText.includes('plot') || searchText.includes('land') || searchText.includes('anmol')) {
-                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('anmol') || (p.title || '').toLowerCase().includes('plot')) || null;
-                                                    } else if (searchText.includes('township') || searchText.includes('16.25')) {
-                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('anmol') || (p.title || '').toLowerCase().includes('township')) || null;
-                                                    } else if (searchText.includes('apartment') || searchText.includes('aspire') || searchText.includes('bhk') || searchText.includes('tower')) {
-                                                        matchedProp = userProps.find((p: any) => (p.title || '').toLowerCase().includes('ananta aspire') || (p.title || '').toLowerCase().includes('aspire')) || null;
-                                                    } else {
-                                                        matchedProp = null;
-                                                    }
-                                                }
-
-                                                if (matchedProp) {
-                                                    metaAdOrigin.property_id = matchedProp.id;
-                                                    metaAdOrigin.product_name = matchedProp.title;
-                                                    metaAdOrigin.product_details = {
-                                                        title: matchedProp.title,
-                                                        price: matchedProp.price,
-                                                        address: matchedProp.address || matchedProp.location,
-                                                        description: matchedProp.description,
-                                                        image_url: matchedProp.image_url,
-                                                        video_url: matchedProp.video_url,
-                                                        brochure_url: matchedProp.brochure_url
-                                                    };
-                                                }
-                                            }
-                                        } catch (propErr) {
-                                            console.error("[Referral] Inventory property lookup error:", propErr);
-                                        }
-
-                                        const currentFlowAnswers = chat.flow_answers || {};
-                                        await supabaseAdmin
-                                            .from('whatsapp_chats')
-                                            .update({
-                                                flow_answers: { ...currentFlowAnswers, meta_ad_origin: metaAdOrigin }
-                                            })
-                                            .eq('id', chat.id);
-                                        chat.flow_answers = { ...currentFlowAnswers, meta_ad_origin: metaAdOrigin };
-
-                                        // Sync to CRM Lead record if lead already exists
-                                        if (chat.lead_id && metaAdOrigin) {
-                                            try {
-                                                const adName = metaAdOrigin.ad_name || metaAdOrigin.headline || metaAdOrigin.campaign_name || metaAdOrigin.product_name;
-                                                const { data: existingLeadData } = await supabaseAdmin.from('leads').select('id, name, pipeline_stage, custom_fields').eq('id', chat.lead_id).single();
-                                                let cf = existingLeadData?.custom_fields || {};
-                                                if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
-
-                                                const prevAdIdentifier = cf?.meta_ad_origin?.ad_id || cf?.meta_ad_origin?.ad_name;
-                                                const newAdIdentifier = metaAdOrigin.ad_id || metaAdOrigin.ad_name;
-                                                const isNewAdReopen = newAdIdentifier && prevAdIdentifier && prevAdIdentifier !== newAdIdentifier;
-
-                                                if (isNewAdReopen) {
-                                                    const reopenedCount = (cf.reopened_count || 0) + 1;
-                                                    cf.reopened_count = reopenedCount;
-                                                    cf.last_reopened_at = new Date().toISOString();
-
-                                                    const reopenDesc = `The lead was reopened from WhatsApp CTWA Ad Click\nLead Name : ${existingLeadData?.name || chat.recipient_name || 'Lead'}\nContact no : +${cleanFrom}\nLead Source : WhatsApp Ad\nSource Details : ${adName || 'Meta CTWA Ad'}\nCampaign : ${metaAdOrigin.campaign_name || 'N/A'}\nLead Status : ${existingLeadData?.pipeline_stage || 'New'}`;
-
-                                                    await supabaseAdmin.from('lead_history').insert({
-                                                        lead_id: chat.lead_id,
-                                                        action_type: 'REOPENED',
-                                                        performed_by: 'System / WhatsApp',
-                                                        actor_name: 'WhatsApp Ad',
-                                                        description: reopenDesc,
-                                                        details: {
-                                                            source: 'WhatsApp Ad',
-                                                            ad_name: adName,
-                                                            campaign_name: metaAdOrigin.campaign_name,
-                                                            reopened_count: reopenedCount,
-                                                            timestamp: new Date().toISOString()
-                                                        },
-                                                        created_at: new Date().toISOString()
-                                                    });
-                                                }
-
-                                                cf = { ...cf, meta_ad_origin: metaAdOrigin };
-
-                                                await supabaseAdmin
-                                                    .from('leads')
-                                                    .update({
-                                                        source: 'WhatsApp Ad',
-                                                        ad_name: adName || 'Meta CTWA Ad',
-                                                        campaign_id: metaAdOrigin.campaign_id || null,
-                                                        property_id: metaAdOrigin.property_id || null,
-                                                        custom_fields: cf
-                                                    })
-                                                    .eq('id', chat.lead_id);
-                                                console.log(`[Referral] Updated lead ${chat.lead_id} with Meta Ad Origin: ${adName}${isNewAdReopen ? ' (Lead Reopened)' : ''}`);
-                                            } catch (leadSyncErr) {
-                                                console.error("[Referral] Lead sync error:", leadSyncErr);
-                                            }
-                                        }
-                                    }
-
-                                    // STEP A: Prepare conversational qualification context & answers
-                                    const existingAnswers = parseCustomFields(latestLead?.custom_fields || chat.flow_answers || {});
-                                    const allBusinessQuestions = (ownerQualifyingQuestions && ownerQualifyingQuestions.length > 0) 
-                                        ? ownerQualifyingQuestions 
-                                        : [];
-
-                                    // Identify unanswered questions that haven't been asked/answered yet
-                                    const unansweredQuestions = allBusinessQuestions.filter((q: string) => {
-                                        const qClean = q.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
-                                        const val = existingAnswers[q] || existingAnswers[qClean] || existingAnswers[`q_${qClean}`];
-                                        return val === undefined || val === null || String(val).trim().length === 0;
-                                    });
-
-                                    const hasRealName = chat.recipient_name && 
-                                        !chat.recipient_name.startsWith('+') && 
-                                        !/^\d+$/.test(chat.recipient_name.replace(/\D/g, '')) &&
-                                        chat.recipient_name !== 'Customer' &&
-                                        chat.recipient_name !== 'Prospect' &&
-                                        chat.recipient_name.trim().length > 1;
-
-                                    console.log(`[WhatsApp AI Assistant] Processing message from customer ${cleanFrom} for owner ${ownerUserId}... (Unanswered Qs: ${unansweredQuestions.length}, Has Real Name: ${!!hasRealName})`);
-
-                                    // Run all independent context queries in parallel for speed
-                                    const [profileResult, propertiesResult, historyResult, chatHistoryResult] = await Promise.all([
-                                        // 1. Business profile
-                                        supabaseAdmin
-                                            .from('profiles')
-                                            .select('business_name, business_info')
-                                            .eq('id', ownerUserId)
-                                            .maybeSingle(),
-                                        // 2. Properties/listings
-                                        supabaseAdmin
-                                            .from('properties')
-                                            .select('id, title, price, address, property_type, description, configurations')
-                                            .eq('user_id', inventoryOwnerId),
-                                        // 3. Voice call history (lead_history for matched leads)
-                                        (async () => {
-                                            try {
-                                                const { data: matchedLeads } = await supabaseAdmin
-                                                    .from('leads')
-                                                    .select('id')
-                                                    .eq('user_id', ownerUserId)
-                                                    .ilike('phone', `%${cleanFrom.slice(-10)}%`);
-                                                const matchedLeadIds = matchedLeads?.map((l: any) => l.id) || [];
-                                                if (matchedLeadIds.length > 0) {
-                                                    const { data: histories } = await supabaseAdmin
-                                                        .from('lead_history')
-                                                        .select('description, created_at')
-                                                        .in('lead_id', matchedLeadIds)
-                                                        .eq('action_type', 'REMARK')
-                                                        .order('created_at', { ascending: true });
-                                                    return histories;
-                                                }
-                                                return null;
-                                            } catch { return null; }
-                                        })(),
-                                        // 4. Chat message history
-                                        supabaseAdmin
-                                            .from('whatsapp_messages')
-                                            .select('direction, message_text')
-                                            .eq('chat_id', chat.id)
-                                            .order('created_at', { ascending: true })
-                                            .limit(12)
-                                    ]);
-
-                                    const companyName = profileResult.data?.business_name || 'our business';
-                                    const companyInfo = profileResult.data?.business_info || 'A professional business service.';
-
-                                    let propertiesText = 'No active listings in inventory.';
-                                    if (propertiesResult.data && propertiesResult.data.length > 0) {
-                                        propertiesText = propertiesResult.data
-                                            .map((p: any) => {
-                                                return `<property>
-  <id>${p.id}</id>
-  <title>${p.title || 'N/A'}</title>
-  <type>${p.property_type || 'N/A'}</type>
-  <price>${p.price || 'N/A'}</price>
-  <address>${p.address || p.location || 'N/A'}</address>
-  <configurations>${p.configurations || 'N/A'}</configurations>
-  <description>${p.description || 'N/A'}</description>
-</property>`;
-                                            })
-                                            .join('\n');
-                                    }
-
-                                    let voiceCallHistory = 'No previous voice calls.';
-                                    if (historyResult && Array.isArray(historyResult) && historyResult.length > 0) {
-                                        const voiceCalls: string[] = [];
-                                        historyResult.forEach((h: any) => {
-                                            if (h.description && h.description.startsWith('🎙️ CALL_JSON:')) {
-                                                try {
-                                                    const jsonStr = h.description.substring('🎙️ CALL_JSON:'.length);
-                                                    const callData = JSON.parse(jsonStr);
-                                                    if (callData.transcript) {
-                                                        voiceCalls.push(`[Voice Call at ${new Date(h.created_at).toLocaleString()}] Transcript:\n${callData.transcript}`);
-                                                    } else if (callData.summary) {
-                                                        voiceCalls.push(`[Voice Call at ${new Date(h.created_at).toLocaleString()}] Summary:\n${callData.summary}`);
-                                                    }
-                                                } catch (parseErr) {
-                                                    // Ignore malformed json
-                                                }
-                                            }
-                                        });
-                                        if (voiceCalls.length > 0) {
-                                            voiceCallHistory = voiceCalls.join('\n\n');
-                                        }
-                                    }
-
-                                    let chatHistory = 'No previous messages.';
-                                    if (chatHistoryResult.data && chatHistoryResult.data.length > 0) {
-                                        chatHistory = chatHistoryResult.data
-                                            .map((m: any) => `${m.direction === 'inbound' ? 'User' : 'Assistant'}: ${m.message_text}`)
-                                            .join('\n');
-                                    }
-
-                                    // Prompt Gemini with natural conversational qualification
-                                    const customerName = hasRealName ? chat.recipient_name : null;
-                                    const aiPrompt = `
-You are an intelligent, friendly AI sales and booking assistant for "${companyName}".
-Here is information about our business:
-${companyInfo}
-
-Available Properties/Listings in our active inventory:
-${propertiesText}
-
-Current Date & Time: ${new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
-
-Customer Status:
-- Name: ${customerName ? customerName : "UNKNOWN (The customer has not shared their name yet)"}
-- Unanswered Qualification Questions:
-${unansweredQuestions.length > 0 ? unansweredQuestions.map((q: string, i: number) => `  ${i + 1}. "${q}"`).join('\n') : "  None (All qualification details have already been collected!)"}
-- Already Collected Details: ${JSON.stringify(existingAnswers)}
-
-CRITICAL CONVERSATIONAL GUIDELINES:
-1. ALWAYS DIRECTLY & WARMLY ANSWER THE CUSTOMER'S QUESTION/MESSAGE FIRST. Never ignore or delay answering what they asked.
-2. In the SAME response, conversationally and naturally weave in ONE unanswered qualification question (if any are listed above). Do NOT interrogate or force them; keep the tone friendly, helpful, and natural (e.g., "By the way, are you looking for 2 BHK or 3 BHK?" or "Also, what is your preferred move-in timeline?").
-3. If Customer Name is UNKNOWN, naturally introduce yourself/ask for their name while answering (e.g., "I'd be glad to help with that! May I know your good name?"). Never force or refuse to answer if they haven't given their name yet.
-4. DO NOT re-ask questions that are already answered in "Already Collected Details".
-5. STRICT CLOSED-WORLD GROUNDING: Answer based ONLY on the provided business profile and active properties catalog. If a detail is missing from catalog, politely state you will arrange a specialist to confirm.
-6. If the user explicitly asks to be called right now, requests a voice call, says "call me", or asks to speak on the phone immediately, set "trigger_call" to true. Otherwise, set it to false.
-7. Gently encourage booking a consultation or site visit slot when appropriate.
-8. If the user confirms or agrees to a meeting time, extract "booking_time" as an ISO-8601 string.
-9. If the user mentions their name in their message (e.g. "I am Aman", "My name is Priya", "Aman here"), extract it in "extracted_name". Otherwise set to null.
-10. If the user answers any qualification question in their message, extract their answer in the "answered_questions" map: { [exact_question_string]: "their answer" }.
-11. Keep responses concise, warm, and formatted cleanly for WhatsApp (under 60 words).
-
-Recent WhatsApp Chat History:
-${chatHistory}
-
-Recent Voice Call History / Transcript Context:
-${voiceCallHistory}
-
-Incoming User Message: "${messageText}"
-
-Format your output as a valid JSON object ONLY. Do not use markdown wrappers:
-{
-  "reply": "Your message reply in English",
-  "extracted_name": "Extracted customer name if they shared their name in this message, otherwise null",
-  "answered_questions": {},
-  "booking_time": "ISO-8601 string of agreed meeting slot or null",
-  "trigger_call": true/false,
-  "allow_after_hours": true/false,
-  "flag_unanswered_question": "raw question text if unanswered, otherwise null",
-  "send_product_id": "UUID string of requested product/property from active inventory if customer asked for details of a particular one, otherwise null"
-}
-`;
-
-                                    let replyText = "Thank you! Our representative will get back to you shortly.";
-                                    let extractedBookingTime: string | null = null;
-                                    let triggerCallRequested = false;
-                                    let extractedAllowAfterHours = false;
-                                    let unansweredQuestionToFlag: string | null = null;
-                                    let extractedProductId: string | null = null;
-                                    let extractedName: string | null = null;
-                                    let answeredQuestionsObj: Record<string, any> = {};
-
-                                    let assistantUsage = { promptTokens: 0, completionTokens: 0, modelName: 'gemini-3.5-flash' };
-                                    try {
-                                        const aiRes = await callGeminiWithUsage(aiPrompt);
-                                        const cleanJson = aiRes.text.replace(/```json/g, '').replace(/```/g, '').trim();
-                                        const parsed = JSON.parse(cleanJson);
-                                        replyText = parsed.reply || replyText;
-                                        extractedBookingTime = parsed.booking_time || null;
-                                        triggerCallRequested = !!parsed.trigger_call;
-                                        extractedAllowAfterHours = !!parsed.allow_after_hours;
-                                        unansweredQuestionToFlag = parsed.flag_unanswered_question || null;
-                                        extractedProductId = parsed.send_product_id || null;
-                                        extractedName = parsed.extracted_name || null;
-                                        answeredQuestionsObj = parsed.answered_questions || {};
-                                        assistantUsage = aiRes;
-                                        console.log('[WhatsApp AI Assistant] Gemini response:', { replyText, extractedName, answeredQuestionsObj, extractedBookingTime, triggerCallRequested, extractedProductId });
+                                    // 3. Action Button 2: "Talk to an expert"
+                                    const isTalkExpert = buttonReplyId === 'talk_expert' || buttonReplyId === 'connect_expert' || /talk to an expert|talk to expert|connect with expert|speak with expert|call expert/i.test(messageText);
+                                    if (isTalkExpert) {
+                                        console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "Talk to an expert".`);
+                                        await syncFieldsAndScore({ connect_expert_clicked: true, requested_callback: true });
                                         
-                                        // Dynamic billing for customer AI reply
-                                        const aiTokensCost = calculateLLMCost(assistantUsage.modelName, assistantUsage.promptTokens, assistantUsage.completionTokens);
-                                        const totalAiCost = 0.05 + aiTokensCost;
-                                        await deductCreditsByCost(supabaseAdmin, billingUserId, totalAiCost, 'whatsapp', 'WhatsApp Customer AI Assistant response');
-                                    } catch (geminiErr) {
-                                        console.error('[WhatsApp AI Assistant] Gemini generation/parsing failed:', geminiErr);
-                                        await deductCreditsByCost(supabaseAdmin, billingUserId, 0.05, 'whatsapp', 'WhatsApp Customer AI Assistant response (Fallback)');
+                                        // Confirm to lead
+                                        await sendTextMessage(`Thank you! Our property specialist from ${ownerBusinessName || 'our team'} will reach out to you directly shortly. 🙏`);
+                                        
+                                        // Alert admin/agent via high-priority multi-channel notification
+                                        const leadName = chat.recipient_name || latestLead?.name || 'Prospect';
+                                        const targetLeadId = latestLead?.id;
+                                        const targetUrl = targetLeadId ? `/dashboard/crm?leadId=${targetLeadId}` : '/dashboard/crm';
+                                        
+                                        sendAdminMultiChannelNotification({
+                                            ownerUserId,
+                                            title: `🚨 Call with Expert Requested!`,
+                                            body: `High-intent lead ${leadName} (+${cleanFrom}) clicked "Talk to an expert" on WhatsApp! Contact them immediately.`,
+                                            url: targetUrl,
+                                            type: 'connect_expert',
+                                            leadPhone: '+' + cleanFrom,
+                                            leadName,
+                                            leadId: targetLeadId
+                                        }).catch(err => console.error('[WhatsApp Bot] Expert alert failed:', err));
+
+                                        await new Promise(r => setTimeout(r, 600));
+                                        await sendThreeButtons("What would you like to do?");
+                                        return;
                                     }
 
-                                    // Update Name if extracted
-                                    if (extractedName && extractedName.trim().length > 1 && !/invalid|none|null/i.test(extractedName)) {
-                                        const cleanExtractedName = extractedName.trim();
-                                        await supabaseAdmin
-                                            .from('whatsapp_chats')
-                                            .update({ recipient_name: cleanExtractedName })
-                                            .eq('id', chat.id);
-                                        chat.recipient_name = cleanExtractedName;
-
-                                        if (latestLead) {
-                                            await supabaseAdmin
-                                                .from('leads')
-                                                .update({ name: cleanExtractedName })
-                                                .eq('id', latestLead.id);
-                                            latestLead.name = cleanExtractedName;
-                                        }
+                                    // 4. Action Button 3: "Book an appointment"
+                                    const isBookAppointment = buttonReplyId === 'book_appointment' || /book an appointment|book appointment|schedule visit|book site visit|schedule meeting/i.test(messageText);
+                                    if (isBookAppointment) {
+                                        console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "Book an appointment".`);
+                                        await syncFieldsAndScore({ book_appointment_clicked: true });
+                                        await sendCtaUrlMessage(
+                                            "📅 Schedule Appointment",
+                                            "Select a convenient consultation or site visit slot directly from our calendar:",
+                                            "Book Appointment 📅",
+                                            bookingLink
+                                        );
+                                        await new Promise(r => setTimeout(r, 800));
+                                        await sendThreeButtons("What would you like to do next?");
+                                        return;
                                     }
 
-                                    // Update Answered Qualification Questions in custom_fields & chat flow_answers
-                                    const updatedCustomFields = { ...existingAnswers };
-                                    let hasNewAnswers = false;
-                                    if (answeredQuestionsObj && typeof answeredQuestionsObj === 'object' && Object.keys(answeredQuestionsObj).length > 0) {
-                                        Object.entries(answeredQuestionsObj).forEach(([qKey, aVal]) => {
-                                            if (aVal !== undefined && aVal !== null && String(aVal).trim().length > 0) {
-                                                updatedCustomFields[qKey] = String(aVal).trim();
-                                                hasNewAnswers = true;
-                                            }
-                                        });
-                                    }
-
-                                    if (hasNewAnswers) {
-                                        await supabaseAdmin
-                                            .from('whatsapp_chats')
-                                            .update({ flow_answers: updatedCustomFields, updated_at: new Date().toISOString() })
-                                            .eq('id', chat.id);
-                                        chat.flow_answers = updatedCustomFields;
-
-                                        if (latestLead) {
-                                            await supabaseAdmin
-                                                .from('leads')
-                                                .update({ custom_fields: updatedCustomFields })
-                                                .eq('id', latestLead.id);
-                                        }
-                                    }
-
-                                    // Recalculate and persist dynamic Lead Score
-                                    if (latestLead?.id) {
-                                        updateLeadScoreInDB(supabaseAdmin, latestLead.id, ownerQualifyingQuestions).catch(err => {
-                                            console.error('[WhatsApp AI Assistant] Lead score update failed:', err);
-                                        });
-                                    }
-
-                                    // 4. Send the reply via WhatsApp
-                                    await sendWAMessage(replyText);
-
-                                    // If a specific product was requested, send the product card as a follow-up
-                                    if (extractedProductId) {
+                                    // 5. Dynamic Qualification MCQ Handlers & Parsers
+                                    const leadCampaignId = campaignId || latestLead?.campaign_id || adId;
+                                    if (leadCampaignId) {
                                         try {
-                                            const { data: prop } = await supabaseAdmin
-                                                .from('properties')
-                                                .select('id, title, price, description, image_url, images')
-                                                .eq('id', extractedProductId)
+                                            const { data: matchedFlow } = await supabaseAdmin
+                                                .from('whatsapp_question_flows')
+                                                .select('questions, name')
+                                                .eq('user_id', ownerUserId)
+                                                .eq('linked_campaign_id', leadCampaignId)
                                                 .maybeSingle();
 
-                                            if (prop) {
-                                                const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
-                                                
-                                                // Fetch custom domain of the inventory owner
-                                                const { data: invProfile } = await supabaseAdmin
-                                                    .from('profiles')
-                                                    .select('custom_domain')
-                                                    .eq('id', inventoryOwnerId)
-                                                    .maybeSingle();
-
-                                                const productUrl = invProfile?.custom_domain 
-                                                    ? `https://${invProfile.custom_domain}?property=${prop.id}` 
-                                                    : `${appUrl}/shared/${inventoryOwnerId}?property=${prop.id}`;
-
-                                                const lines = [];
-                                                if (prop.title) lines.push(`🏷️ *${prop.title}*`);
-                                                if (prop.description) {
-                                                    const shortDesc = prop.description.length > 500 
-                                                        ? prop.description.substring(0, 500) + '...' 
-                                                        : prop.description;
-                                                    lines.push(`\n${shortDesc}`);
-                                                }
-                                                lines.push(`\n🌐 View Details & Photos: ${productUrl}`);
-                                                const productText = lines.join('\n');
-
-                                                const imageUrl = prop.image_url || (prop.images && prop.images.length > 0 ? prop.images[0] : null);
-
-                                                // Send the follow-up message
-                                                if (imageUrl && isRealPublicImageUrl(imageUrl)) {
-                                                    const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
-                                                    const imgRes = await fetch(metaUrl, {
-                                                        method: 'POST',
-                                                        headers: {
-                                                            'Authorization': `Bearer ${ownerWaToken}`,
-                                                            'Content-Type': 'application/json'
-                                                        },
-                                                        body: JSON.stringify({
-                                                            messaging_product: 'whatsapp',
-                                                            recipient_type: 'individual',
-                                                            to: cleanFrom,
-                                                            type: 'image',
-                                                            image: {
-                                                                link: imageUrl,
-                                                                caption: productText
-                                                            }
-                                                        })
-                                                    });
-                                                    if (imgRes.ok) {
-                                                        await supabaseAdmin
-                                                            .from('whatsapp_messages')
-                                                            .insert({
-                                                                chat_id: chat.id,
-                                                                direction: 'outbound',
-                                                                message_text: `[Image Product Card] ${productText}`
-                                                            });
-                                                    } else {
-                                                        // Fallback: send as text if image fails
-                                                        await sendWAMessage(productText);
-                                                    }
-                                                } else {
-                                                    await sendWAMessage(productText);
-                                                }
+                                            if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
+                                                console.log(`[WhatsApp Bot] Using campaign-specific flow "${matchedFlow.name}" for campaign ${leadCampaignId}`);
+                                                ownerQualifyingQuestions = matchedFlow.questions;
                                             }
-                                        } catch (prodErr) {
-                                            console.error('[WhatsApp AI Assistant] Failed to send product follow-up:', prodErr);
+                                        } catch (fErr) {
+                                            console.warn('[WhatsApp Bot] Failed to fetch campaign question flow:', fErr);
                                         }
                                     }
 
-                                    // 5. Post-reply operations: update notes, log history, push notification — fire-and-forget for speed
-                                    const postReplyLeadId = chat.lead_id;
-                                    const postReplyLeadName = chat.recipient_name || 'WhatsApp Lead';
-                                    (async () => {
-                                        try {
-                                            if (postReplyLeadId) {
-                                                const dateStr = new Date().toLocaleDateString();
-                                                const notesAddition = `[💬 WhatsApp Message - ${dateStr}]: User: "${messageText}" | Assistant: "${replyText}"`;
-
-                                                const waHistoryPayload = JSON.stringify({
-                                                    user_msg: messageText,
-                                                    bot_reply: replyText,
-                                                    booking_time: extractedBookingTime || null
+                                    const parsedQuestionsList: { index: number; key: string; question: string; options: string[] }[] = [];
+                                    if (Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
+                                        ownerQualifyingQuestions.forEach((item: any, idx: number) => {
+                                            if (typeof item === 'string') {
+                                                const match = item.match(/\(([^)]+)\)/);
+                                                const qText = item.replace(/\s*\([^)]+\)/, '').trim();
+                                                const options = match ? match[1].split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+                                                const key = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
+                                                parsedQuestionsList.push({ index: idx, key, question: qText || item, options });
+                                            } else if (typeof item === 'object' && item !== null) {
+                                                const qText = item.question || item.text || `Question ${idx + 1}`;
+                                                const key = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
+                                                parsedQuestionsList.push({
+                                                    index: idx,
+                                                    key,
+                                                    question: qText,
+                                                    options: Array.isArray(item.options) ? item.options : []
                                                 });
-
-                                                // Run notes update, history log, booking, call triggering, and question flagging in parallel
-                                                await Promise.all([
-                                                    // Update lead notes and custom_fields
-                                                    (async () => {
-                                                        try {
-                                                            const { data: lead } = await supabaseAdmin
-                                                                .from('leads')
-                                                                .select('notes, custom_fields')
-                                                                .eq('id', postReplyLeadId)
-                                                                .single();
-                                                            const newNotes = lead?.notes ? `${notesAddition}\n\n${lead.notes}` : notesAddition;
-                                                            let customFieldsObj: any = {}
-                                                            if (lead?.custom_fields) {
-                                                                if (typeof lead.custom_fields === 'string') {
-                                                                    try {
-                                                                        customFieldsObj = JSON.parse(lead.custom_fields)
-                                                                    } catch (e) {
-                                                                        customFieldsObj = {}
-                                                                    }
-                                                                } else if (typeof lead.custom_fields === 'object') {
-                                                                    customFieldsObj = lead.custom_fields
-                                                                }
-                                                            }
-                                                            if (extractedAllowAfterHours) {
-                                                                customFieldsObj.allow_after_hours = true;
-                                                            }
-                                                            await supabaseAdmin.from('leads').update({ 
-                                                                notes: newNotes,
-                                                                custom_fields: customFieldsObj
-                                                            }).eq('id', postReplyLeadId);
-                                                        } catch (e) { console.error('[WA AI] Notes update failed:', e); }
-                                                    })(),
-                                                    // Log to lead_history
-                                                    (async () => {
-                                                        try {
-                                                            await supabaseAdmin.from('lead_history').insert({
-                                                                lead_id: postReplyLeadId,
-                                                                action_type: 'WHATSAPP_CHAT',
-                                                                description: `💬 WA_JSON:${waHistoryPayload}`
-                                                            });
-                                                        } catch (e: any) { console.error('[WA AI] History log failed:', e); }
-                                                    })(),
-                                                    // Booking if extracted
-                                                    extractedBookingTime ? bookAppointment(supabaseAdmin, postReplyLeadId, extractedBookingTime, ownerUserId, true).catch(e => console.error('[WA AI] Booking failed:', e)) : Promise.resolve(),
-                                                    // Immediate outbound voice call if requested AND auto_call_new_leads toggle is ON
-                                                    (triggerCallRequested && ownerAutoCallNewLeads) ? triggerOutboundCall(supabaseAdmin, postReplyLeadId, ownerUserId).catch(e => console.error('[WA AI] Outbound call trigger failed:', e)) : Promise.resolve(),
-                                                    // Flag unanswered questions
-                                                    unansweredQuestionToFlag ? supabaseAdmin.from('flagged_questions').insert({
-                                                        user_id: ownerUserId,
-                                                        lead_id: postReplyLeadId,
-                                                        channel: 'whatsapp',
-                                                        question: unansweredQuestionToFlag
-                                                    }) : Promise.resolve()
-                                                ]);
                                             }
-                                            // Push notification
-                                            await sendPushNotification(ownerUserId!, `New WhatsApp from ${postReplyLeadName || cleanFrom}`, messageText.substring(0, 100)).catch(() => {});
-                                        } catch (postErr) {
-                                            console.error('[WA AI] Post-reply operations error:', postErr);
+                                        });
+                                    }
+
+                                    if (parsedQuestionsList.length === 0) {
+                                        parsedQuestionsList.push(
+                                            { index: 0, key: 'property_type', question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
+                                            { index: 1, key: 'budget', question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
+                                            { index: 2, key: 'timeline', question: 'What is your timeline to purchase?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
+                                        );
+                                    }
+
+                                        const askQuestionMCQ = async (qIndex: number) => {
+                                            const qObj = parsedQuestionsList[qIndex];
+                                            if (!qObj) return;
+                                            const rawOptions = qObj.options.length > 0 ? qObj.options.slice(0, 3) : ['Option 1', 'Option 2', 'Option 3'];
+                                            const buttons = rawOptions.map((opt, optIdx) => ({
+                                                id: `q_opt_${qIndex}_${optIdx}`,
+                                                title: opt.slice(0, 20)
+                                            }));
+                                            await sendMCQButtons(qObj.question, buttons);
+                                        };
+
+                                        // Dynamic MCQ button clicks (q_opt_{qIndex}_{optIndex})
+                                        if (buttonReplyId?.startsWith('q_opt_')) {
+                                            const parts = buttonReplyId.split('_');
+                                            const qIdx = parseInt(parts[2], 10);
+                                            const optIdx = parseInt(parts[3], 10);
+                                            const qObj = parsedQuestionsList[qIdx];
+                                            if (qObj) {
+                                                const selectedValue = qObj.options[optIdx] || messageText.trim();
+                                                console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Q#${qIdx + 1} (${qObj.key}): ${selectedValue}`);
+                                                const updateObj: Record<string, any> = { [qObj.key]: selectedValue };
+                                                if (qObj.key === 'property_type') updateObj.interested_property = selectedValue;
+                                                await syncFieldsAndScore(updateObj);
+
+                                                const nextIdx = qIdx + 1;
+                                                if (nextIdx < parsedQuestionsList.length) {
+                                                    await askQuestionMCQ(nextIdx);
+                                                    return;
+                                                } else {
+                                                    await sendTextMessage("Thank you for sharing your preferences! 🎉 We have saved your requirements.");
+                                                    await new Promise(r => setTimeout(r, 600));
+                                                    await sendThreeButtons("What would you like to do?");
+                                                    return;
+                                                }
+                                            }
                                         }
-                                    })();
+
+                                        // Legacy Real Estate Button / Keyword Fallbacks
+                                        if (buttonReplyId?.startsWith('q_prop_') || /^(residential|commercial|plots|land|flat|apartment|villa)/i.test(messageText.trim())) {
+                                            let selectedType = 'Residential';
+                                            if (buttonReplyId === 'q_prop_commercial' || /commercial/i.test(messageText)) selectedType = 'Commercial';
+                                            if (buttonReplyId === 'q_prop_plots' || /plot|land/i.test(messageText)) selectedType = 'Plots / Land';
+                                            
+                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Property Type: ${selectedType}`);
+                                            await syncFieldsAndScore({ property_type: selectedType, interested_property: selectedType });
+
+                                            if (parsedQuestionsList.length > 1) {
+                                                await askQuestionMCQ(1);
+                                            } else {
+                                                await sendThreeButtons("What would you like to do?");
+                                            }
+                                            return;
+                                        }
+
+                                        if (buttonReplyId?.startsWith('q_bud_') || /(under|50l|1\.5|cr|lacs|budget)/i.test(messageText.trim())) {
+                                            let selectedBudget = '₹50L - ₹1.5 Cr';
+                                            if (buttonReplyId === 'q_bud_under_50l' || /under/i.test(messageText)) selectedBudget = 'Under ₹50 Lacs';
+                                            if (buttonReplyId === 'q_bud_above_1_5cr' || /above/i.test(messageText)) selectedBudget = 'Above ₹1.5 Cr';
+
+                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Budget: ${selectedBudget}`);
+                                            await syncFieldsAndScore({ budget: selectedBudget });
+
+                                            if (parsedQuestionsList.length > 2) {
+                                                await askQuestionMCQ(2);
+                                            } else {
+                                                await sendThreeButtons("What would you like to do?");
+                                            }
+                                            return;
+                                        }
+
+                                        if (buttonReplyId?.startsWith('q_time_') || /(immediate|month|exploring|timeline)/i.test(messageText.trim())) {
+                                            let selectedTime = '1 - 3 Months';
+                                            if (buttonReplyId === 'q_time_immediate' || /immediate/i.test(messageText)) selectedTime = 'Immediate (<1 Mo)';
+                                            if (buttonReplyId === 'q_time_exploring' || /exploring/i.test(messageText)) selectedTime = 'Exploring';
+
+                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Timeline: ${selectedTime}`);
+                                            await syncFieldsAndScore({ timeline: selectedTime });
+
+                                            await sendTextMessage("Thank you for sharing your preferences! 🎉 We have saved your requirements.");
+                                            await new Promise(r => setTimeout(r, 600));
+                                            await sendThreeButtons("What would you like to do?");
+                                            return;
+                                        }
+
+                                        // 6. Default Fallback for New or In-Progress Leads:
+                                        // Check if any configured question is unanswered
+                                        const unansweredQ = parsedQuestionsList.find(q => !currentCustomFields[q.key]);
+                                        if (unansweredQ) {
+                                            await askQuestionMCQ(unansweredQ.index);
+                                            return;
+                                        }
+
+                                        // All questions answered: respond strictly with "What would you like to do?" and the 3 buttons
+                                        await sendThreeButtons("What would you like to do?");
+                                        return;
 
                                 } catch (bgErr) {
                                     console.error('[Flow] Background customer message processing error:', bgErr);

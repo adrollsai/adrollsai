@@ -10,9 +10,37 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-export async function sendDistributionEmail(to: string, agentName: string, imageUrl: string, senderName: string) {
+export function resolveNotificationRecipients(profile: {
+  email?: string | null;
+  notification_email?: string | null;
+  business_info?: string | any | null;
+} | null | undefined) {
+  if (!profile) {
+    return { toEmail: '', bccEmail: undefined, notificationEmail: null, registeredEmail: null };
+  }
+
+  let notifEmail = profile.notification_email?.trim() || null;
+  if (!notifEmail && profile.business_info) {
+    try {
+      const parsed = typeof profile.business_info === 'string' ? JSON.parse(profile.business_info) : profile.business_info;
+      if (parsed && typeof parsed.notification_email === 'string' && parsed.notification_email.trim()) {
+        notifEmail = parsed.notification_email.trim();
+      }
+    } catch {}
+  }
+
+  const registeredEmail = profile.email?.trim() || null;
+  const toEmail = notifEmail || registeredEmail || '';
+  const bccEmail = (notifEmail && registeredEmail && notifEmail.toLowerCase() !== registeredEmail.toLowerCase())
+    ? registeredEmail
+    : undefined;
+
+  return { toEmail, bccEmail, notificationEmail: notifEmail, registeredEmail };
+}
+
+export async function sendDistributionEmail(to: string, agentName: string, imageUrl: string, senderName: string, bcc?: string | string[]) {
   try {
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"${senderName}" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `New Marketing Asset for ${agentName}`,
@@ -27,7 +55,9 @@ export async function sendDistributionEmail(to: string, agentName: string, image
           <img src="${imageUrl}" alt="Preview" style="width: 100%; border-radius: 8px; border: 1px solid #eee;" />
         </div>
       `,
-    })
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions)
     return { success: true, messageId: info.messageId }
   } catch (error: any) {
     console.error("Email Error:", error)
@@ -35,9 +65,9 @@ export async function sendDistributionEmail(to: string, agentName: string, image
   }
 }
 
-export async function sendContactFormEmail(name: string, email: string, phone: string, message: string) {
+export async function sendContactFormEmail(name: string, email: string, phone: string, message: string, bcc?: string | string[]) {
   try {
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"Nobogent AI Landing Page" <no-reply@mail.nobogent.com>`,
       to: 'info@nobogent.com, rchopra489@gmail.com',
       subject: `New Lead Query from ${name}`,
@@ -71,7 +101,9 @@ export async function sendContactFormEmail(name: string, email: string, phone: s
           </div>
         </div>
       `,
-    })
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions)
     return { success: true, messageId: info.messageId }
   } catch (error: any) {
     console.error("Email Error:", error)
@@ -86,7 +118,7 @@ export async function sendLandingPageLeadEmail(to: string[], leadDetails: {
   city?: string,
   source?: string,
   customQuestions?: Record<string, any>
-}) {
+}, bcc?: string | string[]) {
   try {
     if (!to || to.length === 0) {
       return { success: false, error: "No recipients provided" };
@@ -109,7 +141,7 @@ export async function sendLandingPageLeadEmail(to: string[], leadDetails: {
       }
     }
 
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"Nobogent AI Landing Page" <no-reply@mail.nobogent.com>`,
       to: to.join(', '),
       subject: `New Landing Page Lead: ${leadDetails.name}`,
@@ -150,7 +182,9 @@ export async function sendLandingPageLeadEmail(to: string[], leadDetails: {
           </div>
         </div>
       `,
-    });
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
     console.error("Landing Page Lead Email Error:", error);
@@ -164,7 +198,8 @@ export async function sendBookingConfirmationEmail(
   slot: string,
   meetLink: string,
   businessName: string,
-  timeZone?: string
+  timeZone?: string,
+  bcc?: string | string[]
 ) {
   try {
     const localDate = new Date(slot)
@@ -179,7 +214,7 @@ export async function sendBookingConfirmationEmail(
       hour12: true
     })
 
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"${businessName || 'Consultation'}" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `Booking Confirmed: Meeting with ${businessName || 'Us'}`,
@@ -218,7 +253,9 @@ export async function sendBookingConfirmationEmail(
           </div>
         </div>
       `,
-    })
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions)
     return { success: true, messageId: info.messageId }
   } catch (error: any) {
     console.error("Booking Confirmation Email Error:", error)
@@ -233,7 +270,8 @@ export async function sendBookingReminderEmail(
   slot: string,
   meetLink: string,
   businessName: string,
-  timeZone?: string
+  timeZone?: string,
+  bcc?: string | string[]
 ) {
   try {
     const localDate = new Date(slot)
@@ -257,7 +295,7 @@ export async function sendBookingReminderEmail(
       ? `You have an upcoming meeting with lead <strong>${leadName}</strong> in 30 minutes.`
       : `You have an upcoming meeting with <strong>${businessName || 'our team'}</strong> in 30 minutes.`
 
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"${businessName || 'Meeting Reminder'}" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: subject,
@@ -295,7 +333,9 @@ export async function sendBookingReminderEmail(
           </div>
         </div>
       `,
-    })
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions)
     return { success: true, messageId: info.messageId }
   } catch (error: any) {
     console.error("Booking Reminder Email Error:", error)
@@ -312,7 +352,8 @@ export async function sendFacebookLeadEmail(
     formName?: string,
     adName?: string,
     customQuestions?: Record<string, any>
-  }
+  },
+  bcc?: string | string[]
 ) {
   try {
     if (!to || to.length === 0) {
@@ -330,7 +371,7 @@ export async function sendFacebookLeadEmail(
       customQuestionsHtml += '</ul></div>';
     }
 
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"Nobogent CRM" <no-reply@mail.nobogent.com>`,
       to: to.join(', '),
       subject: `🔥 New Facebook Lead: ${leadDetails.name}`,
@@ -371,7 +412,9 @@ export async function sendFacebookLeadEmail(
           </div>
         </div>
       `,
-    });
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
     console.error("Facebook Lead Email Error:", error);
@@ -383,7 +426,8 @@ export async function sendLeadAutoResponseEmail(
   to: string,
   leadName: string,
   businessName: string,
-  adName?: string
+  adName?: string,
+  bcc?: string | string[]
 ) {
   try {
     if (!to) {
@@ -392,7 +436,7 @@ export async function sendLeadAutoResponseEmail(
 
     const campaignInfo = adName ? ` regarding <strong>${adName}</strong>` : '';
 
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"${businessName || 'Nobogent'}" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `Thank you for contacting ${businessName || 'us'}!`,
@@ -420,7 +464,9 @@ export async function sendLeadAutoResponseEmail(
           </div>
         </div>
       `,
-    });
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
     console.error("Lead AutoResponse Email Error:", error);
@@ -428,18 +474,20 @@ export async function sendLeadAutoResponseEmail(
   }
 }
 
-export async function sendDailyEodReportEmail(to: string, businessName: string, htmlContent: string) {
+export async function sendDailyEodReportEmail(to: string, businessName: string, htmlContent: string, bcc?: string | string[]) {
   try {
     if (!to) {
       return { success: false, error: "No recipient email provided" };
     }
 
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"Nobogent Daily Analytics" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `📊 Daily EOD Operations Report: ${businessName}`,
       html: htmlContent,
-    });
+    };
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
     console.error("EOD Report Email Error:", error);
@@ -456,7 +504,8 @@ export async function sendReminderEmail(
   cancelLink: string,
   businessName: string,
   timeZone?: string,
-  timeLeftStr?: string
+  timeLeftStr?: string,
+  bcc?: string | string[]
 ) {
   try {
     const localDate = new Date(slot)
@@ -471,7 +520,7 @@ export async function sendReminderEmail(
       hour12: true
     })
 
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"${businessName || 'Consultation'}" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `⏰ Reminder: Meeting with ${businessName || 'Us'} in ${timeLeftStr || 'a few hours'}`,
@@ -514,7 +563,9 @@ export async function sendReminderEmail(
           </div>
         </div>
       `,
-    })
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions)
     return { success: true, messageId: info.messageId }
   } catch (error: any) {
     console.error("Reminder Email Error:", error)
@@ -530,7 +581,8 @@ export async function sendRescheduledEmail(
   rescheduleLink: string,
   cancelLink: string,
   businessName: string,
-  timeZone?: string
+  timeZone?: string,
+  bcc?: string | string[]
 ) {
   try {
     const localDate = new Date(slot)
@@ -545,7 +597,7 @@ export async function sendRescheduledEmail(
       hour12: true
     })
 
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"${businessName || 'Consultation'}" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `🔄 Meeting Rescheduled: ${businessName || 'Us'}`,
@@ -588,7 +640,9 @@ export async function sendRescheduledEmail(
           </div>
         </div>
       `,
-    })
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions)
     return { success: true, messageId: info.messageId }
   } catch (error: any) {
     console.error("Reschedule Email Error:", error)
@@ -599,10 +653,11 @@ export async function sendRescheduledEmail(
 export async function sendCancellationEmail(
   to: string,
   leadName: string,
-  businessName: string
+  businessName: string,
+  bcc?: string | string[]
 ) {
   try {
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"${businessName || 'Consultation'}" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `❌ Meeting Cancelled: ${businessName || 'Us'}`,
@@ -622,7 +677,9 @@ export async function sendCancellationEmail(
           </div>
         </div>
       `,
-    })
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions)
     return { success: true, messageId: info.messageId }
   } catch (error: any) {
     console.error("Cancellation Email Error:", error)
@@ -634,14 +691,15 @@ export async function sendConnectExpertNotificationEmail(
   to: string,
   businessName: string,
   leadName: string,
-  leadPhone: string
+  leadPhone: string,
+  bcc?: string | string[]
 ) {
   try {
     if (!to) {
       return { success: false, error: "No recipient email provided" };
     }
 
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"Nobogent Alerts" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `☎️ Lead Callback Requested: Connect with Expert`,
@@ -677,7 +735,9 @@ export async function sendConnectExpertNotificationEmail(
           </div>
         </div>
       `,
-    });
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
     console.error("Connect Expert Email Notification Error:", error);
@@ -685,15 +745,17 @@ export async function sendConnectExpertNotificationEmail(
   }
 }
 
-export async function sendGenericEmail(to: string, subject: string, html: string) {
+export async function sendGenericEmail(to: string, subject: string, html: string, bcc?: string | string[]) {
   try {
     if (!to) return { success: false, error: 'No recipient email provided' };
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: `"Nobogent Alerts" <no-reply@mail.nobogent.com>`,
       to,
       subject,
       html
-    });
+    };
+    if (bcc) mailOptions.bcc = bcc;
+    const info = await transporter.sendMail(mailOptions);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
     console.error("Generic Email Error:", error);
@@ -715,9 +777,9 @@ export async function sendFollowupReminderEmail(
   return { success: true, message: 'Followup reminder emails are disabled' };
 }
 
-export async function sendLeadTransferEmail(to: string, agentName: string, senderName: string, leadCount: number) {
+export async function sendLeadTransferEmail(to: string, agentName: string, senderName: string, leadCount: number, bcc?: string | string[]) {
   try {
-    const info = await transporter.sendMail({
+    const mailOptions: any = {
       from: '"Nobogent CRM" <no-reply@mail.nobogent.com>',
       to: to,
       subject: `🎯 ${leadCount} Lead(s) Transferred to You on Nobogent CRM`,
@@ -733,7 +795,9 @@ export async function sendLeadTransferEmail(to: string, agentName: string, sende
           <p style="font-size: 12px; color: #94a3b8; margin-top: 20px;">Nobogent CRM Notifications</p>
         </div>
       `
-    });
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
     console.error("Lead Transfer Email Error:", error);

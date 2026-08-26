@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { callGemini, callDeepSeekWithUsage } from '@/utils/external-apis'
+import { calculateLeadScore, parseCustomFields } from '@/utils/lead-scoring'
 
 // Force dynamic execution to bypass Next.js static build cache
 export const dynamic = 'force-dynamic'
@@ -17,448 +17,242 @@ const supabaseAdmin = createClient(
 )
 
 export async function GET(request: Request) {
-    return handleWhatsappFollowups(request)
+    return handleWhatsappWeeklyFollowups(request)
 }
 
 export async function POST(request: Request) {
-    return handleWhatsappFollowups(request)
+    return handleWhatsappWeeklyFollowups(request)
 }
 
-async function handleWhatsappFollowups(request: Request) {
+async function handleWhatsappWeeklyFollowups(request: Request) {
     const diagnostics: any[] = []
     try {
         const url = new URL(request.url)
         const authHeader = request.headers.get('Authorization')
         const cronSecret = url.searchParams.get('cronSecret') || (authHeader ? authHeader.replace('Bearer ', '') : null)
 
-        console.log('[WhatsApp Followup Cron] Running 24h followups scanner...')
+        console.log('[WhatsApp Weekly Followup Cron] Running weekly followups scanner for qualified leads...')
 
         if (process.env.CRON_SECRET && cronSecret !== process.env.CRON_SECRET) {
-            console.warn('[WhatsApp Followup Cron] Unauthorized access attempt.')
+            console.warn('[WhatsApp Weekly Followup Cron] Unauthorized access attempt.')
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Fetch chats active within the last 24 hours
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-        const { data: chats, error: chatsErr } = await supabaseAdmin
-            .from('whatsapp_chats')
-            .select('id, user_id, recipient_phone, recipient_name, updated_at')
-            .gte('updated_at', yesterday)
-            .limit(25)
+        const isForce = url.searchParams.get('force') === 'true'
+        const istDay = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short' }).format(new Date())
+        const isSaturday = istDay === 'Sat'
 
-        if (chatsErr) throw chatsErr
-
-        if (!chats || chats.length === 0) {
-            return NextResponse.json({ success: true, message: 'No recently active chats to scan.' })
+        if (!isSaturday && !isForce) {
+            console.log(`[WhatsApp Weekly Followup Cron] Today is ${istDay} (Not Saturday). Weekly followups run strictly on Saturdays. Skipping.`)
+            return NextResponse.json({
+                success: true,
+                message: `Today is ${istDay}. Weekly followups are scheduled strictly for Saturdays.`,
+                isSaturday: false
+            })
         }
 
         const now = Date.now()
+        const SIX_DAYS_MS = 6 * 24 * 60 * 60 * 1000 // Minimum 6 days spacing to prevent duplicate Saturday dispatches
+
+        // 1. Fetch leads across all accounts
+        const { data: leads, error: leadsErr } = await supabaseAdmin
+            .from('leads')
+            .select('id, user_id, name, phone, email, booked_time, pipeline_stage, status, custom_fields, created_at')
+            .not('phone', 'is', null)
+            .is('booked_time', null)
+            .not('pipeline_stage', 'in', '("Won", "Deal/Token", "Lost/NI", "Dealer", "Already Purchased")')
+            .order('created_at', { ascending: false })
+            .limit(200)
+
+        if (leadsErr) throw leadsErr
+
+        if (!leads || leads.length === 0) {
+            return NextResponse.json({ success: true, message: 'No leads found to scan.' })
+        }
+
         let sentCount = 0
+        let skippedCount = 0
 
-        // In-memory cache for profiles and properties to prevent duplicate DB queries
         const profileCache = new Map<string, any>()
-        const propertiesCache = new Map<string, string>()
 
-        for (const chat of chats) {
-            // Fetch last 15 messages for chronological chat history and follow-up calculation
-            const { data: messages, error: msgErr } = await supabaseAdmin
-                .from('whatsapp_messages')
-                .select('direction, message_text, created_at')
-                .eq('chat_id', chat.id)
-                .order('created_at', { ascending: false })
-                .limit(15)
-
-            if (msgErr || !messages || messages.length === 0) continue
-
-            // Find the customer's last inbound message
-            const lastInbound = messages.find(m => m.direction === 'inbound')
-            if (!lastInbound) continue
-
-            const inboundTime = new Date(lastInbound.created_at).getTime()
-            const timeSinceInbound = now - inboundTime
-            const twentyFourHours = 24 * 60 * 60 * 1000
-            const fortyEightHours = 48 * 60 * 60 * 1000
-            const seventyTwoHours = 72 * 60 * 60 * 1000
-
-            // Guardrail: Skip if customer requested an expert/agent within last 24h
-            if (/connect|expert|call\s+me|speak\s+with|human|talk\s+to/i.test(lastInbound.message_text) && (now - inboundTime) < 24 * 60 * 60 * 1000) {
-                continue
-            }
-
-            // Guardrail: Skip if the very last message in the chat (inbound or outbound) was sent less than 2 hours ago
-            const lastMessage = messages[0]
-            const timeSinceLastMessage = now - new Date(lastMessage.created_at).getTime()
-            if (timeSinceLastMessage < 2 * 60 * 60 * 1000) {
-                continue
-            }
-
-            // Filter outbound messages sent after the customer's last inbound message
-            const outboundAfterInbound = messages.filter(m => 
-                m.direction === 'outbound' && 
-                new Date(m.created_at).getTime() > inboundTime
-            )
-
-            // Spacing thresholds: Count outbound messages sent > 5 minutes after the customer's last message
-            const fiveMinutes = 5 * 60 * 1000
-            const followups = outboundAfterInbound.filter(m => 
-                new Date(m.created_at).getTime() > (inboundTime + fiveMinutes)
-            )
-            const numFollowups = followups.length
-
-            let isDue = false
-            let followupStage = 0
-            let isTemplate = false
-            let templateName = ''
-            let templateParams: string[] = []
-
-            // Spaced Follow-Up Schedule:
-            // Stage 1: Free-form follow-up after 6 hours if no reply (only 1 within 24h window)
-            // Stage 2: Template follow-up at 24-48 hours if still no reply
-            // Stage 3: Final template follow-up at 48-72 hours if still no reply
-            if (timeSinceInbound <= twentyFourHours) {
-                if (numFollowups === 0 && timeSinceInbound >= 6 * 60 * 60 * 1000) {
-                    isDue = true
-                    followupStage = 1
-                }
-            } else if (timeSinceInbound <= fortyEightHours) {
-                if (numFollowups === 1) {
-                    isDue = true
-                    followupStage = 2
-                    isTemplate = true
-                    templateName = 'auto_drip_followup_24h'
-                }
-            } else if (timeSinceInbound <= seventyTwoHours) {
-                if (numFollowups === 2) {
-                    isDue = true
-                    followupStage = 3
-                    isTemplate = true
-                    templateName = 'auto_drip_followup_48h'
-                }
-            }
-
-            if (!isDue) continue
-
-            // Fetch owner's WhatsApp credentials and business profile info (with cache)
-            let profile = profileCache.get(chat.user_id)
-            if (!profile) {
-                const { data: fetchedProfile } = await supabaseAdmin
-                    .from('profiles')
-                    .select('whatsapp_access_token, whatsapp_phone_number_id, business_name, business_info, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain')
-                    .eq('id', chat.user_id)
-                    .maybeSingle()
-                if (fetchedProfile) {
-                    profile = fetchedProfile
-                    profileCache.set(chat.user_id, fetchedProfile)
-                }
-            }
-
-            if (!profile || !profile.whatsapp_access_token || !profile.whatsapp_phone_number_id) {
-                continue
-            }
-
-            templateParams = [chat.recipient_name || 'there', profile.business_name || 'our team']
-
-            // Fetch active properties in owner's inventory to enrich the AI context (with cache)
-            let propertiesText = propertiesCache.get(chat.user_id)
-            if (!propertiesText) {
-                const { data: properties } = await supabaseAdmin
-                    .from('properties')
-                    .select('title, price, address, property_type, description')
-                    .eq('user_id', chat.user_id)
-                    .limit(5)
-
-                propertiesText = 'No active listings in inventory.'
-                if (properties && properties.length > 0) {
-                    propertiesText = properties
-                        .map(p => `- ${p.title} (${p.property_type || 'Listing'}): ${p.price || 'N/A'}, Address: ${p.address || 'N/A'}`)
-                        .join('\n')
-                }
-                propertiesCache.set(chat.user_id, propertiesText)
-            }
-
-            // Retrieve matching CRM lead to log history and get source attribution context
-            const { data: matchedLeads } = await supabaseAdmin
-                .from('leads')
-                .select('id, source, ad_name, form_name')
-                .eq('user_id', chat.user_id)
-                .ilike('phone', `%${chat.recipient_phone.slice(-10)}%`)
-
-            const matchedLead = matchedLeads?.[0]
-            let leadContextText = ''
-            if (matchedLead) {
-                leadContextText = `Lead Source: ${matchedLead.source || 'Unknown'}\nAd Campaign/Property: ${matchedLead.ad_name || 'N/A'}\nLead Form: ${matchedLead.form_name || 'N/A'}`
-            }
-
-            // Build chronological chat history
-            const chatHistory = [...messages]
-                .reverse()
-                .map(m => `${m.direction === 'inbound' ? 'User' : 'Assistant'}: ${m.message_text}`)
-                .join('\n')
-
-            const systemPrompt = `
-You are an AI follow-up assistant for "${profile.business_name || 'our company'}".
-Here is information about our business:
-${profile.business_info || 'AI marketing systems, client acquisition, and growth automation.'}
-
-Business Offerings / Products:
-${propertiesText}
-
-Lead Context:
-${leadContextText || 'No background metadata available.'}
-
-Recent conversation history:
-${chatHistory}
-
-The customer has not replied to our last message. Generate a highly natural, polite, and brief follow-up text message (under 30 words) in English suitable for WhatsApp to re-engage the customer.
-Guidelines:
-1. Refer strictly to our business ("${profile.business_name || 'our company'}") and the preceding conversation topic.
-2. If the user hasn't requested specific product/service details yet, ask if they have any questions about our offerings or if they would like to discuss their requirements.
-3. NEVER mention properties, listings, real estate, residential, or commercial unless our business explicitly sells real estate.
-4. Do NOT repeat hi/hello greetings if we already greeted them. Keep it casual, friendly, and helpful.
-5. Output ONLY the raw response string. No JSON, no markdown code blocks, no quotes around the reply.`
-
+        for (const lead of leads) {
             try {
-                let metaPayload: any = null
-                let logText = ''
-                let isFallback = false
+                const cf = parseCustomFields(lead.custom_fields)
 
-                if (isTemplate) {
-                    metaPayload = {
-                        messaging_product: 'whatsapp',
-                        to: chat.recipient_phone,
-                        type: 'template',
-                        template: {
-                            name: templateName,
-                            language: { code: 'en_US' },
-                            components: [
-                                {
-                                    type: 'body',
-                                    parameters: templateParams.map(val => ({ type: 'text', text: val }))
-                                }
+                // Check opt-out
+                if (cf.opt_out || cf.unsubscribed_at || lead.status === 'not_interested') {
+                    skippedCount++
+                    continue
+                }
+
+                // Check qualification score (Qualified and above: Score >= 40 or warm/hot)
+                const scoreResult = calculateLeadScore(lead, ['property_type', 'budget', 'timeline'])
+                const isQualified = scoreResult.score >= 40 || ['warm', 'hot'].includes(scoreResult.tier)
+                
+                if (!isQualified) {
+                    skippedCount++
+                    continue
+                }
+
+                // Check weekly interval (Must be at least 7 days since last weekly followup)
+                const lastWeeklyFollowup = cf.last_weekly_followup_at ? new Date(cf.last_weekly_followup_at).getTime() : 0
+                const createdTime = new Date(lead.created_at).getTime()
+                
+                // If never followed up, wait at least 24h after lead creation before starting the weekly drip
+                if (!lastWeeklyFollowup) {
+                    if (now - createdTime < 24 * 60 * 60 * 1000) {
+                        skippedCount++
+                        continue
+                    }
+                } else if (now - lastWeeklyFollowup < SIX_DAYS_MS) {
+                    skippedCount++
+                    continue
+                }
+
+                // Fetch owner profile
+                let profile = profileCache.get(lead.user_id)
+                if (!profile) {
+                    const { data: fetchedProfile } = await supabaseAdmin
+                        .from('profiles')
+                        .select('id, business_name, custom_domain, whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
+                        .eq('id', lead.user_id)
+                        .maybeSingle()
+                    if (fetchedProfile) {
+                        profile = fetchedProfile
+                        profileCache.set(lead.user_id, fetchedProfile)
+                    }
+                }
+
+                if (!profile) {
+                    skippedCount++
+                    continue
+                }
+
+                const waToken = profile.whatsapp_access_token || profile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
+                const waPhoneId = profile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID
+
+                if (!waToken || !waPhoneId) {
+                    skippedCount++
+                    continue
+                }
+
+                const cleanPhone = (lead.phone || '').replace(/\D/g, '')
+                if (cleanPhone.length < 10) {
+                    skippedCount++
+                    continue
+                }
+
+                const businessName = profile.business_name || 'our team'
+                const leadName = (lead.name && !lead.name.startsWith('+') && lead.name !== 'Customer') ? lead.name : 'there'
+                const promptText = `Hi ${leadName}! 👋 Following up from ${businessName} with our latest curated property opportunities and project updates.\n\nWhat would you like to do?`
+
+                // Send 3-Button Weekly Follow-Up Message via Meta Graph API
+                const metaUrl = `https://graph.facebook.com/v20.0/${waPhoneId}/messages`
+                const payload = {
+                    messaging_product: 'whatsapp',
+                    recipient_type: 'individual',
+                    to: cleanPhone,
+                    type: 'interactive',
+                    interactive: {
+                        type: 'button',
+                        body: { text: promptText },
+                        action: {
+                            buttons: [
+                                { type: 'reply', reply: { id: 'view_properties', title: 'View properties' } },
+                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to an expert' } },
+                                { type: 'reply', reply: { id: 'book_appointment', title: 'Book an appointment' } }
                             ]
                         }
                     }
-                    logText = `Sent Template: ${templateName}`
-                } else {
-                    let replyText = ''
-                    try {
-                        if (process.env.DEEPSEEK_API_KEY) {
-                            const dsRes = await callDeepSeekWithUsage(systemPrompt)
-                            replyText = dsRes.text.trim().replace(/^"|"$/g, '')
-                        } else {
-                            const aiRes = await callGemini(systemPrompt)
-                            replyText = aiRes.trim().replace(/^"|"$/g, '')
-                        }
-                    } catch (llmErr) {
-                        console.warn('[WhatsApp Followup] DeepSeek error, trying Gemini fallback:', llmErr)
-                        try {
-                            const aiRes = await callGemini(systemPrompt)
-                            replyText = aiRes.trim().replace(/^"|"$/g, '')
-                        } catch (gErr) {
-                            console.error('[WhatsApp Followup] Both DeepSeek and Gemini failed:', gErr)
-                        }
-                    }
-                    if (!replyText) continue
-
-                    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
-                    const catalogueLink = profile.custom_domain 
-                        ? `https://${profile.custom_domain}` 
-                        : `${appUrl}/shared/${chat.user_id}`
-
-                    const catalogueBtnText = profile.whatsapp_catalogue_button_text || 'See Products'
-                    let buttons = [{ text: catalogueBtnText, url: catalogueLink }]
-                    if (profile.whatsapp_buttons && Array.isArray(profile.whatsapp_buttons) && profile.whatsapp_buttons.length > 0) {
-                        buttons = profile.whatsapp_buttons.map((btn: any, idx: number) => {
-                            let url = btn.url ? btn.url.trim() : ''
-                            if (!url) {
-                                url = catalogueLink
-                            } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                                url = 'https://' + url
-                            }
-                            return {
-                                text: (btn.text || (idx === 0 ? catalogueBtnText : 'View Link')).slice(0, 20),
-                                url: url
-                            }
-                        })
-                    }
-
-                    metaPayload = {
-                        messaging_product: 'whatsapp',
-                        recipient_type: 'individual',
-                        to: chat.recipient_phone,
-                        type: 'interactive',
-                        interactive: {
-                            type: 'cta_url',
-                            body: {
-                                text: replyText
-                            },
-                            action: {
-                                name: 'cta_url',
-                                parameters: {
-                                    display_text: buttons[0].text,
-                                    url: buttons[0].url
-                                }
-                            }
-                        }
-                    }
-                    logText = replyText
                 }
 
-                // Send message via Meta API
-                const metaUrl = `https://graph.facebook.com/v20.0/${profile.whatsapp_phone_number_id}/messages`
-                let metaRes = await fetch(metaUrl, {
+                const sendRes = await fetch(metaUrl, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${profile.whatsapp_access_token}`,
+                        'Authorization': `Bearer ${waToken}`,
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(metaPayload)
+                    body: JSON.stringify(payload)
                 })
 
-                let sendData = await metaRes.json()
+                if (sendRes.ok) {
+                    sentCount++
 
-                // Fallback to Template if free-form text failed due to 24h customer service window expiration
-                if (sendData.error && !isTemplate && (sendData.error.code === 131047 || sendData.error.error_subcode === 2494010)) {
-                    console.log(`[WhatsApp Followup Cron] Free-form failed due to 24h limit for ${chat.recipient_phone}, falling back to Meta template...`)
-                    isFallback = true
-                    const fallbackPayload = {
-                        messaging_product: 'whatsapp',
-                        to: chat.recipient_phone,
-                        type: 'template',
-                        template: {
-                            name: 'auto_drip_followup_24h',
-                            language: { code: 'en_US' },
-                            components: [
-                                {
-                                    type: 'body',
-                                    parameters: templateParams.map(val => ({ type: 'text', text: val }))
-                                }
-                            ]
-                        }
+                    // Update lead custom fields with timestamp & count
+                    const updatedCount = (cf.weekly_followup_count || 0) + 1
+                    cf.last_weekly_followup_at = new Date().toISOString()
+                    cf.weekly_followup_count = updatedCount
+
+                    await supabaseAdmin
+                        .from('leads')
+                        .update({ custom_fields: cf })
+                        .eq('id', lead.id)
+
+                    // Find or create chat
+                    let { data: chat } = await supabaseAdmin
+                        .from('whatsapp_chats')
+                        .select('id')
+                        .eq('user_id', lead.user_id)
+                        .eq('recipient_phone', cleanPhone)
+                        .maybeSingle()
+
+                    if (!chat) {
+                        const { data: newChat } = await supabaseAdmin
+                            .from('whatsapp_chats')
+                            .insert({
+                                user_id: lead.user_id,
+                                recipient_phone: cleanPhone,
+                                recipient_name: lead.name || null,
+                                lead_id: lead.id,
+                                last_message_text: promptText,
+                                unread_count: 0
+                            })
+                            .select('id')
+                            .single()
+                        chat = newChat
                     }
 
-                    metaRes = await fetch(metaUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${profile.whatsapp_access_token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(fallbackPayload)
-                    })
-                    sendData = await metaRes.json()
-                    logText = `Sent Template: auto_drip_followup_24h`
-                }
-
-                if (!sendData.error) {
-                    // Log message in whatsapp_messages
-                    await supabaseAdmin
-                        .from('whatsapp_messages')
-                        .insert({
+                    if (chat) {
+                        await supabaseAdmin.from('whatsapp_messages').insert({
                             chat_id: chat.id,
                             direction: 'outbound',
-                            message_text: logText
+                            message_text: `[Weekly Follow-up #${updatedCount}] ${promptText}`
                         })
 
-                    // Update chat details
-                    await supabaseAdmin
-                        .from('whatsapp_chats')
-                        .update({
-                            last_message_text: logText,
+                        await supabaseAdmin.from('whatsapp_chats').update({
+                            last_message_text: promptText,
                             updated_at: new Date().toISOString()
-                        })
-                        .eq('id', chat.id)
-
-                    // Send "Connect with Expert" button message as a follow-up interactive message
-                    if (!isTemplate && !isFallback) {
-                        try {
-                            await new Promise(resolve => setTimeout(resolve, 800))
-                            const expertBodyText = "Would you like to speak directly with our expert on call?"
-                            const expertPayload = {
-                                messaging_product: 'whatsapp',
-                                recipient_type: 'individual',
-                                to: chat.recipient_phone,
-                                type: 'interactive',
-                                interactive: {
-                                    type: 'button',
-                                    body: {
-                                        text: expertBodyText
-                                    },
-                                    action: {
-                                        buttons: [
-                                            {
-                                                type: 'reply',
-                                                reply: {
-                                                    id: 'connect_expert',
-                                                    title: 'Connect with Expert'
-                                                }
-                                            }
-                                        ]
-                                    }
-                                }
-                            }
-
-                            const expertRes = await fetch(metaUrl, {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${profile.whatsapp_access_token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify(expertPayload)
-                            })
-
-                            if (expertRes.ok) {
-                                await supabaseAdmin
-                                    .from('whatsapp_messages')
-                                    .insert({
-                                        chat_id: chat.id,
-                                        direction: 'outbound',
-                                        message_text: `${expertBodyText} [Button: Connect with Expert]`
-                                    })
-                            }
-                        } catch (expertErr) {
-                            console.error('[WhatsApp Followup Cron] Error sending Connect with Expert button:', expertErr)
-                        }
+                        }).eq('id', chat.id)
                     }
 
-                    if (matchedLead) {
-                        await supabaseAdmin
-                            .from('lead_history')
-                            .insert({
-                                lead_id: matchedLead.id,
-                                action_type: 'REMARK',
-                                description: `💬 Automated WhatsApp follow-up (Stage ${followupStage}) sent: "${logText.substring(0, 100)}"`
-                            })
-                    }
+                    // Log in lead_history
+                    await supabaseAdmin.from('lead_history').insert({
+                        lead_id: lead.id,
+                        action_type: 'FOLLOW_UP',
+                        description: `📨 Sent Weekly Real Estate Follow-up #${updatedCount} via WhatsApp.`,
+                        created_at: new Date().toISOString()
+                    })
 
-                    sentCount++
-                    diagnostics.push({ phone: chat.recipient_phone, stage: followupStage, success: true })
+                    diagnostics.push({ leadId: lead.id, phone: cleanPhone, status: 'sent', weeklyFollowupCount: updatedCount })
                 } else {
-                    diagnostics.push({ phone: chat.recipient_phone, stage: followupStage, success: false, error: JSON.stringify(sendData.error) })
+                    const errJson = await sendRes.json()
+                    console.error(`[WhatsApp Weekly Followup] Send failed for lead ${lead.id}:`, errJson)
+                    diagnostics.push({ leadId: lead.id, phone: cleanPhone, status: 'failed', error: errJson })
                 }
-            } catch (err: any) {
-                console.error(`Error generating/sending follow-up for chat ${chat.id}:`, err)
-                diagnostics.push({ phone: chat.recipient_phone, error: err.message })
+            } catch (leadErr: any) {
+                console.error(`[WhatsApp Weekly Followup] Error processing lead ${lead.id}:`, leadErr.message)
             }
         }
 
-        // Execute the full Universal 3-3-3 Follow-Up Engine across active leads
-        let engineResult = { scannedCount: 0, whatsappSentCount: 0, voiceScheduledCount: 0, skippedCount: 0 }
-        try {
-            const { run333FollowupEngine } = await import('@/utils/followup-333-engine')
-            engineResult = await run333FollowupEngine(supabaseAdmin)
-            console.log('[WhatsApp Followup Cron] 3-3-3 Engine Summary:', engineResult)
-        } catch (engineErr) {
-            console.error('[WhatsApp Followup Cron] 3-3-3 engine execution error:', engineErr)
-        }
-
-        return NextResponse.json({ 
-            success: true, 
-            processed: sentCount, 
-            engine333: engineResult,
-            diagnostics 
+        return NextResponse.json({
+            success: true,
+            scannedCount: leads.length,
+            sentCount,
+            skippedCount,
+            diagnostics
         })
-    } catch (error: any) {
-        console.error('[WhatsApp Followup Cron] Error:', error)
-        return NextResponse.json({ error: error.message || 'Internal server error', diagnostics }, { status: 500 })
+    } catch (err: any) {
+        console.error('[WhatsApp Weekly Followup Cron Fatal Error]:', err)
+        return NextResponse.json({ error: err.message }, { status: 500 })
     }
 }

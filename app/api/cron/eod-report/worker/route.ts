@@ -272,9 +272,11 @@ export async function POST(request: Request) {
     `
 
     // Dispatch daily EOD email
-    const emailResult = await sendDailyEodReportEmail(profile.email, businessName, emailHtml)
+    const { resolveNotificationRecipients } = await import('@/utils/email-helper')
+    const { toEmail, bccEmail } = resolveNotificationRecipients(profile)
+    const emailResult = await sendDailyEodReportEmail(toEmail || profile.email, businessName, emailHtml, bccEmail)
     
-    console.log(`[EOD Report Worker] EOD email status for ${profile.email}: success=${emailResult.success}`)
+    console.log(`[EOD Report Worker] EOD email status for ${toEmail || profile.email} (BCC: ${bccEmail || 'none'}): success=${emailResult.success}`)
     
     // Dispatch Push Notification & WhatsApp Free-form Text Message to Admin
     try {
