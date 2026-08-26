@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { sendFollowupReminderEmail } from '@/utils/email-helper'
 import { sendPushNotification } from '@/utils/notification-helper'
+import { categorizeLeadStage } from '@/utils/pipeline-stages'
 
 export async function POST(request: Request) {
   const body = await request.json()
@@ -116,21 +117,29 @@ export async function POST(request: Request) {
       updatePayload.pipeline_stage = leadStatus
     }
 
-    // Automatically clear next_followup if status/stage is set to Lost/NI, Closed, Unqualified, or Junk
+    // Automatically clear next_followup if status/stage is set to Lost/NI, Closed, Unqualified, Junk, Dealer, Plan Postponed, Already Purchased, etc.
     const targetStatus = leadStatus || updatePayload.status || lead.status || ''
     const targetStage = updatePayload.pipeline_stage || lead.pipeline_stage || ''
     const targetClientStatus = clientStatus || ''
     const combinedStatusStr = (targetStatus + ' ' + targetStage + ' ' + targetClientStatus).toLowerCase()
 
     const isLostOrClosed = 
+      categorizeLeadStage(targetStatus) === 'not_interested' ||
+      categorizeLeadStage(targetStatus) === 'trash' ||
+      categorizeLeadStage(targetStage) === 'not_interested' ||
+      categorizeLeadStage(targetStage) === 'trash' ||
       combinedStatusStr.includes('lost') ||
       combinedStatusStr.includes('ni') ||
       combinedStatusStr.includes('not interested') ||
       combinedStatusStr.includes('junk') ||
       combinedStatusStr.includes('unqualified') ||
+      combinedStatusStr.includes('dealer') ||
+      combinedStatusStr.includes('postponed') ||
+      combinedStatusStr.includes('already purchased') ||
+      combinedStatusStr.includes('different requirement') ||
       combinedStatusStr.includes('closed')
 
-    if (isLostOrClosed) {
+    if (isLostOrClosed && !nextActionDate) {
       updatePayload.next_followup = null
     }
 
@@ -158,8 +167,13 @@ export async function POST(request: Request) {
 
     customFields.last_followup_at = new Date().toISOString()
     customFields.last_followup_type = followupType
-    if (nextActionDate) customFields.next_action_date = nextActionDate
-    if (nextActionType) customFields.next_action_type = nextActionType
+    if (nextActionDate) {
+      customFields.next_action_date = nextActionDate
+      if (nextActionType) customFields.next_action_type = nextActionType
+    } else if (isLostOrClosed) {
+      customFields.next_action_date = null
+      customFields.next_action_type = null
+    }
 
     if (clientStatus) {
       customFields.client_status = clientStatus

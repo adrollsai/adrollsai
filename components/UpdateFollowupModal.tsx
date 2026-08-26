@@ -5,6 +5,31 @@ import { X, Calendar, User, Building2, PhoneCall, CheckSquare, Clock, Tag, Spark
 import { getPropertyTags } from '@/utils/property-tags'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
+import { categorizeLeadStage } from '@/utils/pipeline-stages'
+
+export const isNotInterestedOrLostStage = (stage?: string | null): boolean => {
+  if (!stage) return false
+  const cat = categorizeLeadStage(stage)
+  if (cat === 'not_interested' || cat === 'trash') return true
+  const norm = stage.toLowerCase().trim()
+  return (
+    norm === 'dealer' ||
+    norm === 'lost/ni' ||
+    norm === 'lost' ||
+    norm === 'plan postponed' ||
+    norm === 'already purchased' ||
+    norm === 'different requirement' ||
+    norm === 'unqualified' ||
+    norm.includes('not interested') ||
+    norm.includes('lost') ||
+    norm.includes('junk') ||
+    norm.includes('dealer') ||
+    norm.includes('postponed') ||
+    norm.includes('purchased') ||
+    norm.includes('fake') ||
+    norm.includes('wrong')
+  )
+}
 
 interface UpdateFollowupModalProps {
   isOpen: boolean
@@ -151,7 +176,7 @@ export default function UpdateFollowupModal({
     setLoading(true)
     setError(null)
 
-    const isClosedStatus = leadStage === 'Lost/NI' || leadStage === 'Lost' || leadStage?.toLowerCase().includes('lost') || leadStage === 'Different Requirement'
+    const isClosedStatus = isNotInterestedOrLostStage(leadStage)
     const shouldIncludeNextAction = !isClosedStatus || showNextActionForClosed
 
     try {
@@ -280,7 +305,13 @@ export default function UpdateFollowupModal({
                   </label>
                   <select
                     value={leadStage}
-                    onChange={(e) => setLeadStage(e.target.value)}
+                    onChange={(e) => {
+                      const newStage = e.target.value
+                      setLeadStage(newStage)
+                      if (isNotInterestedOrLostStage(newStage)) {
+                        setShowNextActionForClosed(false)
+                      }
+                    }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-extrabold text-blue-700 focus:outline-none focus:border-blue-500 focus:bg-white"
                   >
                     {STAGES.map(s => (
@@ -380,9 +411,9 @@ export default function UpdateFollowupModal({
             </div>
           )}
 
-          {/* Section: Next Action (Hidden by default for Lost/NI and Different Requirement unless checkbox is checked) */}
+          {/* Section: Next Action (Hidden by default for Not Interested/Lost/Dealer stages unless checkbox is checked) */}
           {(() => {
-            const isClosedStatus = leadStage === 'Lost/NI' || leadStage === 'Lost' || leadStage?.toLowerCase().includes('lost') || leadStage === 'Different Requirement'
+            const isClosedStatus = isNotInterestedOrLostStage(leadStage)
             
             if (isClosedStatus && !showNextActionForClosed) {
               return (
@@ -395,8 +426,8 @@ export default function UpdateFollowupModal({
                       className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                     <div className="flex-1">
-                      <span className="text-xs font-extrabold text-slate-800">Add Next Action / Future Reminder</span>
-                      <p className="text-[11px] text-slate-500 font-medium">Check this box if you want to schedule a future call or action for this lead.</p>
+                      <span className="text-xs font-extrabold text-slate-800">Add Next Action / Future Reminder (Optional)</span>
+                      <p className="text-[11px] text-slate-500 font-medium">This lead is in a closed/not interested stage ({leadStage}). Next action is not required unless you check this.</p>
                     </div>
                   </label>
                 </div>
