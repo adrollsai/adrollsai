@@ -80,6 +80,7 @@ export default function ProductsPage() {
 
   // Filter State
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchTagsOnly, setSearchTagsOnly] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   
   // UI State
@@ -711,6 +712,9 @@ export default function ProductsPage() {
     const query = searchQuery.trim().toLowerCase()
     if (!query) return true
     const tags = getPropertyTags(p)
+    if (searchTagsOnly) {
+      return tags.some(tag => tag.toLowerCase().includes(query))
+    }
     return (
       (p.title || '').toLowerCase().includes(query) ||
       (p.description || '').toLowerCase().includes(query) ||
@@ -746,16 +750,40 @@ export default function ProductsPage() {
         </div>
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-            {/* Search Bar */}
-            <div className="relative flex-1 sm:min-w-[300px]">
-              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            {/* Search Bar & Tag Toggle */}
+            <div className="relative flex-1 sm:min-w-[340px] flex items-center bg-white border border-slate-200 rounded-[1.25rem] shadow-sm focus-within:ring-4 focus-within:ring-blue-500/20 focus-within:border-blue-400 transition-all overflow-hidden pr-2">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 shrink-0 pointer-events-none" />
               <input 
                 type="text" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search products..." 
-                className="w-full bg-white border border-slate-200 py-3.5 pl-12 pr-4 rounded-[1.25rem] shadow-sm text-sm text-slate-700 font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all" 
+                placeholder={searchTagsOnly ? "Search tags only (e.g. 3BHK, Luxury)..." : "Search products, locations, tags..."} 
+                className="w-full bg-transparent py-3.5 pl-12 pr-3 text-sm text-slate-700 font-medium outline-none" 
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="p-1 mr-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+                  title="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
+              {/* Tags-only toggle */}
+              <button
+                type="button"
+                onClick={() => setSearchTagsOnly(prev => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer select-none ${
+                  searchTagsOnly
+                    ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-400/30'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/60'
+                }`}
+                title={searchTagsOnly ? "Currently searching tags only. Click to search all fields." : "Click to search tags only"}
+              >
+                <Tag size={13} className={searchTagsOnly ? 'text-white' : 'text-slate-500'} />
+                <span>Tags Only</span>
+              </button>
             </div>
             
             <div className="flex items-center gap-2">

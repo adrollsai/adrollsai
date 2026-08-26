@@ -154,6 +154,21 @@ export async function sendPushNotification(
 ) {
   console.log(`[PUSH] Looking for tokens for User: ${userId}`);
 
+  // Store in in-app notifications center
+  try {
+    await getSupabaseAdmin().from('notifications').insert({
+      user_id: userId,
+      title,
+      message: body,
+      type,
+      action_link: url,
+      is_read: false,
+      created_at: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.error('[PUSH DB Notification Insert Error]:', err.message);
+  }
+
   // Fetch profile to include agency/parent subscriptions if any
   const { data: userProfile } = await getSupabaseAdmin()
     .from('profiles')

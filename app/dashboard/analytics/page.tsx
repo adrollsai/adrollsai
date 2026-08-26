@@ -50,7 +50,7 @@ import {
 import LeadHistoryModal from '@/components/LeadHistoryModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
-import { categorizeLeadStage } from '@/utils/pipeline-stages'
+import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES } from '@/utils/pipeline-stages'
 
 // Render simple markdown headers, bolding, and lists into JSX
 function MarkdownRenderer({ text }: { text: string }) {
@@ -518,6 +518,8 @@ export default function AnalyticsPage() {
     return leads.filter(l => l.assigned_to === selectedAgentId)
   }, [leads, selectedAgentId])
 
+  const configuredStages = useMemo(() => extractStagesFromProfile(profile), [profile])
+
   // --- STATS PRE-COMPUTATIONS ---
   const stats = useMemo(() => {
     const totalLeads = (!selectedAgentId && duration === 'all' && totalServerCount > filteredLeads.length) ? totalServerCount : filteredLeads.length
@@ -532,7 +534,9 @@ export default function AnalyticsPage() {
     const reopenedLeadsList = filteredLeads.filter(l => l.reopened_count > 0 || l.custom_fields?.reopened_count > 0)
     const unassignedLeadsList = filteredLeads.filter(l => !l.assigned_to)
     const followUpLeadsList = filteredLeads.filter(l => l.next_action_date || l.custom_fields?.next_action_date)
-    const freshLeadsList = filteredLeads.filter(l => (l.pipeline_stage || 'New') === 'New')
+    const freshLeadsList = filteredLeads.filter(l => categorizeLeadStage(l, configuredStages) === 'fresh')
+    const ongoingLeadsList = filteredLeads.filter(l => categorizeLeadStage(l, configuredStages) === 'ongoing')
+    const notInterestedLeadsList = filteredLeads.filter(l => categorizeLeadStage(l, configuredStages) === 'not_interested')
     const recentLeadsList = filteredLeads.filter(l => {
       const d = new Date(l.created_at)
       return (Date.now() - d.getTime()) <= 86400000
@@ -566,9 +570,11 @@ export default function AnalyticsPage() {
       duplicateLeadsList,
       followUpLeadsList,
       freshLeadsList,
+      ongoingLeadsList,
+      notInterestedLeadsList,
       recentLeadsList
     }
-  }, [filteredLeads])
+  }, [filteredLeads, configuredStages, selectedAgentId, duration, totalServerCount])
 
   // --- EMPLOYEE-WISE LEAD MANAGER MATRIX (WorkVeu Screenshot 2) ---
   const leadManagerMatrix = useMemo(() => {
@@ -1826,36 +1832,74 @@ export default function AnalyticsPage() {
                 {/* Stage Distribution Panel */}
                 <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">
                   <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-                    <h3 className="font-extrabold text-base text-slate-900">Pipeline Stage Distribution</h3>
-                    <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">Click to filter</span>
+                    <div>
+                      <h3 className="font-extrabold text-base text-slate-900">Pipeline Stage Distribution</h3>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">Click any stage or bucket to filter & inspect leads</p>
+                    </div>
+                    <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">Interactive</span>
                   </div>
 
-                  <div className="space-y-2.5">
-                    {[
-                      { label: 'New Lead', stage: 'New Lead', color: 'bg-blue-500' },
-                      { label: 'Ongoing', stage: 'Ongoing', color: 'bg-cyan-500' },
-                      { label: 'Requirement Taken', stage: 'Requirement Taken', color: 'bg-indigo-500' },
-                      { label: 'Visit Planned', stage: 'Visit Planned', color: 'bg-amber-500' },
-                      { label: 'Visit Done', stage: 'Visit Done', color: 'bg-emerald-500' },
-                      { label: 'Revisit Done', stage: 'Revisit Done', color: 'bg-teal-500' },
-                      { label: 'Negotiation', stage: 'Negotiation', color: 'bg-purple-500' },
-                      { label: 'Deal/Token', stage: 'Deal/Token', color: 'bg-emerald-600' },
-                      { label: 'Lost/NI', stage: 'Lost/NI', color: 'bg-rose-500' }
-                    ].map((item) => {
-                      const stageLeads = filteredLeads.filter(l => l.pipeline_stage === item.stage || l.status === item.stage || (item.stage === 'New Lead' && (l.pipeline_stage === 'New' || !l.pipeline_stage)))
+                  {/* Summary Category Pills: Fresh / Ongoing / Not Interested */}
+                  <div className="grid grid-cols-3 gap-2 pb-1">
+                    <button
+                      type="button"
+                      onClick={() => openLeadsDrilldown('Fresh Leads', `Fresh & New incoming leads (${stats.freshLeadsList.length})`, stats.freshLeadsList)}
+                      className="p-2.5 bg-blue-50/70 hover:bg-blue-100/90 border border-blue-200/80 rounded-2xl text-left transition-colors cursor-pointer"
+                    >
+                      <span className="text-[10px] font-extrabold uppercase text-blue-700 block">Fresh Leads</span>
+                      <span className="text-lg font-black text-blue-950">{stats.freshLeadsList.length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openLeadsDrilldown('Ongoing Leads', `Active ongoing pipeline leads (${stats.ongoingLeadsList.length})`, stats.ongoingLeadsList)}
+                      className="p-2.5 bg-cyan-50/70 hover:bg-cyan-100/90 border border-cyan-200/80 rounded-2xl text-left transition-colors cursor-pointer"
+                    >
+                      <span className="text-[10px] font-extrabold uppercase text-cyan-700 block">Ongoing</span>
+                      <span className="text-lg font-black text-cyan-950">{stats.ongoingLeadsList.length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openLeadsDrilldown('Not Interested', `Lost / Inactive / Dealer leads (${stats.notInterestedLeadsList.length})`, stats.notInterestedLeadsList)}
+                      className="p-2.5 bg-rose-50/70 hover:bg-rose-100/90 border border-rose-200/80 rounded-2xl text-left transition-colors cursor-pointer"
+                    >
+                      <span className="text-[10px] font-extrabold uppercase text-rose-700 block">Not Interested</span>
+                      <span className="text-lg font-black text-rose-950">{stats.notInterestedLeadsList.length}</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                    {configuredStages.map((stageCfg) => {
+                      const stageName = stageCfg.name;
+                      const stageLeads = filteredLeads.filter(l => {
+                        const raw = (l.pipeline_stage || l.status || '').trim();
+                        if (stageName.toLowerCase() === 'new lead') {
+                          return raw.toLowerCase() === 'new lead' || raw.toLowerCase() === 'new' || !raw;
+                        }
+                        return raw.toLowerCase() === stageName.toLowerCase();
+                      });
+                      
+                      const dotColor = stageCfg.category === 'fresh'
+                        ? 'bg-blue-500'
+                        : stageCfg.category === 'not_interested'
+                        ? 'bg-rose-500'
+                        : stageCfg.category === 'trash'
+                        ? 'bg-slate-400'
+                        : 'bg-indigo-500';
+
                       return (
                         <div 
-                          key={item.stage}
-                          onClick={() => openLeadsDrilldown(item.label, `${stageLeads.length} leads in stage: ${item.stage}`, stageLeads)}
-                          className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl text-xs font-bold text-slate-700 hover:bg-blue-50 cursor-pointer transition-colors"
+                          key={stageCfg.id || stageName}
+                          onClick={() => openLeadsDrilldown(stageName, `${stageLeads.length} leads in stage: ${stageName}`, stageLeads)}
+                          className="flex justify-between items-center p-2.5 bg-slate-50 rounded-2xl text-xs font-bold text-slate-700 hover:bg-blue-50 cursor-pointer transition-colors"
                         >
                           <div className="flex items-center gap-2.5">
-                            <span className={`w-2.5 h-2.5 rounded-full ${item.color}`}></span>
-                            <span>{item.label}</span>
+                            <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`}></span>
+                            <span>{stageName}</span>
+                            <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">({stageCfg.category})</span>
                           </div>
-                          <span className="font-black text-slate-900 bg-white px-3 py-1 rounded-xl border border-slate-200">{stageLeads.length}</span>
+                          <span className="font-black text-slate-900 bg-white px-2.5 py-0.5 rounded-xl border border-slate-200 shadow-2xs">{stageLeads.length}</span>
                         </div>
-                      )
+                      );
                     })}
                   </div>
                 </div>
@@ -1869,21 +1913,32 @@ export default function AnalyticsPage() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div 
-                      onClick={() => openLeadsDrilldown('Newly Created Fresh Leads', 'Untouched fresh incoming leads', stats.freshLeadsList)}
+                      onClick={() => openLeadsDrilldown('Fresh Leads (New)', `Untouched fresh incoming leads (${stats.freshLeadsList.length})`, stats.freshLeadsList)}
                       className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-1 cursor-pointer hover:bg-emerald-100/60 transition-colors"
                     >
-                      <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Newly Created</span>
+                      <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Fresh Leads</span>
                       <span className="text-2xl font-black text-emerald-950">{stats.freshLeadsList.length}</span>
                       <span className="text-[11px] font-bold text-emerald-700 block mt-1">Click to view &rarr;</span>
                     </div>
 
                     <div 
-                      onClick={() => openLeadsDrilldown('Recent Leads (<= 1 Day)', 'Leads created within last 24 hours', stats.recentLeadsList)}
-                      className="p-4 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-1 cursor-pointer hover:bg-amber-100/60 transition-colors"
+                      onClick={() => openLeadsDrilldown('Ongoing Leads', `Active leads currently in ongoing stages (${stats.ongoingLeadsList.length})`, stats.ongoingLeadsList)}
+                      className="p-4 bg-cyan-50/60 border border-cyan-200 rounded-2xl space-y-1 cursor-pointer hover:bg-cyan-100/60 transition-colors"
                     >
-                      <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">Created &lt;= 1 Day</span>
+                      <span className="text-[10px] font-black text-cyan-800 uppercase tracking-wider block">Ongoing Leads</span>
+                      <span className="text-2xl font-black text-cyan-950">{stats.ongoingLeadsList.length}</span>
+                      <span className="text-[11px] font-bold text-cyan-700 block mt-1">Click to view &rarr;</span>
+                    </div>
+
+                    <div 
+                      onClick={() => openLeadsDrilldown('Recent Leads (<= 1 Day)', 'Leads created within last 24 hours', stats.recentLeadsList)}
+                      className="col-span-2 p-4 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-1 cursor-pointer hover:bg-amber-100/60 transition-colors"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">Created &lt;= 1 Day</span>
+                        <span className="text-[11px] font-bold text-amber-700">Click to view &rarr;</span>
+                      </div>
                       <span className="text-2xl font-black text-amber-950">{stats.recentLeadsList.length}</span>
-                      <span className="text-[11px] font-bold text-amber-700 block mt-1">Click to view &rarr;</span>
                     </div>
                   </div>
                 </div>

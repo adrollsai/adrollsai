@@ -59,21 +59,55 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, message: 'No reminders due at this time.' })
     }
 
-    // Process due followup push notifications directly without N+1 queries
+    // Process due followup push notifications directly
     const processedIds: string[] = []
     if (leadsToRemind && leadsToRemind.length > 0) {
+      // Gather all user IDs to resolve profiles (agent names and parent/agency admin IDs)
+      const userIdsToFetch = new Set<string>()
+      leadsToRemind.forEach(l => {
+        if (l.assigned_to) userIdsToFetch.add(l.assigned_to)
+        if (l.user_id) userIdsToFetch.add(l.user_id)
+      })
+
+      const profileMap = new Map<string, any>()
+      if (userIdsToFetch.size > 0) {
+        const { data: profs } = await supabaseAdmin
+          .from('profiles')
+          .select('id, full_name, business_name, email, parent_id, agency_id')
+          .in('id', Array.from(userIdsToFetch))
+        
+        profs?.forEach(p => profileMap.set(p.id, p))
+      }
+
       for (const lead of leadsToRemind) {
         if (lead.next_followup) {
-          const targetIds = Array.from(new Set([lead.assigned_to, lead.user_id].filter(Boolean)))
-          for (const targetId of targetIds) {
+          const directTargetId = lead.assigned_to || lead.user_id
+          const directProfile = directTargetId ? profileMap.get(directTargetId) : null
+          const agentName = directProfile?.full_name || directProfile?.business_name || (directProfile?.email ? directProfile.email.split('@')[0] : 'Agent')
+          
+          // 1. Notify direct assignee/owner
+          if (directTargetId) {
             await sendPushNotification(
-              targetId,
+              directTargetId,
               "Follow-Up Reminder ⏰",
               `Time to follow up with ${lead.name || 'Lead'} ${lead.phone ? `(${lead.phone})` : ''}`,
               `/dashboard/crm/${lead.id}`,
               "reminder"
-            ).catch((err: any) => console.error('[Reminders Dispatcher Push Error]:', err))
+            ).catch((err: any) => console.error('[Reminders Dispatcher Push Error (Agent)]:', err))
           }
+
+          // 2. Notify workspace admin / parent if direct assignee is an agent
+          const adminId = directProfile?.parent_id || directProfile?.agency_id || (lead.user_id !== directTargetId ? lead.user_id : null)
+          if (adminId && adminId !== directTargetId) {
+            await sendPushNotification(
+              adminId,
+              `Agent Follow-Up Reminder ⏰ (${agentName})`,
+              `Follow-up scheduled for ${agentName} with ${lead.name || 'Lead'} ${lead.phone ? `(${lead.phone})` : ''}`,
+              `/dashboard/crm/${lead.id}`,
+              "reminder"
+            ).catch((err: any) => console.error('[Reminders Dispatcher Push Error (Admin)]:', err))
+          }
+
           processedIds.push(lead.id)
         }
       }

@@ -44,6 +44,7 @@ import {
   Coins,
   Folder,
   Clock,
+  Bell,
   X
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -339,6 +340,7 @@ export default function ProfilePage() {
   const [authUserName, setAuthUserName] = useState<string | null>(null)
 
   const [bookingEnabled, setBookingEnabled] = useState(false)
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0)
   const [flaggedCount, setFlaggedCount] = useState(0)
   const [flaggedQuestions, setFlaggedQuestions] = useState<any[]>([])
   const [loadingFlagged, setLoadingFlagged] = useState(false)
@@ -946,6 +948,15 @@ export default function ProfilePage() {
           setIsGoogleConnected(false)
         }
       }
+
+      // Fetch unread notifications count
+      try {
+        const notifRes = await fetch(`/api/notifications?limit=1${impersonateId ? `&impersonate=${impersonateId}` : ''}`)
+        const notifData = await notifRes.json()
+        if (notifData?.unreadCount !== undefined) {
+          setUnreadNotificationsCount(notifData.unreadCount)
+        }
+      } catch (e) {}
 
     } catch (error) {
       console.error("Load error:", error)
@@ -3536,6 +3547,39 @@ export default function ProfilePage() {
               </div>
             )}
 
+
+            {/* NOTIFICATIONS & ALERTS TILE - FOR ALL USERS (ADMINS & AGENTS) */}
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+              <button 
+                onClick={() => router.push(`/dashboard/notifications${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer group"
+              >
+                <div className="flex items-center gap-4 text-left">
+                  <div className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white p-3 rounded-2xl shadow-xs group-hover:scale-105 transition-transform relative">
+                    <Bell size={20} />
+                    {unreadNotificationsCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-black border-2 border-white shadow-xs animate-pulse">
+                        {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-slate-900">Notifications & Alerts</span>
+                      {unreadNotificationsCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-extrabold text-[10px]">
+                          {unreadNotificationsCount} unread
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Check lead follow-up reminders, team assignments, and system alerts
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight size={20} className="text-slate-400 group-hover:text-slate-700 transition-colors" />
+              </button>
+            </div>
 
             {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
