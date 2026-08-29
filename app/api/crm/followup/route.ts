@@ -167,6 +167,14 @@ export async function POST(request: Request) {
 
     customFields.last_followup_at = new Date().toISOString()
     customFields.last_followup_type = followupType
+    if (remarks) {
+      customFields.last_followup_remark = remarks
+      customFields.last_remark = remarks
+    } else if (isDnp) {
+      customFields.last_followup_remark = remarks || 'Call Not Picked (DNP)'
+      customFields.last_remark = remarks || 'Call Not Picked (DNP)'
+    }
+
     if (nextActionDate) {
       customFields.next_action_date = nextActionDate
       if (nextActionType) customFields.next_action_type = nextActionType
@@ -179,26 +187,27 @@ export async function POST(request: Request) {
       customFields.client_status = clientStatus
     }
 
+    const currentStage = (lead.pipeline_stage || lead.status || 'New Lead').trim()
+    const isCurrentFresh = currentStage === 'New Lead' || currentStage === 'New' || currentStage === 'Fresh'
+
     if (isDnp) {
       customFields.last_call_dnp = true
       customFields.dnp_count = (customFields.dnp_count || 0) + 1
-      const currentStage = (leadStatus || lead.pipeline_stage || lead.status || 'New Lead').trim()
-      if (leadStatus && leadStatus !== 'Ongoing') {
+      if (leadStatus && leadStatus !== 'Ongoing' && leadStatus !== 'New Lead' && leadStatus !== 'New') {
         updatePayload.status = leadStatus
         updatePayload.pipeline_stage = leadStatus
-      } else if (currentStage === 'New Lead' || currentStage === 'New' || currentStage === 'Ongoing') {
+      } else if (isCurrentFresh || currentStage === 'Ongoing') {
         updatePayload.status = 'Never Picked'
         updatePayload.pipeline_stage = 'Never Picked'
       }
     } else {
       customFields.last_call_dnp = false
-      const currentStage = (leadStatus || lead.pipeline_stage || lead.status || 'New Lead').trim()
-      if (leadStatus && leadStatus !== 'Ongoing') {
+      if (leadStatus && leadStatus !== 'Ongoing' && leadStatus !== 'New Lead' && leadStatus !== 'New' && leadStatus !== 'Fresh') {
         updatePayload.status = leadStatus
         updatePayload.pipeline_stage = leadStatus
-      } else if (currentStage === 'New Lead' || currentStage === 'New' || currentStage === 'Ongoing') {
-        updatePayload.status = 'Requirement Taken'
-        updatePayload.pipeline_stage = 'Requirement Taken'
+      } else if (isCurrentFresh || currentStage === 'Ongoing') {
+        updatePayload.status = 'Contacted'
+        updatePayload.pipeline_stage = 'Contacted'
       }
     }
 
@@ -208,9 +217,14 @@ export async function POST(request: Request) {
       customFields.interested_properties = interestedProperties
     }
 
+    if (updatePayload.pipeline_stage) {
+      customFields.pipeline_stage = updatePayload.pipeline_stage
+      customFields.status = updatePayload.status
+    }
+
     updatePayload.custom_fields = customFields
 
-    const activeStage = updatePayload.pipeline_stage || lead.pipeline_stage || lead.status || 'Requirement Taken'
+    const activeStage = updatePayload.pipeline_stage || lead.pipeline_stage || lead.status || 'Contacted'
 
     // Prepend remarks to notes if provided
     let newNotes = lead.notes || ''

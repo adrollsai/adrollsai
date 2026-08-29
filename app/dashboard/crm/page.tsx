@@ -26,6 +26,7 @@ import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getS
 
 const STAGES = [
   'New Lead',
+  'Contacted',
   'Requirement Taken',
   'Visit Planned',
   'Visit Done',
@@ -2005,8 +2006,10 @@ END:VCARD\n`
     const checkMatch = (s: string) => {
       if (stageName === 'New Lead') {
         return ['new lead', 'new', 'fresh', 'uncontacted', ''].includes(s)
+      } else if (stageName === 'Contacted') {
+        return ['contacted'].includes(s)
       } else if (stageName === 'Requirement Taken') {
-        return ['requirement taken', 'requirement', 'contacted', 'qualified', 'requirement_taken'].includes(s)
+        return ['requirement taken', 'requirement', 'qualified', 'requirement_taken'].includes(s)
       } else if (stageName === 'Appointment Booked') {
         return ['appointment booked', 'appointment', 'booked', 'appointment_booked'].includes(s)
       } else if (stageName === 'Visit Planned') {

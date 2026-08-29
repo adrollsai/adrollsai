@@ -42,6 +42,7 @@ interface UpdateFollowupModalProps {
 
 const STAGES = [
   'New Lead',
+  'Contacted',
   'Requirement Taken',
   'Visit Planned',
   'Visit Done',
@@ -206,6 +207,8 @@ export default function UpdateFollowupModal({
       return
     }
 
+    const effectiveStage = (!isDnp && (leadStage === 'New Lead' || leadStage === 'New' || leadStage === 'Fresh')) ? 'Contacted' : leadStage
+
     try {
       const res = await fetch('/api/crm/followup', {
         method: 'POST',
@@ -216,8 +219,8 @@ export default function UpdateFollowupModal({
           isDnp,
           followupType,
           followupDate,
-          leadStatus: isDnp ? (lead.status || lead.pipeline_stage || 'New Lead') : leadStage,
-          pipelineStage: isDnp ? (lead.pipeline_stage || 'New Lead') : leadStage,
+          leadStatus: isDnp ? (lead.status || lead.pipeline_stage || 'Never Picked') : effectiveStage,
+          pipelineStage: isDnp ? (lead.pipeline_stage || 'Never Picked') : effectiveStage,
           clientStatus: isDnp ? lead.client_status : clientStatus,
           propertyId: selectedPropertyId || null,
           budget: budget || null,

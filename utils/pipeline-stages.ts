@@ -24,6 +24,17 @@ export const DEFAULT_PIPELINE_STAGES: PipelineStageConfig[] = [
     description: 'Incoming unprocessed fresh leads'
   },
   {
+    id: 'contacted',
+    name: 'Contacted',
+    category: 'ongoing',
+    color: 'sky',
+    badgeBg: 'bg-sky-100',
+    badgeText: 'text-sky-800',
+    enableCapi: false,
+    capiEventName: 'Contact',
+    description: 'Lead contacted and communication initiated'
+  },
+  {
     id: 'requirement_taken',
     name: 'Requirement Taken',
     category: 'ongoing',

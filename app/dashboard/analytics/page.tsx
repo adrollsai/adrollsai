@@ -3423,45 +3423,62 @@ export default function AnalyticsPage() {
                     try { cf = JSON.parse(cf) } catch (e) {}
                   }
 
-                  let rawRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim()
-                  if (!rawRemark && lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
+                  let cleanRemark = ''
+                  let lastRemarkTime: string | null = null
+
+                  // 1. Prioritize real-time agent notes from lead.notes (top entry)
+                  if (lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
                     const topEntry = lead.notes.trim().split(/\n\n+/)[0]?.trim()
                     if (topEntry) {
-                      if (topEntry.includes(']:')) {
-                        const parts = topEntry.split(']:')
-                        rawRemark = parts.slice(1).join(']:').trim()
+                      if (topEntry.startsWith('[') && topEntry.includes(']:')) {
+                        const headerEndIdx = topEntry.indexOf(']:')
+                        const header = topEntry.slice(1, headerEndIdx)
+                        const body = topEntry.slice(headerEndIdx + 2).trim()
+
+                        const timeMatch = header.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
+                        if (timeMatch) {
+                          const [_, d, m, y, h, min, ampm] = timeMatch
+                          let hour = h ? parseInt(h, 10) : 0
+                          if (ampm) {
+                            if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
+                            if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
+                          }
+                          const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
+                          if (!isNaN(parsed.getTime())) {
+                            lastRemarkTime = parsed.toISOString()
+                          }
+                        }
+
+                        let formattedBody = body
+                        if (formattedBody.startsWith('Stage:')) {
+                          const dotIdx = formattedBody.indexOf('.')
+                          if (dotIdx !== -1) formattedBody = formattedBody.slice(dotIdx + 1).trim()
+                        }
+                        if (formattedBody.startsWith('Status:')) {
+                          const dotIdx = formattedBody.indexOf('.')
+                          if (dotIdx !== -1) formattedBody = formattedBody.slice(dotIdx + 1).trim()
+                        }
+                        if (formattedBody.includes('Remarks:')) {
+                          const remIdx = formattedBody.indexOf('Remarks:')
+                          formattedBody = formattedBody.slice(remIdx + 8).trim()
+                        }
+
+                        cleanRemark = formattedBody || body
                       } else {
-                        rawRemark = topEntry
-                      }
-                    }
-                  }
-                  if (!rawRemark && lead.summary) rawRemark = lead.summary.trim()
-                  
-                  let lastRemarkTime: string | null = null
-                  let cleanRemark = rawRemark
-
-                  if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
-                  else if (cf?.last_action_date) lastRemarkTime = cf.last_action_date
-                  else if (lead.last_call_at) lastRemarkTime = lead.last_call_at
-
-                  if (rawRemark) {
-                    const match = rawRemark.match(/(?:Call on\s+|Logged on\s+|\[)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
-                    if (match) {
-                      const [full, d, m, y, h, min, ampm] = match
-                      let hour = h ? parseInt(h, 10) : 0
-                      if (ampm) {
-                        if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
-                        if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
-                      }
-                      const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
-                      if (!isNaN(parsed.getTime())) {
-                        if (!lastRemarkTime) lastRemarkTime = parsed.toISOString()
-                        const stripped = rawRemark.replace(/^(?:\[Last Remarks\]:\s*)?(?:Call on\s+)?\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*(?:\d{1,2}:\d{2}\s*[ap]m)?\s*/i, '').trim()
-                        if (stripped) cleanRemark = stripped
+                        cleanRemark = topEntry
                       }
                     }
                   }
 
+                  // 2. Fallback to custom_fields / static remark columns if no notes remark
+                  if (!cleanRemark) {
+                    cleanRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || lead.summary || '').trim()
+                    if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
+                  }
+
+                  if (!lastRemarkTime && cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
+                  if (!lastRemarkTime && cf?.last_action_date) lastRemarkTime = cf.last_action_date
+                  if (!lastRemarkTime && lead.last_call_at) lastRemarkTime = lead.last_call_at
                   if (!lastRemarkTime && lead.updated_at && cleanRemark) lastRemarkTime = lead.updated_at
                   if (!lastRemarkTime && lead.created_at && cleanRemark) lastRemarkTime = lead.created_at
 
