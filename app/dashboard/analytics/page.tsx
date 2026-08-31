@@ -390,7 +390,7 @@ export default function AnalyticsPage() {
           
           const historyTotal = historyCount || 0
           if (historyTotal > 0) {
-            const historyPages = Math.min(Math.ceil(historyTotal / 1000), 20)
+            const historyPages = Math.min(Math.ceil(historyTotal / 1000), 50)
             const historyPromises = Array.from({ length: historyPages }, (_, i) => {
               return supabase.from('lead_history')
                 .select('id, lead_id, user_id, action_type, description, created_at')
@@ -649,7 +649,11 @@ export default function AnalyticsPage() {
     const isDateInRange = (rawDate?: any) => {
       if (!startCutoff && !endCutoff) return true
       if (!rawDate) return false
-      const d = new Date(rawDate)
+      const dateVal = (typeof rawDate === 'object' && rawDate !== null && !(rawDate instanceof Date))
+        ? (rawDate.created_at || rawDate.action_date || rawDate.date || rawDate.last_followup_at || rawDate.last_call_at)
+        : rawDate
+      if (!dateVal) return false
+      const d = new Date(dateVal)
       if (isNaN(d.getTime())) return false
       if (startCutoff && d < startCutoff) return false
       if (endCutoff && d > endCutoff) return false
@@ -1354,10 +1358,31 @@ export default function AnalyticsPage() {
       return null
     }
 
+    // Helper to resolve actual date of an action entry
+    const getHistoryActionDate = (h: any) => {
+      if (!h) return null
+      const desc = h.description || ''
+      const dateMatch = desc.match(/(?:Call on|DNP|Followup|Recorded on|Follow up Date\s*:)\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
+      if (dateMatch) {
+        const day = parseInt(dateMatch[1], 10)
+        const month = parseInt(dateMatch[2], 10) - 1
+        let year = parseInt(dateMatch[3], 10)
+        if (year < 100) year += 2000
+        const d = new Date(year, month, day)
+        if (!isNaN(d.getTime())) return d
+      }
+      if (h.created_at) {
+        const d = new Date(h.created_at)
+        if (!isNaN(d.getTime())) return d
+      }
+      return null
+    }
+
     // Filter history by date range
     const filteredHistory = history.filter(h => {
       if (!startCutoff && !endCutoff) return true
-      return isDateInRange(h)
+      const actionDate = getHistoryActionDate(h)
+      return isDateInRange(actionDate)
     })
 
     // Build lead lookup for drilldown
