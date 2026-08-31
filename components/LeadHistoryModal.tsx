@@ -74,23 +74,77 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
         }
       }
 
-      // Ensure initial / imported last remark is included in timeline if missing
-      const lastRemark = (cf?.last_followup_remark || cf?.opening_comments || lead.notes || lead.summary || '').trim()
+      // Helper to parse date from historical remark text (e.g. "Call Not Picked on 09/08/2026 01:45 pm")
+      const parseActionDateFromDesc = (text: string, fallback: string) => {
+        if (!text) return fallback
+        const match = text.match(/(?:Call on|Call Not Picked on|Recorded on|Date\s*:)\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})(?:\s+([0-9]{1,2}):([0-9]{2})\s*(am|pm)?)?/i)
+        if (match) {
+          const day = parseInt(match[1], 10)
+          const month = parseInt(match[2], 10) - 1
+          let year = parseInt(match[3], 10)
+          if (year < 100) year += 2000
+          let hour = match[4] ? parseInt(match[4], 10) : 12
+          let min = match[5] ? parseInt(match[5], 10) : 0
+          const ampm = match[6]?.toLowerCase()
+          if (ampm === 'pm' && hour < 12) hour += 12
+          if (ampm === 'am' && hour === 12) hour = 0
+          const d = new Date(Date.UTC(year, month, day, hour - 5, min - 30))
+          if (!isNaN(d.getTime())) return d.toISOString()
+        }
+        return fallback
+      }
+
+      // 1. Ensure imported/existing last remarks are included as distinct timeline cards
+      const lastRemark = (cf?.last_followup_remark || cf?.last_remark || '').trim()
       if (lastRemark) {
         const exists = items.some(item => (item.description || '').includes(lastRemark))
         if (!exists) {
+          const actionDate = parseActionDateFromDesc(lastRemark, cf?.last_followup_at || lead.last_call_at || lead.created_at)
           items.push({
             id: 'synthetic_last_remark',
             lead_id: lead.id,
-            action_type: 'LAST_FOLLOWUP_REMARK',
+            action_type: lastRemark.toLowerCase().includes('dnp') || lastRemark.toLowerCase().includes('not picked') ? 'DNP' : 'LAST_FOLLOWUP_REMARK',
             description: lastRemark,
             actor_name: lead.user_name || undefined,
             user_id: lead.assigned_to || lead.user_id,
-            created_at: cf?.last_followup_at || lead.last_call_at || lead.created_at
+            created_at: actionDate
           })
-          items.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         }
       }
+
+      // 2. ALWAYS guarantee the foundational Lead Created / Registration card at the bottom of the timeline
+      const hasCreationEvent = items.some(item => 
+        item.action_type === 'LEAD_CREATED' || 
+        item.action_type === 'LEAD_IMPORT' || 
+        (item.description && item.description.includes('Lead Created from'))
+      )
+
+      if (!hasCreationEvent) {
+        let creationDesc = `Lead Created from ${lead.source || 'Facebook'}\n`
+        creationDesc += `Lead Name : ${lead.name || 'N/A'}\n`
+        creationDesc += `Contact no : ${lead.phone || 'N/A'}\n`
+        if (lead.email) creationDesc += `Email : ${lead.email}\n`
+        creationDesc += `Lead Source : ${lead.source || 'Facebook'}\n`
+        creationDesc += `Source Details : ${lead.ad_name || lead.form_name || lead.campaign_name || 'Meta Ad'}\n`
+        creationDesc += `Stage : ${(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'New Lead')}`
+        
+        if (cf?.opening_comments) {
+          creationDesc += `\n\n📋 Opening Remarks / Ad Answers :\n${cf.opening_comments}`
+        }
+
+        items.push({
+          id: 'foundational_lead_created',
+          lead_id: lead.id,
+          action_type: 'LEAD_CREATED',
+          description: creationDesc,
+          actor_name: 'System / Meta Ad',
+          user_id: lead.assigned_to || lead.user_id,
+          created_at: lead.created_at || new Date().toISOString()
+        })
+      }
+
+      // Sort chronological descending (newest on top, initial creation at the bottom)
+      items.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
 
       const cutoff = cf?.history_visible_from
       if (cutoff && !isAdmin) {
