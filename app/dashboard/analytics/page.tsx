@@ -1378,16 +1378,17 @@ export default function AnalyticsPage() {
     const classifyAction = (h: any) => {
       const type = (h.action_type || '').toUpperCase()
       const desc = (h.description || '').toLowerCase()
-      // Exclude pure system automation logs
-      if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT', 'ASSIGNMENT', 'NOTE'].includes(type)) return null
+      // Exclude purely automated system imports/webhooks
+      if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT', 'ASSIGNMENT'].includes(type)) return null
       if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return null
 
       if (type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return 'dnp'
       if (type === 'SITE_VISIT' || desc.includes('site visit') || desc.includes('visit done') || desc.includes('revisit') || desc.includes('visit planned') || desc.includes('moved to visit')) return 'site_visits'
       if (type === 'MEETING' || desc.includes('meeting') || desc.includes('moved to meeting')) return 'meetings'
       if (type === 'WHATSAPP' || desc.includes('whatsapp') || desc.includes('message sent')) return 'whatsapp'
-      if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG', 'FOLLOWUP', 'REMARK', 'STATUS_CHANGE'].includes(type) || desc.includes('call') || desc.includes('followup') || desc.includes('feedback') || desc.includes('connected')) return 'calls'
-      return null
+      
+      // Every manual note, stage update, followup or call counts as a call/followup attempt
+      return 'calls'
     }
 
     // Build lead lookup for drilldown
@@ -1425,42 +1426,77 @@ export default function AnalyticsPage() {
     // 2. Process Lead Notes Blocks (to guarantee zero missed followups)
     leads.forEach(l => {
       const notes = l.notes || ''
-      if (!notes.includes('[📝') && !notes.includes('[⚠️')) return
+      if (notes.includes('[📝') || notes.includes('[⚠️')) {
+        const chunks = notes.split(/(?=\[(?:📝|⚠️))/)
+        chunks.forEach(chunk => {
+          const effectiveDate = parseActionDate(chunk)
+          if (!effectiveDate || !isDateInRange(effectiveDate)) return
 
-      const chunks = notes.split(/(?=\[(?:📝|⚠️))/)
-      chunks.forEach(chunk => {
-        const effectiveDate = parseActionDate(chunk)
-        if (!effectiveDate || !isDateInRange(effectiveDate)) return
+          // Extract rep from chunk e.g. "by Harman Bajwa"
+          const repMatch = chunk.match(/by\s+([^\]\:\n]+)/i)
+          const repName = repMatch ? repMatch[1].trim().toLowerCase() : ''
+          const matchedRep = allSalesReps.find(r => {
+            const fn = (r.name || '').toLowerCase()
+            const em = (r.email || '').toLowerCase()
+            return (fn && repName.includes(fn)) || (fn && fn.includes(repName)) || (em && repName.includes(em))
+          }) || (l.assigned_to ? allSalesReps.find(r => r.id === l.assigned_to) : null)
 
-        // Extract rep from chunk e.g. "by Harman Bajwa"
-        const repMatch = chunk.match(/by\s+([^\]\:\n]+)/i)
-        const repName = repMatch ? repMatch[1].trim().toLowerCase() : ''
-        const matchedRep = allSalesReps.find(r => {
-          const fn = (r.name || '').toLowerCase()
-          const em = (r.email || '').toLowerCase()
-          return (fn && repName.includes(fn)) || (fn && fn.includes(repName)) || (em && repName.includes(em))
-        }) || (l.assigned_to ? allSalesReps.find(r => r.id === l.assigned_to) : null)
+          if (!matchedRep) return
 
-        if (!matchedRep) return
+          const lowerChunk = chunk.toLowerCase()
+          let cat = 'calls'
+          if (lowerChunk.includes('dnp') || lowerChunk.includes('not picked') || lowerChunk.includes('did not pick')) cat = 'dnp'
+          else if (lowerChunk.includes('site visit') || lowerChunk.includes('visit done') || lowerChunk.includes('revisit')) cat = 'site_visits'
+          else if (lowerChunk.includes('meeting')) cat = 'meetings'
+          else if (lowerChunk.includes('whatsapp')) cat = 'whatsapp'
 
-        const lowerChunk = chunk.toLowerCase()
-        let cat = 'calls'
-        if (lowerChunk.includes('dnp') || lowerChunk.includes('not picked') || lowerChunk.includes('did not pick')) cat = 'dnp'
-        else if (lowerChunk.includes('site visit') || lowerChunk.includes('visit done') || lowerChunk.includes('revisit')) cat = 'site_visits'
-        else if (lowerChunk.includes('meeting')) cat = 'meetings'
-        else if (lowerChunk.includes('whatsapp')) cat = 'whatsapp'
-        else if (lowerChunk.includes('call') || lowerChunk.includes('followup') || lowerChunk.includes('feedback')) cat = 'calls'
-
-        if (repActionCounts[matchedRep.id]) {
-          const dateKey = effectiveDate.toISOString().slice(0, 13)
-          const dedupKey = `${l.id}_${cat}_${dateKey}`
-          if (!seenActionKeys.has(dedupKey)) {
-            seenActionKeys.add(dedupKey)
-            repActionCounts[matchedRep.id][cat]++
-            repActionLeadIds[matchedRep.id][cat].add(l.id)
+          if (repActionCounts[matchedRep.id]) {
+            const dateKey = effectiveDate.toISOString().slice(0, 13)
+            const dedupKey = `${l.id}_${cat}_${dateKey}`
+            if (!seenActionKeys.has(dedupKey)) {
+              seenActionKeys.add(dedupKey)
+              repActionCounts[matchedRep.id][cat]++
+              repActionLeadIds[matchedRep.id][cat].add(l.id)
+            }
           }
-        }
-      })
+        })
+      }
+
+      // 3. Process Custom Fields Followups Array
+      let cf = l.custom_fields
+      if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+      if (cf && Array.isArray(cf.followups)) {
+        cf.followups.forEach((f: any) => {
+          const fDate = f.date ? new Date(f.date) : parseActionDate(f.note)
+          if (!fDate || !isDateInRange(fDate)) return
+
+          const repName = (f.rep_name || f.by || '').toLowerCase()
+          const matchedRep = allSalesReps.find(r => {
+            const fn = (r.name || '').toLowerCase()
+            const em = (r.email || '').toLowerCase()
+            return (fn && repName.includes(fn)) || (fn && fn.includes(repName)) || (em && repName.includes(em))
+          }) || (l.assigned_to ? allSalesReps.find(r => r.id === l.assigned_to) : null)
+
+          if (!matchedRep) return
+
+          let cat = 'calls'
+          const fType = (f.type || f.stage || '').toLowerCase()
+          if (fType.includes('dnp') || fType.includes('not picked')) cat = 'dnp'
+          else if (fType.includes('visit')) cat = 'site_visits'
+          else if (fType.includes('meeting')) cat = 'meetings'
+          else if (fType.includes('whatsapp')) cat = 'whatsapp'
+
+          if (repActionCounts[matchedRep.id]) {
+            const dateKey = fDate.toISOString().slice(0, 13)
+            const dedupKey = `${l.id}_${cat}_${dateKey}`
+            if (!seenActionKeys.has(dedupKey)) {
+              seenActionKeys.add(dedupKey)
+              repActionCounts[matchedRep.id][cat]++
+              repActionLeadIds[matchedRep.id][cat].add(l.id)
+            }
+          }
+        })
+      }
     })
 
     const actionAttemptRows = rows.map(row => {
