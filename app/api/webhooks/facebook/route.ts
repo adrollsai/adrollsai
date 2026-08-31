@@ -2531,14 +2531,23 @@ IMPORTANT RULES:
             continue;
           }
 
-          // Also check by phone number (both raw and normalized last 10 digits) to prevent duplicate leads
+          // Fetch all workspace team IDs for organization-wide deduplication
+          const { data: workspaceMembers } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .or(`parent_id.eq.${profile.id},agency_id.eq.${profile.id},id.eq.${profile.id}`);
+          const workspaceTeamIds = Array.from(new Set((workspaceMembers || []).map(p => p.id)));
+          if (workspaceTeamIds.length === 0) workspaceTeamIds.push(profile.id);
+
+          // Also check by phone number (both raw and normalized last 10 digits) across workspace
           const cleanPhoneDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
           if (cleanPhoneDigits && cleanPhoneDigits.length >= 7) {
             const { data: existingByPhone } = await supabaseAdmin
               .from('leads')
               .select('*')
-              .eq('user_id', profile.id)
-              .or(`phone.eq.${phone},phone.ilike.%${cleanPhoneDigits}`)
+              .in('user_id', workspaceTeamIds)
+              .ilike('phone', `%${cleanPhoneDigits}%`)
+              .order('created_at', { ascending: false })
               .limit(1);
 
             if (existingByPhone && existingByPhone.length > 0) {
@@ -2548,7 +2557,7 @@ IMPORTANT RULES:
 
               // Always count as reopened — every repeat submission increments the count
               const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
-              const reopenedCount = (cf.reopened_count || 0) + 1;
+              const reopenedCount = (existingLead.reopened_count || cf.reopened_count || 0) + 1;
 
               // Track sources for audit (append even if same source)
               const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
@@ -2562,15 +2571,30 @@ IMPORTANT RULES:
                 last_reopened_source: currentSourceId
               };
 
+              const updatePayloadObj: Record<string, any> = {
+                custom_fields: cf,
+                reopened_count: reopenedCount
+              };
+              if (leadgen_id && !existingLead.facebook_lead_id) {
+                updatePayloadObj.facebook_lead_id = leadgen_id;
+              }
+              if (adCampaignString && !existingLead.ad_name) {
+                updatePayloadObj.ad_name = adCampaignString;
+              }
+              if (formName && !existingLead.form_name) {
+                updatePayloadObj.form_name = formName;
+              }
+
               await supabaseAdmin
                 .from('leads')
-                .update({ custom_fields: cf })
+                .update(updatePayloadObj)
                 .eq('id', existingLead.id);
 
-              const reopenDesc = `The lead was reopened from Facebook\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${currentSourceId}\nReopen Count : ${reopenedCount}\nLead Status : ${existingLead.pipeline_stage || 'New'}`;
+              const reopenDesc = `The lead was reopened from Facebook Ads\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${currentSourceId}\nReopen Count : ${reopenedCount}\nCurrent Stage : ${existingLead.pipeline_stage || 'New'}`;
 
               await supabaseAdmin.from('lead_history').insert({
                 lead_id: existingLead.id,
+                user_id: existingLead.assigned_to || existingLead.user_id,
                 action_type: 'REOPENED',
                 performed_by: 'System / Facebook',
                 actor_name: 'Facebook Ads',

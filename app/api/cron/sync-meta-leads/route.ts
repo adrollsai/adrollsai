@@ -340,14 +340,16 @@ async function handleSync(request: Request) {
                 assignedAgentId = await getNextRoundRobinAgent(supabaseAdmin, teamAgentIds);
               }
 
-              // Check Duplicate Phone Number to Reopen Existing Lead
+              // Check Duplicate Phone Number across entire workspace to Reopen Existing Lead
+              const workspaceTeamIds = [profile.id, ...(teamAgentIds || [])];
               const cleanPhoneDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
               if (cleanPhoneDigits && cleanPhoneDigits.length >= 7) {
                 const { data: existingByPhone } = await supabaseAdmin
                   .from('leads')
-                  .select('id, name, email, pipeline_stage, custom_fields, reopened_count')
-                  .eq('user_id', profile.id)
-                  .or(`phone.eq.${phone},phone.ilike.%${cleanPhoneDigits}`)
+                  .select('*')
+                  .in('user_id', workspaceTeamIds)
+                  .ilike('phone', `%${cleanPhoneDigits}%`)
+                  .order('created_at', { ascending: false })
                   .limit(1);
 
                 if (existingByPhone && existingByPhone.length > 0) {
@@ -355,17 +357,41 @@ async function handleSync(request: Request) {
                   let cf = existingLead.custom_fields || {};
                   if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
                   const reopenedCount = (existingLead.reopened_count || cf.reopened_count || 0) + 1;
-                  cf.reopened_count = reopenedCount;
-                  cf.last_reopened_at = new Date().toISOString();
+                  const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
+                  const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
+                  const updatedSources = [...previousSources, currentSourceId];
+
+                  cf = {
+                    ...cf,
+                    reopened_count: reopenedCount,
+                    reopened_sources: updatedSources,
+                    last_reopened_at: new Date().toISOString(),
+                    last_reopened_source: currentSourceId
+                  };
+
+                  const updateLeadData: Record<string, any> = {
+                    custom_fields: cf,
+                    reopened_count: reopenedCount
+                  };
+                  if (leadgenId && !existingLead.facebook_lead_id) {
+                    updateLeadData.facebook_lead_id = leadgenId;
+                  }
+                  if (adCampaignString && !existingLead.ad_name) {
+                    updateLeadData.ad_name = adCampaignString;
+                  }
+                  if (formName && !existingLead.form_name) {
+                    updateLeadData.form_name = formName;
+                  }
 
                   await supabaseAdmin
                     .from('leads')
-                    .update({ custom_fields: cf })
+                    .update(updateLeadData)
                     .eq('id', existingLead.id);
 
                   const reopenDesc = `The lead was reopened from Meta Ads Sync\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nSource : Facebook Ads\nDetails : ${adCampaignString || formName}`;
                   await supabaseAdmin.from('lead_history').insert({
                     lead_id: existingLead.id,
+                    user_id: existingLead.assigned_to || existingLead.user_id,
                     action_type: 'REOPENED',
                     performed_by: 'System / Meta Sync Cron',
                     actor_name: 'Meta Ads Sync',

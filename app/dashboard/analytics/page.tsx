@@ -235,6 +235,8 @@ export default function AnalyticsPage() {
   const [drilldownSort, setDrilldownSort] = useState<'next_action_asc' | 'next_action_desc' | 'last_attempt_desc' | 'last_attempt_asc' | 'created_desc' | 'created_asc' | 'name_asc'>('next_action_asc')
   const [drilldownIsFullScreen, setDrilldownIsFullScreen] = useState(false)
   const [drilldownStageFilter, setDrilldownStageFilter] = useState<string>('all')
+  const [drilldownPage, setDrilldownPage] = useState<number>(1)
+  const [drilldownPageSize, setDrilldownPageSize] = useState<number>(25)
   const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string } | null>(null)
 
   // Stage counts for active drilldown modal
@@ -511,18 +513,176 @@ export default function AnalyticsPage() {
     return []
   }, [team, leads, profile])
 
-  // Filter leads based on selectedAgentId for dashboard cards
+  // --- DATE RANGE CUTOFF HELPER ---
+  const dateCutoffs = useMemo(() => {
+    const userTz = profile?.timezone || 'Asia/Kolkata'
+
+    const getZonedNowParts = (tz: string) => {
+      try {
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: 'numeric',
+          second: 'numeric',
+          hour12: false
+        })
+        const parts = formatter.formatToParts(new Date())
+        const map: Record<string, number> = {}
+        parts.forEach(p => { if (p.type !== 'literal') map[p.type] = parseInt(p.value, 10) })
+        return {
+          year: map.year || new Date().getFullYear(),
+          month: (map.month || (new Date().getMonth() + 1)) - 1,
+          day: map.day || new Date().getDate(),
+          hour: map.hour === 24 ? 0 : (map.hour || 0),
+          minute: map.minute || 0,
+          second: map.second || 0
+        }
+      } catch (e) {
+        const d = new Date()
+        return {
+          year: d.getFullYear(),
+          month: d.getMonth(),
+          day: d.getDate(),
+          hour: d.getHours(),
+          minute: d.getMinutes(),
+          second: d.getSeconds()
+        }
+      }
+    }
+
+    const getUtcDateForZonedMidnight = (year: number, month: number, day: number, tz: string, isEnd: boolean = false) => {
+      try {
+        const h = isEnd ? 23 : 0
+        const m = isEnd ? 59 : 0
+        const s = isEnd ? 59 : 0
+        const ms = isEnd ? 999 : 0
+
+        const d = new Date(Date.UTC(year, month, day, h, m, s, ms))
+        const invFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: 'numeric',
+          second: 'numeric',
+          hour12: false
+        })
+        const targetParts = invFormatter.formatToParts(d)
+        const zMap: Record<string, number> = {}
+        targetParts.forEach(p => { if (p.type !== 'literal') zMap[p.type] = parseInt(p.value, 10) })
+        const zHour = zMap.hour === 24 ? 0 : (zMap.hour || 0)
+        const zDate = Date.UTC(zMap.year || year, (zMap.month || (month + 1)) - 1, zMap.day || day, zHour, zMap.minute || 0, zMap.second || 0)
+        const diff = zDate - d.getTime()
+        return new Date(d.getTime() - diff)
+      } catch (e) {
+        return new Date(year, month, day, isEnd ? 23 : 0, isEnd ? 59 : 0, isEnd ? 59 : 0, isEnd ? 999 : 0)
+      }
+    }
+
+    const zParts = getZonedNowParts(userTz)
+    let startCutoff: Date | null = null
+    let endCutoff: Date | null = null
+
+    if (customDate) {
+      const [cy, cm, cd] = customDate.split('-').map(Number)
+      if (cy && cm && cd) {
+        startCutoff = getUtcDateForZonedMidnight(cy, cm - 1, cd, userTz, false)
+        endCutoff = getUtcDateForZonedMidnight(cy, cm - 1, cd, userTz, true)
+      }
+    } else if (startDate) {
+      const [sy, sm, sd] = startDate.split('-').map(Number)
+      startCutoff = (sy && sm && sd) ? getUtcDateForZonedMidnight(sy, sm - 1, sd, userTz, false) : new Date(startDate)
+      if (endDate) {
+        const [ey, em, ed] = endDate.split('-').map(Number)
+        endCutoff = (ey && em && ed) ? getUtcDateForZonedMidnight(ey, em - 1, ed, userTz, true) : new Date(endDate)
+      }
+    } else {
+      switch (duration) {
+        case 'today':
+          startCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
+          break
+        case '7d':
+          const p7 = getZonedNowParts(userTz)
+          startCutoff = getUtcDateForZonedMidnight(p7.year, p7.month, p7.day - 6, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
+          break
+        case '30d':
+          const p30 = getZonedNowParts(userTz)
+          startCutoff = getUtcDateForZonedMidnight(p30.year, p30.month, p30.day - 29, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
+          break
+        case 'this_month':
+          startCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, 1, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
+          break
+        case 'last_month':
+          const lastMonthIndex = zParts.month === 0 ? 11 : zParts.month - 1
+          const lastMonthYear = zParts.month === 0 ? zParts.year - 1 : zParts.year
+          const lastDayOfPrevMonth = new Date(lastMonthYear, lastMonthIndex + 1, 0).getDate()
+          startCutoff = getUtcDateForZonedMidnight(lastMonthYear, lastMonthIndex, 1, userTz, false)
+          endCutoff = getUtcDateForZonedMidnight(lastMonthYear, lastMonthIndex, lastDayOfPrevMonth, userTz, true)
+          break
+        case 'all':
+        default:
+          startCutoff = null
+          endCutoff = null
+          break
+      }
+    }
+
+    const isDateInRange = (rawDate?: any) => {
+      if (!startCutoff && !endCutoff) return true
+      if (!rawDate) return false
+      const d = new Date(rawDate)
+      if (isNaN(d.getTime())) return false
+      if (startCutoff && d < startCutoff) return false
+      if (endCutoff && d > endCutoff) return false
+      return true
+    }
+
+    return { startCutoff, endCutoff, isDateInRange }
+  }, [duration, customDate, startDate, endDate, profile?.timezone])
+
+  // Filter leads based on selectedAgentId AND selected date range
   const filteredLeads = useMemo(() => {
-    if (!selectedAgentId) return leads
-    if (selectedAgentId === 'unassigned') return leads.filter(l => !l.assigned_to)
-    return leads.filter(l => l.assigned_to === selectedAgentId)
-  }, [leads, selectedAgentId])
+    let list = leads
+    if (selectedAgentId) {
+      if (selectedAgentId === 'unassigned') list = list.filter(l => !l.assigned_to)
+      else list = list.filter(l => l.assigned_to === selectedAgentId || l.user_id === selectedAgentId)
+    }
+
+    if (dateCutoffs.startCutoff || dateCutoffs.endCutoff) {
+      list = list.filter(l => {
+        let cf = l.custom_fields
+        if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+        
+        return (
+          dateCutoffs.isDateInRange(l.created_at) ||
+          dateCutoffs.isDateInRange(l.updated_at) ||
+          dateCutoffs.isDateInRange(cf?.last_followup_at) ||
+          dateCutoffs.isDateInRange(cf?.last_action_date) ||
+          dateCutoffs.isDateInRange(l.last_call_at)
+        )
+      })
+    }
+
+    return list
+  }, [leads, selectedAgentId, dateCutoffs])
 
   const configuredStages = useMemo(() => extractStagesFromProfile(profile), [profile])
 
   // --- STATS PRE-COMPUTATIONS ---
   const stats = useMemo(() => {
-    const totalLeads = (!selectedAgentId && duration === 'all' && totalServerCount > filteredLeads.length) ? totalServerCount : filteredLeads.length
+    const isFilteredByDate = !!(dateCutoffs.startCutoff || dateCutoffs.endCutoff)
+    const totalLeads = (!selectedAgentId && !isFilteredByDate && duration === 'all' && totalServerCount > filteredLeads.length)
+      ? totalServerCount 
+      : filteredLeads.length
+
     const wonLeads = filteredLeads.filter(l => l.pipeline_stage === 'Won' || l.pipeline_stage === 'Closed').length
     const lostLeads = filteredLeads.filter(l => l.pipeline_stage === 'Lost' || l.pipeline_stage === 'Unqualified').length
     const inProgress = totalLeads - wonLeads - lostLeads
@@ -546,7 +706,7 @@ export default function AnalyticsPage() {
     const phoneMap: Record<string, any[]> = {}
     filteredLeads.forEach(l => {
       const p = l.phone ? l.phone.replace(/\D/g, '').slice(-10) : ''
-      if (p) {
+      if (p && p.length >= 7) {
         if (!phoneMap[p]) phoneMap[p] = []
         phoneMap[p].push(l)
       }
@@ -574,7 +734,7 @@ export default function AnalyticsPage() {
       notInterestedLeadsList,
       recentLeadsList
     }
-  }, [filteredLeads, configuredStages, selectedAgentId, duration, totalServerCount])
+  }, [filteredLeads, configuredStages, selectedAgentId, duration, totalServerCount, dateCutoffs])
 
   // --- EMPLOYEE-WISE LEAD MANAGER MATRIX (WorkVeu Screenshot 2) ---
   const leadManagerMatrix = useMemo(() => {
@@ -599,7 +759,7 @@ export default function AnalyticsPage() {
     ]
 
     let rows = salesReps.map(rep => {
-      const repLeads = leads.filter(l => rep.id === 'unassigned' ? !l.assigned_to : l.assigned_to === rep.id)
+      const repLeads = filteredLeads.filter(l => rep.id === 'unassigned' ? !l.assigned_to : l.assigned_to === rep.id)
       
       const categoryLeads: Record<string, any[]> = {
         new: repLeads.filter(l => l.pipeline_stage === 'New Lead' || l.pipeline_stage === 'New' || l.status === 'New Lead' || l.status === 'New'),
@@ -661,7 +821,7 @@ export default function AnalyticsPage() {
     })
 
     return { rows, totals, stagesList }
-  }, [leads, allSalesReps, searchQuery, sortField, sortOrder])
+  }, [filteredLeads, allSalesReps, searchQuery, sortField, sortOrder])
 
   // --- EMPLOYEE-WISE DNP MANAGER MATRIX (WorkVeu Screenshot 1) ---
   const dnpManagerMatrix = useMemo(() => {
@@ -1073,136 +1233,7 @@ export default function AnalyticsPage() {
 
   // --- ACTION REPORT COMPUTATIONS (CRM Stages Matrix) ---
   const actionReportData = useMemo(() => {
-    const userTz = profile?.timezone || (typeof window !== 'undefined' ? localStorage.getItem('nobogent_user_timezone') : null) || 'Asia/Kolkata'
-
-    const getZonedNowParts = (tz: string) => {
-      try {
-        const fmt = new Intl.DateTimeFormat('en-CA', {
-          timeZone: tz,
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false
-        })
-        const parts = fmt.formatToParts(new Date())
-        const pMap: Record<string, number> = {}
-        parts.forEach(p => { if (p.type !== 'literal') pMap[p.type] = parseInt(p.value, 10) })
-        return {
-          year: pMap.year || new Date().getFullYear(),
-          month: (pMap.month || (new Date().getMonth() + 1)) - 1,
-          day: pMap.day || new Date().getDate()
-        }
-      } catch (e) {
-        const d = new Date()
-        return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() }
-      }
-    }
-
-    const getUtcDateForZonedMidnight = (year: number, month: number, day: number, tz: string, isEnd = false): Date => {
-      try {
-        const pad = (n: number) => String(n).padStart(2, '0')
-        const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`
-        const timeStr = isEnd ? '23:59:59.999' : '00:00:00.000'
-        const testIso = `${dateStr}T${timeStr}Z`
-        const d = new Date(testIso)
-        
-        const invFormatter = new Intl.DateTimeFormat('en-US', {
-          timeZone: tz,
-          year: 'numeric', month: 'numeric', day: 'numeric',
-          hour: 'numeric', minute: 'numeric', second: 'numeric',
-          hour12: false
-        })
-        
-        const targetParts = invFormatter.formatToParts(d)
-        const zMap: Record<string, number> = {}
-        targetParts.forEach(p => { if (p.type !== 'literal') zMap[p.type] = parseInt(p.value, 10) })
-        
-        const zHour = zMap.hour === 24 ? 0 : (zMap.hour || 0)
-        const zDate = Date.UTC(zMap.year || year, (zMap.month || (month + 1)) - 1, zMap.day || day, zHour, zMap.minute || 0, zMap.second || 0)
-        const diff = zDate - d.getTime()
-        
-        return new Date(d.getTime() - diff)
-      } catch (e) {
-        const fallback = new Date(year, month, day, isEnd ? 23 : 0, isEnd ? 59 : 0, isEnd ? 59 : 0, isEnd ? 999 : 0)
-        return fallback
-      }
-    }
-
-    const zParts = getZonedNowParts(userTz)
-    let startCutoff: Date | null = null
-    let endCutoff: Date | null = null
-
-    if (customDate) {
-      const [cy, cm, cd] = customDate.split('-').map(Number)
-      if (cy && cm && cd) {
-        startCutoff = getUtcDateForZonedMidnight(cy, cm - 1, cd, userTz, false)
-        endCutoff = getUtcDateForZonedMidnight(cy, cm - 1, cd, userTz, true)
-      } else {
-        startCutoff = new Date(customDate)
-        endCutoff = new Date(customDate)
-        endCutoff.setHours(23, 59, 59, 999)
-      }
-    } else if (startDate) {
-      const [sy, sm, sd] = startDate.split('-').map(Number)
-      startCutoff = (sy && sm && sd) ? getUtcDateForZonedMidnight(sy, sm - 1, sd, userTz, false) : new Date(startDate)
-      if (endDate) {
-        const [ey, em, ed] = endDate.split('-').map(Number)
-        endCutoff = (ey && em && ed) ? getUtcDateForZonedMidnight(ey, em - 1, ed, userTz, true) : new Date(endDate)
-      }
-    } else {
-      switch (duration) {
-        case 'today':
-          startCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, false)
-          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
-          break
-        case '7d':
-          const p7 = getZonedNowParts(userTz)
-          startCutoff = getUtcDateForZonedMidnight(p7.year, p7.month, p7.day - 7, userTz, false)
-          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
-          break
-        case '30d':
-          const p30 = getZonedNowParts(userTz)
-          startCutoff = getUtcDateForZonedMidnight(p30.year, p30.month, p30.day - 30, userTz, false)
-          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
-          break
-        case 'this_month':
-          startCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, 1, userTz, false)
-          endCutoff = getUtcDateForZonedMidnight(zParts.year, zParts.month, zParts.day, userTz, true)
-          break
-        case 'last_month':
-          const lastMonthIndex = zParts.month === 0 ? 11 : zParts.month - 1
-          const lastMonthYear = zParts.month === 0 ? zParts.year - 1 : zParts.year
-          const lastDayOfPrevMonth = new Date(lastMonthYear, lastMonthIndex + 1, 0).getDate()
-          startCutoff = getUtcDateForZonedMidnight(lastMonthYear, lastMonthIndex, 1, userTz, false)
-          endCutoff = getUtcDateForZonedMidnight(lastMonthYear, lastMonthIndex, lastDayOfPrevMonth, userTz, true)
-          break
-        case 'all':
-        default:
-          startCutoff = null
-          endCutoff = null
-          break
-      }
-    }
-
-    const parseItemDate = (item?: any) => {
-      if (!item) return null
-      const rawStr = typeof item === 'string' ? item : item?.created_at
-      if (!rawStr) return null
-      const d = new Date(rawStr)
-      if (isNaN(d.getTime())) return null
-      return d
-    }
-
-    const isDateInRange = (item?: any) => {
-      const d = parseItemDate(item)
-      if (!d) return false
-      if (startCutoff && d < startCutoff) return false
-      if (endCutoff && d > endCutoff) return false
-      return true
-    }
+    const { startCutoff, endCutoff, isDateInRange } = dateCutoffs
 
     const REPORT_STAGES = [
       { key: 'New Lead', label: 'New Lead', badge: 'bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white' },
@@ -1397,6 +1428,7 @@ export default function AnalyticsPage() {
       }
     }
     setDrilldownStageFilter('all')
+    setDrilldownPage(1)
     setDrilldownModal({
       isOpen: true,
       title,
@@ -3021,7 +3053,7 @@ export default function AnalyticsPage() {
                   className="p-2 rounded-xl bg-slate-200/60 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
                   title="Close"
                 >
-                  <X size={18} />
+                  <X size={16} />
                 </button>
               </div>
             </div>
@@ -3035,7 +3067,10 @@ export default function AnalyticsPage() {
                     type="text"
                     placeholder="Filter leads by name, phone, stage, notes..."
                     value={drilldownModal.searchFilter}
-                    onChange={(e) => setDrilldownModal(prev => ({ ...prev, searchFilter: e.target.value }))}
+                    onChange={(e) => {
+                      setDrilldownPage(1)
+                      setDrilldownModal(prev => ({ ...prev, searchFilter: e.target.value }))
+                    }}
                     className="w-full bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 rounded-xl pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
@@ -3046,7 +3081,10 @@ export default function AnalyticsPage() {
                     <ArrowUpDown size={13} className="text-slate-500 shrink-0" />
                     <select
                       value={drilldownSort}
-                      onChange={(e) => setDrilldownSort(e.target.value as any)}
+                      onChange={(e) => {
+                        setDrilldownPage(1)
+                        setDrilldownSort(e.target.value as any)
+                      }}
                       className="bg-transparent border-none text-slate-800 text-xs font-black focus:ring-0 cursor-pointer outline-none pr-1"
                       title="Sort Leads"
                     >
@@ -3057,6 +3095,25 @@ export default function AnalyticsPage() {
                       <option value="created_desc">✨ Created Date (Newest First)</option>
                       <option value="created_asc">✨ Created Date (Oldest First)</option>
                       <option value="name_asc">🔤 Name (A-Z)</option>
+                    </select>
+                  </div>
+
+                  {/* Page Size Selector */}
+                  <div className="flex items-center gap-1 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200 text-xs font-bold shrink-0">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">Show:</span>
+                    <select
+                      value={drilldownPageSize}
+                      onChange={(e) => {
+                        setDrilldownPageSize(Number(e.target.value))
+                        setDrilldownPage(1)
+                      }}
+                      className="bg-transparent border-none text-blue-700 text-xs font-black focus:ring-0 cursor-pointer outline-none"
+                      title="Rows per page"
+                    >
+                      <option value={25}>25 / page</option>
+                      <option value={50}>50 / page</option>
+                      <option value={100}>100 / page</option>
+                      <option value={200}>200 / page</option>
                     </select>
                   </div>
 
@@ -3082,7 +3139,10 @@ export default function AnalyticsPage() {
               {modalStages.length > 1 && (
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar pt-1 border-t border-slate-100">
                   <button
-                    onClick={() => setDrilldownStageFilter('all')}
+                    onClick={() => {
+                      setDrilldownStageFilter('all')
+                      setDrilldownPage(1)
+                    }}
                     className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all shrink-0 cursor-pointer ${
                       drilldownStageFilter === 'all'
                         ? 'bg-slate-900 text-white shadow-xs'
@@ -3094,7 +3154,10 @@ export default function AnalyticsPage() {
                   {modalStages.map(st => (
                     <button
                       key={st.name}
-                      onClick={() => setDrilldownStageFilter(st.name)}
+                      onClick={() => {
+                        setDrilldownStageFilter(st.name)
+                        setDrilldownPage(1)
+                      }}
                       className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all shrink-0 cursor-pointer ${
                         drilldownStageFilter.toLowerCase() === st.name.toLowerCase()
                           ? 'bg-blue-600 text-white shadow-xs'
@@ -3109,145 +3172,383 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Modal Leads List */}
-            <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-2">
-              {(() => {
-                const filtered = drilldownModal.leads.filter(l => {
-                  if (drilldownStageFilter !== 'all') {
-                    const st = (l.pipeline_stage || l.status || 'New Lead').toLowerCase()
-                    if (st !== drilldownStageFilter.toLowerCase()) return false
-                  }
-                  if (!drilldownModal.searchFilter.trim()) return true
-                  const q = drilldownModal.searchFilter.toLowerCase().trim()
-                  return (
-                    (l.name || '').toLowerCase().includes(q) ||
-                    (l.phone || '').includes(q) ||
-                    (l.pipeline_stage || '').toLowerCase().includes(q) ||
-                    (l.status || '').toLowerCase().includes(q)
-                  )
-                })
-
-                const sortedFiltered = [...filtered].sort((a, b) => {
-                  if (drilldownSort === 'next_action_asc') {
-                    const tA = getLeadNextActionTime(a) || Infinity
-                    const tB = getLeadNextActionTime(b) || Infinity
-                    return tA - tB
-                  }
-                  if (drilldownSort === 'next_action_desc') {
-                    const tA = getLeadNextActionTime(a) || 0
-                    const tB = getLeadNextActionTime(b) || 0
-                    return tB - tA
-                  }
-                  if (drilldownSort === 'last_attempt_desc') {
-                    const tA = getLeadLastAttemptTime(a)
-                    const tB = getLeadLastAttemptTime(b)
-                    return tB - tA
-                  }
-                  if (drilldownSort === 'last_attempt_asc') {
-                    const tA = getLeadLastAttemptTime(a) || Infinity
-                    const tB = getLeadLastAttemptTime(b) || Infinity
-                    return tA - tB
-                  }
-                  if (drilldownSort === 'created_desc') {
-                    const tA = new Date(a.created_at || 0).getTime()
-                    const tB = new Date(b.created_at || 0).getTime()
-                    return tB - tA
-                  }
-                  if (drilldownSort === 'created_asc') {
-                    const tA = new Date(a.created_at || 0).getTime()
-                    const tB = new Date(b.created_at || 0).getTime()
-                    return tA - tB
-                  }
-                  if (drilldownSort === 'name_asc') {
-                    return (a.name || '').localeCompare(b.name || '')
-                  }
-                  return 0
-                })
-
-                if (sortedFiltered.length === 0) {
-                  return (
-                    <div className="text-center py-12 text-slate-400">
-                      <Users size={32} className="mx-auto mb-2 opacity-50" />
-                      <p className="text-xs font-extrabold">No active leads found for this view.</p>
-                    </div>
-                  )
+            {(() => {
+              const filtered = drilldownModal.leads.filter(l => {
+                if (drilldownStageFilter !== 'all') {
+                  const st = (l.pipeline_stage || l.status || 'New Lead').toLowerCase()
+                  if (st !== drilldownStageFilter.toLowerCase()) return false
                 }
+                if (!drilldownModal.searchFilter.trim()) return true
+                const q = drilldownModal.searchFilter.toLowerCase().trim()
+                return (
+                  (l.name || '').toLowerCase().includes(q) ||
+                  (l.phone || '').includes(q) ||
+                  (l.pipeline_stage || '').toLowerCase().includes(q) ||
+                  (l.status || '').toLowerCase().includes(q)
+                )
+              })
 
-                if (drilldownViewMode === 'list') {
-                  // COMPACT LIST VIEW WITH LAST REMARKS GLIMPSE
-                  return (
-                    <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-xs">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-wider select-none">
-                            <th 
-                              className="py-3 px-3 cursor-pointer hover:bg-slate-200/70 transition-colors"
-                              onClick={() => setDrilldownSort(prev => prev === 'name_asc' ? 'created_desc' : 'name_asc')}
-                              title="Click to sort by Name"
-                            >
-                              <div className="flex items-center gap-1">
-                                <span>Lead & Contact</span>
-                                {drilldownSort === 'name_asc' && <span className="text-blue-600 font-extrabold">▲</span>}
-                              </div>
-                            </th>
-                            <th className="py-3 px-3">Stage / Rep</th>
-                            <th 
-                              className="py-3 px-3 min-w-[220px] cursor-pointer hover:bg-slate-200/70 transition-colors"
-                              onClick={() => setDrilldownSort(prev => prev === 'last_attempt_desc' ? 'last_attempt_asc' : 'last_attempt_desc')}
-                              title="Click to sort by Last Attempt / Remark Date"
-                            >
-                              <div className="flex items-center gap-1">
-                                <span>Last Remark / Notes</span>
-                                {drilldownSort === 'last_attempt_desc' && <span className="text-blue-600 font-extrabold">▼</span>}
-                                {drilldownSort === 'last_attempt_asc' && <span className="text-blue-600 font-extrabold">▲</span>}
-                              </div>
-                            </th>
-                            <th 
-                              className="py-3 px-3 cursor-pointer hover:bg-slate-200/70 transition-colors"
-                              onClick={() => setDrilldownSort(prev => prev === 'next_action_asc' ? 'next_action_desc' : 'next_action_asc')}
-                              title="Click to sort by Next Action Date"
-                            >
-                              <div className="flex items-center gap-1">
-                                <span>Next Action</span>
-                                {drilldownSort === 'next_action_asc' && <span className="text-blue-600 font-extrabold">▲</span>}
-                                {drilldownSort === 'next_action_desc' && <span className="text-blue-600 font-extrabold">▼</span>}
-                              </div>
-                            </th>
-                            <th className="py-3 px-3 text-right">Quick Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs">
-                          {sortedFiltered.map((lead: any) => {
-                            const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
-                            let cf: any = lead.custom_fields
-                            if (typeof cf === 'string') {
-                              try { cf = JSON.parse(cf) } catch (e) {}
-                            }
+              const sortedFiltered = [...filtered].sort((a, b) => {
+                if (drilldownSort === 'next_action_asc') {
+                  const tA = getLeadNextActionTime(a) || Infinity
+                  const tB = getLeadNextActionTime(b) || Infinity
+                  return tA - tB
+                }
+                if (drilldownSort === 'next_action_desc') {
+                  const tA = getLeadNextActionTime(a) || 0
+                  const tB = getLeadNextActionTime(b) || 0
+                  return tB - tA
+                }
+                if (drilldownSort === 'last_attempt_desc') {
+                  const tA = getLeadLastAttemptTime(a)
+                  const tB = getLeadLastAttemptTime(b)
+                  return tB - tA
+                }
+                if (drilldownSort === 'last_attempt_asc') {
+                  const tA = getLeadLastAttemptTime(a) || Infinity
+                  const tB = getLeadLastAttemptTime(b) || Infinity
+                  return tA - tB
+                }
+                if (drilldownSort === 'created_desc') {
+                  const tA = new Date(a.created_at || 0).getTime()
+                  const tB = new Date(b.created_at || 0).getTime()
+                  return tB - tA
+                }
+                if (drilldownSort === 'created_asc') {
+                  const tA = new Date(a.created_at || 0).getTime()
+                  const tB = new Date(b.created_at || 0).getTime()
+                  return tA - tB
+                }
+                if (drilldownSort === 'name_asc') {
+                  return (a.name || '').localeCompare(b.name || '')
+                }
+                return 0
+              })
 
-                            // Robust Remark and Timestamp extraction
-                            let rawRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim()
-                            if (!rawRemark && lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
-                              let cleaned = lead.notes.trim()
-                              if (cleaned.includes('[Last Remarks]:')) {
-                                rawRemark = cleaned.split('[Last Remarks]:')[1]?.split('\n\n[')[0]?.trim() || cleaned
-                              } else {
-                                rawRemark = cleaned.split(/\n\n+/)[0]?.trim() || cleaned
+              const totalFilteredCount = sortedFiltered.length
+              const totalPages = Math.max(1, Math.ceil(totalFilteredCount / drilldownPageSize))
+              const safePage = Math.min(Math.max(1, drilldownPage), totalPages)
+              const startIndex = (safePage - 1) * drilldownPageSize
+              const endIndex = Math.min(startIndex + drilldownPageSize, totalFilteredCount)
+              const paginatedLeads = sortedFiltered.slice(startIndex, endIndex)
+
+              // Build smart page numbers array
+              const getPageNumbers = () => {
+                if (totalPages <= 7) {
+                  return Array.from({ length: totalPages }, (_, i) => i + 1)
+                }
+                if (safePage <= 4) {
+                  return [1, 2, 3, 4, 5, '...', totalPages]
+                }
+                if (safePage >= totalPages - 3) {
+                  return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+                }
+                return [1, '...', safePage - 1, safePage, safePage + 1, '...', totalPages]
+              }
+
+              return (
+                <>
+                  {/* Top Pagination Summary Bar */}
+                  <div className="px-4 sm:px-6 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-600 shrink-0">
+                    <div>
+                      {totalFilteredCount > 0 ? (
+                        <span>Showing <strong className="text-slate-900">{startIndex + 1}–{endIndex}</strong> of <strong className="text-blue-600">{totalFilteredCount.toLocaleString()}</strong> leads</span>
+                      ) : (
+                        <span>0 leads found</span>
+                      )}
+                    </div>
+                    {totalPages > 1 && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setDrilldownPage(prev => Math.max(1, prev - 1))}
+                          disabled={safePage === 1}
+                          className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-slate-700 font-extrabold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                          ◀ Prev
+                        </button>
+                        <span className="px-2 font-black text-slate-800">
+                          {safePage} / {totalPages}
+                        </span>
+                        <button
+                          onClick={() => setDrilldownPage(prev => Math.min(totalPages, prev + 1))}
+                          disabled={safePage === totalPages}
+                          className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-slate-700 font-extrabold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                          Next ▶
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Modal Leads List Body */}
+                  <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-2">
+                    {totalFilteredCount === 0 ? (
+                      <div className="text-center py-12 text-slate-400">
+                        <Users size={32} className="mx-auto mb-2 opacity-50" />
+                        <p className="text-xs font-extrabold">No active leads found for this view.</p>
+                      </div>
+                    ) : drilldownViewMode === 'list' ? (
+                      /* COMPACT LIST VIEW WITH LAST REMARKS GLIMPSE */
+                      <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-white shadow-xs">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-wider select-none">
+                              <th 
+                                className="py-3 px-3 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                                onClick={() => setDrilldownSort(prev => prev === 'name_asc' ? 'created_desc' : 'name_asc')}
+                                title="Click to sort by Name"
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span>Lead & Contact</span>
+                                  {drilldownSort === 'name_asc' && <span className="text-blue-600 font-extrabold">▲</span>}
+                                </div>
+                              </th>
+                              <th className="py-3 px-3">Stage / Rep</th>
+                              <th 
+                                className="py-3 px-3 min-w-[220px] cursor-pointer hover:bg-slate-200/70 transition-colors"
+                                onClick={() => setDrilldownSort(prev => prev === 'last_attempt_desc' ? 'last_attempt_asc' : 'last_attempt_desc')}
+                                title="Click to sort by Last Attempt / Remark Date"
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span>Last Remark / Notes</span>
+                                  {drilldownSort === 'last_attempt_desc' && <span className="text-blue-600 font-extrabold">▼</span>}
+                                  {drilldownSort === 'last_attempt_asc' && <span className="text-blue-600 font-extrabold">▲</span>}
+                                </div>
+                              </th>
+                              <th 
+                                className="py-3 px-3 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                                onClick={() => setDrilldownSort(prev => prev === 'next_action_asc' ? 'next_action_desc' : 'next_action_asc')}
+                                title="Click to sort by Next Action Date"
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span>Next Action</span>
+                                  {drilldownSort === 'next_action_asc' && <span className="text-blue-600 font-extrabold">▲</span>}
+                                  {drilldownSort === 'next_action_desc' && <span className="text-blue-600 font-extrabold">▼</span>}
+                                </div>
+                              </th>
+                              <th className="py-3 px-3 text-right">Quick Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-xs">
+                            {paginatedLeads.map((lead: any) => {
+                              const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
+                              let cf: any = lead.custom_fields
+                              if (typeof cf === 'string') {
+                                try { cf = JSON.parse(cf) } catch (e) {}
                               }
-                            }
-                            if (!rawRemark && cf?.opening_comments) rawRemark = cf.opening_comments.trim()
-                            if (!rawRemark && lead.summary) rawRemark = lead.summary.trim()
 
-                            let lastRemarkTime: string | null = null
-                            let cleanRemark = rawRemark
+                              // Robust Remark and Timestamp extraction
+                              let rawRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim()
+                              if (!rawRemark && lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
+                                let cleaned = lead.notes.trim()
+                                if (cleaned.includes('[Last Remarks]:')) {
+                                  rawRemark = cleaned.split('[Last Remarks]:')[1]?.split('\n\n[')[0]?.trim() || cleaned
+                                } else {
+                                  rawRemark = cleaned.split(/\n\n+/)[0]?.trim() || cleaned
+                                }
+                              }
+                              if (!rawRemark && cf?.opening_comments) rawRemark = cf.opening_comments.trim()
+                              if (!rawRemark && lead.summary) rawRemark = lead.summary.trim()
 
-                            if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
-                            else if (cf?.last_action_date) lastRemarkTime = cf.last_action_date
-                            else if (lead.last_call_at) lastRemarkTime = lead.last_call_at
+                              let lastRemarkTime: string | null = null
+                              let cleanRemark = rawRemark
 
-                            // If timestamp not in explicit ISO fields, parse from remark string (e.g. "Call on 07/08/2026 04:25 pm")
-                            if (rawRemark) {
-                              const match = rawRemark.match(/(?:Call on\s+|Logged on\s+|\[)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
-                              if (match) {
-                                const [full, d, m, y, h, min, ampm] = match
+                              if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
+                              else if (cf?.last_action_date) lastRemarkTime = cf.last_action_date
+                              else if (lead.last_call_at) lastRemarkTime = lead.last_call_at
+
+                              if (rawRemark) {
+                                const match = rawRemark.match(/(?:Call on\s+|Logged on\s+|\[)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
+                                if (match) {
+                                  const [full, d, m, y, h, min, ampm] = match
+                                  let hour = h ? parseInt(h, 10) : 0
+                                  if (ampm) {
+                                    if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
+                                    if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
+                                  }
+                                  const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
+                                  if (!isNaN(parsed.getTime())) {
+                                    if (!lastRemarkTime) lastRemarkTime = parsed.toISOString()
+                                    const stripped = rawRemark.replace(/^(?:\[Last Remarks\]:\s*)?(?:Call on\s+)?\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*(?:\d{1,2}:\d{2}\s*[ap]m)?\s*/i, '').trim()
+                                    if (stripped) cleanRemark = stripped
+                                  }
+                                }
+                              }
+
+                              if (!lastRemarkTime && lead.updated_at && cleanRemark) lastRemarkTime = lead.updated_at
+                              if (!lastRemarkTime && lead.created_at && cleanRemark) lastRemarkTime = lead.created_at
+
+                              let formattedRemarkTime = ''
+                              if (lastRemarkTime) {
+                                try {
+                                  const rd = new Date(lastRemarkTime)
+                                  if (!isNaN(rd.getTime())) {
+                                    formattedRemarkTime = rd.toLocaleString('en-IN', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      hour12: true
+                                    })
+                                  }
+                                } catch (e) {}
+                              }
+                              const lastRemark = cleanRemark
+
+                              const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
+                              const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
+
+                              let nextActionFormatted = ''
+                              if (rawNextDate) {
+                                try {
+                                  const d = new Date(rawNextDate)
+                                  if (!isNaN(d.getTime())) {
+                                    nextActionFormatted = d.toLocaleString('en-IN', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      hour12: true
+                                    })
+                                  }
+                                } catch (e) {}
+                              }
+
+                              return (
+                                <tr key={lead.id} className="hover:bg-blue-50/40 transition-colors group">
+                                  <td className="py-2.5 px-3">
+                                    <div 
+                                      onClick={() => router.push(`/dashboard/crm/${lead.id}`)}
+                                      className="font-extrabold text-slate-900 text-xs hover:text-blue-600 cursor-pointer transition-colors"
+                                      title="Open Lead Details"
+                                    >
+                                      {lead.name || 'Unknown Prospect'}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
+                                      <span>📞 {lead.phone || 'No phone'}</span>
+                                    </div>
+                                  </td>
+
+                                  <td className="py-2.5 px-3">
+                                    <div className="flex flex-col gap-1 items-start">
+                                      <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-black text-[10px]">
+                                        {lead.pipeline_stage || lead.status || 'New'}
+                                      </span>
+                                      <span className="text-[10px] text-slate-500 font-bold truncate max-w-[110px]">
+                                        Rep: {assignedRep}
+                                      </span>
+                                    </div>
+                                  </td>
+
+                                  <td className="py-2.5 px-3">
+                                    {lastRemark ? (
+                                      <div className="bg-amber-50 border border-amber-200/80 p-2 rounded-xl text-[11px] text-amber-950 font-medium leading-tight max-w-[320px]">
+                                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                                          <span className="font-extrabold text-amber-800 text-[9px] uppercase tracking-wider">Last Remark</span>
+                                          {formattedRemarkTime && (
+                                            <span className="text-[10px] font-bold text-amber-700/90 flex items-center gap-0.5 bg-amber-100/60 px-1.5 py-0.2 rounded">
+                                              <Clock size={9} /> {formattedRemarkTime}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span className="line-clamp-2 italic">{lastRemark}</span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-400 text-[11px] italic">No remarks recorded</span>
+                                    )}
+                                  </td>
+
+                                  <td className="py-2.5 px-3">
+                                    {nextActionFormatted ? (
+                                      <div className="text-[11px] font-bold text-slate-800">
+                                        <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-black text-[10px] block mb-0.5 w-fit">
+                                          {nextActionType}
+                                        </span>
+                                        <span>{nextActionFormatted}</span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-400 text-[11px]">Pending</span>
+                                    )}
+                                  </td>
+
+                                  <td className="py-2.5 px-3 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        onClick={() => router.push(`/dashboard/crm/${lead.id}`)}
+                                        className="px-2.5 py-1 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-slate-700 hover:text-blue-700 rounded-lg text-[11px] font-black shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
+                                        title="Open Lead in Full Page View"
+                                      >
+                                        <ExternalLink size={12} className="text-blue-600" />
+                                        <span>Full View</span>
+                                      </button>
+
+                                      <button
+                                        onClick={() => setHistoryLead(lead)}
+                                        className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-[11px] font-black hover:bg-slate-100 shadow-xs flex items-center gap-1 cursor-pointer"
+                                        title="View History"
+                                      >
+                                        <History size={12} className="text-blue-600" />
+                                        <span>History</span>
+                                      </button>
+
+                                      <button
+                                        onClick={() => setFollowupLead(lead)}
+                                        className="px-2.5 py-1 bg-blue-600 text-white rounded-lg text-[11px] font-black hover:bg-blue-700 shadow-xs flex items-center gap-1 cursor-pointer"
+                                        title="Record Followup"
+                                      >
+                                        <RefreshCw size={12} />
+                                        <span>Followup</span>
+                                      </button>
+
+                                      <a
+                                        href={`https://wa.me/${(lead.phone || '').replace(/\D/g, '')}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                                        title="WhatsApp"
+                                      >
+                                        <MessageSquare size={13} />
+                                      </a>
+
+                                      <a
+                                        href={`tel:${lead.phone}`}
+                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                                        title="Call"
+                                      >
+                                        <Phone size={13} />
+                                      </a>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      /* CARD VIEW */
+                      paginatedLeads.map((lead: any) => {
+                        const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
+
+                        let cf: any = lead.custom_fields
+                        if (typeof cf === 'string') {
+                          try { cf = JSON.parse(cf) } catch (e) {}
+                        }
+
+                        let cleanRemark = ''
+                        let lastRemarkTime: string | null = null
+
+                        if (lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
+                          const topEntry = lead.notes.trim().split(/\n\n+/)[0]?.trim()
+                          if (topEntry) {
+                            if (topEntry.startsWith('[') && topEntry.includes(']:')) {
+                              const headerEndIdx = topEntry.indexOf(']:')
+                              const header = topEntry.slice(1, headerEndIdx)
+                              const body = topEntry.slice(headerEndIdx + 2).trim()
+
+                              const timeMatch = header.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
+                              if (timeMatch) {
+                                const [_, d, m, y, h, min, ampm] = timeMatch
                                 let hour = h ? parseInt(h, 10) : 0
                                 if (ampm) {
                                   if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
@@ -3255,395 +3556,264 @@ export default function AnalyticsPage() {
                                 }
                                 const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
                                 if (!isNaN(parsed.getTime())) {
-                                  if (!lastRemarkTime) lastRemarkTime = parsed.toISOString()
-                                  const stripped = rawRemark.replace(/^(?:\[Last Remarks\]:\s*)?(?:Call on\s+)?\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*(?:\d{1,2}:\d{2}\s*[ap]m)?\s*/i, '').trim()
-                                  if (stripped) cleanRemark = stripped
+                                  lastRemarkTime = parsed.toISOString()
                                 }
                               }
+
+                              let formattedBody = body
+                              if (formattedBody.startsWith('Stage:')) {
+                                const dotIdx = formattedBody.indexOf('.')
+                                if (dotIdx !== -1) formattedBody = formattedBody.slice(dotIdx + 1).trim()
+                              }
+                              if (formattedBody.startsWith('Status:')) {
+                                const dotIdx = formattedBody.indexOf('.')
+                                if (dotIdx !== -1) formattedBody = formattedBody.slice(dotIdx + 1).trim()
+                              }
+                              if (formattedBody.includes('Remarks:')) {
+                                const remIdx = formattedBody.indexOf('Remarks:')
+                                formattedBody = formattedBody.slice(remIdx + 8).trim()
+                              }
+
+                              cleanRemark = formattedBody || body
+                            } else {
+                              cleanRemark = topEntry
                             }
+                          }
+                        }
 
-                            if (!lastRemarkTime && lead.updated_at && cleanRemark) lastRemarkTime = lead.updated_at
-                            if (!lastRemarkTime && lead.created_at && cleanRemark) lastRemarkTime = lead.created_at
+                        if (!cleanRemark) {
+                          cleanRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || lead.summary || '').trim()
+                          if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
+                        }
 
-                            let formattedRemarkTime = ''
-                            if (lastRemarkTime) {
-                              try {
-                                const rd = new Date(lastRemarkTime)
-                                if (!isNaN(rd.getTime())) {
-                                  formattedRemarkTime = rd.toLocaleString('en-IN', {
-                                    day: '2-digit',
-                                    month: 'short',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                    hour12: true
-                                  })
-                                }
-                              } catch (e) {}
+                        if (!lastRemarkTime && cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
+                        if (!lastRemarkTime && cf?.last_action_date) lastRemarkTime = cf.last_action_date
+                        if (!lastRemarkTime && lead.last_call_at) lastRemarkTime = lead.last_call_at
+                        if (!lastRemarkTime && lead.updated_at && cleanRemark) lastRemarkTime = lead.updated_at
+                        if (!lastRemarkTime && lead.created_at && cleanRemark) lastRemarkTime = lead.created_at
+
+                        let formattedRemarkTime = ''
+                        if (lastRemarkTime) {
+                          try {
+                            const rd = new Date(lastRemarkTime)
+                            if (!isNaN(rd.getTime())) {
+                              formattedRemarkTime = rd.toLocaleString('en-IN', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true
+                              })
                             }
-                            const lastRemark = cleanRemark
+                          } catch (e) {}
+                        }
+                        const lastRemark = cleanRemark
 
-                            const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
-                            const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
+                        const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
+                        const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
+                        const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || '').trim()
 
-                            let nextActionFormatted = ''
-                            if (rawNextDate) {
-                              try {
-                                const d = new Date(rawNextDate)
-                                if (!isNaN(d.getTime())) {
-                                  nextActionFormatted = d.toLocaleString('en-IN', {
-                                    day: '2-digit',
-                                    month: 'short',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                    hour12: true
-                                  })
-                                }
-                              } catch (e) {}
+                        let nextActionFormatted = ''
+                        if (rawNextDate) {
+                          try {
+                            const d = new Date(rawNextDate)
+                            if (!isNaN(d.getTime())) {
+                              nextActionFormatted = d.toLocaleString('en-IN', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true
+                              })
                             }
+                          } catch (e) {}
+                        }
 
-                            return (
-                              <tr key={lead.id} className="hover:bg-blue-50/40 transition-colors group">
-                                <td className="py-2.5 px-3">
-                                  <div 
+                        return (
+                          <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200 rounded-2xl flex flex-col justify-between gap-3 hover:bg-blue-50/30 transition-colors">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 
                                     onClick={() => router.push(`/dashboard/crm/${lead.id}`)}
-                                    className="font-extrabold text-slate-900 text-xs hover:text-blue-600 cursor-pointer transition-colors"
+                                    className="font-extrabold text-sm text-slate-900 hover:text-blue-600 cursor-pointer transition-colors"
                                     title="Open Lead Details"
                                   >
                                     {lead.name || 'Unknown Prospect'}
-                                  </div>
-                                  <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
-                                    <span>📞 {lead.phone || 'No phone'}</span>
-                                  </div>
-                                </td>
-
-                                <td className="py-2.5 px-3">
-                                  <div className="flex flex-col gap-1 items-start">
-                                    <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-black text-[10px]">
-                                      {lead.pipeline_stage || lead.status || 'New'}
-                                    </span>
-                                    <span className="text-[10px] text-slate-500 font-bold truncate max-w-[110px]">
-                                      Rep: {assignedRep}
-                                    </span>
-                                  </div>
-                                </td>
-
-                                <td className="py-2.5 px-3">
-                                  {lastRemark ? (
-                                    <div className="bg-amber-50 border border-amber-200/80 p-2 rounded-xl text-[11px] text-amber-950 font-medium leading-tight max-w-[320px]">
-                                      <div className="flex items-center justify-between gap-1 mb-0.5">
-                                        <span className="font-extrabold text-amber-800 text-[9px] uppercase tracking-wider">Last Remark</span>
-                                        {formattedRemarkTime && (
-                                          <span className="text-[10px] font-bold text-amber-700/90 flex items-center gap-0.5 bg-amber-100/60 px-1.5 py-0.2 rounded">
-                                            <Clock size={9} /> {formattedRemarkTime}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <span className="line-clamp-2 italic">{lastRemark}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-400 text-[11px] italic">No remarks recorded</span>
-                                  )}
-                                </td>
-
-                                <td className="py-2.5 px-3">
-                                  {nextActionFormatted ? (
-                                    <div className="text-[11px] font-bold text-slate-800">
-                                      <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-black text-[10px] block mb-0.5 w-fit">
-                                        {nextActionType}
-                                      </span>
-                                      <span>{nextActionFormatted}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-400 text-[11px]">Pending</span>
-                                  )}
-                                </td>
-
-                                <td className="py-2.5 px-3 text-right">
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <button
-                                      onClick={() => router.push(`/dashboard/crm/${lead.id}`)}
-                                      className="px-2.5 py-1 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-slate-700 hover:text-blue-700 rounded-lg text-[11px] font-black shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
-                                      title="Open Lead in Full Page View"
-                                    >
-                                      <ExternalLink size={12} className="text-blue-600" />
-                                      <span>Full View</span>
-                                    </button>
-
-                                    <button
-                                      onClick={() => setHistoryLead(lead)}
-                                      className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-[11px] font-black hover:bg-slate-100 shadow-xs flex items-center gap-1 cursor-pointer"
-                                      title="View History"
-                                    >
-                                      <History size={12} className="text-blue-600" />
-                                      <span>History</span>
-                                    </button>
-
-                                    <button
-                                      onClick={() => setFollowupLead(lead)}
-                                      className="px-2.5 py-1 bg-blue-600 text-white rounded-lg text-[11px] font-black hover:bg-blue-700 shadow-xs flex items-center gap-1 cursor-pointer"
-                                      title="Record Followup"
-                                    >
-                                      <RefreshCw size={12} />
-                                      <span>Followup</span>
-                                    </button>
-
-                                    <a
-                                      href={`https://wa.me/${(lead.phone || '').replace(/\D/g, '')}`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                                      title="WhatsApp"
-                                    >
-                                      <MessageSquare size={13} />
-                                    </a>
-
-                                    <a
-                                      href={`tel:${lead.phone}`}
-                                      className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                                      title="Call"
-                                    >
-                                      <Phone size={13} />
-                                    </a>
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )
-                }
-
-                return sortedFiltered.map((lead: any) => {
-                  const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
-
-                  let cf: any = lead.custom_fields
-                  if (typeof cf === 'string') {
-                    try { cf = JSON.parse(cf) } catch (e) {}
-                  }
-
-                  let cleanRemark = ''
-                  let lastRemarkTime: string | null = null
-
-                  // 1. Prioritize real-time agent notes from lead.notes (top entry)
-                  if (lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
-                    const topEntry = lead.notes.trim().split(/\n\n+/)[0]?.trim()
-                    if (topEntry) {
-                      if (topEntry.startsWith('[') && topEntry.includes(']:')) {
-                        const headerEndIdx = topEntry.indexOf(']:')
-                        const header = topEntry.slice(1, headerEndIdx)
-                        const body = topEntry.slice(headerEndIdx + 2).trim()
-
-                        const timeMatch = header.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
-                        if (timeMatch) {
-                          const [_, d, m, y, h, min, ampm] = timeMatch
-                          let hour = h ? parseInt(h, 10) : 0
-                          if (ampm) {
-                            if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
-                            if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
-                          }
-                          const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
-                          if (!isNaN(parsed.getTime())) {
-                            lastRemarkTime = parsed.toISOString()
-                          }
-                        }
-
-                        let formattedBody = body
-                        if (formattedBody.startsWith('Stage:')) {
-                          const dotIdx = formattedBody.indexOf('.')
-                          if (dotIdx !== -1) formattedBody = formattedBody.slice(dotIdx + 1).trim()
-                        }
-                        if (formattedBody.startsWith('Status:')) {
-                          const dotIdx = formattedBody.indexOf('.')
-                          if (dotIdx !== -1) formattedBody = formattedBody.slice(dotIdx + 1).trim()
-                        }
-                        if (formattedBody.includes('Remarks:')) {
-                          const remIdx = formattedBody.indexOf('Remarks:')
-                          formattedBody = formattedBody.slice(remIdx + 8).trim()
-                        }
-
-                        cleanRemark = formattedBody || body
-                      } else {
-                        cleanRemark = topEntry
-                      }
-                    }
-                  }
-
-                  // 2. Fallback to custom_fields / static remark columns if no notes remark
-                  if (!cleanRemark) {
-                    cleanRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || lead.summary || '').trim()
-                    if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
-                  }
-
-                  if (!lastRemarkTime && cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
-                  if (!lastRemarkTime && cf?.last_action_date) lastRemarkTime = cf.last_action_date
-                  if (!lastRemarkTime && lead.last_call_at) lastRemarkTime = lead.last_call_at
-                  if (!lastRemarkTime && lead.updated_at && cleanRemark) lastRemarkTime = lead.updated_at
-                  if (!lastRemarkTime && lead.created_at && cleanRemark) lastRemarkTime = lead.created_at
-
-                  let formattedRemarkTime = ''
-                  if (lastRemarkTime) {
-                    try {
-                      const rd = new Date(lastRemarkTime)
-                      if (!isNaN(rd.getTime())) {
-                        formattedRemarkTime = rd.toLocaleString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true
-                        })
-                      }
-                    } catch (e) {}
-                  }
-                  const lastRemark = cleanRemark
-
-                  const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
-                  const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
-                  const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || '').trim()
-
-                  let nextActionFormatted = ''
-                  if (rawNextDate) {
-                    try {
-                      const d = new Date(rawNextDate)
-                      if (!isNaN(d.getTime())) {
-                        nextActionFormatted = d.toLocaleString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true
-                        })
-                      }
-                    } catch (e) {}
-                  }
-
-                  return (
-                    <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200 rounded-2xl flex flex-col justify-between gap-3 hover:bg-blue-50/30 transition-colors">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 
-                              onClick={() => router.push(`/dashboard/crm/${lead.id}`)}
-                              className="font-extrabold text-sm text-slate-900 hover:text-blue-600 cursor-pointer transition-colors"
-                              title="Open Lead Details"
-                            >
-                              {lead.name || 'Unknown Prospect'}
-                            </h4>
-                            <LeadScoreBadge lead={lead} size="sm" showDetails />
-                            <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-extrabold text-[10px]">
-                              {lead.pipeline_stage || 'New'}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 font-bold text-[10px]">
-                              Rep: {assignedRep}
-                            </span>
-                          </div>
-                          <p className="text-xs font-bold text-slate-600 flex items-center gap-2">
-                            <span>📞 {lead.phone || 'No phone'}</span>
-                            {lead.ad_name && <span className="text-slate-400">• 📢 {lead.ad_name}</span>}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                          {/* Full View Button */}
-                          <button
-                            onClick={() => router.push(`/dashboard/crm/${lead.id}`)}
-                            className="px-3 py-1.5 bg-slate-50 hover:bg-blue-50 border border-slate-300 hover:border-blue-300 text-slate-700 hover:text-blue-700 rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
-                            title="Open Lead in Full Page View"
-                          >
-                            <ExternalLink size={13} className="text-blue-600" />
-                            <span>Full View</span>
-                          </button>
-
-                          {/* History Button */}
-                          <button
-                            onClick={() => setHistoryLead(lead)}
-                            className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-black hover:bg-slate-100 shadow-xs flex items-center gap-1 cursor-pointer"
-                          >
-                            <History size={13} className="text-blue-600" />
-                            <span>History</span>
-                          </button>
-
-                          {/* Followup Button */}
-                          <button
-                            onClick={() => setFollowupLead(lead)}
-                            className="px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 shadow-xs flex items-center gap-1"
-                          >
-                            <RefreshCw size={13} />
-                            <span>Followup</span>
-                          </button>
-
-                          {/* WhatsApp Auto */}
-                          <a
-                            href={`https://wa.me/${(lead.phone || '').replace(/\D/g, '')}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-1.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors"
-                            title="WhatsApp Chat"
-                          >
-                            <MessageSquare size={14} />
-                          </a>
-
-                          {/* Call */}
-                          <a
-                            href={`tel:${lead.phone}`}
-                            className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-xs flex items-center justify-center"
-                            title="Direct Call"
-                          >
-                            <Phone size={18} />
-                          </a>
-                        </div>
-                      </div>
-
-                      {/* Remarks & Scheduled Next Action Details */}
-                      {(lastRemark || nextActionFormatted) && (
-                        <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
-                          {lastRemark && (
-                            <div className="bg-amber-50/80 border border-amber-200/80 p-2.5 rounded-xl text-xs text-amber-950 font-medium leading-relaxed">
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <span className="font-extrabold text-amber-800 uppercase text-[10px] tracking-wider">Last Followup Remark:</span>
-                                {formattedRemarkTime && (
-                                  <span className="text-[11px] font-bold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md flex items-center gap-1">
-                                    <Clock size={11} /> {formattedRemarkTime}
+                                  </h4>
+                                  <LeadScoreBadge lead={lead} size="sm" showDetails />
+                                  <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-extrabold text-[10px]">
+                                    {lead.pipeline_stage || 'New'}
                                   </span>
+                                  <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 font-bold text-[10px]">
+                                    Rep: {assignedRep}
+                                  </span>
+                                </div>
+                                <p className="text-xs font-bold text-slate-600 flex items-center gap-2">
+                                  <span>📞 {lead.phone || 'No phone'}</span>
+                                  {lead.ad_name && <span className="text-slate-400">• 📢 {lead.ad_name}</span>}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                <button
+                                  onClick={() => router.push(`/dashboard/crm/${lead.id}`)}
+                                  className="px-3 py-1.5 bg-slate-50 hover:bg-blue-50 border border-slate-300 hover:border-blue-300 text-slate-700 hover:text-blue-700 rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                                  title="Open Lead in Full Page View"
+                                >
+                                  <ExternalLink size={13} className="text-blue-600" />
+                                  <span>Full View</span>
+                                </button>
+
+                                <button
+                                  onClick={() => setHistoryLead(lead)}
+                                  className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-black hover:bg-slate-100 shadow-xs flex items-center gap-1 cursor-pointer"
+                                >
+                                  <History size={13} className="text-blue-600" />
+                                  <span>History</span>
+                                </button>
+
+                                <button
+                                  onClick={() => setFollowupLead(lead)}
+                                  className="px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 shadow-xs flex items-center gap-1"
+                                >
+                                  <RefreshCw size={13} />
+                                  <span>Followup</span>
+                                </button>
+
+                                <a
+                                  href={`https://wa.me/${(lead.phone || '').replace(/\D/g, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-1.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors"
+                                  title="WhatsApp Chat"
+                                >
+                                  <MessageSquare size={14} />
+                                </a>
+
+                                <a
+                                  href={`tel:${lead.phone}`}
+                                  className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-xs flex items-center justify-center"
+                                  title="Direct Call"
+                                >
+                                  <Phone size={18} />
+                                </a>
+                              </div>
+                            </div>
+
+                            {(lastRemark || nextActionFormatted) && (
+                              <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
+                                {lastRemark && (
+                                  <div className="bg-amber-50/80 border border-amber-200/80 p-2.5 rounded-xl text-xs text-amber-950 font-medium leading-relaxed">
+                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                      <span className="font-extrabold text-amber-800 uppercase text-[10px] tracking-wider">Last Followup Remark:</span>
+                                      {formattedRemarkTime && (
+                                        <span className="text-[11px] font-bold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                          <Clock size={11} /> {formattedRemarkTime}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="whitespace-pre-wrap">{lastRemark}</span>
+                                  </div>
+                                )}
+
+                                {nextActionFormatted && (
+                                  <div className="bg-blue-50/80 border border-blue-200/80 p-2.5 rounded-xl text-xs text-blue-950 font-medium leading-relaxed flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                    <div>
+                                      <span className="font-extrabold text-blue-800 uppercase text-[10px] tracking-wider inline mr-2">🗓️ Next Action ({nextActionType}):</span>
+                                      <span className="font-bold text-slate-800">{nextActionFormatted}</span>
+                                    </div>
+                                    {nextActionRemark && (
+                                      <span className="text-slate-600 text-[11px] font-semibold italic">Note: {nextActionRemark}</span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
-                              <span className="whitespace-pre-wrap">{lastRemark}</span>
-                            </div>
-                          )}
+                            )}
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
 
-                          {nextActionFormatted && (
-                            <div className="bg-blue-50/80 border border-blue-200/80 p-2.5 rounded-xl text-xs text-blue-950 font-medium leading-relaxed flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                              <div>
-                                <span className="font-extrabold text-blue-800 uppercase text-[10px] tracking-wider inline mr-2">🗓️ Next Action ({nextActionType}):</span>
-                                <span className="font-bold text-slate-800">{nextActionFormatted}</span>
-                              </div>
-                              {nextActionRemark && (
-                                <span className="text-slate-600 text-[11px] font-semibold italic">Note: {nextActionRemark}</span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                  {/* Modal Footer with Full Pagination Controls */}
+                  <div className="p-3 sm:p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+                    <div className="flex items-center gap-2 text-xs text-slate-600 font-bold">
+                      <span>Page <strong className="text-slate-900">{safePage}</strong> of <strong className="text-slate-900">{totalPages}</strong></span>
+                      <span className="text-slate-300">|</span>
+                      <span>{totalFilteredCount.toLocaleString()} total matching leads</span>
                     </div>
-                  )
-                })
-              })()}
-            </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-              <span className="text-xs text-slate-500 font-medium">Click any lead to view full history or record follow-up.</span>
-              <button
-                onClick={() => setDrilldownModal(prev => ({ ...prev, isOpen: false }))}
-                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800"
-              >
-                Close Drawer
-              </button>
-            </div>
+                    {/* Pagination Numbers & Buttons */}
+                    <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                      <button
+                        onClick={() => setDrilldownPage(1)}
+                        disabled={safePage === 1}
+                        className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+                        title="First Page"
+                      >
+                        ⏮ First
+                      </button>
+                      <button
+                        onClick={() => setDrilldownPage(prev => Math.max(1, prev - 1))}
+                        disabled={safePage === 1}
+                        className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+                        title="Previous Page"
+                      >
+                        ◀ Prev
+                      </button>
+
+                      {getPageNumbers().map((p, pIdx) => (
+                        typeof p === 'number' ? (
+                          <button
+                            key={pIdx}
+                            onClick={() => setDrilldownPage(p)}
+                            className={`w-8 h-8 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                              safePage === p
+                                ? 'bg-blue-600 text-white shadow-sm scale-105'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ) : (
+                          <span key={pIdx} className="px-1 text-slate-400 font-black text-xs">...</span>
+                        )
+                      ))}
+
+                      <button
+                        onClick={() => setDrilldownPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={safePage === totalPages}
+                        className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+                        title="Next Page"
+                      >
+                        Next ▶
+                      </button>
+                      <button
+                        onClick={() => setDrilldownPage(totalPages)}
+                        disabled={safePage === totalPages}
+                        className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+                        title="Last Page"
+                      >
+                        Last ⏭
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setDrilldownIsFullScreen(false)
+                          setDrilldownModal(prev => ({ ...prev, isOpen: false }))
+                        }}
+                        className="ml-3 px-4 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800 cursor-pointer"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
 
           </div>
         </div>
