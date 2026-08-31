@@ -3401,7 +3401,7 @@ export default function AnalyticsPage() {
                                         <span>{nextActionFormatted}</span>
                                       </div>
                                     ) : (
-                                      <span className="text-slate-400 text-[11px]">Pending</span>
+                                      <span className="text-slate-400 text-[11px] italic">—</span>
                                     )}
                                   </td>
 
