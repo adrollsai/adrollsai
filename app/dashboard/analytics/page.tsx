@@ -1428,7 +1428,7 @@ export default function AnalyticsPage() {
       const notes = l.notes || ''
       if (notes.includes('[📝') || notes.includes('[⚠️')) {
         const chunks = notes.split(/(?=\[(?:📝|⚠️))/)
-        chunks.forEach(chunk => {
+        chunks.forEach((chunk: string) => {
           const effectiveDate = parseActionDate(chunk)
           if (!effectiveDate || !isDateInRange(effectiveDate)) return
 
