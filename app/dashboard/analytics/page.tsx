@@ -306,14 +306,13 @@ export default function AnalyticsPage() {
 
       let filterFn: (q: any) => any
       if (isTeamUser && activeAgentId) {
-        filterFn = (q: any) => q.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+        filterFn = (q: any) => q.in('user_id', workspaceTeamIds).or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
       } else if (activeAgentId && activeAgentId !== 'unassigned') {
-        filterFn = (q: any) => q.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+        filterFn = (q: any) => q.in('user_id', workspaceTeamIds).or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
       } else if (activeAgentId === 'unassigned') {
         filterFn = (q: any) => q.is('assigned_to', null).in('user_id', workspaceTeamIds)
       } else {
-        const orConditions = workspaceTeamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
-        filterFn = (q: any) => q.or(orConditions)
+        filterFn = (q: any) => q.in('user_id', workspaceTeamIds)
       }
 
       // Parse custom_fields helper
