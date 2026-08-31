@@ -2238,36 +2238,81 @@ IMPORTANT RULES:
             continue;
           }
 
-          let name = 'Unknown', phone = '', email = ''
+          let name = '', phone = '', email = ''
           const customFields: Record<string, any> = {}
           let firstName = '', lastName = ''
           fbLead.field_data?.forEach((field: any) => {
             if (!field.name || !field.values || field.values.length === 0) return;
             
-            const fieldName = field.name.toLowerCase()
-            const fieldValue = field.values[0]
+            const fieldName = field.name.toLowerCase().trim()
+            const fieldValue = (typeof field.values[0] === 'string' ? field.values[0] : String(field.values[0] || '')).trim()
+            if (!fieldValue) return
 
-            if (fieldName.includes('full_name') || fieldName.includes('fullname') || fieldName === 'name' || fieldName.includes('your_name') || fieldName.includes('your name')) name = fieldValue
-            else if (fieldName.includes('first_name') || fieldName.includes('firstname') || fieldName.includes('first name')) firstName = fieldValue
-            else if (fieldName.includes('last_name') || fieldName.includes('lastname') || fieldName.includes('last name')) lastName = fieldValue
-            else if (fieldName.includes('email') || fieldName.includes('e-mail')) email = fieldValue
-            else if (fieldName.includes('phone') || fieldName.includes('mobile') || fieldName.includes('contact') || fieldName.includes('whatsapp') || fieldName.includes('tel')) phone = fieldValue
-            else {
+            if (
+              fieldName.includes('full_name') || 
+              fieldName.includes('fullname') || 
+              fieldName === 'name' || 
+              fieldName.includes('your_name') || 
+              fieldName.includes('your name') ||
+              fieldName.includes('customer_name') ||
+              fieldName.includes('prospect_name') ||
+              fieldName.includes('user_name') ||
+              fieldName.includes('client_name')
+            ) {
+              name = fieldValue
+            } else if (
+              fieldName.includes('first_name') || 
+              fieldName.includes('firstname') || 
+              fieldName.includes('first name') || 
+              fieldName === 'fname'
+            ) {
+              firstName = fieldValue
+            } else if (
+              fieldName.includes('last_name') || 
+              fieldName.includes('lastname') || 
+              fieldName.includes('last name') || 
+              fieldName === 'lname'
+            ) {
+              lastName = fieldValue
+            } else if (fieldName.includes('email') || fieldName.includes('e-mail')) {
+              email = fieldValue
+            } else if (
+              fieldName.includes('phone') || 
+              fieldName.includes('mobile') || 
+              fieldName.includes('contact') || 
+              fieldName.includes('whatsapp') || 
+              fieldName.includes('tel')
+            ) {
+              phone = fieldValue
+            } else {
               customFields[field.name] = fieldValue
             }
           })
 
-          if ((!name || name === 'Unknown') && (firstName || lastName)) {
+          if ((!name || name.toLowerCase() === 'unknown' || name.toLowerCase() === 'lead') && (firstName || lastName)) {
             name = `${firstName} ${lastName}`.trim()
           }
 
-          if (!name || name === 'Unknown') {
+          // Check customFields for first_name / full_name
+          if (!name || name.toLowerCase() === 'unknown' || name.toLowerCase() === 'lead') {
+            const cfFirst = customFields['first_name'] || customFields['firstName'] || customFields['First Name'] || ''
+            const cfLast = customFields['last_name'] || customFields['lastName'] || customFields['Last Name'] || ''
+            const cfFull = customFields['full_name'] || customFields['fullName'] || customFields['Full Name'] || customFields['name'] || customFields['Name'] || ''
+            if (cfFull) {
+              name = cfFull.trim()
+            } else if (cfFirst || cfLast) {
+              name = `${cfFirst} ${cfLast}`.trim()
+            }
+          }
+
+          if (!name || name.toLowerCase() === 'unknown' || name.toLowerCase() === 'lead') {
             if (email) {
-              name = email.split('@')[0]
+              const emailUser = email.split('@')[0].replace(/[._-]/g, ' ')
+              name = emailUser.charAt(0).toUpperCase() + emailUser.slice(1)
             } else if (phone) {
-              name = phone
+              name = `Lead (${phone})`
             } else {
-              name = 'Lead'
+              name = `Meta Lead #${leadgen_id.slice(-4)}`
             }
           }
 
@@ -2555,8 +2600,15 @@ IMPORTANT RULES:
               let cf = existingLead.custom_fields || {};
               if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
 
-              // Always count as reopened — every repeat submission increments the count
               const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
+              const lastReopenTime = cf.last_reopened_at ? new Date(cf.last_reopened_at).getTime() : 0;
+              const isRecentReopenGlitch = (Date.now() - lastReopenTime) < 3600000 && cf.last_reopened_source === currentSourceId;
+
+              if (isRecentReopenGlitch) {
+                console.log(`[Facebook Webhook] Skipping duplicate reopen for lead ${existingLead.id} within 1h cooldown.`);
+                continue;
+              }
+
               const reopenedCount = (existingLead.reopened_count || cf.reopened_count || 0) + 1;
 
               // Track sources for audit (append even if same source)

@@ -74,6 +74,30 @@ function formatCallPhone(phoneRaw: string | null | undefined): string {
   return `+${digits}`;
 }
 
+function hasLeadVisited(lead: any): boolean {
+  if (!lead) return false;
+  let cf = lead.custom_fields;
+  if (cf && typeof cf === 'string') {
+    try { while (typeof cf === 'string') cf = JSON.parse(cf); } catch (e) {}
+  }
+  if (cf?.has_visited === true || cf?.visited === true) return true;
+  const stage = (lead.status || lead.pipeline_stage || '').toLowerCase().trim();
+  if (
+    stage.includes('visit done') || 
+    stage.includes('visited') || 
+    stage.includes('revisit done') || 
+    stage.includes('appointment done') || 
+    stage.includes('visit planned') ||
+    stage.includes('site visit')
+  ) {
+    return true;
+  }
+  if (typeof lead.notes === 'string' && /visit\s+done|site\s+visit\s+done|visited|revisit\s+done|visit\s+planned/i.test(lead.notes)) {
+    return true;
+  }
+  return false;
+}
+
 function getLeadLastRemark(lead: any, currentRole?: string): string | null {
   if (!lead) return null;
   let cf = lead.custom_fields;
@@ -93,6 +117,7 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
     }
   }
   
+  // 1. Explicit latest followup / action remarks take absolute top priority
   if (cf?.last_followup_remark && typeof cf.last_followup_remark === 'string' && cf.last_followup_remark.trim()) {
     return cf.last_followup_remark.trim();
   }
@@ -106,16 +131,26 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
     return lead.last_call_remark.trim();
   }
 
+  // 2. Parse from notes: look for [Last Remarks]: or newest chronological note
   if (lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
     const notesStr = lead.notes.trim();
-    const topEntry = notesStr.split(/\n\n+/)[0]?.trim();
-    if (topEntry) {
-      if (topEntry.includes(']:')) {
-        const parts = topEntry.split(']:');
-        const content = parts.slice(1).join(']:').trim();
-        if (content) return content;
+
+    if (notesStr.includes('[Last Remarks]:')) {
+      const parts = notesStr.split('[Last Remarks]:');
+      const lastSection = parts[parts.length - 1].split(/\[Followups Taken\]:|\[Next Action\]:|\[Opening Remarks\]:/i)[0].trim();
+      if (lastSection) return lastSection;
+    }
+
+    const entries = notesStr.split(/\n\n+|---+|\n(?=\[\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/);
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i].trim();
+      if (entry && !entry.toLowerCase().startsWith('[opening remarks]') && !entry.toLowerCase().startsWith('advertisment') && !entry.toLowerCase().startsWith('[followups taken]')) {
+        if (entry.includes(']:')) {
+          const clean = entry.split(']:').slice(1).join(']:').trim();
+          if (clean) return clean;
+        }
+        return entry;
       }
-      return topEntry;
     }
   }
 
@@ -2977,6 +3012,15 @@ END:VCARD\n`
                                                     <div className="flex items-center gap-1.5 flex-wrap">
                                                         <span className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors truncate">{lead.name || 'Unknown Lead'}</span>
                                                         <LeadScoreBadge lead={lead} size="sm" showDetails />
+                                                        {hasLeadVisited(lead) && (
+                                                            <span 
+                                                                className="px-2 py-0.5 text-[10px] font-black rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-1 shadow-xs"
+                                                                title="Prospect has visited / visit done"
+                                                            >
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                                Visited
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <span className="text-xs font-semibold text-slate-500">{displayPhone || '--'}</span>
                                                 </div>
@@ -3156,6 +3200,15 @@ END:VCARD\n`
                                             {lead.name || 'Unknown Lead'}
                                         </h3>
                                         <LeadScoreBadge lead={lead} size="sm" showDetails />
+                                        {hasLeadVisited(lead) && (
+                                            <span 
+                                                className="px-2 py-0.5 text-[10px] font-black rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-1 shadow-xs"
+                                                title="Prospect has visited / visit done"
+                                            >
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                Visited
+                                            </span>
+                                        )}
                                         {(lead.reopened_count > 0 || lead.custom_fields?.reopened_count > 0) && (
                                             <span 
                                                 onClick={(e) => { e.stopPropagation(); setHistoryLead(lead); }}

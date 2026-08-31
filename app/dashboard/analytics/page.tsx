@@ -3342,12 +3342,18 @@ export default function AnalyticsPage() {
                               if (!rawRemark && lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
                                 let cleaned = lead.notes.trim()
                                 if (cleaned.includes('[Last Remarks]:')) {
-                                  rawRemark = cleaned.split('[Last Remarks]:')[1]?.split('\n\n[')[0]?.trim() || cleaned
+                                  rawRemark = cleaned.split('[Last Remarks]:')[1]?.split(/\[Followups Taken\]:|\[Next Action\]:|\[Opening Remarks\]:/i)[0]?.trim() || cleaned
                                 } else {
-                                  rawRemark = cleaned.split(/\n\n+/)[0]?.trim() || cleaned
+                                  const entries = cleaned.split(/\n\n+|---+|\n(?=\[\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/)
+                                  for (let i = entries.length - 1; i >= 0; i--) {
+                                    const entry = entries[i].trim()
+                                    if (entry && !entry.toLowerCase().startsWith('[opening remarks]') && !entry.toLowerCase().startsWith('advertisment') && !entry.toLowerCase().startsWith('[followups taken]')) {
+                                      rawRemark = entry.includes(']:') ? entry.split(']:').slice(1).join(']:').trim() : entry
+                                      break
+                                    }
+                                  }
                                 }
                               }
-                              if (!rawRemark && cf?.opening_comments) rawRemark = cf.opening_comments.trim()
                               if (!rawRemark && lead.summary) rawRemark = lead.summary.trim()
 
                               let lastRemarkTime: string | null = null
@@ -3369,8 +3375,7 @@ export default function AnalyticsPage() {
                                   const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
                                   if (!isNaN(parsed.getTime())) {
                                     if (!lastRemarkTime) lastRemarkTime = parsed.toISOString()
-                                    const stripped = rawRemark.replace(/^(?:\[Last Remarks\]:\s*)?(?:Call on\s+)?\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s*(?:\d{1,2}:\d{2}\s*[ap]m)?\s*/i, '').trim()
-                                    if (stripped) cleanRemark = stripped
+                                    cleanRemark = rawRemark.replace(/(?:Call on\s+|Logged on\s+|\[)?\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}(?:[,\s]+\d{1,2}:\d{2}(?::\d{2})?\s*[ap]m)?\]?\s*[:-]?\s*/gi, '').trim()
                                   }
                                 }
                               }
@@ -3414,15 +3419,23 @@ export default function AnalyticsPage() {
                                 } catch (e) {}
                               }
 
+                              const isVisited = cf?.has_visited === true || cf?.visited === true || (lead.pipeline_stage || lead.status || '').toLowerCase().includes('visit') || (typeof lead.notes === 'string' && /visit\s+done|site\s+visit\s+done|visited|revisit\s+done/i.test(lead.notes))
+
                               return (
                                 <tr key={lead.id} className="hover:bg-blue-50/40 transition-colors group">
                                   <td className="py-2.5 px-3">
                                     <div 
                                       onClick={() => router.push(`/dashboard/crm/${lead.id}`)}
-                                      className="font-extrabold text-slate-900 text-xs hover:text-blue-600 cursor-pointer transition-colors"
+                                      className="font-extrabold text-slate-900 text-xs hover:text-blue-600 cursor-pointer transition-colors flex items-center gap-1.5 flex-wrap"
                                       title="Open Lead Details"
                                     >
-                                      {lead.name || 'Unknown Prospect'}
+                                      <span>{lead.name || 'Unknown Prospect'}</span>
+                                      {isVisited && (
+                                        <span className="px-1.5 py-0.2 text-[9px] font-black rounded bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-0.5">
+                                          <span className="w-1 h-1 rounded-full bg-emerald-500"></span>
+                                          Visited
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
                                       <span>📞 {lead.phone || 'No phone'}</span>

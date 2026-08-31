@@ -152,6 +152,21 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2 flex-wrap">
                 <span>Timeline History for {lead.name || 'Lead'}</span>
                 <LeadScoreBadge lead={lead} size="sm" showDetails />
+                {(() => {
+                  let cf = lead.custom_fields
+                  if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+                  const stage = (lead.status || lead.pipeline_stage || '').toLowerCase()
+                  const isVisited = cf?.has_visited === true || cf?.visited === true || stage.includes('visit done') || stage.includes('visited') || stage.includes('revisit done') || stage.includes('visit planned') || stage.includes('appointment done') || (typeof lead.notes === 'string' && /visit\s+done|site\s+visit\s+done|visited|revisit\s+done/i.test(lead.notes))
+                  if (isVisited) {
+                    return (
+                      <span className="px-2 py-0.5 text-[10px] font-black rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-1 shadow-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Visited
+                      </span>
+                    )
+                  }
+                  return null
+                })()}
               </h3>
               <p className="text-slate-500 text-xs mt-0.5">
                 {lead.phone || 'No Phone'} • Stage: <span className="font-semibold text-blue-600">{(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'Requirement Taken')}</span>

@@ -79,12 +79,28 @@ export async function POST(request: Request) {
     }
 
 
+    let cf = (checkLead as any).custom_fields || {}
+    if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+    const stageLower = (newStage || '').toLowerCase()
+    if (
+      stageLower.includes('visit done') || 
+      stageLower.includes('visited') || 
+      stageLower.includes('revisit done') || 
+      stageLower.includes('visit planned') || 
+      stageLower.includes('appointment done') ||
+      stageLower.includes('site visit')
+    ) {
+      cf.has_visited = true
+      if (!cf.visited_at) cf.visited_at = new Date().toISOString()
+    }
+
     const { data: lead, error } = await supabaseAdmin
         .from('leads')
         .update({ 
             status: newStage,
             pipeline_stage: newStage, 
-            notes: notes || undefined 
+            notes: notes || undefined,
+            custom_fields: cf
         })
         .eq('id', leadId)
         .select()

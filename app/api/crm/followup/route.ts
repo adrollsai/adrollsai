@@ -234,6 +234,19 @@ export async function POST(request: Request) {
       customFields.status = updatePayload.status
     }
 
+    const chosenStage = `${updatePayload.pipeline_stage || ''} ${leadStatus || ''} ${followupType || ''}`.toLowerCase()
+    if (
+      chosenStage.includes('visit done') || 
+      chosenStage.includes('visited') || 
+      chosenStage.includes('revisit done') || 
+      chosenStage.includes('visit planned') || 
+      chosenStage.includes('appointment done') ||
+      chosenStage.includes('site visit')
+    ) {
+      customFields.has_visited = true
+      if (!customFields.visited_at) customFields.visited_at = new Date().toISOString()
+    }
+
     updatePayload.custom_fields = customFields
 
     const activeStage = updatePayload.pipeline_stage || lead.pipeline_stage || lead.status || 'Contacted'

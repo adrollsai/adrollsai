@@ -207,23 +207,78 @@ async function handleSync(request: Request) {
 
               fbLead.field_data?.forEach((field: any) => {
                 if (!field.name || !field.values || field.values.length === 0) return;
-                const fieldName = field.name.toLowerCase();
-                const fieldValue = field.values[0];
+                const fieldName = field.name.toLowerCase().trim();
+                const fieldValue = (typeof field.values[0] === 'string' ? field.values[0] : String(field.values[0] || '')).trim();
+                if (!fieldValue) return;
 
-                if (fieldName.includes('full_name') || fieldName.includes('fullname') || fieldName === 'name' || fieldName.includes('your_name') || fieldName.includes('your name')) name = fieldValue;
-                else if (fieldName.includes('first_name') || fieldName.includes('firstname') || fieldName.includes('first name')) firstName = fieldValue;
-                else if (fieldName.includes('last_name') || fieldName.includes('lastname') || fieldName.includes('last name')) lastName = fieldValue;
-                else if (fieldName.includes('email') || fieldName.includes('e-mail')) email = fieldValue;
-                else if (fieldName.includes('phone') || fieldName.includes('mobile') || fieldName.includes('contact') || fieldName.includes('whatsapp') || fieldName.includes('tel')) phone = fieldValue;
-                else if (fieldName === 'city') city = fieldValue;
-                else customFields[field.name] = fieldValue;
+                if (
+                  fieldName.includes('full_name') || 
+                  fieldName.includes('fullname') || 
+                  fieldName === 'name' || 
+                  fieldName.includes('your_name') || 
+                  fieldName.includes('your name') ||
+                  fieldName.includes('customer_name') ||
+                  fieldName.includes('prospect_name') ||
+                  fieldName.includes('user_name') ||
+                  fieldName.includes('client_name')
+                ) {
+                  name = fieldValue;
+                } else if (
+                  fieldName.includes('first_name') || 
+                  fieldName.includes('firstname') || 
+                  fieldName.includes('first name') || 
+                  fieldName === 'fname'
+                ) {
+                  firstName = fieldValue;
+                } else if (
+                  fieldName.includes('last_name') || 
+                  fieldName.includes('lastname') || 
+                  fieldName.includes('last name') || 
+                  fieldName === 'lname'
+                ) {
+                  lastName = fieldValue;
+                } else if (fieldName.includes('email') || fieldName.includes('e-mail')) {
+                  email = fieldValue;
+                } else if (
+                  fieldName.includes('phone') || 
+                  fieldName.includes('mobile') || 
+                  fieldName.includes('contact') || 
+                  fieldName.includes('whatsapp') || 
+                  fieldName.includes('tel')
+                ) {
+                  phone = fieldValue;
+                } else if (fieldName === 'city') {
+                  city = fieldValue;
+                } else {
+                  customFields[field.name] = fieldValue;
+                }
               });
 
-              if ((!name || name === 'Unknown') && (firstName || lastName)) {
+              if ((!name || name.toLowerCase() === 'unknown' || name.toLowerCase() === 'lead') && (firstName || lastName)) {
                 name = `${firstName} ${lastName}`.trim();
               }
-              if (!name || name === 'Unknown') {
-                name = email ? email.split('@')[0] : (phone || 'Lead');
+
+              // Check customFields for first_name / full_name
+              if (!name || name.toLowerCase() === 'unknown' || name.toLowerCase() === 'lead') {
+                const cfFirst = customFields['first_name'] || customFields['firstName'] || customFields['First Name'] || '';
+                const cfLast = customFields['last_name'] || customFields['lastName'] || customFields['Last Name'] || '';
+                const cfFull = customFields['full_name'] || customFields['fullName'] || customFields['Full Name'] || customFields['name'] || customFields['Name'] || '';
+                if (cfFull) {
+                  name = cfFull.trim();
+                } else if (cfFirst || cfLast) {
+                  name = `${cfFirst} ${cfLast}`.trim();
+                }
+              }
+
+              if (!name || name.toLowerCase() === 'unknown' || name.toLowerCase() === 'lead') {
+                if (email) {
+                  const emailUser = email.split('@')[0].replace(/[._-]/g, ' ');
+                  name = emailUser.charAt(0).toUpperCase() + emailUser.slice(1);
+                } else if (phone) {
+                  name = `Lead (${phone})`;
+                } else {
+                  name = `Meta Lead #${leadgenId.slice(-4)}`;
+                }
               }
 
               const formName = fbLead.form_name || fallbackFormOrAdName || 'Meta Form';
@@ -356,8 +411,15 @@ async function handleSync(request: Request) {
                   const existingLead = existingByPhone[0];
                   let cf = existingLead.custom_fields || {};
                   if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
-                  const reopenedCount = (existingLead.reopened_count || cf.reopened_count || 0) + 1;
                   const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
+                  const lastReopenTime = cf.last_reopened_at ? new Date(cf.last_reopened_at).getTime() : 0;
+                  const isRecentReopenGlitch = (Date.now() - lastReopenTime) < 3600000 && cf.last_reopened_source === currentSourceId;
+
+                  if (isRecentReopenGlitch) {
+                    continue;
+                  }
+
+                  const reopenedCount = (existingLead.reopened_count || cf.reopened_count || 0) + 1;
                   const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
                   const updatedSources = [...previousSources, currentSourceId];
 
