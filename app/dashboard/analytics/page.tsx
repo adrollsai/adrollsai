@@ -328,6 +328,7 @@ export default function AnalyticsPage() {
       // Step 1: First 1000 leads + count in parallel
       const firstPageQ = filterFn(supabase.from('leads').select(leadFields))
         .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
         .range(0, 999)
       const countQ = filterFn(supabase.from('leads').select('*', { count: 'exact', head: true }))
 
@@ -336,7 +337,12 @@ export default function AnalyticsPage() {
       const totalCount = countRes.count || (firstPageRes.data?.length || 0)
       setTotalServerCount(totalCount)
 
-      let allLeads = parseLeads(firstPageRes.data || [])
+      const seenLeadMap = new Map()
+      parseLeads(firstPageRes.data || []).forEach((l: any) => {
+        if (l && l.id && !seenLeadMap.has(l.id)) seenLeadMap.set(l.id, l)
+      })
+
+      let allLeads = Array.from(seenLeadMap.values())
       setLeads(allLeads)
       if (!forceRefresh) {
         setLoading(false)
@@ -349,15 +355,21 @@ export default function AnalyticsPage() {
           const pageIdx = i + 1
           return filterFn(supabase.from('leads').select(leadFields))
             .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
             .range(pageIdx * 1000, (pageIdx + 1) * 1000 - 1)
         })
 
         const batchResults = await Promise.all(batchPromises)
         for (const r of batchResults) {
           if (r.data && r.data.length > 0) {
-            allLeads = allLeads.concat(parseLeads(r.data))
+            parseLeads(r.data).forEach((l: any) => {
+              if (l && l.id && !seenLeadMap.has(l.id)) {
+                seenLeadMap.set(l.id, l)
+              }
+            })
           }
         }
+        allLeads = Array.from(seenLeadMap.values())
         setLeads(allLeads)
         setTotalServerCount(allLeads.length > totalCount ? allLeads.length : totalCount)
       }
@@ -708,7 +720,9 @@ export default function AnalyticsPage() {
       const p = l.phone ? l.phone.replace(/\D/g, '').slice(-10) : ''
       if (p && p.length >= 7) {
         if (!phoneMap[p]) phoneMap[p] = []
-        phoneMap[p].push(l)
+        if (!phoneMap[p].some(existing => existing.id === l.id)) {
+          phoneMap[p].push(l)
+        }
       }
     })
     const duplicateLeadsList = Object.values(phoneMap).filter(list => list.length > 1).flat()
