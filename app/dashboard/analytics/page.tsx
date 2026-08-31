@@ -1343,73 +1343,134 @@ export default function AnalyticsPage() {
       { key: 'dnp', label: 'DNP (Did Not Pick)', icon: '📵', color: 'rose' },
     ]
 
+    const parseActionDate = (text?: string, fallbackCreatedAt?: string) => {
+      if (text) {
+        // 1. Bracket notes format: [Followup (Call) - 31/8/2026, 12:10:24 pm] or [Call Not Picked - DNP (31/8/2026...)]
+        const bracketMatch = text.match(/\[(?:📝\s*Followup[^\-\]]*|⚠️\s*Call Not Picked[^\-\]]*)\s*-\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
+        if (bracketMatch) {
+          const day = parseInt(bracketMatch[1], 10)
+          const month = parseInt(bracketMatch[2], 10) - 1
+          let year = parseInt(bracketMatch[3], 10)
+          if (year < 100) year += 2000
+          const d = new Date(year, month, day)
+          if (!isNaN(d.getTime())) return d
+        }
+
+        // 2. Workveu historical logs: 'Call on 30/07/2026' or 'Call Not Picked on 30/07/2026' or 'Follow up Date: 30/07/2026'
+        const workveuMatch = text.match(/(?:Call on|Call Not Picked on|Follow up Date\s*:)\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
+        if (workveuMatch) {
+          const day = parseInt(workveuMatch[1], 10)
+          const month = parseInt(workveuMatch[2], 10) - 1
+          let year = parseInt(workveuMatch[3], 10)
+          if (year < 100) year += 2000
+          const d = new Date(year, month, day)
+          if (!isNaN(d.getTime())) return d
+        }
+      }
+
+      if (fallbackCreatedAt) {
+        const d = new Date(fallbackCreatedAt)
+        if (!isNaN(d.getTime())) return d
+      }
+      return null
+    }
+
     const classifyAction = (h: any) => {
       const type = (h.action_type || '').toUpperCase()
       const desc = (h.description || '').toLowerCase()
-      // Exclude system events
-      if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT', 'STAGE_CHANGE', 'ASSIGNMENT', 'NOTE'].includes(type)) return null
+      // Exclude pure system automation logs
+      if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT', 'ASSIGNMENT', 'NOTE'].includes(type)) return null
       if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return null
 
       if (type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return 'dnp'
-      if (type === 'SITE_VISIT' || desc.includes('site visit') || desc.includes('visit done') || desc.includes('revisit')) return 'site_visits'
-      if (type === 'MEETING' || desc.includes('meeting')) return 'meetings'
+      if (type === 'SITE_VISIT' || desc.includes('site visit') || desc.includes('visit done') || desc.includes('revisit') || desc.includes('visit planned') || desc.includes('moved to visit')) return 'site_visits'
+      if (type === 'MEETING' || desc.includes('meeting') || desc.includes('moved to meeting')) return 'meetings'
       if (type === 'WHATSAPP' || desc.includes('whatsapp') || desc.includes('message sent')) return 'whatsapp'
-      if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG'].includes(type) || desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) return 'calls'
+      if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG', 'FOLLOWUP', 'REMARK', 'STATUS_CHANGE'].includes(type) || desc.includes('call') || desc.includes('followup') || desc.includes('feedback') || desc.includes('connected')) return 'calls'
       return null
     }
-
-    // Helper to resolve actual date of an action entry
-    const getHistoryActionDate = (h: any) => {
-      if (!h) return null
-      const desc = h.description || ''
-      const dateMatch = desc.match(/(?:Call on|DNP|Followup|Recorded on|Follow up Date\s*:)\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
-      if (dateMatch) {
-        const day = parseInt(dateMatch[1], 10)
-        const month = parseInt(dateMatch[2], 10) - 1
-        let year = parseInt(dateMatch[3], 10)
-        if (year < 100) year += 2000
-        const d = new Date(year, month, day)
-        if (!isNaN(d.getTime())) return d
-      }
-      if (h.created_at) {
-        const d = new Date(h.created_at)
-        if (!isNaN(d.getTime())) return d
-      }
-      return null
-    }
-
-    // Filter history by date range
-    const filteredHistory = history.filter(h => {
-      if (!startCutoff && !endCutoff) return true
-      const actionDate = getHistoryActionDate(h)
-      return isDateInRange(actionDate)
-    })
 
     // Build lead lookup for drilldown
     const leadLookup: Record<string, any> = {}
     leads.forEach(l => { leadLookup[l.id] = l })
 
-    const actionAttemptRows = rows.map(row => {
-      const repHistoryEntries = filteredHistory.filter(h => h.user_id === row.rep.id)
+    const repActionCounts: Record<string, Record<string, number>> = {}
+    const repActionLeadIds: Record<string, Record<string, Set<string>>> = {}
+    const seenActionKeys = new Set<string>()
 
-      const actionCounts: Record<string, number> = {}
-      const actionLeadIds: Record<string, Set<string>> = {}
-      ACTION_TYPES.forEach(a => { actionCounts[a.key] = 0; actionLeadIds[a.key] = new Set() })
+    allSalesReps.forEach(r => {
+      repActionCounts[r.id] = { calls: 0, site_visits: 0, whatsapp: 0, meetings: 0, dnp: 0 }
+      repActionLeadIds[r.id] = { calls: new Set(), site_visits: new Set(), whatsapp: new Set(), meetings: new Set(), dnp: new Set() }
+    })
 
-      repHistoryEntries.forEach(h => {
-        const cat = classifyAction(h)
-        if (cat && actionCounts[cat] !== undefined) {
-          actionCounts[cat]++
-          if (h.lead_id) actionLeadIds[cat].add(h.lead_id)
+    // 1. Process History Entries
+    history.forEach(h => {
+      const cat = classifyAction(h)
+      if (!cat) return
+      const effectiveDate = parseActionDate(h.description, h.created_at)
+      if (!isDateInRange(effectiveDate)) return
+
+      const targetRepId = h.user_id
+      if (targetRepId && repActionCounts[targetRepId]) {
+        const dateKey = effectiveDate ? effectiveDate.toISOString().slice(0, 13) : h.id
+        const dedupKey = `${h.lead_id || h.id}_${cat}_${dateKey}`
+        if (!seenActionKeys.has(dedupKey)) {
+          seenActionKeys.add(dedupKey)
+          repActionCounts[targetRepId][cat]++
+          if (h.lead_id) repActionLeadIds[targetRepId][cat].add(h.lead_id)
+        }
+      }
+    })
+
+    // 2. Process Lead Notes Blocks (to guarantee zero missed followups)
+    leads.forEach(l => {
+      const notes = l.notes || ''
+      if (!notes.includes('[📝') && !notes.includes('[⚠️')) return
+
+      const chunks = notes.split(/(?=\[(?:📝|⚠️))/)
+      chunks.forEach(chunk => {
+        const effectiveDate = parseActionDate(chunk)
+        if (!effectiveDate || !isDateInRange(effectiveDate)) return
+
+        // Extract rep from chunk e.g. "by Harman Bajwa"
+        const repMatch = chunk.match(/by\s+([^\]\:\n]+)/i)
+        const repName = repMatch ? repMatch[1].trim().toLowerCase() : ''
+        const matchedRep = allSalesReps.find(r => {
+          const fn = (r.name || '').toLowerCase()
+          const em = (r.email || '').toLowerCase()
+          return (fn && repName.includes(fn)) || (fn && fn.includes(repName)) || (em && repName.includes(em))
+        }) || (l.assigned_to ? allSalesReps.find(r => r.id === l.assigned_to) : null)
+
+        if (!matchedRep) return
+
+        const lowerChunk = chunk.toLowerCase()
+        let cat = 'calls'
+        if (lowerChunk.includes('dnp') || lowerChunk.includes('not picked') || lowerChunk.includes('did not pick')) cat = 'dnp'
+        else if (lowerChunk.includes('site visit') || lowerChunk.includes('visit done') || lowerChunk.includes('revisit')) cat = 'site_visits'
+        else if (lowerChunk.includes('meeting')) cat = 'meetings'
+        else if (lowerChunk.includes('whatsapp')) cat = 'whatsapp'
+        else if (lowerChunk.includes('call') || lowerChunk.includes('followup') || lowerChunk.includes('feedback')) cat = 'calls'
+
+        if (repActionCounts[matchedRep.id]) {
+          const dateKey = effectiveDate.toISOString().slice(0, 13)
+          const dedupKey = `${l.id}_${cat}_${dateKey}`
+          if (!seenActionKeys.has(dedupKey)) {
+            seenActionKeys.add(dedupKey)
+            repActionCounts[matchedRep.id][cat]++
+            repActionLeadIds[matchedRep.id][cat].add(l.id)
+          }
         }
       })
+    })
 
+    const actionAttemptRows = rows.map(row => {
+      const actionCounts = repActionCounts[row.rep.id] || { calls: 0, site_visits: 0, whatsapp: 0, meetings: 0, dnp: 0 }
       const totalAttempts = Object.values(actionCounts).reduce((s, v) => s + v, 0)
 
-      // Convert lead IDs to actual lead objects for drilldown
       const actionLeads: Record<string, any[]> = {}
       ACTION_TYPES.forEach(a => {
-        actionLeads[a.key] = Array.from(actionLeadIds[a.key]).map(id => leadLookup[id]).filter(Boolean)
+        const leadIdSet = repActionLeadIds[row.rep.id]?.[a.key] || new Set()
+        actionLeads[a.key] = Array.from(leadIdSet).map(id => leadLookup[id]).filter(Boolean)
       })
 
       return {
