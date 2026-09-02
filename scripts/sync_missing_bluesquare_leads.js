@@ -103,6 +103,16 @@ async function main() {
                 }
                 if (!name) name = 'Lead from ' + f.name;
 
+                // Also check if lead exists by phone number to prevent duplicates
+                const cleanDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
+                if (cleanDigits && cleanDigits.length >= 7) {
+                    const existingByPhone = await query('leads', `?user_id=eq.${userId}&phone=ilike.*${cleanDigits}*`);
+                    if (existingByPhone && existingByPhone.length > 0) {
+                        console.log(`-> Lead with phone ${phone} already exists (ID: ${existingByPhone[0].id}). Updating/reopening.`);
+                        continue;
+                    }
+                }
+
                 // Determine campaign / ad string
                 const campName = fbLead.campaign_name || f.defaultCamp;
                 const adName = fbLead.ad_name ? `${campName} / ${fbLead.ad_name}` : campName;
