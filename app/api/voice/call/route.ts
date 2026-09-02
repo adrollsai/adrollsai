@@ -74,24 +74,11 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Failed to fetch user profile.' }, { status: 500 })
         }
 
-        const telephonyProvider = profile.voice_telephony_provider || 'vobiz'
+        const telephonyProvider = profile.voice_telephony_provider || profile.telephony_provider || 'twilio'
         const isMasterDefaultUser = profile.email === 'rchopra489@gmail.com' || profile.email === 'infobluesquareinfra@gmail.com'
-        const voiceNumber = profile.voice_vobiz_number || profile.voice_twilio_number || process.env.VOBIZ_TEST_NUMBER || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.VOBIZ_TEST_NUMBER : null)
-
-        if (telephonyProvider === 'twilio') {
-            const twilioSid = profile.voice_twilio_sid || process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
-            const twilioToken = profile.voice_twilio_token || process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
-            if (!twilioSid || !twilioToken || !voiceNumber) {
-                return NextResponse.json({ 
-                    error: 'Twilio calling credentials or phone number are not configured. Please check Voice Settings.' 
-                }, { status: 400 })
-            }
-        } else {
-            if (!voiceNumber && !isMasterDefaultUser) {
-                return NextResponse.json({ 
-                    error: 'No calling number assigned. Please assign a calling number in Voice settings.' 
-                }, { status: 400 })
-            }
+        let voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
+        if (voiceNumber === '+911171366938' || voiceNumber?.startsWith('+91')) {
+            voiceNumber = process.env.MASTER_TWILIO_NUMBER || '+16592137728'
         }
 
         const isAuto = !!isAutoTrigger

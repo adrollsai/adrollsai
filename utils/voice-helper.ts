@@ -288,33 +288,39 @@ export async function triggerOutboundCall(
             return { success: false, error: 'Insufficient credits' }
         }
 
-        // Primary Telephony Routing: Vobiz for Indian calls & numbers
+        // Primary Telephony Routing: Vobiz for Indian calls & numbers (if a valid Vobiz number is owned)
         let cleanPhone = (lead.phone || '').replace(/\D/g, '')
-        const telephonyProvider = profile?.telephony_provider || 'vobiz'
-        const isIndiaNumber = cleanPhone.startsWith('91') || cleanPhone.length === 10
-        const effectiveTelephony = (isIndiaNumber || telephonyProvider === 'vobiz') ? 'vobiz' : telephonyProvider
+        const telephonyProvider = profile?.telephony_provider || profile?.voice_telephony_provider || 'twilio'
+        const hasVobizNumber = !!profile?.voice_vobiz_number && profile.voice_vobiz_number !== '+911171366938'
+        const useVobiz = telephonyProvider === 'vobiz' && hasVobizNumber
 
-        if (effectiveTelephony === 'vobiz') {
+        if (useVobiz) {
             const vobizRes = await triggerVobizOutboundCall(supabaseAdmin, {
                 leadId: lead.id,
                 profileId: effectiveProfileId,
                 toPhone: lead.phone,
                 campaignId
             })
-            return {
-                success: vobizRes.success,
-                callSid: vobizRes.callUuid,
-                error: vobizRes.error,
-                scheduled: vobizRes.scheduled,
-                scheduledTime: vobizRes.scheduledTime
+            if (vobizRes.success || vobizRes.scheduled) {
+                return {
+                    success: vobizRes.success,
+                    callSid: vobizRes.callUuid,
+                    error: vobizRes.error,
+                    scheduled: vobizRes.scheduled,
+                    scheduledTime: vobizRes.scheduledTime
+                }
             }
+            console.warn(`[VOICE HELPER] Vobiz call attempt failed (${vobizRes.error}). Falling back to Twilio...`)
         }
 
         const twilioSid = profile.voice_twilio_sid || process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
         const twilioToken = profile.voice_twilio_token || process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
         
         const isMasterDefaultUser = profile.email === 'rchopra489@gmail.com' || profile.email === 'infobluesquareinfra@gmail.com'
-        const voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
+        let voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
+        if (voiceNumber === '+911171366938' || voiceNumber?.startsWith('+91')) {
+            voiceNumber = process.env.MASTER_TWILIO_NUMBER || '+16592137728'
+        }
 
         if (!twilioSid || !twilioToken || !voiceNumber) {
             return { success: false, error: 'Voice calling credentials or phone number are not configured. Please provision a phone number in Voice settings.' }
