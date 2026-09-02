@@ -289,7 +289,8 @@ export async function triggerOutboundCall(
         }
 
         // Primary Telephony Routing: Vobiz for Indian calls & numbers
-        const cleanPhone = (lead.phone || '').replace(/\D/g, '')
+        let cleanPhone = (lead.phone || '').replace(/\D/g, '')
+        const telephonyProvider = profile?.telephony_provider || 'vobiz'
         const isIndiaNumber = cleanPhone.startsWith('91') || cleanPhone.length === 10
         const effectiveTelephony = (isIndiaNumber || telephonyProvider === 'vobiz') ? 'vobiz' : telephonyProvider
 
@@ -320,7 +321,6 @@ export async function triggerOutboundCall(
         }
 
         // 3. Format phone number to E.164
-        let cleanPhone = lead.phone.replace(/\D/g, '')
         if (!cleanPhone.startsWith('+')) {
             if (cleanPhone.length === 10) {
                 cleanPhone = '+91' + cleanPhone // Default to India country code if 10 digits
