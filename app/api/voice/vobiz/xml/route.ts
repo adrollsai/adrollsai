@@ -117,9 +117,9 @@ async function handleRequest(req: Request) {
         warmupVoiceBridge(leadId, effectiveProfileId, effectiveCampaignId || undefined)
             .catch(e => console.warn('[VOBIZ XML] Prewarm error:', e))
 
-        let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
-        if (appUrl.includes('localhost') || appUrl.includes('127.0.0.1')) {
-            appUrl = 'https://local.nobogent.com'
+        let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
+        if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com') || appUrl.includes('127.0.0.1')) {
+            appUrl = 'https://app.nobogent.com'
         }
 
         const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'

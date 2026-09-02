@@ -105,9 +105,13 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
     try { while (typeof cf === 'string') cf = JSON.parse(cf); } catch (e) {}
   }
 
-  // If history is hidden for this agent up to cutoff, don't show pre-transfer remarks
-  if (cf?.history_visible_from && currentRole === 'agent') {
-    const cutoffTime = new Date(cf.history_visible_from).getTime();
+  const isAgent = currentRole === 'agent';
+  const cutoff = cf?.history_visible_from;
+
+  // For Agents:
+  if (isAgent && cutoff) {
+    // If history is hidden for this agent up to cutoff, don't show pre-transfer remarks
+    const cutoffTime = new Date(cutoff).getTime();
     const tFollowup = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : 0;
     const tAction = cf?.last_action_date ? new Date(cf.last_action_date).getTime() : 0;
     const tLastCall = lead.last_call_at ? new Date(lead.last_call_at).getTime() : 0;
@@ -119,6 +123,12 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
   
   // 1. Explicit latest followup / action remarks take absolute top priority
   if (cf?.last_followup_remark && typeof cf.last_followup_remark === 'string' && cf.last_followup_remark.trim()) {
+    // If agent and cutoff is set, ensure the remark is post-cutoff
+    if (isAgent && cutoff) {
+      const cutoffTime = new Date(cutoff).getTime();
+      const tFollowup = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : 0;
+      if (tFollowup < cutoffTime) return null;
+    }
     return cf.last_followup_remark.trim();
   }
   if (cf?.last_remark && typeof cf.last_remark === 'string' && cf.last_remark.trim()) {
@@ -133,6 +143,13 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
 
   // 2. Parse from notes: look for [Last Remarks]: or newest chronological note
   if (lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
+    if (isAgent && cutoff) {
+      // Notes before cutoff are hidden for agent
+      const cutoffTime = new Date(cutoff).getTime();
+      const tFollowup = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : 0;
+      if (tFollowup < cutoffTime) return null;
+    }
+
     const notesStr = lead.notes.trim();
 
     if (notesStr.includes('[Last Remarks]:')) {

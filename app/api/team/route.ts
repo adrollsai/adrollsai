@@ -302,8 +302,16 @@ export async function DELETE(req: Request) {
 
             if (deleteHistory) {
               cf.history_visible_from = cutoffTimestamp;
+              delete cf.last_followup_remark;
+              delete cf.last_remark;
+              delete cf.last_call_remark;
+              delete cf.last_followup_at;
+              delete cf.last_action_date;
+              delete cf.last_followup_by;
               updatePayload.status = 'New Lead';
               updatePayload.pipeline_stage = 'New Lead';
+              updatePayload.last_followup_remark = null;
+              updatePayload.last_call_remark = null;
             }
 
             if (!transferWithScheduledActions) {

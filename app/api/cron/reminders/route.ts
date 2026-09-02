@@ -62,6 +62,10 @@ export async function GET(request: Request) {
     // Process due followup push notifications directly
     const processedIds: string[] = []
     if (leadsToRemind && leadsToRemind.length > 0) {
+      // 1. Immediately clear next_followup from all due leads to prevent race conditions & duplicate cron triggers
+      const leadIdsToClear = leadsToRemind.map(l => l.id)
+      await supabaseAdmin.from('leads').update({ next_followup: null }).in('id', leadIdsToClear)
+
       // Gather all user IDs to resolve profiles (agent names and parent/agency admin IDs)
       const userIdsToFetch = new Set<string>()
       leadsToRemind.forEach(l => {
@@ -79,41 +83,52 @@ export async function GET(request: Request) {
         profs?.forEach(p => profileMap.set(p.id, p))
       }
 
-      for (const lead of leadsToRemind) {
-        if (lead.next_followup) {
-          const directTargetId = lead.assigned_to || lead.user_id
-          const directProfile = directTargetId ? profileMap.get(directTargetId) : null
-          const agentName = directProfile?.full_name || directProfile?.business_name || (directProfile?.email ? directProfile.email.split('@')[0] : 'Agent')
-          
-          // 1. Notify direct assignee/owner
-          if (directTargetId) {
-            await sendPushNotification(
-              directTargetId,
-              "Follow-Up Reminder ⏰",
-              `Time to follow up with ${lead.name || 'Lead'} ${lead.phone ? `(${lead.phone})` : ''}`,
-              `/dashboard/crm/${lead.id}`,
-              "reminder"
-            ).catch((err: any) => console.error('[Reminders Dispatcher Push Error (Agent)]:', err))
-          }
+      // Check recent notifications sent in the last 12 hours to prevent duplicate alerts
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString()
+      const { data: recentNotifs } = await supabaseAdmin
+        .from('notifications')
+        .select('user_id, action_link')
+        .gte('created_at', twelveHoursAgo)
 
-          // 2. Notify workspace admin / parent if direct assignee is an agent
-          const adminId = directProfile?.parent_id || directProfile?.agency_id || (lead.user_id !== directTargetId ? lead.user_id : null)
-          if (adminId && adminId !== directTargetId) {
-            await sendPushNotification(
-              adminId,
-              `Agent Follow-Up Reminder ⏰ (${agentName})`,
-              `Follow-up scheduled for ${agentName} with ${lead.name || 'Lead'} ${lead.phone ? `(${lead.phone})` : ''}`,
-              `/dashboard/crm/${lead.id}`,
-              "reminder"
-            ).catch((err: any) => console.error('[Reminders Dispatcher Push Error (Admin)]:', err))
-          }
-
-          processedIds.push(lead.id)
+      const recentNotifSet = new Set<string>()
+      recentNotifs?.forEach(n => {
+        if (n.user_id && n.action_link) {
+          recentNotifSet.add(`${n.user_id}:${n.action_link}`)
         }
-      }
+      })
 
-      if (processedIds.length > 0) {
-        await supabaseAdmin.from('leads').update({ next_followup: null }).in('id', processedIds)
+      for (const lead of leadsToRemind) {
+        const leadLink = `/dashboard/crm/${lead.id}`
+        const directTargetId = lead.assigned_to || lead.user_id
+        const directProfile = directTargetId ? profileMap.get(directTargetId) : null
+        const agentName = directProfile?.full_name || directProfile?.business_name || (directProfile?.email ? directProfile.email.split('@')[0] : 'Agent')
+        
+        // 1. Notify direct assignee/owner (if not already alerted recently)
+        if (directTargetId && !recentNotifSet.has(`${directTargetId}:${leadLink}`)) {
+          await sendPushNotification(
+            directTargetId,
+            "Follow-Up Reminder ⏰",
+            `Time to follow up with ${lead.name || 'Lead'} ${lead.phone ? `(${lead.phone})` : ''}`,
+            leadLink,
+            "reminder"
+          ).catch((err: any) => console.error('[Reminders Dispatcher Push Error (Agent)]:', err))
+          recentNotifSet.add(`${directTargetId}:${leadLink}`)
+        }
+
+        // 2. Notify workspace admin / parent if direct assignee is an agent (if not already alerted recently)
+        const adminId = directProfile?.parent_id || directProfile?.agency_id || (lead.user_id !== directTargetId ? lead.user_id : null)
+        if (adminId && adminId !== directTargetId && !recentNotifSet.has(`${adminId}:${leadLink}`)) {
+          await sendPushNotification(
+            adminId,
+            `Agent Follow-Up Reminder ⏰ (${agentName})`,
+            `Follow-up scheduled for ${agentName} with ${lead.name || 'Lead'} ${lead.phone ? `(${lead.phone})` : ''}`,
+            leadLink,
+            "reminder"
+          ).catch((err: any) => console.error('[Reminders Dispatcher Push Error (Admin)]:', err))
+          recentNotifSet.add(`${adminId}:${leadLink}`)
+        }
+
+        processedIds.push(lead.id)
       }
     }
 

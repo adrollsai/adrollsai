@@ -288,10 +288,12 @@ export async function triggerOutboundCall(
             return { success: false, error: 'Insufficient credits' }
         }
 
-        const telephonyProvider = profile.voice_telephony_provider || 'vobiz'
+        // Primary Telephony Routing: Vobiz for Indian calls & numbers
+        const cleanPhone = (lead.phone || '').replace(/\D/g, '')
+        const isIndiaNumber = cleanPhone.startsWith('91') || cleanPhone.length === 10
+        const effectiveTelephony = (isIndiaNumber || telephonyProvider === 'vobiz') ? 'vobiz' : telephonyProvider
 
-        // If telephony provider is Vobiz (default)
-        if (telephonyProvider === 'vobiz') {
+        if (effectiveTelephony === 'vobiz') {
             const vobizRes = await triggerVobizOutboundCall(supabaseAdmin, {
                 leadId: lead.id,
                 profileId: effectiveProfileId,
@@ -311,7 +313,7 @@ export async function triggerOutboundCall(
         const twilioToken = profile.voice_twilio_token || process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
         
         const isMasterDefaultUser = profile.email === 'rchopra489@gmail.com' || profile.email === 'infobluesquareinfra@gmail.com'
-        const voiceNumber = profile.voice_twilio_number || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
+        const voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
 
         if (!twilioSid || !twilioToken || !voiceNumber) {
             return { success: false, error: 'Voice calling credentials or phone number are not configured. Please provision a phone number in Voice settings.' }

@@ -94,21 +94,29 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
         return fallback
       }
 
-      // 1. Ensure imported/existing last remarks are included as distinct timeline cards
+      const cutoff = cf?.history_visible_from
+      const cutoffTime = cutoff ? new Date(cutoff).getTime() : null
+
+      // 1. Ensure imported/existing last remarks are included as distinct timeline cards (only if admin or post-cutoff)
       const lastRemark = (cf?.last_followup_remark || cf?.last_remark || '').trim()
       if (lastRemark) {
         const exists = items.some(item => (item.description || '').includes(lastRemark))
         if (!exists) {
-          const actionDate = parseActionDateFromDesc(lastRemark, cf?.last_followup_at || lead.last_call_at || lead.created_at)
-          items.push({
-            id: 'synthetic_last_remark',
-            lead_id: lead.id,
-            action_type: lastRemark.toLowerCase().includes('dnp') || lastRemark.toLowerCase().includes('not picked') ? 'DNP' : 'LAST_FOLLOWUP_REMARK',
-            description: lastRemark,
-            actor_name: lead.user_name || undefined,
-            user_id: lead.assigned_to || lead.user_id,
-            created_at: actionDate
-          })
+          const actionDateStr = parseActionDateFromDesc(lastRemark, cf?.last_followup_at || lead.last_call_at || lead.created_at)
+          const actionTime = new Date(actionDateStr).getTime()
+          const isPostCutoff = !cutoffTime || isNaN(cutoffTime) || actionTime >= cutoffTime
+
+          if (isAdmin || isPostCutoff) {
+            items.push({
+              id: 'synthetic_last_remark',
+              lead_id: lead.id,
+              action_type: lastRemark.toLowerCase().includes('dnp') || lastRemark.toLowerCase().includes('not picked') ? 'DNP' : 'LAST_FOLLOWUP_REMARK',
+              description: lastRemark,
+              actor_name: lead.user_name || undefined,
+              user_id: lead.assigned_to || lead.user_id,
+              created_at: actionDateStr
+            })
+          }
         }
       }
 
@@ -116,6 +124,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
       const hasCreationEvent = items.some(item => 
         item.action_type === 'LEAD_CREATED' || 
         item.action_type === 'LEAD_IMPORT' || 
+        item.id === 'foundational_lead_created' ||
         (item.description && item.description.includes('Lead Created from'))
       )
 
@@ -146,16 +155,15 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
       // Sort chronological descending (newest on top, initial creation at the bottom)
       items.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
 
-      const cutoff = cf?.history_visible_from
-      if (cutoff && !isAdmin) {
-        const cutoffDate = new Date(cutoff)
+      if (cutoffTime && !isAdmin) {
         items = items.filter(item => {
           const isSystem = item.action_type === 'REOPENED' || 
                            item.action_type === 'LEAD_CREATED' || 
                            item.action_type === 'SYSTEM' || 
+                           item.id === 'foundational_lead_created' ||
                            (item.description && (item.description.includes('Lead Source :') || item.description.includes('Facebook Ad Submission') || item.description.includes('Source Details :')))
           if (isSystem) return true
-          return new Date(item.created_at) >= cutoffDate
+          return new Date(item.created_at).getTime() >= cutoffTime
         })
       }
 

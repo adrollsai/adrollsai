@@ -113,8 +113,23 @@ async function handleRemindPost(request: Request) {
         console.log(`[Remind Post Cron] User ${userId} has posted to socials today. Skipping.`);
         diagnostics.skippedAlreadyPosted.push(userId);
       } else {
-        // If they haven't shared any updates to socials today, trigger the push reminder
-        console.log(`[Remind Post Cron] User ${userId} has NOT posted to socials today. Sending push notification...`);
+        // Check if we ALREADY sent a post_reminder notification to this user today
+        const { data: existingReminder } = await supabaseAdmin
+          .from('notifications')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('type', 'post_reminder')
+          .gte('created_at', startOfTodayIso)
+          .limit(1)
+
+        if (existingReminder && existingReminder.length > 0) {
+          console.log(`[Remind Post Cron] User ${userId} already received a post_reminder today. Skipping.`);
+          diagnostics.skippedAlreadyPosted.push(userId);
+          continue;
+        }
+
+        // If they haven't received a reminder today, trigger the push reminder
+        console.log(`[Remind Post Cron] User ${userId} has NOT posted today and NOT been reminded. Sending push notification...`);
         try {
           await sendPushNotification(
             userId,

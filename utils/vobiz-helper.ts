@@ -129,9 +129,9 @@ export async function triggerVobizOutboundCall(
     // Priority for caller ID: passed fromPhone -> profile.voice_vobiz_number -> profile.voice_twilio_number -> env.VOBIZ_TEST_NUMBER -> default
     let callerId = fromPhone || profile.voice_vobiz_number || profile.voice_twilio_number || process.env.VOBIZ_TEST_NUMBER || '+911171366938'
 
-    let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://local.nobogent.com'
-    if (appUrl.includes('localhost') || appUrl.includes('127.0.0.1')) {
-        appUrl = 'https://local.nobogent.com'
+    let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
+    if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com') || appUrl.includes('127.0.0.1')) {
+        appUrl = 'https://app.nobogent.com'
     }
 
     // Format destination number to E.164 (+91 standard)
