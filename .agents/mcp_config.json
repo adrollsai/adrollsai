@@ -2,6 +2,14 @@
   "mcpServers": {
     "vobiz": {
       "serverUrl": "https://vobiz.ai/docs/mcp"
+    },
+    "razorpay": {
+      "httpUrl": "https://mcp.razorpay.com/mcp",
+      "serverUrl": "https://mcp.razorpay.com/sse",
+      "headers": {
+        "Authorization": "Basic cnpwX2xpdmVfVFg0UnQweGFIb2dRbnY6S0VVeXBSeWVGQnp1eGI5eGtmTlUxR09l"
+      }
     }
   }
 }
+

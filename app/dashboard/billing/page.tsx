@@ -34,10 +34,12 @@ import {
     Star
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useRazorpay } from '@/utils/useRazorpay';
 
 export default function BillingPage() {
     const router = useRouter();
     const supabase = createClient();
+    const { openCheckout, isProcessing } = useRazorpay();
 
     const [loading, setLoading] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -130,11 +132,13 @@ export default function BillingPage() {
         fetchBillingData();
     }, [router, supabase]);
 
-    const handlePurchase = (planTitle: string, amount: number, period: string, savingsText?: string) => {
-        toast.info(`Redirecting to secure WhatsApp payment desk for ${planTitle}...`);
-        const savingsNote = savingsText ? ` (${savingsText})` : '';
-        const message = encodeURIComponent(`Hi! I would like to subscribe to the Nobogent ${planTitle} (Rs. ${amount.toLocaleString('en-IN')} + 18% GST for ${period}${savingsNote}). Please help me activate this plan.`);
-        window.open(`https://wa.me/919872669935?text=${message}`, '_blank');
+    const handlePurchase = (planId: string) => {
+        openCheckout({
+            planId: planId,
+            onSuccess: () => {
+                fetchBillingData();
+            }
+        });
     };
 
     const cleanActivePlanDisplay = activePlanName.toLowerCase().includes('early bird')
@@ -425,10 +429,11 @@ export default function BillingPage() {
                                                     </div>
 
                                                     <button
-                                                        onClick={() => handlePurchase(plan.title, plan.price, plan.duration, plan.savings ? `Save ${plan.savings.amount}` : undefined)}
-                                                        className={`w-full mt-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 ${plan.btnStyle}`}
+                                                        onClick={() => handlePurchase(plan.id)}
+                                                        disabled={isProcessing}
+                                                        className={`w-full mt-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50 ${plan.btnStyle}`}
                                                     >
-                                                        <ShoppingBag size={14} /> Subscribe Now
+                                                        <ShoppingBag size={14} /> {isProcessing ? 'Connecting...' : 'Subscribe Now'}
                                                     </button>
                                                 </div>
                                             </div>
@@ -569,10 +574,11 @@ export default function BillingPage() {
                                 {/* Subscribe Action */}
                                 <div className="p-6 bg-slate-50/60 border-t border-slate-100">
                                     <button
-                                        onClick={() => handlePurchase(plan.title, plan.price, plan.duration, plan.savings ? `Save ${plan.savings.amount}` : undefined)}
-                                        className={`w-full py-4 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 ${plan.btnStyle}`}
+                                        onClick={() => handlePurchase(plan.id)}
+                                        disabled={isProcessing}
+                                        className={`w-full py-4 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50 ${plan.btnStyle}`}
                                     >
-                                        <ShoppingBag size={16} /> Subscribe Now
+                                        <ShoppingBag size={16} /> {isProcessing ? 'Connecting...' : 'Subscribe Now'}
                                     </button>
                                 </div>
                             </div>

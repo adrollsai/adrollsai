@@ -55,6 +55,7 @@ import { toast } from 'sonner'
 import PushManager from '@/components/PushManager'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { getCallTrackingSettings, saveCallTrackingSettings, syncAndroidCallLogs, CallTrackingSettings } from '@/utils/callTracking'
+import { useRazorpay } from '@/utils/useRazorpay'
 
 type FBPage = {
   id: string
@@ -411,6 +412,23 @@ export default function ProfilePage() {
   }
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(authRole || role)
+
+  // Razorpay live payment testing
+  const { openCheckout: openRazorpayCheckout, isProcessing: isRazorpayProcessing } = useRazorpay()
+
+  const handleLiveTestPayment = () => {
+    openRazorpayCheckout({
+      packageId: 'test_1inr',
+      onSuccess: (res: any) => {
+        if (res?.credits !== undefined) {
+          setCredits(res.credits)
+        } else {
+          setCredits((prev: number) => prev + 1)
+        }
+        toast.success("✅ ₹1 Live Test Payment successful! Account verified.")
+      }
+    })
+  }
 
   // Actions
   const [isSaving, setIsSaving] = useState(false)
@@ -2417,16 +2435,26 @@ export default function ProfilePage() {
                 </div>
               </div>
               {isAdminLike && (
-                <div className="relative z-10 flex gap-3 w-full sm:w-auto shrink-0 mt-3 sm:mt-0">
+                <div className="relative z-10 flex flex-wrap gap-2.5 w-full sm:w-auto shrink-0 mt-3 sm:mt-0 items-center">
+                  {formData.email === 'rchopra489@gmail.com' && (
+                    <button
+                      onClick={handleLiveTestPayment}
+                      disabled={isRazorpayProcessing}
+                      className="w-full sm:w-auto text-center px-3.5 py-2 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black rounded-xl text-xs transition-all active:scale-95 cursor-pointer shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Sparkles size={13} className="fill-slate-950 text-slate-950" />
+                      {isRazorpayProcessing ? 'Connecting...' : '⚡ ₹1 Live Test'}
+                    </button>
+                  )}
                   <button
                     onClick={() => router.push('/dashboard/usage')}
-                    className="w-full sm:w-auto text-center px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold text-white transition-all active:scale-95 cursor-pointer shadow-sm"
+                    className="w-full sm:w-auto text-center px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-xs font-bold text-white transition-all active:scale-95 cursor-pointer shadow-sm"
                   >
                     View Ledger
                   </button>
                   <button
                     onClick={() => router.push('/dashboard/billing')}
-                    className="w-full sm:w-auto text-center px-4 py-2 bg-white text-indigo-600 hover:bg-indigo-50 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+                    className="w-full sm:w-auto text-center px-3.5 py-2 bg-white text-indigo-600 hover:bg-indigo-50 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
                   >
                     Buy Packages
                   </button>

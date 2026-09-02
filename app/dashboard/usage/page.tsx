@@ -14,8 +14,10 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getCachedValue, setCachedValue } from '@/utils/client-cache'
+import { useRazorpay } from '@/utils/useRazorpay'
 
 export default function UsagePage() {
+    const { openCheckout, isProcessing } = useRazorpay()
     const [usage, setUsage] = useState<any>(() => {
         if (typeof window !== 'undefined') {
             const cached = getCachedValue<any>('usage_cache')
@@ -81,11 +83,14 @@ export default function UsagePage() {
         }
     }
 
-    const handleRecharge = (planName: string, amount: number) => {
-        toast.info(`Redirecting to our secure WhatsApp payment desk for ${planName}...`)
-        const message = encodeURIComponent(`Hi! I would like to recharge my Nobo Credits account with the ${planName} (Rs. ${amount.toLocaleString('en-IN')}).`)
-        window.open(`https://wa.me/919872669935?text=${message}`, '_blank')
-    }
+    const handleRecharge = (packageId: string) => {
+        openCheckout({
+            packageId: packageId,
+            onSuccess: () => {
+                fetchUsage(1);
+            }
+        });
+    };
 
     if (loading) {
         return (
@@ -196,9 +201,9 @@ export default function UsagePage() {
                             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Top-Up Credit Packages</h3>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {[
-                                    { name: 'Starter Pack', amount: 2000, credits: 2000, desc: 'For growing campaigns', color: 'border-slate-200' },
-                                    { name: 'Growth Pack', amount: 5000, credits: 5000, desc: 'Calling & manual chat combo', color: 'border-indigo-600 ring-2 ring-indigo-600/10 scale-102', recommended: true },
-                                    { name: 'Enterprise Pack', amount: 10000, credits: 10000, desc: 'High volume voice calling', color: 'border-slate-200' }
+                                    { id: 'starter', name: 'Starter Pack', basePrice: 2000, totalAmount: 2360, credits: 2000, desc: 'For growing campaigns', color: 'border-slate-200' },
+                                    { id: 'growth', name: 'Growth Pack', basePrice: 5000, totalAmount: 5900, credits: 5000, desc: 'Calling & manual chat combo', color: 'border-indigo-600 ring-2 ring-indigo-600/10 scale-102', recommended: true },
+                                    { id: 'enterprise', name: 'Enterprise Pack', basePrice: 10000, totalAmount: 11800, credits: 10000, desc: 'High volume voice calling', color: 'border-slate-200' }
                                 ].map((pkg, idx) => (
                                     <div 
                                         key={idx} 
@@ -212,7 +217,7 @@ export default function UsagePage() {
                                         <div>
                                             <h4 className="text-sm font-bold text-slate-800 mb-1">{pkg.name}</h4>
                                             <p className="text-[10px] text-slate-400 font-medium mb-4">{pkg.desc}</p>
-                                            <div className="mb-4">
+                                            <div className="mb-3">
                                                 <span className="text-2xl font-black text-slate-900">
                                                     {pkg.credits.toLocaleString()}
                                                 </span>
@@ -220,15 +225,21 @@ export default function UsagePage() {
                                             </div>
                                         </div>
                                         <div>
-                                            <div className="text-xs font-bold text-slate-500 mb-4">
-                                                Rs. {pkg.amount.toLocaleString()}
+                                            <div className="mb-3">
+                                                <div className="text-sm font-black text-slate-900">
+                                                    ₹{pkg.totalAmount.toLocaleString()}
+                                                </div>
+                                                <div className="text-[10px] font-bold text-slate-400">
+                                                    ₹{pkg.basePrice.toLocaleString()} + 18% GST
+                                                </div>
                                             </div>
                                             <button
-                                                onClick={() => handleRecharge(pkg.name, pkg.amount)}
-                                                className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer ${pkg.recommended ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700'}`}
+                                                onClick={() => handleRecharge(pkg.id)}
+                                                disabled={isProcessing}
+                                                className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${pkg.recommended ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700'}`}
                                             >
                                                 <PlusCircle size={14} />
-                                                Recharge Now
+                                                {isProcessing ? 'Connecting...' : 'Recharge Now'}
                                             </button>
                                         </div>
                                     </div>
