@@ -615,12 +615,13 @@ export default function CRMPage() {
           targetAgentId: targetTransferAgentId,
           deleteHistory: deleteHistoryOnTransfer,
           transferWithScheduledActions,
-          fromAgentIds: selectedFromOwnerIds
+          fromAgentIds: selectedFromOwnerIds,
+          impersonateId
         })
       })
 
       const data = await res.json()
-      if (data.success) {
+      if (res.ok && data.success) {
         toast.success(`Successfully transferred ${data.transferredCount} lead(s) to ${data.targetAgentName}! 🎉`)
         setIsBulkActionsModalOpen(false)
         setSelectedLeadIds([])
@@ -1466,7 +1467,8 @@ export default function CRMPage() {
     toast.success("Lead assignment updated")
 
     try {
-      await supabase.from('leads').update({ assigned_to: targetAgentId }).eq('id', leadId)
+      const { error } = await supabase.from('leads').update({ assigned_to: targetAgentId }).eq('id', leadId)
+      if (error) throw error
       
       // Notify Agent
       if (targetAgentId) {
@@ -1478,8 +1480,10 @@ export default function CRMPage() {
       }
       
       fetchLeads(true, true) 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to update lead assignment:", err)
+      toast.error("Failed to update lead assignment: " + (err.message || String(err)))
+      fetchLeads(true, true)
     }
   }
 

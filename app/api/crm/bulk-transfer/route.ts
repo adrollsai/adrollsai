@@ -32,8 +32,9 @@ export async function POST(req: Request) {
       }
     }
 
+    // Handle service/fallback auth or impersonation
     if (!user && (body.userId || body.impersonateId)) {
-      const targetId = body.userId || body.impersonateId
+      const targetId = body.impersonateId || body.userId
       const { data: fallbackProfile } = await supabaseAdmin
         .from('profiles')
         .select('id')
@@ -48,27 +49,56 @@ export async function POST(req: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    const { leadIds, targetAgentId, deleteHistory, transferWithScheduledActions, fromAgentIds, useFilters, filterStage, filterDnp, filterDateRange, filterCampaign, filterForm, maxLimit, previewOnly } = body
 
-    if (!previewOnly && !targetAgentId) {
-      return NextResponse.json({ error: 'Target team member is required.' }, { status: 400 })
+    const {
+      leadIds,
+      targetAgentId,
+      deleteHistory,
+      transferWithScheduledActions = true,
+      fromAgentIds,
+      useFilters,
+      filterStage,
+      filterDnp,
+      filterDateRange,
+      filterCampaign,
+      filterForm,
+      maxLimit,
+      previewOnly,
+      impersonateId
+    } = body
+
+    // Validate target agent if not in preview mode
+    let targetProfile: any = null
+    let agentName = 'Teammate'
+
+    if (!previewOnly) {
+      if (!targetAgentId) {
+        return NextResponse.json({ error: 'Target team member is required.' }, { status: 400 })
+      }
+
+      const { data: tp, error: tpErr } = await supabaseAdmin
+        .from('profiles')
+        .select('id, business_name, email, full_name')
+        .eq('id', targetAgentId)
+        .maybeSingle()
+
+      if (tpErr || !tp) {
+        return NextResponse.json({ error: 'Selected target team member was not found.' }, { status: 404 })
+      }
+
+      targetProfile = tp
+      agentName = tp.business_name || tp.full_name || tp.email || 'Teammate'
     }
 
-    // Get target agent profile for log & notification
-    const { data: targetProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('id, business_name, email, full_name')
-      .eq('id', targetAgentId)
-      .single()
-
-    const agentName = targetProfile?.business_name || targetProfile?.full_name || targetProfile?.email || 'Teammate'
+    // Determine effective workspace user (handle impersonation)
+    const effectiveUserId = impersonateId || user.id
 
     // Get transferrer profile
     const { data: senderProfile } = await supabaseAdmin
       .from('profiles')
-      .select('id, business_name, email, full_name, agency_id, parent_id')
-      .eq('id', user.id)
-      .single()
+      .select('id, business_name, email, full_name, agency_id, parent_id, role')
+      .eq('id', effectiveUserId)
+      .maybeSingle()
 
     const senderName = senderProfile?.business_name || senderProfile?.full_name || senderProfile?.email || 'Admin'
 
@@ -76,44 +106,61 @@ export async function POST(req: Request) {
     let fetchErr: any = null
     let exactMatchedCount: number | null = null
 
+    // PATH 1: Direct Lead IDs provided (Checkbox selection or Selected list)
     if (Array.isArray(leadIds) && leadIds.length > 0 && !useFilters) {
-      // Chunk leadIds and fetch in parallel
+      const uniqueLeadIds = Array.from(new Set(leadIds.filter(Boolean)))
       const batchSize = 200
       const fetchPromises = []
-      for (let i = 0; i < leadIds.length; i += batchSize) {
-        const chunk = leadIds.slice(i, i + batchSize)
+
+      for (let i = 0; i < uniqueLeadIds.length; i += batchSize) {
+        const chunk = uniqueLeadIds.slice(i, i + batchSize)
         fetchPromises.push(
           supabaseAdmin
             .from('leads')
             .select('id, name, phone, email, notes, assigned_to, user_id, custom_fields, pipeline_stage, created_at')
             .in('id', chunk)
             .then(res => {
-              if (res.error) console.error('[Bulk Transfer Chunk Error]:', res.error)
+              if (res.error) console.error('[Bulk Transfer Chunk Fetch Error]:', res.error)
               return res.data || []
             })
         )
       }
+
       const results = await Promise.all(fetchPromises)
       rawFetchedLeads = results.flat()
+
+      // Filter by From Agent IDs if specified in the selection modal
+      if (Array.isArray(fromAgentIds) && fromAgentIds.length > 0 && !fromAgentIds.includes('ALL')) {
+        const hasUnassigned = fromAgentIds.includes('UNASSIGNED') || fromAgentIds.includes('unassigned')
+        const validAgentUuids = fromAgentIds.filter(id => id && !['ALL', 'UNASSIGNED', 'unassigned'].includes(id))
+
+        rawFetchedLeads = rawFetchedLeads.filter(lead => {
+          if (!lead.assigned_to) {
+            return hasUnassigned || validAgentUuids.includes(lead.user_id)
+          }
+          return validAgentUuids.includes(lead.assigned_to) || validAgentUuids.includes(lead.user_id)
+        })
+      }
+
       exactMatchedCount = rawFetchedLeads.length
     } else {
+      // PATH 2: Filter-based querying
       let query = supabaseAdmin
         .from('leads')
         .select('id, name, phone, email, notes, assigned_to, user_id, custom_fields, pipeline_stage, created_at', { count: 'exact' })
 
       // Find workspace profiles to scope query
-      const workspaceOwnerId = senderProfile?.agency_id || senderProfile?.parent_id || senderProfile?.id || user.id
+      const workspaceOwnerId = senderProfile?.agency_id || senderProfile?.parent_id || senderProfile?.id || effectiveUserId
       const { data: workspaceProfiles } = await supabaseAdmin
         .from('profiles')
         .select('id')
         .or(`id.eq.${workspaceOwnerId},parent_id.eq.${workspaceOwnerId},agency_id.eq.${workspaceOwnerId}`)
-      
+
       const workspaceIds = Array.from(new Set((workspaceProfiles || []).map(p => p.id)))
       if (workspaceIds.length > 0) {
-        const workspaceOr = workspaceIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
-        query = query.or(workspaceOr)
+        query = query.or(`user_id.in.(${workspaceIds.join(',')}),assigned_to.in.(${workspaceIds.join(',')})`)
       } else {
-        query = query.eq('user_id', user.id)
+        query = query.eq('user_id', effectiveUserId)
       }
 
       // Filter by From Agent IDs
@@ -177,7 +224,7 @@ export async function POST(req: Request) {
       const finalCount = (maxLimit && typeof maxLimit === 'number' && maxLimit > 0)
         ? Math.min(maxLimit, totalCount)
         : totalCount
-      
+
       return NextResponse.json({
         success: true,
         previewCount: finalCount
@@ -185,18 +232,21 @@ export async function POST(req: Request) {
     }
 
     if (fetchErr || !rawFetchedLeads || rawFetchedLeads.length === 0) {
-      return NextResponse.json({ 
-        error: 'No leads matched the selected transfer and filter criteria.' 
+      return NextResponse.json({
+        error: fetchErr ? fetchErr.message : 'No leads matched the selected transfer and filter criteria.'
       }, { status: 400 })
     }
 
+    // Apply DNP / Call Filter in-memory if requested
     let targetLeads = rawFetchedLeads
     if (filterDnp && filterDnp !== 'ALL') {
       targetLeads = targetLeads.filter(lead => {
         let cf = lead.custom_fields
-        if (typeof cf === 'string') {
-          try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+        while (typeof cf === 'string') {
+          try { cf = JSON.parse(cf) } catch (e) { cf = {}; break; }
         }
+        if (!cf || typeof cf !== 'object' || Array.isArray(cf)) cf = {}
+
         const isDnp = cf?.last_call_dnp === true || (lead.notes && lead.notes.toLowerCase().includes('dnp'))
         if (filterDnp === 'DNP_ONLY') return isDnp
         if (filterDnp === 'NO_DNP') return !isDnp
@@ -205,20 +255,21 @@ export async function POST(req: Request) {
       })
     }
 
-    if (previewOnly) {
-      const finalCount = (maxLimit && typeof maxLimit === 'number' && maxLimit > 0)
-        ? Math.min(maxLimit, targetLeads.length)
-        : targetLeads.length
+    // Apply maxLimit guarantee
+    if (maxLimit && typeof maxLimit === 'number' && maxLimit > 0) {
+      targetLeads = targetLeads.slice(0, maxLimit)
+    }
 
+    if (previewOnly) {
       return NextResponse.json({
         success: true,
-        previewCount: finalCount
+        previewCount: targetLeads.length
       })
     }
 
     if (targetLeads.length === 0) {
-      return NextResponse.json({ 
-        error: 'No leads matched the selected DNP / filter criteria.' 
+      return NextResponse.json({
+        error: 'No leads matched the selected DNP / filter criteria.'
       }, { status: 400 })
     }
 
@@ -226,8 +277,9 @@ export async function POST(req: Request) {
     const cutoffTimestamp = new Date().toISOString()
     const BATCH_SIZE = 250
 
+    // EXECUTE UPDATES
     if (!deleteHistory && transferWithScheduledActions) {
-      // Ultra-fast parallel batch update: update assigned_to in chunks of 250
+      // Fast parallel batch update: update assigned_to in chunks of 250
       const updatePromises = []
       for (let i = 0; i < validLeadIds.length; i += BATCH_SIZE) {
         const chunk = validLeadIds.slice(i, i + BATCH_SIZE)
@@ -238,17 +290,24 @@ export async function POST(req: Request) {
             .in('id', chunk)
         )
       }
-      await Promise.all(updatePromises)
+      const updateResults = await Promise.all(updatePromises)
+      for (const res of updateResults) {
+        if (res.error) {
+          console.error('[Bulk Transfer Batch Update Error]:', res.error)
+          throw new Error(res.error.message || 'Failed to update lead assignments')
+        }
+      }
     } else {
-      // Custom field updates in parallel groups of 50
-      const PARALLEL_GROUP = 50
+      // Row updates in safe parallel groups of 25 with retry
+      const PARALLEL_GROUP = 25
       for (let i = 0; i < targetLeads.length; i += PARALLEL_GROUP) {
         const group = targetLeads.slice(i, i + PARALLEL_GROUP)
-        await Promise.all(group.map(lead => {
+        const results = await Promise.all(group.map(async lead => {
           let cf = lead.custom_fields || {}
-          if (typeof cf === 'string') {
-            try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+          while (typeof cf === 'string') {
+            try { cf = JSON.parse(cf) } catch (e) { cf = {}; break; }
           }
+          if (!cf || typeof cf !== 'object' || Array.isArray(cf)) cf = {}
 
           const updatePayload: any = {
             assigned_to: targetAgentId
@@ -262,10 +321,11 @@ export async function POST(req: Request) {
             delete cf.last_followup_at
             delete cf.last_action_date
             delete cf.last_followup_by
+            delete cf.last_call_status
+            delete cf.last_call_dnp
+            delete cf.dnp_count
             updatePayload.status = 'New Lead'
             updatePayload.pipeline_stage = 'New Lead'
-            updatePayload.last_followup_remark = null
-            updatePayload.last_call_remark = null
           }
 
           if (!transferWithScheduledActions) {
@@ -280,11 +340,29 @@ export async function POST(req: Request) {
 
           updatePayload.custom_fields = cf
 
-          return supabaseAdmin
+          let res = await supabaseAdmin
             .from('leads')
             .update(updatePayload)
             .eq('id', lead.id)
+
+          // One retry in case of momentary connection hiccup
+          if (res.error) {
+            await new Promise(r => setTimeout(r, 100))
+            res = await supabaseAdmin
+              .from('leads')
+              .update(updatePayload)
+              .eq('id', lead.id)
+          }
+
+          return res
         }))
+
+        for (const res of results) {
+          if (res.error) {
+            console.error('[Bulk Transfer Row Update Error]:', res.error)
+            throw new Error(res.error.message || 'Failed to update lead custom fields and assignment')
+          }
+        }
       }
     }
 
@@ -293,7 +371,7 @@ export async function POST(req: Request) {
       lead_id: leadId,
       user_id: user.id,
       action_type: 'TRANSFER',
-      description: deleteHistory 
+      description: deleteHistory
         ? `🔄 Lead transferred from ${senderName} to ${agentName} (History Hidden & Moved to New Lead)`
         : `🔄 Lead transferred from ${senderName} to ${agentName}`
     }))
@@ -305,36 +383,43 @@ export async function POST(req: Request) {
         supabaseAdmin.from('lead_history').insert(chunk)
       )
     }
-    await Promise.all(historyPromises)
+    const historyResults = await Promise.all(historyPromises)
+    for (const res of historyResults) {
+      if (res.error) {
+        console.warn('[Bulk Transfer History Insert Warning]:', res.error.message)
+      }
+    }
 
-    // Trigger Push Notification & Email Notification to target agent in background
-    ;(async () => {
-      try {
-        const notifTitle = `🔄 ${validLeadIds.length} Lead(s) Transferred to You!`
-        const notifBody = `${senderName} transferred ${validLeadIds.length} lead(s) to your CRM pipeline.`
-        
-        // 1. Send Push Notification
-        await sendPushNotification(
+    // Trigger Push Notification & Email Notification to target agent safely
+    try {
+      const notifTitle = `🔄 ${validLeadIds.length} Lead(s) Transferred to You!`
+      const notifBody = `${senderName} transferred ${validLeadIds.length} lead(s) to your CRM pipeline.`
+
+      const notifPromises: Promise<any>[] = [
+        sendPushNotification(
           targetAgentId,
           notifTitle,
           notifBody,
           '/dashboard/crm',
           'lead_transfer'
         ).catch((err: any) => console.error('[Bulk Transfer Push Error]:', err))
+      ]
 
-        // 2. Send Email Notification
-        if (targetProfile?.email) {
-          await sendLeadTransferEmail(
+      if (targetProfile?.email) {
+        notifPromises.push(
+          sendLeadTransferEmail(
             targetProfile.email,
             agentName,
             senderName,
             validLeadIds.length
           ).catch((err: any) => console.error('[Bulk Transfer Email Error]:', err))
-        }
-      } catch (notifErr: any) {
-        console.error('[Bulk Transfer Notification Exception]:', notifErr)
+        )
       }
-    })()
+
+      await Promise.allSettled(notifPromises)
+    } catch (notifErr: any) {
+      console.error('[Bulk Transfer Notification Exception]:', notifErr)
+    }
 
     return NextResponse.json({
       success: true,
