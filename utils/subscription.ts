@@ -41,6 +41,48 @@ export const PLANS = {
             storage_gb: 10
         }
     },
+    '1-month': {
+        name: "1 Month Plan",
+        price: 9999,
+        limits: {
+            videos: 10,
+            images: 50,
+            seo_articles: 30,
+            campaign_launches: 10,
+            campaign_optimizations: 10,
+            team_members: 5,
+            retargeting_campaigns: 0,
+            storage_gb: 10
+        }
+    },
+    '6-months': {
+        name: "6 Months Plan",
+        price: 54999,
+        limits: {
+            videos: 10,
+            images: 50,
+            seo_articles: 30,
+            campaign_launches: 10,
+            campaign_optimizations: 10,
+            team_members: 5,
+            retargeting_campaigns: 0,
+            storage_gb: 10
+        }
+    },
+    '12-months': {
+        name: "12 Months Plan",
+        price: 99999,
+        limits: {
+            videos: 10,
+            images: 50,
+            seo_articles: 30,
+            campaign_launches: 10,
+            campaign_optimizations: 10,
+            team_members: 5,
+            retargeting_campaigns: 0,
+            storage_gb: 10
+        }
+    },
     'early bird plan': {
         name: "Pro Plan",
         price: 9999,
