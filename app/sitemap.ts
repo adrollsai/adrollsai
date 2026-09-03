@@ -96,8 +96,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ]
   }
 
-  // Primary platform domain - index standard platform routes
-  return [
+  // Primary platform domain - index standard platform routes + shared catalogues
+  const platformUrls: MetadataRoute.Sitemap = [
     {
       url: baseUrl,
       lastModified: new Date(),
@@ -129,4 +129,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.3,
     },
   ]
+
+  // Add shared catalogue pages for all active business profiles
+  try {
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    const { data: activeProfiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, updated_at, business_name')
+      .not('business_name', 'is', null)
+      .neq('business_name', '')
+      .in('role', ['super_admin', 'agency', 'admin', 'client'])
+
+    if (activeProfiles && activeProfiles.length > 0) {
+      for (const profile of activeProfiles) {
+        platformUrls.push({
+          url: `${baseUrl}/shared/${profile.id}`,
+          lastModified: profile.updated_at ? new Date(profile.updated_at) : new Date(),
+          changeFrequency: 'weekly',
+          priority: 0.6,
+        })
+      }
+    }
+  } catch (e) {
+    console.error('[Sitemap] Error fetching shared catalogue profiles:', e)
+  }
+
+  return platformUrls
 }

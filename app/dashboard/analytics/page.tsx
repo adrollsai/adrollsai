@@ -3340,7 +3340,8 @@ export default function AnalyticsPage() {
                                 } catch (e) {}
                               }
 
-                              const isVisited = cf?.has_visited === true || cf?.visited === true || (lead.pipeline_stage || lead.status || '').toLowerCase().includes('visit') || (typeof lead.notes === 'string' && /visit\s+done|site\s+visit\s+done|visited|revisit\s+done/i.test(lead.notes))
+                              const stageLower = (lead.pipeline_stage || lead.status || '').toLowerCase()
+                              const isVisited = cf?.has_visited === true || cf?.visited === true || (!stageLower.includes('planned') && !stageLower.includes('scheduled') && (stageLower.includes('visit done') || stageLower === 'visited' || stageLower.includes('revisit done') || stageLower.includes('appointment done') || stageLower.includes('site visit done')))
 
                               return (
                                 <tr key={lead.id} className="hover:bg-blue-50/40 transition-colors group">

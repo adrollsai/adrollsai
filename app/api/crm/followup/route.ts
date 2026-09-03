@@ -235,14 +235,19 @@ export async function POST(request: Request) {
     }
 
     const chosenStage = `${updatePayload.pipeline_stage || ''} ${leadStatus || ''} ${followupType || ''}`.toLowerCase()
-    if (
-      chosenStage.includes('visit done') || 
-      chosenStage.includes('visited') || 
-      chosenStage.includes('revisit done') || 
-      chosenStage.includes('visit planned') || 
-      chosenStage.includes('appointment done') ||
-      chosenStage.includes('site visit')
-    ) {
+    const isCompletedVisit = 
+      !chosenStage.includes('planned') && 
+      !chosenStage.includes('scheduled') && 
+      (
+        chosenStage.includes('visit done') || 
+        chosenStage.includes('visited') || 
+        chosenStage.includes('revisit done') || 
+        chosenStage.includes('re-visited') || 
+        chosenStage.includes('appointment done') ||
+        chosenStage.includes('site visit done')
+      );
+
+    if (isCompletedVisit) {
       customFields.has_visited = true
       if (!customFields.visited_at) customFields.visited_at = new Date().toISOString()
     }

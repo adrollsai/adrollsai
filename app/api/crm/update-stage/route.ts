@@ -82,14 +82,23 @@ export async function POST(request: Request) {
     let cf = (checkLead as any).custom_fields || {}
     if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
     const stageLower = (newStage || '').toLowerCase()
-    if (
-      stageLower.includes('visit done') || 
-      stageLower.includes('visited') || 
-      stageLower.includes('revisit done') || 
-      stageLower.includes('visit planned') || 
-      stageLower.includes('appointment done') ||
-      stageLower.includes('site visit')
-    ) {
+    const isCompletedVisit = 
+      !stageLower.includes('planned') && 
+      !stageLower.includes('scheduled') && 
+      (
+        stageLower === 'visit done' || 
+        stageLower === 'visited' || 
+        stageLower === 'revisit done' || 
+        stageLower === 're-visited' || 
+        stageLower === 'revisit' || 
+        stageLower === 'appointment done' ||
+        stageLower.includes('visit done') || 
+        stageLower.includes('site visit done') || 
+        stageLower.includes('revisit done') ||
+        stageLower.includes('appointment done')
+      );
+
+    if (isCompletedVisit) {
       cf.has_visited = true
       if (!cf.visited_at) cf.visited_at = new Date().toISOString()
     }

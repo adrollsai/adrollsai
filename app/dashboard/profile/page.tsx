@@ -868,13 +868,18 @@ export default function ProfilePage() {
         })
 
         let parsedNotificationEmail = profileData.notification_email || '';
-        if (!parsedNotificationEmail && profileData.business_info) {
+        let parsedTimezone = profileData.timezone || '';
+        if (profileData.business_info) {
           try {
             const parsed = typeof profileData.business_info === 'string' && profileData.business_info.startsWith('{')
               ? JSON.parse(profileData.business_info)
               : profileData.business_info;
-            if (parsed?.notification_email) parsedNotificationEmail = parsed.notification_email;
+            if (parsed?.notification_email && !parsedNotificationEmail) parsedNotificationEmail = parsed.notification_email;
+            if (parsed?.timezone && !parsedTimezone) parsedTimezone = parsed.timezone;
           } catch {}
+        }
+        if (!parsedTimezone && typeof window !== 'undefined') {
+          parsedTimezone = localStorage.getItem('nobogent_user_timezone') || 'Asia/Kolkata';
         }
 
         setFormData({
@@ -893,7 +898,7 @@ export default function ProfilePage() {
           instagramUrl: profileData.instagram_url || '',
           customPrompt: profileData.custom_prompt || '',
           currency: profileData.currency || 'INR',
-          timezone: profileData.timezone || (typeof window !== 'undefined' ? localStorage.getItem('nobogent_user_timezone') : null) || 'Asia/Kolkata',
+          timezone: parsedTimezone || 'Asia/Kolkata',
           industry: profileData.industry || '',
           whatsappPersonalNumber: profileData.whatsapp_personal_number || '',
           notificationEmail: parsedNotificationEmail,
@@ -3345,24 +3350,6 @@ export default function ProfilePage() {
                             className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-3 px-5 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                           >
                             <Users size={14} /> Manage Custom Audiences
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Pipeline Stages & Meta CAPI Settings */}
-                      <div className="bg-blue-50/60 rounded-3xl p-4 border border-blue-100 mt-4">
-                        <div className="flex justify-between items-center mb-2 px-1">
-                          <label className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Pipeline Stages & Conversion API</label>
-                        </div>
-                        <div className="py-2 px-1 flex flex-col gap-3 text-left">
-                          <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                            Customize lead statuses (Fresh, Ongoing, Not Interested) and choose which stages automatically trigger Meta Conversion API (CAPI) events.
-                          </p>
-                          <button
-                            onClick={() => router.push(`/dashboard/profile/stages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3 px-5 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
-                          >
-                            <Layers size={14} /> Configure Stages & Meta CAPI
                           </button>
                         </div>
                       </div>

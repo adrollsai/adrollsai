@@ -83,16 +83,26 @@ function hasLeadVisited(lead: any): boolean {
   if (cf?.has_visited === true || cf?.visited === true) return true;
   const stage = (lead.status || lead.pipeline_stage || '').toLowerCase().trim();
   if (
-    stage.includes('visit done') || 
-    stage.includes('visited') || 
-    stage.includes('revisit done') || 
-    stage.includes('appointment done') || 
-    stage.includes('visit planned') ||
-    stage.includes('site visit')
+    stage.includes('planned') || 
+    stage.includes('scheduled') || 
+    stage.includes('booked') || 
+    stage.includes('not visited') || 
+    stage.includes('cancelled')
   ) {
-    return true;
+    return false;
   }
-  if (typeof lead.notes === 'string' && /visit\s+done|site\s+visit\s+done|visited|revisit\s+done|visit\s+planned/i.test(lead.notes)) {
+  if (
+    stage === 'visit done' || 
+    stage === 'visited' || 
+    stage === 'revisit done' || 
+    stage === 're-visited' || 
+    stage === 'revisit' || 
+    stage === 'appointment done' ||
+    stage.includes('visit done') || 
+    stage.includes('site visit done') || 
+    stage.includes('revisit done') || 
+    stage.includes('appointment done')
+  ) {
     return true;
   }
   return false;

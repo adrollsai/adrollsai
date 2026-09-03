@@ -330,28 +330,39 @@ export async function POST(request: Request) {
       }
     }
 
-    // Sync notification_email into business_info JSON for 100% fail-safe persistence
-    if (updates.notification_email !== undefined) {
-      try {
-        let bInfo: any = {};
-        if (allowedUpdates.business_info) {
-          bInfo = typeof allowedUpdates.business_info === 'string' && allowedUpdates.business_info.startsWith('{')
-            ? JSON.parse(allowedUpdates.business_info)
-            : { bio: allowedUpdates.business_info };
-        } else {
-          const { data: curProf } = await supabaseAdmin.from('profiles').select('business_info').eq('id', targetUserId).maybeSingle();
-          if (curProf?.business_info) {
-            bInfo = typeof curProf.business_info === 'string' && curProf.business_info.startsWith('{')
-              ? JSON.parse(curProf.business_info)
-              : { bio: curProf.business_info };
-          }
+    // Save values for response & auth metadata before stripping un-migrated DB columns
+    const requestedTimezone = updates.timezone || 'Asia/Kolkata'
+    const requestedNotificationEmail = updates.notification_email !== undefined ? (updates.notification_email ? updates.notification_email.trim() : null) : undefined
+
+    // Sync notification_email and timezone into business_info JSON for 100% fail-safe persistence
+    try {
+      let bInfo: any = {};
+      if (allowedUpdates.business_info) {
+        bInfo = typeof allowedUpdates.business_info === 'string' && allowedUpdates.business_info.startsWith('{')
+          ? JSON.parse(allowedUpdates.business_info)
+          : { bio: allowedUpdates.business_info };
+      } else {
+        const { data: curProf } = await supabaseAdmin.from('profiles').select('business_info').eq('id', targetUserId).maybeSingle();
+        if (curProf?.business_info) {
+          bInfo = typeof curProf.business_info === 'string' && curProf.business_info.startsWith('{')
+            ? JSON.parse(curProf.business_info)
+            : { bio: curProf.business_info };
         }
-        bInfo.notification_email = updates.notification_email ? updates.notification_email.trim() : null;
-        allowedUpdates.business_info = JSON.stringify(bInfo);
-      } catch (bErr) {
-        console.warn("[Profile Update API] Failed to serialize notification_email into business_info:", bErr);
       }
+      if (requestedNotificationEmail !== undefined) {
+        bInfo.notification_email = requestedNotificationEmail;
+      }
+      if (updates.timezone !== undefined) {
+        bInfo.timezone = requestedTimezone;
+      }
+      allowedUpdates.business_info = JSON.stringify(bInfo);
+    } catch (bErr) {
+      console.warn("[Profile Update API] Failed to serialize extra metadata into business_info:", bErr);
     }
+
+    // CRITICAL: Delete virtual columns that don't exist in the profiles DB schema cache
+    delete allowedUpdates.timezone
+    delete allowedUpdates.notification_email
 
     let { data, error } = await supabaseAdmin
       .from('profiles')
@@ -372,37 +383,8 @@ export async function POST(request: Request) {
         if (error.message?.includes('avatar_url')) delete healedUpdates.avatar_url
         if (error.message?.includes('avatar_description')) delete healedUpdates.avatar_description
         if (error.message?.includes('avatar_audio_url')) delete healedUpdates.avatar_audio_url
-        if (error.message?.includes('timezone')) delete healedUpdates.timezone
-        if (error.message?.includes('notification_email')) delete healedUpdates.notification_email
-
-        // Also sync timezone and notification_email to user_metadata as persistent fallback
-        const metaUpdates: any = {}
-        if (allowedUpdates.timezone) metaUpdates.timezone = allowedUpdates.timezone
-        if (allowedUpdates.notification_email) metaUpdates.notification_email = allowedUpdates.notification_email
-        if (Object.keys(metaUpdates).length > 0) {
-          try {
-            await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
-              user_metadata: metaUpdates
-            })
-          } catch (metaErr) {}
-        }
-
-        if (Object.keys(healedUpdates).length === 0) {
-          const { data: currentProfile } = await supabaseAdmin
-            .from('profiles')
-            .select('*')
-            .eq('id', targetUserId)
-            .maybeSingle()
-
-          return NextResponse.json({ 
-            success: true, 
-            profile: { 
-              ...currentProfile, 
-              timezone: allowedUpdates.timezone || 'Asia/Kolkata',
-              notification_email: allowedUpdates.notification_email || null
-            }
-          })
-        }
+        delete healedUpdates.timezone
+        delete healedUpdates.notification_email
 
         const retryResult = await supabaseAdmin
           .from('profiles')
@@ -411,31 +393,39 @@ export async function POST(request: Request) {
           .maybeSingle()
 
         if (!retryResult.error) {
-          return NextResponse.json({ 
-            success: true, 
-            profile: { 
-              ...retryResult.data, 
-              timezone: allowedUpdates.timezone || 'Asia/Kolkata',
-              notification_email: allowedUpdates.notification_email || null
-            }
-          })
+          data = retryResult.data
+          error = null
+        } else {
+          error = retryResult.error
         }
-        error = retryResult.error
       }
 
-      console.error("[Profile Update API] Database update error:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) {
+        console.error("[Profile Update API] Database update error:", error)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
     }
 
-    if (allowedUpdates.timezone) {
-      try {
+    // Also sync timezone and notification_email to user_metadata as persistent fallback
+    try {
+      const metaUpdates: any = {}
+      if (requestedTimezone) metaUpdates.timezone = requestedTimezone
+      if (requestedNotificationEmail !== undefined) metaUpdates.notification_email = requestedNotificationEmail
+      if (Object.keys(metaUpdates).length > 0) {
         await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
-          user_metadata: { timezone: allowedUpdates.timezone }
+          user_metadata: metaUpdates
         })
-      } catch (metaErr) {}
-    }
+      }
+    } catch (metaErr) {}
 
-    return NextResponse.json({ success: true, profile: data })
+    return NextResponse.json({ 
+      success: true, 
+      profile: {
+        ...data,
+        timezone: requestedTimezone,
+        notification_email: requestedNotificationEmail !== undefined ? requestedNotificationEmail : null
+      } 
+    })
 
   } catch (error: any) {
     console.error("[Profile Update API] General error:", error)

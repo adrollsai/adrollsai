@@ -8,7 +8,7 @@ import { matchesCampaignRule } from '@/utils/campaign-matcher'
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 export const revalidate = 0
-export const maxDuration = 60
+export const maxDuration = 300
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -101,6 +101,16 @@ async function handleSync(request: Request) {
         const pageToken = profile.selected_page_token || profile.facebook_token;
         if (!pageId || !pageToken) return;
 
+        // Auto-heal page webhook subscription on Meta
+        fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscribed_fields: ['leadgen'],
+            access_token: pageToken
+          })
+        }).catch(() => {});
+
         try {
           // 1. Fetch ALL Leadgen Forms with full pagination (limit 100 per page)
           const formsList: any[] = [];
@@ -185,18 +195,22 @@ async function handleSync(request: Request) {
 
           // 5. Helper to process any batch of Meta leads
           async function processFbLeadsBatch(fbLeads: any[], fallbackFormOrAdName: string, fallbackCampName = '', fallbackCampId: string | null = null, formIdParam?: string) {
+            if (!fbLeads || fbLeads.length === 0) return;
+
+            // Batch check which leads already exist in DB by facebook_lead_id
+            const leadIds = fbLeads.map((l: any) => l.id).filter(Boolean);
+            const { data: existingRecords } = await supabaseAdmin
+              .from('leads')
+              .select('facebook_lead_id')
+              .in('facebook_lead_id', leadIds);
+            const existingLeadIdSet = new Set(existingRecords?.map((r: any) => r.facebook_lead_id) || []);
+
             for (const fbLead of fbLeads) {
               const leadgenId = fbLead.id;
               if (!leadgenId) continue;
 
               // Check if already in DB by facebook_lead_id
-              const { data: existingByFbId } = await supabaseAdmin
-                .from('leads')
-                .select('id')
-                .eq('facebook_lead_id', leadgenId)
-                .limit(1);
-
-              if (existingByFbId && existingByFbId.length > 0) {
+              if (existingLeadIdSet.has(leadgenId)) {
                 continue; // Already processed
               }
 
@@ -544,8 +558,9 @@ async function handleSync(request: Request) {
             }
           }
 
-          // 6. Iterate through all leadgen forms
-          for (const form of formsList) {
+          // 6. Iterate through active leadgen forms
+          const formsToScan = formsList.filter((f: any) => f.status === 'ACTIVE' || !f.status);
+          for (const form of formsToScan) {
             const formId = form.id;
             const formName = form.name || 'Meta Form';
 

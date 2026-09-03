@@ -50,11 +50,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const iconUrl = profileData?.logo_url 
      ? `/api/org-icon?type=icon&v=${logoVersion}${uidParam}` 
-     : "/icon-192x192.png?v=2";
+     : "/icon-192x192.png?v=3";
      
   const faviconUrl = profileData?.logo_url 
      ? `/api/org-icon?type=favicon&v=${logoVersion}${uidParam}` 
-     : "/favicon.ico?v=2";
+     : "/favicon.ico?v=3";
 
   return {
     metadataBase: new URL(`https://${host}`),
