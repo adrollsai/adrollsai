@@ -152,14 +152,28 @@ export async function POST(req: Request) {
         // 3c. Subscribe the WABA to the app's webhooks so we receive incoming messages
         if (finalWabaId && accessToken) {
             try {
-                const subscribeRes = await fetch(`https://graph.facebook.com/v20.0/${finalWabaId}/subscribed_apps`, {
+                let subscribeRes = await fetch(`https://graph.facebook.com/v20.0/${finalWabaId}/subscribed_apps`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json'
                     }
                 });
-                const subscribeData = await subscribeRes.json();
+                let subscribeData = await subscribeRes.json();
+
+                // If user's client token lacks whatsapp_business_management, retry with system dev token
+                if ((!subscribeRes.ok || !subscribeData.success) && process.env.DEV_WHATSAPP_ACCESS_TOKEN) {
+                    console.log('[WHATSAPP ONBOARD] User token lacks permission for WABA subscription, retrying with DEV_WHATSAPP_ACCESS_TOKEN...');
+                    subscribeRes = await fetch(`https://graph.facebook.com/v20.0/${finalWabaId}/subscribed_apps`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${process.env.DEV_WHATSAPP_ACCESS_TOKEN}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    subscribeData = await subscribeRes.json();
+                }
+
                 if (subscribeRes.ok && subscribeData.success) {
                     console.log('[WHATSAPP ONBOARD] ✅ WABA webhook subscription activated successfully.');
                 } else {
