@@ -1680,9 +1680,12 @@ IMPORTANT RULES:
                                     const catalogueLink = ownerCustomDomain 
                                         ? `https://${ownerCustomDomain}` 
                                         : `${appUrl}/shared/${ownerUserId}`;
-                                    const bookingLink = ownerCustomDomain 
-                                        ? `https://${ownerCustomDomain}?book=1` 
-                                        : `${appUrl}/shared/${ownerUserId}?book=1`;
+                                    const baseBookingUrl = ownerCustomDomain 
+                                        ? `https://${ownerCustomDomain}` 
+                                        : `${appUrl}/shared/${ownerUserId}`;
+                                    const bookingLink = latestLead?.id 
+                                        ? `${baseBookingUrl}/booking/${latestLead.id}` 
+                                        : `${baseBookingUrl}/booking`;
 
                                     const isNobogentAccount = 
                                         ownerUserId === 'bc63c065-9bcc-4793-bedc-f0960406425b' ||
@@ -1741,6 +1744,75 @@ IMPORTANT RULES:
                                             }
                                         } catch (err) {
                                             console.error('[WhatsApp Bot] Error sending 3-button menu:', err);
+                                        }
+                                    };
+
+                                    // Helper: Answer customer free-form property inquiry with AI + 3 Action Buttons
+                                    const answerCustomerQueryWithAI = async (queryText: string) => {
+                                        try {
+                                            console.log(`🤖 [Customer AI] Answering query from ${cleanFrom} for ${ownerBusinessName}: "${queryText}"`);
+                                            
+                                            // Fetch real-time available properties for owner
+                                            const { data: properties } = await supabaseAdmin
+                                                .from('properties')
+                                                .select('title, price, address, property_type, description')
+                                                .eq('user_id', ownerUserId)
+                                                .limit(15);
+                                                
+                                            let inventoryText = 'No specific listings in database yet.';
+                                            if (properties && properties.length > 0) {
+                                                inventoryText = properties.map((p: any, idx: number) => {
+                                                    return `${idx + 1}. *${p.title}*\n   • Type: ${p.property_type || 'Residential'}\n   • Price: ${p.price || 'Contact for Price'}\n   • Location: ${p.address || 'New Chandigarh / Tri-city'}\n   • Highlights: ${p.description ? p.description.slice(0, 250) : 'Premium property'}`;
+                                                }).join('\n\n');
+                                            }
+
+                                            const systemPrompt = isNobogentAccount ? 
+`You are the friendly, knowledgeable AI Assistant for ${ownerBusinessName || 'Nobogent'}.
+Nobogent is the world's first AI Sales & Marketing Department for Real Estate developers and brokers.
+Answer the prospect's query clearly, politely, and accurately in 1-2 concise paragraphs (under 120 words).
+Use standard WhatsApp formatting (bold *text*, bullet points •). Do NOT use markdown tables or HTML.
+Always end by inviting them to explore our platform features or speak with a specialist.`
+:
+`You are the friendly, expert AI Property Advisor representing "${ownerBusinessName}".
+You assist potential buyers and investors looking for premium real estate opportunities.
+
+Available Real Estate Inventory for ${ownerBusinessName}:
+${inventoryText}
+
+RULES:
+1. Provide a direct, professional, and enthusiastic answer to the client's query.
+2. If the user asks about a specific location (e.g. New Chandigarh, Mohali, Mullanpur, etc.), property type (e.g. villas, apartments, plots, independent floors), or price range, highlight 2-3 of the best matching projects from the inventory above with their project name, key highlights, and price range.
+3. If they ask a general question or ask about an area not directly listed above, mention our primary options in New Chandigarh / Tricity and reassure them that our advisory portfolio includes prime residential, commercial, and luxury inventory across the region.
+4. Keep the entire response under 150 words. Be concise, warm, and readable on mobile.
+5. Format strictly for WhatsApp: use standard bullet points (•) and bold (*project name*). NEVER use markdown tables (| --- |), code blocks, or HTML tags.
+6. Conclude with a helpful 1-sentence prompt inviting them to explore our catalog or connect with an expert.`;
+
+                                            let aiReply = '';
+                                            try {
+                                                const { text } = await generateText({
+                                                    model: google.chat('gemini-3.5-flash'),
+                                                    system: systemPrompt,
+                                                    prompt: `Client WhatsApp Query: "${queryText}"`
+                                                });
+                                                aiReply = text;
+                                            } catch (callErr: any) {
+                                                console.warn('[Customer AI] generateText failed, falling back to callGemini:', callErr?.message);
+                                                aiReply = await callGemini(`${systemPrompt}\n\nClient WhatsApp Query: "${queryText}"`);
+                                            }
+
+                                            if (!aiReply || aiReply.trim().length === 0) {
+                                                aiReply = `Thank you for reaching out to *${ownerBusinessName}*! We offer premium residential & commercial properties in prime locations. Please check our catalog below or speak directly with our property specialist.`;
+                                            }
+
+                                            // Send AI answer as clear message
+                                            await sendTextMessage(aiReply);
+                                            await new Promise(r => setTimeout(r, 600));
+                                            
+                                            // Send 3 action buttons for easy next steps
+                                            await sendThreeButtons("What would you like to do next?");
+                                        } catch (err) {
+                                            console.error('[Customer AI] Failed to generate AI reply:', err);
+                                            await sendThreeButtons("What would you like to do next?");
                                         }
                                     };
 
@@ -2151,6 +2223,15 @@ IMPORTANT RULES:
                                                 return;
                                             }
 
+                                            // Check if user is asking a specific question/inquiry about projects, location, price, etc.
+                                            const isQuestionOrInquiry = messageText.includes('?') ||
+                                                /\b(which|what|where|when|who|how|why|options|option|project|projects|flat|flats|villa|villas|apartment|apartments|plot|plots|floor|floors|commercial|residential|price|cost|budget|rates|rate|location|located|address|chandigarh|omaxe|lake|mulberry|celestia|cassia|resort|birch|ambrosia|gardenia|mullanpur|mohali|panchkula|site|visit|office|brochure|detail|details|tell me|show me|explain|available|availability)\b/i.test(messageText);
+
+                                            if (isQuestionOrInquiry) {
+                                                await answerCustomerQueryWithAI(messageText);
+                                                return;
+                                            }
+
                                             // Determine answer value
                                             let selectedValue = messageText.trim();
                                             if (Array.isArray(activeQ.options) && activeQ.options.length > 0) {
@@ -2273,8 +2354,15 @@ IMPORTANT RULES:
                                             return;
                                         }
 
-                                        // All questions answered: respond strictly with "What would you like to do?" and the 3 buttons
-                                        await sendThreeButtons("What would you like to do?");
+                                        // All questions answered: if user sends a greeting, greet warmly; otherwise answer with AI + inventory!
+                                        const isGreeting = /^(hi|hello|hey|namaste|good morning|good afternoon|good evening|start|menu)$/i.test(messageText.trim().toLowerCase());
+                                        if (isGreeting) {
+                                            await sendThreeButtons(`Hello! Welcome to ${ownerBusinessName || 'our team'}. What would you like to do?`);
+                                            return;
+                                        }
+
+                                        // Free-form inquiry / question: Answer with AI + Real Inventory + 3 Action Buttons!
+                                        await answerCustomerQueryWithAI(messageText);
                                         return;
 
                                 } catch (bgErr) {

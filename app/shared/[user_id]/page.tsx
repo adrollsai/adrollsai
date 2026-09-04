@@ -119,6 +119,16 @@ export default function SharedCataloguePage() {
     return raw
   }
 
+  // Redirect to dedicated booking calendar if ?book=1 is present
+  useEffect(() => {
+    if (searchParams.get('book') === '1' || searchParams.get('book') === 'true') {
+      const identifier = getSafeIdentifier();
+      const isCustomDomain = typeof window !== 'undefined' && !window.location.pathname.startsWith('/shared/');
+      const target = isCustomDomain ? '/booking' : `/shared/${identifier || 'preview'}/booking`;
+      window.location.replace(target);
+    }
+  }, [searchParams]);
+
   // --- 2. DATA FETCHING ---
   const fetchData = async (isManual = false) => {
     const identifier = getSafeIdentifier()

@@ -6,7 +6,7 @@ import {
   Search, Phone, MessageCircle, RefreshCw, Upload, 
   Plus, CheckCircle2, X, Download, Trash2, UserPlus, Eye,
   Clock, Bell, Users, Shuffle, Mail, Tag, Loader2, Filter, ChevronDown, ChevronUp, SlidersHorizontal, FileText, Send, HelpCircle, Target, Calendar,
-  LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw, History, ArrowRightLeft, Layers, FileSpreadsheet
+  LayoutGrid, List, PhoneCall, PhoneOff, RotateCcw, History, ArrowRightLeft, Layers, FileSpreadsheet, Sparkles
 } from 'lucide-react'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
@@ -18,6 +18,7 @@ import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadHistoryModal from '@/components/LeadHistoryModal'
 import GroupLeadDistributionModal from '@/components/GroupLeadDistributionModal'
 import DownloadLeadsModal from '@/components/DownloadLeadsModal'
+import CsvImportModal from '@/components/CsvImportModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle, extractStagesFromProfile } from '@/utils/pipeline-stages'
@@ -370,6 +371,10 @@ export default function CRMPage() {
   const [historyLead, setHistoryLead] = useState<any>(null)
   const [isGroupDistributionModalOpen, setIsGroupDistributionModalOpen] = useState(false)
   const [isDownloadLeadsModalOpen, setIsDownloadLeadsModalOpen] = useState(false)
+  const [isCsvImportModalOpen, setIsCsvImportModalOpen] = useState(false)
+  const [csvImportHeaders, setCsvImportHeaders] = useState<string[]>([])
+  const [csvImportRows, setCsvImportRows] = useState<string[][]>([])
+  const [csvImportFileName, setCsvImportFileName] = useState('')
   
   // --- FILTERED BULK TRANSFER MODAL STATE ---
   const [isFilteredBulkTransferModalOpen, setIsFilteredBulkTransferModalOpen] = useState(false)
@@ -1621,209 +1626,42 @@ export default function CRMPage() {
     const effectiveUserId = targetUserId || userId;
     if (!file || !effectiveUserId) return
 
-    // Prompt the user for an audience name
-    const defaultName = file.name.replace(".csv", "")
-    const audienceName = prompt("Give a name to this CSV uploaded audience:", defaultName);
-    if (audienceName === null) return; // User cancelled upload
-    const csvAudience = audienceName.trim() || 'General CSV Import'
-
     const reader = new FileReader()
-    reader.onload = async (event) => {
-        const text = (event.target?.result as string) || ''
-        
-        // Multi-line CSV parser with quote handling
-        const parseCSVRows = (str: string) => {
-          const rows: string[][] = []
-          let row: string[] = [], field = '', inQuotes = false
-          for (let i = 0; i < str.length; i++) {
-            const c = str[i]
-            if (c === '"') inQuotes = !inQuotes
-            else if (c === ',' && !inQuotes) { row.push(field); field = '' }
-            else if ((c === '\r' || c === '\n') && !inQuotes) {
-              if (c === '\r' && str[i + 1] === '\n') i++
-              row.push(field)
-              if (row.some(f => f.trim())) rows.push(row)
-              row = []; field = ''
-            } else { field += c }
-          }
-          if (field || row.length) { row.push(field); if (row.some(f => f.trim())) rows.push(row) }
-          return rows
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || ''
+      
+      // Multi-line CSV parser with quote handling
+      const parseCSVRows = (str: string) => {
+        const rows: string[][] = []
+        let row: string[] = [], field = '', inQuotes = false
+        for (let i = 0; i < str.length; i++) {
+          const c = str[i]
+          if (c === '"') inQuotes = !inQuotes
+          else if (c === ',' && !inQuotes) { row.push(field); field = '' }
+          else if ((c === '\r' || c === '\n') && !inQuotes) {
+            if (c === '\r' && str[i + 1] === '\n') i++
+            row.push(field)
+            if (row.some(f => f.trim())) rows.push(row)
+            row = []; field = ''
+          } else { field += c }
         }
+        if (field || row.length) { row.push(field); if (row.some(f => f.trim())) rows.push(row) }
+        return rows
+      }
 
-        const parseCustomDate = (dateStr: string) => {
-          if (!dateStr || !dateStr.trim()) return null
-          const s = dateStr.trim()
-          try {
-            const match = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(am|pm)?$/i)
-            if (match) {
-              let day = parseInt(match[1], 10), month = parseInt(match[2], 10) - 1, year = parseInt(match[3], 10)
-              let hour = parseInt(match[4], 10), minute = parseInt(match[5], 10)
-              const ampm = match[6]?.toLowerCase()
-              if (ampm === 'pm' && hour < 12) hour += 12
-              if (ampm === 'am' && hour === 12) hour = 0
-              const d = new Date(Date.UTC(year, month, day, hour - 5, minute - 30))
-              if (!isNaN(d.getTime())) return d.toISOString()
-            }
-            const fallback = new Date(s)
-            if (!isNaN(fallback.getTime())) return fallback.toISOString()
-          } catch (e) {}
-          return null
-        }
+      const rows = parseCSVRows(text)
+      if (rows.length < 2) {
+        toast.error('The selected CSV file appears to be empty or has no data rows.')
+        return
+      }
 
-        const rows = parseCSVRows(text)
-        if (rows.length < 2) return
-
-        const headers = rows[0].map(h => h.trim())
-        const idx = {
-          name: headers.indexOf('Lead Name'),
-          phone: headers.indexOf('Contacts'),
-          email: headers.indexOf('Email'),
-          owner: headers.indexOf('Lead Owner'),
-          source: headers.indexOf('Lead Source'),
-          sourceDetails: headers.indexOf('Source Details'),
-          budget: headers.indexOf('Budget'),
-          status: headers.indexOf('Lead Status'),
-          clientStatus: headers.indexOf('Client Status'),
-          nextFollowupText: headers.indexOf('Next Followup'),
-          nextFollowupDate: headers.indexOf('Next Followup Date'),
-          followupTaken: headers.indexOf('Followup Taken'),
-          openingRemarks: headers.indexOf('Openning Remarks'),
-          lastRemarks: headers.indexOf('Last Remarks'),
-          meetingDate: headers.indexOf('Meeting Date'),
-          createdDate: headers.indexOf('Created Date')
-        }
-
-        // Build list of team profiles to resolve Lead Owner
-        const { data: teamProfiles } = await supabase
-          .from('profiles')
-          .select('id, email, business_name, full_name')
-          .or(`parent_id.eq.${effectiveUserId},agency_id.eq.${effectiveUserId},id.eq.${effectiveUserId}`)
-
-        const resolveOwner = (ownerName: string) => {
-          if (!ownerName || !teamProfiles) return effectiveUserId
-          const nameLower = ownerName.toLowerCase().trim()
-          const matched = teamProfiles.find(p => {
-            const bName = (p.business_name || p.full_name || p.email || '').toLowerCase()
-            return bName.includes(nameLower) || nameLower.includes(bName.split(' ')[0])
-          })
-          return matched ? matched.id : effectiveUserId
-        }
-
-        const newLeads = rows.slice(1).map(r => {
-          const name = idx.name !== -1 ? (r[idx.name] || '').trim() : (r[0] || '').trim()
-          const rawPhone = idx.phone !== -1 ? (r[idx.phone] || '').trim() : (r[1] || '').trim()
-          if (!name && !rawPhone) return null
-
-          let phone = rawPhone
-          if (phone && !phone.startsWith('+')) {
-            const digits = phone.replace(/\D/g, '')
-            if (digits.length === 10) phone = `+91${digits}`
-            else if (digits.length > 10) phone = `+${digits}`
-          }
-
-          const email = idx.email !== -1 ? (r[idx.email] || '').trim() : (r[2] || '').trim()
-          const ownerName = idx.owner !== -1 ? (r[idx.owner] || '').trim() : ''
-          const assignedTo = resolveOwner(ownerName)
-
-          const source = idx.source !== -1 ? ((r[idx.source] || '').trim() || 'CSV Import') : 'CSV Import'
-          const sourceDetails = idx.sourceDetails !== -1 ? (r[idx.sourceDetails] || '').trim() : ''
-          const budget = idx.budget !== -1 ? (r[idx.budget] || '').trim() : ''
-          const leadStatus = idx.status !== -1 ? ((r[idx.status] || '').trim() || 'New Lead') : 'New'
-          const clientStatus = idx.clientStatus !== -1 ? (r[idx.clientStatus] || '').trim() : ''
-          
-          const nextFollowupText = idx.nextFollowupText !== -1 ? (r[idx.nextFollowupText] || '').trim() : ''
-          const nextFollowupDateStr = idx.nextFollowupDate !== -1 ? (r[idx.nextFollowupDate] || '').trim() : ''
-          const isoNextFollowup = parseCustomDate(nextFollowupDateStr)
-
-          let nextActionType = 'Call'
-          if (nextFollowupText.toLowerCase().includes('visit')) nextActionType = 'Visit'
-          else if (nextFollowupText.toLowerCase().includes('revisit')) nextActionType = 'Revisit'
-          else if (nextFollowupText.toLowerCase().includes('meeting')) nextActionType = 'Closing Meeting'
-
-          const followupTaken = idx.followupTaken !== -1 ? (r[idx.followupTaken] || '').trim() : ''
-          const openingRemarks = idx.openingRemarks !== -1 ? (r[idx.openingRemarks] || '').trim() : ''
-          const lastRemarks = idx.lastRemarks !== -1 ? (r[idx.lastRemarks] || '').trim() : ''
-          const meetingDateStr = idx.meetingDate !== -1 ? (r[idx.meetingDate] || '').trim() : ''
-          const isoMeetingDate = parseCustomDate(meetingDateStr)
-          const createdDateStr = idx.createdDate !== -1 ? (r[idx.createdDate] || '').trim() : ''
-          const isoCreatedDate = parseCustomDate(createdDateStr) || new Date().toISOString()
-
-          let stage = 'New'
-          if (leadStatus.includes('Meeting')) stage = 'Meeting Planned'
-          else if (leadStatus.includes('Visit Planned')) stage = 'Appointment booked'
-          else if (leadStatus.includes('Visit Done')) stage = 'Appointment done'
-          else if (leadStatus.includes('Negotiation')) stage = 'Qualified'
-          else if (leadStatus.includes('Deal') || leadStatus.includes('Token')) stage = 'Closed'
-          else if (leadStatus.includes('Lost')) stage = 'Unqualified'
-          else if (leadStatus.includes('Requirement')) stage = 'Contacted'
-
-          let notes = ''
-          if (openingRemarks) notes += `[Opening Remarks]: ${openingRemarks}\n\n`
-          if (lastRemarks) notes += `[Last Remarks]: ${lastRemarks}`
-          notes = notes.trim()
-
-          return {
-            user_id: effectiveUserId,
-            assigned_to: assignedTo,
-            name: name || 'Lead',
-            phone: phone || null,
-            email: email || null,
-            source,
-            ad_name: sourceDetails || null,
-            budget: budget || null,
-            status: leadStatus,
-            pipeline_stage: stage,
-            next_followup: isoNextFollowup,
-            booked_time: isoMeetingDate,
-            created_at: isoCreatedDate,
-            notes: notes || null,
-            csv_audience: csvAudience,
-            custom_fields: {
-              client_status: clientStatus,
-              next_action_type: nextActionType,
-              next_action_date: isoNextFollowup,
-              opening_comments: openingRemarks,
-              last_followup_remark: lastRemarks,
-              followup_count: followupTaken ? parseInt(followupTaken, 10) : 0,
-              meeting_date: isoMeetingDate,
-              csv_audience: csvAudience
-            }
-          }
-        }).filter(Boolean)
-
-        if (newLeads.length > 0) {
-            // Deduplicate against existing CRM leads and within batch
-            const existingPhoneSet = new Set<string>();
-            leads.forEach(l => {
-              const digits = (l.phone || '').replace(/\D/g, '').slice(-10);
-              if (digits.length >= 7) existingPhoneSet.add(digits);
-            });
-
-            const uniqueNewLeads: any[] = [];
-            const seenInBatch = new Set<string>();
-
-            for (const lead of newLeads) {
-              if (!lead) continue;
-              const digits = (lead.phone || '').replace(/\D/g, '').slice(-10);
-              if (digits.length >= 7) {
-                if (existingPhoneSet.has(digits) || seenInBatch.has(digits)) {
-                  continue;
-                }
-                seenInBatch.add(digits);
-              }
-              uniqueNewLeads.push(lead);
-            }
-
-            if (uniqueNewLeads.length > 0) {
-              const BATCH = 500;
-              for (let i = 0; i < uniqueNewLeads.length; i += BATCH) {
-                await supabase.from('leads').insert(uniqueNewLeads.slice(i, i + BATCH));
-              }
-            }
-            const skipped = newLeads.length - uniqueNewLeads.length;
-            toast.success(`Successfully imported ${uniqueNewLeads.length} new leads!${skipped > 0 ? ` (${skipped} existing duplicate contacts skipped)` : ''}`);
-            fetchLeads(true);
-        }
+      const headers = rows[0].map(h => h.trim())
+      setCsvImportHeaders(headers)
+      setCsvImportRows(rows)
+      setCsvImportFileName(file.name)
+      setIsCsvImportModalOpen(true)
+      // Reset input value so re-selecting the same file works
+      e.target.value = ''
     }
     reader.readAsText(file)
   }
@@ -2407,19 +2245,19 @@ END:VCARD\n`
                                 <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none" title="CSV Format Guide">
                                     <HelpCircle size={16} />
                                 </button>
-                                <div className="absolute right-0 top-full mt-2 w-72 p-4 bg-slate-950 text-white text-xs rounded-2xl shadow-xl border border-slate-800 opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-200 z-50">
-                                    <p className="font-bold text-slate-200 mb-1.5 flex items-center gap-1">
-                                        <HelpCircle size={12} className="text-indigo-400" /> CSV Import Format
+                                <div className="absolute right-0 top-full mt-2 w-80 p-4 bg-slate-950 text-white text-xs rounded-2xl shadow-xl border border-slate-800 opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-200 z-50">
+                                    <p className="font-bold text-slate-200 mb-1.5 flex items-center gap-1.5">
+                                        <Sparkles size={13} className="text-amber-400" /> Smart CSV Column Mapping
                                     </p>
                                     <p className="text-slate-400 leading-relaxed mb-2 font-medium">
-                                        Your CSV file must include headers on the first row: <code className="font-mono text-yellow-300">Name,Phone,Email</code>
+                                        Upload any CSV file. Map Name, Phone, Email, City, Budget, and all survey/questionnaire columns with instant live preview before importing!
                                     </p>
                                     <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 font-mono text-[10px] text-emerald-400 space-y-1">
-                                        <div>Name,Phone,Email</div>
-                                        <div>John Doe,+919999999999,john@example.com</div>
+                                        <div>full_name, phone_number, email, ...</div>
+                                        <div>John Doe, +919876543210, ...</div>
                                     </div>
-                                    <p className="text-[10px] text-slate-500 mt-2 font-semibold leading-normal">
-                                        Name and Phone columns are required. Ensure phone numbers include country prefix (e.g. +91).
+                                    <p className="text-[10px] text-slate-400 mt-2 font-semibold leading-normal">
+                                        Cleanly strips prefixes like <code className="text-amber-300">p:+91</code> and preserves all custom questionnaire data.
                                     </p>
                                 </div>
                             </div>
@@ -4543,6 +4381,20 @@ END:VCARD\n`
             selectedDnpFilter,
             selectedNextActionFilter,
             selectedNextActionType
+          }}
+        />
+
+        {/* ROBUST CSV IMPORT MAPPING MODAL */}
+        <CsvImportModal
+          isOpen={isCsvImportModalOpen}
+          onClose={() => setIsCsvImportModalOpen(false)}
+          headers={csvImportHeaders}
+          rows={csvImportRows}
+          fileName={csvImportFileName}
+          effectiveUserId={(targetUserId || userId) || ''}
+          existingLeads={leads}
+          onSuccess={async () => {
+            await fetchLeads(true)
           }}
         />
         </div>
