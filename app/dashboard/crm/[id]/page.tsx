@@ -571,7 +571,7 @@ export default function LeadProfilePage() {
                     // Fetch linked qualification flow or default flow
                     (async () => {
                         try {
-                            const targetCampaignId = data.campaign_id || data.custom_fields?.campaign_id || data.custom_fields?.meta_ad_origin?.campaign_id;
+                            const targetCampaignId = data.voice_campaign_id || data.campaign_id || data.custom_fields?.voice_campaign_id || data.custom_fields?.campaign_id || data.custom_fields?.meta_ad_origin?.campaign_id;
                             let loadedQuestions: any[] = [];
                             let flowTitle = 'Standard Real Estate Qualification';
 

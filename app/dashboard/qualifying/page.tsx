@@ -233,6 +233,30 @@ export default function QualifyingPage() {
           console.warn("CRM leads campaign fetch error:", crmErr)
         }
 
+        // C. Voice Campaigns
+        try {
+          const { data: voiceCamps } = await supabase
+            .from('voice_campaigns')
+            .select('id, name, status')
+            .eq('user_id', targetUserId)
+            .order('created_at', { ascending: false })
+            .limit(100)
+
+          if (voiceCamps) {
+            voiceCamps.forEach((vc: any) => {
+              if (vc.id) {
+                campaignMap.set(vc.id, {
+                  id: String(vc.id),
+                  name: `🎙️ Voice: ${vc.name || 'Campaign'}`,
+                  status: vc.status ? vc.status.toUpperCase() : 'VOICE'
+                })
+              }
+            })
+          }
+        } catch (voiceErr) {
+          console.warn("Voice campaigns fetch error:", voiceErr)
+        }
+
         setCampaigns(Array.from(campaignMap.values()))
       } catch (err) {
         console.error("Error loading campaigns list:", err)

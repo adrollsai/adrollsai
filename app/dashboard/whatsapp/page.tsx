@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck, Eye, SlidersHorizontal, Sparkles, Tag, Search } from 'lucide-react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck, Eye, SlidersHorizontal, Sparkles, Tag, Search, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { getPropertyTags } from '@/utils/property-tags'
@@ -306,6 +306,7 @@ export default function AutomationPage() {
   const [customTemplateLang, setCustomTemplateLang] = useState('en_US')
   const [sendingMessage, setSendingMessage] = useState(false)
   const [showTemplateInput, setShowTemplateInput] = useState(false)
+  const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [sendingProducts, setSendingProducts] = useState(false)
   type Property = {
     id: string
@@ -934,6 +935,7 @@ export default function AutomationPage() {
         setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, last_message_text: `Sent Template: ${templateName}`, updated_at: new Date().toISOString() } : c))
         setCustomTemplateName('')
         setShowTemplateInput(false)
+        setShowTemplateModal(false)
       } else {
         alert("Failed to send template: " + data.error)
       }
@@ -1595,16 +1597,6 @@ export default function AutomationPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* 24h Window Notice */}
-                {!isWindowActive && (
-                  <div className="bg-amber-50 border-t border-b border-amber-100 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-slate-700">
-                    <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
-                      ⚠️ 24h Customer Service Window Closed
-                    </span>
-                    <span className="text-[9px] text-slate-500 font-medium">To resume this chat, send a pre-approved WhatsApp template.</span>
-                  </div>
-                )}
-
                 {/* Message Entry Input */}
                 <div className="p-3 border-t border-slate-100 bg-white flex flex-col gap-3">
                   {isWindowActive ? (
@@ -1619,7 +1611,7 @@ export default function AutomationPage() {
                           className="flex-1 bg-slate-50 border border-slate-200/80 px-4 py-2.5 rounded-full text-xs font-medium outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all text-slate-800"
                         />
                         <button
-                          onClick={() => { setShowProductDropdown(!showProductDropdown); setShowTemplateInput(false); }}
+                          onClick={() => { setShowProductDropdown(!showProductDropdown); }}
                           disabled={sendingProducts}
                           className={`p-2.5 rounded-full transition-colors shadow-sm shrink-0 ${showProductDropdown ? 'bg-violet-500 text-white' : 'bg-violet-100 text-violet-600 hover:bg-violet-200'} disabled:opacity-50`}
                           title="Select & Send Product Details"
@@ -1627,8 +1619,8 @@ export default function AutomationPage() {
                           {sendingProducts ? <Loader2 className="animate-spin" size={16} /> : <Package size={16} />}
                         </button>
                         <button
-                          onClick={() => { setShowTemplateInput(!showTemplateInput); setShowProductDropdown(false); }}
-                          className={`p-2.5 rounded-full transition-colors shadow-sm shrink-0 ${showTemplateInput ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                          onClick={() => setShowTemplateModal(true)}
+                          className="p-2.5 rounded-full transition-colors shadow-sm shrink-0 bg-slate-100 text-slate-600 hover:bg-blue-150 hover:text-blue-600 cursor-pointer"
                           title="Send Template Message"
                         >
                           <FileText size={16} />
@@ -1923,178 +1915,34 @@ export default function AutomationPage() {
                       )}
                     </>
                   ) : (
-                    <div className="flex flex-col gap-2.5 w-full">
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <div className="flex-1">
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Select Template</label>
-                          <select 
-                            value={selectedTemplate}
-                            onChange={(e) => {
-                              const name = e.target.value;
-                              setSelectedTemplate(name);
-                              const t = templates.find(x => x.name === name);
-                              const headerComp = t?.components?.find((c: any) => c.type === 'HEADER' || c.type === 'header');
-                              const fmt = headerComp?.format || headerComp?.type;
-                              if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(fmt)) {
-                                setSelectedHeaderFormat(fmt as any);
-                              } else {
-                                setSelectedHeaderFormat(null);
-                              }
-                              setSelectedHeaderMediaUrl('');
-                            }}
-                            className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 cursor-pointer"
-                          >
-                            <option value="hello_world">Welcome (hello_world)</option>
-                            {templates.filter(t => t.status === 'APPROVED').map(t => (
-                              <option key={t.name} value={t.name}>{t.name} ({t.category})</option>
-                            ))}
-                            <option value="custom">Custom Template...</option>
-                          </select>
+                    <div className="bg-gradient-to-r from-amber-50/90 via-amber-50/50 to-orange-50/80 border border-amber-200/80 rounded-2xl p-3 sm:p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+                      <div className="flex items-center gap-2.5 min-w-0 w-full sm:w-auto">
+                        <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300/60 flex items-center justify-center text-amber-700 shrink-0 shadow-2xs">
+                          <AlertTriangle size={16} />
                         </div>
-                        {selectedHeaderFormat && (
-                          <WhatsAppTemplateMediaPicker
-                            headerType={selectedHeaderFormat}
-                            mediaUrl={selectedHeaderMediaUrl}
-                            onMediaSelect={(url: string) => setSelectedHeaderMediaUrl(url)}
-                          />
-                        )}
-
-                        {/* Template Variables Customizer */}
-                        {detectedTemplateVars.length > 0 && (
-                          <div className="bg-blue-50/60 border border-blue-200/80 p-3.5 rounded-2xl space-y-3">
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs font-black text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
-                                <SlidersHorizontal size={13} className="text-blue-600" />
-                                Customize Variables ({detectedTemplateVars.length} Detected)
-                              </span>
-                              <span className="text-[9px] font-bold text-blue-600">Manual Field Values</span>
-                            </div>
-
-                            <div className="space-y-2.5">
-                              {detectedTemplateVars.map((vNum: number) => {
-                                const vKey = vNum.toString()
-                                const currentVal = templateVarValues[vKey] !== undefined ? templateVarValues[vKey] : (
-                                  vNum === 1 ? (selectedChat?.recipient_name && selectedChat.recipient_name !== 'Customer' ? selectedChat.recipient_name : (leadInfo?.name || 'there')) :
-                                  vNum === 2 ? (profile?.business_name || 'our team') :
-                                  vNum === 3 ? 'your inquiry' : ''
-                                )
-                                return (
-                                  <div key={vNum} className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <label className="text-[10px] font-black text-blue-600 uppercase">
-                                        Variable {"{{" + vNum + "}}"} value:
-                                      </label>
-                                      {/* Quick Fill Preset Buttons */}
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        <button
-                                          type="button"
-                                          onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: selectedChat?.recipient_name || leadInfo?.name || 'Customer' }))}
-                                          className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer"
-                                        >
-                                          👤 Name
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: profile?.business_name || 'Our Company' }))}
-                                          className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer"
-                                        >
-                                          🏢 Business
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: selectedChat?.recipient_phone || leadInfo?.phone || '' }))}
-                                          className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer"
-                                        >
-                                          📱 Phone
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: 'your inquiry' }))}
-                                          className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer"
-                                        >
-                                          💬 Inquiry
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    <input
-                                      type="text"
-                                      value={currentVal}
-                                      onChange={(e) => setTemplateVarValues(prev => ({ ...prev, [vKey]: e.target.value }))}
-                                      placeholder={`Enter custom value for {{${vNum}}}...`}
-                                      className="w-full bg-slate-50 border border-slate-200/80 px-3 py-2 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
-                                    />
-                                  </div>
-                                )
-                              })}
-                            </div>
-
-                            {/* Live Message Preview Snippet */}
-                            {selectedTemplateBody && (
-                              <div className="bg-white/80 p-3 rounded-xl border border-blue-100 text-xs text-slate-700 leading-relaxed space-y-1">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Live Message Preview:</span>
-                                <p className="whitespace-pre-wrap font-medium">
-                                  {(() => {
-                                    let preview = selectedTemplateBody
-                                    detectedTemplateVars.forEach((vNum: number) => {
-                                      const defaultVal = vNum === 1 ? (selectedChat?.recipient_name || 'Customer') : vNum === 2 ? (profile?.business_name || 'our team') : `{{${vNum}}}`
-                                      const val = templateVarValues[vNum.toString()] || defaultVal
-                                      preview = preview.replace(new RegExp(`\\{\\{${vNum}\\}\\}`, 'g'), val)
-                                    })
-                                    return preview
-                                  })()}
-                                </p>
-                              </div>
-                            )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-amber-900 uppercase tracking-wider">
+                              24h Service Window Closed
+                            </span>
+                            <span className="text-[9px] font-extrabold bg-amber-200/80 text-amber-900 px-1.5 py-0.5 rounded-md">
+                              WhatsApp Policy
+                            </span>
                           </div>
-                        )}
-
-                        {selectedTemplate === 'custom' && (
-                          <>
-                            <div className="flex-1">
-                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Template Name</label>
-                              <input 
-                                type="text"
-                                value={customTemplateName}
-                                onChange={(e) => setCustomTemplateName(e.target.value)}
-                                placeholder="e.g. follow_up_offer"
-                                className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800"
-                              />
-                            </div>
-                            <div className="w-24">
-                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Language</label>
-                              <input 
-                                type="text"
-                                value={customTemplateLang}
-                                onChange={(e) => setCustomTemplateLang(e.target.value)}
-                                placeholder="en_US"
-                                className="w-full bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800"
-                              />
-                            </div>
-                          </>
-                        )}
+                          <p className="text-[11px] text-amber-800/80 font-medium truncate">
+                            Freeform replies locked. Send a pre-approved template message to resume.
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => setShowTemplatePreviewModal(true)}
-                          className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Eye size={14} className="text-blue-600" />
-                          <span>Preview Template</span>
-                        </button>
-                        
-                        <button
-                          type="button"
-                          onClick={handleSendTemplate}
-                          disabled={sendingMessage || (selectedTemplate === 'custom' && !customTemplateName.trim())}
-                          className="flex-[2] py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-                        >
-                          {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={14} />}
-                          <span>Send WhatsApp Template Message</span>
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowTemplateModal(true)}
+                        className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                      >
+                        <Send size={13} />
+                        <span>Send Template to Resume</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -2246,6 +2094,221 @@ export default function AutomationPage() {
                 {sendingMessage ? <Loader2 className="animate-spin" size={14} /> : <Send size={13} />}
                 <span>Send Template Now</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEMPLATE SENDER MODAL */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 tracking-tight">Send WhatsApp Template</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Re-opens the 24-hour customer service window</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTemplateModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body with overflow scroll */}
+            <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+              {/* Template Selector */}
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 block">
+                  Select Approved Template
+                </label>
+                <select
+                  value={selectedTemplate}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    setSelectedTemplate(name);
+                    const t = templates.find(x => x.name === name);
+                    const headerComp = t?.components?.find((c: any) => c.type === 'HEADER' || c.type === 'header');
+                    const fmt = headerComp?.format || headerComp?.type;
+                    if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(fmt)) {
+                      setSelectedHeaderFormat(fmt as any);
+                    } else {
+                      setSelectedHeaderFormat(null);
+                    }
+                    setSelectedHeaderMediaUrl('');
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800 cursor-pointer shadow-2xs"
+                >
+                  <option value="hello_world">Welcome (hello_world)</option>
+                  {templates.filter(t => t.status === 'APPROVED').map(t => (
+                    <option key={t.name} value={t.name}>{t.name} ({t.category})</option>
+                  ))}
+                  <option value="custom">Custom Template...</option>
+                </select>
+              </div>
+
+              {/* Custom Template name & lang if selected */}
+              {selectedTemplate === 'custom' && (
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block">Template Name</label>
+                    <input
+                      type="text"
+                      value={customTemplateName}
+                      onChange={(e) => setCustomTemplateName(e.target.value)}
+                      placeholder="e.g. follow_up_offer"
+                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1 block">Language</label>
+                    <input
+                      type="text"
+                      value={customTemplateLang}
+                      onChange={(e) => setCustomTemplateLang(e.target.value)}
+                      placeholder="en_US"
+                      className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 text-slate-800"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Media Picker if template header requires it */}
+              {selectedHeaderFormat && (
+                <WhatsAppTemplateMediaPicker
+                  headerType={selectedHeaderFormat}
+                  mediaUrl={selectedHeaderMediaUrl}
+                  onMediaSelect={(url: string) => setSelectedHeaderMediaUrl(url)}
+                />
+              )}
+
+              {/* Variables Customizer */}
+              {detectedTemplateVars.length > 0 && (
+                <div className="bg-slate-50/80 border border-slate-200/80 p-4 rounded-2xl space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <SlidersHorizontal size={13} className="text-emerald-600" />
+                      Template Variables ({detectedTemplateVars.length} Detected)
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold">Autofill with Presets</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {detectedTemplateVars.map((vNum: number) => {
+                      const vKey = vNum.toString()
+                      const currentVal = templateVarValues[vKey] !== undefined ? templateVarValues[vKey] : (
+                        vNum === 1 ? (selectedChat?.recipient_name && selectedChat.recipient_name !== 'Customer' ? selectedChat.recipient_name : (leadInfo?.name || 'there')) :
+                        vNum === 2 ? (profile?.business_name || 'our team') :
+                        vNum === 3 ? 'your inquiry' : ''
+                      )
+                      return (
+                        <div key={vNum} className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-black text-emerald-700 uppercase">
+                              Variable {"{{" + vNum + "}}"} Value:
+                            </label>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: selectedChat?.recipient_name || leadInfo?.name || 'Customer' }))}
+                                className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-colors cursor-pointer"
+                              >
+                                👤 Name
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: profile?.business_name || 'Our Company' }))}
+                                className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-colors cursor-pointer"
+                              >
+                                🏢 Business
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: selectedChat?.recipient_phone || leadInfo?.phone || '' }))}
+                                className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-colors cursor-pointer"
+                              >
+                                📱 Phone
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setTemplateVarValues(prev => ({ ...prev, [vKey]: 'your inquiry' }))}
+                                className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-colors cursor-pointer"
+                              >
+                                💬 Inquiry
+                              </button>
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            value={currentVal}
+                            onChange={(e) => setTemplateVarValues(prev => ({ ...prev, [vKey]: e.target.value }))}
+                            placeholder={`Enter custom value for {{${vNum}}}...`}
+                            className="w-full bg-slate-50 border border-slate-200/80 px-3 py-2 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all"
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Live Message Preview Snippet */}
+              {selectedTemplateBody && (
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1.5">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Live Message Preview:</span>
+                  <p className="whitespace-pre-wrap text-xs text-slate-700 leading-relaxed font-medium bg-white p-3 rounded-xl border border-slate-200/60">
+                    {(() => {
+                      let preview = selectedTemplateBody
+                      detectedTemplateVars.forEach((vNum: number) => {
+                        const defaultVal = vNum === 1 ? (selectedChat?.recipient_name || 'Customer') : vNum === 2 ? (profile?.business_name || 'our team') : `{{${vNum}}}`
+                        const val = templateVarValues[vNum.toString()] || defaultVal
+                        preview = preview.replace(new RegExp(`\\{\\{${vNum}\\}\\}`, 'g'), val)
+                      })
+                      return preview
+                    })()}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setShowTemplatePreviewModal(true)}
+                className="py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Eye size={14} className="text-emerald-600" />
+                <span>Preview WhatsApp Card</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTemplateModal(false)}
+                  className="py-2.5 px-4 rounded-xl text-slate-600 hover:bg-slate-200 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendTemplate}
+                  disabled={sendingMessage || (selectedTemplate === 'custom' && !customTemplateName.trim())}
+                  className="py-2.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black transition-all shadow-md flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  {sendingMessage ? <Loader2 className="animate-spin" size={15} /> : <Send size={14} />}
+                  <span>Send Template Message</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

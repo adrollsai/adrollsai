@@ -687,6 +687,7 @@ wss.on('connection', (wsConnection, req) => {
                 let props = null;
                 let campaign = null;
                 let resolvedQuestions = [];
+                let activeQuestionsList = [];
 
                 try {
                     const [profileRes, leadRes, propsRes, campaignRes, flaggedRes] = await dbPromise;
@@ -714,6 +715,21 @@ wss.on('connection', (wsConnection, req) => {
 
                     profileData = profile;
                     campaign = campaignRes ? campaignRes.data : null;
+                    if (!campaign && lead?.voice_campaign_id) {
+                        try {
+                            const { data: fallbackCamp } = await supabaseAdmin
+                                .from('voice_campaigns')
+                                .select('*')
+                                .eq('id', lead.voice_campaign_id)
+                                .maybeSingle();
+                            if (fallbackCamp) {
+                                campaign = fallbackCamp;
+                                console.log(`[BRIDGE] Loaded fallback campaign "${campaign.name}" from lead.voice_campaign_id`);
+                            }
+                        } catch (cErr) {
+                            console.warn('[BRIDGE] Error loading fallback voice campaign:', cErr);
+                        }
+                    }
                     resolvedQuestions = flaggedRes?.data || [];
 
                     if (lead) {
@@ -969,6 +985,8 @@ wss.on('connection', (wsConnection, req) => {
                                 { question: 'What is your purchase timeline?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
                             ];
                         }
+
+                        activeQuestionsList = parsedQuestions;
 
                         const formattedQuestionsList = parsedQuestions.map((q, i) => {
                             const optStr = q.options.length > 0 ? ` (Options: ${q.options.join(', ')})` : '';
@@ -1470,24 +1488,46 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                 
                 console.log('[BRIDGE] Conversation Transcript Compiled:\n', fullTranscript);
 
-                // Use Gemini Flash API (REST) to generate summary & extract appointment booking slot
+                // Use Gemini Flash API (REST) to generate summary & extract appointment booking slot and qualification answers
                 let summary = 'Conversation took place via Gemini Voice AI.';
                 let bookingTime = null;
                 let callbackTime = null;
                 let isQualified = false;
+                let leadPriority = null;
+                let extractedBudget = null;
+                let extractedAnswers = {};
 
                 try {
+                    let questionsForPrompt = '';
+                    if (activeQuestionsList && activeQuestionsList.length > 0) {
+                        questionsForPrompt = activeQuestionsList.map((q, idx) => {
+                            const optStr = q.options && q.options.length > 0 ? ` (Options: ${q.options.join(', ')})` : '';
+                            return `   Q${idx + 1}: "${q.question}"${optStr}`;
+                        }).join('\n');
+                    }
+
                     const analysisPrompt = `
 You are analyzing a phone call transcript between an AI voice agent and a prospect.
 Here is the transcript:
 ${fullTranscript}
+
+${questionsForPrompt ? `The AI caller was qualifying the prospect on the following campaign questions:
+${questionsForPrompt}
+
+Please extract the prospect's answers or choices for these qualification questions from the transcript.
+` : ''}
 
 Extract the following details as a valid JSON object ONLY. Do NOT use markdown tags, ticks, or backticks:
 {
   "summary": "A concise, clean 2-3 sentence paragraph summarizing the call. Do NOT use markdown headers, bold, bullets, or lists.",
   "callback_time": "ISO-8601 string of requested callback date/time if requested/agreed (including 'call me tomorrow', 'connect Saturday', etc.). Current system UTC time is: ${new Date().toISOString()}",
   "booking_time": "ISO-8601 string of confirmed appointment/meeting/consultation/site visit date/time if the prospect agreed to, confirmed, requested, or accepted a meeting/appointment/visit slot (including 'tomorrow', 'Saturday', 'yes', 'okay', or confirming a proposed time), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
-  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a visit/callback, or expressed interest)
+  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a visit/callback, or expressed interest),
+  "lead_priority": "HOT" | "WARM" | "COLD",
+  "extracted_budget": "extracted budget string or number if stated/discussed (e.g. '1.5 Cr', '₹70 Lakhs'), else null",
+  "extracted_answers": {
+    /* Key-value pairs of answers provided by the prospect during the call, e.g. "property_type": "Commercial Showroom", "budget": "₹1.5 Cr", "timeline": "Immediate" */
+  }
 }
 `.trim();
 
@@ -1510,6 +1550,11 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                             if (parsed.booking_time) bookingTime = parsed.booking_time;
                             if (parsed.callback_time) callbackTime = parsed.callback_time;
                             if (parsed.is_qualified) isQualified = true;
+                            if (parsed.lead_priority) leadPriority = parsed.lead_priority;
+                            if (parsed.extracted_budget) extractedBudget = parsed.extracted_budget;
+                            if (parsed.extracted_answers && typeof parsed.extracted_answers === 'object') {
+                                extractedAnswers = parsed.extracted_answers;
+                            }
                         } catch (e) {
                             summary = rawText.trim();
                         }
@@ -1518,12 +1563,85 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                     console.error('[BRIDGE] Auto-analysis failed:', sumErr);
                 }
 
-                // Update leads table with summary, transcript, and stage transition
+                // Build lead update payload with summary, transcript, stage transition, and qualification answers
                 const updatePayload = {
                     voice_call_status: 'completed',
                     voice_call_summary: summary,
                     voice_call_transcript: mergedTurns
                 };
+
+                // Merge extracted answers into lead.custom_fields
+                let currentCf = lead?.custom_fields || {};
+                if (typeof currentCf === 'string') {
+                    try { currentCf = JSON.parse(currentCf); } catch (e) { currentCf = {}; }
+                }
+                const mergedCf = { ...currentCf };
+
+                if (extractedAnswers && typeof extractedAnswers === 'object') {
+                    // Copy raw key-values
+                    Object.entries(extractedAnswers).forEach(([k, v]) => {
+                        if (v !== null && v !== undefined && String(v).trim().length > 0) {
+                            mergedCf[k] = v;
+                            const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+                            mergedCf[cleanK] = v;
+                        }
+                    });
+
+                    // Explicitly map against activeQuestionsList so CRM Question Flow highlights as Answered
+                    if (activeQuestionsList && activeQuestionsList.length > 0) {
+                        activeQuestionsList.forEach((q, idx) => {
+                            const qKey = typeof q === 'object' && q.field_name ? q.field_name : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
+                            const qText = typeof q === 'string' ? q : (q.question || q.text || '');
+                            const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+
+                            for (const [ansK, ansV] of Object.entries(extractedAnswers)) {
+                                if (!ansV) continue;
+                                const ansKLower = ansK.toLowerCase();
+                                const isKeyMatch = ansKLower === qKey.toLowerCase() || ansKLower === qClean;
+                                const isTextMatch = qText.toLowerCase().includes(ansKLower) || ansKLower.includes(qClean);
+                                const isSemanticMatch = (ansKLower.includes('budget') && qKey.includes('budget')) ||
+                                                        (ansKLower.includes('property') && qKey.includes('property')) ||
+                                                        (ansKLower.includes('time') && qKey.includes('time'));
+
+                                if (isKeyMatch || isTextMatch || isSemanticMatch) {
+                                    mergedCf[qKey] = ansV;
+                                    mergedCf[qClean] = ansV;
+                                    if (qKey.includes('property')) mergedCf.interested_property = ansV;
+                                    if (qKey.includes('budget') || ansKLower.includes('budget')) {
+                                        mergedCf.budget = ansV;
+                                        if (!extractedBudget) extractedBudget = ansV;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+
+                if (extractedBudget) {
+                    updatePayload.budget = String(extractedBudget);
+                    mergedCf.budget = String(extractedBudget);
+                }
+
+                if (leadPriority) {
+                    mergedCf.lead_priority = leadPriority;
+                }
+
+                // Check answered count against active questions
+                let answeredCount = 0;
+                if (activeQuestionsList && activeQuestionsList.length > 0) {
+                    activeQuestionsList.forEach((q, idx) => {
+                        const qKey = typeof q === 'object' && q.field_name ? q.field_name : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
+                        const qText = typeof q === 'string' ? q : (q.question || q.text || '');
+                        const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+                        const val = mergedCf[qKey] || mergedCf[qClean] || (qKey.includes('property') ? mergedCf.property_type : undefined) || (qKey.includes('budget') ? mergedCf.budget : undefined);
+                        if (val && String(val).trim().length > 0) answeredCount++;
+                    });
+                    if (answeredCount > 0 && answeredCount >= activeQuestionsList.length) {
+                        mergedCf.qualification_completed = true;
+                    }
+                }
+
+                updatePayload.custom_fields = mergedCf;
 
                 if (bookingTime) {
                     console.log(`[BRIDGE] Detected booking slot from Gemini call: ${bookingTime}. Updating stage to Appointment Booked!`);
@@ -1555,7 +1673,17 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                         .from('leads')
                         .update(updatePayload)
                         .eq('id', leadId);
-                    console.log('[BRIDGE] Leads table summary, transcript, and pipeline stage updated successfully!');
+                    console.log('[BRIDGE] Leads table summary, transcript, answers, and pipeline stage updated successfully!');
+
+                    // Recalculate lead score in background
+                    try {
+                        const appPort = process.env.PORT || 3000;
+                        fetch(`http://127.0.0.1:${appPort}/api/crm/recalculate-score`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ leadId, qualifyingQuestions: activeQuestionsList })
+                        }).catch(() => {});
+                    } catch (scErr) {}
                 } catch (leadErr) {
                     console.error('[BRIDGE] Failed to save transcript/summary to lead:', leadErr);
                 }
