@@ -11,32 +11,62 @@ interface LeadHistoryModalProps {
   onClose: () => void
   lead: any
   viewerRole?: string
+  teamMembers?: any[]
 }
 
-export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: LeadHistoryModalProps) {
+// Module-level caches for instantaneous rendering
+const globalProfilesCache = new Map<string, string>()
+const leadHistoryCache = new Map<string, { items: any[]; timestamp: number }>()
+
+export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, teamMembers }: LeadHistoryModalProps) {
   const router = useRouter()
   const [historyItems, setHistoryItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
-  const [profilesMap, setProfilesMap] = useState<Map<string, string>>(new Map())
+  const [profilesMap, setProfilesMap] = useState<Map<string, string>>(new Map(globalProfilesCache))
+
+  // Ingest teamMembers into profile cache immediately
+  useEffect(() => {
+    if (teamMembers && Array.isArray(teamMembers) && teamMembers.length > 0) {
+      teamMembers.forEach(m => {
+        const name = m.name || m.full_name || m.business_name || (m.email ? m.email.split('@')[0] : '')
+        if (m.id && name) {
+          globalProfilesCache.set(m.id, name)
+        }
+      })
+      setProfilesMap(new Map(globalProfilesCache))
+    }
+  }, [teamMembers])
 
   useEffect(() => {
     if (isOpen && lead?.id) {
-      fetchHistory()
+      // Check cache for instant display
+      const cached = leadHistoryCache.get(lead.id)
+      if (cached && cached.items && cached.items.length > 0) {
+        setHistoryItems(cached.items)
+        setLoading(false)
+        // Background refresh only if cache is older than 20 seconds
+        if (Date.now() - cached.timestamp > 20000) {
+          fetchHistory(true)
+        }
+      } else {
+        fetchHistory(false)
+      }
     }
   }, [isOpen, lead?.id])
 
-  const fetchHistory = async () => {
-    setLoading(true)
+  const fetchHistory = async (isBackgroundRefresh = false) => {
+    if (!isBackgroundRefresh) setLoading(true)
     try {
       const { data } = await supabase
         .from('lead_history')
-        .select('*')
+        .select('id, lead_id, user_id, action_type, description, details, actor_name, created_at')
         .eq('lead_id', lead.id)
         .order('created_at', { ascending: false })
+        .limit(100)
       
-      let items = data || []
+      let items: any[] = data ? [...data] : []
 
       // Admin / Agency / Super Admin role retains 100% full history access
       const isAdmin = viewerRole === 'super_admin' || viewerRole === 'agency' || viewerRole === 'admin'
@@ -46,12 +76,12 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
         try { cf = JSON.parse(cf) } catch (e) { cf = null }
       }
 
-      // Collect user_ids to resolve real agent names
+      // Collect user_ids not yet in profile cache
       const userIds = new Set<string>()
-      if (lead.assigned_to) userIds.add(lead.assigned_to)
-      if (lead.user_id) userIds.add(lead.user_id)
+      if (lead.assigned_to && !globalProfilesCache.has(lead.assigned_to)) userIds.add(lead.assigned_to)
+      if (lead.user_id && !globalProfilesCache.has(lead.user_id)) userIds.add(lead.user_id)
       items.forEach(item => {
-        if (item.user_id) userIds.add(item.user_id)
+        if (item.user_id && !globalProfilesCache.has(item.user_id)) userIds.add(item.user_id)
       })
 
       if (userIds.size > 0) {
@@ -62,16 +92,17 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
             .in('id', Array.from(userIds))
 
           if (profs && profs.length > 0) {
-            const pMap = new Map<string, string>()
             profs.forEach(p => {
               const name = p.full_name?.trim() || p.business_name?.trim() || (p.email ? p.email.split('@')[0] : '')
-              if (name) pMap.set(p.id, name)
+              if (name) globalProfilesCache.set(p.id, name)
             })
-            setProfilesMap(pMap)
+            setProfilesMap(new Map(globalProfilesCache))
           }
         } catch (e) {
           console.error("Failed to resolve actor profiles:", e)
         }
+      } else {
+        setProfilesMap(new Map(globalProfilesCache))
       }
 
       // Helper to parse date from historical remark text (e.g. "Call Not Picked on 09/08/2026 01:45 pm")
@@ -112,6 +143,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
               lead_id: lead.id,
               action_type: lastRemark.toLowerCase().includes('dnp') || lastRemark.toLowerCase().includes('not picked') ? 'DNP' : 'LAST_FOLLOWUP_REMARK',
               description: lastRemark,
+              details: null,
               actor_name: lead.user_name || undefined,
               user_id: lead.assigned_to || lead.user_id,
               created_at: actionDateStr
@@ -146,6 +178,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
           lead_id: lead.id,
           action_type: 'LEAD_CREATED',
           description: creationDesc,
+          details: null,
           actor_name: 'System / Meta Ad',
           user_id: lead.assigned_to || lead.user_id,
           created_at: lead.created_at || new Date().toISOString()
@@ -167,6 +200,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole }: 
         })
       }
 
+      leadHistoryCache.set(lead.id, { items, timestamp: Date.now() })
       setHistoryItems(items)
     } catch (err) {
       console.error("Failed to fetch lead history timeline:", err)

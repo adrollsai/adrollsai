@@ -185,6 +185,8 @@ export async function POST(request: Request) {
       customFields.last_remark = remarks || 'Call Not Picked (DNP)'
     }
 
+    customFields.followup_count = (customFields.followup_count || 0) + 1
+
     if (nextActionDate && !isLostOrClosed) {
       customFields.next_action_date = nextActionDate
       if (nextActionType) customFields.next_action_type = nextActionType

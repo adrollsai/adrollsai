@@ -21,6 +21,7 @@ import DownloadLeadsModal from '@/components/DownloadLeadsModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle, extractStagesFromProfile } from '@/utils/pipeline-stages'
+import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
 
 
 
@@ -162,14 +163,9 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
 
     const notesStr = lead.notes.trim();
 
-    if (notesStr.includes('[Last Remarks]:')) {
-      const parts = notesStr.split('[Last Remarks]:');
-      const lastSection = parts[parts.length - 1].split(/\[Followups Taken\]:|\[Next Action\]:|\[Opening Remarks\]:/i)[0].trim();
-      if (lastSection) return lastSection;
-    }
-
+    // Look for newest chronological note first (Nobogent prepends newer notes at the top)
     const entries = notesStr.split(/\n\n+|---+|\n(?=\[\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/);
-    for (let i = entries.length - 1; i >= 0; i--) {
+    for (let i = 0; i < entries.length; i++) {
       const entry = entries[i].trim();
       if (entry && !entry.toLowerCase().startsWith('[opening remarks]') && !entry.toLowerCase().startsWith('advertisment') && !entry.toLowerCase().startsWith('[followups taken]')) {
         if (entry.includes(']:')) {
@@ -178,6 +174,12 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
         }
         return entry;
       }
+    }
+
+    if (notesStr.includes('[Last Remarks]:')) {
+      const parts = notesStr.split('[Last Remarks]:');
+      const lastSection = parts[parts.length - 1].split(/\[Followups Taken\]:|\[Next Action\]:|\[Opening Remarks\]:/i)[0].trim();
+      if (lastSection) return lastSection;
     }
   }
 
@@ -3052,6 +3054,23 @@ END:VCARD\n`
                                                                 Visited
                                                             </span>
                                                         )}
+                                                        {getLeadFollowupCount(lead) > 0 && (
+                                                            <span 
+                                                                className="px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0 inline-flex items-center gap-1 shadow-xs"
+                                                                title={`${getLeadFollowupCount(lead)} followups recorded`}
+                                                            >
+                                                                💬 {getLeadFollowupCount(lead)} {getLeadFollowupCount(lead) === 1 ? 'followup' : 'followups'}
+                                                            </span>
+                                                        )}
+                                                        {getLeadReopenCount(lead) > 0 && (
+                                                            <span 
+                                                                onClick={(e) => { e.stopPropagation(); setHistoryLead(lead); }}
+                                                                className="px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-purple-100 text-purple-800 border border-purple-300 shrink-0 inline-flex items-center gap-1 cursor-pointer hover:bg-purple-200 shadow-xs"
+                                                                title={`Lead reopened ${getLeadReopenCount(lead)} time(s) - click to view history`}
+                                                            >
+                                                                🔄 Reopened{getLeadReopenCount(lead) > 1 ? ` (${getLeadReopenCount(lead)}x)` : ''}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <span className="text-xs font-semibold text-slate-500">{displayPhone || '--'}</span>
                                                 </div>
@@ -3240,13 +3259,21 @@ END:VCARD\n`
                                                 Visited
                                             </span>
                                         )}
-                                        {(lead.reopened_count > 0 || lead.custom_fields?.reopened_count > 0) && (
+                                        {getLeadFollowupCount(lead) > 0 && (
+                                            <span 
+                                                className="px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0 inline-flex items-center gap-1 shadow-xs"
+                                                title={`${getLeadFollowupCount(lead)} followups recorded`}
+                                            >
+                                                💬 {getLeadFollowupCount(lead)} {getLeadFollowupCount(lead) === 1 ? 'followup' : 'followups'}
+                                            </span>
+                                        )}
+                                        {getLeadReopenCount(lead) > 0 && (
                                             <span 
                                                 onClick={(e) => { e.stopPropagation(); setHistoryLead(lead); }}
-                                                className="px-1.5 py-0.5 text-[10px] font-black rounded-md bg-amber-50 text-amber-700 border border-amber-300 shrink-0 inline-flex items-center gap-0.5 cursor-pointer hover:bg-amber-100 transition-all shadow-xs" 
-                                                title={`Reopened ${(lead.reopened_count || lead.custom_fields?.reopened_count)} times from ad submissions`}
+                                                className="px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-purple-100 text-purple-800 border border-purple-300 shrink-0 inline-flex items-center gap-1 cursor-pointer hover:bg-purple-200 transition-all shadow-xs" 
+                                                title={`Lead reopened ${getLeadReopenCount(lead)} time(s) - click to view history`}
                                             >
-                                                ⏰<span className="w-4 h-4 rounded-full bg-rose-500 text-white font-extrabold text-[9px] flex items-center justify-center -ml-0.5">{(lead.reopened_count || lead.custom_fields?.reopened_count)}</span>
+                                                🔄 Reopened{getLeadReopenCount(lead) > 1 ? ` (${getLeadReopenCount(lead)}x)` : ''}
                                             </span>
                                         )}
                                     </div>
@@ -3901,6 +3928,7 @@ END:VCARD\n`
          lead={historyLead}
          onClose={() => setHistoryLead(null)}
          viewerRole={role}
+         teamMembers={team}
        />
 
        {/* GROUP LEAD DISTRIBUTION MODAL */}

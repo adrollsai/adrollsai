@@ -11,6 +11,7 @@ import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
+import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
 
 const STAGES = [
   'New Lead',
@@ -1083,6 +1084,16 @@ export default function LeadProfilePage() {
         updateLocalCRMCacheWithHistory(newHist)
         setRemarkInput('')
 
+        // Update local lead state so notes and last_remark reflect this manual remark immediately
+        const nowFormatted = new Date().toLocaleString([], { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        const prependedNote = `[${nowFormatted}]: ${text}\n\n${lead?.notes || ''}`
+        let cf = { ...(lead?.custom_fields || {}) }
+        if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+        cf.last_remark = text
+        const nextLead = { ...lead, notes: prependedNote, custom_fields: cf }
+        setLead(nextLead)
+        updateLocalCRMCache(nextLead)
+
         await fetch('/api/crm/lead-action', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1268,6 +1279,22 @@ END:VCARD`
                                 }
                                 return null
                             })()}
+                            {getLeadFollowupCount(lead) > 0 && (
+                                <span 
+                                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0 inline-flex items-center gap-1.5 shadow-xs"
+                                    title={`${getLeadFollowupCount(lead)} followups recorded`}
+                                >
+                                    💬 {getLeadFollowupCount(lead)} {getLeadFollowupCount(lead) === 1 ? 'Followup' : 'Followups'}
+                                </span>
+                            )}
+                            {getLeadReopenCount(lead) > 0 && (
+                                <span 
+                                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-purple-100 text-purple-800 border border-purple-300 shrink-0 inline-flex items-center gap-1.5 shadow-xs"
+                                    title={`Lead reopened ${getLeadReopenCount(lead)} time(s)`}
+                                >
+                                    🔄 Reopened{getLeadReopenCount(lead) > 1 ? ` (${getLeadReopenCount(lead)}x)` : ''}
+                                </span>
+                            )}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mt-1">
                             <p className="text-xs font-medium text-slate-500 break-all">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>

@@ -51,6 +51,7 @@ import LeadHistoryModal from '@/components/LeadHistoryModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES } from '@/utils/pipeline-stages'
+import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark } from '@/utils/lead-helpers'
 
 // Render simple markdown headers, bolding, and lists into JSX
 function MarkdownRenderer({ text }: { text: string }) {
@@ -3258,68 +3259,10 @@ export default function AnalyticsPage() {
                                 try { cf = JSON.parse(cf) } catch (e) {}
                               }
 
-                              // Robust Remark and Timestamp extraction
-                              let rawRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim()
-                              if (!rawRemark && lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
-                                let cleaned = lead.notes.trim()
-                                if (cleaned.includes('[Last Remarks]:')) {
-                                  rawRemark = cleaned.split('[Last Remarks]:')[1]?.split(/\[Followups Taken\]:|\[Next Action\]:|\[Opening Remarks\]:/i)[0]?.trim() || cleaned
-                                } else {
-                                  const entries = cleaned.split(/\n\n+|---+|\n(?=\[\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/)
-                                  for (let i = entries.length - 1; i >= 0; i--) {
-                                    const entry = entries[i].trim()
-                                    if (entry && !entry.toLowerCase().startsWith('[opening remarks]') && !entry.toLowerCase().startsWith('advertisment') && !entry.toLowerCase().startsWith('[followups taken]')) {
-                                      rawRemark = entry.includes(']:') ? entry.split(']:').slice(1).join(']:').trim() : entry
-                                      break
-                                    }
-                                  }
-                                }
-                              }
-                              if (!rawRemark && lead.summary) rawRemark = lead.summary.trim()
-
-                              let lastRemarkTime: string | null = null
-                              let cleanRemark = rawRemark
-
-                              if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
-                              else if (cf?.last_action_date) lastRemarkTime = cf.last_action_date
-                              else if (lead.last_call_at) lastRemarkTime = lead.last_call_at
-
-                              if (rawRemark) {
-                                const match = rawRemark.match(/(?:Call on\s+|Logged on\s+|\[)?(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
-                                if (match) {
-                                  const [full, d, m, y, h, min, ampm] = match
-                                  let hour = h ? parseInt(h, 10) : 0
-                                  if (ampm) {
-                                    if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
-                                    if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
-                                  }
-                                  const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
-                                  if (!isNaN(parsed.getTime())) {
-                                    if (!lastRemarkTime) lastRemarkTime = parsed.toISOString()
-                                    cleanRemark = rawRemark.replace(/(?:Call on\s+|Logged on\s+|\[)?\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}(?:[,\s]+\d{1,2}:\d{2}(?::\d{2})?\s*[ap]m)?\]?\s*[:-]?\s*/gi, '').trim()
-                                  }
-                                }
-                              }
-
-                              if (!lastRemarkTime && lead.updated_at && cleanRemark) lastRemarkTime = lead.updated_at
-                              if (!lastRemarkTime && lead.created_at && cleanRemark) lastRemarkTime = lead.created_at
-
-                              let formattedRemarkTime = ''
-                              if (lastRemarkTime) {
-                                try {
-                                  const rd = new Date(lastRemarkTime)
-                                  if (!isNaN(rd.getTime())) {
-                                    formattedRemarkTime = rd.toLocaleString('en-IN', {
-                                      day: '2-digit',
-                                      month: 'short',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                      hour12: true
-                                    })
-                                  }
-                                } catch (e) {}
-                              }
-                              const lastRemark = cleanRemark
+                              const { remark: lastRemark, formattedTime: formattedRemarkTime } = getLeadLatestRemark(lead)
+                              const isVisited = hasLeadVisited(lead)
+                              const followupCount = getLeadFollowupCount(lead)
+                              const reopenCount = getLeadReopenCount(lead)
 
                               const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                               const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
@@ -3340,9 +3283,6 @@ export default function AnalyticsPage() {
                                 } catch (e) {}
                               }
 
-                              const stageLower = (lead.pipeline_stage || lead.status || '').toLowerCase()
-                              const isVisited = cf?.has_visited === true || cf?.visited === true || (!stageLower.includes('planned') && !stageLower.includes('scheduled') && (stageLower.includes('visit done') || stageLower === 'visited' || stageLower.includes('revisit done') || stageLower.includes('appointment done') || stageLower.includes('site visit done')))
-
                               return (
                                 <tr key={lead.id} className="hover:bg-blue-50/40 transition-colors group">
                                   <td className="py-2.5 px-3">
@@ -3353,11 +3293,19 @@ export default function AnalyticsPage() {
                                     >
                                       <span>{lead.name || 'Unknown Prospect'}</span>
                                       {isVisited && (
-                                        <span className="px-1.5 py-0.2 text-[9px] font-black rounded bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-0.5">
+                                        <span className="px-1.5 py-0.2 text-[9px] font-black rounded bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-0.5 shadow-2xs">
                                           <span className="w-1 h-1 rounded-full bg-emerald-500"></span>
                                           Visited
                                         </span>
                                       )}
+                                      {reopenCount > 0 && (
+                                        <span className="px-1.5 py-0.2 text-[9px] font-black rounded bg-purple-100 text-purple-800 border border-purple-300 shrink-0 inline-flex items-center gap-0.5 shadow-2xs" title={`Lead was reopened from Meta Ads (${reopenCount}x)`}>
+                                          🔄 Reopened {reopenCount > 1 ? `(${reopenCount}x)` : ''}
+                                        </span>
+                                      )}
+                                      <span className="px-1.5 py-0.2 text-[9px] font-extrabold rounded bg-blue-50 text-blue-700 border border-blue-200/80 shrink-0 inline-flex items-center gap-0.5" title={`Total followups taken: ${followupCount}`}>
+                                        💬 {followupCount} {followupCount === 1 ? 'Followup' : 'Followups'}
+                                      </span>
                                     </div>
                                     <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
                                       <span>📞 {lead.phone || 'No phone'}</span>
@@ -3470,80 +3418,10 @@ export default function AnalyticsPage() {
                           try { cf = JSON.parse(cf) } catch (e) {}
                         }
 
-                        let cleanRemark = ''
-                        let lastRemarkTime: string | null = null
-
-                        if (lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
-                          const topEntry = lead.notes.trim().split(/\n\n+/)[0]?.trim()
-                          if (topEntry) {
-                            if (topEntry.startsWith('[') && topEntry.includes(']:')) {
-                              const headerEndIdx = topEntry.indexOf(']:')
-                              const header = topEntry.slice(1, headerEndIdx)
-                              const body = topEntry.slice(headerEndIdx + 2).trim()
-
-                              const timeMatch = header.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i)
-                              if (timeMatch) {
-                                const [_, d, m, y, h, min, ampm] = timeMatch
-                                let hour = h ? parseInt(h, 10) : 0
-                                if (ampm) {
-                                  if (ampm.toLowerCase() === 'pm' && hour < 12) hour += 12
-                                  if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
-                                }
-                                const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0)
-                                if (!isNaN(parsed.getTime())) {
-                                  lastRemarkTime = parsed.toISOString()
-                                }
-                              }
-
-                              let formattedBody = body
-                              if (formattedBody.startsWith('Stage:')) {
-                                const dotIdx = formattedBody.indexOf('.')
-                                if (dotIdx !== -1) formattedBody = formattedBody.slice(dotIdx + 1).trim()
-                              }
-                              if (formattedBody.startsWith('Status:')) {
-                                const dotIdx = formattedBody.indexOf('.')
-                                if (dotIdx !== -1) formattedBody = formattedBody.slice(dotIdx + 1).trim()
-                              }
-                              if (formattedBody.includes('Remarks:')) {
-                                const remIdx = formattedBody.indexOf('Remarks:')
-                                formattedBody = formattedBody.slice(remIdx + 8).trim()
-                              }
-
-                              cleanRemark = formattedBody || body
-                            } else {
-                              cleanRemark = topEntry
-                            }
-                          }
-                        }
-
-                        if (!cleanRemark) {
-                          cleanRemark = (cf?.last_followup_remark || cf?.last_remark || lead.last_followup_remark || lead.last_call_remark || lead.summary || '').trim()
-                          if (cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
-                        }
-
-                        if (!lastRemarkTime && cf?.last_followup_at) lastRemarkTime = cf.last_followup_at
-                        if (!lastRemarkTime && cf?.last_action_date) lastRemarkTime = cf.last_action_date
-                        if (!lastRemarkTime && lead.last_call_at) lastRemarkTime = lead.last_call_at
-                        if (!lastRemarkTime && lead.updated_at && cleanRemark) lastRemarkTime = lead.updated_at
-                        if (!lastRemarkTime && lead.created_at && cleanRemark) lastRemarkTime = lead.created_at
-
-                        let formattedRemarkTime = ''
-                        if (lastRemarkTime) {
-                          try {
-                            const rd = new Date(lastRemarkTime)
-                            if (!isNaN(rd.getTime())) {
-                              formattedRemarkTime = rd.toLocaleString('en-IN', {
-                                day: '2-digit',
-                                month: 'short',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                hour12: true
-                              })
-                            }
-                          } catch (e) {}
-                        }
-                        const lastRemark = cleanRemark
+                        const { remark: lastRemark, formattedTime: formattedRemarkTime } = getLeadLatestRemark(lead)
+                        const isVisited = hasLeadVisited(lead)
+                        const followupCount = getLeadFollowupCount(lead)
+                        const reopenCount = getLeadReopenCount(lead)
 
                         const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                         const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
@@ -3579,6 +3457,20 @@ export default function AnalyticsPage() {
                                     {lead.name || 'Unknown Prospect'}
                                   </h4>
                                   <LeadScoreBadge lead={lead} size="sm" showDetails />
+                                  {isVisited && (
+                                    <span className="px-2 py-0.5 text-[10px] font-black rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-1 shadow-2xs">
+                                      <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></span>
+                                      Visited
+                                    </span>
+                                  )}
+                                  {reopenCount > 0 && (
+                                    <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 font-extrabold text-[10px] border border-purple-300 inline-flex items-center gap-1 shadow-2xs" title={`Lead was reopened from Meta Ads (${reopenCount}x)`}>
+                                      🔄 Reopened {reopenCount > 1 ? `(${reopenCount}x)` : ''}
+                                    </span>
+                                  )}
+                                  <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-extrabold text-[10px] border border-blue-200/80 inline-flex items-center gap-1" title={`Total followups taken: ${followupCount}`}>
+                                    💬 {followupCount} {followupCount === 1 ? 'Followup' : 'Followups'}
+                                  </span>
                                   <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-extrabold text-[10px]">
                                     {lead.pipeline_stage || 'New'}
                                   </span>
@@ -3760,6 +3652,7 @@ export default function AnalyticsPage() {
         lead={historyLead}
         onClose={() => setHistoryLead(null)}
         viewerRole={profile?.role}
+        teamMembers={allSalesReps}
       />
 
       {/* UPDATE FOLLOWUP MODAL */}

@@ -83,30 +83,43 @@ export async function POST(request: Request) {
       updates.status = updateStage
     }
 
-    // Handle DNP increment
+    // Handle DNP increment & custom fields
+    let customFields = currentLead.custom_fields || {}
+    if (typeof customFields === 'string') {
+      try { customFields = JSON.parse(customFields) } catch (e) { customFields = {} }
+    }
+
     let newDnpCount = currentLead.dnp_count || 0
     if (incrementDnp || actionType === 'DNP' || outcome === 'DNP') {
       newDnpCount = (newDnpCount || 0) + 1
       updates.dnp_count = newDnpCount
-
-      // Also store in custom_fields as dual-layer fallback
-      let customFields = currentLead.custom_fields || {}
-      if (typeof customFields === 'string') {
-        try { customFields = JSON.parse(customFields) } catch (e) { customFields = {} }
-      }
       customFields.dnp_count = newDnpCount
       customFields.last_dnp_at = new Date().toISOString()
-      updates.custom_fields = customFields
     } else if (actionType === 'RESET_DNP') {
       newDnpCount = 0
       updates.dnp_count = 0
-      let customFields = currentLead.custom_fields || {}
-      if (typeof customFields === 'string') {
-        try { customFields = JSON.parse(customFields) } catch (e) { customFields = {} }
-      }
       customFields.dnp_count = 0
-      updates.custom_fields = customFields
     }
+
+    if (description && typeof description === 'string' && description.trim()) {
+      const cleanDesc = description.trim()
+      customFields.last_remark = cleanDesc
+      customFields.last_followup_remark = cleanDesc
+      customFields.last_followup_at = new Date().toISOString()
+      
+      // Increment followup count if action is REMARK, CALL_FEEDBACK, or FOLLOWUP
+      if (actionType === 'REMARK' || actionType === 'CALL_FEEDBACK' || actionType === 'FOLLOWUP' || actionType === 'STATUS_CHANGE') {
+        customFields.followup_count = (customFields.followup_count || 0) + 1
+      }
+
+      // Prepend remark to notes so the latest manual remark is at the top
+      const formattedDateStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+      const callerName = user.email ? user.email.split('@')[0] : 'Agent'
+      const remarkNote = `[📝 Remark - ${formattedDateStr} by ${callerName}]: ${cleanDesc}`
+      updates.notes = remarkNote + (currentLead.notes ? `\n\n${currentLead.notes}` : '')
+    }
+
+    updates.custom_fields = customFields
 
     // Perform lead update
     const { data: updatedLead, error: updateErr } = await supabase
