@@ -114,7 +114,7 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                 if (!profile) {
                     const { data: fetchedProfile } = await supabaseAdmin
                         .from('profiles')
-                        .select('id, business_name, custom_domain, whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
+                        .select('id, business_name, email, custom_domain, whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
                         .eq('id', lead.user_id)
                         .maybeSingle()
                     if (fetchedProfile) {
@@ -124,6 +124,31 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                 }
 
                 if (!profile) {
+                    skippedCount++
+                    continue
+                }
+
+                // Strictly ensure weekly inventory showcase followups ONLY run for real estate accounts with property inventory
+                // NEVER for Nobogent SaaS or non-real estate accounts
+                const isNobogentSaaS = 
+                    lead.user_id === 'bc63c065-9bcc-4793-bedc-f0960406425b' ||
+                    lead.user_id === '91553adf-20b5-4c4c-9614-6b6f89fd0bfd' ||
+                    lead.user_id === 'b1645a6d-4b73-41ef-a197-8247d0168905' ||
+                    (profile.email || '').toLowerCase().includes('nobogent') || 
+                    (profile.email || '').toLowerCase() === 'rchopra489@gmail.com' ||
+                    (profile.business_name || '').toLowerCase().includes('nobogent') ||
+                    (profile.business_name || '').toLowerCase().includes('adrolls')
+                if (isNobogentSaaS) {
+                    skippedCount++
+                    continue
+                }
+
+                const { count: propCount } = await supabaseAdmin
+                    .from('properties')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('user_id', lead.user_id)
+
+                if (!propCount || propCount === 0) {
                     skippedCount++
                     continue
                 }
@@ -216,7 +241,7 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                         await supabaseAdmin.from('whatsapp_messages').insert({
                             chat_id: chat.id,
                             direction: 'outbound',
-                            message_text: `[Weekly Follow-up #${updatedCount}] ${promptText}`
+                            message_text: `${promptText} [Buttons: View properties | Talk to an expert | Book an appointment]`
                         })
 
                         await supabaseAdmin.from('whatsapp_chats').update({

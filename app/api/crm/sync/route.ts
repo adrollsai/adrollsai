@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('selected_page_token, selected_page_id, enable_distribution')
+      .select('selected_page_token, selected_page_id, enable_distribution, agency_id, parent_id')
       .eq('id', targetUserId)
       .single()
 
@@ -156,17 +156,19 @@ export async function POST(request: Request) {
     }
 
     // 2. Setup distribution: Group-Distribution automation rules first, then global round robin fallback
+    // Fetch automations and DB campaigns
+    const targetUserIds = Array.from(new Set([targetUserId, profile?.agency_id, profile?.parent_id].filter(Boolean)));
     const [{ data: groupAutomations }, { data: dbUserCampaigns }] = await Promise.all([
       supabase
         .from('automations')
         .select('*')
-        .eq('user_id', targetUserId)
+        .in('user_id', targetUserIds)
         .like('title', 'Group-Distribution:%')
         .eq('is_active', true),
       supabase
         .from('campaigns')
         .select('id, name')
-        .eq('user_id', targetUserId)
+        .in('user_id', targetUserIds)
     ]);
 
     const idToName: Record<string, string> = {};
@@ -238,6 +240,7 @@ export async function POST(request: Request) {
         campaignName: lead.campaign_name,
         adName: lead.ad_name,
         formName: lead.form_name,
+        formId: lead.form_id || null,
         adCampaignString: lead.ad_name
       };
 

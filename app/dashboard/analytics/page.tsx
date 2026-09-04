@@ -3308,7 +3308,7 @@ export default function AnalyticsPage() {
                                       </span>
                                     </div>
                                     <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
-                                      <span>📞 {lead.phone || 'No phone'}</span>
+                                      <span className="truncate max-w-[200px]" title={lead.phone || 'No phone'}>📞 {lead.phone || 'No phone'}</span>
                                     </div>
                                   </td>
 

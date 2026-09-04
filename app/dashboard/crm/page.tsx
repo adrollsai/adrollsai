@@ -919,6 +919,11 @@ export default function CRMPage() {
             .then(data => { if (data?.campaigns) setCampaigns(data.campaigns) })
             .catch(() => {})
 
+          fetch(`/api/facebook/forms${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
+            .then(res => res.json())
+            .then(data => { if (data?.forms) setForms(data.forms) })
+            .catch(() => {})
+
           fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
             .then(res => res.json())
             .then(invData => { if (invData?.properties && Array.isArray(invData.properties)) setProperties(invData.properties) })
@@ -3040,10 +3045,10 @@ END:VCARD\n`
                                                 />
                                             </td>
                                             )}
-                                            <td className="p-4">
-                                                <div className="flex flex-col min-w-[160px]">
+                                            <td className="p-4 max-w-[280px]">
+                                                <div className="flex flex-col min-w-[160px] max-w-[280px]">
                                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                                        <span className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors truncate">{lead.name || 'Unknown Lead'}</span>
+                                                        <span className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors truncate max-w-[200px] block" title={lead.name || 'Unknown Lead'}>{lead.name || 'Unknown Lead'}</span>
                                                         <LeadScoreBadge lead={lead} size="sm" showDetails />
                                                         {hasLeadVisited(lead) && (
                                                             <span 
@@ -3072,7 +3077,7 @@ END:VCARD\n`
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <span className="text-xs font-semibold text-slate-500">{displayPhone || '--'}</span>
+                                                    <span className="text-xs font-semibold text-slate-500 truncate max-w-[220px] block" title={displayPhone}>{displayPhone || '--'}</span>
                                                 </div>
                                             </td>
                                             <td className="p-4" onClick={e => e.stopPropagation()}>
@@ -3603,8 +3608,12 @@ END:VCARD\n`
                                   onChange={(e) => setBatchCampaign(e.target.value)}
                                   className="w-full appearance-none bg-slate-50 border border-slate-100 py-4 px-6 rounded-2xl text-sm font-bold text-slate-900 focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 outline-none transition-all cursor-pointer"
                               >
-                                  <option value="">Choose Campaign...</option>
-                                  {uniqueCampaigns.map((camp, i) => <option key={i} value={camp}>{camp}</option>)}
+                                  <option value="">Choose Campaign or Form...</option>
+                                  {Array.from(new Set([
+                                    ...uniqueCampaigns,
+                                    ...campaigns.map((c: any) => typeof c === 'string' ? c : c?.name).filter(Boolean),
+                                    ...forms.map((f: any) => typeof f === 'string' ? f : f?.name).filter(Boolean)
+                                  ])).sort().map((camp, i) => <option key={i} value={camp}>{camp}</option>)}
                               </select>
                               <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                           </div>
@@ -3936,7 +3945,8 @@ END:VCARD\n`
          isOpen={isGroupDistributionModalOpen}
          onClose={() => setIsGroupDistributionModalOpen(false)}
          team={team}
-         campaigns={uniqueCampaigns}
+         campaigns={campaigns}
+         forms={forms}
          leads={leads}
          targetUserId={targetUserId || userId || ''}
          impersonateId={impersonateId}

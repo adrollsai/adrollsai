@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, Plus, Trash2, Users, Layers, ArrowRight, RefreshCw, CheckCircle2, 
-  ChevronDown, Sparkles, UserCheck, Shield, SlidersHorizontal, AlertCircle, Search
+  ChevronDown, Sparkles, UserCheck, Shield, SlidersHorizontal, AlertCircle, 
+  Search, Megaphone, FileText, Check, Tag
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
@@ -27,12 +28,23 @@ export interface DistributionGroup {
   db_automation_id?: string;
 }
 
+interface SelectableSourceItem {
+  id: string;
+  name: string;
+  type: 'campaign' | 'form' | 'custom';
+  status?: string;
+  leadsCount?: number;
+  ruleValue: string;
+  displayLabel: string;
+}
+
 interface GroupLeadDistributionModalProps {
   isOpen: boolean;
   onClose: () => void;
   team: any[];
-  campaigns: (string | { id: string; name: string })[];
-  leads: any[];
+  campaigns?: (string | { id: string; name: string })[];
+  forms?: any[];
+  leads?: any[];
   targetUserId: string;
   impersonateId?: string | null;
   onLeadsUpdated: () => void;
@@ -43,6 +55,7 @@ export default function GroupLeadDistributionModal({
   onClose,
   team = [],
   campaigns = [],
+  forms = [],
   leads = [],
   targetUserId,
   impersonateId,
@@ -54,26 +67,29 @@ export default function GroupLeadDistributionModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isDistributing, setIsDistributing] = useState<string | null>(null);
 
+  // Live Meta Sources State
+  const [metaCampaigns, setMetaCampaigns] = useState<any[]>([]);
+  const [metaForms, setMetaForms] = useState<any[]>([]);
+  const [dbCampaigns, setDbCampaigns] = useState<any[]>([]);
+  const [loadingSources, setLoadingSources] = useState(false);
+
   // New Group Modal / Inline Form State
   const [isAddingGroup, setIsAddingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [selectedUserToAdd, setSelectedUserToAdd] = useState<Record<string, string>>({});
   
-  // Searchable Campaign Picker State
+  // Searchable Campaign & Form Picker State
   const [activePickerGroupId, setActivePickerGroupId] = useState<string | null>(null);
   const [campaignSearchQuery, setCampaignSearchQuery] = useState('');
+  const [pickerTab, setPickerTab] = useState<'all' | 'campaigns' | 'forms'>('all');
 
-  // Flatten campaign names list
-  const campaignNamesList = Array.from(new Set(
-    campaigns.map(c => typeof c === 'string' ? c : (c?.name || '')).filter(Boolean)
-  ));
-
-  // Fetch saved groups from automations table on load
+  // Fetch groups and live meta sources on modal open
   useEffect(() => {
     if (isOpen && targetUserId) {
       fetchGroups();
+      fetchMetaSources();
     }
-  }, [isOpen, targetUserId]);
+  }, [isOpen, targetUserId, impersonateId]);
 
   const fetchGroups = async () => {
     setLoading(true);
@@ -118,6 +134,164 @@ export default function GroupLeadDistributionModal({
       setLoading(false);
     }
   };
+
+  const fetchMetaSources = async () => {
+    setLoadingSources(true);
+    try {
+      const impParam = impersonateId ? `?impersonate=${impersonateId}` : '';
+      
+      const [campRes, formsRes, dbCampsRes] = await Promise.allSettled([
+        fetch(`/api/meta-ads/campaigns${impParam}`).then(r => r.json()),
+        fetch(`/api/facebook/forms${impParam}`).then(r => r.json()),
+        supabase
+          .from('campaigns')
+          .select('id, name, status')
+          .eq('user_id', targetUserId)
+      ]);
+
+      if (campRes.status === 'fulfilled' && campRes.value?.campaigns) {
+        setMetaCampaigns(campRes.value.campaigns);
+      }
+      if (formsRes.status === 'fulfilled' && formsRes.value?.forms) {
+        setMetaForms(formsRes.value.forms);
+      }
+      if (dbCampsRes.status === 'fulfilled' && dbCampsRes.value.data) {
+        setDbCampaigns(dbCampsRes.value.data);
+      }
+    } catch (err) {
+      console.error('Error fetching Meta campaigns/forms:', err);
+    } finally {
+      setLoadingSources(false);
+    }
+  };
+
+  // Consolidate all available campaigns & forms into a structured selectable catalog
+  const allSelectableSources = useMemo<SelectableSourceItem[]>(() => {
+    const items: SelectableSourceItem[] = [];
+    const seenRuleValues = new Set<string>();
+
+    // 1. Live Meta Campaigns from API
+    metaCampaigns.forEach((c: any) => {
+      const name = c.name?.trim() || 'Untitled Campaign';
+      const ruleVal = `[Campaign] ${name}`;
+      if (!seenRuleValues.has(ruleVal.toLowerCase())) {
+        seenRuleValues.add(ruleVal.toLowerCase());
+        items.push({
+          id: String(c.id || ''),
+          name,
+          type: 'campaign',
+          status: c.status || c.effective_status || 'ACTIVE',
+          ruleValue: ruleVal,
+          displayLabel: name
+        });
+      }
+    });
+
+    // 2. Database Campaigns (from Supabase campaigns table)
+    dbCampaigns.forEach((c: any) => {
+      const name = c.name?.trim();
+      if (!name) return;
+      const ruleVal = `[Campaign] ${name}`;
+      if (!seenRuleValues.has(ruleVal.toLowerCase())) {
+        seenRuleValues.add(ruleVal.toLowerCase());
+        items.push({
+          id: String(c.id || ''),
+          name,
+          type: 'campaign',
+          status: c.status || 'ACTIVE',
+          ruleValue: ruleVal,
+          displayLabel: name
+        });
+      }
+    });
+
+    // 3. Live Meta Lead Forms from API
+    metaForms.forEach((f: any) => {
+      const name = f.name?.trim() || 'Untitled Form';
+      const ruleVal = `[Form] ${name}`;
+      if (!seenRuleValues.has(ruleVal.toLowerCase())) {
+        seenRuleValues.add(ruleVal.toLowerCase());
+        items.push({
+          id: String(f.id || ''),
+          name,
+          type: 'form',
+          status: f.status || 'ACTIVE',
+          leadsCount: f.leads_count,
+          ruleValue: ruleVal,
+          displayLabel: name
+        });
+      }
+    });
+
+    // 4. Props campaigns (from parent component)
+    (campaigns || []).forEach(c => {
+      const name = typeof c === 'string' ? c.trim() : c?.name?.trim();
+      if (!name) return;
+      const ruleVal = name.startsWith('[') ? name : `[Campaign] ${name}`;
+      if (!seenRuleValues.has(ruleVal.toLowerCase()) && !seenRuleValues.has(name.toLowerCase())) {
+        seenRuleValues.add(ruleVal.toLowerCase());
+        items.push({
+          id: typeof c === 'object' && c?.id ? String(c.id) : '',
+          name,
+          type: 'campaign',
+          ruleValue: ruleVal,
+          displayLabel: name.replace(/^\[(campaign|form)\]\s*/i, '')
+        });
+      }
+    });
+
+    // 5. Props forms (from parent component)
+    (forms || []).forEach(f => {
+      const name = typeof f === 'string' ? f.trim() : f?.name?.trim();
+      if (!name) return;
+      const ruleVal = name.startsWith('[') ? name : `[Form] ${name}`;
+      if (!seenRuleValues.has(ruleVal.toLowerCase()) && !seenRuleValues.has(name.toLowerCase())) {
+        seenRuleValues.add(ruleVal.toLowerCase());
+        items.push({
+          id: typeof f === 'object' && f?.id ? String(f.id) : '',
+          name,
+          type: 'form',
+          ruleValue: ruleVal,
+          displayLabel: name.replace(/^\[(campaign|form)\]\s*/i, '')
+        });
+      }
+    });
+
+    // 6. Campaign & Form names extracted from existing leads in workspace
+    (leads || []).forEach(l => {
+      const cName = (l.custom_fields?.meta_ad_origin?.campaign_name || l.campaign_name || l.ad_name)?.trim();
+      if (cName && cName !== 'null' && cName !== 'undefined') {
+        const ruleVal = `[Campaign] ${cName}`;
+        if (!seenRuleValues.has(ruleVal.toLowerCase()) && !seenRuleValues.has(cName.toLowerCase())) {
+          seenRuleValues.add(ruleVal.toLowerCase());
+          items.push({
+            id: String(l.campaign_id || ''),
+            name: cName,
+            type: 'campaign',
+            ruleValue: ruleVal,
+            displayLabel: cName
+          });
+        }
+      }
+
+      const fName = (l.form_name)?.trim();
+      if (fName && fName !== 'null' && fName !== 'undefined') {
+        const ruleVal = `[Form] ${fName}`;
+        if (!seenRuleValues.has(ruleVal.toLowerCase()) && !seenRuleValues.has(fName.toLowerCase())) {
+          seenRuleValues.add(ruleVal.toLowerCase());
+          items.push({
+            id: String(l.form_id || ''),
+            name: fName,
+            type: 'form',
+            ruleValue: ruleVal,
+            displayLabel: fName
+          });
+        }
+      }
+    });
+
+    return items;
+  }, [metaCampaigns, dbCampaigns, metaForms, campaigns, forms, leads]);
 
   const saveGroupRuleToDb = async (group: DistributionGroup) => {
     try {
@@ -274,29 +448,37 @@ export default function GroupLeadDistributionModal({
     }));
   };
 
-  // Campaign management inside a group
-  const handleAddCampaignToGroup = (groupId: string, campaignName: string) => {
-    if (!campaignName) return;
+  // Campaign and Form management inside a group
+  const handleAddCampaignToGroup = (groupId: string, ruleString: string) => {
+    if (!ruleString) return;
 
     setGroups(prev => prev.map(g => {
       if (g.id === groupId) {
-        if (g.campaigns.includes(campaignName)) {
-          toast.error(`Campaign "${campaignName}" is already assigned to this group.`);
+        // Prevent exact duplicates or duplicate normalized strings
+        const isAlreadyAdded = g.campaigns.some(c => 
+          c.toLowerCase() === ruleString.toLowerCase() ||
+          c.replace(/^\[(form|campaign)\]\s*/i, '').toLowerCase() === ruleString.replace(/^\[(form|campaign)\]\s*/i, '').toLowerCase()
+        );
+
+        if (isAlreadyAdded) {
+          toast.error(`"${ruleString}" is already assigned to this group.`);
           return g;
         }
-        const updatedCampaigns = [...g.campaigns, campaignName];
+
+        const updatedCampaigns = [...g.campaigns, ruleString];
         const updatedGroup = { ...g, campaigns: updatedCampaigns };
         saveGroupRuleToDb(updatedGroup);
+        toast.success(`Added "${ruleString}" to "${g.group_name}"`);
         return updatedGroup;
       }
       return g;
     }));
   };
 
-  const handleRemoveCampaign = (groupId: string, campaignName: string) => {
+  const handleRemoveCampaign = (groupId: string, ruleString: string) => {
     setGroups(prev => prev.map(g => {
       if (g.id === groupId) {
-        const updatedCampaigns = g.campaigns.filter(c => c !== campaignName);
+        const updatedCampaigns = g.campaigns.filter(c => c !== ruleString);
         const updatedGroup = { ...g, campaigns: updatedCampaigns };
         saveGroupRuleToDb(updatedGroup);
         return updatedGroup;
@@ -311,7 +493,7 @@ export default function GroupLeadDistributionModal({
       return toast.error(`Please add at least one team member to group "${group.group_name}".`);
     }
     if (group.campaigns.length === 0) {
-      return toast.error(`Please assign at least one campaign to group "${group.group_name}".`);
+      return toast.error(`Please assign at least one campaign or form to group "${group.group_name}".`);
     }
 
     setIsDistributing(group.id);
@@ -319,7 +501,7 @@ export default function GroupLeadDistributionModal({
       // 1. Fetch ALL leads from DB for this workspace to ensure full coverage
       const { data: dbLeads, error: fetchErr } = await supabase
         .from('leads')
-        .select('id, name, phone, assigned_to, user_id, campaign_id, ad_name, form_name, custom_fields')
+        .select('id, name, phone, assigned_to, user_id, campaign_id, form_id, ad_name, form_name, custom_fields')
         .eq('user_id', targetUserId)
         .order('created_at', { ascending: true });
 
@@ -327,21 +509,33 @@ export default function GroupLeadDistributionModal({
 
       const allWorkspaceLeads = dbLeads || [];
 
-      // 2. Filter leads matching group's campaigns
+      // Build campaignsMap for ID <-> Name lookup
+      const idToName: Record<string, string> = {};
+      const nameToId: Record<string, string> = {};
+      [...metaCampaigns, ...dbCampaigns].forEach((c: any) => {
+        if (c.id && c.name) {
+          idToName[c.id] = c.name;
+          nameToId[c.name] = c.id;
+        }
+      });
+      const campaignsMap = { idToName, nameToId };
+
+      // 2. Filter leads matching group's campaigns or forms
       const matchingLeads = allWorkspaceLeads.filter(l => {
         const leadCtx = {
           campaignId: l.campaign_id,
           campaignName: l.custom_fields?.meta_ad_origin?.campaign_name || l.ad_name,
           adName: l.ad_name || l.custom_fields?.meta_ad_origin?.ad_name,
           formName: l.form_name,
+          formId: l.form_id,
           adCampaignString: l.ad_name
         };
 
-        return group.campaigns.some(gc => matchesCampaignRule(gc, leadCtx));
+        return group.campaigns.some(gc => matchesCampaignRule(gc, leadCtx, campaignsMap));
       });
 
       if (matchingLeads.length === 0) {
-        return toast.error(`No leads found matching group "${group.group_name}" campaigns.`);
+        return toast.error(`No leads found matching group "${group.group_name}" campaigns or forms.`);
       }
 
       // 3. Build weighted sequence pool
@@ -375,7 +569,6 @@ export default function GroupLeadDistributionModal({
       // 4. Batch update leads in database by agent
       const updatePromises = Object.entries(updatesByAgent).map(async ([agentId, leadIds]) => {
         if (leadIds.length === 0) return;
-        // Chunk into batches of 100
         for (let i = 0; i < leadIds.length; i += 100) {
           const chunk = leadIds.slice(i, i + 100);
           await supabase
@@ -408,6 +601,41 @@ export default function GroupLeadDistributionModal({
     }
   };
 
+  // Render pill for assigned rule (Campaign or Form)
+  const renderRulePill = (ruleStr: string, groupId: string) => {
+    const isForm = /^\[form\]/i.test(ruleStr) || /^form:/i.test(ruleStr);
+    const isCamp = /^\[campaign\]/i.test(ruleStr) || /^campaign:/i.test(ruleStr);
+    const cleanLabel = ruleStr.replace(/^\[(form|campaign|ad)\]\s*/i, '').replace(/^(form|campaign|ad):\s*/i, '').trim();
+
+    return (
+      <span
+        key={ruleStr}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border shadow-2xs ${
+          isForm 
+            ? 'bg-purple-50 text-purple-900 border-purple-200' 
+            : isCamp
+            ? 'bg-blue-50 text-blue-900 border-blue-200'
+            : 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
+        }`}
+      >
+        <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${
+          isForm ? 'bg-purple-200 text-purple-800' : isCamp ? 'bg-blue-200 text-blue-800' : 'bg-emerald-200 text-emerald-800'
+        }`}>
+          {isForm ? <FileText size={10} /> : isCamp ? <Megaphone size={10} /> : <Tag size={10} />}
+          <span>{isForm ? 'Form' : isCamp ? 'Campaign' : 'Rule'}</span>
+        </span>
+        <span className="max-w-[200px] truncate" title={ruleStr}>{cleanLabel}</span>
+        <button
+          onClick={() => handleRemoveCampaign(groupId, ruleStr)}
+          className="text-slate-400 hover:text-red-600 transition-colors cursor-pointer ml-0.5"
+          title="Remove"
+        >
+          <X size={12} />
+        </button>
+      </span>
+    );
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -417,7 +645,7 @@ export default function GroupLeadDistributionModal({
     >
       <div 
         onClick={(e) => e.stopPropagation()}
-        className="bg-white w-full max-w-6xl rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col my-auto max-h-[80vh] sm:max-h-[90vh]"
+        className="bg-white w-full max-w-6xl rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col my-auto max-h-[85vh] sm:max-h-[90vh]"
       >
         
         {/* Header */}
@@ -432,16 +660,25 @@ export default function GroupLeadDistributionModal({
                   Lead Distribution Groups
                 </h2>
                 <span className="text-[9px] sm:text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
-                  Weighted
+                  Weighted Round-Robin
                 </span>
               </div>
               <p className="text-[10px] sm:text-xs text-slate-400 font-medium hidden sm:block">
-                Set employee lead weightage & link Facebook ad campaigns
+                Assign team members, set weightage ratios & link Facebook ad campaigns or lead forms
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button
+              onClick={() => fetchMetaSources()}
+              disabled={loadingSources}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-700 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+              title="Sync latest campaigns and forms from Meta"
+            >
+              <RefreshCw size={13} className={loadingSources ? 'animate-spin text-blue-400' : ''} />
+              <span className="hidden sm:inline">Refresh Meta</span>
+            </button>
             <button
               onClick={() => setIsAddingGroup(true)}
               className="bg-blue-600 hover:bg-blue-500 text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1 shadow-md shadow-blue-600/30 transition-all cursor-pointer active:scale-98"
@@ -459,7 +696,7 @@ export default function GroupLeadDistributionModal({
           </div>
         </div>
 
-        {/* Modal Body - Touch Pan Scroll Enabled */}
+        {/* Modal Body */}
         <div className="p-3 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 flex-1 bg-slate-50/50 custom-scrollbar touch-pan-y">
 
           {/* Inline Create Group Banner */}
@@ -476,7 +713,7 @@ export default function GroupLeadDistributionModal({
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                 <input
                   type="text"
-                  placeholder="Enter Group Name (e.g. all1, Luxury Projects Team)..."
+                  placeholder="Enter Group Name (e.g. Luxury Team, 2BHK Sales Reps)..."
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
                   className="flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 shadow-xs"
@@ -505,7 +742,7 @@ export default function GroupLeadDistributionModal({
                 <Users size={24} />
               </div>
               <h3 className="text-sm font-extrabold text-slate-800">No Distribution Groups Configured</h3>
-              <p className="text-xs text-slate-500 max-w-md">Create your first employee distribution group to assign specific campaigns and set lead weightage frequency per team member.</p>
+              <p className="text-xs text-slate-500 max-w-md">Create your first employee distribution group to assign specific campaigns or forms and set lead weightage frequency per team member.</p>
               <button
                 onClick={() => setIsAddingGroup(true)}
                 className="mt-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-blue-500 shadow-sm transition-all"
@@ -519,7 +756,6 @@ export default function GroupLeadDistributionModal({
               <div className="block md:hidden space-y-3">
                 {groups.map((group) => {
                   const availableUsers = team.filter(t => !group.members.some(m => m.userId === t.id));
-                  const availableCampaigns = campaignNamesList.filter(c => !group.campaigns.includes(c));
 
                   return (
                     <div key={group.id} className="bg-white rounded-2xl border border-slate-200/80 p-3.5 space-y-3 shadow-xs">
@@ -612,45 +848,31 @@ export default function GroupLeadDistributionModal({
                         </div>
                       </div>
 
-                      {/* Mobile Section 2: Selected Integrations / Campaigns */}
+                      {/* Mobile Section 2: Selected Campaigns / Forms */}
                       <div className="space-y-1.5 pt-1">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                          Selected Campaigns ({group.campaigns.length})
+                          Selected Campaigns & Forms ({group.campaigns.length})
                         </label>
                         <div className="flex flex-wrap gap-1.5 items-center">
                           {group.campaigns.length === 0 ? (
-                            <span className="text-slate-400 text-xs italic block">No campaigns assigned</span>
+                            <span className="text-slate-400 text-xs italic block">No campaigns or forms assigned</span>
                           ) : (
-                            group.campaigns.map((camp) => (
-                              <span
-                                key={camp}
-                                className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-xl text-[11px] font-bold"
-                              >
-                                <span className="max-w-[180px] truncate" title={camp}>{camp}</span>
-                                <button
-                                  onClick={() => handleRemoveCampaign(group.id, camp)}
-                                  className="text-emerald-500 hover:text-emerald-900 cursor-pointer"
-                                >
-                                  <X size={12} />
-                                </button>
-                              </span>
-                            ))
+                            group.campaigns.map((camp) => renderRulePill(camp, group.id))
                           )}
 
-                          {availableCampaigns.length > 0 && (
-                            <div className="w-full pt-1">
-                              <button
-                                onClick={() => {
-                                  setActivePickerGroupId(group.id);
-                                  setCampaignSearchQuery('');
-                                }}
-                                className="w-full bg-emerald-100/80 hover:bg-emerald-200 border border-emerald-300 text-emerald-900 text-xs font-extrabold rounded-xl px-3 py-1.5 cursor-pointer transition-all shadow-xs flex items-center justify-center gap-1.5"
-                              >
-                                <Search size={13} />
-                                <span>+ Add / Search Campaigns ({availableCampaigns.length} available)</span>
-                              </button>
-                            </div>
-                          )}
+                          <div className="w-full pt-1">
+                            <button
+                              onClick={() => {
+                                setActivePickerGroupId(group.id);
+                                setCampaignSearchQuery('');
+                                setPickerTab('all');
+                              }}
+                              className="w-full bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-900 text-xs font-extrabold rounded-xl px-3 py-2 cursor-pointer transition-all shadow-xs flex items-center justify-center gap-1.5"
+                            >
+                              <Search size={13} />
+                              <span>+ Add / Select Campaigns & Forms</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -677,7 +899,7 @@ export default function GroupLeadDistributionModal({
                       <tr className="bg-slate-100/80 border-b border-slate-200/80 text-[10px] font-black text-slate-500 uppercase tracking-wider">
                         <th className="py-3.5 px-4 w-44">Group Name</th>
                         <th className="py-3.5 px-4 w-72">Selected Users & Weightage</th>
-                        <th className="py-3.5 px-4">Selected Integrations / Campaigns</th>
+                        <th className="py-3.5 px-4">Assigned Campaigns & Forms</th>
                         <th className="py-3.5 px-4 w-48 text-center">Last Lead Assigned To</th>
                         <th className="py-3.5 px-4 w-32 text-right">Actions</th>
                       </tr>
@@ -685,7 +907,6 @@ export default function GroupLeadDistributionModal({
                     <tbody className="divide-y divide-slate-100 text-xs">
                       {groups.map((group) => {
                         const availableUsers = team.filter(t => !group.members.some(m => m.userId === t.id));
-                        const availableCampaigns = campaignNamesList.filter(c => !group.campaigns.includes(c));
 
                         return (
                           <tr key={group.id} className="hover:bg-slate-50/60 transition-colors">
@@ -697,7 +918,7 @@ export default function GroupLeadDistributionModal({
                                 <span className="text-sm font-black text-slate-900">{group.group_name}</span>
                               </div>
                               <div className="text-[10px] font-bold text-slate-400 mt-1">
-                                {group.members.length} member(s) • {group.campaigns.length} campaign(s)
+                                {group.members.length} member(s) • {group.campaigns.length} rule(s)
                               </div>
                             </td>
 
@@ -761,40 +982,26 @@ export default function GroupLeadDistributionModal({
                               </div>
                             </td>
 
-                            {/* 3. Selected Integrations / Campaigns (Pills + Search Button) */}
+                            {/* 3. Selected Campaigns & Forms */}
                             <td className="py-4 px-4 align-top">
                               <div className="flex flex-wrap gap-1.5 items-center">
                                 {group.campaigns.length === 0 ? (
-                                  <span className="text-slate-400 text-xs italic">No campaigns assigned</span>
+                                  <span className="text-slate-400 text-xs italic">No campaigns or forms assigned</span>
                                 ) : (
-                                  group.campaigns.map((camp) => (
-                                    <span
-                                      key={camp}
-                                      className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200/80 px-2.5 py-1 rounded-xl text-[11px] font-bold shadow-2xs"
-                                    >
-                                      <span className="max-w-[220px] truncate" title={camp}>{camp}</span>
-                                      <button
-                                        onClick={() => handleRemoveCampaign(group.id, camp)}
-                                        className="text-emerald-500 hover:text-emerald-900 cursor-pointer"
-                                      >
-                                        <X size={13} />
-                                      </button>
-                                    </span>
-                                  ))
+                                  group.campaigns.map((camp) => renderRulePill(camp, group.id))
                                 )}
 
-                                {availableCampaigns.length > 0 && (
-                                  <button
-                                    onClick={() => {
-                                      setActivePickerGroupId(group.id);
-                                      setCampaignSearchQuery('');
-                                    }}
-                                    className="inline-flex items-center gap-1 bg-emerald-100/80 hover:bg-emerald-200 border border-emerald-300 text-emerald-900 text-xs font-extrabold rounded-xl px-3 py-1 cursor-pointer transition-all shadow-xs"
-                                  >
-                                    <Search size={13} />
-                                    <span>+ Add / Search Campaigns</span>
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => {
+                                    setActivePickerGroupId(group.id);
+                                    setCampaignSearchQuery('');
+                                    setPickerTab('all');
+                                  }}
+                                  className="inline-flex items-center gap-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 text-xs font-extrabold rounded-xl px-3 py-1 cursor-pointer transition-all shadow-xs"
+                                >
+                                  <Search size={13} />
+                                  <span>+ Add / Select Campaigns & Forms</span>
+                                </button>
                               </div>
                             </td>
 
@@ -851,7 +1058,7 @@ export default function GroupLeadDistributionModal({
         <div className="bg-slate-50 px-4 sm:px-6 py-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between shrink-0 gap-2.5">
           <div className="hidden sm:flex items-center gap-2 text-xs font-medium text-slate-500">
             <AlertCircle size={14} className="text-blue-600 shrink-0" />
-            <span>Facebook webhooks follow these group distribution rules.</span>
+            <span>Incoming leads from Meta webhooks and sync automatically follow these group rules.</span>
           </div>
 
           <button
@@ -865,50 +1072,132 @@ export default function GroupLeadDistributionModal({
 
       </div>
 
-      {/* SEARCHABLE CAMPAIGN PICKER MODAL POPOVER */}
+      {/* SEARCHABLE CAMPAIGN & FORM PICKER MODAL POPOVER */}
       {activePickerGroupId && (() => {
         const targetGrp = groups.find(g => g.id === activePickerGroupId);
         if (!targetGrp) return null;
-        const availCamps = campaignNamesList.filter(c => !targetGrp.campaigns.includes(c));
-        const filteredCamps = availCamps.filter(c => c.toLowerCase().includes(campaignSearchQuery.toLowerCase().trim()));
+
+        // Filter out items already in the group
+        const availItems = allSelectableSources.filter(item => {
+          return !targetGrp.campaigns.some(c => 
+            c.toLowerCase() === item.ruleValue.toLowerCase() ||
+            c.toLowerCase() === item.name.toLowerCase() ||
+            c.replace(/^\[(form|campaign)\]\s*/i, '').toLowerCase() === item.name.toLowerCase()
+          );
+        });
+
+        // Filter by tab
+        const tabItems = availItems.filter(item => {
+          if (pickerTab === 'campaigns') return item.type === 'campaign';
+          if (pickerTab === 'forms') return item.type === 'form';
+          return true;
+        });
+
+        // Filter by search query
+        const q = campaignSearchQuery.toLowerCase().trim();
+        const filteredItems = tabItems.filter(item => {
+          if (!q) return true;
+          return item.name.toLowerCase().includes(q) || 
+                 item.id.toLowerCase().includes(q) || 
+                 item.ruleValue.toLowerCase().includes(q);
+        });
+
+        const totalCampaignsCount = availItems.filter(i => i.type === 'campaign').length;
+        const totalFormsCount = availItems.filter(i => i.type === 'form').length;
 
         return (
           <div 
             onClick={() => setActivePickerGroupId(null)}
-            className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+            className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150"
           >
             <div 
               onClick={(e) => e.stopPropagation()}
-              className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 p-4 sm:p-5 space-y-3.5 animate-in zoom-in-95"
+              className="bg-white w-full max-w-xl rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 p-4 sm:p-5 space-y-4 animate-in zoom-in-95 max-h-[85vh] flex flex-col overflow-hidden"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              {/* Picker Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <div className="p-2 bg-blue-100 text-blue-700 rounded-xl">
                     <Layers size={18} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-slate-900">Add Campaign to "{targetGrp.group_name}"</h3>
-                    <p className="text-[10px] font-bold text-slate-400">{availCamps.length} available campaign(s)</p>
+                    <h3 className="text-sm font-black text-slate-900">Add Campaign or Form to "{targetGrp.group_name}"</h3>
+                    <p className="text-[10px] font-bold text-slate-400">
+                      {availItems.length} available items ({totalCampaignsCount} campaigns, {totalFormsCount} forms)
+                    </p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setActivePickerGroupId(null)} 
-                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl cursor-pointer"
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => fetchMetaSources()}
+                    disabled={loadingSources}
+                    className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all cursor-pointer"
+                    title="Reload from Meta"
+                  >
+                    <RefreshCw size={16} className={loadingSources ? 'animate-spin text-blue-600' : ''} />
+                  </button>
+                  <button 
+                    onClick={() => setActivePickerGroupId(null)} 
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabs: All / Campaigns / Lead Forms */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl shrink-0 text-xs font-extrabold">
+                <button
+                  onClick={() => setPickerTab('all')}
+                  className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    pickerTab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
                 >
-                  <X size={18} />
+                  <span>All</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-bold">
+                    {availItems.length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setPickerTab('campaigns')}
+                  className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    pickerTab === 'campaigns' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Megaphone size={12} />
+                  <span>Campaigns</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    pickerTab === 'campaigns' ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {totalCampaignsCount}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setPickerTab('forms')}
+                  className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    pickerTab === 'forms' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <FileText size={12} />
+                  <span>Lead Forms</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    pickerTab === 'forms' ? 'bg-purple-500 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {totalFormsCount}
+                  </span>
                 </button>
               </div>
 
               {/* Search Input */}
-              <div className="relative">
+              <div className="relative shrink-0">
                 <Search size={16} className="absolute left-3.5 top-3 text-slate-400" />
                 <input
                   type="text"
                   autoFocus
-                  placeholder="Type to search (e.g. Ananta, Penthouse, Vintage, August)..."
+                  placeholder="Search by campaign name, form name, or ID..."
                   value={campaignSearchQuery}
                   onChange={(e) => setCampaignSearchQuery(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-8 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/30"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-8 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
                 />
                 {campaignSearchQuery && (
                   <button 
@@ -920,38 +1209,111 @@ export default function GroupLeadDistributionModal({
                 )}
               </div>
 
-              {/* Campaign List */}
-              <div className="max-h-64 overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
-                {filteredCamps.length === 0 ? (
-                  <div className="py-8 text-center text-xs font-bold text-slate-400">
-                    No matching campaigns found for "{campaignSearchQuery}"
-                  </div>
-                ) : (
-                  filteredCamps.map((camp) => (
+              {/* Custom Write-In Option if query typed */}
+              {campaignSearchQuery.trim() && (
+                <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-2.5 shrink-0 flex items-center justify-between gap-2 text-xs">
+                  <span className="font-bold text-blue-900 truncate">
+                    Add custom: <span className="underline font-black">"{campaignSearchQuery.trim()}"</span>
+                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
-                      key={camp}
                       onClick={() => {
-                        handleAddCampaignToGroup(targetGrp.id, camp);
-                        setActivePickerGroupId(null);
+                        handleAddCampaignToGroup(targetGrp.id, `[Campaign] ${campaignSearchQuery.trim()}`);
                         setCampaignSearchQuery('');
                       }}
-                      title={camp}
-                      className="w-full text-left bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200/80 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:text-emerald-900 transition-all flex items-start justify-between gap-2.5 group cursor-pointer"
+                      className="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer shadow-xs"
                     >
-                      <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{camp}</span>
-                      <Plus size={14} className="text-slate-400 group-hover:text-emerald-600 shrink-0 mt-0.5" />
+                      + As Campaign
                     </button>
-                  ))
+                    <button
+                      onClick={() => {
+                        handleAddCampaignToGroup(targetGrp.id, `[Form] ${campaignSearchQuery.trim()}`);
+                        setCampaignSearchQuery('');
+                      }}
+                      className="bg-purple-600 hover:bg-purple-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer shadow-xs"
+                    >
+                      + As Form
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Items List */}
+              <div className="flex-1 overflow-y-auto space-y-1.5 custom-scrollbar pr-1 min-h-[220px]">
+                {loadingSources ? (
+                  <div className="py-12 text-center text-slate-400 font-bold text-xs flex flex-col items-center justify-center gap-2">
+                    <RefreshCw size={20} className="animate-spin text-blue-600" />
+                    <span>Loading campaigns and forms from Meta...</span>
+                  </div>
+                ) : filteredItems.length === 0 ? (
+                  <div className="py-12 text-center text-xs font-bold text-slate-400 space-y-2">
+                    <p>No matching campaigns or forms found for "{campaignSearchQuery}"</p>
+                    <p className="text-[11px] font-normal text-slate-400">You can add it directly using the "+ As Campaign" or "+ As Form" buttons above.</p>
+                  </div>
+                ) : (
+                  filteredItems.map((item) => {
+                    const isForm = item.type === 'form';
+                    return (
+                      <button
+                        key={item.ruleValue + (item.id || '')}
+                        onClick={() => {
+                          handleAddCampaignToGroup(targetGrp.id, item.ruleValue);
+                        }}
+                        title={item.name}
+                        className={`w-full text-left border rounded-xl px-3.5 py-2.5 text-xs transition-all flex items-center justify-between gap-3 group cursor-pointer ${
+                          isForm 
+                            ? 'bg-slate-50 hover:bg-purple-50 hover:border-purple-300 border-slate-200/80 text-slate-800' 
+                            : 'bg-slate-50 hover:bg-blue-50 hover:border-blue-300 border-slate-200/80 text-slate-800'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 flex items-start gap-2.5">
+                          <span className={`p-1.5 rounded-lg mt-0.5 shrink-0 ${
+                            isForm ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {isForm ? <FileText size={14} /> : <Megaphone size={14} />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-extrabold text-slate-900 truncate">{item.displayLabel}</span>
+                              <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md ${
+                                isForm ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {isForm ? 'Lead Form' : 'Campaign'}
+                              </span>
+                              {item.status && (
+                                <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md ${
+                                  item.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {item.status}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold mt-0.5">
+                              {item.id && <span>ID: {item.id}</span>}
+                              {typeof item.leadsCount === 'number' && <span>• {item.leadsCount} leads</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 flex items-center">
+                          <span className="w-7 h-7 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all shadow-2xs">
+                            <Plus size={15} />
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })
                 )}
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] font-bold text-slate-400">
-                <span>Showing {filteredCamps.length} of {availCamps.length} campaigns</span>
+              {/* Picker Footer */}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] font-bold text-slate-400 shrink-0">
+                <span>Showing {filteredItems.length} of {tabItems.length} items</span>
                 <button 
                   onClick={() => setActivePickerGroupId(null)} 
                   className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-extrabold cursor-pointer"
                 >
-                  Cancel
+                  Done
                 </button>
               </div>
             </div>

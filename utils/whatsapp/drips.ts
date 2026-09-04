@@ -42,12 +42,8 @@ export async function triggerWelcomeDrip(
 
         let flow = flows?.[0];
         if (!flow) {
-            console.log('[DRIP TRIGGER] No custom welcome flow found. Using default Nobogent VSL Video Welcome flow.');
-            flow = {
-                title: 'Instant Lead Welcome',
-                template_name: 'nobogent_vsl_system_welcome_v3',
-                header_media_url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/stitched_1785757278763.mp4'
-            };
+            console.log(`[DRIP TRIGGER] No active custom welcome flow configured for owner: ${ownerId}. Skipping automated drip.`);
+            return;
         }
 
         console.log(`[DRIP TRIGGER] Active welcome flow: ${flow.title} (Template: ${flow.template_name})`);

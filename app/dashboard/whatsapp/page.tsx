@@ -1442,13 +1442,59 @@ export default function AutomationPage() {
                         displayText = templateInfo.bodyText
                       }
 
-                      // 2. Interactive Button Extraction
-                      let extractedButtonLabel: string | null = null
-                      const buttonMatch = displayText.match(/\[(?:Button|Interactive Button|Quick Reply):\s*([^\]]+)\]/i)
-                      if (buttonMatch) {
-                        extractedButtonLabel = buttonMatch[1].trim()
-                        displayText = displayText.replace(/\[(?:Button|Interactive Button|Quick Reply):\s*([^\]]+)\]/gi, '').trim()
+                      // 2. Interactive Button Extraction (Options, Multi-Buttons, CTA URLs)
+                      interface ExtractedBtn {
+                        label: string
+                        url?: string
                       }
+                      const extractedButtons: ExtractedBtn[] = []
+
+                      // Extract [Button: Label -> URL]
+                      const ctaUrlMatch = displayText.match(/\[Button:\s*([^\]]+?)\s*->\s*(https?:\/\/[^\]]+)\]/i)
+                      if (ctaUrlMatch) {
+                        extractedButtons.push({
+                          label: ctaUrlMatch[1].trim(),
+                          url: ctaUrlMatch[2].trim()
+                        })
+                        displayText = displayText.replace(/\[Button:\s*([^\]]+?)\s*->\s*(https?:\/\/[^\]]+)\]/gi, '').trim()
+                      }
+
+                      // Extract [Buttons: opt1 | opt2 | opt3]
+                      const buttonsMultiMatch = displayText.match(/\[Buttons?:\s*([^\]]+)\]/i)
+                      if (buttonsMultiMatch) {
+                        const rawList = buttonsMultiMatch[1].split('|').map(s => s.trim()).filter(Boolean)
+                        rawList.forEach(btn => {
+                          if (btn.includes('->')) {
+                            const [lbl, u] = btn.split('->').map(s => s.trim())
+                            extractedButtons.push({ label: lbl, url: u })
+                          } else {
+                            extractedButtons.push({ label: btn })
+                          }
+                        })
+                        displayText = displayText.replace(/\[Buttons?:\s*([^\]]+)\]/gi, '').trim()
+                      }
+
+                      // Extract [Options: opt1, opt2, opt3]
+                      const optionsMatch = displayText.match(/\[Options?:\s*([^\]]+)\]/i)
+                      if (optionsMatch) {
+                        const rawList = optionsMatch[1].split(',').map(s => s.trim()).filter(Boolean)
+                        rawList.forEach(opt => {
+                          extractedButtons.push({ label: opt })
+                        })
+                        displayText = displayText.replace(/\[Options?:\s*([^\]]+)\]/gi, '').trim()
+                      }
+
+                      // Extract single [Interactive Button: ...] or [Quick Reply: ...] or [Button: ...]
+                      const singleBtnMatch = displayText.match(/\[(?:Interactive Button|Quick Reply|Button):\s*([^\]]+)\]/i)
+                      if (singleBtnMatch) {
+                        extractedButtons.push({ label: singleBtnMatch[1].trim() })
+                        displayText = displayText.replace(/\[(?:Interactive Button|Quick Reply|Button):\s*([^\]]+)\]/gi, '').trim()
+                      }
+
+                      // Clean debug/internal prefixes like [Weekly Follow-up #1] from display
+                      displayText = displayText.replace(/^\[Weekly Follow-up\s*#?\d*\]\s*/i, '').trim()
+
+                      let extractedButtonLabel: string | null = extractedButtons[0]?.label || null
 
                       if (displayText.startsWith('[Image Product Card]')) {
                         displayText = displayText.replace('[Image Product Card]', '').trim()
@@ -1567,15 +1613,31 @@ export default function AutomationPage() {
                                 <p className="italic opacity-60 text-[11px]">{displayText || '[Media Message]'}</p>
                               )}
 
-                              {/* Render WhatsApp Interactive Reply Button */}
-                              {extractedButtonLabel && (
-                                <div className="mt-2.5 pt-2 border-t border-black/10">
-                                  <button 
-                                    onClick={() => toast.info(`Interactive action: ${extractedButtonLabel}`)}
-                                    className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-[#008069] active:bg-slate-100 border border-[#00a884]/30 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer hover:shadow-md"
-                                  >
-                                    <span className="text-sm">📞</span> {extractedButtonLabel}
-                                  </button>
+                              {/* Render WhatsApp Interactive Reply / Option / CTA Buttons */}
+                              {extractedButtons && extractedButtons.length > 0 && (
+                                <div className="mt-2.5 pt-2 border-t border-black/10 space-y-1.5">
+                                  {extractedButtons.map((btn, bIdx) => (
+                                    btn.url ? (
+                                      <a 
+                                        key={bIdx}
+                                        href={btn.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-[#008069] active:bg-slate-100 border border-[#00a884]/30 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer hover:shadow-sm no-underline"
+                                      >
+                                        <span className="text-sm">🔗</span> <span>{btn.label}</span>
+                                      </a>
+                                    ) : (
+                                      <button 
+                                        key={bIdx}
+                                        type="button"
+                                        onClick={() => toast.info(`Interactive Option: "${btn.label}"`)}
+                                        className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-[#008069] active:bg-slate-100 border border-[#00a884]/30 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer hover:shadow-sm"
+                                      >
+                                        <span className="text-sm">🔘</span> <span>{btn.label}</span>
+                                      </button>
+                                    )
+                                  ))}
                                 </div>
                               )}
 

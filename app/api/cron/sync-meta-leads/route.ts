@@ -82,7 +82,7 @@ async function handleSync(request: Request) {
     // 1. Fetch all active profiles with connected Meta Pages
     const { data: profiles, error: profileErr } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, business_name, selected_page_id, selected_page_token, facebook_token, ad_account_id, enable_distribution, auto_call_new_leads')
+      .select('id, email, business_name, selected_page_id, selected_page_token, facebook_token, ad_account_id, enable_distribution, auto_call_new_leads, agency_id, parent_id')
       .not('selected_page_id', 'is', null)
       .not('selected_page_token', 'is', null);
 
@@ -133,11 +133,12 @@ async function handleSync(request: Request) {
           diagnostics.formsScanned += formsList.length;
 
           // 2. Fetch Automations, Group Distribution Rules, and DB Campaigns for this profile
+          const targetOwnerIds = [profile.id, profile.agency_id, profile.parent_id].filter(Boolean);
           const [{ data: groupAutomations }, { data: campAutomations }, { data: userProps }, { data: dbUserCampaigns }] = await Promise.all([
-            supabaseAdmin.from('automations').select('*').eq('user_id', profile.id).like('title', 'Group-Distribution:%').eq('is_active', true),
-            supabaseAdmin.from('automations').select('*').eq('user_id', profile.id).like('title', 'Campaign-Assignment:%').eq('is_active', true),
-            supabaseAdmin.from('properties').select('id, title, image_url, images').eq('user_id', profile.id),
-            supabaseAdmin.from('campaigns').select('id, name').eq('user_id', profile.id)
+            supabaseAdmin.from('automations').select('*').in('user_id', targetOwnerIds).like('title', 'Group-Distribution:%').eq('is_active', true),
+            supabaseAdmin.from('automations').select('*').in('user_id', targetOwnerIds).like('title', 'Campaign-Assignment:%').eq('is_active', true),
+            supabaseAdmin.from('properties').select('id, title, image_url, images').in('user_id', targetOwnerIds),
+            supabaseAdmin.from('campaigns').select('id, name').in('user_id', targetOwnerIds)
           ]);
 
           const idToName: Record<string, string> = {};
@@ -346,6 +347,7 @@ async function handleSync(request: Request) {
                         campaignName,
                         adName,
                         formName,
+                        formId,
                         adCampaignString
                       };
                       const matches = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx, campaignsMap));

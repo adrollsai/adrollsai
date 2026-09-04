@@ -1684,10 +1684,27 @@ IMPORTANT RULES:
                                         ? `https://${ownerCustomDomain}?book=1` 
                                         : `${appUrl}/shared/${ownerUserId}?book=1`;
 
-                                    // Helper: Send 3-Button Standard Action Menu (1. View properties, 2. Talk to an expert, 3. Book an appointment)
+                                    const isNobogentAccount = 
+                                        ownerUserId === 'bc63c065-9bcc-4793-bedc-f0960406425b' ||
+                                        ownerUserId === '91553adf-20b5-4c4c-9614-6b6f89fd0bfd' ||
+                                        ownerUserId === 'b1645a6d-4b73-41ef-a197-8247d0168905' ||
+                                        (ownerBusinessName || '').toLowerCase().includes('nobogent') ||
+                                        (ownerBusinessName || '').toLowerCase().includes('adrolls');
+
+                                    // Helper: Send 3-Button Standard Action Menu (tailored for Real Estate vs Nobogent Platform)
                                     const sendThreeButtons = async (promptText = "What would you like to do?") => {
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                            const threeButtonsList = isNobogentAccount ? [
+                                                { type: 'reply', reply: { id: 'view_properties', title: 'Explore Nobogent' } },
+                                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Expert' } },
+                                                { type: 'reply', reply: { id: 'book_appointment', title: 'Book Strategy Call' } }
+                                            ] : [
+                                                { type: 'reply', reply: { id: 'view_properties', title: 'View properties' } },
+                                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to an expert' } },
+                                                { type: 'reply', reply: { id: 'book_appointment', title: 'Book an appointment' } }
+                                            ];
+
                                             const payload = {
                                                 messaging_product: 'whatsapp',
                                                 recipient_type: 'individual',
@@ -1697,11 +1714,7 @@ IMPORTANT RULES:
                                                     type: 'button',
                                                     body: { text: promptText },
                                                     action: {
-                                                        buttons: [
-                                                            { type: 'reply', reply: { id: 'view_properties', title: 'View properties' } },
-                                                            { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to an expert' } },
-                                                            { type: 'reply', reply: { id: 'book_appointment', title: 'Book an appointment' } }
-                                                        ]
+                                                        buttons: threeButtonsList
                                                     }
                                                 }
                                             };
@@ -1717,7 +1730,7 @@ IMPORTANT RULES:
                                                 await supabaseAdmin.from('whatsapp_messages').insert({
                                                     chat_id: chat.id,
                                                     direction: 'outbound',
-                                                    message_text: `${promptText} [Buttons: View properties | Talk to an expert | Book an appointment]`
+                                                    message_text: `${promptText} [Buttons: ${threeButtonsList.map(b => b.reply.title).join(' | ')}]`
                                                 });
                                                 await supabaseAdmin.from('whatsapp_chats').update({
                                                     last_message_text: promptText,
@@ -1900,12 +1913,21 @@ IMPORTANT RULES:
                                     if (isViewProperties) {
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "View properties".`);
                                         await syncFieldsAndScore({ view_properties_clicked: true });
-                                        await sendCtaUrlMessage(
-                                            "🏢 Available Properties",
-                                            "Explore our latest premium properties catalog with pricing, layouts, and amenities:",
-                                            "View Properties 🏢",
-                                            catalogueLink
-                                        );
+                                        if (isNobogentAccount) {
+                                            await sendCtaUrlMessage(
+                                                "🚀 Nobogent AI Sales Platform",
+                                                "Explore how Nobogent automates client acquisition, lead qualification, and 24/7 AI sales for your business:",
+                                                "Explore Nobogent 🚀",
+                                                catalogueLink
+                                            );
+                                        } else {
+                                            await sendCtaUrlMessage(
+                                                "🏢 Available Properties",
+                                                "Explore our latest premium properties catalog with pricing, layouts, and amenities:",
+                                                "View Properties 🏢",
+                                                catalogueLink
+                                            );
+                                        }
                                         await new Promise(r => setTimeout(r, 800));
                                         await sendThreeButtons("What would you like to do next?");
                                         return;
@@ -1918,7 +1940,8 @@ IMPORTANT RULES:
                                         await syncFieldsAndScore({ connect_expert_clicked: true, requested_callback: true });
                                         
                                         // Confirm to lead
-                                        await sendTextMessage(`Thank you! Our property specialist from ${ownerBusinessName || 'our team'} will reach out to you directly shortly. 🙏`);
+                                        const specialistLabel = isNobogentAccount ? 'solutions specialist' : 'property specialist';
+                                        await sendTextMessage(`Thank you! Our ${specialistLabel} from ${ownerBusinessName || 'our team'} will reach out to you directly shortly. 🙏`);
                                         
                                         // Alert admin/agent via high-priority multi-channel notification
                                         const leadName = chat.recipient_name || latestLead?.name || 'Prospect';
@@ -2010,12 +2033,17 @@ IMPORTANT RULES:
                                         const askQuestionMCQ = async (qIndex: number) => {
                                             const qObj = parsedQuestionsList[qIndex];
                                             if (!qObj) return;
-                                            const rawOptions = qObj.options.length > 0 ? qObj.options.slice(0, 3) : ['Option 1', 'Option 2', 'Option 3'];
-                                            const buttons = rawOptions.map((opt, optIdx) => ({
-                                                id: `q_opt_${qIndex}_${optIdx}`,
-                                                title: opt.slice(0, 20)
-                                            }));
-                                            await sendMCQButtons(qObj.question, buttons);
+                                            if (Array.isArray(qObj.options) && qObj.options.length > 0) {
+                                                const rawOptions = qObj.options.slice(0, 3);
+                                                const buttons = rawOptions.map((opt, optIdx) => ({
+                                                    id: `q_opt_${qIndex}_${optIdx}`,
+                                                    title: String(opt).slice(0, 20)
+                                                }));
+                                                await sendMCQButtons(qObj.question, buttons);
+                                            } else {
+                                                // Open-ended question without options -> Send as clean text without dummy Option 1/2/3 buttons!
+                                                await sendTextMessage(qObj.question);
+                                            }
                                         };
 
                                         // Check if we are waiting for the lead's name after qualification questions
@@ -2040,12 +2068,21 @@ IMPORTANT RULES:
                                             });
 
                                             // Send tailored lead magnet catalog link
-                                            await sendCtaUrlMessage(
-                                                `🎁 Tailored Catalog for ${cleanedName}`,
-                                                `Thank you, ${cleanedName}! 🎉 Based on your requirements, here is your customized properties & inventory list with pricing and floor plans:`,
-                                                "View Properties 🏢",
-                                                catalogueLink
-                                            );
+                                            if (isNobogentAccount) {
+                                                await sendCtaUrlMessage(
+                                                    `🎁 Platform Information for ${cleanedName}`,
+                                                    `Thank you, ${cleanedName}! 🎉 Here is your customized overview of Nobogent AI sales automation and capabilities:`,
+                                                    "Explore Nobogent 🚀",
+                                                    catalogueLink
+                                                );
+                                            } else {
+                                                await sendCtaUrlMessage(
+                                                    `🎁 Tailored Catalog for ${cleanedName}`,
+                                                    `Thank you, ${cleanedName}! 🎉 Based on your requirements, here is your customized properties & inventory list with pricing and floor plans:`,
+                                                    "View Properties 🏢",
+                                                    catalogueLink
+                                                );
+                                            }
                                             await new Promise(r => setTimeout(r, 800));
                                             await sendThreeButtons("What would you like to do next?");
                                             return;
@@ -2058,7 +2095,7 @@ IMPORTANT RULES:
                                             const optIdx = parseInt(parts[3], 10);
                                             const qObj = parsedQuestionsList[qIdx];
                                             if (qObj) {
-                                                const selectedValue = qObj.options[optIdx] || messageText.trim();
+                                                const selectedValue = (qObj.options && qObj.options[optIdx]) || messageText.trim();
                                                 console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Q#${qIdx + 1} (${qObj.key}): ${selectedValue}`);
                                                 const updateObj: Record<string, any> = { [qObj.key]: selectedValue };
                                                 if (qObj.key === 'property_type') updateObj.interested_property = selectedValue;
@@ -2072,20 +2109,95 @@ IMPORTANT RULES:
                                                     // All qualification questions answered -> Ask for lead name to complete tailored catalog
                                                     if (!currentCustomFields?.lead_name_captured) {
                                                         await syncFieldsAndScore({ awaiting_lead_name: true });
-                                                        await sendTextMessage("Great! 🎉 To instantly receive your tailored inventory list & brochure matched to your preferences, may I know your good name please?");
+                                                        await sendTextMessage("Great! 🎉 To instantly receive your tailored overview & details matched to your preferences, may I know your good name please?");
                                                         return;
                                                     } else {
                                                         await syncFieldsAndScore({ qualification_completed: true });
-                                                        await sendCtaUrlMessage(
-                                                            "🏢 Your Curated Properties",
-                                                            "Thank you! 🎉 Here is your customized property catalog based on your requirements:",
-                                                            "View Properties 🏢",
-                                                            catalogueLink
-                                                        );
+                                                        if (isNobogentAccount) {
+                                                            await sendCtaUrlMessage(
+                                                                "🚀 Nobogent AI Sales Platform",
+                                                                "Thank you! 🎉 Here is your customized overview of Nobogent AI features and solutions:",
+                                                                "Explore Nobogent 🚀",
+                                                                catalogueLink
+                                                            );
+                                                        } else {
+                                                            await sendCtaUrlMessage(
+                                                                "🏢 Your Curated Properties",
+                                                                "Thank you! 🎉 Here is your customized property catalog based on your requirements:",
+                                                                "View Properties 🏢",
+                                                                catalogueLink
+                                                            );
+                                                        }
                                                         await new Promise(r => setTimeout(r, 800));
                                                         await sendThreeButtons("What would you like to do next?");
                                                         return;
                                                     }
+                                                }
+                                            }
+                                        }
+
+                                        // Dynamic Free-Text & Number reply handler for active qualification questions
+                                        const activeQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
+                                        if (activeQIndex !== -1 && messageText && messageText.trim().length > 0 && !buttonReplyId) {
+                                            const activeQ = parsedQuestionsList[activeQIndex];
+                                            const isGenericGreeting = /^(hi|hello|hey|namaste|good morning|good afternoon|good evening|info|more info|details|can i get more info|start|menu)$/i.test(messageText.trim().toLowerCase());
+                                            const hasAnyAnswer = parsedQuestionsList.some(q => currentCustomFields[q.key]);
+
+                                            // If first message is a greeting, send intro and ask question 1
+                                            if (activeQIndex === 0 && !hasAnyAnswer && isGenericGreeting) {
+                                                await sendTextMessage("Hi! 👋 Please answer a few quick questions so we can assist you with the right options & details: 🎁🏢");
+                                                await new Promise(r => setTimeout(r, 600));
+                                                await askQuestionMCQ(0);
+                                                return;
+                                            }
+
+                                            // Determine answer value
+                                            let selectedValue = messageText.trim();
+                                            if (Array.isArray(activeQ.options) && activeQ.options.length > 0) {
+                                                const numMatch = messageText.trim().match(/^(?:option\s*)?([1-3])$/i);
+                                                if (numMatch) {
+                                                    const idx = parseInt(numMatch[1], 10) - 1;
+                                                    if (activeQ.options[idx]) selectedValue = activeQ.options[idx];
+                                                } else {
+                                                    const matchedOpt = activeQ.options.find(opt => opt.toLowerCase() === messageText.trim().toLowerCase());
+                                                    if (matchedOpt) selectedValue = matchedOpt;
+                                                }
+                                            }
+
+                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered active Q#${activeQIndex + 1} (${activeQ.key}) via free-text: ${selectedValue}`);
+                                            const updateObj: Record<string, any> = { [activeQ.key]: selectedValue };
+                                            if (activeQ.key === 'property_type') updateObj.interested_property = selectedValue;
+                                            await syncFieldsAndScore(updateObj);
+
+                                            const nextIdx = activeQIndex + 1;
+                                            if (nextIdx < parsedQuestionsList.length) {
+                                                await askQuestionMCQ(nextIdx);
+                                                return;
+                                            } else {
+                                                if (!currentCustomFields?.lead_name_captured) {
+                                                    await syncFieldsAndScore({ awaiting_lead_name: true });
+                                                    await sendTextMessage("Great! 🎉 To receive your tailored information matched to your preferences, may I know your good name please?");
+                                                    return;
+                                                } else {
+                                                    await syncFieldsAndScore({ qualification_completed: true });
+                                                    if (isNobogentAccount) {
+                                                        await sendCtaUrlMessage(
+                                                            "🚀 Nobogent AI Sales Platform",
+                                                            "Thank you! 🎉 Here is your customized overview of Nobogent AI features and solutions:",
+                                                            "Explore Nobogent 🚀",
+                                                            catalogueLink
+                                                        );
+                                                    } else {
+                                                        await sendCtaUrlMessage(
+                                                            "🏢 Your Curated Details",
+                                                            "Thank you! 🎉 Here is your customized catalog & details based on your requirements:",
+                                                            "View Details 🏢",
+                                                            catalogueLink
+                                                        );
+                                                    }
+                                                    await new Promise(r => setTimeout(r, 800));
+                                                    await sendThreeButtons("What would you like to do next?");
+                                                    return;
                                                 }
                                             }
                                         }
@@ -2197,7 +2309,7 @@ IMPORTANT RULES:
           // Find the User based on the Page ID using Admin Client
           const { data: profiles, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, email, business_name, selected_page_token, facebook_token, pixel_id, enable_distribution, auto_call_new_leads, role')
+            .select('id, email, business_name, selected_page_token, facebook_token, pixel_id, enable_distribution, auto_call_new_leads, role, agency_id, parent_id')
             .eq('selected_page_id', page_id);
 
           if (profileErr || !profiles || profiles.length === 0) {
@@ -2228,7 +2340,7 @@ IMPORTANT RULES:
               form_id: 'dummy_form_id'
             };
           } else {
-            const fbUrl = `https://graph.facebook.com/v19.0/${leadgen_id}?fields=id,created_time,field_data,form_id&access_token=${profile.selected_page_token}`
+            const fbUrl = `https://graph.facebook.com/v19.0/${leadgen_id}?fields=id,created_time,field_data,form_id,ad_id,ad_name,campaign_id,campaign_name&access_token=${profile.selected_page_token}`
             const fbResponse = await fetch(fbUrl)
             fbLead = await fbResponse.json()
           }
@@ -2289,6 +2401,18 @@ IMPORTANT RULES:
             }
           })
 
+          if (phone) {
+            const hasPlus = phone.trim().startsWith('+')
+            const digitsOnly = phone.replace(/\D/g, '')
+            if (digitsOnly.length > 15) {
+              if (digitsOnly.startsWith('91') && digitsOnly.length >= 12) {
+                phone = '+91' + digitsOnly.slice(2, 12)
+              } else {
+                phone = (hasPlus ? '+' : '') + digitsOnly.slice(0, 15)
+              }
+            }
+          }
+
           if ((!name || name.toLowerCase() === 'unknown' || name.toLowerCase() === 'lead') && (firstName || lastName)) {
             name = `${firstName} ${lastName}`.trim()
           }
@@ -2334,10 +2458,11 @@ IMPORTANT RULES:
           let campaignId: string | null = null
           let metaAdOrigin: any = null
 
-          if (ad_id) {
+          const effectiveAdId = ad_id || fbLead.ad_id || null;
+          if (effectiveAdId) {
             try {
                 const metaToken = profile.facebook_token || profile.selected_page_token || process.env.META_SYSTEM_USER_TOKEN || '';
-                const adRes = await fetch(`https://graph.facebook.com/v20.0/${ad_id}?fields=id,name,adset{id,name},campaign{id,name},creative{id,name,image_url,thumbnail_url,object_story_spec,asset_feed_spec}&access_token=${metaToken}`)
+                const adRes = await fetch(`https://graph.facebook.com/v20.0/${effectiveAdId}?fields=id,name,adset{id,name},campaign{id,name},creative{id,name,image_url,thumbnail_url,object_story_spec,asset_feed_spec}&access_token=${metaToken}`)
                 const adDetails = await adRes.json()
                 if (adDetails && !adDetails.error) {
                     campaignId = adDetails.campaign?.id || null
@@ -2366,7 +2491,7 @@ IMPORTANT RULES:
                     }
 
                     metaAdOrigin = {
-                        ad_id: ad_id,
+                        ad_id: effectiveAdId,
                         ad_name: adNameStr,
                         adset_id: adDetails.adset?.id || '',
                         adset_name: adDetails.adset?.name || '',
@@ -2376,14 +2501,18 @@ IMPORTANT RULES:
                         body: bodyText,
                         image_url: creativeImg,
                         video_url: videoMp4Url || '',
-                        source_id: ad_id,
-                        source_url: `https://www.facebook.com/ads/library/?id=${ad_id}`
+                        source_id: effectiveAdId,
+                        source_url: `https://www.facebook.com/ads/library/?id=${effectiveAdId}`
                     };
                 }
             } catch (e) {
                 console.error("Could not fetch Ad metadata", e)
             }
           }
+
+          // Fallback attribution from raw leadgen response if ad details unavailable
+          if (!campaignId && fbLead.campaign_id) campaignId = fbLead.campaign_id;
+          if ((!campaignName || campaignName === 'Unknown Campaign') && fbLead.campaign_name) campaignName = fbLead.campaign_name;
 
           // Match property in active inventory if it corresponds to an existing product
           let matchedPropertyTitle = '';
@@ -2419,14 +2548,14 @@ IMPORTANT RULES:
             const matchedPropObj = propertiesList.find((p: any) => matchedPropertyId === p.id);
             const fallbackImg = matchedPropObj?.image_url || matchedPropObj?.images?.[0] || '';
             metaAdOrigin = {
-              ad_id: ad_id || '',
+              ad_id: effectiveAdId || '',
               ad_name: adCampaignString.includes(' / ') ? adCampaignString.split(' / ')[1] : adCampaignString,
               campaign_name: campaignName || (adCampaignString.includes(' / ') ? adCampaignString.split(' / ')[0] : formName),
               headline: matchedPropertyTitle || adCampaignString,
               body: formName ? `Submitted via form: ${formName}` : '',
               image_url: fallbackImg,
               video_url: '',
-              source_url: ad_id ? `https://www.facebook.com/ads/library/?id=${ad_id}` : 'https://www.facebook.com/ads/library/',
+              source_url: effectiveAdId ? `https://www.facebook.com/ads/library/?id=${effectiveAdId}` : 'https://www.facebook.com/ads/library/',
               product_name: matchedPropertyTitle || null,
               product_id: matchedPropertyId || null
             };
@@ -2441,17 +2570,18 @@ IMPORTANT RULES:
           
           // 0. GROUP WEIGHTED DISTRIBUTION RULE (Primary Strategy)
           try {
+            const targetOwnerIds = [profile.id, profile.agency_id, profile.parent_id].filter(Boolean);
             const [{ data: groupAutomations }, { data: dbUserCampaigns }] = await Promise.all([
               supabaseAdmin
                 .from('automations')
                 .select('*')
-                .eq('user_id', profile.id)
+                .in('user_id', targetOwnerIds)
                 .like('title', 'Group-Distribution:%')
                 .eq('is_active', true),
               supabaseAdmin
                 .from('campaigns')
                 .select('id, name')
-                .eq('user_id', profile.id)
+                .in('user_id', targetOwnerIds)
             ]);
 
             const idToName: Record<string, string> = {};
@@ -2467,8 +2597,9 @@ IMPORTANT RULES:
             const leadCtx = {
               campaignId,
               campaignName,
-              adName: fbLead.ad_name,
+              adName: metaAdOrigin?.ad_name || fbLead.ad_name || null,
               formName,
+              formId: fbLead.form_id || null,
               adCampaignString
             };
 
@@ -2630,11 +2761,20 @@ IMPORTANT RULES:
               if (leadgen_id && !existingLead.facebook_lead_id) {
                 updatePayloadObj.facebook_lead_id = leadgen_id;
               }
+              if (fbLead.form_id && !existingLead.form_id) {
+                updatePayloadObj.form_id = fbLead.form_id;
+              }
+              if (campaignId && !existingLead.campaign_id) {
+                updatePayloadObj.campaign_id = campaignId;
+              }
               if (adCampaignString && !existingLead.ad_name) {
                 updatePayloadObj.ad_name = adCampaignString;
               }
               if (formName && !existingLead.form_name) {
                 updatePayloadObj.form_name = formName;
+              }
+              if (!existingLead.assigned_to && assignedAgentId) {
+                updatePayloadObj.assigned_to = assignedAgentId;
               }
 
               await supabaseAdmin
