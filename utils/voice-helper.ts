@@ -824,6 +824,72 @@ export async function bookAppointment(
                     console.log(`[VOICE HELPER] Sending WhatsApp booking confirmation to prospect: ${cleanLeadPhone}`)
                     let confirmationDelivered = false
 
+                    // Helper to resolve or create chat and log outbound confirmation message
+                    const logOutboundBookingMessage = async (msgText: string) => {
+                        try {
+                            let activeChat: any = null
+                            if (leadId) {
+                                const { data: byLead } = await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .select('id')
+                                    .eq('user_id', profileId)
+                                    .eq('lead_id', leadId)
+                                    .maybeSingle()
+                                if (byLead) activeChat = byLead
+                            }
+
+                            if (!activeChat && cleanLeadPhone) {
+                                const phoneDigits = cleanLeadPhone.slice(-10)
+                                const { data: byPhone } = await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .select('id')
+                                    .eq('user_id', profileId)
+                                    .or(`recipient_phone.eq.${cleanLeadPhone},recipient_phone.eq.+${cleanLeadPhone},recipient_phone.ilike.%${phoneDigits}%`)
+                                    .order('updated_at', { ascending: false })
+                                    .limit(1)
+                                    .maybeSingle()
+                                if (byPhone) activeChat = byPhone
+                            }
+
+                            if (!activeChat) {
+                                const { data: newChat } = await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .insert({
+                                        user_id: profileId,
+                                        lead_id: leadId,
+                                        recipient_name: lead.name || 'Valued Prospect',
+                                        recipient_phone: cleanLeadPhone.startsWith('+') ? cleanLeadPhone : `+${cleanLeadPhone}`,
+                                        last_message_text: msgText,
+                                        unread_count: 0,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .select('id')
+                                    .single()
+                                activeChat = newChat
+                            } else {
+                                await supabaseAdmin
+                                    .from('whatsapp_chats')
+                                    .update({
+                                        lead_id: leadId,
+                                        last_message_text: msgText,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .eq('id', activeChat.id)
+                            }
+
+                            if (activeChat?.id) {
+                                await supabaseAdmin.from('whatsapp_messages').insert({
+                                    chat_id: activeChat.id,
+                                    direction: 'outbound',
+                                    message_text: msgText,
+                                    created_at: new Date().toISOString()
+                                })
+                            }
+                        } catch (logErr) {
+                            console.error('[VOICE HELPER] Error logging WhatsApp confirmation message:', logErr)
+                        }
+                    }
+
                     // Priority 1: Free-Form Text Message (high conversion, instant delivery)
                     const freeFormText = `Hello ${lead.name || 'Valued Lead'}! 🎉\n\nYour meeting has been successfully confirmed!\n\n📅 Date & Time: ${formattedDate}\n👤 Host: ${hostName}\n🏢 Business: ${profile?.business_name || 'Consultation'}${hangoutLink ? `\n🔗 Google Meet: ${hangoutLink}` : ''}\n\nThank you, and we look forward to connecting with you!`
 
@@ -851,48 +917,8 @@ export async function bookAppointment(
                             confirmationDelivered = true
                             console.log(`[VOICE HELPER] Free-Form WhatsApp confirmation delivered to ${cleanLeadPhone}. Message ID: ${freeFormData.messages[0].id}`)
                             
-                            // Helper to ensure message appears in WhatsApp Inbox tab
-                            let { data: chat } = await supabaseAdmin
-                                .from('whatsapp_chats')
-                                .select('id')
-                                .eq('user_id', profileId)
-                                .eq('recipient_phone', cleanLeadPhone)
-                                .maybeSingle()
-
-                            if (!chat) {
-                                const { data: newChat } = await supabaseAdmin
-                                    .from('whatsapp_chats')
-                                    .insert({
-                                        user_id: profileId,
-                                        lead_id: leadId,
-                                        recipient_name: lead.name || 'Valued Prospect',
-                                        recipient_phone: cleanLeadPhone,
-                                        last_message_text: freeFormText,
-                                        unread_count: 0,
-                                        updated_at: new Date().toISOString()
-                                    })
-                                    .select('id')
-                                    .single()
-                                chat = newChat
-                            } else {
-                                await supabaseAdmin
-                                    .from('whatsapp_chats')
-                                    .update({
-                                        lead_id: leadId,
-                                        last_message_text: freeFormText,
-                                        updated_at: new Date().toISOString()
-                                    })
-                                    .eq('id', chat.id)
-                            }
-
-                            if (chat?.id) {
-                                await supabaseAdmin.from('whatsapp_messages').insert({
-                                    chat_id: chat.id,
-                                    direction: 'outbound',
-                                    message_text: freeFormText,
-                                    created_at: new Date().toISOString()
-                                }).catch(() => {})
-                            }
+                            // Log message and update chat thread
+                            await logOutboundBookingMessage(freeFormText)
                         } else {
                             console.warn('[VOICE HELPER] Free-form WhatsApp send failed (likely outside 24h window), falling back to template message:', freeFormData.error)
                         }
@@ -938,16 +964,7 @@ export async function bookAppointment(
                             if (genRes.ok && genData.messages?.[0]?.id) {
                                 confirmationDelivered = true
                                 console.log(`[VOICE HELPER] Generic WhatsApp template confirmation delivered to ${cleanLeadPhone}. Message ID: ${genData.messages[0].id}`)
-                                await supabaseAdmin.from('whatsapp_messages').insert({
-                                    user_id: profileId,
-                                    lead_id: leadId,
-                                    direction: 'outbound',
-                                    message_type: 'template',
-                                    body: `💬 WhatsApp Template (Generic): Booking confirmed for ${formattedDate}`,
-                                    status: 'sent',
-                                    message_id: genData.messages[0].id,
-                                    created_at: new Date().toISOString()
-                                }).catch(() => {})
+                                await logOutboundBookingMessage(freeFormText)
                             } else {
                                 console.warn('[VOICE HELPER] Generic template send failed, trying image-header template fallback:', genData.error)
                             }
@@ -1020,16 +1037,7 @@ export async function bookAppointment(
                                 console.error('[VOICE HELPER] WhatsApp Prospect Template Confirmation Error:', waData.error)
                             } else {
                                 console.log(`[VOICE HELPER] Prospect WhatsApp template confirmation sent successfully. Message ID: ${waData.messages?.[0]?.id}`)
-                                await supabaseAdmin.from('whatsapp_messages').insert({
-                                    user_id: profileId,
-                                    lead_id: leadId,
-                                    direction: 'outbound',
-                                    message_type: 'template',
-                                    body: `💬 WhatsApp Template: Booking confirmed for ${formattedDate}`,
-                                    status: 'sent',
-                                    message_id: waData.messages?.[0]?.id,
-                                    created_at: new Date().toISOString()
-                                }).catch(() => {})
+                                await logOutboundBookingMessage(freeFormText)
                             }
                         } catch (tmplErr: any) {
                             console.error('[VOICE HELPER] Exception in Priority 3 Template send:', tmplErr)

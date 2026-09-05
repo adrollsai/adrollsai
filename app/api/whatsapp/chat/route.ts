@@ -53,22 +53,53 @@ export async function GET(req: Request) {
                 }
             }
 
-            // Search for existing chat
-            let existingChatQuery = dbClient.from('whatsapp_chats').select('*')
+            const targetOwnerId = targetLead?.user_id || effectiveUserId
+
+            // 1. Search for existing chat specifically under this account
+            let activeChat: any = null
+
+            // Prioritize exact lead_id match first
             if (leadId) {
-                existingChatQuery = existingChatQuery.or(`lead_id.eq.${leadId},recipient_phone.eq.${cleanPhone},recipient_phone.eq.+${cleanPhone},recipient_phone.ilike.%${cleanPhone.slice(-10)}%`)
-            } else if (cleanPhone) {
-                existingChatQuery = existingChatQuery.or(`recipient_phone.eq.${cleanPhone},recipient_phone.eq.+${cleanPhone},recipient_phone.ilike.%${cleanPhone.slice(-10)}%`)
+                const { data: chatByLead } = await dbClient
+                    .from('whatsapp_chats')
+                    .select('*')
+                    .eq('user_id', targetOwnerId)
+                    .eq('lead_id', leadId)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle()
+                if (chatByLead) activeChat = chatByLead
             }
 
-            const { data: existingChats } = await existingChatQuery.limit(1)
-            let activeChat = existingChats?.[0] || null
+            // If not found by lead_id, search by phone strictly within this account
+            if (!activeChat && cleanPhone) {
+                const phoneDigits = cleanPhone.slice(-10)
+                const { data: chatByPhone } = await dbClient
+                    .from('whatsapp_chats')
+                    .select('*')
+                    .eq('user_id', targetOwnerId)
+                    .or(`recipient_phone.eq.${cleanPhone},recipient_phone.eq.+${cleanPhone},recipient_phone.ilike.%${phoneDigits}%`)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle()
+                
+                if (chatByPhone) {
+                    activeChat = chatByPhone
+                    // Link lead_id if not linked yet
+                    if (leadId && !chatByPhone.lead_id) {
+                        await dbClient
+                            .from('whatsapp_chats')
+                            .update({ lead_id: leadId })
+                            .eq('id', chatByPhone.id)
+                    }
+                }
+            }
 
             if (!activeChat && (cleanPhone || targetLead)) {
                 // Auto create new chat thread
                 const recipientName = targetLead?.name || (cleanPhone ? `+${cleanPhone}` : 'Lead')
                 const insertPayload: any = {
-                    user_id: targetLead?.user_id || effectiveUserId,
+                    user_id: targetOwnerId,
                     lead_id: targetLead?.id || leadId || null,
                     recipient_phone: cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`,
                     recipient_name: recipientName,
@@ -88,7 +119,20 @@ export async function GET(req: Request) {
             }
 
             if (activeChat) {
-                return NextResponse.json({ success: true, chat: activeChat, chatId: activeChat.id })
+                // Fetch recent messages for this chat
+                const { data: messages } = await dbClient
+                    .from('whatsapp_messages')
+                    .select('*')
+                    .eq('chat_id', activeChat.id)
+                    .order('created_at', { ascending: true })
+                    .limit(500)
+
+                return NextResponse.json({ 
+                    success: true, 
+                    chat: activeChat, 
+                    chatId: activeChat.id,
+                    messages: messages || []
+                })
             }
         }
 

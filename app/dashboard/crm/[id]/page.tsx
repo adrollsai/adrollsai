@@ -533,30 +533,24 @@ export default function LeadProfilePage() {
                 data.custom_fields = parsedCustomFields
                 setLead(data)
 
-                // Fetch full WhatsApp conversation for this lead
+                // Fetch full WhatsApp conversation for this lead via API (handles impersonation & RLS correctly)
                 const cleanPhone = (data.phone || '').replace(/\D/g, '').slice(-10)
-                if (cleanPhone) {
-                    supabase
-                        .from('whatsapp_chats')
-                        .select('*')
-                        .or(`lead_id.eq.${id},recipient_phone.ilike.%${cleanPhone}%`)
-                        .order('updated_at', { ascending: false })
-                        .limit(1)
-                        .then(async ({ data: chatData }) => {
-                            if (chatData && chatData.length > 0) {
-                                const foundChat = chatData[0]
-                                setWhatsappChat(foundChat)
-                                const { data: msgData } = await supabase
-                                    .from('whatsapp_messages')
-                                    .select('*')
-                                    .eq('chat_id', foundChat.id)
-                                    .order('created_at', { ascending: true })
-                                if (msgData) {
-                                    setWhatsappMessages(msgData)
-                                }
+                const chatQuery = new URLSearchParams()
+                if (id) chatQuery.set('leadId', Array.isArray(id) ? id[0] : id)
+                if (cleanPhone) chatQuery.set('phone', cleanPhone)
+                if (impersonateId) chatQuery.set('impersonate', impersonateId)
+
+                fetch(`/api/whatsapp/chat?${chatQuery.toString()}`)
+                    .then(res => res.json())
+                    .then(chatRes => {
+                        if (chatRes.success && chatRes.chat) {
+                            setWhatsappChat(chatRes.chat)
+                            if (chatRes.messages) {
+                                setWhatsappMessages(chatRes.messages)
                             }
-                        })
-                }
+                        }
+                    })
+                    .catch(err => console.error('[CRM Lead Page] Failed to fetch WhatsApp chat:', err))
 
                 // Non-blocking background sibling fetching
                 setTimeout(() => {
@@ -747,12 +741,13 @@ export default function LeadProfilePage() {
                 return
             }
 
-            const res = await fetch('/api/whatsapp/chat', {
+            const res = await fetch(`/api/whatsapp/chat${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chatId: targetChatId,
-                    messageText: directMsgText.trim()
+                    messageText: directMsgText.trim(),
+                    impersonateId
                 })
             })
             const data = await res.json()
