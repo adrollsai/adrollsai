@@ -88,6 +88,14 @@ export async function POST(req: Request) {
             }, { status: 403 })
         }
 
+        // Enforce 1-free-number limit per account
+        const currentVobizNumber = biKyc.voice_vobiz_number || (targetProfile.voice_twilio_number?.startsWith('+91') ? targetProfile.voice_twilio_number : '')
+        if (currentVobizNumber) {
+            return NextResponse.json({
+                error: `You have already claimed your 1 free calling line (${currentVobizNumber}). Each account is limited to 1 complimentary line. You cannot claim additional numbers.`
+            }, { status: 400 })
+        }
+
         // Choose number: must be explicitly selected from catalog
         const requestedNumber = body.phoneNumber || body.number
         if (!requestedNumber) {
@@ -106,10 +114,25 @@ export async function POST(req: Request) {
             }
         }
 
+        // Check if number is already claimed by another user
+        const { data: existingProfiles } = await supabaseAdmin
+            .from('profiles')
+            .select('id, email')
+            .or(`voice_twilio_number.eq.${cleanNumber},business_info.ilike.%${cleanNumber}%`)
+
+        if (existingProfiles && existingProfiles.length > 0 && !existingProfiles.some(p => p.id === targetId)) {
+            return NextResponse.json({
+                error: `The number ${cleanNumber} has already been claimed by another account. Please select another number from the catalog.`
+            }, { status: 409 })
+        }
+
         console.log(`[PROVISION] Assigning Vobiz number ${cleanNumber} to user ${targetId}...`)
 
         // Update profile with the assigned Vobiz calling number
         biKyc.voice_vobiz_number = cleanNumber
+        biKyc.claimed_vobiz_number = cleanNumber
+        biKyc.claimed_at = new Date().toISOString()
+        biKyc.voice_telephony_provider = 'vobiz'
         const updatePayload: any = {
             voice_twilio_number: cleanNumber, // primary calling line stored in DB
             voice_provider: 'vobiz',
@@ -171,6 +194,7 @@ export async function DELETE(req: Request) {
             bi = typeof targetProfile?.business_info === 'string' ? JSON.parse(targetProfile.business_info) : (targetProfile?.business_info || {})
         } catch (e) {}
         delete bi.voice_vobiz_number
+        delete bi.claimed_vobiz_number
 
         console.log(`[PROVISION] Disconnecting voice number for user ${targetId}...`)
 

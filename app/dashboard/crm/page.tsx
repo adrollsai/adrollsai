@@ -1725,7 +1725,7 @@ END:VCARD\n`
   }, [campaigns])
 
   // --- DYNAMIC FILTER EXTRACTION ---
-  // Strictly isolate campaigns to the current workspace's loaded leads
+  // Extract campaigns from current workspace's loaded leads AND live Meta campaigns
   const uniqueCampaigns = useMemo(() => {
     const list: string[] = []
     leads.forEach(l => {
@@ -1734,8 +1734,13 @@ END:VCARD\n`
       if (l.ad_name && l.ad_name.trim()) list.push(l.ad_name.trim())
       if (l.campaign_name && l.campaign_name.trim()) list.push(l.campaign_name.trim())
     })
+    // Also include live active Meta campaigns from API so newly launched campaigns appear immediately in filter dropdown
+    campaigns.forEach((c: any) => {
+      const name = typeof c === 'string' ? c : c?.name
+      if (name && name.trim()) list.push(name.trim())
+    })
     return Array.from(new Set(list)).filter(c => c && c !== 'null' && c !== 'undefined').sort()
-  }, [leads, getLeadCampaignName])
+  }, [leads, campaigns, getLeadCampaignName])
 
   const uniqueForms = useMemo(() => {
     const formNames = leads
@@ -1894,6 +1899,8 @@ END:VCARD\n`
           const camp = campaigns.find(c => c.id === l.campaign_id);
           if (camp && camp.name.trim() === selectedCampaign.trim()) return true;
         }
+        const leadCamp = getLeadCampaignName(l);
+        if (leadCamp && leadCamp.trim() === selectedCampaign.trim()) return true;
         return l.ad_name?.trim() === selectedCampaign.trim() || 
                l.campaign_name?.trim() === selectedCampaign.trim();
       })()

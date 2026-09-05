@@ -776,7 +776,7 @@ export async function fetchLeadForms(accessToken: string, pageId: string): Promi
 export async function fetchFacebookLeads(accessToken: string, pageId: string, specificFormId?: string): Promise<any[]> {
     try {
         let formsToProcess: any[] = [];
-        let formsUrl: string | null = `${FACEBOOK_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name&limit=100&access_token=${accessToken}`;
+        let formsUrl: string | null = `${FACEBOOK_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name,status,created_time,leads_count&limit=100&access_token=${accessToken}`;
         
         while (formsUrl && formsToProcess.length < 500) {
             const formsRes: any = await fetch(formsUrl);
@@ -790,6 +790,23 @@ export async function fetchFacebookLeads(accessToken: string, pageId: string, sp
         
         if (specificFormId) {
             formsToProcess = formsToProcess.filter((f: any) => f.id === specificFormId);
+        } else {
+            // Sort forms by newest first so newly launched campaign forms are scanned first
+            formsToProcess.sort((a: any, b: any) => {
+                const timeA = new Date(a.created_time || 0).getTime();
+                const timeB = new Date(b.created_time || 0).getTime();
+                return timeB - timeA;
+            });
+            // Filter out old legacy forms that have 0 leads
+            formsToProcess = formsToProcess.filter((f: any) => {
+                if (typeof f.leads_count === 'number' && f.leads_count > 0) return true;
+                if (f.status === 'ACTIVE') return true;
+                if (f.created_time) {
+                    const ageDays = (Date.now() - new Date(f.created_time).getTime()) / (1000 * 60 * 60 * 24);
+                    if (ageDays < 30) return true;
+                }
+                return false;
+            });
         }
 
         const allLeads = [];

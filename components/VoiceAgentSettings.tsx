@@ -28,11 +28,16 @@ import {
   Radio,
   FileCheck,
   ChevronDown,
-  Mail
+  Mail,
+  Search,
+  Lock,
+  ChevronLeft,
+  ChevronRight,
+  Info
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
-import { VOBIZ_NUMBER_CATALOG, VobizAvailableNumber } from '@/utils/vobiz-catalog'
+import { type VobizAvailableNumber } from '@/utils/vobiz-catalog'
 
 interface VoiceAgentSettingsProps {
   userId: string
@@ -59,7 +64,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   const [copiedNumber, setCopiedNumber] = useState(false)
   
   // Telephony & Provider Settings
-  const [telephonyProvider, setTelephonyProvider] = useState<'vobiz' | 'twilio'>('vobiz')
+  const [telephonyProvider, setTelephonyProvider] = useState<'vobiz' | 'twilio'>('twilio')
+  const [vobizNumber, setVobizNumber] = useState<string>('')
+  const [twilioNumber, setTwilioNumber] = useState<string>('')
   const [concurrencyLimit, setConcurrencyLimit] = useState<number>(3)
   const [credits, setCredits] = useState<number>(0)
   
@@ -89,9 +96,20 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     entityType: 'individual' as 'individual' | 'business'
   })
 
-  // Number Catalog
+  // Lazy-loaded Number Catalog & Exploration
   const [showNumberCatalog, setShowNumberCatalog] = useState(false)
   const [selectedCatalogNumber, setSelectedCatalogNumber] = useState<string>('')
+  const [claimedNumbers, setClaimedNumbers] = useState<string[]>([])
+  const [catalogNumbers, setCatalogNumbers] = useState<(VobizAvailableNumber & { isClaimed?: boolean })[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(false)
+  const [catalogLoadingMore, setCatalogLoadingMore] = useState(false)
+  const [catalogTotal, setCatalogTotal] = useState(0)
+  const [catalogPage, setCatalogPage] = useState(1)
+  const [catalogHasMore, setCatalogHasMore] = useState(false)
+  const [categoryCounts, setCategoryCounts] = useState({ all: 0, VIP: 0, easyRecall: 0, standard: 0 })
+  const [numberSearchQuery, setNumberSearchQuery] = useState('')
+  const [numberCategoryFilter, setNumberCategoryFilter] = useState<'all' | 'VIP' | 'Easy Recall' | 'Standard'>('all')
+  const numbersPerPage = 8
 
   const [connected, setConnected] = useState(false)
   const [sources, setSources] = useState<string[]>(['Facebook', 'Manual', 'CSV Import', '99acres', 'Housing.com'])
@@ -155,6 +173,60 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     if (isMasterNobogent) return 'Nobogent'
     return ''
   }, [kycData, isMasterNobogent])
+
+  const fetchLazyNumbers = async (pageToFetch = 1, append = false) => {
+    if (pageToFetch === 1 && !append) {
+      setCatalogLoading(true)
+    } else {
+      setCatalogLoadingMore(true)
+    }
+
+    try {
+      const urlParams = new URLSearchParams()
+      urlParams.set('page', String(pageToFetch))
+      urlParams.set('limit', String(numbersPerPage))
+      if (numberSearchQuery.trim()) {
+        urlParams.set('search', numberSearchQuery.trim())
+      }
+      if (numberCategoryFilter !== 'all') {
+        urlParams.set('category', numberCategoryFilter)
+      }
+
+      const res = await fetch(`/api/voice/numbers?${urlParams.toString()}`)
+      const data = await res.json()
+      if (data.success && Array.isArray(data.numbers)) {
+        if (append) {
+          setCatalogNumbers(prev => [...prev, ...data.numbers])
+        } else {
+          setCatalogNumbers(data.numbers)
+        }
+        setCatalogTotal(data.total || 0)
+        setCatalogPage(pageToFetch)
+        setCatalogHasMore(!!data.hasMore)
+        if (data.categoryCounts) {
+          setCategoryCounts(data.categoryCounts)
+        }
+      }
+    } catch (err) {
+      console.error('[LAZY NUMBERS FETCH ERROR]', err)
+    } finally {
+      setCatalogLoading(false)
+      setCatalogLoadingMore(false)
+    }
+  }
+
+  // Debounced lazy search / category filter
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchLazyNumbers(1, false)
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [numberSearchQuery, numberCategoryFilter])
+
+  const handleLoadMoreNumbers = () => {
+    if (catalogLoadingMore || !catalogHasMore) return
+    fetchLazyNumbers(catalogPage + 1, true)
+  }
 
   const fetchCampaignsAndFilters = async () => {
     if (!userId) return
@@ -260,11 +332,38 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
 
       let phoneNum = ''
       if (data) {
-        phoneNum = data.voice_vobiz_number || data.voice_twilio_number || ''
+        let bi: any = {}
+        try {
+          bi = typeof data.business_info === 'string' ? JSON.parse(data.business_info) : (data.business_info || {})
+        } catch (e) {}
+
+        const rawVobiz = bi.voice_vobiz_number || data.voice_vobiz_number || ''
+        const rawTwilio = data.voice_twilio_number || ''
+
+        let vNum = ''
+        let twNum = ''
+
+        if (rawVobiz && rawVobiz.startsWith('+91')) {
+          vNum = rawVobiz
+        }
+        if (rawTwilio) {
+          if (rawTwilio.startsWith('+91')) {
+            if (!vNum) vNum = rawTwilio
+          } else {
+            twNum = rawTwilio
+          }
+        }
+
+        setVobizNumber(vNum)
+        setTwilioNumber(twNum)
+
+        phoneNum = twNum || vNum || ''
         setUserEmail(data.email || '')
         setSubscriptionStatus(data.subscription_status || '')
         setOldVoiceNumber(data.old_voice_twilio_number || '')
-        setTelephonyProvider(data.voice_telephony_provider || 'vobiz')
+        
+        const effectiveProvider = bi.voice_telephony_provider || data.voice_telephony_provider || (twNum && !vNum ? 'twilio' : (vNum ? 'vobiz' : 'twilio'))
+        setTelephonyProvider(effectiveProvider)
         setConcurrencyLimit(data.voice_concurrency_limit || 3)
         setCredits(data.credits || 0)
         setKycStatus(data.email === 'rchopra489@gmail.com' ? 'verified' : (data.kyc_status || 'not_submitted'))
@@ -276,7 +375,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
           elevenlabs_agent_id: data.elevenlabs_agent_id || '',
           voice_twilio_sid: data.voice_twilio_sid || '',
           voice_twilio_token: data.voice_twilio_token || '',
-          voice_twilio_number: phoneNum,
+          voice_twilio_number: twNum,
           auto_call_new_leads: !!data.auto_call_new_leads,
           voice_provider: data.voice_provider || 'gemini',
           voice_name: data.voice_name || 'Aoede'
@@ -291,16 +390,20 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       const resData = await res.json()
       if (resData.success) {
         setSaasMode(resData.saasMode)
-        if (resData.voiceNumber) {
-          setSettings(prev => ({ ...prev, voice_twilio_number: resData.voiceNumber }))
-          setConnected(true)
-        } else {
-          setSettings(prev => ({ ...prev, voice_twilio_number: '' }))
-          setConnected(false)
+        if (resData.vobizNumber !== undefined) {
+          setVobizNumber(resData.vobizNumber || '')
+        }
+        if (resData.twilioNumber !== undefined) {
+          setTwilioNumber(resData.twilioNumber || '')
+          if (resData.twilioNumber) {
+            setSettings(prev => ({ ...prev, voice_twilio_number: resData.twilioNumber }))
+          }
         }
         if (resData.telephonyProvider) {
           setTelephonyProvider(resData.telephonyProvider)
         }
+        const hasActiveLine = resData.telephonyProvider === 'vobiz' ? !!resData.vobizNumber : !!(resData.twilioNumber || settings.voice_twilio_sid)
+        setConnected(hasActiveLine)
         if (resData.concurrencyLimit) {
           setConcurrencyLimit(resData.concurrencyLimit)
         }
@@ -315,6 +418,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
         }
         if (resData.kycData) {
           setKycData(resData.kycData)
+        }
+        if (resData.claimedNumbers) {
+          setClaimedNumbers(resData.claimedNumbers)
         }
       }
     } catch (err: any) {
@@ -392,9 +498,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       const data = await res.json()
       if (data.success) {
         toast.success(`Calling number assigned successfully: ${data.phoneNumber}! 🎙️`)
-        setSettings(prev => ({ ...prev, voice_twilio_number: data.phoneNumber }))
+        setVobizNumber(data.phoneNumber)
+        setTelephonyProvider('vobiz')
         setConnected(true)
-        setOldVoiceNumber('')
         setShowNumberCatalog(false)
         fetchSettings()
       } else {
@@ -423,14 +529,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       const data = await res.json()
       if (data.success) {
         toast.success('Voice line disconnected successfully! 🎙️')
-        setSettings(prev => ({ 
-          ...prev, 
-          voice_twilio_number: '',
-          voice_twilio_sid: '',
-          voice_twilio_token: ''
-        }))
+        setVobizNumber('')
         setConnected(false)
-        setOldVoiceNumber('')
         fetchSettings()
       } else {
         toast.error(data.error || 'Failed to disconnect voice line.')
@@ -483,30 +583,31 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     e.preventDefault()
     setSaving(true)
     try {
-      const updateData: any = {
-        voice_telephony_provider: telephonyProvider,
-        voice_concurrency_limit: concurrencyLimit,
-        auto_call_new_leads: settings.auto_call_new_leads,
-        voice_provider: settings.voice_provider,
-        voice_name: settings.voice_name
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      const res = await fetch(`/api/voice/settings${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telephonyProvider,
+          concurrencyLimit,
+          auto_call_new_leads: settings.auto_call_new_leads,
+          voice_provider: settings.voice_provider,
+          voice_name: settings.voice_name,
+          voice_twilio_sid: settings.voice_twilio_sid,
+          voice_twilio_token: settings.voice_twilio_token,
+          voice_twilio_number: settings.voice_twilio_number
+        })
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to save voice settings')
       }
-
-      if (telephonyProvider === 'twilio') {
-        updateData.voice_twilio_sid = settings.voice_twilio_sid.trim() || null
-        updateData.voice_twilio_token = settings.voice_twilio_token.trim() || null
-        updateData.voice_twilio_number = settings.voice_twilio_number.trim() || null
-      }
-
-      const { error } = await supabase
-        .from('profiles')
-        .update(updateData)
-        .eq('id', userId)
-
-      if (error) throw error
 
       toast.success('Voice agent settings saved successfully! 🎙️')
-      const isCustomConnected = telephonyProvider === 'vobiz' ? !!settings.voice_twilio_number : !!(settings.voice_twilio_sid || settings.voice_twilio_number)
+      const isCustomConnected = telephonyProvider === 'vobiz' ? !!vobizNumber : !!(settings.voice_twilio_sid || settings.voice_twilio_number)
       setConnected(isCustomConnected)
+      fetchSettings()
     } catch (err: any) {
       toast.error(`Save failed: ${err.message}`)
     } finally {
@@ -583,26 +684,40 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                   </div>
                   <div className="flex justify-between items-center pb-2 border-b border-indigo-100/50">
                     <span className="text-[10px] text-indigo-800 font-bold uppercase tracking-wider">Line Status</span>
-                    <span className={`text-xs font-black flex items-center gap-1 ${connected && isSubscriptionActive ? 'text-emerald-600' : !isSubscriptionActive ? 'text-amber-600' : 'text-slate-400'}`}>
-                      ● {connected && isSubscriptionActive ? 'Online & Ready' : !isSubscriptionActive ? 'Subscription Inactive' : 'No Number Assigned'}
+                    <span className={`text-xs font-black flex items-center gap-1 ${
+                      (telephonyProvider === 'vobiz' ? !!vobizNumber : !!(settings.voice_twilio_number || twilioNumber)) && isSubscriptionActive 
+                        ? 'text-emerald-600' 
+                        : !isSubscriptionActive 
+                        ? 'text-amber-600' 
+                        : 'text-slate-400'
+                    }`}>
+                      ● {(telephonyProvider === 'vobiz' ? !!vobizNumber : !!(settings.voice_twilio_number || twilioNumber)) && isSubscriptionActive 
+                        ? 'Online & Ready' 
+                        : !isSubscriptionActive 
+                        ? 'Subscription Inactive' 
+                        : (telephonyProvider === 'vobiz' ? 'No Vobiz DID Assigned' : 'No Twilio Number')}
                     </span>
                   </div>
-                  {settings.voice_twilio_number && (
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase">Caller ID</span>
-                      <div className="flex items-center gap-1.5 font-bold text-slate-800">
-                        <span>{settings.voice_twilio_number}</span>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">Caller ID</span>
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                      <span className="font-mono">
+                        {telephonyProvider === 'vobiz' 
+                          ? (vobizNumber || 'None') 
+                          : (settings.voice_twilio_number || twilioNumber || 'None')}
+                      </span>
+                      {((telephonyProvider === 'vobiz' && vobizNumber) || (telephonyProvider === 'twilio' && (settings.voice_twilio_number || twilioNumber))) && (
                         <button
                           type="button"
-                          onClick={() => copyToClipboard(settings.voice_twilio_number)}
+                          onClick={() => copyToClipboard(telephonyProvider === 'vobiz' ? vobizNumber : (settings.voice_twilio_number || twilioNumber))}
                           className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
                           title="Copy Caller ID"
                         >
                           {copiedNumber ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
                         </button>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -829,111 +944,349 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                         </div>
                       </div>
 
-                      {settings.voice_twilio_number && isSubscriptionActive ? (
-                        <div className="bg-white border border-slate-200/80 p-4.5 rounded-2xl flex items-center justify-between shadow-sm flex-wrap gap-3">
-                          <div className="flex flex-col">
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Active Outbound Caller ID</span>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-base font-extrabold text-slate-900 font-mono">{settings.voice_twilio_number}</span>
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(settings.voice_twilio_number)}
-                                className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
-                                title="Copy Number"
-                              >
-                                {copiedNumber ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                              </button>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="bg-emerald-50 text-emerald-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
-                              ● Active Line
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleDisconnectNumber}
-                              disabled={disconnecting}
-                              className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
-                              title="Disconnect voice line and release number"
-                            >
-                              {disconnecting ? <Loader2 size={12} className="animate-spin" /> : 'Disconnect'}
-                            </button>
-                          </div>
+                      {!isKycVerified ? (
+                        <div className="bg-white border border-slate-200/80 p-5 sm:p-6 rounded-2xl shadow-sm text-center py-6 space-y-2">
+                          <p className="text-xs text-amber-800 font-semibold max-w-md mx-auto">
+                            Complete TRAI KYC verification above to unlock outbound virtual calling lines.
+                          </p>
+                        </div>
+                      ) : !isSubscriptionActive ? (
+                        <div className="bg-white border border-slate-200/80 p-5 sm:p-6 rounded-2xl shadow-sm text-center py-6 space-y-2">
+                          <p className="text-xs text-amber-800 font-semibold max-w-md mx-auto">
+                            Your subscription is currently inactive. Please ensure an active plan to connect your calling line.
+                          </p>
                         </div>
                       ) : (
-                        <div className="bg-white border border-slate-200/80 p-5 sm:p-6 rounded-2xl shadow-sm space-y-4">
-                          {!isKycVerified ? (
-                            <div className="text-center py-4 space-y-2">
-                              <p className="text-xs text-amber-800 font-semibold max-w-md mx-auto">
-                                Complete TRAI KYC verification above to unlock outbound virtual calling lines.
-                              </p>
-                            </div>
-                          ) : !isSubscriptionActive ? (
-                            <div className="text-center py-4 space-y-2">
-                              <p className="text-xs text-amber-800 font-semibold max-w-md mx-auto">
-                                Your subscription is currently inactive. Please ensure an active plan to connect your calling line.
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="space-y-4">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                                <div>
-                                  <h5 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                                    Available 79-Series Calling Lines
-                                  </h5>
-                                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                                    Select any dedicated 79-series line below to claim and activate outbound calls.
-                                  </p>
-                                </div>
-                                <span className="self-start sm:self-auto text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shrink-0">
-                                  100% Included in Package (₹0)
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
-                                {VOBIZ_NUMBER_CATALOG.map((num) => (
-                                  <div 
-                                    key={num.phoneNumber}
-                                    className="p-4 bg-slate-50 hover:bg-indigo-50/40 border border-slate-200 hover:border-indigo-300 rounded-2xl flex items-center justify-between gap-4 transition-all group"
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="font-extrabold text-sm sm:text-base text-slate-900 font-mono tracking-tight whitespace-nowrap">
-                                          {num.formattedNumber}
-                                        </span>
-                                        <span className="text-[9px] font-black px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full shrink-0">
-                                          79-Series
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500 font-medium">
-                                        <span className="flex items-center gap-1 text-emerald-600 font-bold whitespace-nowrap">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span> Ready to Claim
-                                        </span>
-                                        <span>•</span>
-                                        <span className="whitespace-nowrap">16kHz PCM Audio</span>
-                                      </div>
-                                    </div>
+                        <div className="space-y-4">
+                          {/* Active Line Display if User Has Claimed a Number */}
+                          {vobizNumber && (
+                            <div className="bg-white border-2 border-emerald-300/80 p-5 rounded-2xl shadow-xs space-y-3">
+                              <div className="flex items-center justify-between shadow-sm flex-wrap gap-3">
+                                <div className="flex flex-col">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-black text-emerald-800 uppercase tracking-widest bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                      Active Outbound Caller ID
+                                    </span>
+                                    <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                      1/1 Included Line Active
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2.5 mt-1.5">
+                                    <span className="text-lg sm:text-xl font-extrabold text-slate-950 font-mono tracking-tight">{vobizNumber}</span>
                                     <button
                                       type="button"
-                                      onClick={() => handleProvisionNumber(num.phoneNumber)}
-                                      disabled={provisioning}
-                                      className="shrink-0 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full text-xs font-black shadow-sm transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                                      onClick={() => copyToClipboard(vobizNumber)}
+                                      className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
+                                      title="Copy Number"
                                     >
-                                      {provisioning ? (
-                                        <>
-                                          <Loader2 size={12} className="animate-spin" /> Claiming...
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Sparkles size={12} /> Claim Number
-                                        </>
-                                      )}
+                                      {copiedNumber ? <Check size={15} className="text-emerald-600" /> : <Copy size={15} />}
                                     </button>
                                   </div>
-                                ))}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+                                    ● Active Line
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={handleDisconnectNumber}
+                                    disabled={disconnecting}
+                                    className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 text-[10px] font-black px-3.5 py-1.5 rounded-full uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+                                    title="Disconnect voice line and release number to claim a different line"
+                                  >
+                                    {disconnecting ? <Loader2 size={12} className="animate-spin" /> : 'Disconnect'}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Quota & Rule Notice */}
+                              <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-900">
+                                <Info size={16} className="text-amber-700 shrink-0 mt-0.5" />
+                                <div className="space-y-0.5">
+                                  <p className="font-extrabold text-amber-950">
+                                    1 Complimentary Calling Line Claimed (1/1 Quota Used)
+                                  </p>
+                                  <p className="text-amber-800/90 text-[11px] leading-relaxed font-medium">
+                                    Your account includes 1 free dedicated 79-series outbound line. You cannot claim more numbers for free. If you want to switch to a different number, click <strong>Disconnect</strong> above to release this line and select another from the catalog below.
+                                  </p>
+                                </div>
                               </div>
                             </div>
                           )}
+
+                          {/* Interactive Number Catalog & Exploration */}
+                          <div className="bg-white border border-slate-200/90 p-5 sm:p-6 rounded-2xl shadow-sm space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                              <div>
+                                <h5 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                                  {vobizNumber ? 'Explore 79-Series Number Inventory' : 'Available 79-Series Calling Lines'}
+                                </h5>
+                                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                  {vobizNumber 
+                                    ? 'Browse our complete pool of numbers. Disconnect your active line above if you wish to claim a different number.'
+                                    : 'Explore our complete pool of 80+ numbers below. Select and claim 1 free number for your account.'
+                                  }
+                                </p>
+                              </div>
+                              <span className={`self-start sm:self-auto text-[10px] font-extrabold px-3 py-1 rounded-full border shrink-0 ${
+                                vobizNumber 
+                                  ? 'text-amber-800 bg-amber-50 border-amber-200'
+                                  : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                              }`}>
+                                {vobizNumber ? 'Free Line Quota Active (1/1)' : '100% Included in Package (₹0)'}
+                              </span>
+                            </div>
+
+                            {/* Search and Category Filter Toolbar */}
+                            <div className="space-y-3">
+                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                                {/* Search by Digits Input */}
+                                <div className="relative flex-1">
+                                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                  <input
+                                    type="text"
+                                    value={numberSearchQuery}
+                                    onChange={(e) => setNumberSearchQuery(e.target.value)}
+                                    placeholder="Search by digits (e.g. 71, 8800, 4912)..."
+                                    className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                                  />
+                                  {numberSearchQuery && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setNumberSearchQuery('')}
+                                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* Category Filters */}
+                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setNumberCategoryFilter('all')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                                      numberCategoryFilter === 'all'
+                                        ? 'bg-indigo-600 text-white shadow-xs'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
+                                    }`}
+                                  >
+                                    All ({categoryCounts.all})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setNumberCategoryFilter('VIP')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                                      numberCategoryFilter === 'VIP'
+                                        ? 'bg-amber-500 text-white shadow-xs'
+                                        : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                                    }`}
+                                  >
+                                    ⭐ VIP ({categoryCounts.VIP})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setNumberCategoryFilter('Easy Recall')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                                      numberCategoryFilter === 'Easy Recall'
+                                        ? 'bg-purple-600 text-white shadow-xs'
+                                        : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100'
+                                    }`}
+                                  >
+                                    ✨ Easy Recall ({categoryCounts.easyRecall})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setNumberCategoryFilter('Standard')}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                                      numberCategoryFilter === 'Standard'
+                                        ? 'bg-slate-800 text-white shadow-xs'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
+                                    }`}
+                                  >
+                                    Standard ({categoryCounts.standard})
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Numbers List */}
+                            <div className="space-y-2.5 pt-1">
+                              {catalogLoading ? (
+                                <div className="space-y-3 py-2">
+                                  {[1, 2, 3].map((i) => (
+                                    <div key={i} className="p-4 bg-slate-50/60 border border-slate-200/60 rounded-2xl animate-pulse flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-xl bg-slate-200" />
+                                        <div className="space-y-1.5">
+                                          <div className="w-36 h-4 bg-slate-200 rounded" />
+                                          <div className="w-48 h-3 bg-slate-100 rounded" />
+                                        </div>
+                                      </div>
+                                      <div className="w-24 h-8 bg-slate-200 rounded-xl" />
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : catalogNumbers.length === 0 ? (
+                                <div className="text-center py-8 text-slate-400 space-y-2">
+                                  <Phone size={28} className="mx-auto text-slate-300" />
+                                  <p className="text-xs font-semibold text-slate-600">No calling lines match your search query &quot;{numberSearchQuery}&quot;.</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setNumberSearchQuery(''); setNumberCategoryFilter('all'); }}
+                                    className="text-xs text-indigo-600 font-bold hover:underline"
+                                  >
+                                    Reset filters & view all {categoryCounts.all} numbers
+                                  </button>
+                                </div>
+                              ) : (
+                                catalogNumbers.map((num) => {
+                                  const isCurrentlyActive = vobizNumber && (vobizNumber.replace(/\D/g, '') === num.phoneNumber.replace(/\D/g, ''))
+                                  const isTakenByOther = !isCurrentlyActive && (num.isClaimed || claimedNumbers.some(c => c.replace(/\D/g, '') === num.phoneNumber.replace(/\D/g, '')) || false)
+                                  const hasAlreadyClaimed = !!vobizNumber
+
+                                  return (
+                                    <div 
+                                      key={num.phoneNumber}
+                                      className={`p-3.5 sm:p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all group shadow-xs ${
+                                        isCurrentlyActive 
+                                          ? 'bg-emerald-50/70 border-2 border-emerald-400 shadow-emerald-100/50' 
+                                          : isTakenByOther 
+                                            ? 'bg-slate-50/50 border border-slate-200 opacity-60' 
+                                            : 'bg-slate-50/80 hover:bg-indigo-50/40 border border-slate-200/90 hover:border-indigo-300'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-3 min-w-0">
+                                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                                          isCurrentlyActive 
+                                            ? 'bg-emerald-100 text-emerald-700 border-emerald-300' 
+                                            : 'bg-indigo-100 text-indigo-700 border-indigo-200/50'
+                                        }`}>
+                                          <Phone size={16} />
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-extrabold text-base sm:text-lg text-slate-900 font-mono tracking-tight">
+                                              {num.formattedNumber}
+                                            </span>
+                                            <span className="text-[10px] font-black px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full border border-indigo-200/60 shrink-0">
+                                              79-Series Line
+                                            </span>
+                                            {num.category === 'VIP' && (
+                                              <span className="text-[10px] font-black px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full border border-amber-300/60 shrink-0 flex items-center gap-1">
+                                                ⭐ VIP / Golden
+                                              </span>
+                                            )}
+                                            {num.category === 'Easy Recall' && (
+                                              <span className="text-[10px] font-black px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full border border-purple-300/60 shrink-0">
+                                                ✨ Easy Recall
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 font-medium flex-wrap">
+                                            {isCurrentlyActive ? (
+                                              <span className="flex items-center gap-1.5 text-emerald-700 font-black">
+                                                <CheckCircle2 size={13} className="text-emerald-600" /> Your Active Calling Line
+                                              </span>
+                                            ) : isTakenByOther ? (
+                                              <span className="flex items-center gap-1.5 text-slate-400 font-bold">
+                                                <Lock size={11} /> Claimed by another account
+                                              </span>
+                                            ) : hasAlreadyClaimed ? (
+                                              <span className="flex items-center gap-1.5 text-amber-700 font-bold">
+                                                <Lock size={11} /> Limit reached (1 free line active)
+                                              </span>
+                                            ) : (
+                                              <span className="flex items-center gap-1.5 text-emerald-600 font-bold">
+                                                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span> Ready to Claim
+                                              </span>
+                                            )}
+                                            <span className="text-slate-300">•</span>
+                                            <span>16kHz HD PCM</span>
+                                            <span className="text-slate-300">•</span>
+                                            <span className="text-indigo-600 font-semibold">Included in Package (₹0)</span>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {isCurrentlyActive ? (
+                                        <span className="shrink-0 self-start sm:self-auto px-4 py-2 bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-black rounded-xl flex items-center gap-1.5">
+                                          <CheckCircle2 size={13} /> Active Line
+                                        </span>
+                                      ) : isTakenByOther ? (
+                                        <button
+                                          type="button"
+                                          disabled
+                                          className="shrink-0 self-start sm:self-auto px-4 py-2 bg-slate-100 text-slate-400 border border-slate-200 text-xs font-bold rounded-xl cursor-not-allowed flex items-center gap-1.5"
+                                        >
+                                          <Lock size={12} /> Unavailable
+                                        </button>
+                                      ) : hasAlreadyClaimed ? (
+                                        <button
+                                          type="button"
+                                          disabled
+                                          title="You have already claimed your 1 free calling line. Disconnect your active line above if you wish to switch to this number."
+                                          className="shrink-0 self-start sm:self-auto px-4 py-2 bg-slate-100 text-slate-400 border border-slate-200 text-xs font-bold rounded-xl cursor-not-allowed flex items-center gap-1.5 transition-all"
+                                        >
+                                          <Lock size={12} /> Limit Reached (1/1)
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleProvisionNumber(num.phoneNumber)}
+                                          disabled={provisioning}
+                                          className="shrink-0 self-start sm:self-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
+                                        >
+                                          {provisioning ? (
+                                            <>
+                                              <Loader2 size={13} className="animate-spin" /> Claiming...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Sparkles size={13} /> Claim Number
+                                            </>
+                                          )}
+                                        </button>
+                                      )}
+                                    </div>
+                                  )
+                                })
+                              )}
+                            </div>
+
+                            {/* Lazy Loading "Load More" Controls */}
+                            {catalogNumbers.length > 0 && (
+                              <div className="flex flex-col items-center justify-center pt-4 border-t border-slate-100 gap-2">
+                                <span className="text-xs text-slate-500 font-medium">
+                                  Showing <span className="font-bold text-slate-800">{catalogNumbers.length}</span> of <span className="font-bold text-slate-900">{catalogTotal}</span> calling lines
+                                </span>
+
+                                {catalogHasMore ? (
+                                  <button
+                                    type="button"
+                                    onClick={handleLoadMoreNumbers}
+                                    disabled={catalogLoadingMore}
+                                    className="px-5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 rounded-xl text-xs font-black transition-all active:scale-95 flex items-center gap-2 cursor-pointer shadow-2xs disabled:opacity-50"
+                                  >
+                                    {catalogLoadingMore ? (
+                                      <>
+                                        <Loader2 size={13} className="animate-spin" /> Loading more numbers...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ChevronDown size={14} /> Load More Numbers (+{Math.min(numbersPerPage, catalogTotal - catalogNumbers.length)})
+                                      </>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] text-slate-400 font-semibold bg-slate-50 px-3 py-1 rounded-full border border-slate-200/60">
+                                    ✓ All {catalogTotal} available numbers loaded
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -943,13 +1296,45 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                   /* TWILIO CONFIGURATION SECTION */
                   <div className="space-y-5 animate-in fade-in duration-200">
                     <div className="bg-indigo-50/40 border border-indigo-100/50 rounded-2xl p-4 space-y-2">
-                      <h4 className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
-                        <ShieldCheck size={14} className="text-indigo-600" /> Custom Twilio Phone Credentials
-                      </h4>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <h4 className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                          <ShieldCheck size={14} className="text-indigo-600" /> Twilio Phone & Gateway Settings
+                        </h4>
+                        {(settings.voice_twilio_number || twilioNumber) && (
+                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                            ● Active Twilio Line
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[11px] text-indigo-800 leading-relaxed font-medium">
-                        Configure your own Twilio Account SID and Auth Token to place outbound calls through your private Twilio trunk.
+                        Configure your Twilio Account SID, Auth Token, and outbound calling number for international or custom telephony.
                       </p>
                     </div>
+
+                    {/* Active Twilio Caller ID Banner */}
+                    {(settings.voice_twilio_number || twilioNumber) && (
+                      <div className="bg-white border border-slate-200/80 p-4.5 rounded-2xl flex items-center justify-between shadow-2xs flex-wrap gap-3">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Active Twilio Caller ID</span>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-base font-extrabold text-slate-900 font-mono">
+                              {settings.voice_twilio_number || twilioNumber}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(settings.voice_twilio_number || twilioNumber)}
+                              className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
+                              title="Copy Number"
+                            >
+                              {copiedNumber ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                            </button>
+                          </div>
+                        </div>
+                        <span className="bg-emerald-50 text-emerald-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+                          ● Connected
+                        </span>
+                      </div>
+                    )}
 
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -975,15 +1360,17 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Outbound Caller ID (Twilio Number / Verified Caller)</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block ml-1">Outbound Caller ID (Twilio International / Local Number)</label>
                         <input 
                           type="text" 
                           value={settings.voice_twilio_number}
                           onChange={(e) => setSettings({ ...settings, voice_twilio_number: e.target.value })}
-                          placeholder="e.g. +91XXXXXXXXXX or +1XXXXXXXXXX"
+                          placeholder="e.g. +16592137728"
                           className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-400 transition-all"
                         />
-                        <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">Must include international prefix (e.g. +91 for India).</span>
+                        <span className="text-[9px] text-slate-400 block ml-1 font-semibold leading-normal">
+                          Include international country prefix (e.g. +1 for US/Canada, +91 for India).
+                        </span>
                       </div>
                     </div>
                   </div>

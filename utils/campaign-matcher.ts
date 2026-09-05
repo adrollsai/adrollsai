@@ -1,7 +1,7 @@
 /**
- * Robust Campaign & Lead Attribution Matcher
- * Ensures Group-Distribution and Campaign-Assignment rules match
- * 100% reliably based on Campaign Name, Campaign ID, Form Name, Form ID, and Ad Name.
+ * Deterministic Campaign & Lead Attribution Matcher
+ * Uses exact Campaign IDs, Form IDs, and clean full-string equality.
+ * No loose regex or arbitrary substring matching that causes false positives.
  */
 
 export function normalizeCampaignString(str: string | null | undefined): string {
@@ -13,7 +13,7 @@ export function normalizeCampaignString(str: string | null | undefined): string 
     .toLowerCase()
     .replace(/\bhaymten\b/g, 'hampton')
     .replace(/\bhamyten\b/g, 'hampton')
-    .replace(/[^\w\s-]/g, '') // remove special characters like quotes, colons
+    .replace(/[^\w\s-]/g, '') // remove special characters like quotes, punctuation
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -27,11 +27,21 @@ export interface MatchLeadContext {
   adCampaignString?: string | null;
 }
 
+const STOP_WORDS = new Set([
+  'copy', 'copies', 'new', 'ad', 'ads', 'campaign', 'campaigns', 'form', 'forms',
+  'lead', 'leads', 'page', 'pages', 'test', 'wp', 'office', 'price', 'cost', 'budget',
+  'website', 'landing', 'direct'
+]);
+
 /**
- * Checks whether a given lead matches a campaign or form rule entry
- * @param ruleCampaign The campaign or form string/ID configured in the rule (e.g. from the dropdown)
- * @param lead The incoming lead metadata
- * @param userCampaignsMap Optional mapping of campaign ID -> campaign name or campaign name -> campaign ID
+ * Checks whether a given lead matches a campaign or form rule entry.
+ * Prioritizes:
+ * 1. Exact Campaign ID or Form ID match (100% deterministic)
+ * 2. ID lookup through userCampaignsMap
+ * 3. Exact full-name match (case-insensitive & whitespace trimmed)
+ * 4. Controlled whole-token prefix match (e.g. "Ananta Aspire" matching "Ananta Aspire 5 September 2026")
+ * 
+ * Never uses fuzzy token splitting or regex searching that could match "copy" against "Price-copy".
  */
 export function matchesCampaignRule(
   ruleCampaign: string,
@@ -64,23 +74,26 @@ export function matchesCampaignRule(
   const leadAdNameNorm = normalizeCampaignString(lead.adName);
   const leadAdCampStrNorm = normalizeCampaignString(lead.adCampaignString);
 
-  // 1. Direct ID Matches
+  // 1. EXACT ID MATCHES (Deterministic)
   // Campaign ID Match
-  if (leadCampId && !isExplicitForm && (leadCampId === ruleRaw || leadCampId === rawTrimmed || ruleNorm === leadCampId)) {
-    return true;
-  }
-  // Form ID Match
-  if (leadFormId && !isExplicitCamp && (leadFormId === ruleRaw || leadFormId === rawTrimmed || ruleNorm === leadFormId)) {
-    return true;
+  if (leadCampId && !isExplicitForm) {
+    if (leadCampId === ruleRaw || leadCampId === rawTrimmed || ruleNorm === leadCampId) {
+      return true;
+    }
   }
 
-  // 2. Lookup through userCampaignsMap (if Campaign ID or Name was selected)
+  // Form ID Match
+  if (leadFormId && !isExplicitCamp) {
+    if (leadFormId === ruleRaw || leadFormId === rawTrimmed || ruleNorm === leadFormId) {
+      return true;
+    }
+  }
+
+  // 2. Lookup through userCampaignsMap (ID <-> Name)
   if (userCampaignsMap && !isExplicitForm) {
     if (leadCampId && userCampaignsMap.idToName?.[leadCampId]) {
       const dbCampNameNorm = normalizeCampaignString(userCampaignsMap.idToName[leadCampId]);
-      if (dbCampNameNorm === ruleNorm || dbCampNameNorm.includes(ruleNorm) || ruleNorm.includes(dbCampNameNorm)) {
-        return true;
-      }
+      if (dbCampNameNorm && dbCampNameNorm === ruleNorm) return true;
     }
     if (userCampaignsMap.nameToId?.[ruleRaw] && leadCampId === userCampaignsMap.nameToId[ruleRaw]) {
       return true;
@@ -88,37 +101,46 @@ export function matchesCampaignRule(
     if (userCampaignsMap.nameToId?.[rawTrimmed] && leadCampId === userCampaignsMap.nameToId[rawTrimmed]) {
       return true;
     }
+    if (userCampaignsMap.nameToId?.[cleanRule] && leadCampId === userCampaignsMap.nameToId[cleanRule]) {
+      return true;
+    }
   }
 
-  // 3. Form Name Exact / Normalized / Substring Match (unless explicitly campaign-only)
+  // 3. EXACT FULL NAME MATCHES (Case-insensitive, normalized)
+  // Form Name Exact Match
   if (!isExplicitCamp && leadFormNameNorm && ruleNorm) {
     if (leadFormNameNorm === ruleNorm) return true;
-    if (leadFormNameNorm.includes(ruleNorm) || ruleNorm.includes(leadFormNameNorm)) return true;
   }
 
-  // 4. Campaign Name Exact / Normalized / Substring Match (unless explicitly form-only)
+  // Campaign Name Exact Match
   if (!isExplicitForm && leadCampNameNorm && ruleNorm) {
     if (leadCampNameNorm === ruleNorm) return true;
-    if (leadCampNameNorm.includes(ruleNorm) || ruleNorm.includes(leadCampNameNorm)) return true;
   }
 
-  // 5. Ad Campaign String Match (e.g., "Campaign Name / Ad Name")
+  // Ad Campaign String Exact Match (e.g., "Campaign Name / Ad Name")
   if (!isExplicitForm && leadAdCampStrNorm && ruleNorm) {
-    if (leadAdCampStrNorm.includes(ruleNorm) || ruleNorm.includes(leadAdCampStrNorm)) return true;
+    if (leadAdCampStrNorm === ruleNorm) return true;
   }
 
-  // 6. Ad Name Match
+  // Ad Name Exact Match
   if (leadAdNameNorm && ruleNorm) {
-    if (leadAdNameNorm.includes(ruleNorm) || ruleNorm.includes(leadAdNameNorm)) return true;
+    if (leadAdNameNorm === ruleNorm) return true;
   }
 
-  // 7. Sub-segment matching (for compound campaign/form titles like "Anmol Avenue - 12-03-2026")
-  const segments = ruleNorm.split(/[-|/]/).map(seg => seg.trim()).filter(seg => seg.length >= 3 && !/^\d+$/.test(seg));
-  for (const seg of segments) {
-    if (!isExplicitCamp && leadFormNameNorm && leadFormNameNorm.includes(seg)) return true;
-    if (!isExplicitForm && leadCampNameNorm && leadCampNameNorm.includes(seg)) return true;
-    if (!isExplicitForm && leadAdCampStrNorm && leadAdCampStrNorm.includes(seg)) return true;
-    if (leadAdNameNorm && leadAdNameNorm.includes(seg)) return true;
+  // 4. CONTROLLED WORD-BOUNDARY PREFIX MATCH
+  // Example: Rule "Ananta Aspire" cleanly matches "Ananta Aspire 5 September 2026" or "Ananta Aspire - 14 July"
+  // Rejects stop words, noise words, or reverse prefix matches.
+  if (ruleNorm.length >= 4 && !STOP_WORDS.has(ruleNorm)) {
+    const isPrefixOf = (leadStr: string) => {
+      if (!leadStr) return false;
+      return leadStr.startsWith(ruleNorm + ' ') || 
+             leadStr.startsWith(ruleNorm + '-') || 
+             leadStr.startsWith(ruleNorm + ' -');
+    };
+
+    if (!isExplicitForm && leadCampNameNorm && isPrefixOf(leadCampNameNorm)) return true;
+    if (!isExplicitCamp && leadFormNameNorm && isPrefixOf(leadFormNameNorm)) return true;
+    if (!isExplicitForm && leadAdCampStrNorm && isPrefixOf(leadAdCampStrNorm)) return true;
   }
 
   return false;

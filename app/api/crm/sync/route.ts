@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server'
 import { fetchFacebookLeads } from '@/utils/external-apis'
 import { logToFile } from '@/utils/logger'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
+import { ensureMetaPageSubscribed } from '@/utils/meta-subscription'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -37,13 +38,21 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('selected_page_token, selected_page_id, enable_distribution, agency_id, parent_id')
+      .select('selected_page_token, selected_page_id, facebook_token, enable_distribution, agency_id, parent_id')
       .eq('id', targetUserId)
       .single()
 
     if (!profile?.selected_page_token || !profile?.selected_page_id) {
         return NextResponse.json({ error: 'Target account has no Page connected' }, { status: 400 })
     }
+
+    // Auto-heal Meta Page webhook subscription in background during sync
+    ensureMetaPageSubscribed(supabase, {
+      id: targetUserId,
+      selected_page_id: profile.selected_page_id,
+      selected_page_token: profile.selected_page_token,
+      facebook_token: profile.facebook_token
+    }).catch(() => {});
 
     // Pass formId to the helper
     const leads = await fetchFacebookLeads(
@@ -186,12 +195,14 @@ export async function POST(request: Request) {
       for (const aut of groupAutomations) {
         try {
           const parsed = JSON.parse(aut.description || '{}');
-          if (Array.isArray(parsed.members) && parsed.members.length > 0 && Array.isArray(parsed.campaigns) && parsed.campaigns.length > 0) {
+          if (Array.isArray(parsed.members) && parsed.members.length > 0 && (Array.isArray(parsed.campaigns) || Array.isArray(parsed.campaign_ids))) {
             parsedGroupRules.push({
               id: aut.id,
               group_name: parsed.group_name || aut.title.replace('Group-Distribution:', '').trim(),
               members: parsed.members,
-              campaigns: parsed.campaigns,
+              campaigns: Array.isArray(parsed.campaigns) ? parsed.campaigns : [],
+              campaign_ids: Array.isArray(parsed.campaign_ids) ? parsed.campaign_ids : [],
+              form_ids: Array.isArray(parsed.form_ids) ? parsed.form_ids : [],
               last_assigned_user_id: parsed.last_assigned_user_id || null,
               rawDesc: parsed,
               isDirty: false
@@ -246,7 +257,10 @@ export async function POST(request: Request) {
 
       // Check Group-Distribution rules first
       for (const rule of parsedGroupRules) {
-        const matches = rule.campaigns.some((gc: string) => matchesCampaignRule(gc, leadCtx, campaignsMap));
+        const matchesById = (lead.campaign_id && rule.campaign_ids?.includes(String(lead.campaign_id))) ||
+                            (lead.form_id && rule.form_ids?.includes(String(lead.form_id)));
+        const matchesByRule = rule.campaigns?.length > 0 && rule.campaigns.some((gc: string) => matchesCampaignRule(gc, leadCtx, campaignsMap));
+        const matches = matchesById || matchesByRule;
 
         if (matches) {
           const weightedPool: any[] = [];

@@ -1059,17 +1059,21 @@ IMPORTANT RULES:
                                                 try {
                                                     const parsedGroup = JSON.parse(aut.description || '{}');
                                                     const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
+                                                    const groupCampaignIds: string[] = Array.isArray(parsedGroup.campaign_ids) ? parsedGroup.campaign_ids : [];
+                                                    const groupFormIds: string[] = Array.isArray(parsedGroup.form_ids) ? parsedGroup.form_ids : [];
                                                     const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
 
-                                                    if (groupMembers.length > 0 && groupCampaigns.length > 0) {
+                                                    if (groupMembers.length > 0 && (groupCampaigns.length > 0 || groupCampaignIds.length > 0 || groupFormIds.length > 0)) {
                                                         const leadCtx = {
                                                             campaignId: campaignId || null,
                                                             campaignName: campaignName || null,
                                                             adName: adNameStr || null,
                                                             adCampaignString: adCampaignString || null,
-                                                            formName: adHeadline || null
+                                                            formName: adHeadline || null,
+                                                            formId: null
                                                         };
-                                                        const matchesCamp = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx));
+                                                        const matchesById = (campaignId && groupCampaignIds.includes(String(campaignId)));
+                                                        const matchesCamp = matchesById || (groupCampaigns.length > 0 && groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx)));
 
                                                         if (matchesCamp) {
                                                             const weightedPool: any[] = [];
@@ -2696,9 +2700,13 @@ RULES:
                 try {
                   const parsedGroup = JSON.parse(aut.description || '{}');
                   const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
+                  const groupCampaignIds: string[] = Array.isArray(parsedGroup.campaign_ids) ? parsedGroup.campaign_ids : [];
+                  const groupFormIds: string[] = Array.isArray(parsedGroup.form_ids) ? parsedGroup.form_ids : [];
                   const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
-                  if (groupMembers.length > 0 && groupCampaigns.length > 0) {
-                    const matchesCamp = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx, campaignsMap));
+                  if (groupMembers.length > 0 && (groupCampaigns.length > 0 || groupCampaignIds.length > 0 || groupFormIds.length > 0)) {
+                    const matchesById = (campaignId && groupCampaignIds.includes(String(campaignId))) ||
+                                        (fbLead.form_id && groupFormIds.includes(String(fbLead.form_id)));
+                    const matchesCamp = matchesById || (groupCampaigns.length > 0 && groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx, campaignsMap)));
 
                     if (matchesCamp) {
                       // Build weighted sequence pool

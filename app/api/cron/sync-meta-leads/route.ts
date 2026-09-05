@@ -4,6 +4,7 @@ import { sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { triggerWelcomeDrip, sendInstantFormCatalogMessage } from '@/utils/whatsapp/drips'
 import { triggerOutboundCall } from '@/utils/voice-helper'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
+import { ensureMetaPageSubscribed } from '@/utils/meta-subscription'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -101,15 +102,8 @@ async function handleSync(request: Request) {
         const pageToken = profile.selected_page_token || profile.facebook_token;
         if (!pageId || !pageToken) return;
 
-        // Auto-heal page webhook subscription on Meta
-        fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subscribed_fields: ['leadgen'],
-            access_token: pageToken
-          })
-        }).catch(() => {});
+        // Auto-heal page webhook subscription on Meta with token refresh
+        await ensureMetaPageSubscribed(supabaseAdmin, profile).catch(() => {});
 
         try {
           // 1. Fetch ALL Leadgen Forms with full pagination (limit 100 per page)
@@ -339,9 +333,11 @@ async function handleSync(request: Request) {
                   try {
                     const parsedGroup = JSON.parse(aut.description || '{}');
                     const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
+                    const groupCampaignIds: string[] = Array.isArray(parsedGroup.campaign_ids) ? parsedGroup.campaign_ids : [];
+                    const groupFormIds: string[] = Array.isArray(parsedGroup.form_ids) ? parsedGroup.form_ids : [];
                     const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
 
-                    if (groupMembers.length > 0 && groupCampaigns.length > 0) {
+                    if (groupMembers.length > 0 && (groupCampaigns.length > 0 || groupCampaignIds.length > 0 || groupFormIds.length > 0)) {
                       const leadCtx = {
                         campaignId,
                         campaignName,
@@ -350,9 +346,15 @@ async function handleSync(request: Request) {
                         formId,
                         adCampaignString
                       };
-                      const matches = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx, campaignsMap));
 
-                      if (matches) {
+                      // 1. Exact ID match (Highest deterministic priority)
+                      const matchesById = (campaignId && groupCampaignIds.includes(String(campaignId))) ||
+                                          (formId && groupFormIds.includes(String(formId)));
+
+                      // 2. Fallback to name rule matcher
+                      const matchesByRule = groupCampaigns.length > 0 && groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx, campaignsMap));
+
+                      if (matchesById || matchesByRule) {
                         const weightedPool: any[] = [];
                         groupMembers.forEach(m => {
                           for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
@@ -560,8 +562,10 @@ async function handleSync(request: Request) {
             }
           }
 
-          // 6. Iterate through active leadgen forms
-          const formsToScan = formsList.filter((f: any) => f.status === 'ACTIVE' || !f.status);
+          // 6. Iterate through active leadgen forms (newest forms first)
+          const formsToScan = formsList
+            .filter((f: any) => f.status === 'ACTIVE' || !f.status)
+            .sort((a: any, b: any) => new Date(b.created_time || 0).getTime() - new Date(a.created_time || 0).getTime());
           for (const form of formsToScan) {
             const formId = form.id;
             const formName = form.name || 'Meta Form';

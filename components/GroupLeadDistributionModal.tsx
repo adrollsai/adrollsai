@@ -21,6 +21,8 @@ export interface DistributionGroup {
   group_name: string;
   members: DistributionGroupMember[];
   campaigns: string[];
+  campaign_ids?: string[];
+  form_ids?: string[];
   is_active: boolean;
   last_assigned_user_id?: string | null;
   last_assigned_user_name?: string | null;
@@ -114,6 +116,8 @@ export default function GroupLeadDistributionModal({
               group_name: parsed.group_name || gName,
               members: Array.isArray(parsed.members) ? parsed.members : [],
               campaigns: Array.isArray(parsed.campaigns) ? parsed.campaigns : [],
+              campaign_ids: Array.isArray(parsed.campaign_ids) ? parsed.campaign_ids : [],
+              form_ids: Array.isArray(parsed.form_ids) ? parsed.form_ids : [],
               is_active: aut.is_active ?? true,
               last_assigned_user_id: parsed.last_assigned_user_id || null,
               last_assigned_user_name: parsed.last_assigned_user_name || null,
@@ -164,6 +168,83 @@ export default function GroupLeadDistributionModal({
       setLoadingSources(false);
     }
   };
+
+  // Map of ID -> { name: string; type: 'campaign' | 'form' } and Name -> { id: string; type: 'campaign' | 'form' }
+  const sourceResolutionMap = useMemo(() => {
+    const idMap = new Map<string, { name: string; type: 'campaign' | 'form' }>();
+    const nameMap = new Map<string, { id: string; type: 'campaign' | 'form' }>();
+
+    // 1. Meta campaigns
+    metaCampaigns.forEach((c: any) => {
+      const id = String(c.id || '').trim();
+      const name = c.name?.trim();
+      if (id && name) {
+        idMap.set(id, { name, type: 'campaign' });
+        nameMap.set(name.toLowerCase(), { id, type: 'campaign' });
+      }
+    });
+
+    // 2. DB campaigns
+    dbCampaigns.forEach((c: any) => {
+      const id = String(c.id || '').trim();
+      const name = c.name?.trim();
+      if (id && name) {
+        if (!idMap.has(id)) idMap.set(id, { name, type: 'campaign' });
+        if (!nameMap.has(name.toLowerCase())) nameMap.set(name.toLowerCase(), { id, type: 'campaign' });
+      }
+    });
+
+    // 3. Meta forms
+    metaForms.forEach((f: any) => {
+      const id = String(f.id || '').trim();
+      const name = f.name?.trim();
+      if (id && name) {
+        idMap.set(id, { name, type: 'form' });
+        nameMap.set(name.toLowerCase(), { id, type: 'form' });
+      }
+    });
+
+    // 4. Props campaigns
+    (campaigns || []).forEach(c => {
+      const id = typeof c === 'object' && c?.id ? String(c.id).trim() : '';
+      const name = typeof c === 'string' ? c.trim() : c?.name?.trim();
+      if (id && name) {
+        const cleanName = name.replace(/^\[(campaign|form)\]\s*/i, '');
+        if (!idMap.has(id)) idMap.set(id, { name: cleanName, type: 'campaign' });
+        if (!nameMap.has(cleanName.toLowerCase())) nameMap.set(cleanName.toLowerCase(), { id, type: 'campaign' });
+      }
+    });
+
+    // 5. Props forms
+    (forms || []).forEach(f => {
+      const id = typeof f === 'object' && f?.id ? String(f.id).trim() : '';
+      const name = typeof f === 'string' ? f.trim() : f?.name?.trim();
+      if (id && name) {
+        const cleanName = name.replace(/^\[(campaign|form)\]\s*/i, '');
+        if (!idMap.has(id)) idMap.set(id, { name: cleanName, type: 'form' });
+        if (!nameMap.has(cleanName.toLowerCase())) nameMap.set(cleanName.toLowerCase(), { id, type: 'form' });
+      }
+    });
+
+    // 6. Leads from workspace
+    (leads || []).forEach(l => {
+      const cId = String(l.campaign_id || '').trim();
+      const cName = (l.custom_fields?.meta_ad_origin?.campaign_name || l.campaign_name || l.ad_name)?.trim();
+      if (cId && cName && cName !== 'null' && cName !== 'undefined') {
+        if (!idMap.has(cId)) idMap.set(cId, { name: cName, type: 'campaign' });
+        if (!nameMap.has(cName.toLowerCase())) nameMap.set(cName.toLowerCase(), { id: cId, type: 'campaign' });
+      }
+
+      const fId = String(l.form_id || '').trim();
+      const fName = (l.form_name)?.trim();
+      if (fId && fName && fName !== 'null' && fName !== 'undefined') {
+        if (!idMap.has(fId)) idMap.set(fId, { name: fName, type: 'form' });
+        if (!nameMap.has(fName.toLowerCase())) nameMap.set(fName.toLowerCase(), { id: fId, type: 'form' });
+      }
+    });
+
+    return { idMap, nameMap };
+  }, [metaCampaigns, dbCampaigns, metaForms, campaigns, forms, leads]);
 
   // Consolidate all available campaigns & forms into a structured selectable catalog
   const allSelectableSources = useMemo<SelectableSourceItem[]>(() => {
@@ -301,6 +382,8 @@ export default function GroupLeadDistributionModal({
         group_name: group.group_name.trim(),
         members: group.members,
         campaigns: group.campaigns,
+        campaign_ids: group.campaign_ids || [],
+        form_ids: group.form_ids || [],
         last_assigned_user_id: group.last_assigned_user_id || null,
         last_assigned_user_name: group.last_assigned_user_name || null,
         last_assigned_at: group.last_assigned_at || null
@@ -449,7 +532,12 @@ export default function GroupLeadDistributionModal({
   };
 
   // Campaign and Form management inside a group
-  const handleAddCampaignToGroup = (groupId: string, ruleString: string) => {
+  const handleAddCampaignToGroup = (
+    groupId: string,
+    ruleString: string,
+    sourceId?: string,
+    sourceType?: 'campaign' | 'form' | 'custom'
+  ) => {
     if (!ruleString) return;
 
     setGroups(prev => prev.map(g => {
@@ -466,7 +554,36 @@ export default function GroupLeadDistributionModal({
         }
 
         const updatedCampaigns = [...g.campaigns, ruleString];
-        const updatedGroup = { ...g, campaigns: updatedCampaigns };
+        const updatedCampaignIds = [...(g.campaign_ids || [])];
+        const updatedFormIds = [...(g.form_ids || [])];
+
+        // Resolve ID if not directly provided
+        let targetId = sourceId;
+        let targetType = sourceType;
+        const cleanName = ruleString.replace(/^\[(form|campaign|ad)\]\s*/i, '').trim();
+
+        if (!targetId) {
+          const resolved = sourceResolutionMap.nameMap.get(cleanName.toLowerCase()) || sourceResolutionMap.idMap.get(cleanName);
+          if (resolved) {
+            targetId = sourceResolutionMap.nameMap.get(cleanName.toLowerCase())?.id || cleanName;
+            targetType = resolved.type;
+          }
+        }
+
+        if (targetId) {
+          if (targetType === 'form' || /^\[form\]/i.test(ruleString)) {
+            if (!updatedFormIds.includes(targetId)) updatedFormIds.push(targetId);
+          } else {
+            if (!updatedCampaignIds.includes(targetId)) updatedCampaignIds.push(targetId);
+          }
+        }
+
+        const updatedGroup: DistributionGroup = {
+          ...g,
+          campaigns: updatedCampaigns,
+          campaign_ids: updatedCampaignIds,
+          form_ids: updatedFormIds
+        };
         saveGroupRuleToDb(updatedGroup);
         toast.success(`Added "${ruleString}" to "${g.group_name}"`);
         return updatedGroup;
@@ -478,8 +595,20 @@ export default function GroupLeadDistributionModal({
   const handleRemoveCampaign = (groupId: string, ruleString: string) => {
     setGroups(prev => prev.map(g => {
       if (g.id === groupId) {
+        const cleanName = ruleString.replace(/^\[(form|campaign|ad)\]\s*/i, '').trim();
+        const associatedId = sourceResolutionMap.nameMap.get(cleanName.toLowerCase())?.id || 
+                             (sourceResolutionMap.idMap.has(cleanName) ? cleanName : null);
+
         const updatedCampaigns = g.campaigns.filter(c => c !== ruleString);
-        const updatedGroup = { ...g, campaigns: updatedCampaigns };
+        const updatedCampaignIds = (g.campaign_ids || []).filter(id => id !== ruleString && id !== cleanName && id !== associatedId);
+        const updatedFormIds = (g.form_ids || []).filter(id => id !== ruleString && id !== cleanName && id !== associatedId);
+
+        const updatedGroup: DistributionGroup = {
+          ...g,
+          campaigns: updatedCampaigns,
+          campaign_ids: updatedCampaignIds,
+          form_ids: updatedFormIds
+        };
         saveGroupRuleToDb(updatedGroup);
         return updatedGroup;
       }
@@ -522,6 +651,10 @@ export default function GroupLeadDistributionModal({
 
       // 2. Filter leads matching group's campaigns or forms
       const matchingLeads = allWorkspaceLeads.filter(l => {
+        // Direct ID match against campaign_ids or form_ids
+        if (l.campaign_id && group.campaign_ids?.includes(String(l.campaign_id))) return true;
+        if (l.form_id && group.form_ids?.includes(String(l.form_id))) return true;
+
         const leadCtx = {
           campaignId: l.campaign_id,
           campaignName: l.custom_fields?.meta_ad_origin?.campaign_name || l.ad_name,
@@ -602,10 +735,39 @@ export default function GroupLeadDistributionModal({
   };
 
   // Render pill for assigned rule (Campaign or Form)
+  // Resolves numeric IDs dynamically to full human-readable names
   const renderRulePill = (ruleStr: string, groupId: string) => {
-    const isForm = /^\[form\]/i.test(ruleStr) || /^form:/i.test(ruleStr);
-    const isCamp = /^\[campaign\]/i.test(ruleStr) || /^campaign:/i.test(ruleStr);
-    const cleanLabel = ruleStr.replace(/^\[(form|campaign|ad)\]\s*/i, '').replace(/^(form|campaign|ad):\s*/i, '').trim();
+    const isExplicitForm = /^\[form\]/i.test(ruleStr) || /^form:/i.test(ruleStr);
+    const isExplicitCamp = /^\[campaign\]/i.test(ruleStr) || /^campaign:/i.test(ruleStr);
+    const rawClean = ruleStr.replace(/^\[(form|campaign|ad|rule)\]\s*/i, '').replace(/^(form|campaign|ad|rule):\s*/i, '').trim();
+
+    // Check if rawClean is an ID in our resolution map or numeric
+    const resolvedFromId = sourceResolutionMap.idMap.get(rawClean);
+    const isNumericId = /^\d{10,}$/.test(rawClean);
+
+    let displayName = rawClean;
+    let resolvedType: 'campaign' | 'form' | 'rule' = isExplicitForm ? 'form' : isExplicitCamp ? 'campaign' : 'rule';
+    let idSubtitle = '';
+
+    if (resolvedFromId) {
+      displayName = resolvedFromId.name;
+      resolvedType = resolvedFromId.type;
+      idSubtitle = `ID: ${rawClean}`;
+    } else if (isNumericId) {
+      // Unresolved numeric ID - show clean label with ID badge
+      displayName = `Meta ID: ${rawClean}`;
+      idSubtitle = rawClean;
+    } else {
+      // It's a name; check if we know its ID
+      const resolvedFromName = sourceResolutionMap.nameMap.get(rawClean.toLowerCase());
+      if (resolvedFromName) {
+        resolvedType = resolvedFromName.type;
+        idSubtitle = `ID: ${resolvedFromName.id}`;
+      }
+    }
+
+    const isForm = resolvedType === 'form';
+    const isCamp = resolvedType === 'campaign';
 
     return (
       <span
@@ -617,14 +779,15 @@ export default function GroupLeadDistributionModal({
             ? 'bg-blue-50 text-blue-900 border-blue-200'
             : 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
         }`}
+        title={idSubtitle ? `${displayName} (${idSubtitle})` : displayName}
       >
         <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${
           isForm ? 'bg-purple-200 text-purple-800' : isCamp ? 'bg-blue-200 text-blue-800' : 'bg-emerald-200 text-emerald-800'
         }`}>
           {isForm ? <FileText size={10} /> : isCamp ? <Megaphone size={10} /> : <Tag size={10} />}
-          <span>{isForm ? 'Form' : isCamp ? 'Campaign' : 'Rule'}</span>
+          <span>{isForm ? 'Lead Form' : isCamp ? 'Campaign' : 'Rule'}</span>
         </span>
-        <span className="max-w-[200px] truncate" title={ruleStr}>{cleanLabel}</span>
+        <span className="max-w-[240px] truncate">{displayName}</span>
         <button
           onClick={() => handleRemoveCampaign(groupId, ruleStr)}
           className="text-slate-400 hover:text-red-600 transition-colors cursor-pointer ml-0.5"
@@ -1257,7 +1420,7 @@ export default function GroupLeadDistributionModal({
                       <button
                         key={item.ruleValue + (item.id || '')}
                         onClick={() => {
-                          handleAddCampaignToGroup(targetGrp.id, item.ruleValue);
+                          handleAddCampaignToGroup(targetGrp.id, item.ruleValue, item.id, item.type);
                         }}
                         title={item.name}
                         className={`w-full text-left border rounded-xl px-3.5 py-2.5 text-xs transition-all flex items-center justify-between gap-3 group cursor-pointer ${
