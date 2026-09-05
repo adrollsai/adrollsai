@@ -128,6 +128,62 @@ export async function POST(req: Request) {
 
         console.log(`[PROVISION] Assigning Vobiz number ${cleanNumber} to user ${targetId}...`)
 
+        // Execute purchase on Vobiz API to claim from inventory
+        const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+        const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+
+        try {
+            console.log(`[PROVISION] Purchasing number ${cleanNumber} from Vobiz inventory...`)
+            const vobizPurchaseRes = await fetch(
+                `https://api.vobiz.ai/api/v1/Account/${authId}/numbers/purchase-from-inventory`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'X-Auth-ID': authId,
+                        'X-Auth-Token': authToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ e164: cleanNumber })
+                }
+            )
+
+            const vobizData = await vobizPurchaseRes.json().catch(() => ({}))
+            console.log(`[PROVISION] Vobiz purchase response: status=${vobizPurchaseRes.status}`, vobizData)
+
+            if (!vobizPurchaseRes.ok && vobizPurchaseRes.status !== 409) {
+                const msg = vobizData.error || vobizData.message || `Carrier purchase error (HTTP ${vobizPurchaseRes.status})`
+                if (!msg.toLowerCase().includes('already')) {
+                    return NextResponse.json({ error: `Vobiz Telephony Error: ${msg}` }, { status: 400 })
+                }
+            }
+
+            // Assign number to user's dedicated Vobiz subaccount if one exists
+            const targetSubAccountId = biKyc.voice_vobiz_sub_account_id || biKyc.kyc_data?.vobizSubAccountId
+            if (targetSubAccountId) {
+                console.log(`[PROVISION] Assigning number ${cleanNumber} to customer subaccount ${targetSubAccountId}...`)
+                try {
+                    const assignRes = await fetch(
+                        `https://api.vobiz.ai/api/v1/account/${authId}/numbers/${encodeURIComponent(cleanNumber)}/assign-subaccount`,
+                        {
+                            method: 'POST',
+                            headers: {
+                                'X-Auth-ID': authId,
+                                'X-Auth-Token': authToken,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ sub_account_id: String(targetSubAccountId) })
+                        }
+                    )
+                    const assignData = await assignRes.json().catch(() => ({}))
+                    console.log(`[PROVISION] Subaccount assignment response: status=${assignRes.status}`, assignData)
+                } catch (assignErr: any) {
+                    console.warn('[PROVISION] Error assigning number to subaccount:', assignErr.message)
+                }
+            }
+        } catch (vErr: any) {
+            console.warn('[PROVISION] Vobiz network purchase warning:', vErr.message)
+        }
+
         // Update profile with the assigned Vobiz calling number
         biKyc.voice_vobiz_number = cleanNumber
         biKyc.claimed_vobiz_number = cleanNumber
@@ -195,6 +251,30 @@ export async function DELETE(req: Request) {
         } catch (e) {}
         delete bi.voice_vobiz_number
         delete bi.claimed_vobiz_number
+
+        // Unassign number from Vobiz subaccount if assigned
+        const subAccountId = bi.voice_vobiz_sub_account_id || bi.kyc_data?.vobizSubAccountId
+        const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+        const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+
+        if (subAccountId && currentNum && currentNum.startsWith('+91')) {
+            try {
+                console.log(`[PROVISION] Unassigning number ${currentNum} from subaccount ${subAccountId}...`)
+                await fetch(
+                    `https://api.vobiz.ai/api/v1/account/${authId}/numbers/${encodeURIComponent(currentNum)}/assign-subaccount`,
+                    {
+                        method: 'DELETE',
+                        headers: {
+                            'X-Auth-ID': authId,
+                            'X-Auth-Token': authToken,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                )
+            } catch (unassignErr: any) {
+                console.warn('[PROVISION] Error unassigning number from subaccount:', unassignErr.message)
+            }
+        }
 
         console.log(`[PROVISION] Disconnecting voice number for user ${targetId}...`)
 

@@ -14,6 +14,34 @@ export interface VobizAvailableNumber {
     category?: 'VIP' | 'Easy Recall' | 'Standard'
 }
 
+export function formatIndianPhoneNumber(num: string): string {
+    const clean = num.replace(/\D/g, '')
+    if (clean.length === 12 && clean.startsWith('91')) {
+        return `+91 ${clean.slice(2, 4)} ${clean.slice(4, 8)} ${clean.slice(8)}`
+    }
+    if (clean.length === 10) {
+        return `+91 ${clean.slice(0, 2)} ${clean.slice(2, 6)} ${clean.slice(6)}`
+    }
+    return num.startsWith('+') ? num : `+${num}`
+}
+
+export function classifyNumberPattern(num: string): 'VIP' | 'Easy Recall' | 'Standard' {
+    const digits = num.replace(/\D/g, '')
+    const local = digits.slice(-8)
+    
+    // VIP: triples (777, 888, 000), ending with 00/000, or repeating 2-digit pairs at the end
+    if (/(\d)\1\1/.test(local) || /(\d{2})\1$/.test(local) || /00$/.test(local)) {
+        return 'VIP'
+    }
+    
+    // Easy Recall: consecutive ascending/descending runs, duplicate pairs (e.g. 44, 55, 88)
+    if (/012|123|234|345|456|567|678|789|987|876|765|654|543|432|321/.test(local) || /(\d)\1/.test(local)) {
+        return 'Easy Recall'
+    }
+
+    return 'Standard'
+}
+
 // Available comprehensive pool of Indian Vobiz 79-series virtual numbers for client claiming
 export const VOBIZ_NUMBER_CATALOG: VobizAvailableNumber[] = [
     // Featured / Original Pool
