@@ -168,7 +168,8 @@ export async function GET(request: Request) {
             amount_spent: data.amount_spent,
             funding_source_details: data.funding_source_details,
             currency: data.currency,
-            leadgenTos
+            leadgenTos,
+            pageId: effectivePageId
         })
     } catch (error: any) {
         logToFile(`[Check-Account API] Catch block error: ${error.message}`);

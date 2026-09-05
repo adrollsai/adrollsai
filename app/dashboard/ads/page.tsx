@@ -410,7 +410,7 @@ export default function AdsPage() {
     try {
       const urlParams = new URLSearchParams(window.location.search)
       const impersonateId = urlParams.get('impersonate')
-      const effectivePageId = adForm.pageId || profile?.selected_page_id || ''
+      const effectivePageId = adForm.pageId || (accountStatus as any)?.pageId || ''
       
       const res = await fetch('/api/meta-ads/confirm-leadgen-tos', {
         method: 'POST',
@@ -2099,7 +2099,7 @@ export default function AdsPage() {
                       </p>
                       <div className="flex flex-wrap items-center gap-3">
                         <a 
-                          href={`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId || profile?.selected_page_id || ''}`} 
+                          href={`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId || (accountStatus as any)?.pageId || ''}`} 
                           target="_blank" 
                           rel="noreferrer" 
                           className="inline-flex items-center gap-1.5 text-blue-700 bg-white border border-blue-200 px-3 py-1.5 rounded-xl font-bold hover:bg-blue-50 transition-colors shadow-xs"
