@@ -158,9 +158,10 @@ export async function POST(req: Request) {
             }
 
             // Assign number to user's dedicated Vobiz subaccount if one exists
-            const targetSubAccountId = biKyc.voice_vobiz_sub_account_id || biKyc.kyc_data?.vobizSubAccountId
-            if (targetSubAccountId) {
-                console.log(`[PROVISION] Assigning number ${cleanNumber} to customer subaccount ${targetSubAccountId}...`)
+            // Note: Vobiz expects the Subaccount Auth ID (e.g. SA_CU21FXWZ) in sub_account_id field
+            const targetSubAccountAuthId = biKyc.voice_vobiz_auth_id || biKyc.kyc_data?.vobizSubAuthId || biKyc.voice_vobiz_sub_account_id
+            if (targetSubAccountAuthId) {
+                console.log(`[PROVISION] Assigning number ${cleanNumber} to customer subaccount ${targetSubAccountAuthId}...`)
                 try {
                     const assignRes = await fetch(
                         `https://api.vobiz.ai/api/v1/account/${authId}/numbers/${encodeURIComponent(cleanNumber)}/assign-subaccount`,
@@ -171,7 +172,7 @@ export async function POST(req: Request) {
                                 'X-Auth-Token': authToken,
                                 'Content-Type': 'application/json'
                             },
-                            body: JSON.stringify({ sub_account_id: String(targetSubAccountId) })
+                            body: JSON.stringify({ sub_account_id: String(targetSubAccountAuthId) })
                         }
                     )
                     const assignData = await assignRes.json().catch(() => ({}))
@@ -253,13 +254,13 @@ export async function DELETE(req: Request) {
         delete bi.claimed_vobiz_number
 
         // Unassign number from Vobiz subaccount if assigned
-        const subAccountId = bi.voice_vobiz_sub_account_id || bi.kyc_data?.vobizSubAccountId
+        const subAccountAuthId = bi.voice_vobiz_auth_id || bi.kyc_data?.vobizSubAuthId || bi.voice_vobiz_sub_account_id
         const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
         const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
 
-        if (subAccountId && currentNum && currentNum.startsWith('+91')) {
+        if (subAccountAuthId && currentNum && currentNum.startsWith('+91')) {
             try {
-                console.log(`[PROVISION] Unassigning number ${currentNum} from subaccount ${subAccountId}...`)
+                console.log(`[PROVISION] Unassigning number ${currentNum} from subaccount ${subAccountAuthId}...`)
                 await fetch(
                     `https://api.vobiz.ai/api/v1/account/${authId}/numbers/${encodeURIComponent(currentNum)}/assign-subaccount`,
                     {
