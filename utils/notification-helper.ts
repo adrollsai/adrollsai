@@ -332,6 +332,7 @@ export async function sendAdminMultiChannelNotification({
             const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
             
             const isExpertAlert = type === 'connect_expert' || /expert|callback|connect/i.test(title || '') || /expert|callback|connect/i.test(body || '');
+            const isBookingAlert = type === 'meeting_booked' || type === 'appointment_booked' || /booking|appointment/i.test(type || '') || /meeting booked|appointment booked/i.test(title || '');
 
             let payload: any;
             
@@ -346,7 +347,7 @@ export async function sendAdminMultiChannelNotification({
                   body: `☎️ HIGH-PRIORITY ALERT: Connect with Expert Requested!\n\nLead Name: ${leadName || 'Prospect'}\nPhone: ${targetLeadPhone}\n\n${body || 'Lead clicked "Connect with Expert" on WhatsApp.'}\n\n🔗 View CRM Record: ${leadPageUrl}` 
                 }
               };
-            } else {
+            } else if (isBookingAlert) {
               // Template for actual appointment bookings
               payload = {
                 messaging_product: 'whatsapp',
@@ -369,6 +370,10 @@ export async function sendAdminMultiChannelNotification({
                   ]
                 }
               };
+            } else {
+              // Not a booking or expert alert (e.g. new_lead event) — skip WhatsApp template to prevent bogus booking notifications
+              console.log(`[MULTI-CHANNEL WA SKIP] Event "${type}" is not a booking or expert alert. Skipping WhatsApp admin alert.`);
+              return;
             }
 
             let waRes = await fetch(metaUrl, {

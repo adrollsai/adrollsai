@@ -98,28 +98,10 @@ async function handleSync(request: Request) {
     for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
       const batch = profiles.slice(i, i + BATCH_SIZE);
       await Promise.allSettled(batch.map(async (profile) => {
+        // Strictly sync ONLY the page explicitly connected to this profile
         const pagesMap = new Map<string, string>();
         if (profile.selected_page_id && (profile.selected_page_token || profile.facebook_token)) {
           pagesMap.set(profile.selected_page_id, profile.selected_page_token || profile.facebook_token);
-        }
-
-        // Also discover any additional pages owned by this user account
-        if (profile.facebook_token) {
-          try {
-            const accRes = await fetch(`https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&limit=25&access_token=${profile.facebook_token}`, {
-              signal: AbortSignal.timeout(6000)
-            });
-            if (accRes.ok) {
-              const accData = await accRes.json();
-              if (accData.data && Array.isArray(accData.data)) {
-                for (const acc of accData.data) {
-                  if (acc.id && acc.access_token && !pagesMap.has(acc.id)) {
-                    pagesMap.set(acc.id, acc.access_token);
-                  }
-                }
-              }
-            }
-          } catch (e) {}
         }
 
         if (pagesMap.size === 0) return;
