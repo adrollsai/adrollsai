@@ -861,68 +861,79 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                           </div>
                         </div>
                       ) : (
-                        <div className="bg-white border border-slate-200/80 p-6 rounded-2xl text-center space-y-4 shadow-sm">
-                          <p className="text-xs text-slate-500 font-medium max-w-md mx-auto">
-                            {!isKycVerified
-                              ? 'Complete KYC verification above to unlock 1-click number assignment and browse available local Indian phone lines.'
-                              : !isSubscriptionActive 
-                              ? 'Your subscription is inactive. Please ensure you have an active subscription to connect your calling line.'
-                              : oldVoiceNumber 
-                                ? `Your previous voice line (${oldVoiceNumber}) was disconnected. Click below to reclaim it or assign a new number.`
-                                : 'You do not have an active outbound calling number assigned yet. Get a number assigned in 1-click or choose from available cities.'
-                            }
-                          </p>
-
-                          <div className="space-y-4">
-                            <p className="text-xs text-slate-600 font-semibold max-w-md mx-auto">
-                              {!isKycVerified
-                                ? 'Complete KYC verification above to unlock your outbound virtual line.'
-                                : !isSubscriptionActive 
-                                ? 'Your subscription is inactive. Please ensure you have an active subscription to connect your calling line.'
-                                : 'Select and claim any 79-series outbound calling line below (included in your package at no extra charge):'
-                              }
-                            </p>
-
-                            {/* 79-Series Number Selection */}
-                            {isKycVerified && (
-                              <div className="pt-2 space-y-3 animate-in fade-in duration-200 text-left">
-                                <div className="flex items-center justify-between">
-                                  <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Available 79-Series Virtual Lines:</h5>
-                                  <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                                    100% Included in Package (₹0 / No Extra Charge)
-                                  </span>
+                        <div className="bg-white border border-slate-200/80 p-5 sm:p-6 rounded-2xl shadow-sm space-y-4">
+                          {!isKycVerified ? (
+                            <div className="text-center py-4 space-y-2">
+                              <p className="text-xs text-amber-800 font-semibold max-w-md mx-auto">
+                                Complete TRAI KYC verification above to unlock outbound virtual calling lines.
+                              </p>
+                            </div>
+                          ) : !isSubscriptionActive ? (
+                            <div className="text-center py-4 space-y-2">
+                              <p className="text-xs text-amber-800 font-semibold max-w-md mx-auto">
+                                Your subscription is currently inactive. Please ensure an active plan to connect your calling line.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                                <div>
+                                  <h5 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                                    Available 79-Series Calling Lines
+                                  </h5>
+                                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                    Select any dedicated 79-series line below to claim and activate outbound calls.
+                                  </p>
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                  {VOBIZ_NUMBER_CATALOG.map((num) => (
-                                    <div 
-                                      key={num.phoneNumber}
-                                      className="p-3.5 bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-200 rounded-2xl flex items-center justify-between transition-all"
-                                    >
-                                      <div>
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-extrabold text-xs text-slate-900 font-mono">{num.formattedNumber}</span>
-                                          <span className="text-[9px] font-black px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">{num.region}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-1">
-                                          <span className="text-[10px] text-slate-400 font-medium">Bidirectional 16kHz PCM</span>
-                                          <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">Available</span>
-                                        </div>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleProvisionNumber(num.phoneNumber)}
-                                        disabled={provisioning}
-                                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-[11px] font-black transition-all active:scale-95 cursor-pointer shrink-0 shadow-sm flex items-center gap-1.5"
-                                      >
-                                        {provisioning ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                                        Claim Number
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
+                                <span className="self-start sm:self-auto text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shrink-0">
+                                  100% Included in Package (₹0)
+                                </span>
                               </div>
-                            )}
-                          </div>
+
+                              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
+                                {VOBIZ_NUMBER_CATALOG.map((num) => (
+                                  <div 
+                                    key={num.phoneNumber}
+                                    className="p-4 bg-slate-50 hover:bg-indigo-50/40 border border-slate-200 hover:border-indigo-300 rounded-2xl flex items-center justify-between gap-4 transition-all group"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-extrabold text-sm sm:text-base text-slate-900 font-mono tracking-tight whitespace-nowrap">
+                                          {num.formattedNumber}
+                                        </span>
+                                        <span className="text-[9px] font-black px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full shrink-0">
+                                          79-Series
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500 font-medium">
+                                        <span className="flex items-center gap-1 text-emerald-600 font-bold whitespace-nowrap">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span> Ready to Claim
+                                        </span>
+                                        <span>•</span>
+                                        <span className="whitespace-nowrap">16kHz PCM Audio</span>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleProvisionNumber(num.phoneNumber)}
+                                      disabled={provisioning}
+                                      className="shrink-0 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full text-xs font-black shadow-sm transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                                    >
+                                      {provisioning ? (
+                                        <>
+                                          <Loader2 size={12} className="animate-spin" /> Claiming...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Sparkles size={12} /> Claim Number
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

@@ -18,7 +18,7 @@ export const VOBIZ_NUMBER_CATALOG: VobizAvailableNumber[] = [
     {
         phoneNumber: '+917949123456',
         formattedNumber: '+91 79 4912 3456',
-        region: '79 Series Virtual Line',
+        region: '79-Series',
         state: 'India',
         type: 'Local',
         monthlyRental: 0,
@@ -28,7 +28,7 @@ export const VOBIZ_NUMBER_CATALOG: VobizAvailableNumber[] = [
     {
         phoneNumber: '+917969874521',
         formattedNumber: '+91 79 6987 4521',
-        region: '79 Series Virtual Line',
+        region: '79-Series',
         state: 'India',
         type: 'Local',
         monthlyRental: 0,
@@ -38,7 +38,7 @@ export const VOBIZ_NUMBER_CATALOG: VobizAvailableNumber[] = [
     {
         phoneNumber: '+917971366938',
         formattedNumber: '+91 79 7136 6938',
-        region: '79 Series Virtual Line',
+        region: '79-Series',
         state: 'India',
         type: 'Local',
         monthlyRental: 0,
@@ -48,7 +48,7 @@ export const VOBIZ_NUMBER_CATALOG: VobizAvailableNumber[] = [
     {
         phoneNumber: '+917980695421',
         formattedNumber: '+91 79 8069 5421',
-        region: '79 Series Virtual Line',
+        region: '79-Series',
         state: 'India',
         type: 'Local',
         monthlyRental: 0,
@@ -57,7 +57,7 @@ export const VOBIZ_NUMBER_CATALOG: VobizAvailableNumber[] = [
     {
         phoneNumber: '+917935214550',
         formattedNumber: '+91 79 3521 4550',
-        region: '79 Series Virtual Line',
+        region: '79-Series',
         state: 'India',
         type: 'Local',
         monthlyRental: 0,
@@ -66,7 +66,7 @@ export const VOBIZ_NUMBER_CATALOG: VobizAvailableNumber[] = [
     {
         phoneNumber: '+917971298401',
         formattedNumber: '+91 79 7129 8401',
-        region: '79 Series Virtual Line',
+        region: '79-Series',
         state: 'India',
         type: 'Local',
         monthlyRental: 0,
