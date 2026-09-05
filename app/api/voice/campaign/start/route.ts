@@ -94,24 +94,51 @@ export async function POST(req: Request) {
                             break;
                         }
 
-                        // 2. Exact ad_name match
-                        if (lead.ad_name && (lead.ad_name === targetName || lead.ad_name === targetMeta)) {
-                            match = true;
-                            break;
+                        // 2. Exact or substring ad_name match
+                        if (lead.ad_name) {
+                            const leadAdLower = lead.ad_name.toLowerCase();
+                            const targetLower = targetName.toLowerCase();
+                            if (lead.ad_name === targetName || lead.ad_name === targetMeta || leadAdLower === targetLower || leadAdLower.includes(targetLower) || targetLower.includes(leadAdLower)) {
+                                match = true;
+                                break;
+                            }
                         }
 
                         // 3. Custom fields origin match
                         if (lead.custom_fields) {
                             const cfStr = typeof lead.custom_fields === 'string' ? lead.custom_fields : JSON.stringify(lead.custom_fields);
-                            if (cfStr.includes(`"campaign_id":"${targetId}"`) || cfStr.includes(`"campaign_id": "${targetId}"`) || cfStr.includes(targetId)) {
+                            if (
+                                cfStr.includes(`"campaign_id":"${targetId}"`) || 
+                                cfStr.includes(`"campaign_id": "${targetId}"`) || 
+                                cfStr.includes(targetId) ||
+                                (targetName && cfStr.toLowerCase().includes(targetName.toLowerCase()))
+                            ) {
                                 match = true;
                                 break;
                             }
                         }
                     }
                 }
-                if (hasCsv && lead.csv_audience && filter.csv_audiences.includes(lead.csv_audience)) {
-                    match = true
+                if (hasCsv) {
+                    for (const aud of filter.csv_audiences) {
+                        if (!aud) continue
+                        if (lead.csv_audience) {
+                            if (lead.csv_audience === aud || lead.csv_audience.split(',').map((s: string) => s.trim()).includes(aud)) {
+                                match = true
+                                break
+                            }
+                        }
+                        if (lead.custom_fields) {
+                            let cf = lead.custom_fields
+                            if (typeof cf === 'string') {
+                                try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+                            }
+                            if (Array.isArray(cf?.audience_groups) && cf.audience_groups.includes(aud)) {
+                                match = true
+                                break
+                            }
+                        }
+                    }
                 }
                 if (!match) return false
             }

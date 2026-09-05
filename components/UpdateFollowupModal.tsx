@@ -31,6 +31,31 @@ export const isNotInterestedOrLostStage = (stage?: string | null): boolean => {
   )
 }
 
+export function formatFriendlyDateWithDay(dateStr?: string | null): string | null {
+  if (!dateStr) return null
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return null
+    
+    // e.g. "Sat, 06 Sep 2026 • 11:00 AM"
+    const weekday = d.toLocaleDateString('en-US', { weekday: 'short' })
+    const day = d.getDate().toString().padStart(2, '0')
+    const month = d.toLocaleDateString('en-US', { month: 'short' })
+    const year = d.getFullYear()
+    
+    let hours = d.getHours()
+    const minutes = d.getMinutes().toString().padStart(2, '0')
+    const ampm = hours >= 12 ? 'PM' : 'AM'
+    hours = hours % 12
+    hours = hours ? hours : 12
+    const formattedHours = hours.toString().padStart(2, '0')
+
+    return `${weekday}, ${day} ${month} ${year} • ${formattedHours}:${minutes} ${ampm}`
+  } catch (e) {
+    return null
+  }
+}
+
 interface UpdateFollowupModalProps {
   isOpen: boolean
   onClose: () => void
@@ -151,6 +176,10 @@ export default function UpdateFollowupModal({
       setRemarks('')
       setNextRemarks('')
 
+      // Always reset followupType and nextActionType to 'Call' by default when opening for a lead
+      setFollowupType('Call')
+      setNextActionType('Call')
+
       // Default dates
       const now = new Date()
       const formatLocalIso = (d: Date) => {
@@ -160,33 +189,20 @@ export default function UpdateFollowupModal({
       
       setFollowupDate(formatLocalIso(now))
       
+      const getTomorrowDefaultIso = (baseDate = new Date()) => {
+        const tomorrow = new Date(baseDate)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        tomorrow.setHours(11, 0, 0, 0)
+        return formatLocalIso(tomorrow)
+      }
+
       const isClosed = isNotInterestedOrLostStage(currentStage)
       if (isClosed) {
-        if (lead.next_followup || lead.custom_fields?.next_action_date) {
-          try {
-            setNextActionDate(formatLocalIso(new Date(lead.next_followup || lead.custom_fields?.next_action_date)))
-          } catch (e) {
-            setNextActionDate('')
-          }
-        } else {
-          setNextActionDate('')
-        }
+        // Blank out for not interested/lost stages so there is no confusion or ambiguity
+        setNextActionDate('')
       } else {
-        if (lead.next_followup || lead.custom_fields?.next_action_date) {
-          try {
-            setNextActionDate(formatLocalIso(new Date(lead.next_followup || lead.custom_fields?.next_action_date)))
-          } catch (e) {
-            const tomorrow = new Date(now)
-            tomorrow.setDate(tomorrow.getDate() + 1)
-            tomorrow.setHours(11, 0, 0, 0)
-            setNextActionDate(formatLocalIso(tomorrow))
-          }
-        } else {
-          const tomorrow = new Date(now)
-          tomorrow.setDate(tomorrow.getDate() + 1)
-          tomorrow.setHours(11, 0, 0, 0)
-          setNextActionDate(formatLocalIso(tomorrow))
-        }
+        // Always default to next day (tomorrow) date and time for new followup reminders
+        setNextActionDate(getTomorrowDefaultIso(now))
       }
     }
   }, [lead, isOpen])
@@ -199,7 +215,7 @@ export default function UpdateFollowupModal({
     setError(null)
 
     const isClosedStatus = isNotInterestedOrLostStage(leadStage)
-    const hasNextAction = !!nextActionDate
+    const hasNextAction = !!nextActionDate && nextActionDate.trim() !== ''
 
     if (!isClosedStatus && !hasNextAction) {
       setError('Next Action Date & Time is required for active/ongoing leads.')
@@ -327,6 +343,12 @@ export default function UpdateFollowupModal({
                     onChange={(e) => setFollowupDate(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-medium focus:outline-none focus:border-blue-500 focus:bg-white"
                   />
+                  {followupDate && (
+                    <div className="mt-1.5 text-[11px] font-bold text-blue-700 bg-blue-50/90 border border-blue-200/60 px-2.5 py-1 rounded-lg flex items-center gap-1.5 w-fit">
+                      <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>{formatFriendlyDateWithDay(followupDate)}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -336,7 +358,20 @@ export default function UpdateFollowupModal({
                   <select
                     value={leadStage}
                     onChange={(e) => {
-                      setLeadStage(e.target.value)
+                      const newStage = e.target.value
+                      setLeadStage(newStage)
+                      if (isNotInterestedOrLostStage(newStage)) {
+                        // Clear next action date when picking not interested/lost stage
+                        setNextActionDate('')
+                      } else if (!nextActionDate) {
+                        // Re-initialize default tomorrow date if switching back to active stage
+                        const n = new Date()
+                        const t = new Date(n)
+                        t.setDate(t.getDate() + 1)
+                        t.setHours(11, 0, 0, 0)
+                        const pad = (num: number) => num.toString().padStart(2, '0')
+                        setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                      }
                     }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-extrabold text-blue-700 focus:outline-none focus:border-blue-500 focus:bg-white"
                   >
@@ -469,9 +504,57 @@ export default function UpdateFollowupModal({
                       onChange={(e) => setNextActionDate(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-medium focus:outline-none focus:border-blue-500 focus:bg-white"
                     />
-                    {isClosedStatus && (
-                      <p className="text-[11px] text-slate-500 font-medium mt-1">Optional: Leave blank if no future follow-up is planned.</p>
-                    )}
+                    {nextActionDate ? (
+                      <div className="mt-1.5 text-[11px] font-bold text-blue-700 bg-blue-50/90 border border-blue-200/60 px-2.5 py-1 rounded-lg flex items-center gap-1.5 w-fit">
+                        <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span>{formatFriendlyDateWithDay(nextActionDate)}</span>
+                      </div>
+                    ) : isClosedStatus ? (
+                      <p className="text-[11px] text-slate-500 font-medium mt-1">Optional: Leave blank if no future followup is needed.</p>
+                    ) : null}
+
+                    {/* Quick date shortcuts */}
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = new Date()
+                          t.setDate(t.getDate() + 1)
+                          t.setHours(11, 0, 0, 0)
+                          const pad = (n: number) => n.toString().padStart(2, '0')
+                          setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
+                      >
+                        Tomorrow 11 AM
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = new Date()
+                          t.setDate(t.getDate() + 2)
+                          t.setHours(11, 0, 0, 0)
+                          const pad = (n: number) => n.toString().padStart(2, '0')
+                          setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
+                      >
+                        +2 Days
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = new Date()
+                          t.setDate(t.getDate() + 7)
+                          t.setHours(11, 0, 0, 0)
+                          const pad = (n: number) => n.toString().padStart(2, '0')
+                          setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
+                      >
+                        +1 Week
+                      </button>
+                    </div>
                   </div>
 
                   <div>

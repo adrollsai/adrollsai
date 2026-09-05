@@ -509,17 +509,17 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
         const qualifyingInstruction = `
 NATURAL CONVERSATIONAL QUALIFICATION & INVENTORY VALUE PITCH:
 During the call, your objective is strictly to:
-1. Explain to the lead: "Main aapki requirement note kar ${isFemale ? 'rahi hoon' : 'raha hoon'} taaki aapke exact budget aur preference ke hisaab se tailored inventory list aur brochure directly aapke WhatsApp par share kar sakoon."
-2. Collect answers to the following qualification questions naturally:
+1. Note the lead's requirement so our sales team can curate the exact property options matching their preference.
+2. Collect answers to the following qualification questions conversationally:
 ${formattedQuestionsList}
-3. Assist the lead in scheduling / booking an appointment or site visit slot.
-4. Answer any questions the lead has about our company, projects, and active property inventory.
+3. Answer any questions the lead has about our company, projects, and active property inventory.
+4. Assist the lead in scheduling / booking an in-person site visit or meeting slot.
 
 Guidelines:
 - DO NOT read questions mechanically like a survey. Ask them conversationally and naturally.
-- Explain that answering these questions helps us send them the exact tailored inventory options on WhatsApp.
 - Politely clarify any missing qualification details in friendly conversational Hinglish.
 - If an answer is already known in 'Attributed Details' or 'CRM Notes', do not re-ask.
+- ABSOLUTE PROHIBITION: NEVER mention WhatsApp or offer to share anything on WhatsApp. Focus on direct consultation and scheduling a physical site visit.
 `.trim()
 
         const effectiveGreeting = `Hi ${firstName}, kaise hain aap?`

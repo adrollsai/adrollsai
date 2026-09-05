@@ -33,11 +33,13 @@ import {
   Lock,
   ChevronLeft,
   ChevronRight,
-  Info
+  Info,
+  Eye
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import { type VobizAvailableNumber } from '@/utils/vobiz-catalog'
+import CreateAudienceGroupModal from '@/components/CreateAudienceGroupModal'
 
 interface VoiceAgentSettingsProps {
   userId: string
@@ -130,6 +132,12 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
 
   const [metaCampaignSearchQuery, setMetaCampaignSearchQuery] = useState('')
   const [csvAudienceSearchQuery, setCsvAudienceSearchQuery] = useState('')
+  const [showCreateAudienceGroupModal, setShowCreateAudienceGroupModal] = useState(false)
+
+  const [showLeadPreviewModal, setShowLeadPreviewModal] = useState(false)
+  const [leadPreviewSearch, setLeadPreviewSearch] = useState('')
+  const [modalDisplayLimit, setModalDisplayLimit] = useState(60)
+  const [previewDisplayLimit, setPreviewDisplayLimit] = useState(60)
 
   const [campaignForm, setCampaignForm] = useState({
     name: '',
@@ -138,7 +146,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     facebookCampaign: '',
     customPrompt: '',
     voiceName: 'Aoede',
-    greeting: ''
+    greeting: '',
+    qualifyingQuestionsText: '1. What is your preferred budget range for the commercial property?\n2. Are you looking for self-use / business or for rental returns / investment?\n3. What is your expected timeframe to visit the site in Aerocity Mohali?'
   })
 
   const [subscriptionStatus, setSubscriptionStatus] = useState('')
@@ -228,7 +237,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     fetchLazyNumbers(catalogPage + 1, true)
   }
 
-  const fetchCampaignsAndFilters = async () => {
+  const fetchCampaignsAndFilters = async (fullRefresh = true) => {
     if (!userId) return
     try {
       const urlParams = new URLSearchParams(window.location.search)
@@ -238,6 +247,19 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       if (campsData.success && campsData.campaigns) {
         setCampaigns(campsData.campaigns)
       }
+
+      // Check active dialing lead in real-time
+      const { data: activeCallLeads } = await supabase
+        .from('leads')
+        .select('id, name, phone, voice_campaign_id')
+        .eq('user_id', userId)
+        .eq('voice_call_status', 'calling')
+        .limit(1)
+
+      setActiveCallLead(activeCallLeads && activeCallLeads.length > 0 ? activeCallLeads[0] : null)
+
+      // Only perform heavy Meta API & paginated leads fetch on initial load or explicit refresh
+      if (!fullRefresh) return
 
       let metaApiCampaignItems: string[] = []
       try {
@@ -252,49 +274,65 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
         console.error("[META API CAMPAIGNS FETCH ERROR]", err)
       }
 
-      const { data: leads, error: leadsErr } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('user_id', userId)
+      // Paginated lightweight leads query (fetches all leads without getting capped by Supabase 1000 limit)
+      let allFetchedLeads: any[] = []
+      let page = 0
+      const pageSize = 1000
+      while (true) {
+        const { data: batch, error: batchErr } = await supabase
+          .from('leads')
+          .select('id, name, phone, source, campaign_id, ad_name, pipeline_stage, csv_audience, voice_campaign_id, voice_call_status, voice_call_summary, created_at, custom_fields')
+          .eq('user_id', userId)
+          .range(page * pageSize, (page + 1) * pageSize - 1)
 
-      if (!leadsErr && leads) {
-        setAllLeads(leads)
-        const uniqueSources = Array.from(new Set(leads.map(l => l.source).filter(Boolean))) as string[]
-        const defaultSources = ['Facebook', 'Manual', 'CSV Import', '99acres', 'Housing.com']
-        const allSources = Array.from(new Set([...defaultSources, ...uniqueSources]))
-
-        const uniqueStages = Array.from(new Set(leads.map(l => l.pipeline_stage).filter(Boolean))) as string[]
-        const defaultStages = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
-        const allStages = Array.from(new Set([...defaultStages, ...uniqueStages]))
-
-        const fbCampaignsFromLeads = Array.from(new Set(
-          leads
-            .filter(l => l.source?.toLowerCase()?.includes('facebook'))
-            .map(l => l.campaign_id ? `${l.campaign_id}|${l.ad_name || l.campaign_name || l.campaign_id}` : (l.ad_name || l.campaign_name))
-            .filter(Boolean)
-        )) as string[]
-
-        const fbCampaigns = Array.from(new Set([...metaApiCampaignItems, ...fbCampaignsFromLeads]))
-        const csvAuds = Array.from(new Set(leads.map(l => l.csv_audience).filter(Boolean))) as string[]
-
-        setSources(allSources)
-        setPipelineStages(allStages)
-        setMetaCampaigns(fbCampaigns)
-        setCsvAudiences(csvAuds)
+        if (batchErr || !batch || batch.length === 0) break
+        allFetchedLeads = allFetchedLeads.concat(batch)
+        if (batch.length < pageSize) break
+        page++
       }
 
-      const { data: activeCallLeads } = await supabase
-        .from('leads')
-        .select('id, name, phone, voice_campaign_id')
-        .eq('user_id', userId)
-        .eq('voice_call_status', 'calling')
-        .limit(1)
+      setAllLeads(allFetchedLeads)
 
-      if (activeCallLeads && activeCallLeads.length > 0) {
-        setActiveCallLead(activeCallLeads[0])
-      } else {
-        setActiveCallLead(null)
-      }
+      const uniqueSources = Array.from(new Set(allFetchedLeads.map(l => l.source).filter(Boolean))) as string[]
+      const defaultSources = ['Facebook', 'Manual', 'CSV Import', '99acres', 'Housing.com']
+      const allSources = Array.from(new Set([...defaultSources, ...uniqueSources]))
+
+      const uniqueStages = Array.from(new Set(allFetchedLeads.map(l => l.pipeline_stage).filter(Boolean))) as string[]
+      const defaultStages = ['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified']
+      const allStages = Array.from(new Set([...defaultStages, ...uniqueStages]))
+
+      const fbCampaignsFromLeads = Array.from(new Set(
+        allFetchedLeads
+          .filter(l => l.source?.toLowerCase()?.includes('facebook'))
+          .map(l => l.campaign_id ? `${l.campaign_id}|${l.ad_name || l.campaign_id}` : l.ad_name)
+          .filter(Boolean)
+      )) as string[]
+
+      const fbCampaigns = Array.from(new Set([...metaApiCampaignItems, ...fbCampaignsFromLeads]))
+      
+      const csvAudsSet = new Set<string>()
+      allFetchedLeads.forEach(l => {
+        if (l.csv_audience) {
+          l.csv_audience.split(',').map((s: string) => s.trim()).filter(Boolean).forEach((s: string) => csvAudsSet.add(s))
+        }
+        if (l.custom_fields) {
+          let cf = l.custom_fields
+          if (typeof cf === 'string') {
+            try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+          }
+          if (Array.isArray(cf?.audience_groups)) {
+            cf.audience_groups.forEach((g: any) => {
+              if (g && typeof g === 'string' && g.trim()) csvAudsSet.add(g.trim())
+            })
+          }
+        }
+      })
+      const csvAuds = Array.from(csvAudsSet).sort()
+
+      setSources(allSources)
+      setPipelineStages(allStages)
+      setMetaCampaigns(fbCampaigns)
+      setCsvAudiences(csvAuds)
     } catch (err) {
       console.error('[CAMPAIGN DETAILS FETCH]', err)
     }
@@ -559,9 +597,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   useEffect(() => {
     let interval: any = null
     if (userId && activeTab === 'campaigns') {
-      fetchCampaignsAndFilters()
+      fetchCampaignsAndFilters(true) // Full initial data fetch
       interval = setInterval(() => {
-        fetchCampaignsAndFilters()
+        fetchCampaignsAndFilters(false) // Lightweight 4s live stats polling only
       }, 4000)
     }
     return () => {
@@ -578,6 +616,114 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     if (!csvAudienceSearchQuery.trim()) return csvAudiences
     return csvAudiences.filter(a => a.toLowerCase().includes(csvAudienceSearchQuery.toLowerCase()))
   }, [csvAudiences, csvAudienceSearchQuery])
+
+  const matchedAudienceLeads = useMemo(() => {
+    if (!allLeads || allLeads.length === 0) return []
+
+    const filtered = allLeads.filter(lead => {
+      if (targetAudienceType === 'all') return true
+
+      // 1. Pipeline stages
+      if (selectedStages.length > 0) {
+        if (!selectedStages.includes(lead.pipeline_stage || 'New')) {
+          return false
+        }
+      }
+
+      // 2. Sources, meta campaigns, csv audiences
+      const hasSources = selectedSources.length > 0
+      const hasMeta = selectedMetaCampaigns.length > 0
+      const hasCsv = selectedCsvAudiences.length > 0
+
+      if (hasSources || hasMeta || hasCsv) {
+        let match = false
+        if (hasSources && lead.source && selectedSources.includes(lead.source)) {
+          match = true
+        }
+        if (hasMeta) {
+          for (const targetMeta of selectedMetaCampaigns) {
+            if (!targetMeta) continue
+            const targetId = targetMeta.includes('|') ? targetMeta.split('|')[0].trim() : targetMeta.trim()
+            const targetName = targetMeta.includes('|') ? targetMeta.split('|')[1].trim() : targetMeta.trim()
+
+            if (lead.campaign_id && (lead.campaign_id === targetId || lead.campaign_id === targetMeta)) {
+              match = true
+              break
+            }
+            if (lead.ad_name) {
+              const leadAdLower = lead.ad_name.toLowerCase()
+              const targetLower = targetName.toLowerCase()
+              if (leadAdLower === targetLower || leadAdLower.includes(targetLower) || targetLower.includes(leadAdLower)) {
+                match = true
+                break
+              }
+            }
+            if (lead.custom_fields) {
+              const cfStr = typeof lead.custom_fields === 'string' ? lead.custom_fields : JSON.stringify(lead.custom_fields)
+              if (
+                cfStr.includes(`"campaign_id":"${targetId}"`) ||
+                cfStr.includes(`"campaign_id": "${targetId}"`) ||
+                cfStr.includes(targetId) ||
+                (targetName && cfStr.toLowerCase().includes(targetName.toLowerCase()))
+              ) {
+                match = true
+                break
+              }
+            }
+          }
+        }
+        if (hasCsv) {
+          for (const aud of selectedCsvAudiences) {
+            if (!aud) continue
+            if (lead.csv_audience) {
+              if (lead.csv_audience === aud || lead.csv_audience.split(',').map((s: string) => s.trim()).includes(aud)) {
+                match = true
+                break
+              }
+            }
+            if (lead.custom_fields) {
+              let cf = lead.custom_fields
+              if (typeof cf === 'string') {
+                try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+              }
+              if (Array.isArray(cf?.audience_groups) && cf.audience_groups.includes(aud)) {
+                match = true
+                break
+              }
+            }
+          }
+        }
+        if (!match) return false
+      }
+
+      return true
+    })
+
+    // Deduplicate leads by normalized 10-digit phone number (exact match to backend /api/voice/campaign/start)
+    const uniqueMap = new Map<string, any>()
+    for (const lead of filtered) {
+      if (!lead.phone) continue
+      const normPhone = lead.phone.replace(/\D/g, '').slice(-10)
+      if (!normPhone || normPhone.length < 10 || /^0+$/.test(normPhone)) continue
+      if (!uniqueMap.has(normPhone)) {
+        uniqueMap.set(normPhone, lead)
+      }
+    }
+
+    return Array.from(uniqueMap.values())
+  }, [allLeads, targetAudienceType, selectedSources, selectedMetaCampaigns, selectedCsvAudiences, selectedStages])
+
+  const filteredPreviewLeads = useMemo(() => {
+    if (!leadPreviewSearch.trim()) return matchedAudienceLeads
+    const q = leadPreviewSearch.toLowerCase()
+    return matchedAudienceLeads.filter(l => 
+      (l.name && l.name.toLowerCase().includes(q)) ||
+      (l.phone && l.phone.includes(q)) ||
+      (l.source && l.source.toLowerCase().includes(q)) ||
+      (l.pipeline_stage && l.pipeline_stage.toLowerCase().includes(q)) ||
+      (l.ad_name && l.ad_name.toLowerCase().includes(q))
+    )
+  }, [matchedAudienceLeads, leadPreviewSearch])
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1466,11 +1612,19 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
             <form onSubmit={async (e) => {
               e.preventDefault()
               if (!campaignForm.name.trim()) return toast.error("Please enter a campaign name")
+              if (matchedAudienceLeads.length === 0) {
+                return toast.error("No valid reachable leads found with the selected filters. Please adjust your audience selection.")
+              }
               
               setSaving(true)
               try {
                 const urlParams = new URLSearchParams(window.location.search)
                 const impersonateId = urlParams.get('impersonate')
+                const parsedQuestions = (campaignForm.qualifyingQuestionsText || '')
+                  .split('\n')
+                  .map(q => q.replace(/^\d+[\.\)]\s*/, '').trim())
+                  .filter(Boolean)
+
                 const res = await fetch(`/api/voice/campaign${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -1482,7 +1636,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                       csv_audiences: targetAudienceType === 'all' ? [] : selectedCsvAudiences,
                       pipeline_stages: targetAudienceType === 'all' ? [] : selectedStages,
                       voice_name: campaignForm.voiceName,
-                      greeting: campaignForm.greeting.trim() || null
+                      greeting: campaignForm.greeting.trim() || null,
+                      qualifying_questions: parsedQuestions
                     },
                     custom_prompt: campaignForm.customPrompt
                   })
@@ -1491,8 +1646,17 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
 
                 if (!resData.success) throw new Error(resData.error || "Failed to create campaign")
 
-                toast.success("Campaign created as draft!")
-                setCampaignForm({ name: '', filterType: 'all', filterValue: '', facebookCampaign: '', customPrompt: '', voiceName: 'Aoede', greeting: '' })
+                toast.success(`Campaign created as draft with ${matchedAudienceLeads.length} leads ready to dial!`)
+                setCampaignForm({ 
+                  name: '', 
+                  filterType: 'all', 
+                  filterValue: '', 
+                  facebookCampaign: '', 
+                  customPrompt: '', 
+                  voiceName: 'Aoede', 
+                  greeting: '',
+                  qualifyingQuestionsText: '1. What is your preferred budget range for the commercial property?\n2. Are you looking for self-use / business or for rental returns / investment?\n3. What is your expected timeframe to visit the site in Aerocity Mohali?'
+                })
                 setSelectedSources([])
                 setSelectedMetaCampaigns([])
                 setSelectedCsvAudiences([])
@@ -1602,47 +1766,72 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                     </div>
                   )}
 
-                  {/* CSV Audiences Checkboxes (if any exist) */}
-                  {csvAudiences.length > 0 && (
-                    <div className="space-y-1.5 animate-in fade-in duration-200">
-                      <label className="text-[10px] font-black text-slate-500 uppercase block ml-1 flex items-center justify-between">
-                        <span>3. CSV Uploaded Audiences</span>
-                        <span className="text-[8px] text-slate-400 font-bold lowercase">Found: {filteredCsvAudiences.length} / {csvAudiences.length}</span>
-                      </label>
-                      <input 
-                        type="text" 
-                        placeholder="Search CSV Audiences..." 
-                        value={csvAudienceSearchQuery} 
-                        onChange={(e) => setCsvAudienceSearchQuery(e.target.value)} 
-                        className="w-full bg-white border border-slate-200/80 py-1.5 px-3 rounded-xl text-[11px] font-semibold outline-none focus:border-indigo-400 transition-all shadow-xs"
-                      />
-                      <div className="grid grid-cols-1 gap-2 bg-white p-3 rounded-xl border border-slate-200/60 max-h-28 overflow-y-auto">
-                        {filteredCsvAudiences.map(aud => {
-                          const isChecked = selectedCsvAudiences.includes(aud)
-                          return (
-                            <label key={aud} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none font-sans truncate" title={aud}>
-                              <input 
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => {
-                                  if (isChecked) {
-                                    setSelectedCsvAudiences(selectedCsvAudiences.filter(a => a !== aud))
-                                  } else {
-                                    setSelectedCsvAudiences([...selectedCsvAudiences, aud])
-                                  }
-                                }}
-                                className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
-                              />
-                              <span className="truncate">{aud}</span>
-                            </label>
-                          )
-                        })}
-                        {filteredCsvAudiences.length === 0 && (
-                          <div className="text-[10px] text-slate-400 font-semibold italic text-center py-2">No audiences found</div>
+                  {/* CSV & Custom Number Audience Groups */}
+                  <div className="space-y-1.5 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between ml-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1.5">
+                        <span>3. CSV & Number Audience Groups</span>
+                        {csvAudiences.length > 0 && (
+                          <span className="text-[8px] text-slate-400 font-bold lowercase">({filteredCsvAudiences.length} / {csvAudiences.length})</span>
                         )}
-                      </div>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateAudienceGroupModal(true)}
+                        className="text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Users size={11} /> + Create / Upload Group
+                      </button>
                     </div>
-                  )}
+
+                    {csvAudiences.length > 0 ? (
+                      <>
+                        <input 
+                          type="text" 
+                          placeholder="Search Audience Groups..." 
+                          value={csvAudienceSearchQuery} 
+                          onChange={(e) => setCsvAudienceSearchQuery(e.target.value)} 
+                          className="w-full bg-white border border-slate-200/80 py-1.5 px-3 rounded-xl text-[11px] font-semibold outline-none focus:border-indigo-400 transition-all shadow-xs"
+                        />
+                        <div className="grid grid-cols-1 gap-2 bg-white p-3 rounded-xl border border-slate-200/60 max-h-28 overflow-y-auto">
+                          {filteredCsvAudiences.map(aud => {
+                            const isChecked = selectedCsvAudiences.includes(aud)
+                            return (
+                              <label key={aud} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none font-sans truncate" title={aud}>
+                                <input 
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    if (isChecked) {
+                                      setSelectedCsvAudiences(selectedCsvAudiences.filter(a => a !== aud))
+                                    } else {
+                                      setSelectedCsvAudiences([...selectedCsvAudiences, aud])
+                                    }
+                                  }}
+                                  className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                                />
+                                <span className="truncate">{aud}</span>
+                              </label>
+                            )
+                          })}
+                          {filteredCsvAudiences.length === 0 && (
+                            <div className="text-[10px] text-slate-400 font-semibold italic text-center py-2">No audiences found</div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="bg-white p-3 rounded-xl border border-dashed border-slate-200 text-center py-3">
+                        <p className="text-[11px] text-slate-500 font-medium mb-1.5">No custom groups created yet</p>
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateAudienceGroupModal(true)}
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                        >
+                          <Users size={12} /> + Create Group from Numbers / File
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Pipeline Stages Checkboxes */}
                   <div className="space-y-1.5">
@@ -1672,6 +1861,34 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                   </div>
                 </div>
               )}
+
+              {/* Live Target Audience Summary & Preview Button */}
+              <div className="bg-gradient-to-r from-indigo-50/90 to-indigo-50/50 border border-indigo-100 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-xs shrink-0">
+                    {matchedAudienceLeads.length}
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                      <span>{matchedAudienceLeads.length} Matching Leads</span>
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.2 rounded-full border border-emerald-100">Ready</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-medium">
+                      Unique verified phone numbers that will be called in this campaign
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => { setPreviewDisplayLimit(60); setShowLeadPreviewModal(true); }}
+                  disabled={matchedAudienceLeads.length === 0}
+                  className="px-3 py-2 bg-white hover:bg-slate-50 border border-indigo-200/80 text-indigo-700 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Eye size={13} />
+                  <span>Preview Leads</span>
+                </button>
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -1711,6 +1928,27 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                     className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none focus:border-indigo-400 transition-all"
                   />
                 </div>
+              </div>
+
+              {/* Lead Qualification Questions */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase block ml-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1 text-slate-700 font-bold">
+                    <Sparkles size={11} className="text-amber-500" />
+                    Lead Qualification Questions
+                  </span>
+                  <span className="text-[8px] text-indigo-600 font-bold lowercase">Asked by AI & Saved to CRM</span>
+                </label>
+                <textarea 
+                  value={campaignForm.qualifyingQuestionsText}
+                  onChange={(e) => setCampaignForm({ ...campaignForm, qualifyingQuestionsText: e.target.value })}
+                  placeholder={"1. What is your preferred budget range for the commercial property?\n2. Are you looking for self-use / business or for rental returns / investment?\n3. What is your expected timeframe to visit the site in Aerocity Mohali?"}
+                  rows={3}
+                  className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-3.5 rounded-xl text-xs font-medium outline-none focus:border-indigo-400 transition-all resize-none leading-relaxed"
+                />
+                <p className="text-[10px] text-slate-400 ml-1 leading-normal">
+                  One question per line. The AI Voice Agent will organically ask these questions during the call and log responses in the lead's CRM record.
+                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -1956,10 +2194,32 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                             💬 Greeting: "{filter.greeting}"
                           </span>
                         )}
+                        {Array.isArray(filter.qualifying_questions) && filter.qualifying_questions.length > 0 && (
+                          <span className="bg-amber-50 text-amber-700 px-2.5 py-1 rounded-md uppercase border border-amber-200/60 flex items-center gap-1" title={filter.qualifying_questions.join('\n')}>
+                            🎯 {filter.qualifying_questions.length} Qualification Questions
+                          </span>
+                        )}
                         <span className="text-slate-400 px-1 py-1 font-semibold">
                           Created: {new Date(c.created_at).toLocaleDateString()}
                         </span>
                       </div>
+
+                      {Array.isArray(filter.qualifying_questions) && filter.qualifying_questions.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                            <Sparkles size={10} className="text-amber-500" />
+                            Active Qualification Questions:
+                          </span>
+                          <div className="bg-amber-50/70 border border-amber-200/60 p-3 rounded-xl text-[11px] text-amber-950 font-medium space-y-1">
+                            {filter.qualifying_questions.map((q: string, idx: number) => (
+                              <div key={idx} className="flex items-start gap-1.5">
+                                <span className="font-bold text-amber-600">{idx + 1}.</span>
+                                <span>{q}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {c.custom_prompt && (
                         <div className="space-y-1">
@@ -2007,7 +2267,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                           <div className="pt-2">
                             <button
                               type="button"
-                              onClick={() => setSelectedCampaignForModal(c)}
+                              onClick={() => { setModalDisplayLimit(60); setSelectedCampaignForModal(c); }}
                               className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200/80 rounded-xl text-xs font-black transition-all shadow-xs active:scale-95 cursor-pointer"
                             >
                               <Users size={14} />
@@ -2224,61 +2484,75 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                         No unique leads currently tagged for this campaign.
                       </div>
                     ) : (
-                      modalLeads.map((lead) => {
-                        const impersonateId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('impersonate') : null
-                        const crmUrl = `/dashboard/crm/${lead.id}${impersonateId ? `?impersonate=${impersonateId}` : ''}`
-                        
-                        let statusBadgeClass = 'bg-slate-100 text-slate-600 border-slate-200'
-                        let statusText = lead.voice_call_status || 'not_called'
-                        
-                        if (lead.voice_call_status === 'completed') {
-                          statusBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          statusText = '✅ Spoke / Completed'
-                        } else if (['failed', 'failed_max_retries'].includes(lead.voice_call_status)) {
-                          statusBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200'
-                          statusText = '❌ Unreachable / Failed'
-                        } else if (lead.voice_call_status === 'calling') {
-                          statusBadgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse'
-                          statusText = '📞 Dialing Now'
-                        } else if (lead.voice_call_status === 'scheduled_retry') {
-                          statusBadgeClass = 'bg-purple-50 text-purple-700 border-purple-200'
-                          statusText = '🔄 Voicemail - Retry Scheduled'
-                        } else if (lead.voice_call_status === 'scheduled_callback') {
-                          statusBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200'
-                          statusText = '🕒 Callback Scheduled'
-                        }
+                      <>
+                        {modalLeads.slice(0, modalDisplayLimit).map((lead) => {
+                          const impersonateId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('impersonate') : null
+                          const crmUrl = `/dashboard/crm/${lead.id}${impersonateId ? `?impersonate=${impersonateId}` : ''}`
+                          
+                          let statusBadgeClass = 'bg-slate-100 text-slate-600 border-slate-200'
+                          let statusText = lead.voice_call_status || 'not_called'
+                          
+                          if (lead.voice_call_status === 'completed') {
+                            statusBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            statusText = '✅ Spoke / Completed'
+                          } else if (['failed', 'failed_max_retries'].includes(lead.voice_call_status)) {
+                            statusBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200'
+                            statusText = '❌ Unreachable / Failed'
+                          } else if (lead.voice_call_status === 'calling') {
+                            statusBadgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse'
+                            statusText = '📞 Dialing Now'
+                          } else if (lead.voice_call_status === 'scheduled_retry') {
+                            statusBadgeClass = 'bg-purple-50 text-purple-700 border-purple-200'
+                            statusText = '🔄 Voicemail - Retry Scheduled'
+                          } else if (lead.voice_call_status === 'scheduled_callback') {
+                            statusBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200'
+                            statusText = '🕒 Callback Scheduled'
+                          }
 
-                        return (
-                          <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-slate-300 transition-all">
-                            <div className="space-y-1.5 flex-1 pr-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-extrabold text-sm text-slate-900">{lead.name || 'Unnamed Lead'}</span>
-                                <span className="text-xs font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200/60">{lead.phone}</span>
-                                <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border ${statusBadgeClass}`}>
-                                  {statusText}
-                                </span>
+                          return (
+                            <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-slate-300 transition-all">
+                              <div className="space-y-1.5 flex-1 pr-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-extrabold text-sm text-slate-900">{lead.name || 'Unnamed Lead'}</span>
+                                  <span className="text-xs font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200/60">{lead.phone}</span>
+                                  <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border ${statusBadgeClass}`}>
+                                    {statusText}
+                                  </span>
+                                </div>
+                                {lead.voice_call_summary ? (
+                                  <p className="text-xs text-slate-600 line-clamp-2 bg-white p-2.5 rounded-xl border border-slate-200/60 italic font-medium leading-relaxed">
+                                    "{lead.voice_call_summary}"
+                                  </p>
+                                ) : (
+                                  <p className="text-[11px] text-slate-400 italic">No call conversation recorded yet.</p>
+                                )}
                               </div>
-                              {lead.voice_call_summary ? (
-                                <p className="text-xs text-slate-600 line-clamp-2 bg-white p-2.5 rounded-xl border border-slate-200/60 italic font-medium leading-relaxed">
-                                  "{lead.voice_call_summary}"
-                                </p>
-                              ) : (
-                                <p className="text-[11px] text-slate-400 italic">No call conversation recorded yet.</p>
-                              )}
-                            </div>
 
-                            <a
-                              href={crmUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs shrink-0 active:scale-95 cursor-pointer"
+                              <a
+                                href={crmUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs shrink-0 active:scale-95 cursor-pointer"
+                              >
+                                <span>Open Lead CRM Page</span>
+                                <ExternalLink size={13} className="text-slate-500" />
+                              </a>
+                            </div>
+                          )
+                        })}
+
+                        {modalLeads.length > modalDisplayLimit && (
+                          <div className="pt-2 text-center pb-2">
+                            <button
+                              type="button"
+                              onClick={() => setModalDisplayLimit(prev => prev + 100)}
+                              className="px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl transition-all cursor-pointer shadow-2xs"
                             >
-                              <span>Open Lead CRM Page</span>
-                              <ExternalLink size={13} className="text-slate-500" />
-                            </a>
+                              Load More Leads ({modalLeads.length - modalDisplayLimit} remaining)
+                            </button>
                           </div>
-                        )
-                      })
+                        )}
+                      </>
                     )}
                   </div>
                 </>
@@ -2287,6 +2561,127 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
           </div>
         </div>
       )}
+      {/* Pre-Campaign Lead Preview Modal Overlay */}
+      {showLeadPreviewModal && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 pb-28 sm:pb-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden font-sans">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl">
+                  <Eye size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    Target Audience Preview ({matchedAudienceLeads.length} Leads)
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Reviewing leads that match your selected filters before creating the campaign
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowLeadPreviewModal(false)}
+                className="p-1.5 hover:bg-slate-200/60 rounded-full text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3.5 border-b border-slate-100 bg-white">
+              <div className="relative">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={leadPreviewSearch}
+                  onChange={(e) => setLeadPreviewSearch(e.target.value)}
+                  placeholder="Search leads by name, phone, stage, or ad name..."
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-indigo-400 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {filteredPreviewLeads.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 text-xs font-semibold">
+                  No leads found matching your search.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {filteredPreviewLeads.slice(0, previewDisplayLimit).map((lead, idx) => (
+                    <div key={lead.id || idx} className="py-2.5 px-3 flex items-center justify-between hover:bg-slate-50 rounded-xl transition-all">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0">
+                          {lead.name ? lead.name[0].toUpperCase() : 'L'}
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                            <span>{lead.name || 'Unnamed Lead'}</span>
+                            <span className="font-mono text-[11px] text-slate-500 font-normal">
+                              {lead.phone}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 font-medium flex-wrap">
+                            {lead.source && <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-semibold">{lead.source}</span>}
+                            {(lead.ad_name || lead.campaign_name) && (
+                              <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded truncate max-w-[220px]">
+                                {lead.ad_name || lead.campaign_name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 uppercase border border-slate-200">
+                          {lead.pipeline_stage || 'New'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {filteredPreviewLeads.length > previewDisplayLimit && (
+                    <div className="pt-3 text-center pb-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDisplayLimit(prev => prev + 100)}
+                        className="px-5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl transition-all cursor-pointer shadow-2xs"
+                      >
+                        Load More Leads ({filteredPreviewLeads.length - previewDisplayLimit} remaining)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">
+                Showing {filteredPreviewLeads.length} of {matchedAudienceLeads.length} leads
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowLeadPreviewModal(false)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Audience Group Modal */}
+      <CreateAudienceGroupModal
+        isOpen={showCreateAudienceGroupModal}
+        onClose={() => setShowCreateAudienceGroupModal(false)}
+        allLeads={allLeads}
+        onSuccess={(newGroupName) => {
+          fetchCampaignsAndFilters(true)
+          setTargetAudienceType('custom')
+          setSelectedCsvAudiences(prev => Array.from(new Set([...prev, newGroupName])))
+        }}
+      />
     </div>
   )
 }

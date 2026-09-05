@@ -19,9 +19,9 @@ interface CsvImportModalProps {
   onSuccess: () => Promise<void>
 }
 
-export function sanitizePhoneNumber(raw: string): string | null {
+export function sanitizePhoneNumber(raw: any): string | null {
   if (!raw) return null
-  let clean = raw.trim()
+  let clean = String(raw).trim()
   // Strip prefixes like "p:", "p:+", "tel:", "tel:+"
   clean = clean.replace(/^(p:|tel:)/i, '').trim()
   const hasPlus = clean.startsWith('+')
@@ -245,16 +245,20 @@ export default function CsvImportModal({
 
       // Deduplicate against existing CRM leads and within the import batch
       const existingPhoneSet = new Set<string>()
-      existingLeads.forEach(l => {
-        const d = (l.phone || '').replace(/\D/g, '').slice(-10)
-        if (d.length >= 7) existingPhoneSet.add(d)
-      })
+      if (Array.isArray(existingLeads)) {
+        existingLeads.forEach(l => {
+          const rawP = l?.phone ? String(l.phone) : ''
+          const d = rawP.replace(/\D/g, '').slice(-10)
+          if (d.length >= 7) existingPhoneSet.add(d)
+        })
+      }
 
       const uniqueLeads: any[] = []
       const seenInBatch = new Set<string>()
 
       for (const lead of parsedLeads) {
-        const d = (lead.phone || '').replace(/\D/g, '').slice(-10)
+        const rawP = lead?.phone ? String(lead.phone) : ''
+        const d = rawP.replace(/\D/g, '').slice(-10)
         if (d && d.length >= 7) {
           if (!existingPhoneSet.has(d) && !seenInBatch.has(d)) {
             seenInBatch.add(d)
@@ -287,11 +291,18 @@ export default function CsvImportModal({
       const skippedCount = parsedLeads.length - uniqueLeads.length
       toast.success(`🎉 Successfully imported ${uniqueLeads.length} leads under "${finalAudienceName}"!${skippedCount > 0 ? ` (${skippedCount} existing duplicates skipped)` : ''}`)
       
-      await onSuccess()
+      try {
+        if (onSuccess) {
+          await onSuccess()
+        }
+      } catch (refreshErr) {
+        console.warn('[CSV IMPORT] Background data refresh after import:', refreshErr)
+      }
+
       onClose()
     } catch (err: any) {
       console.error('[CSV IMPORT] Import failed:', err)
-      toast.error(err.message || 'Failed to import CSV leads')
+      toast.error(err?.message || 'Failed to import CSV leads')
     } finally {
       setIsImporting(false)
     }

@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, History, Clock, User, Phone, MessageSquare, AlertCircle, RefreshCw, FileText, ExternalLink } from 'lucide-react'
+import { X, History, Clock, User, Phone, MessageSquare, AlertCircle, RefreshCw, FileText, ExternalLink, Package } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
+import { getLeadFollowupCount } from '@/utils/lead-helpers'
 
 interface LeadHistoryModalProps {
   isOpen: boolean
@@ -43,7 +44,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
     if (isOpen && lead?.id) {
       // Check cache for instant display
       const cached = leadHistoryCache.get(lead.id)
-      if (cached && cached.items && cached.items.length > 0) {
+      if (cached && cached.items && cached.items.length > 2 && (Date.now() - cached.timestamp < 30000)) {
         setHistoryItems(cached.items)
         setLoading(false)
         // Background refresh only if cache is older than 20 seconds
@@ -59,13 +60,17 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
   const fetchHistory = async (isBackgroundRefresh = false) => {
     if (!isBackgroundRefresh) setLoading(true)
     try {
-      const { data } = await supabase
+      const { data, error: histErr } = await supabase
         .from('lead_history')
-        .select('id, lead_id, user_id, action_type, description, details, actor_name, created_at')
+        .select('*')
         .eq('lead_id', lead.id)
         .order('created_at', { ascending: false })
         .limit(100)
       
+      if (histErr) {
+        console.error("Failed to query lead_history:", histErr)
+      }
+
       let items: any[] = data ? [...data] : []
 
       // Admin / Agency / Super Admin role retains 100% full history access
@@ -74,6 +79,96 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
       let cf: any = lead.custom_fields
       if (typeof cf === 'string') {
         try { cf = JSON.parse(cf) } catch (e) { cf = null }
+      }
+
+      // Helper to parse date from historical remark text (e.g. "Call Not Picked on 09/08/2026 01:45 pm" or "3/9/2026, 2:30:54 pm")
+      const parseActionDateFromDesc = (text: string, fallback: string) => {
+        if (!text) return fallback
+        const match = text.match(/(?:(?:Call on|Call Not Picked on|Recorded on|Date\s*:|[\-\(])\s*)?([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})(?:[,\s]+([0-9]{1,2}):([0-9]{2})(?::([0-9]{2}))?\s*(am|pm)?)?/i)
+        if (match) {
+          const day = parseInt(match[1], 10)
+          const month = parseInt(match[2], 10) - 1
+          let year = parseInt(match[3], 10)
+          if (year < 100) year += 2000
+          let hour = match[4] ? parseInt(match[4], 10) : 12
+          let min = match[5] ? parseInt(match[5], 10) : 0
+          const ampm = match[7]?.toLowerCase()
+          if (ampm === 'pm' && hour < 12) hour += 12
+          if (ampm === 'am' && hour === 12) hour = 0
+          const d = new Date(Date.UTC(year, month, day, hour - 5, min - 30))
+          if (!isNaN(d.getTime())) return d.toISOString()
+        }
+        return fallback
+      }
+
+      // 1. Ingest all followups & remarks recorded in lead.notes (for imported/historical leads)
+      if (lead.notes && typeof lead.notes === 'string') {
+        // Split by delimiter headers ([📝...], [⚠️...], [🔄...], [Last Remarks], [Opening Remarks], etc.) or horizontal divider lines
+        const rawEntries = lead.notes.trim().split(/(?:---+|\n+(?=\[(?:📝|⚠️|🔄|Last Remarks|Opening Remarks|Followups Taken|Merged|Call|Visit|Transfer|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})))/)
+        for (let i = 0; i < rawEntries.length; i++) {
+          const entry = rawEntries[i].trim()
+          if (!entry || entry.length < 5) continue
+          const lower = entry.toLowerCase()
+
+          if (
+            lower.startsWith('[opening remarks]') ||
+            lower.startsWith('advertisment') ||
+            lower.startsWith('ad name') ||
+            lower.startsWith('[followups taken]') ||
+            lower.startsWith('lead created from')
+          ) {
+            continue
+          }
+
+          let remarkBody = entry
+          if (entry.includes(']:')) {
+            remarkBody = entry.split(']:').slice(1).join(']:').trim()
+          }
+          remarkBody = remarkBody.replace(/^Stage:\s*[^.]+\.\s*/i, '').trim()
+          remarkBody = remarkBody.replace(/^Next action scheduled for[^.]+\.\s*/i, '').trim()
+
+          const searchSnippet = (remarkBody || entry).slice(0, 30).toLowerCase().trim()
+          const dateStr = parseActionDateFromDesc(entry, lead.created_at || new Date().toISOString())
+          const noteTime = new Date(dateStr).getTime()
+
+          const alreadyPresent = items.some(it => {
+            const itDesc = (it.description || '').toLowerCase()
+            if (searchSnippet && searchSnippet.length >= 8 && itDesc.includes(searchSnippet)) return true
+            const itTime = new Date(it.created_at).getTime()
+            if (Math.abs(itTime - noteTime) < 120000) {
+              if (lower.includes('dnp') && (itDesc.includes('dnp') || itDesc.includes('not picked'))) return true
+              if (lower.includes('followup') && itDesc.includes('followup')) return true
+            }
+            return false
+          })
+
+          if (!alreadyPresent) {
+            let actorName = lead.user_name || undefined
+            const byMatch = entry.match(/\bby\s+([A-Za-z0-9\s._-]+?)(?:\:|\]|\.|\s-\s|\n|$)/i)
+            if (byMatch && byMatch[1]) {
+              const rawName = byMatch[1].trim()
+              if (rawName && !rawName.toLowerCase().includes('agent') && !rawName.toLowerCase().includes('system')) {
+                actorName = rawName
+              }
+            }
+
+            let actionType = 'FOLLOWUP'
+            if (lower.includes('call not picked') || lower.includes('dnp')) actionType = 'DNP'
+            else if (lower.includes('visit')) actionType = 'SITE_VISIT'
+            else if (lower.includes('meeting')) actionType = 'MEETING'
+            else if (lower.includes('transferred')) actionType = 'TRANSFER'
+
+            items.push({
+              id: `note_entry_${i}`,
+              lead_id: lead.id,
+              action_type: actionType,
+              description: entry,
+              actor_name: actorName,
+              user_id: lead.assigned_to || lead.user_id,
+              created_at: dateStr
+            })
+          }
+        }
       }
 
       // Collect user_ids not yet in profile cache
@@ -105,30 +200,10 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
         setProfilesMap(new Map(globalProfilesCache))
       }
 
-      // Helper to parse date from historical remark text (e.g. "Call Not Picked on 09/08/2026 01:45 pm")
-      const parseActionDateFromDesc = (text: string, fallback: string) => {
-        if (!text) return fallback
-        const match = text.match(/(?:Call on|Call Not Picked on|Recorded on|Date\s*:)\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})(?:\s+([0-9]{1,2}):([0-9]{2})\s*(am|pm)?)?/i)
-        if (match) {
-          const day = parseInt(match[1], 10)
-          const month = parseInt(match[2], 10) - 1
-          let year = parseInt(match[3], 10)
-          if (year < 100) year += 2000
-          let hour = match[4] ? parseInt(match[4], 10) : 12
-          let min = match[5] ? parseInt(match[5], 10) : 0
-          const ampm = match[6]?.toLowerCase()
-          if (ampm === 'pm' && hour < 12) hour += 12
-          if (ampm === 'am' && hour === 12) hour = 0
-          const d = new Date(Date.UTC(year, month, day, hour - 5, min - 30))
-          if (!isNaN(d.getTime())) return d.toISOString()
-        }
-        return fallback
-      }
-
       const cutoff = cf?.history_visible_from
       const cutoffTime = cutoff ? new Date(cutoff).getTime() : null
 
-      // 1. Ensure imported/existing last remarks are included as distinct timeline cards (only if admin or post-cutoff)
+      // 2. Ensure imported/existing last remarks are included as distinct timeline cards (only if admin or post-cutoff)
       const lastRemark = (cf?.last_followup_remark || cf?.last_remark || '').trim()
       if (lastRemark) {
         const exists = items.some(item => (item.description || '').includes(lastRemark))
@@ -152,7 +227,36 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
         }
       }
 
-      // 2. ALWAYS guarantee the foundational Lead Created / Registration card at the bottom of the timeline
+      // 3. Reconcile total followup count with detailed records (for leads with prior followups from previous CRM/Workveu)
+      const totalRecordedFollowups = getLeadFollowupCount(lead)
+      const detailedFollowupItems = items.filter(it => 
+        it.action_type !== 'LEAD_CREATED' && 
+        it.action_type !== 'LEAD_IMPORT' && 
+        it.action_type !== 'REOPENED' && 
+        it.action_type !== 'ASSIGNED' &&
+        it.id !== 'foundational_lead_created'
+      )
+      const missingPriorCount = totalRecordedFollowups - detailedFollowupItems.length
+
+      if (missingPriorCount > 0) {
+        const leadCreationTime = new Date(lead.created_at || Date.now()).getTime()
+        const priorDate = new Date(leadCreationTime + 60000).toISOString()
+
+        items.push({
+          id: 'prior_crm_followups_summary',
+          lead_id: lead.id,
+          action_type: 'PRIOR_FOLLOWUPS_SUMMARY',
+          description: `📦 ${missingPriorCount} earlier followup${missingPriorCount === 1 ? '' : 's'} were completed in the previous CRM prior to migration.\n\nTotal Followups: ${totalRecordedFollowups}. The previous CRM export retained the aggregate followup count (${totalRecordedFollowups}) along with the opening and latest discussion remarks shown in this timeline.`,
+          details: null,
+          actor_name: 'Previous CRM Import',
+          user_id: lead.assigned_to || lead.user_id,
+          created_at: priorDate,
+          prior_count: missingPriorCount,
+          total_count: totalRecordedFollowups
+        })
+      }
+
+      // 4. ALWAYS guarantee the foundational Lead Created / Registration card at the bottom of the timeline
       const hasCreationEvent = items.some(item => 
         item.action_type === 'LEAD_CREATED' || 
         item.action_type === 'LEAD_IMPORT' || 
@@ -234,6 +338,8 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
     return nameStr.trim().charAt(0).toUpperCase()
   }
 
+  const totalRecordedFollowups = lead ? getLeadFollowupCount(lead) : 0
+
   return (
     <div className="fixed inset-0 z-[999999] flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white border border-slate-200 rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] sm:max-h-[85vh] flex flex-col overflow-hidden">
@@ -248,6 +354,9 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2 flex-wrap">
                 <span>Timeline History for {lead.name || 'Lead'}</span>
                 <LeadScoreBadge lead={lead} size="sm" showDetails />
+                <span className="px-2 py-0.5 text-[11px] font-black rounded-md bg-blue-100 text-blue-800 border border-blue-200 shrink-0 inline-flex items-center gap-1 shadow-xs">
+                  💬 {totalRecordedFollowups} Followup{totalRecordedFollowups === 1 ? '' : 's'}
+                </span>
                 {(() => {
                   let cf = lead.custom_fields
                   if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
@@ -264,8 +373,22 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   return null
                 })()}
               </h3>
-              <p className="text-slate-500 text-xs mt-0.5">
-                {lead.phone || 'No Phone'} • Stage: <span className="font-semibold text-blue-600">{(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'Requirement Taken')}</span>
+              <p className="text-slate-500 text-xs mt-0.5 flex items-center gap-1.5 flex-wrap">
+                <span>{lead.phone || 'No Phone'}</span>
+                <span>•</span>
+                <span>Stage: <strong className="font-semibold text-blue-600">{(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'Requirement Taken')}</strong></span>
+                {(() => {
+                  const rep = (lead.assigned_to && profilesMap.get(lead.assigned_to)) || (lead.user_id && profilesMap.get(lead.user_id)) || lead.user_name
+                  if (rep && rep !== 'Agent') {
+                    return (
+                      <>
+                        <span>•</span>
+                        <span>Rep: <strong className="text-slate-700 font-semibold">{rep}</strong></span>
+                      </>
+                    )
+                  }
+                  return null
+                })()}
               </p>
             </div>
           </div>
@@ -340,12 +463,46 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
           ) : (
             <div className="relative pl-8 border-l-2 border-emerald-500/40 space-y-6 my-4">
               {historyItems.map((item, idx) => {
+                const resolveDisplayActionType = (it: any): string => {
+                  const raw = (it.action_type || it.title || '').trim()
+                  const desc = (it.description || '').toLowerCase()
+
+                  if (raw === 'STATUS_CHANGE') {
+                    if (desc.includes('followup')) return 'FOLLOWUP'
+                    return 'STAGE UPDATE'
+                  }
+                  if (raw === 'REMARK') {
+                    if (desc.includes('call not picked') || desc.includes('dnp')) return 'CALL NOT PICKED (DNP)'
+                    if (desc.includes('followup')) return 'FOLLOWUP'
+                    if (desc.includes('whatsapp')) return 'WHATSAPP'
+                    if (desc.includes('call initiated')) return 'OUTBOUND CALL'
+                    return 'REMARK / FOLLOWUP'
+                  }
+                  if (raw === 'DNP' || raw === 'CALL_NOT_PICKED') return 'CALL NOT PICKED (DNP)'
+                  if (raw === 'TRANSFER') return 'LEAD TRANSFERRED'
+                  if (raw === 'CALL' || raw === 'CALL_FEEDBACK') return 'CALL LOG'
+                  if (raw === 'LEAD_CREATED') return 'LEAD CREATED'
+                  if (raw === 'SITE_VISIT') return 'SITE VISIT'
+                  if (raw === 'MEETING') return 'MEETING'
+                  if (raw === 'FOLLOWUP') return 'FOLLOWUP'
+                  if (raw === 'PRIOR_FOLLOWUPS_SUMMARY') return 'PREVIOUS CRM FOLLOWUPS'
+                  return raw || 'Followup Event'
+                }
+
                 const resolveActorName = (it: any): string => {
-                  if (it.actor_name && it.actor_name !== 'Agent') return it.actor_name;
-                  if (it.performed_by && it.performed_by !== 'Agent') return it.performed_by;
-                  if (it.user_id && profilesMap.has(it.user_id)) return profilesMap.get(it.user_id)!;
+                  if (it.actor_name && it.actor_name !== 'Agent') return it.actor_name
+                  if (it.performed_by && it.performed_by !== 'Agent') return it.performed_by
 
                   const desc = it.description || ''
+                  if (it.action_type === 'REOPENED' || desc.includes('Facebook Ad Submission') || desc.includes('Lead Created from')) {
+                    return 'System / Meta Ad'
+                  }
+                  if (desc.includes('WhatsApp welcome') || desc.includes('Video Welcome') || desc.includes('Instant WhatsApp')) {
+                    return 'Automated System'
+                  }
+
+                  if (it.user_id && profilesMap.has(it.user_id)) return profilesMap.get(it.user_id)!
+
                   const bracketMatch = desc.match(/\[[^\]]+?\bby\s+([^\]]+)\]/i)
                   if (bracketMatch && bracketMatch[1]) {
                     const rawName = bracketMatch[1].trim()
@@ -361,10 +518,6 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                     }
                   }
 
-                  if (it.action_type === 'REOPENED' || desc.includes('Facebook Ad Submission')) {
-                    return 'Meta Ads System'
-                  }
-
                   if (lead.assigned_to && profilesMap.has(lead.assigned_to)) {
                     return profilesMap.get(lead.assigned_to)!
                   }
@@ -376,19 +529,53 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   return lead.user_name || 'Agent'
                 }
 
-                const actorName = resolveActorName(item);
+                const actorName = resolveActorName(item)
                 const urlMatch = item.description?.match(/(https?:\/\/[^\s]+\.(mp3|m4a|wav|aac|ogg|3gp)|https?:\/\/[^\s]+\/call-recordings\/[^\s]+)/i)
-                const recordingUrl = item.metadata?.recording_url || item.recording_url || (urlMatch ? urlMatch[0] : null);
-                const displayActionType = item.action_type === 'STATUS_CHANGE'
-                  ? 'STAGE UPDATE'
-                  : item.action_type === 'FOLLOWUP'
-                  ? 'FOLLOWUP'
-                  : item.action_type || item.title || 'Followup Event';
+                const recordingUrl = item.metadata?.recording_url || item.recording_url || (urlMatch ? urlMatch[0] : null)
+                const displayActionType = resolveDisplayActionType(item)
 
                 const cleanedDescription = (item.description || '')
                   .replace(/Status:\s*Ongoing/g, 'Stage: Requirement Taken')
                   .replace(/Stage:\s*Ongoing/g, 'Stage: Requirement Taken')
-                  .replace(/Lead Status\s*:\s*Ongoing/g, 'Stage: Requirement Taken');
+                  .replace(/Lead Status\s*:\s*Ongoing/g, 'Stage: Requirement Taken')
+
+                if (item.action_type === 'PRIOR_FOLLOWUPS_SUMMARY') {
+                  return (
+                    <div key={item.id || idx} className="relative">
+                      {/* Circle Bullet on Timeline */}
+                      <span className="absolute -left-[39px] top-1 w-3.5 h-3.5 rounded-full border-2 border-indigo-500 bg-white" />
+
+                      {/* Actor Header */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center border border-indigo-300">
+                          <Package size={14} />
+                        </div>
+                        <span className="font-bold text-xs text-indigo-950">Previous CRM Import</span>
+                        <span className="text-xs text-slate-400">{formatDateTime(item.created_at)}</span>
+                      </div>
+
+                      {/* Event Detail Card */}
+                      <div className="bg-indigo-50/70 border border-indigo-200/80 p-4 rounded-2xl space-y-2 text-xs text-slate-700 font-medium leading-relaxed">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <p className="font-extrabold text-sm text-indigo-950 flex items-center gap-2">
+                            <span>📦 Previous CRM Followups Summary</span>
+                          </p>
+                          <span className="px-2.5 py-0.5 text-[11px] font-black rounded-lg bg-indigo-600 text-white shadow-xs">
+                            {item.prior_count || 1} Earlier Followup{(item.prior_count || 1) === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        <div className="p-3 bg-white rounded-xl border border-indigo-100/80 shadow-2xs space-y-1.5 text-slate-700">
+                          <p className="font-bold text-indigo-950">
+                            {item.prior_count} earlier followups were logged in the previous CRM prior to migration.
+                          </p>
+                          <p className="text-slate-500 text-[11px] leading-normal">
+                            This lead was imported with an aggregate count of <strong>{item.total_count} total followups</strong>. The initial lead creation and the latest recorded conversation remarks are detailed below and above.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
 
                 return (
                   <div key={item.id || idx} className="relative">
@@ -509,7 +696,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                         </div>
                       )}
 
-                      {!item.details && !recordingUrl && (
+                      {!item.details && !recordingUrl && !item.description?.includes('Lead Name :') && (
                         <div className="space-y-0.5 pt-1 text-slate-600">
                           <div><strong>Lead Name :</strong> {lead.name || 'N/A'}</div>
                           <div><strong>Contact no :</strong> {lead.phone || 'N/A'}</div>

@@ -20,6 +20,8 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     }
 });
 
+const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
+
 function computeValidCallingSlot(targetDate = new Date(), timeZone = 'Asia/Kolkata') {
     const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone,
@@ -465,10 +467,10 @@ wss.on('connection', (wsConnection, req) => {
         urlObj = new URL(req.url, 'http://localhost');
     } catch (e) {}
 
-    const queryLeadId = urlObj?.searchParams?.get('leadId');
-    const queryProfileId = urlObj?.searchParams?.get('profileId');
-    const queryCampaignId = urlObj?.searchParams?.get('campaignId');
-    const queryTelephony = urlObj?.searchParams?.get('telephony');
+    const queryLeadId = urlObj?.searchParams?.get('leadId') || urlObj?.searchParams?.get('amp;leadId');
+    const queryProfileId = urlObj?.searchParams?.get('profileId') || urlObj?.searchParams?.get('amp;profileId');
+    const queryCampaignId = urlObj?.searchParams?.get('campaignId') || urlObj?.searchParams?.get('amp;campaignId');
+    const queryTelephony = urlObj?.searchParams?.get('telephony') || urlObj?.searchParams?.get('amp;telephony');
 
     let isVobiz = queryTelephony === 'vobiz';
     let vobizStreamId = null;
@@ -486,6 +488,10 @@ wss.on('connection', (wsConnection, req) => {
     let leadId = queryLeadId || null;
     let profileId = queryProfileId || null;
     let profileData = null;
+    let profile = null;
+    let lead = null;
+    let campaign = null;
+    let activeQuestionsList = [];
     let leadPhone = null;
     let leadName = 'there';
 
@@ -655,7 +661,6 @@ wss.on('connection', (wsConnection, req) => {
 
                 let dbPromise;
                 let tempSocket;
-                const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
 
                 const prewarmed = prewarmedPool.get(leadId);
                 if (prewarmed && !prewarmed.used) {
@@ -682,12 +687,8 @@ wss.on('connection', (wsConnection, req) => {
                 }
 
 
-                let profile = null;
-                let lead = null;
                 let props = null;
-                let campaign = null;
                 let resolvedQuestions = [];
-                let activeQuestionsList = [];
 
                 try {
                     const [profileRes, leadRes, propsRes, campaignRes, flaggedRes] = await dbPromise;
@@ -929,23 +930,28 @@ wss.on('connection', (wsConnection, req) => {
 
                         // Check for campaign-specific or active question flows
                         let activeQualifyingQuestions = profile?.qualifying_questions || [];
-                        const targetLeadCampId = lead?.campaign_id || lead?.voice_campaign_id || campaignId;
-                        try {
-                            if (targetLeadCampId) {
-                                const { data: matchedFlow } = await supabaseAdmin
-                                    .from('whatsapp_question_flows')
-                                    .select('questions, name')
-                                    .eq('user_id', effectiveProfileId)
-                                    .eq('linked_campaign_id', targetLeadCampId)
-                                    .maybeSingle();
+                        if (Array.isArray(campaign?.audience_filter?.qualifying_questions) && campaign.audience_filter.qualifying_questions.length > 0) {
+                            activeQualifyingQuestions = campaign.audience_filter.qualifying_questions;
+                            console.log(`[BRIDGE] Using campaign audience_filter qualifying questions (${activeQualifyingQuestions.length}) for lead ${leadId}`);
+                        } else {
+                            const targetLeadCampId = lead?.campaign_id || lead?.voice_campaign_id || campaignId;
+                            try {
+                                if (targetLeadCampId) {
+                                    const { data: matchedFlow } = await supabaseAdmin
+                                        .from('whatsapp_question_flows')
+                                        .select('questions, name')
+                                        .eq('user_id', effectiveProfileId)
+                                        .eq('linked_campaign_id', targetLeadCampId)
+                                        .maybeSingle();
 
-                                if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
-                                    console.log(`[BRIDGE] Using campaign question flow "${matchedFlow.name}" for lead ${leadId}`);
-                                    activeQualifyingQuestions = matchedFlow.questions;
+                                    if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
+                                        console.log(`[BRIDGE] Using campaign question flow "${matchedFlow.name}" for lead ${leadId}`);
+                                        activeQualifyingQuestions = matchedFlow.questions;
+                                    }
                                 }
+                            } catch (fErr) {
+                                console.warn('[BRIDGE] Error fetching campaign flow:', fErr);
                             }
-                        } catch (fErr) {
-                            console.warn('[BRIDGE] Error fetching campaign flow:', fErr);
                         }
 
                         // Determine voice gender from voiceName / profile
@@ -956,8 +962,6 @@ wss.on('connection', (wsConnection, req) => {
                             ? `GENDER IDENTITY (FEMALE): You are a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon", "Main check kar KE BATA DETI hoon", "Call kar RAHI thi"). NEVER use masculine endings like "raha hoon", "sakta hoon", or "karta hoon".`
                             : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHA hoon", "Main aapki help kar SAKTA hoon", "Main check kar KE BATA DETA hoon", "Call kar RAHA tha").`;
 
-                        // Direct context instruction
-                        contextInstruction = `After the lead responds to your greeting, say: "Aapne ${companyName} ka ek ad dekha tha, usi ke regarding call kiya hai." Then naturally ask about their requirement.`;
 
                         let parsedQuestions = [];
                         if (Array.isArray(activeQualifyingQuestions) && activeQualifyingQuestions.length > 0) {
@@ -996,36 +1000,61 @@ wss.on('connection', (wsConnection, req) => {
                         const qualifyingInstruction = `
 NATURAL CONVERSATIONAL QUALIFICATION & INVENTORY VALUE PITCH:
 During the call, your objective is strictly to:
-1. Explain to the lead: "Main aapki requirement note kar ${isFemale ? 'rahi hoon' : 'raha hoon'} taaki aapke exact budget aur preference ke hisaab se tailored inventory list aur brochure directly aapke WhatsApp par share kar sakoon."
-2. Collect answers to the following qualification questions naturally:
+1. Note the lead's requirement so our sales team can curate the exact property options matching their preference.
+2. Collect answers to the following qualification questions conversationally:
 ${formattedQuestionsList}
-3. Assist the lead in scheduling / booking an appointment or site visit slot.
-4. Answer any questions the lead has about our company, projects, and active property inventory.
+3. Answer any questions the lead has about our company, projects, and active commercial property inventory.
+4. Assist the lead in scheduling / booking an in-person site visit or meeting slot.
 
 Guidelines:
 - DO NOT read questions mechanically like a survey. Ask them conversationally and naturally.
-- Explain that answering these questions helps us send them the exact tailored inventory options on WhatsApp.
 - Politely clarify any missing qualification details in friendly conversational Hinglish.
 - If an answer is already known in 'Attributed Details' or 'CRM Notes', do not re-ask.
+- ABSOLUTE PROHIBITION: NEVER mention WhatsApp or offer to send details on WhatsApp. Do NOT offer WhatsApp brochures or links. Focus on phone consultation and in-person site visits.
 `.trim();
 
-                        greetingMessage = `Hi ${firstName}, kaise hain aap?`;
+                        if (campaign?.audience_filter?.greeting) {
+                            let cleanG = campaign.audience_filter.greeting;
+                            if (firstName && firstName !== 'there' && firstName !== 'Adrolls' && firstName !== 'Lead') {
+                                cleanG = cleanG.replace(/{name}/gi, firstName).replace(/{firstName}/gi, firstName);
+                            } else {
+                                cleanG = cleanG.replace(/{name}\s*(ji)?/gi, '').replace(/{firstName}\s*(ji)?/gi, '').replace(/\s+/g, ' ').trim();
+                            }
+                            greetingMessage = cleanG;
+                        } else if (firstName && firstName !== 'there' && firstName !== 'Adrolls' && firstName !== 'Lead') {
+                            greetingMessage = `Hi ${firstName} ji, kaise hain aap?`;
+                        } else {
+                            greetingMessage = `Hi ji, kaise ho aap?`;
+                        }
 
                         const languageDirective = `
-MANDATORY LANGUAGE & GREETING RULES:
+MANDATORY LANGUAGE & CONVERSATIONAL RULES:
 1. You MUST speak in natural, warm, polite Hindi / Hinglish.
 2. Default to Hindi / Hinglish for all responses.
 3. MULTILINGUAL ADAPTATION: If the lead asks to speak in Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, Hindi, English, or any other regional language (e.g. "Telugu lo matladandi", "Can we speak in English?", "Tamil la pesunga"), you MUST IMMEDIATELY adapt and converse fluently in their requested language.
 4. Your ONLY opening greeting is: "${greetingMessage}". Speak this exact greeting clearly and warmly.
+5. STRICT CONVERSATION SEQUENCING & PREREQUISITES:
+   - Turn 1: Speak exact greeting "${greetingMessage}".
+   - Turn 2: Once the lead responds, introduce our commercial ready-to-move properties in Aerocity Mohali (showrooms, retail shops, furnished offices from ₹70L to ₹5-6 Cr+) and ask Question 1: "Aapka tentative budget range kya rahega?"
+   - Turn 3: Once they mention their budget or requirement, ask Question 2: "Aur ye property aap self-use / business setup ke liye dekh rahe hain, ya rental income aur investment returns ke liye?"
+   - Turn 4: ONLY after asking both budget and usage questions, invite them for a site visit in Aerocity Mohali to see available units and floor plans.
+6. STRICT FORBIDDEN SHORTCUTS:
+   - NEVER ask "Kya aap appointment book karna chahte hain?" abruptly at the start or in the first 2 turns!
+   - NEVER offer proposals or ask for a site visit until you have asked the prospect about their budget range and usage/investment purpose!
+   - NEVER mention WhatsApp or ask to send details on WhatsApp.
+7. CALL CONCLUSION & HANGUP:
+   - Whenever you or the prospect conclude the call, say goodbye, or say "Thank you" / "Have a great day" / "Alvida" / "Shukriya", you MUST simultaneously trigger your "end_call" function tool in that same turn.
 `.trim();
 
                         if (campaign && campaign.custom_prompt) {
                             systemInstruction = `
 ${languageDirective}
 ${genderGrammarInstruction}
-${qualifyingInstruction}
 
+=== CAMPAIGN SPECIFIC INSTRUCTIONS & FLOW ===
 ${campaign.custom_prompt}
+
+${qualifyingInstruction}
 
 ${sourceInstructions}
 ${contextInstruction}
@@ -1066,6 +1095,7 @@ CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
 7. APPLE LIVE VOICEMAIL & CALL SCREENING PROTOCOL: If you detect that an automated screening robot is speaking, state your name and wait silently.
 8. VOICEMAIL DETECTION: If you hear an automated machine prompt to leave a message, trigger "end_call" to hang up.
 9. NATURAL BACKCHANNELING: You MUST naturally use short Hinglish backchannels such as "Hmm", "Haan", "Ahaan", "Ji" to acknowledge the lead while listening.
+10. ABSOLUTE PROHIBITION: NEVER mention WhatsApp or offer to send details on WhatsApp. Focus on direct conversation and in-person site visits.
 
 ${sourceInstructions}
 ${resolvedQuestionsInstruction}
@@ -1138,6 +1168,76 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                 };
                 geminiSocket.send(JSON.stringify(setupPayload));
 
+                let isCallHangingUp = false;
+                const triggerCallHangup = async (reason = 'tool_call') => {
+                    if (isCallHangingUp) return;
+                    isCallHangingUp = true;
+                    console.log(`[BRIDGE] Initiating call hangup sequence (reason: ${reason}, isVobiz: ${isVobiz}). Waiting 2.8s for final audio playout...`);
+                    setTimeout(async () => {
+                        try {
+                            if (isVobiz) {
+                                if (wsConnection.readyState === ws.OPEN && vobizStreamId) {
+                                    wsConnection.send(JSON.stringify({
+                                        event: 'stop',
+                                        streamId: vobizStreamId
+                                    }));
+                                }
+                                if (vobizCallId) {
+                                    const vobizAuthId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+                                    const vobizAuthToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+                                    try {
+                                        await fetch(`https://api.vobiz.ai/api/v1/Account/${vobizAuthId}/Call/${vobizCallId}/`, {
+                                            method: 'DELETE',
+                                            headers: {
+                                                'X-Auth-ID': vobizAuthId,
+                                                'X-Auth-Token': vobizAuthToken
+                                            }
+                                        });
+                                        console.log(`[BRIDGE] Vobiz call ${vobizCallId} hung up via REST.`);
+                                    } catch (hErr) {
+                                        console.error('[BRIDGE] Vobiz REST hangup failed:', hErr);
+                                    }
+                                }
+                            } else if (twilioCallSid && profileData) {
+                                const twilioSid = process.env.MASTER_TWILIO_SID;
+                                const twilioToken = process.env.MASTER_TWILIO_TOKEN;
+                                if (twilioSid && twilioToken) {
+                                    try {
+                                        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls/${twilioCallSid}.json`;
+                                        const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64');
+                                        await fetch(twilioUrl, {
+                                            method: 'POST',
+                                            headers: {
+                                                'Authorization': `Basic ${twilioAuth}`,
+                                                'Content-Type': 'application/x-www-form-urlencoded'
+                                            },
+                                            body: new URLSearchParams({ Status: 'completed' })
+                                        });
+                                        console.log(`[BRIDGE] Twilio call ${twilioCallSid} hung up successfully via REST.`);
+                                    } catch (hangupErr) {
+                                        console.error('[BRIDGE] Twilio REST hangup failed:', hangupErr);
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.error('[BRIDGE] Error in triggerCallHangup:', e);
+                        } finally {
+                            if (wsConnection.readyState === ws.OPEN) {
+                                wsConnection.close();
+                            }
+                        }
+                    }, 2800);
+                };
+
+                const checkAgentGoodbyeAndHangup = (text) => {
+                    if (!text || isCallHangingUp) return;
+                    const goodbyeRegex = /\b(thank\s*you|shukriya|alvida|have a (good|great|nice) day|bye\b|take\s*care|phir milte hain|dhanyawad)\b/i;
+                    if (goodbyeRegex.test(text) && transcriptTurns.length >= 2) {
+                        console.log(`[BRIDGE] Detected verbal farewell from agent: "${text.trim()}". Triggering fallback hangup...`);
+                        triggerCallHangup('verbal_goodbye_detected');
+                    }
+                };
+
                  geminiSocket.on('message', async (data) => {
                      try {
                          const serverMsg = JSON.parse(data.toString());
@@ -1206,6 +1306,7 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                 if (part.text) {
                                     console.log(`[Gemini Agent]: ${part.text}`);
                                     transcriptTurns.push({ role: 'agent', message: part.text });
+                                    checkAgentGoodbyeAndHangup(part.text);
                                 }
                                 
                                 if (part.inlineData && part.inlineData.data) {
@@ -1252,6 +1353,7 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                         if (agentText) {
                             console.log(`[Gemini Agent]: ${agentText}`);
                             transcriptTurns.push({ role: 'agent', message: agentText });
+                            checkAgentGoodbyeAndHangup(agentText);
                         }
 
                         // Record user text turns if transcribed by Gemini
@@ -1275,7 +1377,7 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                         if (serverMsg.toolCall?.functionCalls) {
                             for (const call of serverMsg.toolCall.functionCalls) {
                                 if (call.name === 'end_call') {
-                                    console.log(`[BRIDGE] Gemini triggered tool: end_call. Hanging up call (isVobiz: ${isVobiz})...`);
+                                    console.log(`[BRIDGE] Gemini triggered tool: end_call.`);
                                     
                                     // Send empty response back to Gemini
                                     geminiSocket.send(JSON.stringify({
@@ -1288,59 +1390,7 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                         }
                                     }));
 
-                                    // Trigger Call Termination & Close WebSocket with a 3-second delay
-                                    // to allow in-flight audio (like goodbye dialogue) to finish playing to the lead.
-                                    console.log('[BRIDGE] Waiting 3 seconds for audio playout before hanging up...');
-                                    setTimeout(async () => {
-                                        if (isVobiz) {
-                                            if (wsConnection.readyState === ws.OPEN && vobizStreamId) {
-                                                wsConnection.send(JSON.stringify({
-                                                    event: 'stop',
-                                                    streamId: vobizStreamId
-                                                }));
-                                            }
-                                            if (vobizCallId) {
-                                                const vobizAuthId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
-                                                const vobizAuthToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
-                                                try {
-                                                    await fetch(`https://api.vobiz.ai/api/v1/Account/${vobizAuthId}/Call/${vobizCallId}/`, {
-                                                        method: 'DELETE',
-                                                        headers: {
-                                                            'X-Auth-ID': vobizAuthId,
-                                                            'X-Auth-Token': vobizAuthToken
-                                                        }
-                                                    });
-                                                    console.log(`[BRIDGE] Vobiz call ${vobizCallId} hung up via REST.`);
-                                                } catch (hErr) {
-                                                    console.error('[BRIDGE] Vobiz REST hangup failed:', hErr);
-                                                }
-                                            }
-                                        } else if (twilioCallSid && profileData) {
-                                            const twilioSid = process.env.MASTER_TWILIO_SID;
-                                            const twilioToken = process.env.MASTER_TWILIO_TOKEN;
-                                            
-                                            if (twilioSid && twilioToken) {
-                                                try {
-                                                    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls/${twilioCallSid}.json`;
-                                                    const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64');
-                                                    await fetch(twilioUrl, {
-                                                        method: 'POST',
-                                                        headers: {
-                                                            'Authorization': `Basic ${twilioAuth}`,
-                                                            'Content-Type': 'application/x-www-form-urlencoded'
-                                                        },
-                                                        body: new URLSearchParams({ Status: 'completed' })
-                                                    });
-                                                    console.log(`[BRIDGE] Twilio call ${twilioCallSid} hung up successfully via REST.`);
-                                                } catch (hangupErr) {
-                                                    console.error('[BRIDGE] Twilio REST hangup failed:', hangupErr);
-                                                }
-                                            }
-                                        }
-
-                                        // Close WebSocket connection
-                                        wsConnection.close();
-                                    }, 3000);
+                                    triggerCallHangup('end_call_tool');
                                 }
                             }
                         }

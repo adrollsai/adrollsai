@@ -290,15 +290,16 @@ export async function triggerOutboundCall(
 
         // Primary Telephony Routing: Vobiz for Indian calls & numbers (if a valid Vobiz number is owned)
         let cleanPhone = (lead.phone || '').replace(/\D/g, '')
-        const telephonyProvider = profile?.telephony_provider || profile?.voice_telephony_provider || 'twilio'
-        const hasVobizNumber = !!profile?.voice_vobiz_number && profile.voice_vobiz_number !== '+911171366938'
-        const useVobiz = telephonyProvider === 'vobiz' && hasVobizNumber
+        const telephonyProvider = profile?.voice_telephony_provider || profile?.telephony_provider || profile?.voice_provider || 'vobiz'
+        const vobizNumber = profile?.voice_vobiz_number || (profile?.voice_twilio_number?.startsWith('+91') ? profile.voice_twilio_number : null)
+        const useVobiz = (telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz') && !!vobizNumber
 
         if (useVobiz) {
             const vobizRes = await triggerVobizOutboundCall(supabaseAdmin, {
                 leadId: lead.id,
                 profileId: effectiveProfileId,
                 toPhone: lead.phone,
+                fromPhone: vobizNumber,
                 campaignId
             })
             if (vobizRes.success || vobizRes.scheduled) {

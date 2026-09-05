@@ -124,7 +124,7 @@ async function handleRequest(req: Request) {
 
         const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'
         const statusCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}`
-        const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&amp;profileId=${effectiveProfileId}${effectiveCampaignId ? `&amp;campaignId=${effectiveCampaignId}` : ''}&amp;telephony=vobiz${isInbound ? '&amp;inbound=true' : ''}`
+        const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&profileId=${effectiveProfileId}${effectiveCampaignId ? `&campaignId=${effectiveCampaignId}` : ''}&telephony=vobiz${isInbound ? '&inbound=true' : ''}`
 
         // Generate Vobiz XML with audio recording and bidirectional Linear PCM 16kHz stream
         const vobizXml = `<?xml version="1.0" encoding="UTF-8"?>

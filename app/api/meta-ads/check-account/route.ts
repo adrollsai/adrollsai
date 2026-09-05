@@ -53,7 +53,7 @@ export async function GET(request: Request) {
 
     const { data: targetProfile } = await supabase
       .from('profiles')
-      .select('facebook_token, agency_id, parent_id')
+      .select('facebook_token, agency_id, parent_id, selected_page_id, business_info')
       .eq('id', targetUserId)
       .single()
 
@@ -89,11 +89,36 @@ export async function GET(request: Request) {
             (data.capabilities && data.capabilities.includes('HAS_VALID_PAYMENT_METHODS'))
         )
 
+        const effectivePageId = pageId || targetProfile?.selected_page_id || null
+
+        // Check if user/admin previously confirmed Lead Gen TOS acceptance in database
+        let isTosConfirmedInDb = false
+        if (targetProfile?.business_info) {
+            try {
+                const bi = typeof targetProfile.business_info === 'string'
+                    ? JSON.parse(targetProfile.business_info)
+                    : targetProfile.business_info
+                if (bi?.leadgen_tos_accepted === true || bi?.leadgen_tos_override === true) {
+                    isTosConfirmedInDb = true
+                }
+                if (effectivePageId && Array.isArray(bi?.leadgen_tos_accepted_pages) && bi.leadgen_tos_accepted_pages.includes(effectivePageId)) {
+                    isTosConfirmedInDb = true
+                }
+            } catch (e) {}
+        }
+
         let leadgenTos = null
-        if (pageId) {
+        if (isTosConfirmedInDb) {
+            leadgenTos = {
+                leadgen_tos: {
+                    accepted: true,
+                    source: 'confirmed_by_user'
+                }
+            }
+        } else if (effectivePageId) {
             try {
                 // leadgen_tos endpoint is deprecated/restricted in v19.0+; we query page fields directly.
-                const tosRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}?fields=leadgen_tos_accepted,name&access_token=${token}`)
+                const tosRes = await fetch(`https://graph.facebook.com/v19.0/${effectivePageId}?fields=leadgen_tos_accepted,name&access_token=${token}`)
                 const tosData = await tosRes.json()
                 
                 if (tosData && typeof tosData.leadgen_tos_accepted === 'boolean') {

@@ -98,29 +98,52 @@ async function handleSync(request: Request) {
     for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
       const batch = profiles.slice(i, i + BATCH_SIZE);
       await Promise.allSettled(batch.map(async (profile) => {
-        const pageId = profile.selected_page_id;
-        const pageToken = profile.selected_page_token || profile.facebook_token;
-        if (!pageId || !pageToken) return;
+        const pagesMap = new Map<string, string>();
+        if (profile.selected_page_id && (profile.selected_page_token || profile.facebook_token)) {
+          pagesMap.set(profile.selected_page_id, profile.selected_page_token || profile.facebook_token);
+        }
+
+        // Also discover any additional pages owned by this user account
+        if (profile.facebook_token) {
+          try {
+            const accRes = await fetch(`https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&limit=25&access_token=${profile.facebook_token}`, {
+              signal: AbortSignal.timeout(6000)
+            });
+            if (accRes.ok) {
+              const accData = await accRes.json();
+              if (accData.data && Array.isArray(accData.data)) {
+                for (const acc of accData.data) {
+                  if (acc.id && acc.access_token && !pagesMap.has(acc.id)) {
+                    pagesMap.set(acc.id, acc.access_token);
+                  }
+                }
+              }
+            }
+          } catch (e) {}
+        }
+
+        if (pagesMap.size === 0) return;
 
         // Auto-heal page webhook subscription on Meta with token refresh
         await ensureMetaPageSubscribed(supabaseAdmin, profile).catch(() => {});
 
         try {
-          // 1. Fetch ALL Leadgen Forms with full pagination (limit 100 per page)
+          // 1. Fetch Leadgen Forms across ALL user pages with full pagination
           const formsList: any[] = [];
-          let formsUrl: string | null = `https://graph.facebook.com/v20.0/${pageId}/leadgen_forms?fields=id,name,status,created_time&limit=100&access_token=${pageToken}`;
-          
-          while (formsUrl && formsList.length < 500) {
-            try {
-              const formsRes: any = await fetch(formsUrl, { signal: AbortSignal.timeout(8000) });
-              if (!formsRes.ok) break;
-              const formsData: any = await formsRes.json();
-              if (formsData.data && formsData.data.length > 0) {
-                formsList.push(...formsData.data);
+          for (const [pId, pToken] of pagesMap.entries()) {
+            let formsUrl: string | null = `https://graph.facebook.com/v20.0/${pId}/leadgen_forms?fields=id,name,status,created_time&limit=100&access_token=${pToken}`;
+            while (formsUrl && formsList.length < 500) {
+              try {
+                const formsRes: any = await fetch(formsUrl, { signal: AbortSignal.timeout(8000) });
+                if (!formsRes.ok) break;
+                const formsData: any = await formsRes.json();
+                if (formsData.data && formsData.data.length > 0) {
+                  formsList.push(...formsData.data.map((f: any) => ({ ...f, _pageToken: pToken })));
+                }
+                formsUrl = formsData.paging?.next || null;
+              } catch (e) {
+                break;
               }
-              formsUrl = formsData.paging?.next || null;
-            } catch (e) {
-              break;
             }
           }
 
@@ -172,7 +195,7 @@ async function handleSync(request: Request) {
                   // Direct fetch for leads from active ads
                   for (const ad of adData.data) {
                     try {
-                      const adLeadsRes = await fetch(`https://graph.facebook.com/v20.0/${ad.id}/leads?fields=id,created_time,field_data,form_id,ad_id,ad_name,campaign_id,campaign_name&limit=25&access_token=${pageToken}`, {
+                      const adLeadsRes = await fetch(`https://graph.facebook.com/v20.0/${ad.id}/leads?fields=id,created_time,field_data,form_id,ad_id,ad_name,campaign_id,campaign_name&limit=25&access_token=${profile.facebook_token}`, {
                         signal: AbortSignal.timeout(6000)
                       });
                       if (adLeadsRes.ok) {
@@ -570,8 +593,9 @@ async function handleSync(request: Request) {
             const formId = form.id;
             const formName = form.name || 'Meta Form';
 
+            const formToken = form._pageToken || profile.selected_page_token || profile.facebook_token;
             try {
-              const leadsRes = await fetch(`https://graph.facebook.com/v20.0/${formId}/leads?fields=id,created_time,field_data,ad_id,ad_name,campaign_id,campaign_name&limit=30&access_token=${pageToken}`, {
+              const leadsRes = await fetch(`https://graph.facebook.com/v20.0/${formId}/leads?fields=id,created_time,field_data,ad_id,ad_name,campaign_id,campaign_name&limit=30&access_token=${formToken}`, {
                 signal: AbortSignal.timeout(6000)
               });
               if (!leadsRes.ok) continue;

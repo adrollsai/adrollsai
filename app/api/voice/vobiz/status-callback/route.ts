@@ -47,7 +47,7 @@ export async function POST(req: Request) {
             // Fetch lead details
             const { data: lead } = await supabaseAdmin
                 .from('leads')
-                .select('id, user_id, name, phone, voice_call_status, voice_recording_url')
+                .select('id, user_id, name, phone, voice_call_status, voice_recording_url, custom_fields')
                 .eq('id', leadId)
                 .single()
 
@@ -108,8 +108,16 @@ export async function POST(req: Request) {
 
                 // If call finished (completed, failed, or no_answer)
                 if (['completed', 'no_answer', 'failed'].includes(updatedStatus || '') && lead) {
-                    // Bill credits if call lasted > 0 seconds
-                    if (callDuration > 0 && updatedStatus === 'completed') {
+                    let cf: any = lead.custom_fields || {}
+                    if (typeof cf === 'string') {
+                        try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+                    }
+                    const isTestCall = cf.skip_credit_deduction || cf.is_test_call || lead.phone === '+918288835235'
+
+                    if (isTestCall) {
+                        console.log(`[VOBIZ STATUS] 🧪 Test call detected for lead ${lead.id} (${lead.phone}). Skipping credit deduction.`)
+                    } else if (callDuration > 0 && updatedStatus === 'completed') {
+                        // Connected call: 5 credits per minute (rounded up to nearest minute)
                         const billableMinutes = Math.ceil(callDuration / 60)
                         const totalCredits = billableMinutes * CREDIT_COSTS.VOICE_CALL_MINUTE
                         deductCredits(
@@ -119,14 +127,26 @@ export async function POST(req: Request) {
                             'calling',
                             `🎙️ AI Voice Call to ${lead.name || lead.phone || 'lead'} (${callDuration}s - ${billableMinutes} min)`
                         ).catch(e => console.error('[VOBIZ STATUS] Credit deduction error:', e))
+                    } else {
+                        // Unconnected call (no answer, busy, failed, or 0 duration): 0.02 credits
+                        const unconnectedCredits = CREDIT_COSTS.VOICE_CALL_UNCONNECTED || 0.02
+                        deductCredits(
+                            supabaseAdmin,
+                            lead.user_id,
+                            unconnectedCredits,
+                            'calling',
+                            `📞 Outbound Call Attempt (Unconnected / ${updatedStatus || 'No Answer'}) to ${lead.name || lead.phone || 'lead'}`
+                        ).catch(e => console.error('[VOBIZ STATUS] Unconnected credit deduction error:', e))
                     }
 
-                    // Advance queue by dispatching the next pending/queued call for this user
-                    setTimeout(() => {
-                        dispatchNextCall(supabaseAdmin, lead.user_id).catch(dErr => {
-                            console.error('[VOBIZ STATUS] Error dispatching next call:', dErr)
-                        })
-                    }, 1000)
+                    // Advance queue by dispatching the next pending/queued call for this user (skip on test calls)
+                    if (!isTestCall) {
+                        setTimeout(() => {
+                            dispatchNextCall(supabaseAdmin, lead.user_id).catch(dErr => {
+                                console.error('[VOBIZ STATUS] Error dispatching next call:', dErr)
+                            })
+                        }, 1000)
+                    }
                 }
             }
         }

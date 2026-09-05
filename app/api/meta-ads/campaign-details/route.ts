@@ -121,6 +121,25 @@ export async function GET(request: Request) {
     const adsetsRaw = data.adsets?.data || [];
     const adsRaw = data.ads?.data || [];
 
+    // Accurately reflect actual form leads for form campaigns
+    const hasWa = adsRaw.some((a: any) => {
+      const cta = a.creative?.call_to_action?.type || a.creative?.object_story_spec?.link_data?.call_to_action?.type;
+      return cta === 'WHATSAPP_MESSAGE';
+    }) || data.objective === 'MESSAGES';
+
+    if (!hasWa) {
+      const { count: actualDbCount } = await supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', targetUserId)
+        .or(`campaign_id.eq.${campaignId},custom_fields->meta_ad_origin->>campaign_id.eq.${campaignId}`);
+
+      if (actualDbCount !== null && actualDbCount > 0) {
+        campaignMetrics.leads = actualDbCount;
+        campaignMetrics.cpl = campaignMetrics.leads > 0 ? campaignMetrics.spend / campaignMetrics.leads : 0;
+      }
+    }
+
     // Collect video IDs that need source URL resolution
     const videoIds: string[] = [];
     for (const ad of adsRaw) {

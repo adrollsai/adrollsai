@@ -403,6 +403,43 @@ export default function AdsPage() {
       }
   }
 
+  const [isConfirmingTos, setIsConfirmingTos] = useState(false)
+
+  const handleConfirmLeadgenTos = async () => {
+    setIsConfirmingTos(true)
+    try {
+      const urlParams = new URLSearchParams(window.location.search)
+      const impersonateId = urlParams.get('impersonate')
+      const effectivePageId = adForm.pageId || profile?.selected_page_id || ''
+      
+      const res = await fetch('/api/meta-ads/confirm-leadgen-tos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageId: effectivePageId, impersonateId })
+      })
+      const data = await res.json()
+      if (data.error) {
+        toast.error(`Failed to confirm TOS: ${data.error}`)
+      } else {
+        toast.success('Facebook Lead Generation Terms confirmed as accepted!')
+        setAccountStatus((prev: any) => ({
+          ...prev,
+          leadgenTos: {
+            ...(prev?.leadgenTos || {}),
+            leadgen_tos: {
+              accepted: true,
+              source: 'confirmed_by_user'
+            }
+          }
+        }))
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to confirm terms')
+    } finally {
+      setIsConfirmingTos(false)
+    }
+  }
+
   const handleCreatePixel = async () => {
       if (!selectedAdAccountId) return
       
@@ -2053,12 +2090,32 @@ export default function AdsPage() {
                   </div>
                 )}
                 {accountStatus?.leadgenTos?.leadgen_tos?.accepted !== true && (
-                  <div className="bg-rose-50/80 border border-rose-100/60 p-4 rounded-2xl text-xs text-rose-800 font-semibold leading-relaxed flex items-start gap-3">
-                    <XCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold text-rose-900 block">Page Lead Generation Terms Outstanding</span>
-                      You must accept Facebook's Lead Generation Terms of Service for your connected Facebook Page before running lead-based campaigns.
-                      <a href={`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-rose-900 underline font-extrabold mt-1">Review & Accept Terms on Facebook <ExternalLink size={12} /></a>
+                  <div className="bg-rose-50/90 border border-rose-200/80 p-4 rounded-2xl text-xs text-rose-800 font-semibold leading-relaxed flex items-start gap-3 shadow-sm">
+                    <XCircle size={18} className="text-rose-500 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="font-bold text-rose-900 block text-sm mb-0.5">Page Lead Generation Terms Outstanding</span>
+                      <p className="text-slate-700 font-normal mb-2.5">
+                        You must accept Facebook's Lead Generation Terms of Service for your connected Facebook Page before running lead-based campaigns.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <a 
+                          href={`https://www.facebook.com/ads/leadgen/tos/?page_id=${adForm.pageId || profile?.selected_page_id || ''}`} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="inline-flex items-center gap-1.5 text-blue-700 bg-white border border-blue-200 px-3 py-1.5 rounded-xl font-bold hover:bg-blue-50 transition-colors shadow-xs"
+                        >
+                          Review & Accept on Facebook <ExternalLink size={12} />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={handleConfirmLeadgenTos}
+                          disabled={isConfirmingTos}
+                          className="inline-flex items-center gap-1.5 text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 px-3.5 py-1.5 rounded-xl font-bold transition-all shadow-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                          {isConfirmingTos ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                          <span>I've Already Accepted</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -3979,8 +4036,11 @@ export default function AdsPage() {
                                       {/* Results (Leads / WhatsApp Conversations) */}
                                       {(() => {
                                           const camp = statsModal.campaign as any;
-                                          const isLeadCampStats = camp?.objective === 'OUTCOME_LEADS' || camp?.objective === 'LEAD_GENERATION' || camp?.objective === 'LEADS' || (camp?.name || '').toLowerCase().includes('lead') || (camp?.name || '').toLowerCase().includes('villa');
-                                          const isWAStats = !isLeadCampStats && (camp?.objective === 'WHATSAPP' || camp?.campaign_type === 'whatsapp_chat' || camp?.destination_type === 'WHATSAPP');
+                                          const isWAStats = statsModal.insights?.resultType === 'whatsapp' ||
+                                                            camp?.objective === 'WHATSAPP' || 
+                                                            camp?.objective === 'MESSAGES' || 
+                                                            camp?.campaign_type === 'whatsapp_chat' || 
+                                                            camp?.destination_type === 'WHATSAPP';
                                           return (
                                               <div className="bg-blue-50 p-5 rounded-[1.5rem] border border-blue-100 shadow-sm hover:border-blue-200 transition-colors">
                                                   <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={14}/> {isWAStats ? 'WhatsApp Conversations' : 'Results (Leads)'}</div>
@@ -4048,7 +4108,7 @@ export default function AdsPage() {
                                                   <th className="p-4">Clicks</th>
                                                   <th className="p-4">CTR</th>
                                                   <th className="p-4">CPM</th>
-                                                  <th className="p-4">Leads</th>
+                                                  <th className="p-4">{statsModal.insights?.resultType === 'whatsapp' ? 'Conversations' : 'Leads'}</th>
                                                   <th className="p-4 pr-6">Page Views</th>
                                               </tr>
                                           </thead>
@@ -4090,8 +4150,8 @@ export default function AdsPage() {
                                                       <th className="p-4">Clicks</th>
                                                       <th className="p-4">CTR</th>
                                                       <th className="p-4">CPM</th>
-                                                      <th className="p-4">Leads</th>
-                                                      <th className="p-4 pr-6">Cost Per Lead</th>
+                                                      <th className="p-4">{statsModal.insights?.resultType === 'whatsapp' ? 'Conversations' : 'Leads'}</th>
+                                                      <th className="p-4 pr-6">Cost Per {statsModal.insights?.resultType === 'whatsapp' ? 'Conversation' : 'Lead'}</th>
                                                   </tr>
                                               </thead>
                                               <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">

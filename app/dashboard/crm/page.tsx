@@ -819,7 +819,7 @@ export default function CRMPage() {
       if (parentId) setParentAdminId(parentId)
 
       let activeStages = extractStagesFromProfile(profile)
-      if (parentId && (!profile?.badges || !profile.badges.some((b: string) => typeof b === 'string' && b.startsWith('__PIPELINE_STAGES__:')))) {
+      if (parentId && (!profile?.badges || !Array.isArray(profile.badges) || !profile.badges.some((b: string) => typeof b === 'string' && b.startsWith('__PIPELINE_STAGES__:')))) {
         const { data: parentProfile } = await supabase.from('profiles').select('badges').eq('id', parentId).single()
         if (parentProfile) {
           activeStages = extractStagesFromProfile(parentProfile)

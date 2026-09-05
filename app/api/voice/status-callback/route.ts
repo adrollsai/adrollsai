@@ -827,7 +827,8 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                     });
                 }
 
-                // 8. Trigger Automated Post-Call Brochure Dispatch if lead requested brochure / details / WhatsApp
+                // 8. Trigger Automated Post-Call Brochure Dispatch (DISABLED per user instruction)
+                const ENABLE_POST_CALL_WHATSAPP_AUTOMATION = false;
                 const isBrochureRequested = Boolean(
                     transcriptText.includes('brochure') || 
                     transcriptText.includes('pdf') || 
@@ -863,7 +864,7 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                     transcriptText.includes('luxury villa')
                 );
 
-                if (isBrochureRequested && isFarmhouseTopic && lead?.phone) {
+                if (ENABLE_POST_CALL_WHATSAPP_AUTOMATION && isBrochureRequested && isFarmhouseTopic && lead?.phone) {
                     console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} requested brochure for Farmhouse Campaign. Dispatching native PDF document card...`);
                     try {
                         const { data: ownerProf } = await supabaseAdmin
