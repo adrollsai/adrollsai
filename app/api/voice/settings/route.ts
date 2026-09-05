@@ -49,11 +49,41 @@ export async function GET(req: Request) {
             }
         } catch (e) {}
 
-        const kycStatus = isNobogentMaster ? 'verified' : (biKyc.kyc_status || profile?.kyc_status || 'not_submitted')
-        const kycType = isNobogentMaster ? 'business' : (biKyc.kyc_type || profile?.kyc_type || 'individual')
-        const kycData = isNobogentMaster 
-            ? (biKyc.kyc_data || profile?.kyc_data || { email: 'nobogent@gmail.com', fullName: 'Nobogent', companyName: 'Nobogent', entityType: 'business' })
-            : (biKyc.kyc_data || profile?.kyc_data || {})
+        let kycStatus = isNobogentMaster ? 'verified' : (biKyc.kyc_status || 'not_submitted')
+        let kycType = isNobogentMaster ? 'business' : (biKyc.kyc_type || 'individual')
+        let kycData = isNobogentMaster 
+            ? (biKyc.kyc_data || { email: 'nobogent@gmail.com', fullName: 'Nobogent', companyName: 'Nobogent', entityType: 'business' })
+            : (biKyc.kyc_data || {})
+
+        // Real-time auto-sync with Vobiz if subaccount is registered but status is not yet verified in DB
+        if (!isNobogentMaster && kycStatus !== 'verified') {
+            const subIdentifier = kycData?.vobizSubAuthId || biKyc.voice_vobiz_auth_id || kycData?.email || profile?.email
+            if (subIdentifier) {
+                try {
+                    const { getVobizSubAccount } = await import('@/utils/vobiz-helper')
+                    const sub = await getVobizSubAccount(subIdentifier)
+                    if (sub && sub.kyc_status === 'verified') {
+                        kycStatus = 'verified'
+                        kycData.vobizKycStatus = 'verified'
+                        kycData.vobizSubAuthId = sub.auth_id || kycData.vobizSubAuthId
+                        kycData.vobizSubAccountId = String(sub.id) || kycData.vobizSubAccountId
+                        biKyc.kyc_status = 'verified'
+                        biKyc.kyc_data = kycData
+                        biKyc.voice_vobiz_auth_id = sub.auth_id || biKyc.voice_vobiz_auth_id
+                        biKyc.voice_vobiz_auth_token = sub.auth_token || biKyc.voice_vobiz_auth_token
+                        biKyc.voice_vobiz_sub_account_id = String(sub.id) || biKyc.voice_vobiz_sub_account_id
+
+                        // Sync in database
+                        await supabase
+                            .from('profiles')
+                            .update({ business_info: JSON.stringify(biKyc) })
+                            .eq('id', targetId)
+                    }
+                } catch (syncErr: any) {
+                    console.warn('[VOICE SETTINGS] Vobiz KYC sync notice:', syncErr.message)
+                }
+            }
+        }
 
         return NextResponse.json({
             success: true,

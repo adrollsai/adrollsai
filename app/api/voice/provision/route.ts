@@ -47,8 +47,38 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 })
         }
 
+        let biKyc: any = {}
+        try {
+            if (targetProfile.business_info && typeof targetProfile.business_info === 'string') {
+                biKyc = JSON.parse(targetProfile.business_info)
+            } else if (targetProfile.business_info && typeof targetProfile.business_info === 'object') {
+                biKyc = targetProfile.business_info
+            }
+        } catch (e) {
+            biKyc = {}
+        }
+
+        let kycStatus = biKyc.kyc_status || 'not_submitted'
         const isWhitelisted = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(targetProfile.email || '')
-        const kycStatus = targetProfile.kyc_status
+
+        // If not marked verified in DB, check Vobiz real-time
+        if (!isWhitelisted && kycStatus !== 'verified') {
+            const subIdentifier = biKyc.kyc_data?.vobizSubAuthId || biKyc.voice_vobiz_auth_id || targetProfile.email
+            if (subIdentifier) {
+                try {
+                    const { getVobizSubAccount } = await import('@/utils/vobiz-helper')
+                    const sub = await getVobizSubAccount(subIdentifier)
+                    if (sub && sub.kyc_status === 'verified') {
+                        kycStatus = 'verified'
+                        biKyc.kyc_status = 'verified'
+                        await supabaseAdmin
+                            .from('profiles')
+                            .update({ business_info: JSON.stringify(biKyc) })
+                            .eq('id', targetId)
+                    }
+                } catch (e) {}
+            }
+        }
 
         // Verify KYC requirement before number buying/assignment
         if (kycStatus !== 'verified' && !isWhitelisted) {
@@ -58,12 +88,12 @@ export async function POST(req: Request) {
             }, { status: 403 })
         }
 
-        // Choose number: specific requested number or default Vobiz number from catalog
-        let requestedNumber = body.phoneNumber || body.number
+        // Choose number: must be explicitly selected from catalog
+        const requestedNumber = body.phoneNumber || body.number
         if (!requestedNumber) {
-            // 1-Click Provision: Assign first popular available number or default Vobiz test number
-            const popular = VOBIZ_NUMBER_CATALOG.find(n => n.isPopular) || VOBIZ_NUMBER_CATALOG[0]
-            requestedNumber = popular?.phoneNumber || process.env.VOBIZ_TEST_NUMBER || '+911171366938'
+            return NextResponse.json({
+                error: 'Please select a 79-series number from the list to claim your calling line.'
+            }, { status: 400 })
         }
 
         // Format number to E.164
@@ -79,10 +109,11 @@ export async function POST(req: Request) {
         console.log(`[PROVISION] Assigning Vobiz number ${cleanNumber} to user ${targetId}...`)
 
         // Update profile with the assigned Vobiz calling number
+        biKyc.voice_vobiz_number = cleanNumber
         const updatePayload: any = {
-            voice_vobiz_number: cleanNumber,
-            voice_twilio_number: cleanNumber, // keep in sync for backwards compatibility
-            voice_telephony_provider: 'vobiz',
+            voice_twilio_number: cleanNumber, // primary calling line stored in DB
+            voice_provider: 'vobiz',
+            business_info: JSON.stringify(biKyc),
             old_voice_twilio_number: null
         }
 
@@ -130,19 +161,24 @@ export async function DELETE(req: Request) {
 
         const { data: targetProfile } = await supabaseAdmin
             .from('profiles')
-            .select('voice_vobiz_number, voice_twilio_number')
+            .select('voice_twilio_number, business_info')
             .eq('id', targetId)
             .single()
 
-        const currentNum = targetProfile?.voice_vobiz_number || targetProfile?.voice_twilio_number
+        const currentNum = targetProfile?.voice_twilio_number
+        let bi: any = {}
+        try {
+            bi = typeof targetProfile?.business_info === 'string' ? JSON.parse(targetProfile.business_info) : (targetProfile?.business_info || {})
+        } catch (e) {}
+        delete bi.voice_vobiz_number
 
         console.log(`[PROVISION] Disconnecting voice number for user ${targetId}...`)
 
         await supabaseAdmin
             .from('profiles')
             .update({
-                voice_vobiz_number: null,
                 voice_twilio_number: null,
+                business_info: JSON.stringify(bi),
                 old_voice_twilio_number: currentNum
             })
             .eq('id', targetId)

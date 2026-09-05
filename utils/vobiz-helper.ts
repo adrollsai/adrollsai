@@ -375,3 +375,35 @@ export async function createVobizSubAccount(params: {
         }
     }
 }
+
+/**
+ * Retrieves a sub-account by email, auth_id, or sub-account ID from Vobiz to check current real-time status.
+ */
+export async function getVobizSubAccount(identifier: string): Promise<any | null> {
+    if (!identifier) return null
+    const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+    const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+    const basicAuth = Buffer.from(`${authId}:${authToken}`).toString('base64')
+    const url = `https://api.vobiz.ai/api/v1/accounts/${authId}/sub-accounts/`
+
+    try {
+        const res = await fetch(url, {
+            headers: {
+                'Authorization': `Basic ${basicAuth}`,
+                'Content-Type': 'application/json'
+            }
+        })
+        if (!res.ok) return null
+        const data = await res.json().catch(() => ({}))
+        const subAccounts = data.sub_accounts || []
+        const clean = identifier.toLowerCase().trim()
+        return subAccounts.find((s: any) => 
+            s.email?.toLowerCase() === clean || 
+            s.auth_id?.toLowerCase() === clean ||
+            String(s.id) === clean
+        ) || null
+    } catch (err: any) {
+        console.warn('[VOBIZ HELPER] Error fetching subaccount status:', err.message)
+        return null
+    }
+}

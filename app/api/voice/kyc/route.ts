@@ -37,12 +37,44 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
         }
 
+        let bi: any = {}
+        try {
+            if (profile.business_info && typeof profile.business_info === 'string') {
+                bi = JSON.parse(profile.business_info)
+            } else if (profile.business_info && typeof profile.business_info === 'object') {
+                bi = profile.business_info
+            }
+        } catch (e) {
+            bi = {}
+        }
+
         const isNobogentMaster = profile.email === 'rchopra489@gmail.com'
-        const kycStatus = isNobogentMaster ? 'verified' : (profile.kyc_status || 'not_submitted')
-        const kycType = isNobogentMaster ? 'business' : (profile.kyc_type || 'individual')
-        const kycData = isNobogentMaster 
-            ? (profile.kyc_data || { email: 'nobogent@gmail.com', fullName: 'Nobogent', companyName: 'Nobogent', entityType: 'business' })
-            : (profile.kyc_data || {})
+        let kycStatus = isNobogentMaster ? 'verified' : (bi.kyc_status || 'not_submitted')
+        let kycType = isNobogentMaster ? 'business' : (bi.kyc_type || 'individual')
+        let kycData = isNobogentMaster 
+            ? (bi.kyc_data || { email: 'nobogent@gmail.com', fullName: 'Nobogent', companyName: 'Nobogent', entityType: 'business' })
+            : (bi.kyc_data || {})
+
+        if (!isNobogentMaster && kycStatus !== 'verified') {
+            const subId = kycData?.vobizSubAuthId || bi.voice_vobiz_auth_id || kycData?.email || profile.email
+            if (subId) {
+                try {
+                    const { getVobizSubAccount } = await import('@/utils/vobiz-helper')
+                    const sub = await getVobizSubAccount(subId)
+                    if (sub && sub.kyc_status === 'verified') {
+                        kycStatus = 'verified'
+                        kycData.vobizKycStatus = 'verified'
+                        kycData.vobizSubAuthId = sub.auth_id || kycData.vobizSubAuthId
+                        bi.kyc_status = 'verified'
+                        bi.kyc_data = kycData
+                        await supabaseAdmin
+                            .from('profiles')
+                            .update({ business_info: JSON.stringify(bi) })
+                            .eq('id', targetId)
+                    }
+                } catch (e) {}
+            }
+        }
 
         return NextResponse.json({
             success: true,
@@ -50,8 +82,8 @@ export async function GET(req: Request) {
                 status: kycStatus,
                 type: kycType,
                 data: kycData,
-                submittedAt: profile.kyc_submitted_at || null,
-                verifiedAt: profile.kyc_verified_at || null,
+                submittedAt: bi.kyc_submitted_at || null,
+                verifiedAt: bi.kyc_verified_at || null,
                 isVerified: kycStatus === 'verified'
             }
         })
@@ -198,9 +230,90 @@ export async function POST(req: Request) {
             })
             .eq('id', targetId)
 
+        // Dispatch official Telecom KYC verification email to subAccountEmail
+        try {
+            const { sendGenericEmail } = await import('@/utils/email-helper')
+            const isVerifiedNow = finalKycStatus === 'verified'
+            const subject = isVerifiedNow
+                ? `✅ Telecom TRAI KYC Verified: Outbound Calling Line Unlocked (${subAccountName})`
+                : `Action Required: Complete Telecom TRAI KYC Verification (${subAccountName})`
+
+            const emailHtml = `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+                    <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid ${isVerifiedNow ? '#10b981' : '#6366f1'};">
+                        <h1 style="color: #0f172a; font-size: 20px; font-weight: 800; margin: 0;">Nobogent AI Telephony</h1>
+                        <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Mandatory TRAI Indian Telecom Carrier Verification</p>
+                    </div>
+
+                    <div style="background-color: ${isVerifiedNow ? '#f0fdf4' : '#fefce8'}; border: 1px solid ${isVerifiedNow ? '#bbf7d0' : '#fef08a'}; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+                        <h3 style="color: ${isVerifiedNow ? '#166534' : '#854d0e'}; margin: 0 0 6px 0; font-size: 15px; font-weight: 700;">
+                            ${isVerifiedNow ? '🎉 KYC Verification Complete' : '⏳ Action Required: Complete Verification'}
+                        </h3>
+                        <p style="color: ${isVerifiedNow ? '#15803d' : '#a16207'}; font-size: 13px; margin: 0; line-height: 1.5;">
+                            ${isVerifiedNow 
+                                ? `Your telecom registration for <strong>${subAccountName}</strong> is fully verified with our carrier partner (Vobiz). Your outbound calling line is active and ready to make automated AI calls.` 
+                                : `Your telecom sub-account for <strong>${subAccountName}</strong> has been registered. Under Telecom Regulatory Authority of India (TRAI) directives, commercial AI calls require mandatory business/individual verification.`
+                            }
+                        </p>
+                    </div>
+
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+                        <tr style="border-bottom: 1px solid #f1f5f9;">
+                            <td style="padding: 10px 0; font-weight: 700; color: #64748b; font-size: 12px; text-transform: uppercase;">Entity / Legal Name:</td>
+                            <td style="padding: 10px 0; color: #0f172a; font-weight: 600; font-size: 14px;">${subAccountName}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #f1f5f9;">
+                            <td style="padding: 10px 0; font-weight: 700; color: #64748b; font-size: 12px; text-transform: uppercase;">Registered Email:</td>
+                            <td style="padding: 10px 0; color: #0f172a; font-weight: 600; font-size: 14px;">${subAccountEmail}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #f1f5f9;">
+                            <td style="padding: 10px 0; font-weight: 700; color: #64748b; font-size: 12px; text-transform: uppercase;">Sub-Account ID:</td>
+                            <td style="padding: 10px 0; color: #4338ca; font-weight: 700; font-size: 14px; font-family: monospace;">${subAuthId || 'Registered'}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px 0; font-weight: 700; color: #64748b; font-size: 12px; text-transform: uppercase;">KYC Status:</td>
+                            <td style="padding: 10px 0; color: ${isVerifiedNow ? '#16a34a' : '#ea580c'}; font-weight: 800; font-size: 13px; text-transform: uppercase;">
+                                ${finalKycStatus}
+                            </td>
+                        </tr>
+                    </table>
+
+                    ${!isVerifiedNow ? `
+                    <div style="text-align: center; margin: 24px 0;">
+                        <a href="https://app.nobogent.com/dashboard/voice-agent" style="display: inline-block; background-color: #4f46e5; color: #ffffff; padding: 12px 28px; font-size: 13px; font-weight: 700; text-decoration: none; border-radius: 9999px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            Open Voice Agent Settings
+                        </a>
+                    </div>
+                    ` : `
+                    <div style="text-align: center; margin: 24px 0;">
+                        <a href="https://app.nobogent.com/dashboard/voice-agent" style="display: inline-block; background-color: #059669; color: #ffffff; padding: 12px 28px; font-size: 13px; font-weight: 700; text-decoration: none; border-radius: 9999px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            Launch AI Calling Campaign
+                        </a>
+                    </div>
+                    `}
+
+                    <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px; text-align: center;">
+                        <p style="margin: 0; font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase;">
+                            Powered by Nobogent AI Telephony • Support: support@nobogent.com
+                        </p>
+                    </div>
+                </div>
+            `
+
+            await sendGenericEmail(
+                subAccountEmail,
+                subject,
+                emailHtml,
+                ['rchopra489@gmail.com']
+            )
+            console.log(`[KYC EMAIL DISPATCH] Sent to ${subAccountEmail} with status: ${finalKycStatus}`)
+        } catch (emailErr: any) {
+            console.error('[KYC EMAIL DISPATCH ERROR]', emailErr.message)
+        }
+
         return NextResponse.json({
             success: true,
-            message: `Sub-account created on Vobiz! KYC verification mail has been sent to ${subAccountEmail}.`,
+            message: `KYC verification mail has been dispatched to ${subAccountEmail}.`,
             kyc: {
                 status: finalKycStatus,
                 type: effectiveEntityType,

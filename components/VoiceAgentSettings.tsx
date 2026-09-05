@@ -645,22 +645,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
               )}
             </div>
 
-            {/* Account Concurrency Card */}
-            <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-3">
-                <Radio size={16} className="text-indigo-600" />
-                <h4 className="font-extrabold text-sm text-slate-900">Concurrency & Capacity</h4>
-              </div>
-              <p className="text-[11px] text-slate-600 leading-relaxed font-medium mb-3">
-                Your account is configured with <strong>{concurrencyLimit} concurrent channels</strong> by default (up to {concurrencyLimit} simultaneous calls). Extra leads in campaigns queue sequentially.
-              </p>
-              <div className="bg-indigo-50/40 border border-indigo-100 rounded-2xl p-3 flex items-center justify-between text-xs">
-                <span className="text-[10px] font-black text-indigo-900 uppercase">Included Channels:</span>
-                <span className="font-extrabold text-indigo-700 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-2xs font-mono">
-                  {concurrencyLimit} Channels (Active)
-                </span>
-              </div>
-            </div>
+
 
             {/* India Regulatory Guide Banner */}
             <div className="bg-amber-50/75 border border-amber-200 rounded-[2rem] p-6 shadow-sm">
@@ -767,7 +752,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                             Update Details
                           </button>
                         </div>
-                      ) : (kycStatus === 'pending' || kycData?.vobizSubAuthId || userEmail === 'khushiramrealtor@gmail.com') ? (
+                      ) : (kycStatus === 'pending' || kycData?.vobizSubAuthId) ? (
                         <div className="bg-white border border-amber-200 p-5 rounded-2xl space-y-4 shadow-2xs">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="space-y-1">
@@ -888,83 +873,58 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                             }
                           </p>
 
-                          <div className="flex flex-wrap items-center justify-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => handleProvisionNumber()}
-                              disabled={provisioning || !isKycVerified}
-                              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black px-6 py-3 rounded-full shadow-sm hover:shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-                            >
-                              {provisioning ? (
-                                <>
-                                  <Loader2 size={14} className="animate-spin text-white" /> Assigning Line...
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkles size={14} /> 
-                                  {!isSubscriptionActive || oldVoiceNumber ? 'Reconnect Voice Line' : '⚡ 1-Click Assign Calling Number'}
-                                </>
-                              )}
-                            </button>
+                          <div className="space-y-4">
+                            <p className="text-xs text-slate-600 font-semibold max-w-md mx-auto">
+                              {!isKycVerified
+                                ? 'Complete KYC verification above to unlock your outbound virtual line.'
+                                : !isSubscriptionActive 
+                                ? 'Your subscription is inactive. Please ensure you have an active subscription to connect your calling line.'
+                                : 'Select and claim any 79-series outbound calling line below (included in your package at no extra charge):'
+                              }
+                            </p>
 
+                            {/* 79-Series Number Selection */}
                             {isKycVerified && (
-                              <button
-                                type="button"
-                                onClick={() => setShowNumberCatalog(!showNumberCatalog)}
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-5 py-3 rounded-full border border-slate-200 transition-all cursor-pointer"
-                              >
-                                {showNumberCatalog ? 'Hide Available Numbers' : 'Browse Numbers by City'}
-                              </button>
+                              <div className="pt-2 space-y-3 animate-in fade-in duration-200 text-left">
+                                <div className="flex items-center justify-between">
+                                  <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Available 79-Series Virtual Lines:</h5>
+                                  <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                                    100% Included in Package (₹0 / No Extra Charge)
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {VOBIZ_NUMBER_CATALOG.map((num) => (
+                                    <div 
+                                      key={num.phoneNumber}
+                                      className="p-3.5 bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-200 rounded-2xl flex items-center justify-between transition-all"
+                                    >
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-extrabold text-xs text-slate-900 font-mono">{num.formattedNumber}</span>
+                                          <span className="text-[9px] font-black px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">{num.region}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <span className="text-[10px] text-slate-400 font-medium">Bidirectional 16kHz PCM</span>
+                                          <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">Available</span>
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleProvisionNumber(num.phoneNumber)}
+                                        disabled={provisioning}
+                                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-[11px] font-black transition-all active:scale-95 cursor-pointer shrink-0 shadow-sm flex items-center gap-1.5"
+                                      >
+                                        {provisioning ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                                        Claim Number
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
                             )}
                           </div>
-
-                          {/* Number Catalog Selection */}
-                          {showNumberCatalog && isKycVerified && (
-                            <div className="mt-4 pt-4 border-t border-slate-100 space-y-3 animate-in fade-in duration-200 text-left">
-                              <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Available Indian Virtual DIDs:</h5>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {VOBIZ_NUMBER_CATALOG.map((num) => (
-                                  <div 
-                                    key={num.phoneNumber}
-                                    className="p-3.5 bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-200 rounded-2xl flex items-center justify-between transition-all"
-                                  >
-                                    <div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-extrabold text-xs text-slate-900 font-mono">{num.formattedNumber}</span>
-                                        <span className="text-[9px] font-black px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">{num.region}</span>
-                                      </div>
-                                      <span className="text-[10px] text-slate-400 font-medium block mt-0.5">Bidirectional 16kHz PCM Stream</span>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleProvisionNumber(num.phoneNumber)}
-                                      disabled={provisioning}
-                                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-[10px] font-black transition-all active:scale-95 cursor-pointer shrink-0"
-                                    >
-                                      Assign
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       )}
-                    </div>
-
-                    {/* Step 3: Concurrency Capacity Controls */}
-                    <div className="border border-slate-200/80 rounded-3xl p-5 sm:p-6 bg-slate-50/40 space-y-2.5">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-extrabold text-slate-900">Concurrent Calling Capacity</h4>
-                          <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-200 shadow-2xs">
-                            3 Channels Included
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-                        Your virtual line includes <strong>3 concurrent outbound channels</strong> by default to dial up to 3 leads simultaneously. When running larger call campaigns, extra leads automatically queue and dial in real-time as channels free up.
-                      </p>
                     </div>
 
                   </div>
