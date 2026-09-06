@@ -96,7 +96,7 @@ export default function BottomNav() {
     }
   }, [supabase])
 
-  if (!role || isKeyboardOpen) return null;
+  if (!role || isKeyboardOpen || pathname.startsWith('/dashboard/flows')) return null;
 
   const allNavItems = [
     { name: 'Analytics', icon: BarChart2, path: '/dashboard/analytics' },

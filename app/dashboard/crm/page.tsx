@@ -342,6 +342,24 @@ export default function CRMPage() {
   }, [isCampaignFilterOpen])
 
   const [selectedForm, setSelectedForm] = useState('')
+  const [isFormFilterOpen, setIsFormFilterOpen] = useState(false)
+  const [formFilterSearch, setFormFilterSearch] = useState('')
+  const formFilterRef = useRef<HTMLDivElement>(null)
+
+  // Click outside listener to close form dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (formFilterRef.current && !formFilterRef.current.contains(event.target as Node)) {
+        setIsFormFilterOpen(false)
+      }
+    }
+    if (isFormFilterOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isFormFilterOpen])
   const [showFilters, setShowFilters] = useState(false)
   const [isMobileControlsCollapsed, setIsMobileControlsCollapsed] = useState(true)
 
@@ -1724,6 +1742,52 @@ END:VCARD\n`
     return '';
   }, [campaigns])
 
+  // --- ACTIVE CAMPAIGNS & ACTIVE LEAD FORMS TRACKING ---
+  const activeCampaignSet = useMemo(() => {
+    const names = new Set<string>()
+    const ids = new Set<string>()
+    campaigns.forEach((c: any) => {
+      const status = String(c?.effective_status || c?.status || '').toUpperCase()
+      if (status === 'ACTIVE') {
+        if (c.name) names.add(c.name.trim().toLowerCase())
+        if (c.id) ids.add(String(c.id).trim())
+      }
+    })
+    return { names, ids }
+  }, [campaigns])
+
+  const activeFormSet = useMemo(() => {
+    const names = new Set<string>()
+    const ids = new Set<string>()
+
+    // 1. From live Meta forms API response (enriched with is_active_in_campaign)
+    forms.forEach((f: any) => {
+      if (f?.is_active_in_campaign) {
+        if (f.name) names.add(f.name.trim().toLowerCase())
+        if (f.id) ids.add(String(f.id).trim())
+      }
+    })
+
+    // 2. From leads whose campaign is active in Meta
+    leads.forEach((l: any) => {
+      const cId = String(l.campaign_id || '').trim()
+      let parsedCf = l.custom_fields
+      if (typeof parsedCf === 'string') {
+        try { parsedCf = JSON.parse(parsedCf) } catch { parsedCf = {} }
+      }
+      const cName = (parsedCf?.meta_ad_origin?.campaign_name || l.campaign_name || l.ad_name || '')?.trim()?.toLowerCase()
+      const isLeadInActiveCampaign = (cId && activeCampaignSet.ids.has(cId)) || (cName && activeCampaignSet.names.has(cName))
+
+      if (isLeadInActiveCampaign) {
+        if (l.form_name && typeof l.form_name === 'string') names.add(l.form_name.trim().toLowerCase())
+        if (l.source && typeof l.source === 'string') names.add(l.source.trim().toLowerCase())
+        if (l.form_id) ids.add(String(l.form_id).trim())
+      }
+    })
+
+    return { names, ids }
+  }, [forms, leads, activeCampaignSet])
+
   // --- DYNAMIC FILTER EXTRACTION ---
   // Extract campaigns from current workspace's loaded leads AND live Meta campaigns
   const uniqueCampaigns = useMemo(() => {
@@ -1739,15 +1803,39 @@ END:VCARD\n`
       const name = typeof c === 'string' ? c : c?.name
       if (name && name.trim()) list.push(name.trim())
     })
-    return Array.from(new Set(list)).filter(c => c && c !== 'null' && c !== 'undefined').sort()
-  }, [leads, campaigns, getLeadCampaignName])
+    const unique = Array.from(new Set(list)).filter(c => c && c !== 'null' && c !== 'undefined')
+    return unique.sort((a, b) => {
+      const aActive = activeCampaignSet.names.has(a.toLowerCase())
+      const bActive = activeCampaignSet.names.has(b.toLowerCase())
+      if (aActive && !bActive) return -1
+      if (!aActive && bActive) return 1
+      return a.localeCompare(b)
+    })
+  }, [leads, campaigns, getLeadCampaignName, activeCampaignSet])
 
   const uniqueForms = useMemo(() => {
-    const formNames = leads
-      .map(l => l.form_name || l.source)
-      .filter(f => f && f !== 'null' && f !== 'undefined' && typeof f === 'string')
-    return [...new Set(formNames)] as string[]
-  }, [leads])
+    const list: string[] = []
+    leads.forEach(l => {
+      const fName = l.form_name || l.source
+      if (fName && fName !== 'null' && fName !== 'undefined' && typeof fName === 'string') {
+        list.push(fName.trim())
+      }
+    })
+    forms.forEach((f: any) => {
+      const name = typeof f === 'string' ? f : f?.name
+      if (name && name !== 'null' && name !== 'undefined' && typeof name === 'string') {
+        list.push(name.trim())
+      }
+    })
+    const unique = Array.from(new Set(list)).filter(Boolean)
+    return unique.sort((a, b) => {
+      const aActive = activeFormSet.names.has(a.toLowerCase())
+      const bActive = activeFormSet.names.has(b.toLowerCase())
+      if (aActive && !bActive) return -1
+      if (!aActive && bActive) return 1
+      return a.localeCompare(b)
+    })
+  }, [leads, forms, activeFormSet])
 
   const uniqueCsvAudiences = useMemo(() => {
     const audiences = leads
@@ -1941,7 +2029,7 @@ END:VCARD\n`
       } else if (stageName === 'Meeting Done') {
         return ['meeting done', 'meeting_done'].includes(s)
       } else if (stageName === 'Never Picked') {
-        return ['never picked', 'never_picked', 'dnp'].includes(s)
+        return ['never picked', 'never_picked'].includes(s)
       } else if (stageName === 'Negotiation') {
         return ['negotiation', 'negotiating', 'offer'].includes(s)
       } else if (stageName === 'Deal/Token') {
@@ -2594,8 +2682,14 @@ END:VCARD\n`
                             } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer flex items-center justify-between shadow-xs`}
                             title={selectedCampaign || 'All Campaigns'}
                         >
-                            <span className="truncate flex-1" title={selectedCampaign || 'All Campaigns'}>
-                                {selectedCampaign ? selectedCampaign : 'All Campaigns'}
+                            <span className="truncate flex-1 flex items-center gap-1.5" title={selectedCampaign || 'All Campaigns'}>
+                                <span className="truncate">{selectedCampaign ? selectedCampaign : 'All Campaigns'}</span>
+                                {selectedCampaign && activeCampaignSet.names.has(selectedCampaign.toLowerCase()) && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        <span>Active</span>
+                                    </span>
+                                )}
                             </span>
                             {selectedCampaign ? (
                                 <span
@@ -2659,6 +2753,7 @@ END:VCARD\n`
                                         .filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim()))
                                         .map((camp, idx) => {
                                             const isSelected = selectedCampaign === camp
+                                            const isCampActive = activeCampaignSet.names.has(camp.toLowerCase())
                                             return (
                                                 <button
                                                     key={idx}
@@ -2669,11 +2764,21 @@ END:VCARD\n`
                                                         setIsCampaignFilterOpen(false)
                                                     }}
                                                     title={camp}
-                                                    className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-start justify-between gap-2.5 transition-all cursor-pointer ${
+                                                    className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
                                                         isSelected ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                                                     }`}
                                                 >
-                                                    <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{camp}</span>
+                                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                        <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{camp}</span>
+                                                        {isCampActive && (
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 shadow-2xs ${
+                                                                isSelected ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                            }`}>
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'} animate-pulse`}></span>
+                                                                <span>Active</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     {isSelected && <CheckCircle2 size={14} className="shrink-0 mt-0.5" />}
                                                 </button>
                                             )
@@ -2689,14 +2794,130 @@ END:VCARD\n`
                         )}
                     </div>
 
-                    {/* Form / Source Filter */}
-                    <div className="relative flex-1">
+                    {/* Searchable Lead Form / Source Filter */}
+                    <div className="relative flex-1" ref={formFilterRef}>
                         <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Lead Form / Source</label>
-                        <select value={selectedForm} onChange={(e) => setSelectedForm(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
-                            <option value="">All Lead Forms</option>
-                            {uniqueForms.map((form, i) => <option key={i} value={form}>{form}</option>)}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsFormFilterOpen(!isFormFilterOpen)
+                                if (!isFormFilterOpen) setFormFilterSearch('')
+                            }}
+                            className={`w-full bg-slate-50 hover:bg-slate-100/80 border ${
+                                selectedForm ? 'border-purple-500 bg-purple-50/40 text-purple-900' : 'border-slate-200/60 text-slate-700'
+                            } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-purple-500/20 transition-all cursor-pointer flex items-center justify-between shadow-xs`}
+                            title={selectedForm || 'All Lead Forms'}
+                        >
+                            <span className="truncate flex-1 flex items-center gap-1.5" title={selectedForm || 'All Lead Forms'}>
+                                <span className="truncate">{selectedForm ? selectedForm : 'All Lead Forms'}</span>
+                                {selectedForm && activeFormSet.names.has(selectedForm.toLowerCase()) && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        <span>Active</span>
+                                    </span>
+                                )}
+                            </span>
+                            {selectedForm ? (
+                                <span
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedForm('')
+                                        setCurrentPage(1)
+                                    }}
+                                    className="p-0.5 hover:bg-purple-200/60 rounded-md text-purple-600 ml-1 transition-colors shrink-0"
+                                    title="Clear Form Filter"
+                                >
+                                    <X size={13} />
+                                </span>
+                            ) : (
+                                <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${isFormFilterOpen ? 'rotate-180' : ''}`} />
+                            )}
+                        </button>
+
+                        {isFormFilterOpen && (
+                            <div className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200/80 rounded-2xl shadow-2xl z-50 p-2 space-y-1.5 min-w-[320px] sm:min-w-[460px] md:min-w-[540px] max-w-[92vw] sm:max-w-2xl animate-in fade-in zoom-in-95 duration-150">
+                                {/* Search input */}
+                                <div className="relative">
+                                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        autoFocus
+                                        placeholder="Search lead forms..."
+                                        value={formFilterSearch}
+                                        onChange={(e) => setFormFilterSearch(e.target.value)}
+                                        className="w-full pl-8 pr-7 py-2 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                                    />
+                                    {formFilterSearch && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormFilterSearch('')}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                                        >
+                                            <X size={12} />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Options List */}
+                                <div className="max-h-72 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedForm('')
+                                            setCurrentPage(1)
+                                            setIsFormFilterOpen(false)
+                                        }}
+                                        className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
+                                            !selectedForm ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <span>All Lead Forms</span>
+                                        {!selectedForm && <CheckCircle2 size={13} />}
+                                    </button>
+
+                                    {uniqueForms
+                                        .filter(form => !formFilterSearch.trim() || form.toLowerCase().includes(formFilterSearch.toLowerCase().trim()))
+                                        .map((form, idx) => {
+                                            const isSelected = selectedForm === form
+                                            const isFormActive = activeFormSet.names.has(form.toLowerCase())
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedForm(form)
+                                                        setCurrentPage(1)
+                                                        setIsFormFilterOpen(false)
+                                                    }}
+                                                    title={form}
+                                                    className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
+                                                        isSelected ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                        <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{form}</span>
+                                                        {isFormActive && (
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 shadow-2xs ${
+                                                                isSelected ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                            }`}>
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'} animate-pulse`}></span>
+                                                                <span>Active</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {isSelected && <CheckCircle2 size={14} className="shrink-0 mt-0.5" />}
+                                                </button>
+                                            )
+                                        })}
+
+                                    {uniqueForms.filter(form => !formFilterSearch.trim() || form.toLowerCase().includes(formFilterSearch.toLowerCase().trim())).length === 0 && (
+                                        <div className="py-4 text-center text-xs font-semibold text-slate-400">
+                                            No matching lead forms found
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Specific Pipeline Stage Filter */}

@@ -7,8 +7,8 @@
 export function normalizeCampaignString(str: string | null | undefined): string {
   if (!str) return '';
   return str
-    .replace(/^\[(form|campaign|ad)\]\s*/i, '') // remove prefix like [Form] or [Campaign]
-    .replace(/^(form|campaign|ad):\s*/i, '') // remove prefix like Form: or Campaign:
+    .replace(/^\[(form|campaign|ad|source)\]\s*/i, '') // remove prefix like [Form] or [Campaign] or [Source]
+    .replace(/^(form|campaign|ad|source):\s*/i, '') // remove prefix like Form: or Campaign: or Source:
     .replace(/[\u2010-\u2015\u2212]/g, '-') // Normalize various unicode dashes
     .toLowerCase()
     .replace(/\bhaymten\b/g, 'hampton')
@@ -25,6 +25,7 @@ export interface MatchLeadContext {
   formName?: string | null;
   formId?: string | null;
   adCampaignString?: string | null;
+  source?: string | null;
 }
 
 const STOP_WORDS = new Set([
@@ -34,14 +35,13 @@ const STOP_WORDS = new Set([
 ]);
 
 /**
- * Checks whether a given lead matches a campaign or form rule entry.
+ * Checks whether a given lead matches a campaign, form, or source rule entry.
  * Prioritizes:
- * 1. Exact Campaign ID or Form ID match (100% deterministic)
- * 2. ID lookup through userCampaignsMap
- * 3. Exact full-name match (case-insensitive & whitespace trimmed)
- * 4. Controlled whole-token prefix match (e.g. "Ananta Aspire" matching "Ananta Aspire 5 September 2026")
- * 
- * Never uses fuzzy token splitting or regex searching that could match "copy" against "Price-copy".
+ * 1. Exact Source match (e.g. [Source] Housing.com or 99 Acres)
+ * 2. Exact Campaign ID or Form ID match (100% deterministic)
+ * 3. ID lookup through userCampaignsMap
+ * 4. Exact full-name match (case-insensitive & whitespace trimmed)
+ * 5. Controlled whole-token prefix match (e.g. "Ananta Aspire" matching "Ananta Aspire 5 September 2026")
  */
 export function matchesCampaignRule(
   ruleCampaign: string,
@@ -56,11 +56,12 @@ export function matchesCampaignRule(
   // Check if rule is explicitly tagged
   const isExplicitForm = /^\[form\]/i.test(rawTrimmed) || /^form:/i.test(rawTrimmed);
   const isExplicitCamp = /^\[campaign\]/i.test(rawTrimmed) || /^campaign:/i.test(rawTrimmed);
+  const isExplicitSource = /^\[source\]/i.test(rawTrimmed) || /^source:/i.test(rawTrimmed);
 
   // Clean the rule string of tags
   const cleanRule = rawTrimmed
-    .replace(/^\[(form|campaign|ad)\]\s*/i, '')
-    .replace(/^(form|campaign|ad):\s*/i, '')
+    .replace(/^\[(form|campaign|ad|source)\]\s*/i, '')
+    .replace(/^(form|campaign|ad|source):\s*/i, '')
     .trim();
 
   const ruleNorm = normalizeCampaignString(cleanRule);
@@ -73,6 +74,31 @@ export function matchesCampaignRule(
   const leadFormNameNorm = normalizeCampaignString(lead.formName);
   const leadAdNameNorm = normalizeCampaignString(lead.adName);
   const leadAdCampStrNorm = normalizeCampaignString(lead.adCampaignString);
+  const leadSourceNorm = normalizeCampaignString(lead.source);
+
+  // 0. LEAD SOURCE MATCHING (Housing.com, 99 Acres, Facebook, WhatsApp, etc.)
+  if (leadSourceNorm) {
+    if (isExplicitSource) {
+      if (leadSourceNorm === ruleNorm) return true;
+      const cleanLeadSrc = leadSourceNorm.replace(/[\s.-]/g, '');
+      const cleanRuleSrc = ruleNorm.replace(/[\s.-]/g, '');
+      if (cleanLeadSrc && cleanRuleSrc && (cleanLeadSrc === cleanRuleSrc || cleanLeadSrc.includes(cleanRuleSrc) || cleanRuleSrc.includes(cleanLeadSrc))) {
+        return true;
+      }
+    } else if (!isExplicitForm && !isExplicitCamp) {
+      if (leadSourceNorm === ruleNorm) return true;
+      const cleanLeadSrc = leadSourceNorm.replace(/[\s.-]/g, '');
+      const cleanRuleSrc = ruleNorm.replace(/[\s.-]/g, '');
+      if (cleanLeadSrc && cleanRuleSrc && cleanLeadSrc === cleanRuleSrc) {
+        return true;
+      }
+    }
+  }
+
+  // If rule is explicitly tagged as a Source, do NOT fall through to match campaigns or forms
+  if (isExplicitSource) {
+    return false;
+  }
 
   // 1. EXACT ID MATCHES (Deterministic)
   // Campaign ID Match

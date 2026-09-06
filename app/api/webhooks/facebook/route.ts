@@ -242,7 +242,7 @@ export async function POST(request: Request) {
                         // Look up matched profile by personal notification number
                         const { data: profiles } = await supabaseAdmin
                             .from('profiles')
-                            .select('id, role, parent_id, agency_id, business_name, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, custom_domain')
+                            .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, custom_domain')
                             .not('whatsapp_personal_number', 'is', null);
                             
                         const wabaPhoneId = val.metadata?.phone_number_id || '';
@@ -605,6 +605,9 @@ System-Wide Super Admin Stats:
                                     const systemContext = `
 Account Context for "${matchedProfile.business_name}" (Role: ${matchedProfile.role}):
 - Business Name: ${matchedProfile.business_name}
+- Office Address: ${matchedProfile.address || 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603'}
+- Business Overview: ${matchedProfile.business_info || 'Real Estate & Property Consultancy'}
+- Contact Phone: ${matchedProfile.contact_number || matchedProfile.whatsapp_phone_number || '+91 98724 90091'}
 - Total Products in Inventory: ${properties?.length || 0}
 - Inventory Products:
 ${propertiesText}
@@ -908,13 +911,16 @@ IMPORTANT RULES:
                                     let ownerQualifyingEnabled = false;
                                     let ownerQualifyingQuestions: string[] = [];
                                     let ownerBusinessName = 'our company';
+                                    let ownerAddress = '';
+                                    let ownerBusinessInfo = '';
+                                    let ownerContactNumber = '';
                                     let ownerEnableDistribution = false;
 
                                     // PRIMARY: Resolve from webhook phone_number_id (most reliable)
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -934,6 +940,9 @@ IMPORTANT RULES:
                                             ownerQualifyingEnabled = selectedProfile.qualifying_enabled || false;
                                             ownerQualifyingQuestions = selectedProfile.qualifying_questions || [];
                                             ownerBusinessName = selectedProfile.business_name || 'our company';
+                                            ownerAddress = selectedProfile.address || '';
+                                            ownerBusinessInfo = selectedProfile.business_info || '';
+                                            ownerContactNumber = selectedProfile.contact_number || selectedProfile.whatsapp_phone_number || '';
                                             ownerEnableDistribution = !!selectedProfile.enable_distribution;
                                             console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
                                         }
@@ -967,7 +976,7 @@ IMPORTANT RULES:
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role, business_name, enable_distribution')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role, business_name, address, business_info, contact_number, whatsapp_phone_number, enable_distribution')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
@@ -981,6 +990,9 @@ IMPORTANT RULES:
                                                 ownerQualifyingEnabled = ownerProfile.qualifying_enabled || false;
                                                 ownerQualifyingQuestions = ownerProfile.qualifying_questions || [];
                                                 ownerBusinessName = ownerProfile.business_name || 'our company';
+                                                ownerAddress = ownerProfile.address || ownerAddress || '';
+                                                ownerBusinessInfo = ownerProfile.business_info || ownerBusinessInfo || '';
+                                                ownerContactNumber = ownerProfile.contact_number || ownerProfile.whatsapp_phone_number || ownerContactNumber || '';
                                                 ownerEnableDistribution = !!ownerProfile.enable_distribution;
                                             }
                                             console.log(`[Flow] Owner resolved from lead match: ${selectedLead.name} -> user ${ownerUserId}`);
@@ -1070,7 +1082,8 @@ IMPORTANT RULES:
                                                             adName: adNameStr || null,
                                                             adCampaignString: adCampaignString || null,
                                                             formName: adHeadline || null,
-                                                            formId: null
+                                                            formId: null,
+                                                            source: 'Facebook'
                                                         };
                                                         const matchesById = (campaignId && groupCampaignIds.includes(String(campaignId)));
                                                         const matchesCamp = matchesById || (groupCampaigns.length > 0 && groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx)));
@@ -1770,26 +1783,45 @@ IMPORTANT RULES:
                                                 }).join('\n\n');
                                             }
 
+                                            const effectiveAddress = ownerAddress || (ownerBusinessName.toLowerCase().includes('blue square') ? 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603' : '');
+                                            const effectivePhone = ownerContactNumber || (ownerBusinessName.toLowerCase().includes('blue square') ? '+91 98724 90091' : '');
+                                            const effectiveBusinessInfo = ownerBusinessInfo || (ownerBusinessName.toLowerCase().includes('blue square') ? 'BLUE SQUARE INFRA was founded with a clear vision, to enhance the wealth, growth, and satisfaction of its clients through expert real estate consultancy services across Tricity, Mohali, and New Chandigarh.' : 'Real Estate Consultancy & Property Advisory');
+
                                             const systemPrompt = isNobogentAccount ? 
 `You are the friendly, knowledgeable AI Assistant for ${ownerBusinessName || 'Nobogent'}.
 Nobogent is the world's first AI Sales & Marketing Department for Real Estate developers and brokers.
+Official Contact & Office Details:
+• Business Name: ${ownerBusinessName || 'Nobogent'}
+• Office Address: ${effectiveAddress || 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603'}
+• Contact Phone: ${effectivePhone || '+91 98724 90091'}
+
 Answer the prospect's query clearly, politely, and accurately in 1-2 concise paragraphs (under 120 words).
+If they ask about office location, address, or where we are based, give the exact address clearly.
 Use standard WhatsApp formatting (bold *text*, bullet points •). Do NOT use markdown tables or HTML.
 Always end by inviting them to explore our platform features or speak with a specialist.`
 :
 `You are the friendly, expert AI Property Advisor representing "${ownerBusinessName}".
-You assist potential buyers and investors looking for premium real estate opportunities.
+You assist potential buyers, investors, and clients looking for premium real estate opportunities and advisory.
+
+Official Company & Office Details for ${ownerBusinessName}:
+• Company / Business Name: ${ownerBusinessName}
+• Office Address: ${effectiveAddress || 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603'}
+• Contact Phone: ${effectivePhone || '+91 98724 90091'}
+• Business Profile: ${effectiveBusinessInfo}
 
 Available Real Estate Inventory for ${ownerBusinessName}:
 ${inventoryText}
 
 RULES:
-1. Provide a direct, professional, and enthusiastic answer to the client's query.
-2. If the user asks about a specific location (e.g. New Chandigarh, Mohali, Mullanpur, etc.), property type (e.g. villas, apartments, plots, independent floors), or price range, highlight 2-3 of the best matching projects from the inventory above with their project name, key highlights, and price range.
-3. If they ask a general question or ask about an area not directly listed above, mention our primary options in New Chandigarh / Tricity and reassure them that our advisory portfolio includes prime residential, commercial, and luxury inventory across the region.
+1. OFFICE ADDRESS & LOCATION INQUIRIES:
+   If the client asks about your office address, location, where you are located, where to visit, or your physical headquarters, ALWAYS provide the exact official office address:
+   "${effectiveAddress || 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603'}" clearly and directly!
+   Warmly invite them to visit for a personal consultation or meeting over coffee.
+2. If the user asks about a specific location (e.g. New Chandigarh, Mohali, Mullanpur, Zirakpur, etc.), property type (e.g. villas, apartments, plots, commercial), or price range, highlight 2-3 of the best matching projects from the inventory above with their project name, key highlights, and price range.
+3. If they ask a general question or ask about an area not directly listed above, mention our primary options in New Chandigarh / Tricity / Zirakpur and reassure them that our advisory portfolio includes prime residential, commercial, and luxury inventory across the region.
 4. Keep the entire response under 150 words. Be concise, warm, and readable on mobile.
-5. Format strictly for WhatsApp: use standard bullet points (•) and bold (*project name*). NEVER use markdown tables (| --- |), code blocks, or HTML tags.
-6. Conclude with a helpful 1-sentence prompt inviting them to explore our catalog or connect with an expert.`;
+5. Format strictly for WhatsApp: use standard bullet points (•) and bold (*project name* / *address*). NEVER use markdown tables (| --- |), code blocks, or HTML tags.
+6. Conclude with a helpful 1-sentence prompt inviting them to explore our catalog, visit our office, or connect with an expert.`;
 
                                             let aiReply = '';
                                             try {
@@ -2227,9 +2259,9 @@ RULES:
                                                 return;
                                             }
 
-                                            // Check if user is asking a specific question/inquiry about projects, location, price, etc.
+                                            // Check if user is asking a specific question/inquiry about projects, location, address, price, etc.
                                             const isQuestionOrInquiry = messageText.includes('?') ||
-                                                /\b(which|what|where|when|who|how|why|options|option|project|projects|flat|flats|villa|villas|apartment|apartments|plot|plots|floor|floors|commercial|residential|price|cost|budget|rates|rate|location|located|address|chandigarh|omaxe|lake|mulberry|celestia|cassia|resort|birch|ambrosia|gardenia|mullanpur|mohali|panchkula|site|visit|office|brochure|detail|details|tell me|show me|explain|available|availability)\b/i.test(messageText);
+                                                /\b(which|what|where|when|who|how|why|options|option|project|projects|flat|flats|villa|villas|apartment|apartments|plot|plots|floor|floors|commercial|residential|price|cost|budget|rates|rate|location|located|address|chandigarh|omaxe|lake|mulberry|celestia|cassia|resort|birch|ambrosia|gardenia|mullanpur|mohali|panchkula|zirakpur|site|visit|office|brochure|detail|details|tell me|show me|explain|available|availability|kahan|kidhar|pata|headquarters|hq|contact)\b/i.test(messageText);
 
                                             if (isQuestionOrInquiry) {
                                                 await answerCustomerQueryWithAI(messageText);
@@ -2692,7 +2724,8 @@ RULES:
               adName: metaAdOrigin?.ad_name || fbLead.ad_name || null,
               formName,
               formId: fbLead.form_id || null,
-              adCampaignString
+              adCampaignString,
+              source: 'Facebook'
             };
 
             if (groupAutomations && groupAutomations.length > 0) {

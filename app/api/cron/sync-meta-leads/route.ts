@@ -349,7 +349,8 @@ async function handleSync(request: Request) {
                         adName,
                         formName,
                         formId,
-                        adCampaignString
+                        adCampaignString,
+                        source: 'Facebook'
                       };
 
                       // 1. Exact ID match (Highest deterministic priority)

@@ -15,9 +15,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // 2. Get Credentials
+  // 2. Get Credentials & Query Parameters
   const url = new URL(request.url)
   const impersonateId = url.searchParams.get('impersonate')
+  const datePreset = url.searchParams.get('date_preset') || 'maximum'
+  const since = url.searchParams.get('since')
+  const until = url.searchParams.get('until')
+
+  let dateParam = `date_preset=${encodeURIComponent(datePreset)}`
+  if (since && until) {
+    dateParam = `time_range=${encodeURIComponent(JSON.stringify({ since, until }))}`
+  }
 
   // 1.5 Get User Profile for role/hierarchy
   const { data: profile } = await supabase.from('profiles').select('role, facebook_token, agency_id, parent_id').eq('id', user.id).single()
@@ -117,20 +125,20 @@ export async function GET(request: Request) {
 
     let allMetaCampaigns: any[] = [];
     let nextUrl: string | null = `${FB_GRAPH_URL}/${formattedAdAccountId}/campaigns?fields=id,name,status,effective_status,objective,start_time,created_time,daily_budget,lifetime_budget,budget_remaining&effective_status=${encodeURIComponent(effectiveStatuses)}&limit=100&access_token=${token}`;
-    let pageCount = 0;
 
+    let pageCount = 0;
     while (nextUrl && pageCount < 5) {
-      const pageRes: Response = await fetch(nextUrl);
-      const pageData: any = await pageRes.json();
-      if (pageData.error) {
-        logToFile(`[Campaigns API] Meta API pagination warning/error: ${JSON.stringify(pageData.error)}`);
+      try {
+        const pageRes: Response = await fetch(nextUrl);
+        const pageData: any = await pageRes.json();
+        if (pageData.data && Array.isArray(pageData.data)) {
+          allMetaCampaigns = allMetaCampaigns.concat(pageData.data);
+        }
+        nextUrl = pageData.paging?.next || null;
+        pageCount++;
+      } catch {
         break;
       }
-      if (pageData.data && Array.isArray(pageData.data)) {
-        allMetaCampaigns = allMetaCampaigns.concat(pageData.data);
-      }
-      nextUrl = pageData.paging?.next || null;
-      pageCount++;
     }
 
     // Fallback without effective_status filter if zero campaigns found
@@ -144,17 +152,143 @@ export async function GET(request: Request) {
       }
     }
 
-    const campaignList = allMetaCampaigns.map((c: any) => ({
-      id: c.id,
-      name: c.name || 'Untitled Campaign',
-      status: c.effective_status || c.status || 'ACTIVE',
-      objective: c.objective || 'OUTCOME_LEADS',
-      start_time: c.start_time,
-      created_time: c.created_time,
-      daily_budget: c.daily_budget,
-      lifetime_budget: c.lifetime_budget,
-      budget_remaining: c.budget_remaining
-    }));
+    // Helper to parse insight metrics
+    const parseInsight = (ins: any) => {
+      if (!ins?.campaign_id) return null;
+      const spend = parseFloat(ins.spend || 0);
+      const impressions = parseInt(ins.impressions || 0, 10);
+      const clicks = parseInt(ins.clicks || 0, 10);
+      const ctr = parseFloat(ins.inline_link_click_ctr || ins.ctr || 0);
+      const cpc = parseFloat(ins.cpc || 0);
+      const cpm = parseFloat(ins.cpm || 0);
+
+      let resultsCount = 0;
+      let resultType: 'leads' | 'conversations' | 'results' = 'results';
+
+      if (Array.isArray(ins.actions)) {
+        const waAction = ins.actions.find((a: any) => 
+          a.action_type === 'onsite_conversion.messaging_conversation_started_7d' ||
+          a.action_type === 'onsite_conversion.total_messaging_connection'
+        );
+        const leadAction = ins.actions.find((a: any) => 
+          a.action_type === 'lead' || 
+          a.action_type === 'onsite_conversion.lead_grouped' ||
+          a.action_type === 'offsite_complete_registration_add_meta_leads' ||
+          a.action_type === 'leadgen.other'
+        );
+
+        if (leadAction) {
+          resultsCount = parseInt(leadAction.value || 0, 10);
+          resultType = 'leads';
+        } else if (waAction) {
+          resultsCount = parseInt(waAction.value || 0, 10);
+          resultType = 'conversations';
+        }
+      }
+
+      const cpl = resultsCount > 0 ? (spend / resultsCount) : null;
+
+      return {
+        spend,
+        impressions,
+        clicks,
+        ctr,
+        cpc,
+        cpm,
+        results: resultsCount,
+        cpl,
+        resultType
+      };
+    };
+
+    // Find active campaigns
+    const activeCampaignIds = allMetaCampaigns
+      .filter((c: any) => (c.effective_status || c.status) === 'ACTIVE')
+      .map((c: any) => c.id);
+
+    // Build map of campaign insights by campaign_id
+    const campaignInsightsMap = new Map<string, any>();
+
+    // Concurrently fetch:
+    // 1. Targeted insights specifically for active campaigns (guarantees active campaigns have live non-zero data)
+    // 2. Account-wide insights (paged up to 4 pages to cover all historical campaigns in this date range)
+    const activeInsightsPromise = activeCampaignIds.length > 0
+      ? fetch(`${FB_GRAPH_URL}/${formattedAdAccountId}/insights?level=campaign&fields=campaign_id,spend,impressions,clicks,actions,ctr,cpc,cpm,inline_link_click_ctr&${dateParam}&filtering=${encodeURIComponent(JSON.stringify([{ field: 'campaign.id', operator: 'IN', value: activeCampaignIds }]))}&limit=50&access_token=${token}`)
+          .then(r => r.json())
+          .catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] });
+
+    const accountInsightsPromise = (async () => {
+      let insightsList: any[] = [];
+      let pUrl: string | null = `${FB_GRAPH_URL}/${formattedAdAccountId}/insights?level=campaign&fields=campaign_id,spend,impressions,clicks,actions,ctr,cpc,cpm,inline_link_click_ctr&${dateParam}&limit=100&access_token=${token}`;
+      let pCount = 0;
+      while (pUrl && pCount < 4) {
+        try {
+          const r: Response = await fetch(pUrl);
+          const d: any = await r.json();
+          if (d.data && Array.isArray(d.data)) {
+            insightsList = insightsList.concat(d.data);
+          }
+          pUrl = d.paging?.next || null;
+          pCount++;
+        } catch {
+          break;
+        }
+      }
+      return insightsList;
+    })();
+
+    const [activeRes, allInsightsList] = await Promise.all([
+      activeInsightsPromise,
+      accountInsightsPromise
+    ]);
+
+    // 1. Ingest account-wide insights
+    if (Array.isArray(allInsightsList)) {
+      allInsightsList.forEach((ins: any) => {
+        const parsed = parseInsight(ins);
+        if (parsed && ins.campaign_id) {
+          campaignInsightsMap.set(String(ins.campaign_id), parsed);
+        }
+      });
+    }
+
+    // 2. Overlay targeted active insights (ensuring 100% active campaigns take priority)
+    if (activeRes?.data && Array.isArray(activeRes.data)) {
+      activeRes.data.forEach((ins: any) => {
+        const parsed = parseInsight(ins);
+        if (parsed && ins.campaign_id) {
+          campaignInsightsMap.set(String(ins.campaign_id), parsed);
+        }
+      });
+    }
+
+    const campaignList = allMetaCampaigns.map((c: any) => {
+      const ins = campaignInsightsMap.get(String(c.id)) || {
+        spend: 0,
+        impressions: 0,
+        clicks: 0,
+        ctr: 0,
+        cpc: 0,
+        cpm: 0,
+        results: 0,
+        cpl: null,
+        resultType: 'leads'
+      };
+
+      return {
+        id: c.id,
+        name: c.name || 'Untitled Campaign',
+        status: c.effective_status || c.status || 'ACTIVE',
+        objective: c.objective || 'OUTCOME_LEADS',
+        start_time: c.start_time,
+        created_time: c.created_time,
+        daily_budget: c.daily_budget ? parseFloat(c.daily_budget) : null,
+        lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) : null,
+        budget_remaining: c.budget_remaining ? parseFloat(c.budget_remaining) : null,
+        metrics: ins
+      };
+    });
 
     // Sort by created_time descending so newly created campaigns show first
     campaignList.sort((a: any, b: any) => {
@@ -163,7 +297,7 @@ export async function GET(request: Request) {
       return timeB - timeA;
     });
 
-    logToFile(`[Campaigns API] Successfully fetched ${campaignList.length} campaigns`);
+    logToFile(`[Campaigns API] Successfully fetched ${campaignList.length} campaigns with live metrics`);
     return NextResponse.json({ campaigns: campaignList })
 
   } catch (error: any) {

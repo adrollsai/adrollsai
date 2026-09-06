@@ -43,10 +43,10 @@ export async function GET(request: Request) {
       }
   }
 
-  // Get Page Credentials
+  // Get Page & Ad Account Credentials
   const { data: profile } = await supabase
     .from('profiles')
-    .select('selected_page_token, selected_page_id')
+    .select('selected_page_token, selected_page_id, facebook_token, ad_account_id, parent_id, agency_id')
     .eq('id', targetUserId)
     .single()
 
@@ -56,6 +56,72 @@ export async function GET(request: Request) {
 
   try {
     const forms = await fetchLeadForms(profile.selected_page_token, profile.selected_page_id)
+
+    // Resolve Facebook Token and Ad Account ID for active ads lookup
+    let fbToken = profile.facebook_token;
+    let adAccountId = profile.ad_account_id;
+
+    if ((!fbToken || !adAccountId) && (profile.parent_id || profile.agency_id)) {
+      const { data: parentProfile } = await supabase
+        .from('profiles')
+        .select('facebook_token, ad_account_id')
+        .eq('id', profile.parent_id || profile.agency_id)
+        .single();
+      if (!fbToken && parentProfile?.facebook_token) fbToken = parentProfile.facebook_token;
+      if (!adAccountId && parentProfile?.ad_account_id) adAccountId = parentProfile.ad_account_id;
+    }
+
+    if (fbToken && adAccountId) {
+      try {
+        const formattedAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+        const statuses = encodeURIComponent(JSON.stringify(['ACTIVE']));
+
+        const [adsRes, campRes] = await Promise.allSettled([
+          fetch(`https://graph.facebook.com/v20.0/${formattedAdAccountId}/ads?fields=id,name,campaign_id,effective_status,creative{id,name,object_story_spec,asset_feed_spec}&effective_status=${statuses}&limit=100&access_token=${fbToken}`).then(r => r.json()),
+          fetch(`https://graph.facebook.com/v20.0/${formattedAdAccountId}/campaigns?fields=id,name,effective_status&effective_status=${statuses}&limit=50&access_token=${fbToken}`).then(r => r.json())
+        ]);
+
+        const activeFormIds = new Set<string>();
+        const activeFormToCampId = new Map<string, string>();
+        const activeCampIdToName = new Map<string, string>();
+
+        if (campRes.status === 'fulfilled' && campRes.value?.data) {
+          campRes.value.data.forEach((c: any) => {
+            if (c.id && c.name) activeCampIdToName.set(String(c.id), c.name);
+          });
+        }
+
+        if (adsRes.status === 'fulfilled' && adsRes.value?.data) {
+          adsRes.value.data.forEach((ad: any) => {
+            const crStr = JSON.stringify(ad.creative || {});
+            const matches = crStr.matchAll(/"lead_gen_form_id":"(\d+)"/g);
+            for (const m of matches) {
+              const fId = m[1];
+              activeFormIds.add(fId);
+              if (ad.campaign_id) activeFormToCampId.set(fId, String(ad.campaign_id));
+            }
+          });
+        }
+
+        const enrichedForms = forms.map((f: any) => {
+          const fIdStr = String(f.id || '').trim();
+          const isActiveInCamp = activeFormIds.has(fIdStr);
+          const campId = activeFormToCampId.get(fIdStr) || null;
+          const campName = campId ? activeCampIdToName.get(campId) || null : null;
+          return {
+            ...f,
+            is_active_in_campaign: isActiveInCamp,
+            active_campaign_id: campId,
+            active_campaign_name: campName
+          };
+        });
+
+        return NextResponse.json({ forms: enrichedForms });
+      } catch (adLookupErr) {
+        console.warn("Could not enrich forms with active ad data:", adLookupErr);
+      }
+    }
+
     return NextResponse.json({ forms })
   } catch (error: any) {
     console.error("Fetch Forms Error:", error);

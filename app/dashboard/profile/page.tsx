@@ -45,6 +45,7 @@ import {
   Folder,
   Clock,
   Bell,
+  Workflow,
   X
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -3668,6 +3669,31 @@ export default function ProfilePage() {
                     <span className="font-bold text-sm text-slate-900">Landing Pages Manager</span>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
+                </button>
+
+                <button 
+                  onClick={() => router.push(`/dashboard/flows${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-violet-50/50 transition-all border-b border-slate-100 group cursor-pointer"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white p-3 rounded-2xl shadow-sm group-hover:scale-105 transition-transform">
+                      <Workflow size={20} />
+                    </div>
+                    <div className="text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-slate-900 group-hover:text-violet-700 transition-colors">
+                          Automation Flow Builder
+                        </span>
+                        <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-violet-100 text-violet-700 rounded-full">
+                          Visual Canvas
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 font-medium block">
+                        Design multi-channel automation pipelines for Meta campaigns, WhatsApp bots & AI calling
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400 group-hover:text-violet-600 transition-colors" />
                 </button>
 
                 <button 

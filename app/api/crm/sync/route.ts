@@ -252,7 +252,8 @@ export async function POST(request: Request) {
         adName: lead.ad_name,
         formName: lead.form_name,
         formId: lead.form_id || null,
-        adCampaignString: lead.ad_name
+        adCampaignString: lead.ad_name,
+        source: lead.source || lead.custom_fields?.source || null
       };
 
       // Check Group-Distribution rules first

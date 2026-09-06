@@ -162,6 +162,33 @@ export default async function RootLayout({
         <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)" />
         <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)" />
         <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (typeof window !== 'undefined') {
+                var isLocal = window.location.hostname === 'local.nobogent.com' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                if (isLocal && 'serviceWorker' in navigator) {
+                  navigator.serviceWorker.getRegistrations().then(function(regs) {
+                    for (var r of regs) { r.unregister(); }
+                  });
+                  if ('caches' in window) {
+                    caches.keys().then(function(names) {
+                      for (var name of names) { caches.delete(name); }
+                    });
+                  }
+                }
+                window.addEventListener('error', function(e) {
+                  if (e && (e.message && e.message.indexOf('Loading chunk') !== -1 || (e.error && e.error.name === 'ChunkLoadError'))) {
+                    if (!sessionStorage.getItem('chunk_retry')) {
+                      sessionStorage.setItem('chunk_retry', '1');
+                      window.location.reload();
+                    }
+                  }
+                });
+              }
+            `,
+          }}
+        />
       </head>
       <body className={inter.className} suppressHydrationWarning>
         <CapacitorBridge />

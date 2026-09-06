@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
+import { matchesCampaignRule } from '@/utils/campaign-matcher'
 
 // Admin client — webhooks have no user session
 const supabaseAdmin = createClient(
@@ -143,9 +144,82 @@ export async function POST(
             }
         })
 
-        // 3. Round-robin assignment
+        // 3. Evaluate Group-Distribution automation rules first
         let assignedAgentId: string | null = null;
-        if (profile.enable_distribution) {
+        let assignedAgentName = '';
+
+        try {
+            const { data: groupAutomations } = await supabaseAdmin
+                .from('automations')
+                .select('*')
+                .eq('user_id', profile.id)
+                .like('title', 'Group-Distribution:%')
+                .eq('is_active', true);
+
+            if (groupAutomations && groupAutomations.length > 0) {
+                const leadCtx = {
+                    source: 'Housing.com',
+                    campaignName: projectName || null,
+                    adName: propertyType || null,
+                    adCampaignString: projectName || null
+                };
+
+                for (const aut of groupAutomations) {
+                    try {
+                        const parsedGroup = JSON.parse(aut.description || '{}');
+                        const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
+                        const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
+
+                        if (groupMembers.length > 0 && groupCampaigns.length > 0) {
+                            const matchesCamp = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx));
+
+                            if (matchesCamp) {
+                                const weightedPool: any[] = [];
+                                groupMembers.forEach(m => {
+                                    for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
+                                        weightedPool.push(m);
+                                    }
+                                });
+
+                                let currentIdx = 0;
+                                if (parsedGroup.last_assigned_user_id) {
+                                    const lastIdx = weightedPool.findIndex(m => m.userId === parsedGroup.last_assigned_user_id);
+                                    if (lastIdx !== -1) {
+                                        currentIdx = (lastIdx + 1) % weightedPool.length;
+                                    }
+                                }
+
+                                const selectedMember = weightedPool[currentIdx];
+                                assignedAgentId = selectedMember.userId;
+                                assignedAgentName = selectedMember.name || '';
+
+                                parsedGroup.last_assigned_user_id = selectedMember.userId;
+                                parsedGroup.last_assigned_user_name = selectedMember.name;
+                                parsedGroup.last_assigned_at = new Date().toISOString();
+
+                                const updatedGroupJson = JSON.stringify(parsedGroup);
+                                aut.description = updatedGroupJson;
+
+                                await supabaseAdmin
+                                    .from('automations')
+                                    .update({ description: updatedGroupJson })
+                                    .eq('id', aut.id);
+
+                                console.log(`[Housing Webhook] Group distribution assigned lead to ${selectedMember.name} (${selectedMember.userId}) for rule ${aut.title}`);
+                                break;
+                            }
+                        }
+                    } catch (pErr) {
+                        console.error('[Housing Webhook] Error evaluating group rule:', pErr);
+                    }
+                }
+            }
+        } catch (distErr) {
+            console.error('[Housing Webhook] Error evaluating group distribution:', distErr);
+        }
+
+        // Fallback to standard round-robin if not matched by group rule
+        if (!assignedAgentId && profile.enable_distribution) {
             const { data: teamData } = await supabaseAdmin
                 .from('profiles')
                 .select('id')

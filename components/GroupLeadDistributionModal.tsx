@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, Plus, Trash2, Users, Layers, ArrowRight, RefreshCw, CheckCircle2, 
   ChevronDown, Sparkles, UserCheck, Shield, SlidersHorizontal, AlertCircle, 
-  Search, Megaphone, FileText, Check, Tag
+  Search, Megaphone, FileText, Check, Tag, Globe
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
@@ -33,7 +33,7 @@ export interface DistributionGroup {
 interface SelectableSourceItem {
   id: string;
   name: string;
-  type: 'campaign' | 'form' | 'custom';
+  type: 'campaign' | 'form' | 'source' | 'custom';
   status?: string;
   leadsCount?: number;
   ruleValue: string;
@@ -69,10 +69,11 @@ export default function GroupLeadDistributionModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isDistributing, setIsDistributing] = useState<string | null>(null);
 
-  // Live Meta Sources State
+  // Live Meta & Discovered Sources State
   const [metaCampaigns, setMetaCampaigns] = useState<any[]>([]);
   const [metaForms, setMetaForms] = useState<any[]>([]);
   const [dbCampaigns, setDbCampaigns] = useState<any[]>([]);
+  const [dbSources, setDbSources] = useState<string[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
 
   // New Group Modal / Inline Form State
@@ -80,10 +81,10 @@ export default function GroupLeadDistributionModal({
   const [newGroupName, setNewGroupName] = useState('');
   const [selectedUserToAdd, setSelectedUserToAdd] = useState<Record<string, string>>({});
   
-  // Searchable Campaign & Form Picker State
+  // Searchable Campaign, Form & Source Picker State
   const [activePickerGroupId, setActivePickerGroupId] = useState<string | null>(null);
   const [campaignSearchQuery, setCampaignSearchQuery] = useState('');
-  const [pickerTab, setPickerTab] = useState<'all' | 'campaigns' | 'forms'>('all');
+  const [pickerTab, setPickerTab] = useState<'all' | 'campaigns' | 'forms' | 'sources'>('all');
 
   // Fetch groups and live meta sources on modal open
   useEffect(() => {
@@ -144,13 +145,18 @@ export default function GroupLeadDistributionModal({
     try {
       const impParam = impersonateId ? `?impersonate=${impersonateId}` : '';
       
-      const [campRes, formsRes, dbCampsRes] = await Promise.allSettled([
+      const [campRes, formsRes, dbCampsRes, dbSourcesRes] = await Promise.allSettled([
         fetch(`/api/meta-ads/campaigns${impParam}`).then(r => r.json()),
         fetch(`/api/facebook/forms${impParam}`).then(r => r.json()),
         supabase
           .from('campaigns')
           .select('id, name, status')
+          .eq('user_id', targetUserId),
+        supabase
+          .from('leads')
+          .select('source')
           .eq('user_id', targetUserId)
+          .not('source', 'is', null)
       ]);
 
       if (campRes.status === 'fulfilled' && campRes.value?.campaigns) {
@@ -162,17 +168,28 @@ export default function GroupLeadDistributionModal({
       if (dbCampsRes.status === 'fulfilled' && dbCampsRes.value.data) {
         setDbCampaigns(dbCampsRes.value.data);
       }
+      if (dbSourcesRes.status === 'fulfilled' && dbSourcesRes.value.data) {
+        const unique = Array.from(new Set(
+          dbSourcesRes.value.data
+            .map((d: any) => d.source?.trim())
+            .filter((s: string | undefined): s is string => !!s)
+        ));
+        setDbSources(unique);
+      }
     } catch (err) {
-      console.error('Error fetching Meta campaigns/forms:', err);
+      console.error('Error fetching sources/campaigns/forms:', err);
     } finally {
       setLoadingSources(false);
     }
   };
 
-  // Map of ID -> { name: string; type: 'campaign' | 'form' } and Name -> { id: string; type: 'campaign' | 'form' }
+  // Map of ID -> { name: string; type: 'campaign' | 'form' | 'source' } and Name -> { id: string; type: 'campaign' | 'form' | 'source' }
   const sourceResolutionMap = useMemo(() => {
-    const idMap = new Map<string, { name: string; type: 'campaign' | 'form' }>();
-    const nameMap = new Map<string, { id: string; type: 'campaign' | 'form' }>();
+    const idMap = new Map<string, { name: string; type: 'campaign' | 'form' | 'source' }>();
+    const campaignNameMap = new Map<string, { id: string; type: 'campaign' }>();
+    const formNameMap = new Map<string, { id: string; type: 'form' }>();
+    const sourceNameMap = new Map<string, { id: string; type: 'source' }>();
+    const nameMap = new Map<string, { id: string; type: 'campaign' | 'form' | 'source' }>();
 
     // 1. Meta campaigns
     metaCampaigns.forEach((c: any) => {
@@ -180,6 +197,7 @@ export default function GroupLeadDistributionModal({
       const name = c.name?.trim();
       if (id && name) {
         idMap.set(id, { name, type: 'campaign' });
+        campaignNameMap.set(name.toLowerCase(), { id, type: 'campaign' });
         nameMap.set(name.toLowerCase(), { id, type: 'campaign' });
       }
     });
@@ -190,6 +208,7 @@ export default function GroupLeadDistributionModal({
       const name = c.name?.trim();
       if (id && name) {
         if (!idMap.has(id)) idMap.set(id, { name, type: 'campaign' });
+        if (!campaignNameMap.has(name.toLowerCase())) campaignNameMap.set(name.toLowerCase(), { id, type: 'campaign' });
         if (!nameMap.has(name.toLowerCase())) nameMap.set(name.toLowerCase(), { id, type: 'campaign' });
       }
     });
@@ -200,7 +219,10 @@ export default function GroupLeadDistributionModal({
       const name = f.name?.trim();
       if (id && name) {
         idMap.set(id, { name, type: 'form' });
-        nameMap.set(name.toLowerCase(), { id, type: 'form' });
+        formNameMap.set(name.toLowerCase(), { id, type: 'form' });
+        if (!nameMap.has(name.toLowerCase())) {
+          nameMap.set(name.toLowerCase(), { id, type: 'form' });
+        }
       }
     });
 
@@ -209,8 +231,9 @@ export default function GroupLeadDistributionModal({
       const id = typeof c === 'object' && c?.id ? String(c.id).trim() : '';
       const name = typeof c === 'string' ? c.trim() : c?.name?.trim();
       if (id && name) {
-        const cleanName = name.replace(/^\[(campaign|form)\]\s*/i, '');
+        const cleanName = name.replace(/^\[(campaign|form|source)\]\s*/i, '');
         if (!idMap.has(id)) idMap.set(id, { name: cleanName, type: 'campaign' });
+        if (!campaignNameMap.has(cleanName.toLowerCase())) campaignNameMap.set(cleanName.toLowerCase(), { id, type: 'campaign' });
         if (!nameMap.has(cleanName.toLowerCase())) nameMap.set(cleanName.toLowerCase(), { id, type: 'campaign' });
       }
     });
@@ -220,8 +243,9 @@ export default function GroupLeadDistributionModal({
       const id = typeof f === 'object' && f?.id ? String(f.id).trim() : '';
       const name = typeof f === 'string' ? f.trim() : f?.name?.trim();
       if (id && name) {
-        const cleanName = name.replace(/^\[(campaign|form)\]\s*/i, '');
+        const cleanName = name.replace(/^\[(campaign|form|source)\]\s*/i, '');
         if (!idMap.has(id)) idMap.set(id, { name: cleanName, type: 'form' });
+        if (!formNameMap.has(cleanName.toLowerCase())) formNameMap.set(cleanName.toLowerCase(), { id, type: 'form' });
         if (!nameMap.has(cleanName.toLowerCase())) nameMap.set(cleanName.toLowerCase(), { id, type: 'form' });
       }
     });
@@ -232,6 +256,7 @@ export default function GroupLeadDistributionModal({
       const cName = (l.custom_fields?.meta_ad_origin?.campaign_name || l.campaign_name || l.ad_name)?.trim();
       if (cId && cName && cName !== 'null' && cName !== 'undefined') {
         if (!idMap.has(cId)) idMap.set(cId, { name: cName, type: 'campaign' });
+        if (!campaignNameMap.has(cName.toLowerCase())) campaignNameMap.set(cName.toLowerCase(), { id: cId, type: 'campaign' });
         if (!nameMap.has(cName.toLowerCase())) nameMap.set(cName.toLowerCase(), { id: cId, type: 'campaign' });
       }
 
@@ -239,12 +264,27 @@ export default function GroupLeadDistributionModal({
       const fName = (l.form_name)?.trim();
       if (fId && fName && fName !== 'null' && fName !== 'undefined') {
         if (!idMap.has(fId)) idMap.set(fId, { name: fName, type: 'form' });
+        if (!formNameMap.has(fName.toLowerCase())) formNameMap.set(fName.toLowerCase(), { id: fId, type: 'form' });
         if (!nameMap.has(fName.toLowerCase())) nameMap.set(fName.toLowerCase(), { id: fId, type: 'form' });
       }
     });
 
-    return { idMap, nameMap };
-  }, [metaCampaigns, dbCampaigns, metaForms, campaigns, forms, leads]);
+    // 7. Lead Sources
+    const allKnownSources = ['Housing.com', '99 Acres', 'Magic Bricks', 'Facebook', 'WhatsApp Ad', 'Website', 'Google Ads', 'IVRS', 'Walk-in', 'Referral', ...dbSources];
+    allKnownSources.forEach(s => {
+      const sTrim = s?.trim();
+      if (sTrim) {
+        const sId = `source_${sTrim.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        idMap.set(sId, { name: sTrim, type: 'source' });
+        sourceNameMap.set(sTrim.toLowerCase(), { id: sId, type: 'source' });
+        if (!nameMap.has(sTrim.toLowerCase())) {
+          nameMap.set(sTrim.toLowerCase(), { id: sId, type: 'source' });
+        }
+      }
+    });
+
+    return { idMap, campaignNameMap, formNameMap, sourceNameMap, nameMap };
+  }, [metaCampaigns, dbCampaigns, metaForms, campaigns, forms, leads, dbSources]);
 
   // Consolidate all available campaigns & forms into a structured selectable catalog
   const allSelectableSources = useMemo<SelectableSourceItem[]>(() => {
@@ -371,8 +411,53 @@ export default function GroupLeadDistributionModal({
       }
     });
 
+    // 7. Dynamic & Preset Lead Sources (Housing.com, 99 Acres, Magic Bricks, Facebook, WhatsApp, etc.)
+    const sourceLeadsCount: Record<string, number> = {};
+    (leads || []).forEach(l => {
+      const s = (l.source || l.custom_fields?.source)?.trim();
+      if (s) {
+        sourceLeadsCount[s.toLowerCase()] = (sourceLeadsCount[s.toLowerCase()] || 0) + 1;
+      }
+    });
+
+    const defaultSourcePresets = [
+      'Housing.com',
+      '99 Acres',
+      'Magic Bricks',
+      'Facebook',
+      'WhatsApp Ad',
+      'Website',
+      'Google Ads',
+      'IVRS',
+      'Walk-in',
+      'Referral'
+    ];
+
+    const allDiscoveredSources = Array.from(new Set([
+      ...defaultSourcePresets,
+      ...dbSources,
+      ...(leads || []).map(l => (l.source || l.custom_fields?.source)?.trim()).filter(Boolean)
+    ]));
+
+    allDiscoveredSources.forEach(src => {
+      if (!src) return;
+      const ruleVal = `[Source] ${src}`;
+      if (!seenRuleValues.has(ruleVal.toLowerCase()) && !seenRuleValues.has(src.toLowerCase())) {
+        seenRuleValues.add(ruleVal.toLowerCase());
+        items.push({
+          id: `source_${src.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          name: src,
+          type: 'source',
+          status: 'ACTIVE',
+          leadsCount: sourceLeadsCount[src.toLowerCase()] || 0,
+          ruleValue: ruleVal,
+          displayLabel: src
+        });
+      }
+    });
+
     return items;
-  }, [metaCampaigns, dbCampaigns, metaForms, campaigns, forms, leads]);
+  }, [metaCampaigns, dbCampaigns, metaForms, campaigns, forms, leads, dbSources]);
 
   const saveGroupRuleToDb = async (group: DistributionGroup) => {
     try {
@@ -531,12 +616,12 @@ export default function GroupLeadDistributionModal({
     }));
   };
 
-  // Campaign and Form management inside a group
+  // Campaign, Form and Source management inside a group
   const handleAddCampaignToGroup = (
     groupId: string,
     ruleString: string,
     sourceId?: string,
-    sourceType?: 'campaign' | 'form' | 'custom'
+    sourceType?: 'campaign' | 'form' | 'source' | 'custom'
   ) => {
     if (!ruleString) return;
 
@@ -545,7 +630,7 @@ export default function GroupLeadDistributionModal({
         // Prevent exact duplicates or duplicate normalized strings
         const isAlreadyAdded = g.campaigns.some(c => 
           c.toLowerCase() === ruleString.toLowerCase() ||
-          c.replace(/^\[(form|campaign)\]\s*/i, '').toLowerCase() === ruleString.replace(/^\[(form|campaign)\]\s*/i, '').toLowerCase()
+          c.replace(/^\[(form|campaign|source)\]\s*/i, '').toLowerCase() === ruleString.replace(/^\[(form|campaign|source)\]\s*/i, '').toLowerCase()
         );
 
         if (isAlreadyAdded) {
@@ -560,18 +645,43 @@ export default function GroupLeadDistributionModal({
         // Resolve ID if not directly provided
         let targetId = sourceId;
         let targetType = sourceType;
-        const cleanName = ruleString.replace(/^\[(form|campaign|ad)\]\s*/i, '').trim();
+        const cleanName = ruleString.replace(/^\[(form|campaign|ad|source)\]\s*/i, '').trim();
+        const lowerName = cleanName.toLowerCase();
+        const isSourceRule = /^\[source\]/i.test(ruleString) || targetType === 'source';
+        const isCampRule = /^\[campaign\]/i.test(ruleString) || targetType === 'campaign';
+        const isFormRule = /^\[form\]/i.test(ruleString) || targetType === 'form';
 
-        if (!targetId) {
-          const resolved = sourceResolutionMap.nameMap.get(cleanName.toLowerCase()) || sourceResolutionMap.idMap.get(cleanName);
-          if (resolved) {
-            targetId = sourceResolutionMap.nameMap.get(cleanName.toLowerCase())?.id || cleanName;
-            targetType = resolved.type;
+        if (!isSourceRule && !targetId) {
+          if (isCampRule) {
+            const campRes = sourceResolutionMap.campaignNameMap.get(lowerName);
+            if (campRes) {
+              targetId = campRes.id;
+              targetType = 'campaign';
+            }
+          } else if (isFormRule) {
+            const formRes = sourceResolutionMap.formNameMap.get(lowerName);
+            if (formRes) {
+              targetId = formRes.id;
+              targetType = 'form';
+            }
+          }
+          if (!targetId) {
+            const resolvedName = sourceResolutionMap.nameMap.get(lowerName);
+            if (resolvedName) {
+              targetId = resolvedName.id;
+              targetType = resolvedName.type;
+            } else {
+              const resolvedId = sourceResolutionMap.idMap.get(cleanName);
+              if (resolvedId) {
+                targetId = cleanName;
+                targetType = resolvedId.type;
+              }
+            }
           }
         }
 
-        if (targetId) {
-          if (targetType === 'form' || /^\[form\]/i.test(ruleString)) {
+        if (targetId && !isSourceRule) {
+          if (targetType === 'form' || isFormRule) {
             if (!updatedFormIds.includes(targetId)) updatedFormIds.push(targetId);
           } else {
             if (!updatedCampaignIds.includes(targetId)) updatedCampaignIds.push(targetId);
@@ -595,8 +705,11 @@ export default function GroupLeadDistributionModal({
   const handleRemoveCampaign = (groupId: string, ruleString: string) => {
     setGroups(prev => prev.map(g => {
       if (g.id === groupId) {
-        const cleanName = ruleString.replace(/^\[(form|campaign|ad)\]\s*/i, '').trim();
-        const associatedId = sourceResolutionMap.nameMap.get(cleanName.toLowerCase())?.id || 
+        const cleanName = ruleString.replace(/^\[(form|campaign|ad|source)\]\s*/i, '').trim();
+        const lowerName = cleanName.toLowerCase();
+        const associatedId = sourceResolutionMap.campaignNameMap.get(lowerName)?.id ||
+                             sourceResolutionMap.formNameMap.get(lowerName)?.id ||
+                             sourceResolutionMap.nameMap.get(lowerName)?.id || 
                              (sourceResolutionMap.idMap.has(cleanName) ? cleanName : null);
 
         const updatedCampaigns = g.campaigns.filter(c => c !== ruleString);
@@ -622,21 +735,40 @@ export default function GroupLeadDistributionModal({
       return toast.error(`Please add at least one team member to group "${group.group_name}".`);
     }
     if (group.campaigns.length === 0) {
-      return toast.error(`Please assign at least one campaign or form to group "${group.group_name}".`);
+      return toast.error(`Please assign at least one campaign, form or source to group "${group.group_name}".`);
     }
 
     setIsDistributing(group.id);
     try {
-      // 1. Fetch ALL leads from DB for this workspace to ensure full coverage
-      const { data: dbLeads, error: fetchErr } = await supabase
-        .from('leads')
-        .select('id, name, phone, assigned_to, user_id, campaign_id, form_id, ad_name, form_name, custom_fields')
-        .eq('user_id', targetUserId)
-        .order('created_at', { ascending: true });
+      // 1. Fetch ALL leads from DB for this workspace with pagination to ensure full coverage
+      let allWorkspaceLeads: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
 
-      if (fetchErr) throw fetchErr;
+      while (hasMore) {
+        const { data: chunk, error: fetchErr } = await supabase
+          .from('leads')
+          .select('id, name, phone, assigned_to, user_id, campaign_id, form_id, ad_name, form_name, custom_fields, source')
+          .eq('user_id', targetUserId)
+          .order('created_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      const allWorkspaceLeads = dbLeads || [];
+        if (fetchErr) throw fetchErr;
+
+        if (chunk && chunk.length > 0) {
+          allWorkspaceLeads.push(...chunk);
+          if (chunk.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+
+        if (page > 20) break; // Safety limit up to 20,000 leads
+      }
 
       // Build campaignsMap for ID <-> Name lookup
       const idToName: Record<string, string> = {};
@@ -649,19 +781,32 @@ export default function GroupLeadDistributionModal({
       });
       const campaignsMap = { idToName, nameToId };
 
-      // 2. Filter leads matching group's campaigns or forms
+      // 2. Filter leads matching group's campaigns, forms, or sources
       const matchingLeads = allWorkspaceLeads.filter(l => {
         // Direct ID match against campaign_ids or form_ids
         if (l.campaign_id && group.campaign_ids?.includes(String(l.campaign_id))) return true;
         if (l.form_id && group.form_ids?.includes(String(l.form_id))) return true;
 
+        let parsedCustomFields = l.custom_fields;
+        if (typeof parsedCustomFields === 'string') {
+          try {
+            parsedCustomFields = JSON.parse(parsedCustomFields);
+          } catch {
+            parsedCustomFields = {};
+          }
+        }
+
+        const leadCampaignName = parsedCustomFields?.meta_ad_origin?.campaign_name || l.campaign_name || l.ad_name;
+        const leadAdName = l.ad_name || parsedCustomFields?.meta_ad_origin?.ad_name;
+
         const leadCtx = {
           campaignId: l.campaign_id,
-          campaignName: l.custom_fields?.meta_ad_origin?.campaign_name || l.ad_name,
-          adName: l.ad_name || l.custom_fields?.meta_ad_origin?.ad_name,
+          campaignName: leadCampaignName,
+          adName: leadAdName,
           formName: l.form_name,
           formId: l.form_id,
-          adCampaignString: l.ad_name
+          adCampaignString: l.ad_name,
+          source: l.source || parsedCustomFields?.source || null
         };
 
         return group.campaigns.some(gc => matchesCampaignRule(gc, leadCtx, campaignsMap));
@@ -734,38 +879,55 @@ export default function GroupLeadDistributionModal({
     }
   };
 
-  // Render pill for assigned rule (Campaign or Form)
+  // Render pill for assigned rule (Campaign, Form, or Lead Source)
   // Resolves numeric IDs dynamically to full human-readable names
   const renderRulePill = (ruleStr: string, groupId: string) => {
+    const isExplicitSource = /^\[source\]/i.test(ruleStr) || /^source:/i.test(ruleStr);
     const isExplicitForm = /^\[form\]/i.test(ruleStr) || /^form:/i.test(ruleStr);
     const isExplicitCamp = /^\[campaign\]/i.test(ruleStr) || /^campaign:/i.test(ruleStr);
-    const rawClean = ruleStr.replace(/^\[(form|campaign|ad|rule)\]\s*/i, '').replace(/^(form|campaign|ad|rule):\s*/i, '').trim();
+    const rawClean = ruleStr.replace(/^\[(form|campaign|ad|rule|source)\]\s*/i, '').replace(/^(form|campaign|ad|rule|source):\s*/i, '').trim();
 
     // Check if rawClean is an ID in our resolution map or numeric
     const resolvedFromId = sourceResolutionMap.idMap.get(rawClean);
     const isNumericId = /^\d{10,}$/.test(rawClean);
 
     let displayName = rawClean;
-    let resolvedType: 'campaign' | 'form' | 'rule' = isExplicitForm ? 'form' : isExplicitCamp ? 'campaign' : 'rule';
+    let resolvedType: 'campaign' | 'form' | 'source' | 'rule' = isExplicitSource ? 'source' : isExplicitForm ? 'form' : isExplicitCamp ? 'campaign' : 'rule';
     let idSubtitle = '';
 
-    if (resolvedFromId) {
+    if (isExplicitSource) {
+      resolvedType = 'source';
+    } else if (resolvedFromId) {
       displayName = resolvedFromId.name;
-      resolvedType = resolvedFromId.type;
+      resolvedType = isExplicitCamp ? 'campaign' : isExplicitForm ? 'form' : resolvedFromId.type;
       idSubtitle = `ID: ${rawClean}`;
     } else if (isNumericId) {
       // Unresolved numeric ID - show clean label with ID badge
       displayName = `Meta ID: ${rawClean}`;
       idSubtitle = rawClean;
     } else {
-      // It's a name; check if we know its ID
-      const resolvedFromName = sourceResolutionMap.nameMap.get(rawClean.toLowerCase());
-      if (resolvedFromName) {
-        resolvedType = resolvedFromName.type;
-        idSubtitle = `ID: ${resolvedFromName.id}`;
+      // Lookup by name: STRICTLY RESPECT EXPLICIT TYPE
+      const lower = rawClean.toLowerCase();
+      if (isExplicitCamp) {
+        resolvedType = 'campaign';
+        const campRes = sourceResolutionMap.campaignNameMap.get(lower) || sourceResolutionMap.nameMap.get(lower);
+        if (campRes?.id) idSubtitle = `ID: ${campRes.id}`;
+      } else if (isExplicitForm) {
+        resolvedType = 'form';
+        const formRes = sourceResolutionMap.formNameMap.get(lower) || sourceResolutionMap.nameMap.get(lower);
+        if (formRes?.id) idSubtitle = `ID: ${formRes.id}`;
+      } else {
+        const resolvedFromName = sourceResolutionMap.campaignNameMap.get(lower) ||
+                                 sourceResolutionMap.formNameMap.get(lower) ||
+                                 sourceResolutionMap.nameMap.get(lower);
+        if (resolvedFromName) {
+          resolvedType = resolvedFromName.type;
+          idSubtitle = `ID: ${resolvedFromName.id}`;
+        }
       }
     }
 
+    const isSource = resolvedType === 'source';
     const isForm = resolvedType === 'form';
     const isCamp = resolvedType === 'campaign';
 
@@ -773,7 +935,9 @@ export default function GroupLeadDistributionModal({
       <span
         key={ruleStr}
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border shadow-2xs ${
-          isForm 
+          isSource
+            ? 'bg-amber-50 text-amber-950 border-amber-200'
+            : isForm 
             ? 'bg-purple-50 text-purple-900 border-purple-200' 
             : isCamp
             ? 'bg-blue-50 text-blue-900 border-blue-200'
@@ -782,10 +946,16 @@ export default function GroupLeadDistributionModal({
         title={idSubtitle ? `${displayName} (${idSubtitle})` : displayName}
       >
         <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${
-          isForm ? 'bg-purple-200 text-purple-800' : isCamp ? 'bg-blue-200 text-blue-800' : 'bg-emerald-200 text-emerald-800'
+          isSource
+            ? 'bg-amber-200 text-amber-900'
+            : isForm 
+            ? 'bg-purple-200 text-purple-800' 
+            : isCamp 
+            ? 'bg-blue-200 text-blue-800' 
+            : 'bg-emerald-200 text-emerald-800'
         }`}>
-          {isForm ? <FileText size={10} /> : isCamp ? <Megaphone size={10} /> : <Tag size={10} />}
-          <span>{isForm ? 'Lead Form' : isCamp ? 'Campaign' : 'Rule'}</span>
+          {isSource ? <Globe size={10} /> : isForm ? <FileText size={10} /> : isCamp ? <Megaphone size={10} /> : <Tag size={10} />}
+          <span>{isSource ? 'Lead Source' : isForm ? 'Lead Form' : isCamp ? 'Campaign' : 'Rule'}</span>
         </span>
         <span className="max-w-[240px] truncate">{displayName}</span>
         <button
@@ -1253,6 +1423,7 @@ export default function GroupLeadDistributionModal({
         const tabItems = availItems.filter(item => {
           if (pickerTab === 'campaigns') return item.type === 'campaign';
           if (pickerTab === 'forms') return item.type === 'form';
+          if (pickerTab === 'sources') return item.type === 'source';
           return true;
         });
 
@@ -1267,6 +1438,7 @@ export default function GroupLeadDistributionModal({
 
         const totalCampaignsCount = availItems.filter(i => i.type === 'campaign').length;
         const totalFormsCount = availItems.filter(i => i.type === 'form').length;
+        const totalSourcesCount = availItems.filter(i => i.type === 'source').length;
 
         return (
           <div 
@@ -1284,9 +1456,9 @@ export default function GroupLeadDistributionModal({
                     <Layers size={18} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-slate-900">Add Campaign or Form to "{targetGrp.group_name}"</h3>
+                    <h3 className="text-sm font-black text-slate-900">Add Campaign, Form or Source to "{targetGrp.group_name}"</h3>
                     <p className="text-[10px] font-bold text-slate-400">
-                      {availItems.length} available items ({totalCampaignsCount} campaigns, {totalFormsCount} forms)
+                      {availItems.length} available items ({totalCampaignsCount} campaigns, {totalFormsCount} forms, {totalSourcesCount} sources)
                     </p>
                   </div>
                 </div>
@@ -1308,11 +1480,11 @@ export default function GroupLeadDistributionModal({
                 </div>
               </div>
 
-              {/* Tabs: All / Campaigns / Lead Forms */}
-              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl shrink-0 text-xs font-extrabold">
+              {/* Tabs: All / Campaigns / Lead Forms / Lead Sources */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 text-xs font-extrabold overflow-x-auto">
                 <button
                   onClick={() => setPickerTab('all')}
-                  className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
                     pickerTab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -1323,7 +1495,7 @@ export default function GroupLeadDistributionModal({
                 </button>
                 <button
                   onClick={() => setPickerTab('campaigns')}
-                  className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
                     pickerTab === 'campaigns' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -1337,7 +1509,7 @@ export default function GroupLeadDistributionModal({
                 </button>
                 <button
                   onClick={() => setPickerTab('forms')}
-                  className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
                     pickerTab === 'forms' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -1349,6 +1521,20 @@ export default function GroupLeadDistributionModal({
                     {totalFormsCount}
                   </span>
                 </button>
+                <button
+                  onClick={() => setPickerTab('sources')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                    pickerTab === 'sources' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Globe size={12} />
+                  <span>Lead Sources</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    pickerTab === 'sources' ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {totalSourcesCount}
+                  </span>
+                </button>
               </div>
 
               {/* Search Input */}
@@ -1357,7 +1543,7 @@ export default function GroupLeadDistributionModal({
                 <input
                   type="text"
                   autoFocus
-                  placeholder="Search by campaign name, form name, or ID..."
+                  placeholder="Search by campaign name, form name, source, or ID..."
                   value={campaignSearchQuery}
                   onChange={(e) => setCampaignSearchQuery(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-8 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
@@ -1374,28 +1560,37 @@ export default function GroupLeadDistributionModal({
 
               {/* Custom Write-In Option if query typed */}
               {campaignSearchQuery.trim() && (
-                <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-2.5 shrink-0 flex items-center justify-between gap-2 text-xs">
-                  <span className="font-bold text-blue-900 truncate">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 shrink-0 flex items-center justify-between gap-2 text-xs flex-wrap">
+                  <span className="font-bold text-slate-900 truncate">
                     Add custom: <span className="underline font-black">"{campaignSearchQuery.trim()}"</span>
                   </span>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={() => {
-                        handleAddCampaignToGroup(targetGrp.id, `[Campaign] ${campaignSearchQuery.trim()}`);
+                        handleAddCampaignToGroup(targetGrp.id, `[Campaign] ${campaignSearchQuery.trim()}`, undefined, 'campaign');
                         setCampaignSearchQuery('');
                       }}
                       className="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer shadow-xs"
                     >
-                      + As Campaign
+                      + Campaign
                     </button>
                     <button
                       onClick={() => {
-                        handleAddCampaignToGroup(targetGrp.id, `[Form] ${campaignSearchQuery.trim()}`);
+                        handleAddCampaignToGroup(targetGrp.id, `[Form] ${campaignSearchQuery.trim()}`, undefined, 'form');
                         setCampaignSearchQuery('');
                       }}
                       className="bg-purple-600 hover:bg-purple-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer shadow-xs"
                     >
-                      + As Form
+                      + Form
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleAddCampaignToGroup(targetGrp.id, `[Source] ${campaignSearchQuery.trim()}`, undefined, 'source');
+                        setCampaignSearchQuery('');
+                      }}
+                      className="bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer shadow-xs"
+                    >
+                      + Source
                     </button>
                   </div>
                 </div>
@@ -1406,15 +1601,16 @@ export default function GroupLeadDistributionModal({
                 {loadingSources ? (
                   <div className="py-12 text-center text-slate-400 font-bold text-xs flex flex-col items-center justify-center gap-2">
                     <RefreshCw size={20} className="animate-spin text-blue-600" />
-                    <span>Loading campaigns and forms from Meta...</span>
+                    <span>Loading campaigns, forms and sources...</span>
                   </div>
                 ) : filteredItems.length === 0 ? (
                   <div className="py-12 text-center text-xs font-bold text-slate-400 space-y-2">
-                    <p>No matching campaigns or forms found for "{campaignSearchQuery}"</p>
-                    <p className="text-[11px] font-normal text-slate-400">You can add it directly using the "+ As Campaign" or "+ As Form" buttons above.</p>
+                    <p>No matching items found for "{campaignSearchQuery}"</p>
+                    <p className="text-[11px] font-normal text-slate-400">You can add it directly using the buttons above.</p>
                   </div>
                 ) : (
                   filteredItems.map((item) => {
+                    const isSource = item.type === 'source';
                     const isForm = item.type === 'form';
                     return (
                       <button
@@ -1424,24 +1620,26 @@ export default function GroupLeadDistributionModal({
                         }}
                         title={item.name}
                         className={`w-full text-left border rounded-xl px-3.5 py-2.5 text-xs transition-all flex items-center justify-between gap-3 group cursor-pointer ${
-                          isForm 
+                          isSource
+                            ? 'bg-slate-50 hover:bg-amber-50 hover:border-amber-300 border-slate-200/80 text-slate-800'
+                            : isForm 
                             ? 'bg-slate-50 hover:bg-purple-50 hover:border-purple-300 border-slate-200/80 text-slate-800' 
                             : 'bg-slate-50 hover:bg-blue-50 hover:border-blue-300 border-slate-200/80 text-slate-800'
                         }`}
                       >
                         <div className="min-w-0 flex-1 flex items-start gap-2.5">
                           <span className={`p-1.5 rounded-lg mt-0.5 shrink-0 ${
-                            isForm ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                            isSource ? 'bg-amber-100 text-amber-800' : isForm ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                           }`}>
-                            {isForm ? <FileText size={14} /> : <Megaphone size={14} />}
+                            {isSource ? <Globe size={14} /> : isForm ? <FileText size={14} /> : <Megaphone size={14} />}
                           </span>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-extrabold text-slate-900 truncate">{item.displayLabel}</span>
                               <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md ${
-                                isForm ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                                isSource ? 'bg-amber-100 text-amber-900' : isForm ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
                               }`}>
-                                {isForm ? 'Lead Form' : 'Campaign'}
+                                {isSource ? 'Lead Source' : isForm ? 'Lead Form' : 'Campaign'}
                               </span>
                               {item.status && (
                                 <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md ${

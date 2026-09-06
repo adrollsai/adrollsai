@@ -207,12 +207,16 @@ export async function POST(request: Request) {
     if (isDnp) {
       customFields.last_call_dnp = true
       customFields.dnp_count = (customFields.dnp_count || 0) + 1
-      if (leadStatus && leadStatus !== 'Ongoing' && leadStatus !== 'New Lead' && leadStatus !== 'New') {
+      // Maintain existing lead stage or transition fresh lead to Contacted. Never force to Never Picked!
+      if (leadStatus && leadStatus !== 'Ongoing' && leadStatus !== 'New Lead' && leadStatus !== 'New' && leadStatus !== 'Fresh' && leadStatus !== 'Never Picked') {
         updatePayload.status = leadStatus
         updatePayload.pipeline_stage = leadStatus
       } else if (isCurrentFresh || currentStage === 'Ongoing') {
-        updatePayload.status = 'Never Picked'
-        updatePayload.pipeline_stage = 'Never Picked'
+        updatePayload.status = 'Contacted'
+        updatePayload.pipeline_stage = 'Contacted'
+      } else if (lead.pipeline_stage) {
+        updatePayload.status = lead.status || lead.pipeline_stage
+        updatePayload.pipeline_stage = lead.pipeline_stage
       }
     } else {
       customFields.last_call_dnp = false

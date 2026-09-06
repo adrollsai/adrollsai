@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil, BarChart4, Trash2, Search } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil, BarChart4, Trash2, Search, Table as TableIcon, ArrowUpDown, ChevronDown, Filter, SlidersHorizontal, Layers, ArrowUpRight, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
+import CampaignLeadsModal from '@/components/CampaignLeadsModal'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
@@ -13,7 +14,29 @@ import { getVideoPosterUrl } from '@/utils/get-video-poster'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string; metadata?: any }
-type Campaign = { id: string; name: string; status: string; objective: string }
+type Campaign = { 
+  id: string; 
+  name: string; 
+  status: string; 
+  objective: string;
+  daily_budget?: string;
+  lifetime_budget?: string;
+  budget_remaining?: string;
+  created_time?: string;
+  start_time?: string;
+  stop_time?: string;
+  metrics?: {
+    spend: number;
+    impressions: number;
+    clicks: number;
+    ctr: number;
+    cpc: number;
+    cpm: number;
+    results: number;
+    cpl: number;
+    resultType: string;
+  };
+}
 type LocationOption = { key: string; name: string; type: string; region?: string; country_code?: string; }
 type CustomQuestion = { label: string; type: 'SHORT_ANSWER' | 'MULTIPLE_CHOICE'; options?: string[]; disqualifyingOptions?: string[] }
 
@@ -106,6 +129,7 @@ export default function AdsPage() {
   const [selectedLandingPageId, setSelectedLandingPageId] = useState<string>('')
   const [attachedFormName, setAttachedFormName] = useState<string>('')
   const [targetUserId, setTargetUserId] = useState<string>('')
+  const [team, setTeam] = useState<any[]>([])
   const [customDomain, setCustomDomain] = useState<string>('')
   const [pixels, setPixels] = useState<any[]>([])
   const [isLoadingPixels, setIsLoadingPixels] = useState(false)
@@ -159,6 +183,40 @@ export default function AdsPage() {
   const [statsTab, setStatsTab] = useState<'overview' | 'daily' | 'creatives'>('overview')
   const [chartMetric, setChartMetric] = useState<'spend' | 'leads' | 'clicks'>('spend')
   const [campaignLeadCounts, setCampaignLeadCounts] = useState<Record<string, number>>({})
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table')
+  const [campaignSortBy, setCampaignSortBy] = useState<'active' | 'spend_high' | 'results_high' | 'cpl_low' | 'newest' | 'name_asc'>('active')
+  const [activeLeadsModalCampaign, setActiveLeadsModalCampaign] = useState<Campaign | null>(null)
+  const [campaignDatePreset, setCampaignDatePreset] = useState<string>('maximum')
+  const [campaignSince, setCampaignSince] = useState<string>('')
+  const [campaignUntil, setCampaignUntil] = useState<string>('')
+  const [showCustomDateModal, setShowCustomDateModal] = useState<boolean>(false)
+  const [customStartDate, setCustomStartDate] = useState<string>('')
+  const [customEndDate, setCustomEndDate] = useState<string>('')
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const [pageSize, setPageSize] = useState<number>(20)
+
+  // Scroll sync refs for dual horizontal scrollbars
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const tableScrollRef = useRef<HTMLDivElement>(null)
+  const isSyncingScroll = useRef<boolean>(false)
+
+  const handleTopScroll = () => {
+    if (isSyncingScroll.current) return
+    isSyncingScroll.current = true
+    if (tableScrollRef.current && topScrollRef.current) {
+      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft
+    }
+    requestAnimationFrame(() => { isSyncingScroll.current = false })
+  }
+
+  const handleTableScroll = () => {
+    if (isSyncingScroll.current) return
+    isSyncingScroll.current = true
+    if (topScrollRef.current && tableScrollRef.current) {
+      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft
+    }
+    requestAnimationFrame(() => { isSyncingScroll.current = false })
+  }
   
   const [orchestrator, setOrchestrator] = useState<{
     isOpen: boolean,
@@ -499,7 +557,7 @@ export default function AdsPage() {
           checkAccountStatus(selectedAdAccountId, adForm.pageId)
       }
   }, [selectedAdAccountId, adForm.pageId])
-  const fetchAdsData = async (force = false) => {
+  const fetchAdsData = async (force = false, customPreset?: string, customSince?: string, customUntil?: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
@@ -573,8 +631,22 @@ export default function AdsPage() {
       }
       setTargetUserId(targetUserId)
 
+      // Fetch team members for modal and assignment
+      fetch(`/api/team?adminId=${targetUserId}`)
+        .then(res => res.json())
+        .then(tData => {
+          if (tData?.team && Array.isArray(tData.team)) {
+            setTeam(tData.team)
+          }
+        })
+        .catch(() => {})
+
+      const activePreset = customPreset !== undefined ? customPreset : campaignDatePreset;
+      const activeSince = customSince !== undefined ? customSince : campaignSince;
+      const activeUntil = customUntil !== undefined ? customUntil : campaignUntil;
+
       // Setup caching keys
-      const campaignCacheKey = `ads_campaigns_cache_${targetUserId}`;
+      const campaignCacheKey = `ads_campaigns_cache_${targetUserId}_${activePreset}_${activeSince || ''}_${activeUntil || ''}`;
       const propCacheKey = `properties_cache_${targetUserId}`;
       const leadsCacheKey = `ads_leads_cache_${targetUserId}`;
       const pagesCacheKey = `landing_pages_cache_${targetUserId}`;
@@ -643,9 +715,18 @@ export default function AdsPage() {
         checkAccountStatus(targetProfile.ad_account_id, targetProfile.selected_page_id)
       }
 
+      const campaignParams = new URLSearchParams();
+      if (impersonateId) campaignParams.set('impersonate', impersonateId);
+      if (activePreset) campaignParams.set('date_preset', activePreset);
+      if (activeSince && activeUntil) {
+        campaignParams.set('since', activeSince);
+        campaignParams.set('until', activeUntil);
+      }
+      const campaignsUrl = `/api/meta-ads/campaigns?${campaignParams.toString()}`;
+
       const [campaignsRes, inventoryData, leadsRes, pagesRes, formsRes, apiAssetsData, metaFormsData] = await Promise.all([
           targetProfile?.ad_account_id 
-            ? fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`).then(r => r.json()).catch(e => {
+            ? fetch(campaignsUrl).then(r => r.json()).catch(e => {
                 console.error("Failed to load campaigns", e);
                 return { campaigns: [] };
               })
@@ -2124,86 +2205,747 @@ export default function AdsPage() {
           </div>
         )}
 
-        {/* CAMPAIGN SEARCH BAR */}
+        {/* META ADS MANAGER TOOLBAR & CONTROLS */}
         {!loading && campaigns.length > 0 && (
-          <div className="mb-6 relative max-w-md">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text" 
-              value={campaignSearchQuery}
-              onChange={(e) => setCampaignSearchQuery(e.target.value)}
-              placeholder="Search campaigns by name or objective..." 
-              className="w-full bg-white border border-slate-200 py-3.5 pl-12 pr-4 rounded-[1.25rem] shadow-sm text-sm text-slate-700 font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all" 
-            />
-            {campaignSearchQuery && (
-              <button 
-                onClick={() => setCampaignSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-              >
-                <X size={14} />
-              </button>
-            )}
+          <div className="space-y-4 mb-6">
+            {/* AGGREGATE SUMMARY RIBBON */}
+            {(() => {
+              const activeCount = campaigns.filter(c => c.status === 'ACTIVE').length;
+              const totalSpend = campaigns.reduce((acc, c) => acc + (c.metrics?.spend || 0), 0);
+              const totalResults = campaigns.reduce((acc, c) => acc + (c.metrics?.results ?? (campaignLeadCounts[c.id] || 0)), 0);
+              const totalImpressions = campaigns.reduce((acc, c) => acc + (c.metrics?.impressions || 0), 0);
+              const totalClicks = campaigns.reduce((acc, c) => acc + (c.metrics?.clicks || 0), 0);
+              const avgCpl = totalResults > 0 ? (totalSpend / totalResults) : 0;
+
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <PlayCircle size={13} className="text-emerald-500" /> Active Campaigns
+                    </p>
+                    <p className="text-xl sm:text-2xl font-black text-slate-800 mt-1">
+                      {activeCount} <span className="text-xs font-semibold text-slate-400">/ {campaigns.length} Total</span>
+                    </p>
+                  </div>
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <CreditCard size={13} className="text-blue-500" /> Total Spend
+                    </p>
+                    <p className="text-xl sm:text-2xl font-black text-slate-800 mt-1">
+                      ₹{Math.round(totalSpend).toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Users size={13} className="text-indigo-500" /> Total Results / Leads
+                    </p>
+                    <p className="text-xl sm:text-2xl font-black text-indigo-600 mt-1">
+                      {totalResults.toLocaleString('en-IN')} <span className="text-xs font-semibold text-slate-400">Leads</span>
+                    </p>
+                  </div>
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <TrendingUp size={13} className="text-emerald-500" /> Avg Cost / Result
+                    </p>
+                    <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-1">
+                      {avgCpl > 0 ? `₹${avgCpl.toFixed(2)}` : '—'}
+                    </p>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1 bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <MousePointerClick size={13} className="text-purple-500" /> Engagement
+                    </p>
+                    <p className="text-lg sm:text-xl font-black text-slate-800 mt-1">
+                      {totalClicks.toLocaleString('en-IN')} <span className="text-xs font-semibold text-slate-400">Clicks • {(totalImpressions / 1000).toFixed(1)}k Imp</span>
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* SEARCH, DURATION FILTER, SORT & VIEW SWITCHER BAR */}
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm">
+              {/* Search input */}
+              <div className="relative flex-1 max-w-md">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input 
+                  type="text" 
+                  value={campaignSearchQuery}
+                  onChange={(e) => {
+                    setCampaignSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Search campaigns by name, ID or objective..." 
+                  className="w-full bg-slate-50 border border-slate-200 py-2.5 pl-10 pr-8 rounded-xl text-xs sm:text-sm font-medium text-slate-700 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all" 
+                />
+                {campaignSearchQuery && (
+                  <button 
+                    onClick={() => {
+                      setCampaignSearchQuery('');
+                      setCurrentPage(1);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Controls: Date Duration, Sorting & View Mode */}
+              <div className="flex items-center gap-2 flex-wrap justify-between lg:justify-end">
+                {/* Duration / Date Preset Selector */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 shadow-xs">
+                  <Calendar size={14} className="text-slate-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden xs:inline">Date:</span>
+                  <select
+                    value={campaignDatePreset}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'custom') {
+                        setShowCustomDateModal(true);
+                        return;
+                      }
+                      setCampaignDatePreset(val);
+                      setCampaignSince('');
+                      setCampaignUntil('');
+                      setCurrentPage(1);
+                      fetchAdsData(true, val, '', '');
+                    }}
+                    className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer pr-1"
+                  >
+                    <option value="maximum">Lifetime (All Time)</option>
+                    <option value="today">Today</option>
+                    <option value="yesterday">Yesterday</option>
+                    <option value="last_7d">Last 7 Days</option>
+                    <option value="last_14d">Last 14 Days</option>
+                    <option value="last_30d">Last 30 Days</option>
+                    <option value="this_month">This Month</option>
+                    <option value="last_month">Last Month</option>
+                    <option value="custom">Custom Range...</option>
+                  </select>
+                  {campaignDatePreset === 'custom' && campaignSince && campaignUntil && (
+                    <button
+                      onClick={() => setShowCustomDateModal(true)}
+                      className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 hover:bg-blue-100"
+                      title="Edit Custom Date Range"
+                    >
+                      {campaignSince.slice(5)} - {campaignUntil.slice(5)}
+                    </button>
+                  )}
+                </div>
+
+                {/* Sort Selector */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 shadow-xs">
+                  <ArrowUpDown size={14} className="text-slate-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden xs:inline">Sort:</span>
+                  <select
+                    value={campaignSortBy}
+                    onChange={(e: any) => {
+                      setCampaignSortBy(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer pr-1"
+                  >
+                    <option value="active">Active First</option>
+                    <option value="spend_high">Spend: High to Low</option>
+                    <option value="results_high">Results: Most Leads</option>
+                    <option value="cpl_low">CPL: Lowest Cost</option>
+                    <option value="newest">Newest Created</option>
+                    <option value="name_asc">Name: A to Z</option>
+                  </select>
+                </div>
+
+                {/* View Mode Toggle (Table / Cards) */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <button
+                    onClick={() => setViewMode('table')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      viewMode === 'table'
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                    title="Meta Ads Manager Table View"
+                  >
+                    <TableIcon size={14} />
+                    <span>Table</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('cards')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      viewMode === 'cards'
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                    title="Cards Grid View"
+                  >
+                    <LayoutGrid size={14} />
+                    <span>Cards</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
         {loading ? (
-            <div className="flex flex-col items-center justify-center min-h-[40vh] text-slate-400 gap-4"><Loader2 size={32} className="animate-spin text-slate-300" /><p className="text-sm font-medium animate-pulse">Syncing with Meta...</p></div>
-        ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6"> 
-                {campaigns.length === 0 ? (
-                    <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-[1.75rem] xs:rounded-[2.5rem] border border-slate-200/60 border-dashed"><LayoutGrid size={48} className="text-slate-200 mb-4" /><p className="text-base font-bold text-slate-600">No active campaigns</p><p className="text-sm mt-1">Tap 'New Campaign' to launch your first AI-optimized ad.</p></div>
-                ) : (
-                    [...campaigns]
-                    .filter(c => {
-                        const q = campaignSearchQuery.trim().toLowerCase();
-                        if (!q) return true;
-                        return (c.name || '').toLowerCase().includes(q) || (c.objective || '').toLowerCase().includes(q);
-                    })
-                    .sort((a, b) => {
-                        if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1;
-                        if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1;
-                        return 0;
-                    }).map(campaign => (
-                        <div key={campaign.id} className="bg-white p-6 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 transition-all hover:shadow-lg hover:border-blue-200 flex flex-col h-full group">
-                            <div className="flex justify-between items-start mb-4 gap-3">
-                                <div onClick={() => handleOpenExplorer(campaign)} className="flex-1 min-w-0 cursor-pointer">
-                                    <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition-colors flex items-center gap-1.5 w-full">
-                                        <span className="truncate flex-1">{campaign.name}</span>
-                                        <ExternalLink size={12} className="text-slate-300 group-hover:text-blue-400 transition-colors shrink-0" />
-                                    </h3>
-                                    <div className="flex items-center gap-1.5 mt-2">
-                                        <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
-                                            {campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    {togglingId === campaign.id && <Loader2 size={14} className="animate-spin text-slate-400" />}
-                                    <button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${campaign.status === 'ACTIVE' ? 'bg-green-500 focus:ring-green-500' : 'bg-slate-200 focus:ring-slate-400'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} /></button>
-                                    <button 
-                                        onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
-                                        disabled={deletingId === campaign.id}
-                                        className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
-                                        title="Delete Campaign"
-                                    >
-                                        {deletingId === campaign.id ? <Loader2 size={14} className="animate-spin text-red-500" /> : <Trash2 size={14} />}
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="flex-grow"></div>
-                            <div className="flex justify-between items-center text-xs text-slate-500 pt-4 border-t border-slate-100 gap-1.5 flex-wrap">
-                                <button onClick={() => handleOpenStats(campaign)} className="flex items-center justify-center gap-1 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 py-2 px-2.5 rounded-xl transition-colors"><TrendingUp size={14} /> Stats</button>
-                                <button onClick={() => handleOpenAnalysis(campaign)} className="flex items-center justify-center gap-1 text-xs font-bold text-slate-600 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 py-2 px-2.5 rounded-xl transition-colors"><BarChart4 size={14} /> Analyse</button>
-                                <button onClick={() => handleOptimize(campaign)} disabled={orchestrator.isOpen && orchestrator.mode === 'optimize'} className={`flex items-center justify-center gap-1 text-xs font-bold py-2 px-2.5 rounded-xl transition-all ${orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'optimize' ? 'bg-purple-100 text-purple-400 cursor-not-allowed' : optimizedCampaigns.includes(campaign.id) ? 'bg-purple-50 text-purple-600 border border-purple-100 hover:bg-purple-100' : campaign.status !== 'ACTIVE' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 shadow-sm'}`}>
-                                    <Sparkles size={14} /> 
-                                    {orchestrator.isOpen && orchestrator.campaign?.id === campaign.id ? 'Optimizing...' : optimizedCampaigns.includes(campaign.id) ? 'Re-optimize' : 'Optimize'}
-                                </button>
-                                <a href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-xl transition-colors"><ExternalLink size={16} /></a>
-                            </div>
-                        </div>
-                    ))
-                )}
+            <div className="flex flex-col items-center justify-center min-h-[40vh] text-slate-400 gap-4">
+              <Loader2 size={32} className="animate-spin text-blue-500" />
+              <p className="text-sm font-semibold text-slate-600 animate-pulse">Syncing campaigns & live metrics with Meta Ads...</p>
             </div>
+        ) : (
+          (() => {
+            const q = campaignSearchQuery.trim().toLowerCase();
+            const filteredCampaigns = campaigns
+              .filter(c => {
+                if (!q) return true;
+                return (c.name || '').toLowerCase().includes(q) || 
+                       (c.id || '').includes(q) ||
+                       (c.objective || '').toLowerCase().includes(q);
+              })
+              .sort((a, b) => {
+                if (campaignSortBy === 'active') {
+                  if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1;
+                  if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1;
+                  return (b.metrics?.spend || 0) - (a.metrics?.spend || 0);
+                }
+                if (campaignSortBy === 'spend_high') {
+                  return (b.metrics?.spend || 0) - (a.metrics?.spend || 0);
+                }
+                if (campaignSortBy === 'results_high') {
+                  const resA = a.metrics?.results ?? (campaignLeadCounts[a.id] || 0);
+                  const resB = b.metrics?.results ?? (campaignLeadCounts[b.id] || 0);
+                  return resB - resA;
+                }
+                if (campaignSortBy === 'cpl_low') {
+                  const cplA = a.metrics?.cpl || 999999;
+                  const cplB = b.metrics?.cpl || 999999;
+                  return cplA - cplB;
+                }
+                if (campaignSortBy === 'newest') {
+                  const timeA = a.created_time ? new Date(a.created_time).getTime() : 0;
+                  const timeB = b.created_time ? new Date(b.created_time).getTime() : 0;
+                  return timeB - timeA;
+                }
+                if (campaignSortBy === 'name_asc') {
+                  return (a.name || '').localeCompare(b.name || '');
+                }
+                return 0;
+              });
+
+            const totalItems = filteredCampaigns.length;
+            const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+            const validCurrentPage = Math.min(currentPage, totalPages);
+            const startIndex = (validCurrentPage - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, totalItems);
+            const paginatedCampaigns = filteredCampaigns.slice(startIndex, endIndex);
+
+            if (campaigns.length === 0) {
+              return (
+                <div className="flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-[1.75rem] xs:rounded-[2.5rem] border border-slate-200/60 border-dashed">
+                  <LayoutGrid size={48} className="text-slate-200 mb-4" />
+                  <p className="text-base font-bold text-slate-600">No active campaigns</p>
+                  <p className="text-sm mt-1">Tap 'New Campaign' to launch your first AI-optimized ad.</p>
+                </div>
+              );
+            }
+
+            if (filteredCampaigns.length === 0) {
+              return (
+                <div className="flex flex-col items-center justify-center py-16 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8">
+                  <Search size={36} className="text-slate-300 mb-3" />
+                  <h3 className="text-base font-bold text-slate-700">No campaigns match "{campaignSearchQuery}"</h3>
+                  <p className="text-xs text-slate-500 mt-1">Try searching by campaign name, Meta ID, or objective.</p>
+                  <button
+                    onClick={() => {
+                      setCampaignSearchQuery('');
+                      setCurrentPage(1);
+                    }}
+                    className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                  >
+                    Clear Search
+                  </button>
+                </div>
+              );
+            }
+
+            // ==========================================
+            // TABLE VIEW (META ADS MANAGER STYLE)
+            // ==========================================
+            if (viewMode === 'table') {
+              return (
+                <div className="space-y-3">
+                  {/* TOP HORIZONTAL SCROLLBAR (SYNCS WITH TABLE) */}
+                  <div 
+                    ref={topScrollRef} 
+                    onScroll={handleTopScroll}
+                    className="overflow-x-auto custom-scrollbar h-2 bg-slate-100/90 rounded-full border border-slate-200/80 shadow-inner"
+                    title="Drag to scroll table horizontally"
+                  >
+                    <div className="w-[1250px] h-1" />
+                  </div>
+
+                  {/* TABLE WRAPPER WITH STICKY HEADERS & STICKY COLUMNS */}
+                  <div 
+                    ref={tableScrollRef}
+                    onScroll={handleTableScroll}
+                    className="overflow-x-auto custom-scrollbar border border-slate-200/80 rounded-2xl bg-white shadow-sm"
+                  >
+                    <table className="w-full text-left border-collapse min-w-[1250px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider font-extrabold text-slate-500 select-none">
+                          <th className="py-3.5 px-4 w-16 text-center sticky left-0 z-30 bg-slate-50 border-r border-slate-200/60">Off / On</th>
+                          <th className="py-3.5 px-4 min-w-[260px] sticky left-16 z-30 bg-slate-50 border-r border-slate-200/60 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.06)]">Campaign</th>
+                          <th className="py-3.5 px-4 w-28">Delivery</th>
+                          <th className="py-3.5 px-4 w-32">Budget</th>
+                          <th className="py-3.5 px-4 w-32 text-right">Results</th>
+                          <th className="py-3.5 px-4 w-32 text-right">Cost / Result</th>
+                          <th className="py-3.5 px-4 w-32 text-right">Amount Spent</th>
+                          <th className="py-3.5 px-4 w-28 text-right">Impressions</th>
+                          <th className="py-3.5 px-4 w-24 text-right">Clicks</th>
+                          <th className="py-3.5 px-4 w-24 text-right">CTR</th>
+                          <th className="py-3.5 px-4 w-24 text-right">CPC</th>
+                          <th className="py-3.5 px-5 min-w-[340px] text-right sticky right-0 z-30 bg-slate-50 border-l border-slate-200/60 shadow-[-4px_0_10px_-3px_rgba(0,0,0,0.06)]">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {paginatedCampaigns.map((campaign) => {
+                          const resultsCount = campaign.metrics?.results ?? (campaignLeadCounts[campaign.id] || 0);
+                          const spend = campaign.metrics?.spend || 0;
+                          const cpl = campaign.metrics?.cpl || (resultsCount > 0 && spend > 0 ? (spend / resultsCount) : null);
+                          const impressions = campaign.metrics?.impressions || 0;
+                          const clicks = campaign.metrics?.clicks || 0;
+                          const ctr = campaign.metrics?.ctr || 0;
+                          const cpc = campaign.metrics?.cpc || 0;
+
+                          // Format Budget
+                          let budgetStr = 'Ad set budget';
+                          if (campaign.daily_budget) {
+                            const val = parseFloat(campaign.daily_budget);
+                            budgetStr = `₹${(val > 100 ? val / 100 : val).toLocaleString('en-IN')}/day`;
+                          } else if (campaign.lifetime_budget) {
+                            const val = parseFloat(campaign.lifetime_budget);
+                            budgetStr = `₹${(val > 100 ? val / 100 : val).toLocaleString('en-IN')} total`;
+                          }
+
+                          return (
+                            <tr 
+                              key={campaign.id} 
+                              className="hover:bg-blue-50/40 transition-colors group"
+                            >
+                              {/* ON / OFF TOGGLE (STICKY LEFT 1) */}
+                              <td className="py-3.5 px-4 text-center sticky left-0 z-10 bg-white group-hover:bg-blue-50/70 border-r border-slate-100">
+                                <div className="inline-flex items-center justify-center">
+                                  {togglingId === campaign.id ? (
+                                    <Loader2 size={16} className="animate-spin text-blue-500" />
+                                  ) : (
+                                    <button 
+                                      onClick={() => handleToggleStatus(campaign.id, campaign.status)} 
+                                      className={`w-10 h-6 rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        campaign.status === 'ACTIVE' ? 'bg-blue-600' : 'bg-slate-300 hover:bg-slate-400'
+                                      }`}
+                                      title={campaign.status === 'ACTIVE' ? 'Turn campaign off' : 'Turn campaign on'}
+                                    >
+                                      <div className={`w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform duration-200 ${
+                                        campaign.status === 'ACTIVE' ? 'translate-x-4' : 'translate-x-0'
+                                      }`} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* CAMPAIGN NAME & METADATA (STICKY LEFT 2) */}
+                              <td className="py-3.5 px-4 sticky left-16 z-10 bg-white group-hover:bg-blue-50/70 border-r border-slate-200/60 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.06)]">
+                                <div className="flex flex-col min-w-0">
+                                  <div 
+                                    onClick={() => handleOpenExplorer(campaign)}
+                                    className="font-bold text-slate-800 hover:text-blue-600 transition-colors cursor-pointer flex items-center gap-1.5"
+                                  >
+                                    <span className="truncate max-w-[260px]" title={campaign.name}>
+                                      {campaign.name}
+                                    </span>
+                                    <ArrowUpRight size={13} className="text-slate-300 group-hover:text-blue-500 shrink-0 transition-colors" />
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-mono">
+                                    <span>ID: {campaign.id}</span>
+                                    {campaign.objective && (
+                                      <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-sans font-medium uppercase text-[9px]">
+                                        {campaign.objective.replace('OUTCOME_', '').toLowerCase()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* DELIVERY STATUS */}
+                              <td className="py-3.5 px-4">
+                                <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                                  campaign.status === 'ACTIVE' 
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' 
+                                    : 'bg-slate-100 text-slate-600 border border-slate-200/60'
+                                }`}>
+                                  <span className={`w-2 h-2 rounded-full ${campaign.status === 'ACTIVE' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                                  {campaign.status === 'ACTIVE' ? 'Active' : 'Off'}
+                                </span>
+                              </td>
+
+                              {/* BUDGET */}
+                              <td className="py-3.5 px-4 font-semibold text-slate-700 whitespace-nowrap">
+                                {budgetStr}
+                              </td>
+
+                              {/* RESULTS / LEADS */}
+                              <td className="py-3.5 px-4 text-right">
+                                <div className="font-black text-sm text-slate-900">
+                                  {resultsCount.toLocaleString('en-IN')}
+                                </div>
+                                <div className="text-[10px] font-semibold text-indigo-600 uppercase tracking-tight">
+                                  {campaign.metrics?.resultType || 'Leads'}
+                                </div>
+                              </td>
+
+                              {/* COST PER RESULT */}
+                              <td className="py-3.5 px-4 text-right">
+                                {cpl ? (
+                                  <span className="font-bold text-emerald-600 bg-emerald-50/70 px-2 py-0.5 rounded-lg border border-emerald-100">
+                                    ₹{cpl.toFixed(2)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300 font-mono">—</span>
+                                )}
+                              </td>
+
+                              {/* AMOUNT SPENT */}
+                              <td className="py-3.5 px-4 text-right font-black text-slate-800">
+                                ₹{Math.round(spend).toLocaleString('en-IN')}
+                              </td>
+
+                              {/* IMPRESSIONS */}
+                              <td className="py-3.5 px-4 text-right font-medium text-slate-600">
+                                {impressions > 0 ? impressions.toLocaleString('en-IN') : '—'}
+                              </td>
+
+                              {/* CLICKS */}
+                              <td className="py-3.5 px-4 text-right font-medium text-slate-600">
+                                {clicks > 0 ? clicks.toLocaleString('en-IN') : '—'}
+                              </td>
+
+                              {/* CTR */}
+                              <td className="py-3.5 px-4 text-right font-medium text-slate-600">
+                                {ctr > 0 ? `${ctr.toFixed(2)}%` : '—'}
+                              </td>
+
+                              {/* CPC */}
+                              <td className="py-3.5 px-4 text-right font-medium text-slate-600">
+                                {cpc > 0 ? `₹${cpc.toFixed(2)}` : '—'}
+                              </td>
+
+                              {/* ACTION BUTTONS (STICKY RIGHT) */}
+                              <td className="py-3.5 px-5 text-right sticky right-0 z-10 bg-white group-hover:bg-blue-50/70 border-l border-slate-200/60 shadow-[-4px_0_10px_-3px_rgba(0,0,0,0.06)]">
+                                <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                  {/* LEADS BUTTON (PRIMARY HIGHLIGHT) */}
+                                  <button
+                                    onClick={() => setActiveLeadsModalCampaign(campaign)}
+                                    className="flex items-center gap-1 text-xs font-bold text-blue-700 hover:text-white bg-blue-50 hover:bg-blue-600 border border-blue-200/80 hover:border-blue-600 py-1.5 px-2.5 rounded-xl transition-all shadow-sm"
+                                    title="View Campaign Leads (Paginated & Filterable)"
+                                  >
+                                    <Users size={13} />
+                                    <span>Leads</span>
+                                    {resultsCount > 0 && (
+                                      <span className="ml-0.5 bg-blue-200/80 text-blue-900 group-hover:bg-white group-hover:text-blue-700 text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                                        {resultsCount}
+                                      </span>
+                                    )}
+                                  </button>
+
+                                  {/* STATS BUTTON */}
+                                  <button 
+                                    onClick={() => handleOpenStats(campaign)} 
+                                    className="flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 py-1.5 px-2.5 rounded-xl transition-colors border border-slate-200/60"
+                                    title="View Performance Insights"
+                                  >
+                                    <TrendingUp size={13} />
+                                    <span>Stats</span>
+                                  </button>
+
+                                  {/* ANALYSE BUTTON */}
+                                  <button 
+                                    onClick={() => handleOpenAnalysis(campaign)} 
+                                    className="flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 py-1.5 px-2.5 rounded-xl transition-colors border border-slate-200/60"
+                                    title="AI Andromeda Analysis"
+                                  >
+                                    <BarChart4 size={13} />
+                                    <span>Analyse</span>
+                                  </button>
+
+                                  {/* OPTIMIZE BUTTON */}
+                                  <button 
+                                    onClick={() => handleOptimize(campaign)} 
+                                    disabled={orchestrator.isOpen && orchestrator.mode === 'optimize'} 
+                                    className={`flex items-center gap-1 text-xs font-bold py-1.5 px-2.5 rounded-xl transition-all border ${
+                                      orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'optimize' 
+                                        ? 'bg-purple-100 text-purple-400 border-purple-200 cursor-not-allowed' 
+                                        : optimizedCampaigns.includes(campaign.id) 
+                                        ? 'bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100' 
+                                        : campaign.status !== 'ACTIVE' 
+                                        ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' 
+                                        : 'bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white border-purple-200 shadow-sm'
+                                    }`}
+                                    title="Optimize Campaign with Andromeda AI"
+                                  >
+                                    <Sparkles size={13} />
+                                    <span>{orchestrator.isOpen && orchestrator.campaign?.id === campaign.id ? 'Optimizing...' : 'Optimize'}</span>
+                                  </button>
+
+                                  {/* META LINK */}
+                                  <a 
+                                    href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+                                    title="Open in Meta Ads Manager"
+                                  >
+                                    <ExternalLink size={14} />
+                                  </a>
+
+                                  {/* DELETE BUTTON */}
+                                  <button 
+                                    onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
+                                    disabled={deletingId === campaign.id}
+                                    className="text-slate-400 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
+                                    title="Delete Campaign"
+                                  >
+                                    {deletingId === campaign.id ? <Loader2 size={13} className="animate-spin text-rose-500" /> : <Trash2 size={13} />}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* PAGINATION FOOTER */}
+                  <div className="px-4 py-3 bg-white rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+                    <div className="flex items-center gap-3">
+                      <span>
+                        Showing <strong className="text-slate-800">{totalItems === 0 ? 0 : startIndex + 1}</strong> to <strong className="text-slate-800">{endIndex}</strong> of <strong className="text-slate-800">{totalItems}</strong> campaigns
+                      </span>
+                      <span className="text-slate-300">•</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400">Rows:</span>
+                        <select
+                          value={pageSize}
+                          onChange={(e) => {
+                            setPageSize(Number(e.target.value));
+                            setCurrentPage(1);
+                          }}
+                          className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-700 outline-none cursor-pointer"
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Pagination Controls */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setCurrentPage(1)}
+                        disabled={validCurrentPage <= 1}
+                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+                        title="First Page"
+                      >
+                        <ChevronsLeft size={15} />
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={validCurrentPage <= 1}
+                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+                        title="Previous Page"
+                      >
+                        <ChevronLeft size={15} />
+                      </button>
+
+                      {/* Current Page Indicator */}
+                      <div className="flex items-center gap-1 px-2 font-bold text-xs">
+                        <span className="text-blue-600 font-extrabold">{validCurrentPage}</span>
+                        <span className="text-slate-400">/</span>
+                        <span className="text-slate-700">{totalPages}</span>
+                      </div>
+
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={validCurrentPage >= totalPages}
+                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+                        title="Next Page"
+                      >
+                        <ChevronRight size={15} />
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage(totalPages)}
+                        disabled={validCurrentPage >= totalPages}
+                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+                        title="Last Page"
+                      >
+                        <ChevronsRight size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // ==========================================
+            // CARDS VIEW (ENHANCED GRID WITH PAGINATION)
+            // ==========================================
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+                  {paginatedCampaigns.map(campaign => {
+                    const resultsCount = campaign.metrics?.results ?? (campaignLeadCounts[campaign.id] || 0);
+                    const spend = campaign.metrics?.spend || 0;
+                    const cpl = campaign.metrics?.cpl || (resultsCount > 0 && spend > 0 ? (spend / resultsCount) : null);
+
+                    return (
+                      <div key={campaign.id} className="bg-white p-6 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 transition-all hover:shadow-lg hover:border-blue-200 flex flex-col h-full group">
+                        <div className="flex justify-between items-start mb-4 gap-3">
+                          <div onClick={() => handleOpenExplorer(campaign)} className="flex-1 min-w-0 cursor-pointer">
+                            <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition-colors flex items-center gap-1.5 w-full">
+                              <span className="truncate flex-1">{campaign.name}</span>
+                              <ExternalLink size={12} className="text-slate-300 group-hover:text-blue-400 transition-colors shrink-0" />
+                            </h3>
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                              <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
+                                {campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-400">ID: {campaign.id}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {togglingId === campaign.id && <Loader2 size={14} className="animate-spin text-slate-400" />}
+                            <button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${campaign.status === 'ACTIVE' ? 'bg-green-500 focus:ring-green-500' : 'bg-slate-200 focus:ring-slate-400'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} /></button>
+                            <button 
+                              onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
+                              disabled={deletingId === campaign.id}
+                              className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                              title="Delete Campaign"
+                            >
+                              {deletingId === campaign.id ? <Loader2 size={14} className="animate-spin text-red-500" /> : <Trash2 size={14} />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* METRICS SNIPPET ON CARD */}
+                        <div className="grid grid-cols-3 gap-2 py-3 px-3 bg-slate-50/70 rounded-xl border border-slate-100 my-2 text-center">
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Leads</p>
+                            <p className="text-sm font-black text-indigo-600 mt-0.5">{resultsCount}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Spend</p>
+                            <p className="text-sm font-black text-slate-800 mt-0.5">₹{Math.round(spend).toLocaleString('en-IN')}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">CPL</p>
+                            <p className="text-sm font-black text-emerald-600 mt-0.5">{cpl ? `₹${cpl.toFixed(0)}` : '—'}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex-grow"></div>
+                        <div className="flex justify-between items-center text-xs text-slate-500 pt-4 border-t border-slate-100 gap-1.5 flex-wrap">
+                          <button 
+                            onClick={() => setActiveLeadsModalCampaign(campaign)} 
+                            className="flex items-center justify-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 py-2 px-2.5 rounded-xl transition-colors border border-blue-200/80"
+                          >
+                            <Users size={14} /> Leads {resultsCount > 0 ? `(${resultsCount})` : ''}
+                          </button>
+                          <button onClick={() => handleOpenStats(campaign)} className="flex items-center justify-center gap-1 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 py-2 px-2.5 rounded-xl transition-colors"><TrendingUp size={14} /> Stats</button>
+                          <button onClick={() => handleOpenAnalysis(campaign)} className="flex items-center justify-center gap-1 text-xs font-bold text-slate-600 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 py-2 px-2.5 rounded-xl transition-colors"><BarChart4 size={14} /> Analyse</button>
+                          <button onClick={() => handleOptimize(campaign)} disabled={orchestrator.isOpen && orchestrator.mode === 'optimize'} className={`flex items-center justify-center gap-1 text-xs font-bold py-2 px-2.5 rounded-xl transition-all ${orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'optimize' ? 'bg-purple-100 text-purple-400 cursor-not-allowed' : optimizedCampaigns.includes(campaign.id) ? 'bg-purple-50 text-purple-600 border border-purple-100 hover:bg-purple-100' : campaign.status !== 'ACTIVE' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 shadow-sm'}`}>
+                            <Sparkles size={14} /> 
+                            {orchestrator.isOpen && orchestrator.campaign?.id === campaign.id ? 'Optimizing...' : optimizedCampaigns.includes(campaign.id) ? 'Re-optimize' : 'Optimize'}
+                          </button>
+                          <a href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-xl transition-colors"><ExternalLink size={16} /></a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* CARDS PAGINATION FOOTER */}
+                <div className="px-4 py-3 bg-white rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+                  <div className="flex items-center gap-3">
+                    <span>
+                      Showing <strong className="text-slate-800">{totalItems === 0 ? 0 : startIndex + 1}</strong> to <strong className="text-slate-800">{endIndex}</strong> of <strong className="text-slate-800">{totalItems}</strong> campaigns
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-400">Rows:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          setPageSize(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-700 outline-none cursor-pointer"
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Pagination Controls */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={validCurrentPage <= 1}
+                      className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+                      title="First Page"
+                    >
+                      <ChevronsLeft size={15} />
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={validCurrentPage <= 1}
+                      className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+                      title="Previous Page"
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+
+                    <div className="flex items-center gap-1 px-2 font-bold text-xs">
+                      <span className="text-blue-600 font-extrabold">{validCurrentPage}</span>
+                      <span className="text-slate-400">/</span>
+                      <span className="text-slate-700">{totalPages}</span>
+                    </div>
+
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={validCurrentPage >= totalPages}
+                      className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+                      title="Next Page"
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={validCurrentPage >= totalPages}
+                      className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+                      title="Last Page"
+                    >
+                      <ChevronsRight size={15} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()
         )}
       </div>
         {orchestrator.isOpen && (
@@ -5111,6 +5853,98 @@ export default function AdsPage() {
         title={previewImage.title} 
         type={previewImage.type}
       />
+
+      {activeLeadsModalCampaign && (
+        <CampaignLeadsModal
+          isOpen={!!activeLeadsModalCampaign}
+          onClose={() => setActiveLeadsModalCampaign(null)}
+          campaign={activeLeadsModalCampaign}
+          targetUserId={targetUserId}
+          team={team}
+        />
+      )}
+
+      {/* Custom Date Range Picker Modal */}
+      {showCustomDateModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md p-6 relative">
+            <button
+              onClick={() => setShowCustomDateModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                <Calendar size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Custom Date Range</h3>
+                <p className="text-xs text-slate-500">Filter campaigns & live performance insights</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 my-5">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Start Date (Since)
+                </label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  End Date (Until)
+                </label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowCustomDateModal(false)}
+                className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!customStartDate || !customEndDate) {
+                    toast.error('Please select both start and end dates');
+                    return;
+                  }
+                  if (customStartDate > customEndDate) {
+                    toast.error('Start date cannot be after end date');
+                    return;
+                  }
+                  setCampaignDatePreset('custom');
+                  setCampaignSince(customStartDate);
+                  setCampaignUntil(customEndDate);
+                  setShowCustomDateModal(false);
+                  setCurrentPage(1);
+                  fetchAdsData(true, 'custom', customStartDate, customEndDate);
+                }}
+                className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-95 rounded-xl shadow-sm transition-all"
+              >
+                Apply Range
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
