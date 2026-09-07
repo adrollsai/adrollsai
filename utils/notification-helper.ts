@@ -306,7 +306,21 @@ export async function sendAdminMultiChannelNotification({
       return;
     }
 
-    // 1. Push Notification
+    // 1. In-App Dashboard Notification
+    try {
+      await getSupabaseAdmin().from('notifications').insert({
+        user_id: ownerUserId,
+        title,
+        message: body,
+        type: type || 'meeting_booked',
+        action_link: leadPageUrl,
+        is_read: false
+      });
+    } catch (notifErr: any) {
+      console.error('[MULTI-CHANNEL DB NOTIF ERROR]', notifErr.message);
+    }
+
+    // 2. Push Notification
     if (!skipPush) {
       try {
         await sendPushNotification(ownerUserId, title, body, leadPageUrl, type);
