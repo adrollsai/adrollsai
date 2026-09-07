@@ -362,7 +362,7 @@ export async function POST(req: Request) {
                                         ]
                                     })
                                 } else if (fmt === 'IMAGE') {
-                                    let imgUrl = providedMedia || ownerProfile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/bc63c065-9bcc-4793-bedc-f0960406425b/1785906182341-offer.jpg'
+                                    let imgUrl = providedMedia || (templateName === 'webinar_thursday' ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png' : ownerProfile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png')
                                     if (imgUrl.includes('/api/fetch-image?url=')) {
                                         try { imgUrl = decodeURIComponent(imgUrl.split('/api/fetch-image?url=')[1]) } catch (e) {}
                                     }

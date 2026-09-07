@@ -235,8 +235,9 @@ export async function POST(req: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const body = await req.json()
-        const { title, templateName, recipientStage, recipientPropertyId, recipientCsvAudience, scheduledAt, impersonateId, variableMappings, audienceFilter } = body
+        const { title, templateName, headerMediaUrl, mediaUrl, recipientStage, recipientPropertyId, recipientCsvAudience, scheduledAt, impersonateId, variableMappings, audienceFilter } = body
         const targetUserId = impersonateId || user.id
+        const effectiveHeaderMediaUrl = headerMediaUrl || mediaUrl || null
 
         if (!title || !templateName) {
             return NextResponse.json({ error: 'Missing required broadcast parameters (title, templateName)' }, { status: 400 })
@@ -245,7 +246,7 @@ export async function POST(req: Request) {
         // Fetch credentials
         const { data: profile } = await supabase
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_phone_number_id, business_name')
+            .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, business_name, avatar_url')
             .eq('id', targetUserId)
             .single()
 
@@ -402,7 +403,7 @@ export async function POST(req: Request) {
         }
 
         // Otherwise execute immediately in background (don't block the HTTP response)
-        executeBroadcastImmediately(broadcast.id, targetUserId, profile, templateName, leads, recipientPayloads, variableMappings).catch(console.error)
+        executeBroadcastImmediately(broadcast.id, targetUserId, profile, templateName, leads, recipientPayloads, variableMappings, effectiveHeaderMediaUrl).catch(console.error)
 
         return NextResponse.json({ 
             success: true, 
@@ -424,7 +425,8 @@ async function executeBroadcastImmediately(
     templateName: string, 
     leads: any[], 
     recipients: any[],
-    variableMappings?: Record<string, string>
+    variableMappings?: Record<string, string>,
+    headerMediaUrl?: string | null
 ) {
     console.log(`[BROADCAST EXECUTION] Starting Broadcast ID ${broadcastId} for ${recipients.length} recipients...`)
     
@@ -439,9 +441,10 @@ async function executeBroadcastImmediately(
     const businessName = profile.business_name || 'Adrolls Partner'
     const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`
 
-    // Fetch template details to get exact language and parameter count
+    // Fetch template details to get exact language, header format, and parameter count
     let templateLanguageCode = 'en_US'
     let templateVarCount = 0
+    let headerFormat: string | null = null
 
     try {
         const wabaId = profile.whatsapp_waba_id || profile.whatsapp_business_account_id || process.env.DEV_WHATSAPP_WABA_ID
@@ -460,11 +463,42 @@ async function executeBroadcastImmediately(
                         const parsed = matches.map((m: string) => parseInt(m.replace(/\D/g, '')))
                         templateVarCount = new Set(parsed).size
                     }
+
+                    const headerComp = (foundTpl.components || []).find((c: any) => c.type === 'HEADER')
+                    if (headerComp && headerComp.format) {
+                        headerFormat = headerComp.format.toUpperCase()
+                    }
                 }
             }
         }
     } catch (tplErr) {
         console.error('[BROADCAST EXECUTION] Error fetching template info from Meta:', tplErr)
+    }
+
+    // Resolve header media URL if template requires a media header
+    let resolvedHeaderUrl = headerMediaUrl || null
+    if (headerFormat && !resolvedHeaderUrl) {
+        try {
+            const { data: flow } = await supabaseAdmin
+                .from('whatsapp_flows')
+                .select('header_media_url')
+                .eq('user_id', userId)
+                .eq('template_name', templateName)
+                .maybeSingle()
+            if (flow?.header_media_url) resolvedHeaderUrl = flow.header_media_url
+        } catch (flowErr) {
+            console.warn('[BROADCAST EXECUTION] Could not query flow for header media:', flowErr)
+        }
+
+        if (!resolvedHeaderUrl) {
+            if (headerFormat === 'IMAGE') {
+                resolvedHeaderUrl = templateName === 'webinar_thursday'
+                    ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png'
+                    : (profile.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png')
+            } else if (headerFormat === 'VIDEO') {
+                resolvedHeaderUrl = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/stitched_1785757278763.mp4'
+            }
+        }
     }
 
     for (const r of recipients) {
@@ -481,8 +515,8 @@ async function executeBroadcastImmediately(
         const property = (properties || []).find(p => p.id === lead.property_id)
         const propertyTitle = property ? property.title : 'Premium Listings'
 
-        // Map template variables dynamically based on user UI selection or exact template variable count
-        let parameters: any[] = []
+        // Map template variables dynamically ONLY if template requires variables
+        let bodyParameters: any[] = []
         
         if (templateVarCount > 0) {
             for (let i = 1; i <= templateVarCount; i++) {
@@ -502,23 +536,52 @@ async function executeBroadcastImmediately(
                 // Strip non-printable unicode whitespace (e.g. U+3164) that triggers Meta Error #132018
                 val = val.replace(/[\u3164\u200B-\u200D\uFEFF]/g, '').trim() || 'Valued Customer'
                 
-                parameters.push({ type: 'text', text: val })
+                bodyParameters.push({ type: 'text', text: val })
             }
-        } else if (variableMappings && Object.keys(variableMappings).length > 0) {
-            const varKeys = Object.keys(variableMappings).sort((a, b) => parseInt(a) - parseInt(b))
-            parameters = varKeys.map(k => {
-                const mappedField = variableMappings[k]
-                let val = ''
-                if (mappedField === 'name') val = lead.name || 'Valued Customer'
-                else if (mappedField === 'phone') val = lead.phone || ''
-                else if (mappedField === 'email') val = lead.email || ''
-                else if (mappedField === 'property_title') val = propertyTitle
-                else if (mappedField === 'business_name') val = businessName
-                else if (mappedField === 'csv_audience') val = lead.csv_audience || ''
-                else if (mappedField === 'pipeline_stage') val = lead.pipeline_stage || ''
-                else val = mappedField || 'Valued Customer'
-                
-                return { type: 'text', text: val }
+        }
+
+        const components: any[] = []
+
+        // 1. Header Component (IMAGE, VIDEO, DOCUMENT)
+        if (headerFormat && resolvedHeaderUrl) {
+            if (headerFormat === 'IMAGE') {
+                components.push({
+                    type: 'header',
+                    parameters: [
+                        {
+                            type: 'image',
+                            image: { link: resolvedHeaderUrl }
+                        }
+                    ]
+                })
+            } else if (headerFormat === 'VIDEO') {
+                components.push({
+                    type: 'header',
+                    parameters: [
+                        {
+                            type: 'video',
+                            video: { link: resolvedHeaderUrl }
+                        }
+                    ]
+                })
+            } else if (headerFormat === 'DOCUMENT') {
+                components.push({
+                    type: 'header',
+                    parameters: [
+                        {
+                            type: 'document',
+                            document: { link: resolvedHeaderUrl }
+                        }
+                    ]
+                })
+            }
+        }
+
+        // 2. Body Component (ONLY when template has {{1}} parameters)
+        if (templateVarCount > 0 && bodyParameters.length > 0) {
+            components.push({
+                type: 'body',
+                parameters: bodyParameters
             })
         }
 
@@ -527,13 +590,8 @@ async function executeBroadcastImmediately(
             language: { code: templateLanguageCode }
         }
 
-        if (parameters.length > 0) {
-            templatePayload.components = [
-                {
-                    type: 'body',
-                    parameters
-                }
-            ]
+        if (components.length > 0) {
+            templatePayload.components = components
         }
 
         const messagePayload = {
@@ -542,7 +600,6 @@ async function executeBroadcastImmediately(
             type: 'template',
             template: templatePayload
         }
-
 
         try {
             const metaRes = await fetch(metaUrl, {
@@ -625,6 +682,8 @@ async function executeBroadcastImmediately(
                                 chat_id: chat.id,
                                 direction: 'outbound',
                                 message_text: summaryText,
+                                media_url: resolvedHeaderUrl || null,
+                                media_type: headerFormat === 'IMAGE' ? 'image' : headerFormat === 'VIDEO' ? 'video' : null,
                                 created_at: new Date().toISOString()
                             })
                     }
