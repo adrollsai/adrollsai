@@ -3,6 +3,14 @@
 import React from 'react'
 import { Image, Video, FileText, ExternalLink, Phone, CornerDownLeft } from 'lucide-react'
 
+export interface WhatsAppTemplateButton {
+  type?: string
+  text?: string
+  url?: string
+  phone_number?: string
+  payload?: string
+}
+
 interface WhatsAppLivePreviewProps {
   headerType?: 'NONE' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
   headerText?: string
@@ -18,6 +26,7 @@ interface WhatsAppLivePreviewProps {
   ctaPhoneText?: string
   ctaPhone?: string
   footerText?: string
+  buttons?: WhatsAppTemplateButton[]
 }
 
 export default function WhatsAppLivePreview({
@@ -34,7 +43,8 @@ export default function WhatsAppLivePreview({
   ctaUrl = '',
   ctaPhoneText = '',
   ctaPhone = '',
-  footerText = ''
+  footerText = '',
+  buttons = []
 }: WhatsAppLivePreviewProps) {
 
   // Meta Template Editor Body Text Parser (*bold*, **bold**, ***bold***)
@@ -159,32 +169,61 @@ export default function WhatsAppLivePreview({
         </div>
 
         {/* INTERACTIVE BUTTONS RENDERING (META OFFICIAL STYLE) */}
-        {buttonsType === 'QUICK_REPLY' && validQuickReplies.length > 0 && (
+        {buttons && buttons.length > 0 ? (
           <div className="border-t border-[#e9edef] divide-y divide-[#e9edef] bg-white">
-            {validQuickReplies.map((btn, idx) => (
-              <div key={idx} className="w-full py-2.5 px-3 text-[#008069] font-semibold text-[13px] text-center hover:bg-[#f9fafb] cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
-                <CornerDownLeft size={13} className="text-[#008069]" />
-                <span>{btn}</span>
-              </div>
-            ))}
-          </div>
-        )}
+            {buttons.map((btn, idx) => {
+              const bType = (btn.type || '').toUpperCase()
+              const isUrl = bType === 'URL' || !!btn.url
+              const isPhone = bType === 'PHONE_NUMBER' || !!btn.phone_number
+              const label = btn.text || (btn as any).title || 'Action'
 
-        {buttonsType === 'CALL_TO_ACTION' && (ctaUrlText || ctaPhoneText) && (
-          <div className="border-t border-[#e9edef] divide-y divide-[#e9edef] bg-white">
-            {ctaUrlText && (
-              <div className="w-full py-2.5 px-3 text-[#008069] font-semibold text-[13px] text-center hover:bg-[#f9fafb] cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
-                <ExternalLink size={13} className="text-[#008069]" />
-                <span>{ctaUrlText}</span>
-              </div>
-            )}
-            {ctaPhoneText && (
-              <div className="w-full py-2.5 px-3 text-[#008069] font-semibold text-[13px] text-center hover:bg-[#f9fafb] cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
-                <Phone size={13} className="text-[#008069]" />
-                <span>{ctaPhoneText}</span>
-              </div>
-            )}
+              return (
+                <div 
+                  key={idx} 
+                  className="w-full py-2.5 px-3 text-[#008069] font-semibold text-[13px] text-center hover:bg-[#f9fafb] cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  {isUrl ? (
+                    <ExternalLink size={13} className="text-[#008069]" />
+                  ) : isPhone ? (
+                    <Phone size={13} className="text-[#008069]" />
+                  ) : (
+                    <CornerDownLeft size={13} className="text-[#008069]" />
+                  )}
+                  <span>{label}</span>
+                </div>
+              )
+            })}
           </div>
+        ) : (
+          <>
+            {buttonsType === 'QUICK_REPLY' && validQuickReplies.length > 0 && (
+              <div className="border-t border-[#e9edef] divide-y divide-[#e9edef] bg-white">
+                {validQuickReplies.map((btn, idx) => (
+                  <div key={idx} className="w-full py-2.5 px-3 text-[#008069] font-semibold text-[13px] text-center hover:bg-[#f9fafb] cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
+                    <CornerDownLeft size={13} className="text-[#008069]" />
+                    <span>{btn}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {buttonsType === 'CALL_TO_ACTION' && (ctaUrlText || ctaPhoneText) && (
+              <div className="border-t border-[#e9edef] divide-y divide-[#e9edef] bg-white">
+                {ctaUrlText && (
+                  <div className="w-full py-2.5 px-3 text-[#008069] font-semibold text-[13px] text-center hover:bg-[#f9fafb] cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
+                    <ExternalLink size={13} className="text-[#008069]" />
+                    <span>{ctaUrlText}</span>
+                  </div>
+                )}
+                {ctaPhoneText && (
+                  <div className="w-full py-2.5 px-3 text-[#008069] font-semibold text-[13px] text-center hover:bg-[#f9fafb] cursor-pointer flex items-center justify-center gap-1.5 transition-colors">
+                    <Phone size={13} className="text-[#008069]" />
+                    <span>{ctaPhoneText}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
 
       </div>

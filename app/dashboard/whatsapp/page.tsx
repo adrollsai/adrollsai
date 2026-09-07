@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck, Eye, SlidersHorizontal, Sparkles, Tag, Search, AlertTriangle } from 'lucide-react'
+import { MessageCircle, UserPlus, CalendarClock, BellRing, LucideIcon, Send, Inbox, User, Loader2, ArrowLeft, ChevronDown, ChevronUp, Pencil, Save, FileText, X, Package, RefreshCw, CreditCard, Target, Check, CheckCheck, Eye, SlidersHorizontal, Sparkles, Tag, Search, AlertTriangle, ExternalLink, Phone, CornerDownLeft } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { getPropertyTags } from '@/utils/property-tags'
@@ -142,8 +142,29 @@ export default function AutomationPage() {
 
   // Helper to resolve full template content, body text, and interactive buttons
   const resolveTemplateContent = (text: string, leadName?: string, bizName?: string) => {
-    if (!text || !text.startsWith('Sent Template:')) return null;
-    const templateName = text.replace('Sent Template:', '').trim();
+    if (!text) return null;
+    let templateName = '';
+
+    if (text.startsWith('Sent Template:')) {
+      templateName = text.replace('Sent Template:', '').trim();
+    } else if (text.startsWith('📋 Template:')) {
+      templateName = text.replace('📋 Template:', '').trim();
+    } else {
+      // Check if text matches any loaded template body or name
+      const foundTpl = templates.find(t => {
+        const bodyComp = t.components?.find((c: any) => c.type === 'BODY' || c.type === 'body');
+        if (bodyComp?.text) {
+          const cleanTplBody = bodyComp.text.replace(/\{\{\d+\}\}/g, '').trim();
+          if (cleanTplBody && text.includes(cleanTplBody.slice(0, 35))) return true;
+        }
+        return false;
+      });
+      if (foundTpl) {
+        templateName = foundTpl.name;
+      }
+    }
+
+    if (!templateName) return null;
     
     // Check Meta API templates loaded in state first
     const metaMatch = templates.find(t => t.name === templateName);
@@ -151,17 +172,17 @@ export default function AutomationPage() {
     let templateButtons: string[] = [];
 
     if (metaMatch && metaMatch.components) {
-      const bodyComp = metaMatch.components.find((c: any) => c.type === 'BODY');
+      const bodyComp = metaMatch.components.find((c: any) => c.type === 'BODY' || c.type === 'body');
       if (bodyComp && bodyComp.text) rawBody = bodyComp.text;
 
-      const btnComp = metaMatch.components.find((c: any) => c.type === 'BUTTONS');
+      const btnComp = metaMatch.components.find((c: any) => c.type === 'BUTTONS' || c.type === 'buttons');
       if (btnComp && btnComp.buttons && Array.isArray(btnComp.buttons)) {
         templateButtons = btnComp.buttons.map((b: any) => b.text || b.payload || 'Action').filter(Boolean);
       }
     }
 
     if (!rawBody) {
-      rawBody = TEMPLATE_BODY_MAP[templateName] || `Hello! This is an automated update regarding your inquiry with ${bizName || 'our team'}. Please reply if you have any questions.`;
+      rawBody = TEMPLATE_BODY_MAP[templateName] || text;
     }
 
     if (templateButtons.length === 0 && TEMPLATE_BUTTONS_MAP[templateName]) {
@@ -858,8 +879,11 @@ export default function AutomationPage() {
         body: JSON.stringify({ chatId: selectedChatId, messageText: newMessageText })
       })
       const data = await res.json()
-      if (data.success) {
-        setMessages(prev => [...prev, data.message])
+      if (data.success && data.message) {
+        setMessages(prev => {
+          if (prev.some(m => m.id === data.message.id)) return prev
+          return [...prev, data.message]
+        })
         setChats(prev => prev.map(c => {
           if (c.id === selectedChatId) {
             const currentAns = c.flow_answers || {};
@@ -896,7 +920,8 @@ export default function AutomationPage() {
     setSendingMessage(true)
 
     const templateName = selectedTemplate === 'custom' ? customTemplateName.trim() : selectedTemplate
-    const language = selectedTemplate === 'custom' ? customTemplateLang.trim() : 'en_US'
+    const matchedTpl = templates.find(t => t.name === templateName)
+    const language = selectedTemplate === 'custom' ? customTemplateLang.trim() : (matchedTpl?.language || 'en_US')
 
     if (!templateName) {
       alert("Please enter a valid template name.")
@@ -930,8 +955,11 @@ export default function AutomationPage() {
         })
       })
       const data = await res.json()
-      if (data.success) {
-        setMessages(prev => [...prev, data.message])
+      if (data.success && data.message) {
+        setMessages(prev => {
+          if (prev.some(m => m.id === data.message.id)) return prev
+          return [...prev, data.message]
+        })
         setChats(prev => prev.map(c => c.id === selectedChatId ? { ...c, last_message_text: `Sent Template: ${templateName}`, updated_at: new Date().toISOString() } : c))
         setCustomTemplateName('')
         setShowTemplateInput(false)
@@ -1423,15 +1451,17 @@ export default function AutomationPage() {
                   ) : messages.length === 0 ? (
                     <div className="text-center text-xs text-slate-500 bg-white/80 backdrop-blur-xs border border-slate-200/60 font-semibold py-3 px-6 rounded-2xl max-w-sm mx-auto shadow-xs mt-10">No messages in this conversation yet.</div>
                   ) : (
-                    messages.map((m, mIdx) => {
-                      const isOutbound = m.direction === 'outbound'
-                      
-                      const showDateHeader = (() => {
-                        if (mIdx === 0) return true
-                        const prevDate = new Date(messages[mIdx - 1].created_at).toDateString()
-                        const currentDate = new Date(m.created_at).toDateString()
-                        return prevDate !== currentDate
-                      })()
+                    messages
+                      .filter((m, idx, arr) => arr.findIndex(x => x.id === m.id) === idx)
+                      .map((m, mIdx, uniqueMessages) => {
+                        const isOutbound = m.direction === 'outbound'
+                        
+                        const showDateHeader = (() => {
+                          if (mIdx === 0) return true
+                          const prevDate = new Date(uniqueMessages[mIdx - 1].created_at).toDateString()
+                          const currentDate = new Date(m.created_at).toDateString()
+                          return prevDate !== currentDate
+                        })()
 
                       // Clean text and resolve template info & interactive buttons
                       let displayText = m.message_text || ''
@@ -2124,14 +2154,21 @@ export default function AutomationPage() {
                 const tObj = templates.find(t => t.name === selectedTemplate)
                 const bodyObj = tObj?.components?.find((c: any) => c.type === 'BODY' || c.type === 'body')
                 const bodyText = bodyObj?.text || 'Hello {{1}}, here is an update regarding {{2}}.'
+                const btnComp = tObj?.components?.find((c: any) => c.type === 'BUTTONS' || c.type === 'buttons')
+                const footerComp = tObj?.components?.find((c: any) => c.type === 'FOOTER' || c.type === 'footer')
+                const headerComp = tObj?.components?.find((c: any) => c.type === 'HEADER' || c.type === 'header')
+                const effectiveHeaderFormat = selectedHeaderFormat || (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp?.format || headerComp?.type) ? (headerComp?.format || headerComp?.type) : null)
+
                 return (
                   <WhatsAppLivePreview
-                    headerType={selectedHeaderFormat}
+                    headerType={effectiveHeaderFormat}
                     headerMediaUrl={selectedHeaderMediaUrl}
                     bodyText={bodyText}
-                    sampleLeadName={leadInfo?.name || selectedChat?.recipient_phone || "Valued Prospect"}
+                    sampleLeadName={selectedChat?.recipient_name || leadInfo?.name || selectedChat?.recipient_phone || "Valued Prospect"}
                     samplePropertyTitle="Green Valley Villas"
                     sampleBusinessName={profile?.business_name || 'Nobogent AI'}
+                    buttons={btnComp?.buttons || []}
+                    footerText={footerComp?.text || ''}
                   />
                 )
               })()}
@@ -2163,8 +2200,8 @@ export default function AutomationPage() {
 
       {/* TEMPLATE SENDER MODAL */}
       {showTemplateModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-[100] animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[85vh] sm:max-h-[88vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 my-auto">
             {/* Header */}
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/70">
               <div className="flex items-center gap-2.5">
@@ -2325,25 +2362,54 @@ export default function AutomationPage() {
 
               {/* Live Message Preview Snippet */}
               {selectedTemplateBody && (
-                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1.5">
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Live Message Preview:</span>
-                  <p className="whitespace-pre-wrap text-xs text-slate-700 leading-relaxed font-medium bg-white p-3 rounded-xl border border-slate-200/60">
+                  <div className="bg-white rounded-xl border border-slate-200/60 overflow-hidden shadow-2xs">
+                    {/* Header Media Preview */}
+                    {selectedHeaderMediaUrl && (
+                      <div className="w-full bg-slate-100 max-h-40 overflow-hidden flex items-center justify-center border-b border-slate-100">
+                        {selectedHeaderFormat === 'VIDEO' ? (
+                          <video src={selectedHeaderMediaUrl} className="w-full max-h-40 object-cover" />
+                        ) : (
+                          <img src={selectedHeaderMediaUrl} alt="Header Preview" className="w-full max-h-40 object-cover" />
+                        )}
+                      </div>
+                    )}
+                    <p className="whitespace-pre-wrap text-xs text-slate-700 leading-relaxed font-medium p-3.5">
+                      {(() => {
+                        let preview = selectedTemplateBody
+                        detectedTemplateVars.forEach((vNum: number) => {
+                          const defaultVal = vNum === 1 ? (selectedChat?.recipient_name || 'Customer') : vNum === 2 ? (profile?.business_name || 'our team') : `{{${vNum}}}`
+                          const val = templateVarValues[vNum.toString()] || defaultVal
+                          preview = preview.replace(new RegExp(`\\{\\{${vNum}\\}\\}`, 'g'), val)
+                        })
+                        return preview
+                      })()}
+                    </p>
+                    {/* Interactive Buttons Preview */}
                     {(() => {
-                      let preview = selectedTemplateBody
-                      detectedTemplateVars.forEach((vNum: number) => {
-                        const defaultVal = vNum === 1 ? (selectedChat?.recipient_name || 'Customer') : vNum === 2 ? (profile?.business_name || 'our team') : `{{${vNum}}}`
-                        const val = templateVarValues[vNum.toString()] || defaultVal
-                        preview = preview.replace(new RegExp(`\\{\\{${vNum}\\}\\}`, 'g'), val)
-                      })
-                      return preview
+                      const t = templates.find(x => x.name === selectedTemplate);
+                      const btnComp = t?.components?.find((c: any) => c.type === 'BUTTONS' || c.type === 'buttons');
+                      const btns = btnComp?.buttons || [];
+                      if (!btns || btns.length === 0) return null;
+                      return (
+                        <div className="border-t border-slate-100 divide-y divide-slate-100 bg-slate-50/50">
+                          {btns.map((btn: any, idx: number) => (
+                            <div key={idx} className="py-2.5 px-3 text-[#008069] font-bold text-xs flex items-center justify-center gap-1.5">
+                              {btn.type === 'URL' ? <ExternalLink size={12} /> : btn.type === 'PHONE_NUMBER' ? <Phone size={12} /> : <CornerDownLeft size={12} />}
+                              <span>{btn.text || 'Action'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
                     })()}
-                  </p>
+                  </div>
                 </div>
               )}
             </div>
 
             {/* Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowTemplatePreviewModal(true)}

@@ -177,8 +177,59 @@ export async function POST(request: Request) {
                     if (statuses.length > 0) {
                         for (const statusObj of statuses) {
                             console.log(`[WHATSAPP WEBHOOK STATUS] Message ID: ${statusObj.id}, Status: ${statusObj.status}, Recipient: ${statusObj.recipient_id}`);
-                            if (statusObj.errors) {
+                            if (statusObj.errors && statusObj.errors.length > 0) {
                                 console.error(`[WHATSAPP WEBHOOK STATUS ERROR] Message ID: ${statusObj.id}, Errors:`, JSON.stringify(statusObj.errors, null, 2));
+                                const firstErr = statusObj.errors[0];
+                                const recipient = (statusObj.recipient_id || '').replace(/\D/g, '');
+                                const phoneDigits = recipient.slice(-10);
+
+                                if (phoneDigits) {
+                                    try {
+                                        // Find chat for this recipient
+                                        const { data: chat } = await supabaseAdmin
+                                            .from('whatsapp_chats')
+                                            .select('id, lead_id')
+                                            .ilike('recipient_phone', `%${phoneDigits}%`)
+                                            .order('updated_at', { ascending: false })
+                                            .limit(1)
+                                            .maybeSingle();
+
+                                        if (chat) {
+                                            // Find most recent outbound message in this chat
+                                            const { data: lastOutbound } = await supabaseAdmin
+                                                .from('whatsapp_messages')
+                                                .select('id, message_text')
+                                                .eq('chat_id', chat.id)
+                                                .eq('direction', 'outbound')
+                                                .order('created_at', { ascending: false })
+                                                .limit(1)
+                                                .maybeSingle();
+
+                                            if (lastOutbound && !lastOutbound.message_text.includes('Delivery Failed by Meta')) {
+                                                const errReason = firstErr.code === 131049 
+                                                    ? 'Meta suppressed delivery to maintain healthy ecosystem engagement (Marketing message frequency limit). The recipient has reached Meta’s marketing message cap.'
+                                                    : (firstErr.message || firstErr.title || 'Delivery failed');
+                                                
+                                                await supabaseAdmin
+                                                    .from('whatsapp_messages')
+                                                    .update({
+                                                        message_text: `${lastOutbound.message_text}\n\n⚠️ *Delivery Failed by Meta (Error ${firstErr.code})*: ${errReason}`
+                                                    })
+                                                    .eq('id', lastOutbound.id);
+                                            }
+
+                                            if (chat.lead_id) {
+                                                await supabaseAdmin.from('lead_history').insert({
+                                                    lead_id: chat.lead_id,
+                                                    action_type: 'WHATSAPP_CHAT',
+                                                    description: `⚠️ WhatsApp Delivery Failed: Error ${firstErr.code} - ${firstErr.title || firstErr.message || 'Delivery error'}`
+                                                });
+                                            }
+                                        }
+                                    } catch (err) {
+                                        console.error('[WHATSAPP WEBHOOK] Error annotating failed message:', err);
+                                    }
+                                }
                             }
                         }
                     }

@@ -130,6 +130,7 @@ async function handleSync(request: Request) {
           }
 
           diagnostics.formsScanned += formsList.length;
+          const allowedFormIds = new Set<string>(formsList.map((f: any) => String(f.id)));
 
           // 2. Fetch Automations, Group Distribution Rules, and DB Campaigns for this profile
           const targetOwnerIds = [profile.id, profile.agency_id, profile.parent_id].filter(Boolean);
@@ -164,11 +165,11 @@ async function handleSync(request: Request) {
             }
           }
 
-          // 4. Also collect any active ads directly from Ad Account if available
+          // 4. Also collect any active ads directly from Ad Account if available (STRICTLY scoped to profile.selected_page_id)
           const activeAdForms = new Set<string>();
-          if (profile.ad_account_id && profile.facebook_token) {
+          if (profile.ad_account_id && profile.facebook_token && profile.selected_page_id) {
             try {
-              const adRes = await fetch(`https://graph.facebook.com/v20.0/${profile.ad_account_id}/ads?fields=id,name,status,effective_status,campaign_id,campaign{id,name}&effective_status=['ACTIVE']&limit=50&access_token=${profile.facebook_token}`, {
+              const adRes = await fetch(`https://graph.facebook.com/v20.0/${profile.ad_account_id}/ads?fields=id,name,status,effective_status,campaign_id,campaign{id,name},creative{object_story_spec,effective_object_story_id}&effective_status=['ACTIVE']&limit=50&access_token=${profile.facebook_token}`, {
                 signal: AbortSignal.timeout(6000)
               });
               if (adRes.ok) {
@@ -176,6 +177,16 @@ async function handleSync(request: Request) {
                 if (adData.data) {
                   // Direct fetch for leads from active ads
                   for (const ad of adData.data) {
+                    // STRICT ISOLATION GUARD: Verify ad belongs to profile's connected Page
+                    const spec = ad.creative?.object_story_spec;
+                    const adPageId = spec?.page_id || 
+                      (ad.creative?.effective_object_story_id ? ad.creative.effective_object_story_id.split('_')[0] : null);
+
+                    if (adPageId && adPageId !== profile.selected_page_id) {
+                      console.log(`[Meta Leads Sync Security] Skipping ad ${ad.id} (${ad.name}): Ad page (${adPageId}) does not match profile page (${profile.selected_page_id})`);
+                      continue;
+                    }
+
                     try {
                       const adLeadsRes = await fetch(`https://graph.facebook.com/v20.0/${ad.id}/leads?fields=id,created_time,field_data,form_id,ad_id,ad_name,campaign_id,campaign_name&limit=25&access_token=${profile.facebook_token}`, {
                         signal: AbortSignal.timeout(6000)
@@ -208,6 +219,13 @@ async function handleSync(request: Request) {
             for (const fbLead of fbLeads) {
               const leadgenId = fbLead.id;
               if (!leadgenId) continue;
+
+              // STRICT TENANT ISOLATION GUARD: Verify that this lead form belongs to this profile's selected Page
+              const effectiveFormId = formIdParam || fbLead.form_id;
+              if (effectiveFormId && allowedFormIds.size > 0 && !allowedFormIds.has(String(effectiveFormId))) {
+                console.warn(`[Meta Leads Sync Security] BLOCKED foreign lead ${leadgenId} from form ${effectiveFormId} which does not belong to profile ${profile.id} (Page: ${profile.selected_page_id})`);
+                continue;
+              }
 
               // Check if already in DB by facebook_lead_id
               if (existingLeadIdSet.has(leadgenId)) {

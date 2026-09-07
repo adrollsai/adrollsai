@@ -308,6 +308,9 @@ export async function POST(req: Request) {
         }
 
         let resolvedTemplateText = ''
+        let savedMediaUrl: string | null = null
+        let savedMediaType: string | null = null
+        let templateButtonsSuffix = ''
 
         if (templateName) {
             payload.type = 'template'
@@ -346,6 +349,9 @@ export async function POST(req: Request) {
                                         if (flow?.header_media_url) videoUrl = flow.header_media_url
                                     }
 
+                                    savedMediaUrl = videoUrl
+                                    savedMediaType = 'video'
+
                                     components.push({
                                         type: 'header',
                                         parameters: [
@@ -360,6 +366,10 @@ export async function POST(req: Request) {
                                     if (imgUrl.includes('/api/fetch-image?url=')) {
                                         try { imgUrl = decodeURIComponent(imgUrl.split('/api/fetch-image?url=')[1]) } catch (e) {}
                                     }
+
+                                    savedMediaUrl = imgUrl
+                                    savedMediaType = 'image'
+
                                     components.push({
                                         type: 'header',
                                         parameters: [
@@ -371,6 +381,10 @@ export async function POST(req: Request) {
                                     })
                                 } else if (fmt === 'DOCUMENT') {
                                     const docUrl = providedMedia || 'https://adrolls.in/sample-doc.pdf'
+
+                                    savedMediaUrl = docUrl
+                                    savedMediaType = 'document'
+
                                     components.push({
                                         type: 'header',
                                         parameters: [
@@ -381,6 +395,18 @@ export async function POST(req: Request) {
                                         ]
                                     })
                                 }
+                            }
+
+                            // Check for BUTTONS component to append to logText for UI display
+                            const btnComp = templateDef.components.find((c: any) => c.type === 'BUTTONS')
+                            if (btnComp && btnComp.buttons && Array.isArray(btnComp.buttons) && btnComp.buttons.length > 0) {
+                                const buttonStrings = btnComp.buttons.map((b: any) => {
+                                    const label = b.text || b.payload || 'Action'
+                                    if (b.type === 'URL' && b.url) return `${label} -> ${b.url}`
+                                    if (b.type === 'PHONE_NUMBER' && b.phone_number) return `${label} -> tel:${b.phone_number}`
+                                    return label
+                                })
+                                templateButtonsSuffix = `\n\n[Buttons: ${buttonStrings.join(' | ')}]`
                             }
 
                             // Check for BODY component parameters
@@ -433,6 +459,10 @@ export async function POST(req: Request) {
         } else {
             payload.type = 'text'
             payload.text = { body: messageText }
+            if (mediaUrl) {
+                savedMediaUrl = mediaUrl
+                savedMediaType = 'image'
+            }
         }
 
         console.log(`[CHAT API] Dispatching message: recipient=${cleanRecipient}, type=${payload.type}, phoneId=${whatsappPhoneId}, sender=${user.id}, owner=${ownerUserId}`);
@@ -468,15 +498,22 @@ export async function POST(req: Request) {
         )
 
         // Save to whatsapp_messages — use resolved template text if available
-        const logText = templateName 
+        let logText = templateName 
             ? (resolvedTemplateText || `📋 Template: ${templateName}`)
             : messageText
+
+        if (templateButtonsSuffix && !logText.includes('[Buttons:')) {
+            logText += templateButtonsSuffix
+        }
+
         const { data: insertedMsg, error: insertErr } = await dbClient
             .from('whatsapp_messages')
             .insert({
                 chat_id: chatId,
                 direction: 'outbound',
-                message_text: logText
+                message_text: logText,
+                media_url: savedMediaUrl,
+                media_type: savedMediaType
             })
             .select('*')
             .single()

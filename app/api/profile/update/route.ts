@@ -364,6 +364,43 @@ export async function POST(request: Request) {
     delete allowedUpdates.timezone
     delete allowedUpdates.notification_email
 
+    // Page Collision Protection: Ensure no unrelated account keeps this selected_page_id
+    if (allowedUpdates.selected_page_id) {
+      try {
+        const { data: existingOwners } = await supabaseAdmin
+          .from('profiles')
+          .select('id, email, agency_id, parent_id')
+          .eq('selected_page_id', allowedUpdates.selected_page_id)
+          .neq('id', targetUserId);
+
+        if (existingOwners && existingOwners.length > 0) {
+          const { data: currentTarget } = await supabaseAdmin
+            .from('profiles')
+            .select('id, agency_id, parent_id')
+            .eq('id', targetUserId)
+            .maybeSingle();
+
+          for (const owner of existingOwners) {
+            const isSameWorkspace =
+              owner.parent_id === targetUserId ||
+              owner.agency_id === targetUserId ||
+              (currentTarget?.agency_id && owner.agency_id === currentTarget.agency_id) ||
+              (currentTarget?.parent_id && (owner.id === currentTarget.parent_id || owner.parent_id === currentTarget.parent_id));
+
+            if (!isSameWorkspace) {
+              console.log(`[Profile Update API] Releasing page ${allowedUpdates.selected_page_id} from unrelated user ${owner.email} (${owner.id}) to enforce strict page ownership.`);
+              await supabaseAdmin
+                .from('profiles')
+                .update({ selected_page_id: null, selected_page_name: null, selected_page_token: null })
+                .eq('id', owner.id);
+            }
+          }
+        }
+      } catch (pageDisputeErr) {
+        console.error("[Profile Update API] Error resolving page ownership:", pageDisputeErr);
+      }
+    }
+
     let { data, error } = await supabaseAdmin
       .from('profiles')
       .upsert({ id: targetUserId, ...allowedUpdates }, { onConflict: 'id' })

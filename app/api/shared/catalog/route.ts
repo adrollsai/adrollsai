@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    let identifier = searchParams.get('identifier') || ''
+    let identifier = searchParams.get('identifier') || searchParams.get('user_id') || searchParams.get('userId') || searchParams.get('id') || ''
 
     if (!identifier) {
       return NextResponse.json({ error: 'Missing identifier' }, { status: 400 })

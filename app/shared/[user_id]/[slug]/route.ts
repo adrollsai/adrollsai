@@ -1810,6 +1810,12 @@ export async function GET(request: Request, { params }: RouteProps) {
                     .eq('user_id', profile.id)
                     .neq('show_on_landing_page', false)
 
+                // Inject live properties into LIVE_PROPERTIES script array if the page uses client-side catalog state
+                const livePropsRegex = /(const|var|let)\s+LIVE_PROPERTIES\s*=\s*\[[\s\S]*?\];/g;
+                if (finalHtml.match(livePropsRegex)) {
+                    finalHtml = finalHtml.replace(livePropsRegex, `$1 LIVE_PROPERTIES = ${JSON.stringify(propertiesData || [])};`);
+                }
+
                 if (propertiesData && propertiesData.length > 0) {
                     const isDarkTheme = finalHtml.includes('gold-btn') || finalHtml.includes('glass-card') || finalHtml.includes('bg-navy-') || finalHtml.includes('#070C18')
                     
