@@ -1651,32 +1651,90 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
 }
 `.trim();
 
-                    const apiKeyToUse = profileData?.gemini_api_key || profile?.gemini_api_key || defaultApiKey;
-                    const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKeyToUse}`;
-                    const summaryRes = await fetch(restUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: analysisPrompt }] }]
-                        })
-                    });
-                    const summaryData = await summaryRes.json();
-                    const rawText = summaryData.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (rawText) {
-                        const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    // Post-call AI analysis: Use DeepSeek v4-flash for all text tasks
+                    const dsKey = process.env.DEEPSEEK_API_KEY || 'sk-20cf24c78eeb44669f22cd92b2d0382f';
+                    let analysisDone = false;
+
+                    if (dsKey) {
                         try {
-                            const parsed = JSON.parse(cleanJson);
-                            if (parsed.summary) summary = parsed.summary.trim();
-                            if (parsed.booking_time) bookingTime = parsed.booking_time;
-                            if (parsed.callback_time) callbackTime = parsed.callback_time;
-                            if (parsed.is_qualified) isQualified = true;
-                            if (parsed.lead_priority) leadPriority = parsed.lead_priority;
-                            if (parsed.extracted_budget) extractedBudget = parsed.extracted_budget;
-                            if (parsed.extracted_answers && typeof parsed.extracted_answers === 'object') {
-                                extractedAnswers = parsed.extracted_answers;
+                            console.log('[BRIDGE] Analyzing call transcript using DeepSeek v4-flash...');
+                            const dsRes = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${dsKey}`
+                                },
+                                body: JSON.stringify({
+                                    model: 'deepseek-chat',
+                                    messages: [
+                                        {
+                                            role: 'system',
+                                            content: 'You are an expert real estate AI CRM call analyst. Return a valid JSON object ONLY. Do not wrap in markdown or backticks.'
+                                        },
+                                        {
+                                            role: 'user',
+                                            content: analysisPrompt
+                                        }
+                                    ],
+                                    response_format: { type: 'json_object' }
+                                })
+                            });
+
+                            if (dsRes.ok) {
+                                const dsData = await dsRes.json();
+                                const rawText = dsData.choices?.[0]?.message?.content;
+                                if (rawText) {
+                                    const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                                    const parsed = JSON.parse(cleanJson);
+                                    if (parsed.summary) summary = parsed.summary.trim();
+                                    if (parsed.booking_time) bookingTime = parsed.booking_time;
+                                    if (parsed.callback_time) callbackTime = parsed.callback_time;
+                                    if (parsed.is_qualified) isQualified = true;
+                                    if (parsed.lead_priority) leadPriority = parsed.lead_priority;
+                                    if (parsed.extracted_budget) extractedBudget = parsed.extracted_budget;
+                                    if (parsed.extracted_answers && typeof parsed.extracted_answers === 'object') {
+                                        extractedAnswers = parsed.extracted_answers;
+                                    }
+                                    analysisDone = true;
+                                    console.log('[BRIDGE] Call evaluation completed successfully with DeepSeek v4-flash!');
+                                }
+                            } else {
+                                console.warn('[BRIDGE] DeepSeek call returned non-OK status:', dsRes.status, await dsRes.text());
                             }
-                        } catch (e) {
-                            summary = rawText.trim();
+                        } catch (dsErr) {
+                            console.warn('[BRIDGE] DeepSeek analysis error:', dsErr.message);
+                        }
+                    }
+
+                    if (!analysisDone) {
+                        // Fallback to Gemini 2.5 Flash only if DeepSeek was unreachable
+                        try {
+                            const apiKeyToUse = profileData?.gemini_api_key || profile?.gemini_api_key || defaultApiKey;
+                            const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKeyToUse}`;
+                            const summaryRes = await fetch(restUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    contents: [{ parts: [{ text: analysisPrompt }] }]
+                                })
+                            });
+                            const summaryData = await summaryRes.json();
+                            const rawText = summaryData.candidates?.[0]?.content?.parts?.[0]?.text;
+                            if (rawText) {
+                                const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                                const parsed = JSON.parse(cleanJson);
+                                if (parsed.summary) summary = parsed.summary.trim();
+                                if (parsed.booking_time) bookingTime = parsed.booking_time;
+                                if (parsed.callback_time) callbackTime = parsed.callback_time;
+                                if (parsed.is_qualified) isQualified = true;
+                                if (parsed.lead_priority) leadPriority = parsed.lead_priority;
+                                if (parsed.extracted_budget) extractedBudget = parsed.extracted_budget;
+                                if (parsed.extracted_answers && typeof parsed.extracted_answers === 'object') {
+                                    extractedAnswers = parsed.extracted_answers;
+                                }
+                            }
+                        } catch (geminiErr) {
+                            console.error('[BRIDGE] Gemini fallback analysis failed:', geminiErr.message);
                         }
                     }
                 } catch (sumErr) {

@@ -581,8 +581,8 @@ async function getSuperAdminSelectedLLM(): Promise<string> {
         console.error("[LLM ROUTER] Failed to fetch super admin selected LLM:", err);
     }
 
-    // Default fallback
-    return cachedLLMModel || 'gemini';
+    // Default fallback to DeepSeek v4-flash for all text tasks
+    return cachedLLMModel || 'deepseek';
 }
 
 export async function callDeepSeekWithUsage(prompt: string): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {

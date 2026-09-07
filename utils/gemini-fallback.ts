@@ -14,6 +14,44 @@ export async function generateContentWithFallback(
     initialDelay = 2000,
     generationConfig?: any
 ) {
+    // For pure text-related AI tasks, use DeepSeek v4-flash
+    const deepSeekKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.replace(/^["']|["']$/g, '').trim() : '';
+    if (typeof contents === 'string' && deepSeekKey) {
+        try {
+            console.log(`[Text AI Router] Routing text generation to DeepSeek v4-flash`);
+            const dsRes = await fetch("https://api.deepseek.com/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${deepSeekKey}`
+                },
+                body: JSON.stringify({
+                    model: "deepseek-chat",
+                    messages: [{ role: "user", content: contents }],
+                    stream: false
+                })
+            });
+            if (dsRes.ok) {
+                const dsData = await dsRes.json();
+                const text = dsData.choices?.[0]?.message?.content || "";
+                const usage = dsData.usage || {};
+                console.log(`[Text AI Router] Successfully generated text with DeepSeek v4-flash`);
+                return {
+                    response: {
+                        text: () => text,
+                        usageMetadata: {
+                            promptTokenCount: usage.prompt_tokens || 0,
+                            candidatesTokenCount: usage.completion_tokens || 0,
+                            totalTokenCount: usage.total_tokens || 0
+                        }
+                    }
+                } as any;
+            }
+        } catch (dsErr: any) {
+            console.warn(`[Text AI Router] DeepSeek v4-flash notice, using Gemini fallback: ${dsErr?.message}`);
+        }
+    }
+
     let currentModelName = primaryModel;
     let delay = initialDelay;
     
