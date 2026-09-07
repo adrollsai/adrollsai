@@ -126,7 +126,7 @@ export async function GET(request: Request) {
                 }
             },
             credits: primaryProfile.credits || 0,
-            isUnlimited: ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(primaryProfile?.email || ''),
+            isUnlimited: ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(primaryProfile?.email || ''),
             transactions: [] as any[],
             hasMore: false
         };

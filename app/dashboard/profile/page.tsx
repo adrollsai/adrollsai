@@ -2438,7 +2438,7 @@ export default function ProfilePage() {
                 <div>
                   <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest block">Nobo Credits Balance</span>
                   <h3 className="text-2xl font-black tracking-tight mt-0.5">
-                    {(['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(formData.email)) ? '∞' : `${credits.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Credits`}
+                    {(['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(formData.email)) ? '∞' : `${credits.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Credits`}
                   </h3>
                 </div>
               </div>

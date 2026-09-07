@@ -49,8 +49,8 @@ export async function hasEnoughCredits(
 
     if (error || !profile) return false
 
-    // Unlimited bypass check (rchopra489, infobluesquare, khushiram)
-    const isUnlimited = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(profile.email || '')
+    // Unlimited bypass check (rchopra489, infobluesquare)
+    const isUnlimited = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(profile.email || '')
     if (isUnlimited) return true
 
     // Check if base subscription plan is active
@@ -96,7 +96,7 @@ export async function deductCredits(
     }
 
     const currentCredits = profile.credits || 0
-    const isUnlimited = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'].includes(profile.email || '')
+    const isUnlimited = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(profile.email || '')
 
     if (!isUnlimited && currentCredits < amount) {
       console.warn(`[CREDITS HELPER] Overdraft prevented. User ${primaryUserId} has ${currentCredits} credits; trying to deduct ${amount}.`)
