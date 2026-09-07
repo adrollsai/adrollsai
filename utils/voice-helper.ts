@@ -1243,13 +1243,15 @@ export async function cancelAppointment(
 export async function dispatchNextCall(supabaseAdmin: any, userId: string): Promise<any> {
     console.log(`[CALL DISPATCHER] Dispatching next call for user ${userId}...`);
 
-    // 1. Check if there is already an active call in progress for this user (respecting voice_concurrency_limit)
-    const { data: userProfile } = await supabaseAdmin
-        .from('profiles')
-        .select('voice_concurrency_limit')
-        .eq('id', userId)
-        .single()
-    const maxConcurrent = userProfile?.voice_concurrency_limit || 1
+    // 1. Check if there is already an active call in progress for this user (respecting 3 concurrent channels by default)
+    let maxConcurrent = 3
+    try {
+        const { data: userProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('id, voice_provider')
+            .eq('id', userId)
+            .single()
+    } catch (e) {}
 
     const { data: activeLeads } = await supabaseAdmin
         .from('leads')
