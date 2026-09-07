@@ -732,6 +732,13 @@ wss.on('connection', (wsConnection, req) => {
                         }
                     }
                     resolvedQuestions = flaggedRes?.data || [];
+                    let resolvedQuestionsInstruction = '';
+                    if (resolvedQuestions && resolvedQuestions.length > 0) {
+                        const list = resolvedQuestions.filter(q => q && q.resolution).map(q => `• Question: "${q.question}" -> Verified Answer: "${q.resolution}"`).join('\n');
+                        if (list) {
+                            resolvedQuestionsInstruction = `--- VERIFIED ANSWERS TO PREVIOUSLY ASKED QUESTIONS ---\n${list}\n`;
+                        }
+                    }
 
                     if (lead) {
                         leadPhone = lead.phone;
@@ -1013,16 +1020,17 @@ Guidelines:
 - ABSOLUTE PROHIBITION: NEVER mention WhatsApp or offer to send details on WhatsApp. Do NOT offer WhatsApp brochures or links. Focus on phone consultation and in-person site visits.
 `.trim();
 
+                        let greetingName = (firstName && firstName !== 'there' && firstName !== 'Lead') ? firstName : '';
                         if (campaign?.audience_filter?.greeting) {
                             let cleanG = campaign.audience_filter.greeting;
-                            if (firstName && firstName !== 'there' && firstName !== 'Adrolls' && firstName !== 'Lead') {
-                                cleanG = cleanG.replace(/{name}/gi, firstName).replace(/{firstName}/gi, firstName);
+                            if (greetingName) {
+                                cleanG = cleanG.replace(/{name}/gi, greetingName).replace(/{firstName}/gi, greetingName);
                             } else {
                                 cleanG = cleanG.replace(/{name}\s*(ji)?/gi, '').replace(/{firstName}\s*(ji)?/gi, '').replace(/\s+/g, ' ').trim();
                             }
                             greetingMessage = cleanG;
-                        } else if (firstName && firstName !== 'there' && firstName !== 'Adrolls' && firstName !== 'Lead') {
-                            greetingMessage = `Hi ${firstName} ji, kaise hain aap?`;
+                        } else if (greetingName) {
+                            greetingMessage = `Hi ${greetingName} ji, kaise hain aap?`;
                         } else {
                             greetingMessage = `Hi ji, kaise ho aap?`;
                         }
@@ -1033,26 +1041,25 @@ MANDATORY LANGUAGE & CONVERSATIONAL RULES:
 2. Default to Hindi / Hinglish for all responses.
 3. MULTILINGUAL ADAPTATION: If the lead asks to speak in Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, Hindi, English, or any other regional language (e.g. "Telugu lo matladandi", "Can we speak in English?", "Tamil la pesunga"), you MUST IMMEDIATELY adapt and converse fluently in their requested language.
 4. Your ONLY opening greeting is: "${greetingMessage}". Speak this exact greeting clearly and warmly.
-5. STRICT CONVERSATION SEQUENCING & PREREQUISITES:
-   - Turn 1: Speak exact greeting "${greetingMessage}".
-   - Turn 2: Once the lead responds, introduce our commercial ready-to-move properties in Aerocity Mohali (showrooms, retail shops, furnished offices from ₹70L to ₹5-6 Cr+) and ask Question 1: "Aapka tentative budget range kya rahega?"
-   - Turn 3: Once they mention their budget or requirement, ask Question 2: "Aur ye property aap self-use / business setup ke liye dekh rahe hain, ya rental income aur investment returns ke liye?"
-   - Turn 4: ONLY after asking both budget and usage questions, invite them for a site visit in Aerocity Mohali to see available units and floor plans.
-6. STRICT FORBIDDEN SHORTCUTS:
-   - NEVER ask "Kya aap appointment book karna chahte hain?" abruptly at the start or in the first 2 turns!
-   - NEVER offer proposals or ask for a site visit until you have asked the prospect about their budget range and usage/investment purpose!
+5. STRICT FORBIDDEN SHORTCUTS:
+   - NEVER ask "Kya aap appointment book karna chahte hain?" abruptly at the start! Strictly follow the conversation flow step by step.
+   - NEVER offer proposals or ask for a site visit until you have completed the conversational steps.
    - NEVER mention WhatsApp or ask to send details on WhatsApp.
-7. CALL CONCLUSION & HANGUP:
+6. CALL CONCLUSION & HANGUP:
    - Whenever you or the prospect conclude the call, say goodbye, or say "Thank you" / "Have a great day" / "Alvida" / "Shukriya", you MUST simultaneously trigger your "end_call" function tool in that same turn.
 `.trim();
 
                         if (campaign && campaign.custom_prompt) {
+                            const renderedCustomPrompt = campaign.custom_prompt
+                                .replace(/{name}/gi, greetingName)
+                                .replace(/{firstName}/gi, greetingName);
+
                             systemInstruction = `
 ${languageDirective}
 ${genderGrammarInstruction}
 
 === CAMPAIGN SPECIFIC INSTRUCTIONS & FLOW ===
-${campaign.custom_prompt}
+${renderedCustomPrompt}
 
 ${qualifyingInstruction}
 
@@ -1727,8 +1734,7 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
 
                     // Post-call notifications for Admin (WhatsApp + Email) and lead score calculation
                     try {
-                        const appPort = process.env.PORT || 3000;
-                        const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || `http://127.0.0.1:${appPort}`;
+                        const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://app.nobogent.com';
                         const notifyUrl = `${appBaseUrl}/api/voice/post-call-notify`;
                         
                         fetch(notifyUrl, {

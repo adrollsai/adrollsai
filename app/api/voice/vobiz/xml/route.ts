@@ -126,11 +126,12 @@ async function handleRequest(req: Request) {
         const statusCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}`
         const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&profileId=${effectiveProfileId}${effectiveCampaignId ? `&campaignId=${effectiveCampaignId}` : ''}&telephony=vobiz${isInbound ? '&inbound=true' : ''}`
 
-        // Generate Vobiz XML with audio recording and bidirectional Linear PCM 16kHz stream
+        const escapedWsUrl = wsStreamUrl.replace(/&/g, '&amp;')
+
+        // Generate valid Vobiz XML with bidirectional Linear PCM 16kHz stream
         const vobizXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Record action="${statusCallbackUrl}" method="POST" recordSession="true" redirect="false" maxLength="3600" playBeep="false"/>
-    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusCallbackUrl}">${wsStreamUrl}</Stream>
+    <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusCallbackUrl}">${escapedWsUrl}</Stream>
 </Response>`
 
         console.log(`[VOBIZ XML] Returning Vobiz Stream XML for lead ${leadId}:`, vobizXml)

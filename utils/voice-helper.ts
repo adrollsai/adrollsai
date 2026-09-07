@@ -170,8 +170,8 @@ export async function triggerOutboundCall(
             return { success: false, error: 'SUBSCRIPTION_EXPIRED' }
         }
 
-        // Concurrency Check: Limit active calls according to account capacity (default 1 concurrent call per user)
-        const maxConcurrent = profile.voice_concurrency_limit || 1
+        // Concurrency Check: Limit active calls according to account capacity (default 3 concurrent calls per user)
+        const maxConcurrent = profile.voice_concurrency_limit || 3
         const { data: activeLeads } = await supabaseAdmin
             .from('leads')
             .select('id, last_called_at, voice_call_scheduled_at, created_at')

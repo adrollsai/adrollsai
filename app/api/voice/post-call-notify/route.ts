@@ -59,21 +59,32 @@ export async function POST(req: Request) {
 
     // CASE 1: Site visit / appointment booked
     if (bookingTime) {
-      const slotDate = new Date(bookingTime)
-      const formattedSlotDate = slotDate.toLocaleString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        dateStyle: 'full',
-        timeStyle: 'short'
-      })
+      let slotDate = new Date(bookingTime)
+      if (isNaN(slotDate.getTime())) {
+        // Fallback for relative strings like "Saturday"
+        const now = new Date()
+        slotDate = new Date(now.getTime() + 48 * 3600 * 1000)
+      }
+      const formattedSlotDate = !isNaN(slotDate.getTime())
+        ? slotDate.toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            dateStyle: 'full',
+            timeStyle: 'short'
+          })
+        : bookingTime
+
+      const leadUpdatePayload: Record<string, any> = {
+        pipeline_stage: 'Appointment Booked',
+        status: 'Appointment Booked'
+      }
+      if (!isNaN(slotDate.getTime())) {
+        leadUpdatePayload.booked_time = slotDate.toISOString()
+      }
 
       // Ensure stage is Appointment Booked
       await supabaseAdmin
         .from('leads')
-        .update({
-          pipeline_stage: 'Appointment Booked',
-          status: 'Appointment Booked',
-          booked_time: bookingTime
-        })
+        .update(leadUpdatePayload)
         .eq('id', leadId)
 
       // Send Multi-channel notification to Admin (WhatsApp + Email)
