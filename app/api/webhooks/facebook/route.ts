@@ -2433,7 +2433,7 @@ RULES:
           // Find the User based on the Page ID using Admin Client
           const { data: profiles, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, email, business_name, selected_page_token, facebook_token, pixel_id, enable_distribution, auto_call_new_leads, role, agency_id, parent_id')
+            .select('id, email, business_name, selected_page_id, selected_page_token, facebook_token, pixel_id, enable_distribution, auto_call_new_leads, role, agency_id, parent_id')
             .eq('selected_page_id', page_id);
 
           if (profileErr || !profiles || profiles.length === 0) {
@@ -2441,12 +2441,18 @@ RULES:
             continue;
           }
 
-          const profile = profiles.find((p: any) => p.selected_page_token && ['admin', 'agency', 'super_admin'].includes(p.role)) ||
+          const profile = profiles.find((p: any) => p.selected_page_token && ['admin', 'agency'].includes(p.role)) ||
+                          profiles.find((p: any) => p.selected_page_token && p.role === 'super_admin') ||
                           profiles.find((p: any) => p.selected_page_token) ||
                           profiles[0];
 
           if (!profile.selected_page_token) {
             console.error(`❌ Profile found but NO Page Token for Page ID: ${page_id}`)
+            continue;
+          }
+
+          if (String(page_id) !== String((profile as any).selected_page_id)) {
+            console.error(`❌ Security guard triggered: Webhook page ${page_id} does not match profile page ${(profile as any).selected_page_id}. Skipping.`);
             continue;
           }
 

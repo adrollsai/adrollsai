@@ -101,6 +101,7 @@ app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+    <Record recordSession="true" redirect="false" fileFormat="mp3" callbackUrl="${statusUrl}" callbackMethod="POST" playBeep="false" />
     <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusUrl}">${escapedWsUrl}</Stream>
 </Response>`;
 
@@ -112,17 +113,18 @@ app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
 // Vobiz Status Callback endpoint
 app.all(['/vobiz-status', '/api/voice/vobiz/status-callback'], async (req, res) => {
     const leadId = req.query.leadId || req.body?.leadId;
-    const callStatus = (req.body?.CallStatus || req.body?.call_status || req.body?.Status || req.body?.event || '').toLowerCase();
-    const duration = req.body?.Duration || req.body?.duration || 0;
+    const callStatus = (req.body?.CallStatus || req.body?.call_status || req.body?.Status || req.body?.event || req.body?.Event || '').toLowerCase();
+    const duration = req.body?.Duration || req.body?.duration || req.body?.RecordingDuration || 0;
     const callUuid = req.body?.CallUUID || req.body?.call_uuid || '';
+    const recordUrl = req.body?.RecordUrl || req.body?.RecordFile || req.body?.RecordingUrl || req.body?.recording_url || '';
 
-    console.log(`[BRIDGE VOBIZ-STATUS] Received status for lead ${leadId}: status=${callStatus}, duration=${duration}s, callUuid=${callUuid}`);
+    console.log(`[BRIDGE VOBIZ-STATUS] Received status for lead ${leadId}: status=${callStatus}, duration=${duration}s, callUuid=${callUuid}, recordUrl=${recordUrl}`);
 
     if (leadId) {
         let updatedStatus = null;
         if (['in-progress', 'answered'].includes(callStatus)) {
             updatedStatus = 'calling';
-        } else if (['completed', 'hangup', 'stopped'].includes(callStatus)) {
+        } else if (['completed', 'hangup', 'stopped', 'recordstop'].includes(callStatus)) {
             updatedStatus = 'completed';
         } else if (['busy', 'no-answer', 'timeout', 'rejected'].includes(callStatus)) {
             updatedStatus = 'no_answer';
@@ -130,13 +132,74 @@ app.all(['/vobiz-status', '/api/voice/vobiz/status-callback'], async (req, res) 
             updatedStatus = 'failed';
         }
 
+        const updatePayload = {};
         if (updatedStatus) {
+            updatePayload.voice_call_status = updatedStatus;
+        }
+
+        let publicRecUrl = recordUrl;
+        if (recordUrl) {
             try {
-                const updatePayload = { voice_call_status: updatedStatus };
-                if (duration > 0) updatePayload.voice_call_duration = parseInt(duration, 10);
+                const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+                const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+                const audioRes = await fetch(recordUrl, {
+                    headers: { 'X-Auth-ID': authId, 'X-Auth-Token': authToken }
+                });
+                if (audioRes.ok) {
+                    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+                    const storagePath = `${leadId}/vobiz_${Date.now()}.mp3`;
+                    const { error: uploadErr } = await supabaseAdmin.storage
+                        .from('lead-voice-recordings')
+                        .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true });
+
+                    if (!uploadErr) {
+                        const { data: pubData } = supabaseAdmin.storage
+                            .from('lead-voice-recordings')
+                            .getPublicUrl(storagePath);
+                        publicRecUrl = pubData.publicUrl;
+                        console.log(`[BRIDGE VOBIZ-STATUS] Saved public recording URL for lead ${leadId}: ${publicRecUrl}`);
+                    } else {
+                        console.warn('[BRIDGE VOBIZ-STATUS] Storage upload error:', uploadErr);
+                    }
+                }
+            } catch (rErr) {
+                console.warn('[BRIDGE VOBIZ-STATUS] Recording fetch/upload error:', rErr);
+            }
+            updatePayload.voice_recording_url = publicRecUrl;
+        }
+
+        if (Object.keys(updatePayload).length > 0) {
+            try {
                 await supabaseAdmin.from('leads').update(updatePayload).eq('id', leadId);
+                console.log(`[BRIDGE VOBIZ-STATUS] Updated lead ${leadId} successfully:`, updatePayload);
             } catch (err) {
                 console.warn('[BRIDGE VOBIZ-STATUS] DB update error:', err);
+            }
+        }
+
+        // Also update latest lead_history if recording URL is found
+        if (publicRecUrl) {
+            try {
+                const { data: latestHistory } = await supabaseAdmin
+                    .from('lead_history')
+                    .select('id, description')
+                    .eq('lead_id', leadId)
+                    .eq('action_type', 'REMARK')
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (latestHistory && latestHistory.description?.startsWith('🎙️ CALL_JSON:')) {
+                    const rawJson = latestHistory.description.replace('🎙️ CALL_JSON:', '').trim();
+                    const parsed = JSON.parse(rawJson);
+                    parsed.recording_url = publicRecUrl;
+                    await supabaseAdmin
+                        .from('lead_history')
+                        .update({ description: `🎙️ CALL_JSON:${JSON.stringify(parsed)}` })
+                        .eq('id', latestHistory.id);
+                }
+            } catch (hErr) {
+                console.warn('[BRIDGE VOBIZ-STATUS] History update error:', hErr);
             }
         }
     }
@@ -1449,29 +1512,8 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                         pcm16 = upsample8To16(pcm8);
                     }
 
-                    const procRes = audioProcessor.processFrame(pcm16);
-
-                    // Continuously send noise-suppressed 16kHz PCM audio stream to Gemini
-                    sendPcmChunkToGemini(procRes.pcmOutput);
-
-                    // If caller speaks continuously for >1.0s, stream a real-time vocal backchannel ("ahaan"/"hmm"/"haan")
-                    if (procRes.shouldBackchannel && wsConnection.readyState === ws.OPEN) {
-                        const randomBuf = GLOBAL_BACKCHANNEL_POOL[Math.floor(Math.random() * GLOBAL_BACKCHANNEL_POOL.length)];
-                        console.log('[BRIDGE BACKCHANNEL] Playing real-time chunked mid-speech vocal backchannel...');
-                        if (isVobiz && vobizStreamId) {
-                            wsConnection.send(JSON.stringify({
-                                event: 'playAudio',
-                                streamId: vobizStreamId,
-                                media: {
-                                    contentType: 'audio/x-mulaw',
-                                    sampleRate: 8000,
-                                    payload: randomBuf.toString('base64')
-                                }
-                            }));
-                        } else if (twilioStreamSid) {
-                            playBackchannelToTwilio(randomBuf, wsConnection, twilioStreamSid);
-                        }
-                    }
+                    // Directly stream full-fidelity unclipped 16kHz PCM audio to Gemini Live
+                    sendPcmChunkToGemini(pcm16);
                 }
             }
 
@@ -1712,7 +1754,6 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                         if (!isNaN(reqDate.getTime())) {
                             const { scheduledTime } = computeValidCallingSlot(reqDate, 'Asia/Kolkata');
                             updatePayload.voice_call_scheduled_at = scheduledTime.toISOString();
-                            updatePayload.voice_next_retry_at = scheduledTime.toISOString();
                             updatePayload.voice_call_status = 'scheduled_callback';
                         }
                     } catch (cbErr) {

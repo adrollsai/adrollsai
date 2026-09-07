@@ -61,7 +61,7 @@ export async function triggerVobizOutboundCall(
     const maxConcurrent = profile.voice_concurrency_limit || 3
     const { data: activeLeads } = await supabaseAdmin
         .from('leads')
-        .select('id, last_called_at, voice_call_scheduled_at, created_at')
+        .select('id, voice_call_scheduled_at, created_at')
         .eq('user_id', profileId)
         .eq('voice_call_status', 'calling')
 
@@ -69,7 +69,7 @@ export async function triggerVobizOutboundCall(
     const activeCalls: any[] = []
 
     for (const c of (activeLeads || [])) {
-        const updatedAtTime = new Date(c.last_called_at || c.voice_call_scheduled_at || c.created_at || 0).getTime()
+        const updatedAtTime = new Date(c.voice_call_scheduled_at || c.created_at || 0).getTime()
         const elapsed = nowTs - updatedAtTime
         // Auto-recover calls stuck in calling for >= 7 minutes
         if (updatedAtTime > 0 && elapsed >= 7 * 60 * 1000) {
@@ -155,8 +155,7 @@ export async function triggerVobizOutboundCall(
                 voice_call_status: 'calling',
                 voice_call_summary: null,
                 voice_call_transcript: null,
-                voice_recording_url: null,
-                last_called_at: new Date().toISOString()
+                voice_recording_url: null
             })
             .eq('id', leadId)
     } catch (dbErr) {

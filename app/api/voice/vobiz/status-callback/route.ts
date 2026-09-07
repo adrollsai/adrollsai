@@ -67,11 +67,42 @@ export async function POST(req: Request) {
             if (updatedStatus) {
                 updatePayload.voice_call_status = updatedStatus
             }
-            if (callDuration > 0) {
-                updatePayload.voice_call_duration = callDuration
-            }
+
+            // If recordingUrl is present, upload to Supabase storage to provide a permanent public playback URL
+            let publicRecordingUrl = recordingUrl
             if (recordingUrl) {
-                updatePayload.voice_recording_url = recordingUrl
+                try {
+                    const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+                    const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+                    const recFetchRes = await fetch(recordingUrl, {
+                        headers: {
+                            'X-Auth-ID': authId,
+                            'X-Auth-Token': authToken
+                        }
+                    })
+
+                    if (recFetchRes.ok) {
+                        const audioBuffer = Buffer.from(await recFetchRes.arrayBuffer())
+                        const storagePath = `${leadId}/vobiz_${Date.now()}.mp3`
+                        const { error: upErr } = await supabaseAdmin.storage
+                            .from('lead-voice-recordings')
+                            .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true })
+
+                        if (!upErr) {
+                            const { data: pubData } = supabaseAdmin.storage
+                                .from('lead-voice-recordings')
+                                .getPublicUrl(storagePath)
+
+                            if (pubData?.publicUrl) {
+                                publicRecordingUrl = pubData.publicUrl
+                                console.log(`[VOBIZ STATUS] Saved public recording URL for lead ${leadId}: ${publicRecordingUrl}`)
+                            }
+                        }
+                    }
+                } catch (sErr) {
+                    console.warn('[VOBIZ STATUS] Error uploading recording to Supabase storage:', sErr)
+                }
+                updatePayload.voice_recording_url = publicRecordingUrl
             }
 
             if (Object.keys(updatePayload).length > 0) {
@@ -81,7 +112,7 @@ export async function POST(req: Request) {
                     .eq('id', leadId)
 
                 // If recordingUrl is present, update the latest lead_history remark
-                if (recordingUrl) {
+                if (publicRecordingUrl) {
                     try {
                         const { data: latestHistory } = await supabaseAdmin
                             .from('lead_history')
@@ -95,7 +126,7 @@ export async function POST(req: Request) {
                         if (latestHistory && latestHistory.description?.startsWith('🎙️ CALL_JSON:')) {
                             const rawJson = latestHistory.description.replace('🎙️ CALL_JSON:', '').trim()
                             const parsed = JSON.parse(rawJson)
-                            parsed.recording_url = recordingUrl
+                            parsed.recording_url = publicRecordingUrl
                             await supabaseAdmin
                                 .from('lead_history')
                                 .update({ description: `🎙️ CALL_JSON:${JSON.stringify(parsed)}` })

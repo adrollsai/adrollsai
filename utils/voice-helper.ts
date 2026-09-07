@@ -174,7 +174,7 @@ export async function triggerOutboundCall(
         const maxConcurrent = profile.voice_concurrency_limit || 3
         const { data: activeLeads } = await supabaseAdmin
             .from('leads')
-            .select('id, last_called_at, voice_call_scheduled_at, created_at')
+            .select('id, voice_call_scheduled_at, created_at')
             .eq('user_id', profileId)
             .eq('voice_call_status', 'calling');
 
@@ -182,7 +182,7 @@ export async function triggerOutboundCall(
         const activeCalls: any[] = [];
 
         for (const c of (activeLeads || [])) {
-            const updatedAtTime = new Date(c.last_called_at || c.voice_call_scheduled_at || c.created_at || 0).getTime();
+            const updatedAtTime = new Date(c.voice_call_scheduled_at || c.created_at || 0).getTime();
             const elapsed = nowTs - updatedAtTime;
             if (updatedAtTime > 0 && elapsed >= 7 * 60 * 1000) {
                 console.warn(`[VOICE HELPER] Auto-recovering stale call stuck in calling status for lead ${c.id}`);
