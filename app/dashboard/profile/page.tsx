@@ -300,8 +300,8 @@ export default function ProfilePage() {
   // --- STATE ---
   const [loading, setLoading] = useState(true)
   const initialSection = (searchParams.get('section') || searchParams.get('tab')) as any
-  const [activeSection, setActiveSection] = useState<'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal' | 'call_settings'>(() => {
-    if (initialSection && ['whatsapp', 'voice', 'calendar', 'flagged', 'legal', 'call_settings'].includes(initialSection)) {
+  const [activeSection, setActiveSection] = useState<'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal'>(() => {
+    if (initialSection && ['whatsapp', 'voice', 'calendar', 'flagged', 'legal'].includes(initialSection)) {
       return initialSection
     }
     return 'main'
@@ -309,14 +309,14 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const sec = (searchParams.get('section') || searchParams.get('tab')) as any
-    if (sec && ['whatsapp', 'voice', 'calendar', 'flagged', 'legal', 'call_settings'].includes(sec)) {
+    if (sec && ['whatsapp', 'voice', 'calendar', 'flagged', 'legal'].includes(sec)) {
       setActiveSection(sec)
     } else if (!sec) {
       setActiveSection('main')
     }
   }, [searchParams])
 
-  const navigateToSection = (section: 'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal' | 'call_settings') => {
+  const navigateToSection = (section: 'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal') => {
     if (section === 'voice') {
       router.push(`/dashboard/voice-agent${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
       return
@@ -1805,7 +1805,7 @@ export default function ProfilePage() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
 
         <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-8 ml-1">
-          {activeSection === 'whatsapp' ? 'WhatsApp Automation' : activeSection === 'voice' ? 'Voice Agent' : activeSection === 'calendar' ? 'Calendar Settings' : activeSection === 'call_settings' ? 'Call & Recording Settings' : activeSection === 'flagged' ? 'Flagged Questions' : activeSection === 'legal' ? 'Terms & Privacy Compliance' : 'Workspace Settings'}
+          {activeSection === 'whatsapp' ? 'WhatsApp Automation' : activeSection === 'voice' ? 'Voice Agent' : activeSection === 'calendar' ? 'Calendar Settings' : activeSection === 'flagged' ? 'Flagged Questions' : activeSection === 'legal' ? 'Terms & Privacy Compliance' : 'Workspace Settings'}
         </h1>
 
         {activeSection === 'whatsapp' ? (
@@ -1818,7 +1818,7 @@ export default function ProfilePage() {
             userId={targetUserId || userId || ''} 
             onBack={() => navigateToSection('main')} 
           />
-        ) : activeSection === 'call_settings' ? (
+        ) : (activeSection as any) === 'call_settings' ? (
           <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200/60 max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
@@ -2071,61 +2071,63 @@ export default function ProfilePage() {
                 </label>
               </div>
 
-              {/* Google Calendar Connection Status */}
-              <div className="p-6 rounded-3xl border border-slate-150 bg-white/50 backdrop-blur-md space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-red-100 text-red-600 p-2.5 rounded-full">
-                      <Plug size={18} />
+              {/* Google Calendar Connection Status - Temporarily hidden pending Google OAuth verification */}
+              {false && (
+                <div className="p-6 rounded-3xl border border-slate-150 bg-white/50 backdrop-blur-md space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-red-100 text-red-600 p-2.5 rounded-full">
+                        <Plug size={18} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-800">Google Calendar Sync</h4>
+                        <p className="text-xs text-slate-500 font-medium">{isGoogleConnected ? 'Syncing active' : 'Sync schedule to prevent double-booking'}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-slate-800">Google Calendar Sync</h4>
-                      <p className="text-xs text-slate-500 font-medium">{isGoogleConnected ? 'Syncing active' : 'Sync schedule to prevent double-booking'}</p>
-                    </div>
-                  </div>
-                  {isGoogleConnected ? (
-                    <button 
-                      onClick={handleDisconnectGoogle} 
-                      disabled={isDisconnectingGoogle} 
-                      className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-full font-bold transition-all"
-                    >
-                      {isDisconnectingGoogle ? '...' : 'Disconnect'}
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={handleConnectGoogle} 
-                      disabled={isConnectingGoogle} 
-                      className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-sm transition-all"
-                    >
-                      {isConnectingGoogle ? 'Connecting...' : 'Connect Google'}
-                    </button>
-                  )}
-                </div>
-
-                {isGoogleConnected && (
-                  <div className="pt-2 animate-in fade-in slide-in-from-top-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block font-black">Target Calendar</label>
-                    {isLoadingCalendars ? (
-                      <div className="text-xs text-slate-400 py-2.5 font-medium">Syncing calendar lists...</div>
-                    ) : (
-                      <select
-                        value={googleCalendarId}
-                        onChange={(e) => setGoogleCalendarId(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-2xl text-xs font-bold outline-none cursor-pointer text-slate-800 focus:border-red-500 transition-all"
+                    {isGoogleConnected ? (
+                      <button 
+                        onClick={handleDisconnectGoogle} 
+                        disabled={isDisconnectingGoogle} 
+                        className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-full font-bold transition-all"
                       >
-                        <option value="primary">Primary Calendar (Default)</option>
-                        {googleCalendars
-                          .filter(c => c.id !== 'primary')
-                          .map(c => (
-                            <option key={c.id} value={c.id}>
-                              {c.summary}
-                            </option>
-                          ))}
-                      </select>
+                        {isDisconnectingGoogle ? '...' : 'Disconnect'}
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={handleConnectGoogle} 
+                        disabled={isConnectingGoogle} 
+                        className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-sm transition-all"
+                      >
+                        {isConnectingGoogle ? 'Connecting...' : 'Connect Google'}
+                      </button>
                     )}
                   </div>
-                )}
-              </div>
+
+                  {isGoogleConnected && (
+                    <div className="pt-2 animate-in fade-in slide-in-from-top-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block font-black">Target Calendar</label>
+                      {isLoadingCalendars ? (
+                        <div className="text-xs text-slate-400 py-2.5 font-medium">Syncing calendar lists...</div>
+                      ) : (
+                        <select
+                          value={googleCalendarId}
+                          onChange={(e) => setGoogleCalendarId(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-2xl text-xs font-bold outline-none cursor-pointer text-slate-800 focus:border-red-500 transition-all"
+                        >
+                          <option value="primary">Primary Calendar (Default)</option>
+                          {googleCalendars
+                            .filter(c => c.id !== 'primary')
+                            .map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.summary}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Slot Config fields */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3456,7 +3458,8 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {isAdminLike && authRole !== 'agent' && (
+            {/* Google Calendar Tile - Temporarily hidden for everyone pending Google OAuth verification */}
+            {false && isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md mb-6">
                 <div className="p-6 sm:p-7">
                   <div className="flex items-center justify-between">
@@ -3672,24 +3675,26 @@ export default function ProfilePage() {
                 </button>
 
                 <button 
-                  onClick={() => router.push(`/dashboard/flows${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  onClick={() => router.push(`/dashboard/automations${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
                   className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-violet-50/50 transition-all border-b border-slate-100 group cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white p-3 rounded-2xl shadow-sm group-hover:scale-105 transition-transform">
+                    <div className="bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-3 rounded-2xl shadow-sm group-hover:scale-105 transition-transform">
                       <Workflow size={20} />
                     </div>
                     <div className="text-left">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm text-slate-900 group-hover:text-violet-700 transition-colors">
-                          Automation Flow Builder
+                          Automations
                         </span>
                         <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-violet-100 text-violet-700 rounded-full">
-                          Visual Canvas
+                          Complete Suite
                         </span>
                       </div>
                       <span className="text-[11px] text-slate-500 font-medium block">
-                        Design multi-channel automation pipelines for Meta campaigns, WhatsApp bots & AI calling
+                        {authRole === 'super_admin'
+                          ? 'Visual Flow Builder, AI Calling, DM Triggers, Comment Auto-Replies & Drip Sequences'
+                          : 'AI Calling, DM Triggers, Comment Auto-Replies & Drip Sequences'}
                       </span>
                     </div>
                   </div>
@@ -3748,21 +3753,24 @@ export default function ProfilePage() {
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>
 
-                <button 
-                  onClick={() => navigateToSection('call_settings')} 
-                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100 cursor-pointer"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
-                      <Phone size={20} />
+                {/* Call & Recording Settings - Hidden for everyone */}
+                {false && (
+                  <button 
+                    onClick={() => navigateToSection('call_settings' as any)} 
+                    className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-all border-b border-slate-100 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl">
+                        <Phone size={20} />
+                      </div>
+                      <div className="text-left">
+                        <span className="font-bold text-sm text-slate-900 block">Call & Recording Settings</span>
+                        <span className="text-[11px] text-slate-500 font-medium">Configure Android call log sync & recordings folder path</span>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <span className="font-bold text-sm text-slate-900 block">Call & Recording Settings</span>
-                      <span className="text-[11px] text-slate-500 font-medium">Configure Android call log sync & recordings folder path</span>
-                    </div>
-                  </div>
-                  <ChevronRight size={20} className="text-slate-400" />
-                </button>
+                    <ChevronRight size={20} className="text-slate-400" />
+                  </button>
+                )}
 
                 <button 
                   onClick={() => navigateToSection('legal')} 
@@ -3849,24 +3857,26 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {/* Call & Recording Settings Tile - Available to ALL users (including team members & staff) */}
-            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
-              <button 
-                onClick={() => setActiveSection('call_settings')} 
-                className="w-full p-5 flex items-center justify-between hover:bg-slate-50 transition-all group"
-              >
-                <div className="flex items-center gap-4 text-left">
-                  <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl group-hover:scale-105 transition-transform">
-                    <Phone size={20} />
+            {/* Call & Recording Settings Tile - Hidden for everyone */}
+            {false && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+                <button 
+                  onClick={() => setActiveSection('call_settings' as any)} 
+                  className="w-full p-5 flex items-center justify-between hover:bg-slate-50 transition-all group"
+                >
+                  <div className="flex items-center gap-4 text-left">
+                    <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl group-hover:scale-105 transition-transform">
+                      <Phone size={20} />
+                    </div>
+                    <div>
+                      <span className="font-bold text-sm text-slate-900 block">Call & Recording Settings</span>
+                      <span className="text-[11px] text-slate-500 font-medium">Configure Android call log sync & recordings folder path</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-bold text-sm text-slate-900 block">Call & Recording Settings</span>
-                    <span className="text-[11px] text-slate-500 font-medium">Configure Android call log sync & recordings folder path</span>
-                  </div>
-                </div>
-                <ChevronRight size={20} className="text-slate-400 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
+                  <ChevronRight size={20} className="text-slate-400 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            )}
 
             <div className="bg-white rounded-[2rem] shadow-sm border border-red-100 overflow-hidden transition-all hover:border-red-200 hover:shadow-md">
               <button

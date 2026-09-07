@@ -821,7 +821,8 @@ export async function bookAppointment(
 
             if (phoneId && whatsappToken) {
                 // 1. Prospect message: Free-form Priority 1, Template Priority 2 Fallback
-                if (cleanLeadPhone) {
+                const skipProspectWa = lead?.custom_fields?.skip_prospect_whatsapp || lead?.custom_fields?.omit_prospect_whatsapp;
+                if (cleanLeadPhone && !skipProspectWa) {
                     console.log(`[VOICE HELPER] Sending WhatsApp booking confirmation to prospect: ${cleanLeadPhone}`)
                     let confirmationDelivered = false
 

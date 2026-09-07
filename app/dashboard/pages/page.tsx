@@ -1664,7 +1664,7 @@ const handleSendChatEdit = async () => {
                                                         onChange={(e) => handleUpdatePageBooking(page.id, e.target.checked)}
                                                         className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
                                                     />
-                                                    <span className="text-xs font-bold text-slate-600">Enable Google Calendar booking after lead submission</span>
+                                                    <span className="text-xs font-bold text-slate-600">Enable meeting booking after lead submission</span>
                                                 </label>
                                             </div>
 

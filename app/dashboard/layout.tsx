@@ -202,11 +202,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {children}
 
-        {/* Hide the navigation bar on billing, onboarding, video-editor, and full-screen flow builder */}
+        {/* Hide the navigation bar on billing, onboarding, video-editor, and full-screen flow builder / automations */}
         {pathname !== '/dashboard/billing' && 
          pathname !== '/dashboard/onboarding' && 
          !pathname?.includes('/dashboard/video-editor') && 
          !pathname?.includes('/dashboard/flows') && 
+         !pathname?.includes('/dashboard/automations') && 
          <BottomNav />}
       </div>
     </UploadProvider>

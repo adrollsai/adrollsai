@@ -18,26 +18,63 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
+import { SuiteHeader, SuiteTabType } from './components/suite-header'
+import { AiCallingAutomationsView } from './components/ai-calling-view'
+import { DmAutomationsView } from './components/dm-automations-view'
+import { IgCommentsView } from './components/ig-comments-view'
+import { FbCommentsView } from './components/fb-comments-view'
+import { SequencesView } from './components/sequences-view'
+import { SuiteAnalyticsView } from './components/suite-analytics-view'
 
 // Types
 export type FlowNodeType = 
+  // Triggers
   | 'trigger_campaign_audience'
   | 'trigger_csv_audience'
   | 'trigger_custom_audience_group'
   | 'trigger_meta_ad'
+  | 'trigger_ig_dm'
+  | 'trigger_ig_comment'
+  | 'trigger_ig_story_mention'
+  | 'trigger_fb_lead_ad'
+  | 'trigger_fb_comment'
+  | 'trigger_fb_messenger'
   | 'trigger_whatsapp_inbound'
+  | 'trigger_whatsapp_ctwa'
+  | 'trigger_ai_call_request'
   | 'trigger_portal_lead'
   | 'trigger_crm_lead'
   | 'trigger_webhook'
+  // Instagram Actions
+  | 'action_ig_send_dm'
+  | 'action_ig_comment_reply'
+  | 'action_ig_card'
+  // WhatsApp Actions
   | 'action_whatsapp_msg'
   | 'action_whatsapp_questions'
+  | 'action_whatsapp_interactive'
+  // Facebook Actions
+  | 'action_fb_send_messenger'
+  | 'action_fb_comment_reply'
+  // AI Voice Calling Actions
+  | 'action_ai_call'
+  | 'action_ai_call_transfer'
+  // Email Actions
+  | 'action_send_email'
+  // Logic & Branching Actions
+  | 'action_condition'
+  | 'action_split_traffic'
+  | 'action_delay'
+  | 'action_follow_up'
   | 'action_qualify'
   | 'action_ai_qualify'
-  | 'action_ai_call'
-  | 'action_condition'
-  | 'action_assign_agent'
+  // CRM, Tags & System Actions
+  | 'action_add_tag'
+  | 'action_remove_tag'
+  | 'action_add_note'
+  | 'action_update_field'
   | 'action_crm_stage'
-  | 'action_delay'
+  | 'action_assign_agent'
   | 'action_webhook'
   | 'action_notify_team'
 
@@ -117,7 +154,7 @@ const PROSPECT_POOL = [
   { name: 'Rajesh Bansal', phone: '+91 98155 44332', budget: '3.0 Cr', intent: 'High', location: 'Sector 70 Mohali' }
 ]
 
-// Pre-built Starter Templates (Chatrace & Enterprise Grade)
+// Pre-built Starter Templates (Enterprise Grade Omnichannel Suite)
 const FLOW_TEMPLATES: {
   id: string
   title: string
@@ -128,6 +165,133 @@ const FLOW_TEMPLATES: {
   icon: any
   flow: Omit<AutomationFlow, 'id'>
 }[] = [
+  {
+    id: 'ig_comment_dm_growth',
+    title: 'Instagram Reel Comment to Instant DM & WhatsApp',
+    category: 'Instagram Automation',
+    tag: '🟣 Reel Comments & DMs',
+    badgeColor: 'bg-pink-50 text-pink-700 border-pink-200',
+    description: 'When someone comments "PRICE" on an Instagram Reel, post an instant public reply, deliver the brochure in DM, and tag as an engaged prospect.',
+    icon: MessageCircle,
+    flow: {
+      name: 'Instagram Reel Comment to Instant DM Flow',
+      description: 'Auto-replies to Reel comments and sends private DM with verified brochure and CTA buttons.',
+      isActive: false,
+      trigger: {
+        type: 'trigger_ig_comment',
+        label: 'Instagram Reel & Post Comment (Keyword Match)'
+      },
+      nodes: [
+        {
+          id: 'step_1',
+          type: 'action_ig_comment_reply',
+          title: 'Public Comment Reply + Private DM',
+          description: 'Instant public reply to boost algorithm reach and private DM handoff',
+          config: {
+            publicReplyText: 'Sent you the verified brochure & price list in DM! 📩 Check your requests.',
+            sendPrivateDm: true,
+            dmMessage: 'Hey {{lead.name}}! Thanks for commenting on our reel. Here is the verified project brochure and floor plan deck: https://nobogent.com/brochure'
+          }
+        },
+        {
+          id: 'step_2',
+          type: 'action_ig_send_dm',
+          title: 'Deliver Interactive Brochure Card in DM',
+          description: 'Sends interactive buttons to book site visit or speak with an agent',
+          config: {
+            message: 'Would you like to schedule a private site visit this weekend, or view our 3 & 4 BHK sample flat walkthrough?',
+            buttons: [
+              { id: 'btn_1', title: '📅 Book Site Visit', actionType: 'crm_stage', actionValue: 'Visit Planned' },
+              { id: 'btn_2', title: '💬 Chat with Closer', actionType: 'assign_agent', actionValue: 'Harman Bajwa' }
+            ]
+          }
+        },
+        {
+          id: 'step_3',
+          type: 'action_add_tag',
+          title: 'Attach Tag "Instagram Reel Lead"',
+          description: 'Tag contact for Instagram audience retargeting',
+          config: {
+            tag: 'Instagram Reel Lead'
+          }
+        },
+        {
+          id: 'step_4',
+          type: 'action_crm_stage',
+          title: 'Move CRM Stage to "Contacted"',
+          description: 'Track in active pipeline',
+          config: {
+            stage: 'Contacted',
+            tags: 'Instagram Automation, DM Sent'
+          }
+        }
+      ]
+    }
+  },
+  {
+    id: 'fb_lead_ad_speed_to_lead',
+    title: 'Facebook Lead Ad to Instant Voice Call & WhatsApp',
+    category: 'Meta Lead Gen',
+    tag: '🔵 Lead Ads + 🎙️ Gemini Live',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
+    description: 'Instant WhatsApp brochure delivery on Facebook Lead Ad submission, followed by a Gemini Live outbound qualification call.',
+    icon: Zap,
+    flow: {
+      name: 'Facebook Lead Ad Instant Voice & WhatsApp Flow',
+      description: 'Zero-latency response for Facebook Lead Ads with WhatsApp brochure and AI voice call.',
+      isActive: false,
+      trigger: {
+        type: 'trigger_fb_lead_ad',
+        label: 'Facebook Instant Lead Ad Form'
+      },
+      nodes: [
+        {
+          id: 'step_1',
+          type: 'action_whatsapp_msg',
+          title: 'Send Instant Project Brochure on WhatsApp',
+          description: 'Delivers project brochure immediately upon lead submission',
+          config: {
+            message: 'Hi {{lead.name}}! Thank you for requesting information on Facebook. Here is the verified brochure and floor plans:',
+            includeBrochure: true,
+            buttons: ['📅 Schedule Visit', '💬 Talk to Agent']
+          }
+        },
+        {
+          id: 'step_2',
+          type: 'action_delay',
+          title: 'Wait 2 Minutes',
+          description: 'Allow lead to glance at WhatsApp brochure before receiving callback',
+          config: {
+            duration: 2,
+            unit: 'minutes',
+            businessHoursOnly: false
+          }
+        },
+        {
+          id: 'step_3',
+          type: 'action_ai_call',
+          title: 'Gemini 3.1 Live Voice Qualification Call',
+          description: 'Calls prospect, verifies interest in site visit, and checks investment budget',
+          config: {
+            voiceAgent: 'Fenrir (Crisp & Focused)',
+            objective: 'Site Visit Confirmation',
+            firstLine: 'Hi {{lead.name}}, I am calling from Bluesquare Infra following up on the brochure we just sent to your WhatsApp.'
+          }
+        },
+        {
+          id: 'step_4',
+          type: 'action_ai_call_transfer',
+          title: 'Transfer to Senior Closer if High Intent',
+          description: 'Warm transfer to sales closer when prospect wants to book a slot',
+          config: {
+            closerName: 'Harman Bajwa',
+            transferNumber: '+91 98765 43210',
+            whisperMessage: 'Connecting high intent buyer from Facebook Lead Ad'
+          }
+        }
+      ]
+    }
+  },
   {
     id: 'calling_qualification_pipeline',
     title: 'Outbound Calling & Qualification Pipeline',
@@ -542,172 +706,431 @@ const FLOW_TEMPLATES: {
   }
 ]
 
-// All available node definitions (Chatrace / Enterprise style)
+// All available node definitions (Enterprise Omnichannel Builder)
 const NODE_DEFINITIONS: {
   type: FlowNodeType
-  category: 'Triggers' | 'Communication' | 'AI & Logic' | 'CRM & Routing'
+  category: 'Instagram' | 'WhatsApp' | 'Facebook' | 'AI Voice Calling' | 'Email' | 'Logic & Flow' | 'CRM & Actions' | 'Triggers' | 'Communication' | 'AI & Logic' | 'CRM & Routing'
+  channel: 'instagram' | 'whatsapp' | 'facebook' | 'voice' | 'email' | 'logic' | 'crm' | 'triggers'
   title: string
   description: string
   icon: any
   color: string
   badgeColor: string
 }[] = [
-  // Triggers
+  // 🟣 INSTAGRAM AUTOMATION NODES
+  {
+    type: 'trigger_ig_dm',
+    category: 'Instagram',
+    channel: 'instagram',
+    title: 'Instagram Inbound DM Trigger',
+    description: 'Triggers when a prospect sends an Instagram DM matching keywords (e.g. PRICE, BROCHURE, INFO)',
+    icon: MessageCircle,
+    color: 'border-pink-300 bg-pink-50 text-pink-700',
+    badgeColor: 'bg-gradient-to-r from-purple-50 to-pink-50 text-pink-700 border-pink-200'
+  },
+  {
+    type: 'trigger_ig_comment',
+    category: 'Instagram',
+    channel: 'instagram',
+    title: 'Instagram Reel & Post Comments',
+    description: 'Triggers when someone comments on your Instagram reels, posts, or sponsored ad creatives',
+    icon: MessageSquare,
+    color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700',
+    badgeColor: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200'
+  },
+  {
+    type: 'trigger_ig_story_mention',
+    category: 'Instagram',
+    channel: 'instagram',
+    title: 'Instagram Story Mention / Reply',
+    description: 'Triggers when a prospect mentions your handle in an Instagram Story or replies to your story',
+    icon: Sparkles,
+    color: 'border-purple-300 bg-purple-50 text-purple-700',
+    badgeColor: 'bg-purple-50 text-purple-700 border-purple-200'
+  },
+  {
+    type: 'action_ig_send_dm',
+    category: 'Instagram',
+    channel: 'instagram',
+    title: 'Send Instagram Direct Message',
+    description: 'Sends personalized DM with rich media links, project brochure, and interactive quick reply buttons',
+    icon: Send,
+    color: 'border-pink-300 bg-pink-50 text-pink-700',
+    badgeColor: 'bg-pink-50 text-pink-700 border-pink-200'
+  },
+  {
+    type: 'action_ig_comment_reply',
+    category: 'Instagram',
+    channel: 'instagram',
+    title: 'Instagram Comment Auto-Reply',
+    description: 'Posts an instant public reply to the comment and immediately sends private DM with requested brochure',
+    icon: MessageCircle,
+    color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700',
+    badgeColor: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200'
+  },
+  {
+    type: 'action_ig_card',
+    category: 'Instagram',
+    channel: 'instagram',
+    title: 'Send Instagram Brochure Card',
+    description: 'Sends a visual property brochure card with hero image, pricing details, and direct CTA buttons',
+    icon: ImageIcon,
+    color: 'border-rose-300 bg-rose-50 text-rose-700',
+    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200'
+  },
+
+  // 🟢 WHATSAPP AUTOMATION NODES
+  {
+    type: 'trigger_whatsapp_inbound',
+    category: 'WhatsApp',
+    channel: 'whatsapp',
+    title: 'WhatsApp Inbound Message',
+    description: 'Triggers when a customer messages your WhatsApp business number or sends a keyword',
+    icon: MessageSquare,
+    color: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+  },
+  {
+    type: 'trigger_whatsapp_ctwa',
+    category: 'WhatsApp',
+    channel: 'whatsapp',
+    title: 'Click-to-WhatsApp Ad Lead',
+    description: 'Triggers when a prospect clicks a Meta Click-to-WhatsApp ad with campaign source tracking',
+    icon: Smartphone,
+    color: 'border-teal-300 bg-teal-50 text-teal-700',
+    badgeColor: 'bg-teal-50 text-teal-700 border-teal-200'
+  },
+  {
+    type: 'action_whatsapp_msg',
+    category: 'WhatsApp',
+    channel: 'whatsapp',
+    title: 'Send WhatsApp Message',
+    description: 'Sends rich text, verified PDF brochure, and interactive quick-reply buttons or CTA links',
+    icon: Send,
+    color: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+  },
+  {
+    type: 'action_whatsapp_questions',
+    category: 'WhatsApp',
+    channel: 'whatsapp',
+    title: 'Ask Questions / Screening Form',
+    description: 'Screening questions (budget, BHK, timeline) with custom field auto-saving and quick reply chips',
+    icon: MessageCircle,
+    color: 'border-teal-300 bg-teal-50 text-teal-700',
+    badgeColor: 'bg-teal-50 text-teal-700 border-teal-200'
+  },
+  {
+    type: 'action_whatsapp_interactive',
+    category: 'WhatsApp',
+    channel: 'whatsapp',
+    title: 'WhatsApp Interactive List Menu',
+    description: 'Interactive list picker for unit selection, floor plan choices, or scheduling appointment slots',
+    icon: Layers,
+    color: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+  },
+
+  // 🔵 FACEBOOK AUTOMATION NODES
+  {
+    type: 'trigger_fb_lead_ad',
+    category: 'Facebook',
+    channel: 'facebook',
+    title: 'Facebook Lead Ad (Instant Form)',
+    description: 'Triggers instantly when a prospect submits a Facebook or Meta Lead Ad instant form',
+    icon: Zap,
+    color: 'border-blue-300 bg-blue-50 text-blue-700',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200'
+  },
+  {
+    type: 'trigger_fb_comment',
+    category: 'Facebook',
+    channel: 'facebook',
+    title: 'Facebook Post & Ad Comment',
+    description: 'Triggers when someone comments on your Facebook page posts or sponsored ad creatives',
+    icon: MessageSquare,
+    color: 'border-blue-300 bg-blue-50 text-blue-700',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200'
+  },
+  {
+    type: 'trigger_fb_messenger',
+    category: 'Facebook',
+    channel: 'facebook',
+    title: 'Facebook Messenger Inbound',
+    description: 'Triggers when a prospect clicks "Send Message" on Facebook or sends a Messenger chat',
+    icon: MessageCircle,
+    color: 'border-sky-300 bg-sky-50 text-sky-700',
+    badgeColor: 'bg-sky-50 text-sky-700 border-sky-200'
+  },
+  {
+    type: 'action_fb_send_messenger',
+    category: 'Facebook',
+    channel: 'facebook',
+    title: 'Send Facebook Messenger Message',
+    description: 'Sends rich text message with clickable CTA buttons and quick reply response chips',
+    icon: Send,
+    color: 'border-blue-300 bg-blue-50 text-blue-700',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200'
+  },
+  {
+    type: 'action_fb_comment_reply',
+    category: 'Facebook',
+    channel: 'facebook',
+    title: 'Facebook Comment Auto-Reply',
+    description: 'Replies publicly to Facebook post comments and delivers brochure in private Messenger conversation',
+    icon: MessageSquare,
+    color: 'border-indigo-300 bg-indigo-50 text-indigo-700',
+    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  },
+
+  // 🎙️ AI VOICE CALLING NODES
+  {
+    type: 'trigger_ai_call_request',
+    category: 'AI Voice Calling',
+    channel: 'voice',
+    title: 'Instant AI Call Request Trigger',
+    description: 'Triggers when a prospect clicks "Call Me Now" on lander or submits a callback request form',
+    icon: Phone,
+    color: 'border-indigo-300 bg-indigo-50 text-indigo-700',
+    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  },
+  {
+    type: 'action_ai_call',
+    category: 'AI Voice Calling',
+    channel: 'voice',
+    title: 'Automated AI Voice Call (Gemini Live)',
+    description: 'Outbound call with official Gemini Live voice (Puck, Fenrir, Kore, Charon, Aoede) & multi-question qualification',
+    icon: PhoneCall,
+    color: 'border-indigo-300 bg-indigo-50 text-indigo-700',
+    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  },
+  {
+    type: 'action_ai_call_transfer',
+    category: 'AI Voice Calling',
+    channel: 'voice',
+    title: 'Live Call Transfer to Closer',
+    description: 'Seamlessly transfers active call to a human sales rep or closer when high intent is detected',
+    icon: PhoneForwarded,
+    color: 'border-purple-300 bg-purple-50 text-purple-700',
+    badgeColor: 'bg-purple-50 text-purple-700 border-purple-200'
+  },
+
+  // 📧 EMAIL NODES
+  {
+    type: 'action_send_email',
+    category: 'Email',
+    channel: 'email',
+    title: 'Send Rich Email',
+    description: 'Delivers HTML email with verified project brochure PDF, pricing breakdown, and site visit booking link',
+    icon: Mail,
+    color: 'border-sky-300 bg-sky-50 text-sky-700',
+    badgeColor: 'bg-sky-50 text-sky-700 border-sky-200'
+  },
+
+  // 🔀 LOGIC & FLOW CONTROL NODES
+  {
+    type: 'action_condition',
+    category: 'Logic & Flow',
+    channel: 'logic',
+    title: 'Condition / If-Else Branch',
+    description: 'Dual-path logic branch based on qualification score, answers, tags, or buyer budget',
+    icon: GitFork,
+    color: 'border-rose-300 bg-rose-50 text-rose-700',
+    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200'
+  },
+  {
+    type: 'action_split_traffic',
+    category: 'Logic & Flow',
+    channel: 'logic',
+    title: 'Split Traffic (A/B Test)',
+    description: 'Splits incoming leads into randomized percentage branches (e.g. 50/50, 70/30) for conversion testing',
+    icon: Split,
+    color: 'border-amber-300 bg-amber-50 text-amber-700',
+    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200'
+  },
+  {
+    type: 'action_delay',
+    category: 'Logic & Flow',
+    channel: 'logic',
+    title: 'Smart Delay / Wait Timer',
+    description: 'Pauses pipeline for specified minutes, hours, or waits for next business morning 9:00 AM',
+    icon: Clock,
+    color: 'border-amber-300 bg-amber-50 text-amber-700',
+    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200'
+  },
+  {
+    type: 'action_follow_up',
+    category: 'Logic & Flow',
+    channel: 'logic',
+    title: 'Multi-Day Drip Sequence',
+    description: 'Enrolls the contact into an automated multi-day drip nurture sequence',
+    icon: ListOrdered,
+    color: 'border-violet-300 bg-violet-50 text-violet-700',
+    badgeColor: 'bg-violet-50 text-violet-700 border-violet-200'
+  },
+  {
+    type: 'action_qualify',
+    category: 'Logic & Flow',
+    channel: 'logic',
+    title: 'Deterministic Lead Scoring',
+    description: 'Exact rule-based criteria & scoring without AI drift or hallucinations',
+    icon: CheckCircle2,
+    color: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+  },
+
+  // ⚡ CRM, TAGS & ACTIONS NODES
+  {
+    type: 'action_add_tag',
+    category: 'CRM & Actions',
+    channel: 'crm',
+    title: 'Add Contact Tag',
+    description: 'Attaches a specific tag to the contact profile for segmentation and filtering',
+    icon: Tag,
+    color: 'border-blue-300 bg-blue-50 text-blue-700',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200'
+  },
+  {
+    type: 'action_remove_tag',
+    category: 'CRM & Actions',
+    channel: 'crm',
+    title: 'Remove Contact Tag',
+    description: 'Removes an existing tag from the contact profile upon progression',
+    icon: Tag,
+    color: 'border-slate-300 bg-slate-50 text-slate-700',
+    badgeColor: 'bg-slate-100 text-slate-700 border-slate-200'
+  },
+  {
+    type: 'action_add_note',
+    category: 'CRM & Actions',
+    channel: 'crm',
+    title: 'Add Contact Note',
+    description: 'Logs an internal activity or qualification summary directly into the lead timeline',
+    icon: FileText,
+    color: 'border-yellow-300 bg-yellow-50 text-yellow-700',
+    badgeColor: 'bg-yellow-50 text-yellow-700 border-yellow-200'
+  },
+  {
+    type: 'action_update_field',
+    category: 'CRM & Actions',
+    channel: 'crm',
+    title: 'Update Custom Field',
+    description: 'Updates a specific lead attribute (e.g. budget, preferred location, timeline, intent)',
+    icon: Sliders,
+    color: 'border-indigo-300 bg-indigo-50 text-indigo-700',
+    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  },
+  {
+    type: 'action_crm_stage',
+    category: 'CRM & Actions',
+    channel: 'crm',
+    title: 'Update CRM Stage & Tags',
+    description: 'Moves lead to target pipeline stage and attaches stage-specific tags',
+    icon: Tag,
+    color: 'border-blue-300 bg-blue-50 text-blue-700',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200'
+  },
+  {
+    type: 'action_assign_agent',
+    category: 'CRM & Actions',
+    channel: 'crm',
+    title: 'Assign Lead (Agent or Group)',
+    description: 'Assigns to specific agent or to a distribution group with weighted round-robin',
+    icon: UserCheck,
+    color: 'border-cyan-300 bg-cyan-50 text-cyan-700',
+    badgeColor: 'bg-cyan-50 text-cyan-700 border-cyan-200'
+  },
+  {
+    type: 'action_webhook',
+    category: 'CRM & Actions',
+    channel: 'crm',
+    title: 'Send Outbound Webhook',
+    description: 'POSTs lead payload to external CRM, Zapier, Make, or custom API',
+    icon: ExternalLink,
+    color: 'border-purple-300 bg-purple-50 text-purple-700',
+    badgeColor: 'bg-purple-50 text-purple-700 border-purple-200'
+  },
+  {
+    type: 'action_notify_team',
+    category: 'CRM & Actions',
+    channel: 'crm',
+    title: 'Notify Admin & Team (Email + WhatsApp)',
+    description: 'Sends instant alert to admin email and WhatsApp with lead info, score, and call confirmation',
+    icon: Bell,
+    color: 'border-amber-300 bg-amber-50 text-amber-700',
+    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200'
+  },
+
+  // 🎯 INBOUND & AUDIENCE TRIGGERS
   {
     type: 'trigger_campaign_audience',
     category: 'Triggers',
+    channel: 'triggers',
     title: 'Existing Campaign Audience',
     description: 'Triggers outbound calling or messaging for contacts in an existing campaign audience',
     icon: PhoneCall,
-    color: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+    color: 'border-indigo-300 bg-indigo-50 text-indigo-700',
     badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200'
   },
   {
     type: 'trigger_csv_audience',
     category: 'Triggers',
+    channel: 'triggers',
     title: 'Uploaded CSV Audience',
     description: 'Run outbound calling or WhatsApp workflows on custom uploaded CSV lead lists',
     icon: FileText,
-    color: 'border-violet-200 bg-violet-50 text-violet-700',
+    color: 'border-violet-300 bg-violet-50 text-violet-700',
     badgeColor: 'bg-violet-50 text-violet-700 border-violet-200'
   },
   {
     type: 'trigger_custom_audience_group',
     category: 'Triggers',
+    channel: 'triggers',
     title: 'Custom Audience Group / Segment',
     description: 'Target a custom lead group, CRM audience segment, or DNP retry pool',
     icon: Users,
-    color: 'border-blue-200 bg-blue-50 text-blue-700',
+    color: 'border-blue-300 bg-blue-50 text-blue-700',
     badgeColor: 'bg-blue-50 text-blue-700 border-blue-200'
   },
   {
     type: 'trigger_meta_ad',
     category: 'Triggers',
+    channel: 'triggers',
     title: 'Meta Ad Campaign Lead',
     description: 'Triggers when a prospect submits a lead form on Facebook or Instagram',
     icon: Zap,
-    color: 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700',
+    color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700',
     badgeColor: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200'
-  },
-  {
-    type: 'trigger_whatsapp_inbound',
-    category: 'Triggers',
-    title: 'WhatsApp Inbound Message',
-    description: 'Triggers when a customer messages your WhatsApp business number',
-    icon: MessageSquare,
-    color: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
   },
   {
     type: 'trigger_portal_lead',
     category: 'Triggers',
+    channel: 'triggers',
     title: 'Housing.com / 99Acres Lead',
     description: 'Triggers when an inbound lead arrives from Housing.com or 99Acres webhook',
     icon: Globe,
-    color: 'border-amber-200 bg-amber-50 text-amber-800',
+    color: 'border-amber-300 bg-amber-50 text-amber-800',
     badgeColor: 'bg-amber-50 text-amber-800 border-amber-200'
   },
   {
     type: 'trigger_crm_lead',
     category: 'Triggers',
+    channel: 'triggers',
     title: 'CRM Lead Created or Stage Moved',
     description: 'Triggers when a lead enters CRM or moves to a specific pipeline stage',
     icon: Users,
-    color: 'border-sky-200 bg-sky-50 text-sky-700',
+    color: 'border-sky-300 bg-sky-50 text-sky-700',
     badgeColor: 'bg-sky-50 text-sky-700 border-sky-200'
   },
-  // Communication
   {
-    type: 'action_whatsapp_msg',
-    category: 'Communication',
-    title: 'Send WhatsApp Message',
-    description: 'Sends rich text, brochure PDF, media, and interactive clickable buttons',
-    icon: Send,
-    color: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
-  },
-  {
-    type: 'action_whatsapp_questions',
-    category: 'Communication',
-    title: 'Ask Question / Collect Info',
-    description: 'Screening questions with custom field mapping & quick-reply chips',
-    icon: MessageCircle,
-    color: 'border-teal-200 bg-teal-50 text-teal-700',
-    badgeColor: 'bg-teal-50 text-teal-700 border-teal-200'
-  },
-  {
-    type: 'action_ai_call',
-    category: 'Communication',
-    title: 'Automated AI Voice Call (Gemini Live)',
-    description: 'Outbound call with official Gemini Live voice, multi-question qualification & auto-save to CRM',
-    icon: PhoneCall,
-    color: 'border-indigo-200 bg-indigo-50 text-indigo-700',
-    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200'
-  },
-  // Qualification & Logic
-  {
-    type: 'action_qualify',
-    category: 'AI & Logic',
-    title: 'Deterministic Lead Qualification',
-    description: 'Exact rule-based criteria & scoring without AI drift or hallucinations',
-    icon: CheckCircle2,
-    color: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
-  },
-  {
-    type: 'action_condition',
-    category: 'AI & Logic',
-    title: 'Condition / If-Else Branch',
-    description: 'Splits workflow into True / False paths based on score, question answers, or CRM fields',
-    icon: GitFork,
-    color: 'border-rose-200 bg-rose-50 text-rose-700',
-    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200'
-  },
-  {
-    type: 'action_delay',
-    category: 'AI & Logic',
-    title: 'Delay / Wait Timer',
-    description: 'Pauses the pipeline for X minutes/hours, or waits for next business morning',
-    icon: Clock,
-    color: 'border-amber-200 bg-amber-50 text-amber-700',
-    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200'
-  },
-  // CRM & Routing
-  {
-    type: 'action_assign_agent',
-    category: 'CRM & Routing',
-    title: 'Assign Lead (Agent or Group)',
-    description: 'Assigns to specific agent or to a Lead Distribution Group with weighted round-robin',
-    icon: UserCheck,
-    color: 'border-cyan-200 bg-cyan-50 text-cyan-700',
-    badgeColor: 'bg-cyan-50 text-cyan-700 border-cyan-200'
-  },
-  {
-    type: 'action_crm_stage',
-    category: 'CRM & Routing',
-    title: 'Update CRM Stage & Tags',
-    description: 'Moves lead to target pipeline stage and attaches custom CRM tags',
-    icon: Tag,
-    color: 'border-blue-200 bg-blue-50 text-blue-700',
-    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200'
-  },
-  {
-    type: 'action_webhook',
-    category: 'CRM & Routing',
-    title: 'Send Outbound Webhook',
-    description: 'POSTs lead payload to external CRM, Zapier, Make, or custom API',
+    type: 'trigger_webhook',
+    category: 'Triggers',
+    channel: 'triggers',
+    title: 'Inbound Webhook Trigger',
+    description: 'Triggers via HTTP POST from external website forms, landing pages, or tools',
     icon: ExternalLink,
-    color: 'border-purple-200 bg-purple-50 text-purple-700',
-    badgeColor: 'bg-purple-50 text-purple-700 border-purple-200'
-  },
-  {
-    type: 'action_notify_team',
-    category: 'CRM & Routing',
-    title: 'Notify Admin & Team (Email + WhatsApp)',
-    description: 'Sends instant alert to admin email and WhatsApp with lead info, score, and call confirmation',
-    icon: Bell,
-    color: 'border-amber-200 bg-amber-50 text-amber-700',
-    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200'
+    color: 'border-slate-300 bg-slate-50 text-slate-700',
+    badgeColor: 'bg-slate-100 text-slate-700 border-slate-200'
   }
 ]
 
@@ -726,7 +1149,9 @@ export default function FlowsPage() {
   const [distributionGroups, setDistributionGroups] = useState<any[]>([])
   const [targetUserId, setTargetUserId] = useState<string>('')
 
-  // State: View
+  // State: View & Permissions
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [activeSuiteTab, setActiveSuiteTab] = useState<SuiteTabType>('ai_calling')
   const [currentFlow, setCurrentFlow] = useState<AutomationFlow | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED'>('ALL')
@@ -736,6 +1161,8 @@ export default function FlowsPage() {
   const [isNodePaletteOpen, setIsNodePaletteOpen] = useState(false)
   const [insertAtIndex, setInsertAtIndex] = useState<number | null>(null)
   const [zoomLevel, setZoomLevel] = useState(100)
+  const [paletteChannelFilter, setPaletteChannelFilter] = useState<string>('all')
+  const [paletteSearchQuery, setPaletteSearchQuery] = useState<string>('')
 
   // State: AI Flow Architect (DeepSeek v4-flash & Voice Dictation)
   const [isAiArchitectOpen, setIsAiArchitectOpen] = useState(false)
@@ -745,7 +1172,7 @@ export default function FlowsPage() {
   const [testedBeforePublish, setTestedBeforePublish] = useState(false)
   const speechRecognitionRef = useRef<any>(null)
 
-  // State: Interactive WhatsApp Simulator (Chatrace Signature)
+  // State: Interactive WhatsApp Simulator (Nobogent Studio)
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false)
   const [simulatorTab, setSimulatorTab] = useState<'chat' | 'logs'>('chat')
   const [simStepIndex, setSimStepIndex] = useState(0)
@@ -883,28 +1310,64 @@ export default function FlowsPage() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) return
 
+      // Authenticated user's actual profile (for super admin check, regardless of impersonation)
+      const { data: authProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single()
+
+      const userRole = authProfile?.role?.toLowerCase() || ''
+      const superAdminUser = userRole === 'super_admin'
+      setIsSuperAdmin(superAdminUser)
+
       let resolvedUserId = session.user.id
       if (impersonateId) {
-        const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
-        if (['super_admin', 'agency', 'admin'].includes(prof?.role?.toLowerCase() || '')) {
+        if (['super_admin', 'agency', 'admin'].includes(userRole)) {
           resolvedUserId = impersonateId
         }
       }
       setTargetUserId(resolvedUserId)
 
-      // Fetch Flows from API
-      const impParam = impersonateId ? `?impersonate=${impersonateId}` : ''
-      const res = await fetch(`/api/flows${impParam}`)
-      const json = await res.json()
-      if (json?.flows) {
-        setFlows(json.flows)
+      // Only super admins see and land on the Flow Builder; everyone else lands on AI Calling
+      if (superAdminUser) {
+        setActiveSuiteTab('flows')
+      } else {
+        setActiveSuiteTab('ai_calling')
+        setCurrentFlow(null)
       }
 
-      // Fetch Campaigns for dropdown
-      const campRes = await fetch(`/api/meta-ads/campaigns${impParam}`)
-      const campData = await campRes.json()
-      if (campData?.campaigns) {
-        setCampaigns(campData.campaigns)
+      // Fetch Flows from API (Safe Content-Type check to prevent <!DOCTYPE HTML syntax crashes)
+      const impParam = impersonateId ? `?impersonate=${impersonateId}` : ''
+      try {
+        const res = await fetch(`/api/flows${impParam}`)
+        if (res.ok) {
+          const contentType = res.headers.get('content-type') || ''
+          if (contentType.includes('application/json')) {
+            const json = await res.json()
+            if (json?.flows) {
+              setFlows(json.flows)
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch flows from API:', err)
+      }
+
+      // Fetch Campaigns for dropdown (Safe Content-Type check)
+      try {
+        const campRes = await fetch(`/api/meta-ads/campaigns${impParam}`)
+        if (campRes.ok) {
+          const contentType = campRes.headers.get('content-type') || ''
+          if (contentType.includes('application/json')) {
+            const campData = await campRes.json()
+            if (campData?.campaigns) {
+              setCampaigns(campData.campaigns)
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch campaigns from API:', err)
       }
 
       // Fetch Team Members
@@ -1248,6 +1711,10 @@ export default function FlowsPage() {
 
   // Template instantiation
   const handleUseTemplate = (tpl: typeof FLOW_TEMPLATES[0]) => {
+    if (!isSuperAdmin) {
+      toast.error('Flow Builder is restricted to Super Admins')
+      return
+    }
     const newFlow: AutomationFlow = {
       ...JSON.parse(JSON.stringify(tpl.flow)),
       id: undefined,
@@ -1260,6 +1727,10 @@ export default function FlowsPage() {
 
   // Create Blank Flow
   const handleCreateBlankFlow = () => {
+    if (!isSuperAdmin) {
+      toast.error('Flow Builder is restricted to Super Admins')
+      return
+    }
     const blank: AutomationFlow = {
       name: 'New Custom Automation Flow',
       description: 'Custom multi-step automation workflow',
@@ -1308,7 +1779,8 @@ export default function FlowsPage() {
         body: JSON.stringify(payload)
       })
 
-      const data = await res.json()
+      const isJson = res.headers.get('content-type')?.includes('application/json')
+      const data = isJson ? await res.json() : {}
       if (!res.ok) throw new Error(data.error || 'Failed to save flow')
 
       toast.success(currentFlow.id ? 'Flow saved successfully!' : 'New flow created!')
@@ -1347,7 +1819,7 @@ export default function FlowsPage() {
       const payload = {
         ...currentFlow,
         id: currentFlow.id,
-        isActive: false
+        isActive: true // User explicitly hits Publish to activate
       }
 
       const res = await fetch(`/api/flows${impParam}`, {
@@ -1356,7 +1828,8 @@ export default function FlowsPage() {
         body: JSON.stringify(payload)
       })
 
-      const data = await res.json()
+      const isJson = res.headers.get('content-type')?.includes('application/json')
+      const data = isJson ? await res.json() : {}
       if (!res.ok) throw new Error(data.error || 'Failed to publish flow')
 
       toast.success('🚀 Flow Published & Live! Campaign is now active.')
@@ -1453,7 +1926,8 @@ export default function FlowsPage() {
         body: JSON.stringify({ prompt })
       })
 
-      const data = await res.json()
+      const isJson = res.headers.get('content-type')?.includes('application/json')
+      const data = isJson ? await res.json() : {}
       if (!res.ok) throw new Error(data.error || 'Failed to generate flow')
 
       if (data.flow) {
@@ -1695,7 +2169,8 @@ export default function FlowsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(clone)
       })
-      const data = await res.json()
+      const isJson = res.headers.get('content-type')?.includes('application/json')
+      const data = isJson ? await res.json() : {}
       if (data?.flow) {
         setFlows(prev => [data.flow, ...prev])
         toast.success('Flow duplicated')
@@ -1733,6 +2208,95 @@ export default function FlowsPage() {
   // Default configuration per node type
   const getDefaultNodeConfig = (type: FlowNodeType): Record<string, any> => {
     switch (type) {
+      // 🟣 Instagram Nodes
+      case 'trigger_ig_dm':
+        return {
+          keywords: 'PRICE, BROCHURE, DETAILS, COST, VISIT',
+          matchingType: 'contains',
+          caseSensitive: false
+        }
+      case 'trigger_ig_comment':
+        return {
+          postScope: 'all_posts_and_reels',
+          keywords: 'price, info, brochure, details, location, cost',
+          autoDmReply: true,
+          publicReplyTemplates: [
+            'Sent you the complete brochure & price details in DM! 📩 Check your requests.',
+            'Check your DM! Just sent over the verified brochure & floor plans ✨',
+            'Sent details to your inbox! Check your DMs 🏢'
+          ]
+        }
+      case 'trigger_ig_story_mention':
+        return {
+          replyOnMention: true,
+          storyReplyText: 'Thank you for mentioning us! Here is our project brochure & VIP pricing link 🌟'
+        }
+      case 'action_ig_send_dm':
+        return {
+          message: 'Hi {{lead.name}}! 👋 Thank you for reaching out to Bluesquare Infra. Here is the verified project brochure and pricing sheet you requested:',
+          includeBrochure: true,
+          buttons: [
+            { id: 'btn_1', title: '📄 View Brochure PDF', actionType: 'send_reply', actionValue: 'Brochure Link' },
+            { id: 'btn_2', title: '📅 Book Site Visit', actionType: 'crm_stage', actionValue: 'Visit Planned' },
+            { id: 'btn_3', title: '💬 Chat with Closer', actionType: 'assign_agent', actionValue: 'Harman Bajwa' }
+          ]
+        }
+      case 'action_ig_comment_reply':
+        return {
+          publicReplyText: 'Sent you the full brochure & floor plans in DM! 📩 Please check your inbox.',
+          sendPrivateDm: true,
+          dmMessage: 'Hi {{lead.name}}! Thanks for your comment. Here is the official project brochure and price breakdown: https://nobogent.com/brochure'
+        }
+      case 'action_ig_card':
+        return {
+          cardTitle: 'Joy Grand Luxury Residences',
+          cardSubtitle: '3 & 4 BHK Luxury Apartments in Sector 82 Mohali. Starting ₹1.8 Cr.',
+          imageUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
+          buttonTitle: 'Download Project Deck',
+          buttonUrl: 'https://bluesquareinfra.com/joygrand'
+        }
+
+      // 🔵 Facebook Nodes
+      case 'trigger_fb_lead_ad':
+        return {
+          formName: 'Joy Grand Luxury Leads 2026',
+          instantSync: true
+        }
+      case 'trigger_fb_comment':
+        return {
+          postScope: 'all_page_posts',
+          keywords: 'price, brochure, details, cost',
+          publicReply: 'Thank you! We have sent you full details via Messenger.'
+        }
+      case 'trigger_fb_messenger':
+        return {
+          welcomeGreeting: 'Welcome to Bluesquare Infra! How can our property advisors assist you today?'
+        }
+      case 'action_fb_send_messenger':
+        return {
+          message: 'Hello {{lead.name}}! Thank you for contacting us on Facebook. How would you like us to assist you?',
+          ctaButtons: [
+            { id: 'cta_1', title: '📄 Project Brochure', type: 'url', url: 'https://bluesquareinfra.com' },
+            { id: 'cta_2', title: '📞 Speak with Sales', type: 'call', phoneNumber: '+91 98765 43210' }
+          ]
+        }
+      case 'action_fb_comment_reply':
+        return {
+          publicReplyText: 'Thanks for reaching out! We sent you the project details in Messenger.',
+          privateMessageText: 'Hi {{lead.name}}! Here are the details and brochure link you requested.'
+        }
+
+      // 🟢 WhatsApp Nodes
+      case 'trigger_whatsapp_inbound':
+        return {
+          keywords: 'START, BROCHURE, HELLO, HI, INFO',
+          matchingType: 'contains'
+        }
+      case 'trigger_whatsapp_ctwa':
+        return {
+          adCampaign: 'All Active Meta CTWA Ad Campaigns',
+          trackAdCreative: true
+        }
       case 'action_whatsapp_msg':
         return {
           message: 'Hi {{lead.name}}! Thank you for inquiring with us. How can we help you today?',
@@ -1755,28 +2319,22 @@ export default function FlowsPage() {
           quickReplies: ['2 BHK', '3 BHK', 'Penthouse'],
           saveField: 'buyer_preference'
         }
-      case 'action_qualify':
-      case 'action_ai_qualify':
+      case 'action_whatsapp_interactive':
         return {
-          scoringMode: 'points',
-          passScore: 70,
-          rules: [
-            { id: '1', field: 'experience', label: 'Sales Experience >= 2 Yrs', operator: 'contains_any', value: '2+ Years, 2 Years', points: 40, required: true },
-            { id: '2', field: 'location', label: 'On-site in Mohali / Chandigarh', operator: 'contains_any', value: 'Yes, Comfortable', points: 30, required: true },
-            { id: '3', field: 'salary', label: 'Expected Salary <= 35k', operator: 'contains_any', value: 'Under 30k, 30k, 35k, Under 35000', points: 30, required: false }
+          headerText: 'Available Inventory & Configurations',
+          bodyText: 'Select your preferred apartment configuration to see pricing and floor plans:',
+          listButtonTitle: 'View Configurations',
+          sections: [
+            { title: 'Luxury Apartments', rows: [{ id: '2bhk', title: '2 BHK Luxury', description: '1,350 sq.ft • Starting ₹1.25 Cr' }, { id: '3bhk', title: '3 BHK Premium', description: '1,950 sq.ft • Starting ₹1.85 Cr' }] },
+            { title: 'Penthouses', rows: [{ id: 'penthouse', title: '4 BHK Duplex Penthouse', description: '3,400 sq.ft • Starting ₹3.50 Cr' }] }
           ]
         }
-      case 'trigger_csv_audience':
+
+      // 🎙️ AI Voice Calling Nodes
+      case 'trigger_ai_call_request':
         return {
-          csvFileName: 'Mohali-Luxury-HNIs-Calling-List.csv',
-          csvLeadCount: 450,
-          columnMapping: { nameCol: 'Full Name', phoneCol: 'Phone Number', emailCol: 'Email Address' }
-        }
-      case 'trigger_custom_audience_group':
-        return {
-          groupName: 'Mohali Luxury Segment (HNIs > 2 Cr)',
-          groupId: 'grp_1',
-          audienceSegment: 'High Intent'
+          source: 'Website / Landing Page Call Request Button',
+          speedToLeadSeconds: 30
         }
       case 'action_ai_call':
         return {
@@ -1801,6 +2359,25 @@ export default function FlowsPage() {
           ],
           qualificationQuestion: 'Are you interested in scheduling a site visit this weekend?'
         }
+      case 'action_ai_call_transfer':
+        return {
+          transferNumber: '+91 98765 43210',
+          closerName: 'Harman Bajwa (Senior Sales Closer)',
+          whisperMessage: 'Connecting high-intent qualified buyer for Joy Grand',
+          fallbackAction: 'send_whatsapp_brochure'
+        }
+
+      // 📧 Email Nodes
+      case 'action_send_email':
+        return {
+          senderName: 'Bluesquare Infra VIP Advisory',
+          subject: 'Official Joy Grand Brochure, Floor Plans & Pricing Sheet',
+          body: 'Dear {{lead.name}},\n\nThank you for speaking with our team regarding Joy Grand Luxury Residences.\n\nWe have attached the official project deck and floor plans for your review.\n\nPlease let us know if you would like to reserve a site visit slot for this weekend.\n\nBest regards,\nBluesquare Infra Advisory Team',
+          includeAttachment: true,
+          attachmentUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'
+        }
+
+      // 🔀 Logic & Branching Nodes
       case 'action_condition':
         return {
           evaluationType: 'qualification_score',
@@ -1810,21 +2387,63 @@ export default function FlowsPage() {
           branchTrueLabel: 'Branch A: Qualified (Said Yes / High Intent)',
           branchFalseLabel: 'Branch B: Not Interested / Low Intent'
         }
-      case 'action_assign_agent':
+      case 'action_split_traffic':
         return {
-          assignMode: 'individual',
-          agentName: 'Harman Bajwa'
-        }
-      case 'action_crm_stage':
-        return {
-          stage: 'Contacted',
-          tags: 'Automated Flow'
+          splitPercentage: 50,
+          pathALabel: 'Path A: Gemini Live Outbound Voice Call (50%)',
+          pathBLabel: 'Path B: Instant WhatsApp Brochure & Screening (50%)'
         }
       case 'action_delay':
         return {
           duration: 5,
           unit: 'minutes',
           businessHoursOnly: false
+        }
+      case 'action_follow_up':
+        return {
+          sequenceName: '5-Day High Intent Buyer Nurture',
+          startDelayHours: 24,
+          touchpoints: 3
+        }
+      case 'action_qualify':
+      case 'action_ai_qualify':
+        return {
+          scoringMode: 'points',
+          passScore: 70,
+          rules: [
+            { id: '1', field: 'experience', label: 'Sales Experience >= 2 Yrs', operator: 'contains_any', value: '2+ Years, 2 Years', points: 40, required: true },
+            { id: '2', field: 'location', label: 'On-site in Mohali / Chandigarh', operator: 'contains_any', value: 'Yes, Comfortable', points: 30, required: true },
+            { id: '3', field: 'salary', label: 'Expected Salary <= 35k', operator: 'contains_any', value: 'Under 30k, 30k, 35k, Under 35000', points: 30, required: false }
+          ]
+        }
+
+      // ⚡ CRM, Tags & Actions Nodes
+      case 'action_add_tag':
+        return {
+          tag: 'Instagram Reel Comment Lead'
+        }
+      case 'action_remove_tag':
+        return {
+          tag: 'Cold Prospect'
+        }
+      case 'action_add_note':
+        return {
+          note: 'Lead engaged via omnichannel automation. Requested project brochure and site visit slot.'
+        }
+      case 'action_update_field':
+        return {
+          fieldKey: 'buyer_budget',
+          fieldValue: '2.5 Cr'
+        }
+      case 'action_crm_stage':
+        return {
+          stage: 'Contacted',
+          tags: 'Automated Flow'
+        }
+      case 'action_assign_agent':
+        return {
+          assignMode: 'individual',
+          agentName: 'Harman Bajwa'
         }
       case 'action_webhook':
         return {
@@ -1839,6 +2458,20 @@ export default function FlowsPage() {
           includeLeadInfo: true,
           includeCallDetails: true,
           alertMessage: '🔥 HOT LEAD ALERT: {{lead.name}} ({{lead.phone}}) confirmed interest on call!'
+        }
+
+      // 🎯 Inbound Triggers
+      case 'trigger_csv_audience':
+        return {
+          csvFileName: 'Mohali-Luxury-HNIs-Calling-List.csv',
+          csvLeadCount: 450,
+          columnMapping: { nameCol: 'Full Name', phoneCol: 'Phone Number', emailCol: 'Email Address' }
+        }
+      case 'trigger_custom_audience_group':
+        return {
+          groupName: 'Mohali Luxury Segment (HNIs > 2 Cr)',
+          groupId: 'grp_1',
+          audienceSegment: 'High Intent'
         }
       default:
         return {}
@@ -1871,7 +2504,7 @@ export default function FlowsPage() {
   }
 
   // =========================================================================
-  // INTERACTIVE WHATSAPP PHONE SIMULATOR ENGINE (Chatrace Signature)
+  // INTERACTIVE WHATSAPP PHONE SIMULATOR ENGINE (Nobogent Studio)
   // =========================================================================
   const handleStartSimulation = () => {
     if (!currentFlow || currentFlow.nodes.length === 0) {
@@ -2223,8 +2856,9 @@ export default function FlowsPage() {
 
   // =========================================================================
   // VIEW: VISUAL CANVAS BUILDER (LIGHT THEME STUDIO ARCHITECTURE)
+  // Restricted exclusively to Super Admin
   // =========================================================================
-  if (currentFlow) {
+  if (currentFlow && isSuperAdmin) {
     return (
       <div className="fixed inset-0 z-40 bg-slate-50 text-slate-900 flex flex-col overflow-hidden font-sans">
         
@@ -2238,16 +2872,31 @@ export default function FlowsPage() {
                 setCurrentFlow(null)
               }}
               className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
-              title="Return to Flows Directory"
+              title="Return to Automations Suite"
             >
               <ArrowLeft size={18} />
             </button>
 
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-violet-50 text-violet-600 border border-violet-200 flex items-center justify-center shrink-0">
               <Workflow size={18} />
             </div>
 
             <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 px-2">
+                <button
+                  onClick={() => {
+                    setSelectedNode(null)
+                    setCurrentFlow(null)
+                  }}
+                  className="hover:text-slate-700 transition-colors cursor-pointer"
+                >
+                  Automations
+                </button>
+                <span className="text-slate-300">/</span>
+                <span className="text-slate-500">Flows</span>
+                <span className="text-slate-300">/</span>
+                <span className="text-slate-700 font-bold truncate max-w-[150px]">{currentFlow.name}</span>
+              </div>
               <input
                 type="text"
                 value={currentFlow.name}
@@ -2660,9 +3309,14 @@ export default function FlowsPage() {
                             <IconComponent size={20} />
                           </div>
                           <div className="min-w-0">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                              {nodeDef?.category || 'Action Step'}
-                            </span>
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded border ${nodeDef?.badgeColor || 'bg-slate-100 text-slate-700'}`}>
+                                {nodeDef?.channel || 'Step'}
+                              </span>
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                {nodeDef?.category}
+                              </span>
+                            </div>
                             <h4 className="text-sm sm:text-base font-bold text-slate-900 truncate">
                               {node.title}
                             </h4>
@@ -2730,7 +3384,25 @@ export default function FlowsPage() {
                           </div>
                         )}
 
-                        {/* 2. Deterministic Qualification Preview */}
+                        {/* 2. Live Call Transfer Preview */}
+                        {node.type === 'action_ai_call_transfer' && (
+                          <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3 text-xs text-purple-950 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-purple-700 font-bold text-[10px] uppercase">
+                                <PhoneForwarded size={12} />
+                                <span>Warm Call Transfer</span>
+                              </div>
+                              <span className="text-[9px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded">
+                                Live Closer Handoff
+                              </span>
+                            </div>
+                            <p className="text-slate-800 font-medium text-[11px]">
+                              Transferring active call to: <span className="font-bold text-purple-800">{node.config.closerName || 'Senior Closer'}</span> ({node.config.transferNumber || '+91 98765 43210'})
+                            </p>
+                          </div>
+                        )}
+
+                        {/* 3. Deterministic Qualification Preview */}
                         {(node.type === 'action_qualify' || node.type === 'action_ai_qualify') && (
                           <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs space-y-2">
                             <div className="flex items-center justify-between gap-2">
@@ -2755,7 +3427,7 @@ export default function FlowsPage() {
                           </div>
                         )}
 
-                        {/* 3. Logic Branch Condition Preview */}
+                        {/* 4. Logic Branch Condition Preview */}
                         {node.type === 'action_condition' && (
                           <div className="bg-rose-50/60 border border-rose-200 rounded-xl p-3 text-xs space-y-2 text-rose-950">
                             <div className="flex items-center justify-between gap-2">
@@ -2770,17 +3442,201 @@ export default function FlowsPage() {
                             <div className="grid grid-cols-2 gap-2 text-[10px]">
                               <div className="bg-white p-2 rounded-lg border border-emerald-200 text-emerald-800">
                                 <span className="font-bold block">✓ Branch A: True</span>
-                                <span className="text-[9px] text-slate-600">Qualified (Said Yes)</span>
+                                <span className="text-[9px] text-slate-600">{node.config.branchTrueLabel || 'Qualified (Said Yes)'}</span>
                               </div>
                               <div className="bg-white p-2 rounded-lg border border-slate-200 text-slate-700">
                                 <span className="font-bold block">✕ Branch B: False</span>
-                                <span className="text-[9px] text-slate-500">Not Interested / Follow-up</span>
+                                <span className="text-[9px] text-slate-500">{node.config.branchFalseLabel || 'Not Interested / Follow-up'}</span>
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {/* 4. WhatsApp Message Preview */}
+                        {/* 5. Split Traffic Preview */}
+                        {node.type === 'action_split_traffic' && (
+                          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 text-xs text-amber-950 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-amber-700 font-bold text-[10px] uppercase">
+                                <Split size={12} />
+                                <span>Traffic Split (A/B Test)</span>
+                              </div>
+                              <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
+                                {node.config.splitPercentage || 50}% / {100 - (node.config.splitPercentage || 50)}%
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[10px]">
+                              <div className="bg-white p-2 rounded-lg border border-indigo-100">
+                                <span className="font-bold text-indigo-700 block">Path A ({node.config.splitPercentage || 50}%)</span>
+                                <span className="text-[9px] text-slate-600 truncate block">{node.config.pathALabel || 'Path A'}</span>
+                              </div>
+                              <div className="bg-white p-2 rounded-lg border border-emerald-100">
+                                <span className="font-bold text-emerald-700 block">Path B ({100 - (node.config.splitPercentage || 50)}%)</span>
+                                <span className="text-[9px] text-slate-600 truncate block">{node.config.pathBLabel || 'Path B'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 6. Instagram Direct Message Preview */}
+                        {node.type === 'action_ig_send_dm' && (
+                          <div className="bg-pink-50/70 border border-pink-200 rounded-xl p-3 text-xs text-pink-950 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 text-pink-700 text-[10px] font-bold uppercase">
+                                <MessageCircle size={12} />
+                                <span>Instagram Direct Message</span>
+                              </div>
+                              <span className="bg-gradient-to-r from-purple-100 to-pink-100 text-pink-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-pink-200">
+                                🟣 Instagram DM
+                              </span>
+                            </div>
+                            <p className="line-clamp-2 leading-relaxed text-slate-800 bg-white/80 p-2 rounded-lg border border-pink-100">
+                              "{node.config.message || 'Hi {{lead.name}}! Thanks for reaching out.'}"
+                            </p>
+                            {node.config.buttons && node.config.buttons.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {node.config.buttons.map((b: any, bi: number) => (
+                                  <span key={bi} className="bg-white text-pink-700 text-[9px] font-bold px-2 py-0.5 rounded-md border border-pink-200">
+                                    {b.title || b}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 7. Instagram Comment Auto-Reply Preview */}
+                        {node.type === 'action_ig_comment_reply' && (
+                          <div className="bg-fuchsia-50/70 border border-fuchsia-200 rounded-xl p-3 text-xs text-fuchsia-950 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-fuchsia-700 text-[10px] font-bold uppercase">
+                                <MessageSquare size={12} />
+                                <span>Instagram Comment + DM Reply</span>
+                              </div>
+                              <span className="bg-fuchsia-100 text-fuchsia-800 text-[9px] font-bold px-2 py-0.5 rounded">
+                                Reel &amp; Post Auto-Reply
+                              </span>
+                            </div>
+                            <div className="space-y-1 text-[10px]">
+                              <div className="bg-white p-2 rounded-lg border border-fuchsia-100">
+                                <span className="text-slate-400 font-bold block text-[9px] uppercase">Public Reply:</span>
+                                <span className="text-slate-800">"{node.config.publicReplyText || 'Sent details in DM! 📩'}"</span>
+                              </div>
+                              <div className="bg-white p-2 rounded-lg border border-fuchsia-100">
+                                <span className="text-slate-400 font-bold block text-[9px] uppercase">Private DM:</span>
+                                <span className="text-slate-800">"{node.config.dmMessage || 'Here is your brochure link 🏢'}"</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 8. Instagram Brochure Card Preview */}
+                        {node.type === 'action_ig_card' && (
+                          <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-3 text-xs text-rose-950 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-rose-700 text-[10px] font-bold uppercase">
+                                <ImageIcon size={12} />
+                                <span>Instagram Media / Brochure Card</span>
+                              </div>
+                              <span className="bg-rose-100 text-rose-800 text-[9px] font-bold px-2 py-0.5 rounded">
+                                Visual Card
+                              </span>
+                            </div>
+                            <div className="bg-white p-2.5 rounded-xl border border-rose-100 flex items-center gap-2.5">
+                              <div className="w-12 h-12 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                                <ImageIcon size={20} />
+                              </div>
+                              <div className="min-w-0">
+                                <h6 className="font-bold text-slate-900 truncate text-[11px]">{node.config.cardTitle || 'Project Brochure'}</h6>
+                                <p className="text-[10px] text-slate-500 truncate">{node.config.cardSubtitle || 'Luxury Residences'}</p>
+                                <span className="text-[9px] font-bold text-rose-600 mt-0.5 inline-block">Button: {node.config.buttonTitle || 'Download'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 9. Facebook Messenger Preview */}
+                        {node.type === 'action_fb_send_messenger' && (
+                          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs text-blue-950 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-blue-700 text-[10px] font-bold uppercase">
+                                <MessageCircle size={12} />
+                                <span>Facebook Messenger Message</span>
+                              </div>
+                              <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded">
+                                Messenger
+                              </span>
+                            </div>
+                            <p className="line-clamp-2 leading-relaxed text-slate-800 bg-white/80 p-2 rounded-lg border border-blue-100">
+                              "{node.config.message || 'Hello {{lead.name}}! How can we help?'}"
+                            </p>
+                          </div>
+                        )}
+
+                        {/* 10. Send Rich Email Preview */}
+                        {node.type === 'action_send_email' && (
+                          <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-3 text-xs text-sky-950 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-sky-700 text-[10px] font-bold uppercase">
+                                <Mail size={12} />
+                                <span>HTML Email Delivery</span>
+                              </div>
+                              <span className="bg-sky-100 text-sky-800 text-[9px] font-bold px-2 py-0.5 rounded">
+                                Email
+                              </span>
+                            </div>
+                            <div className="bg-white p-2 rounded-lg border border-sky-100">
+                              <span className="text-[10px] font-bold text-slate-800 block truncate">Subject: {node.config.subject || 'Project Brochure & Price List'}</span>
+                              <span className="text-[9px] text-slate-500 truncate block">From: {node.config.senderName || 'Nobogent Advisory'}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 11. Add Tag / Remove Tag Preview */}
+                        {(node.type === 'action_add_tag' || node.type === 'action_remove_tag') && (
+                          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-2.5 text-xs text-blue-950 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Tag size={13} className="text-blue-600 shrink-0" />
+                              <span className="font-semibold text-slate-800 text-[11px]">
+                                {node.type === 'action_add_tag' ? 'Attach Tag:' : 'Remove Tag:'} <span className="font-bold text-blue-700">{node.config.tag || 'New Tag'}</span>
+                              </span>
+                            </div>
+                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                              Contact CRM Tag
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 12. Add Note Preview */}
+                        {node.type === 'action_add_note' && (
+                          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 text-xs text-amber-950 flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText size={13} className="text-amber-600 shrink-0" />
+                              <span className="font-medium text-slate-800 text-[11px] truncate">
+                                Note: "{node.config.note || 'Logged activity note'}"
+                              </span>
+                            </div>
+                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-800 shrink-0">
+                              CRM Note
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 13. Update Custom Field Preview */}
+                        {node.type === 'action_update_field' && (
+                          <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-2.5 text-xs text-indigo-950 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Sliders size={13} className="text-indigo-600 shrink-0" />
+                              <span className="font-semibold text-slate-800 text-[11px]">
+                                Field <span className="font-mono text-indigo-700">{node.config.fieldKey || 'attribute'}</span> = <span className="font-bold text-indigo-900">{node.config.fieldValue || 'value'}</span>
+                              </span>
+                            </div>
+                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                              Custom Field
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 14. WhatsApp Message Preview */}
                         {node.type === 'action_whatsapp_msg' && (
                           <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-950 font-medium space-y-2">
                             <div className="flex items-center justify-between gap-2">
@@ -2855,7 +3711,7 @@ export default function FlowsPage() {
                           </div>
                         )}
 
-                        {/* 5. Instant Alert to Admin (Email + WhatsApp) Preview */}
+                        {/* 15. Instant Alert to Admin (Email + WhatsApp) Preview */}
                         {node.type === 'action_notify_team' && (
                           <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 text-xs text-amber-950 flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -3326,7 +4182,7 @@ export default function FlowsPage() {
             </div>
           )}
 
-          {/* RIGHT FIXED SIDEBAR: CHATRACE-STYLE STEP CONFIGURATION DRAWER (LIGHT THEME) */}
+          {/* RIGHT FIXED SIDEBAR: STEP CONFIGURATION INSPECTOR DRAWER (LIGHT THEME) */}
           {selectedNode && (
             <aside className="fixed right-0 top-16 bottom-0 w-[460px] max-w-[95vw] bg-white border-l border-slate-200 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-slate-900">
               
@@ -5100,6 +5956,564 @@ export default function FlowsPage() {
                   </div>
                 )}
 
+                {/* ========================================================================= */}
+                {/* 8. CONFIG: Instagram Direct Message (action_ig_send_dm)                   */}
+                {/* ========================================================================= */}
+                {selectedNode.type === 'action_ig_send_dm' && (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-pink-50 border border-pink-200 rounded-2xl flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <MessageCircle size={15} className="text-pink-600 shrink-0" />
+                        <span className="text-xs font-bold text-pink-900">Instagram DM Automation</span>
+                      </div>
+                      <span className="text-[10px] font-bold bg-white text-pink-700 px-2 py-0.5 rounded-full border border-pink-200">
+                        Meta Graph API
+                      </span>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Instagram DM Text
+                        </label>
+                        <span className="text-[10px] text-slate-400">Personalize with variables</span>
+                      </div>
+                      <textarea
+                        rows={4}
+                        value={selectedNode.config.message || ''}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, message: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        placeholder="Hi {{lead.name}}! 👋 Thank you for messaging us. Here is the verified project brochure..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium leading-relaxed outline-none"
+                      />
+                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                        {['{{lead.name}}', '{{project}}', '{{assigned_agent}}'].map(tag => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              const cur = selectedNode.config.message || ''
+                              const updated = { ...selectedNode.config, message: `${cur} ${tag}` }
+                              setSelectedNode({ ...selectedNode, config: updated })
+                              setCurrentFlow({
+                                ...currentFlow,
+                                nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                              })
+                            }}
+                            className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded border border-slate-200 font-mono transition-colors cursor-pointer"
+                          >
+                            + {tag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!selectedNode.config.includeBrochure}
+                          onChange={(e) => {
+                            const updated = { ...selectedNode.config, includeBrochure: e.target.checked }
+                            setSelectedNode({ ...selectedNode, config: updated })
+                            setCurrentFlow({
+                              ...currentFlow,
+                              nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                            })
+                          }}
+                          className="rounded text-pink-600 bg-white border-slate-300"
+                        />
+                        <span className="text-xs font-bold text-slate-800">Attach Verified PDF Brochure</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* 9. CONFIG: Instagram Comment Auto-Reply (action_ig_comment_reply)         */}
+                {/* ========================================================================= */}
+                {selectedNode.type === 'action_ig_comment_reply' && (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-fuchsia-50 border border-fuchsia-200 rounded-2xl flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare size={15} className="text-fuchsia-600 shrink-0" />
+                        <span className="text-xs font-bold text-fuchsia-900">Reel & Post Comment Auto-Reply</span>
+                      </div>
+                      <span className="text-[10px] font-bold bg-white text-fuchsia-700 px-2 py-0.5 rounded-full border border-fuchsia-200">
+                        Public + DM
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Public Comment Reply
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.publicReplyText || ''}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, publicReplyText: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        placeholder="Sent you the complete brochure & price details in DM! 📩 Check your requests."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Instant Private DM Message
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={selectedNode.config.dmMessage || ''}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, dmMessage: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        placeholder="Hey {{lead.name}}! Thanks for your comment. Here is the verified brochure and pricing link..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium leading-relaxed"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* 10. CONFIG: Instagram Brochure Card (action_ig_card)                      */}
+                {/* ========================================================================= */}
+                {selectedNode.type === 'action_ig_card' && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Card Title
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.cardTitle || ''}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, cardTitle: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        placeholder="Joy Grand Luxury Residences"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Card Subtitle / Price
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.cardSubtitle || ''}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, cardSubtitle: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        placeholder="3 & 4 BHK Luxury Apartments • Starting ₹1.8 Cr"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                          Button Text
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config.buttonTitle || 'Download Brochure'}
+                          onChange={(e) => {
+                            const updated = { ...selectedNode.config, buttonTitle: e.target.value }
+                            setSelectedNode({ ...selectedNode, config: updated })
+                            setCurrentFlow({
+                              ...currentFlow,
+                              nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                            })
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                          Destination URL
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config.buttonUrl || ''}
+                          onChange={(e) => {
+                            const updated = { ...selectedNode.config, buttonUrl: e.target.value }
+                            setSelectedNode({ ...selectedNode, config: updated })
+                            setCurrentFlow({
+                              ...currentFlow,
+                              nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                            })
+                          }}
+                          placeholder="https://bluesquareinfra.com"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* 11. CONFIG: Facebook Messenger (action_fb_send_messenger)                 */}
+                {/* ========================================================================= */}
+                {selectedNode.type === 'action_fb_send_messenger' && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Messenger Message Text
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={selectedNode.config.message || ''}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, message: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        placeholder="Hello {{lead.name}}! Thank you for contacting us on Facebook..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium leading-relaxed outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* 12. CONFIG: Live Call Transfer (action_ai_call_transfer)                  */}
+                {/* ========================================================================= */}
+                {selectedNode.type === 'action_ai_call_transfer' && (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-2xl">
+                      <span className="text-xs font-bold text-purple-900 block mb-1">Warm Human Closer Transfer</span>
+                      <p className="text-[11px] text-purple-700 leading-snug">
+                        When the Gemini Live voice agent detects high intent, it seamlessly dials your sales rep and merges the prospect into a live call.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Sales Rep / Closer Name
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.closerName || 'Harman Bajwa'}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, closerName: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Closer Phone Number with Country Code
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.transferNumber || '+91 98765 43210'}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, transferNumber: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Whisper Audio / Briefing Message to Agent
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.whisperMessage || 'Connecting verified high-intent buyer for Joy Grand'}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, whisperMessage: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* 13. CONFIG: Send Rich Email (action_send_email)                           */}
+                {/* ========================================================================= */}
+                {selectedNode.type === 'action_send_email' && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Sender Name
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.senderName || 'Nobogent Real Estate Advisory'}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, senderName: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Email Subject Line
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.subject || 'Official Joy Grand Brochure & Pricing Sheet'}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, subject: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Email Body (HTML / Markdown)
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={selectedNode.config.body || ''}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, body: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        placeholder="Dear {{lead.name}}, thank you for your interest..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium leading-relaxed outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* 14. CONFIG: Split Traffic (action_split_traffic)                          */}
+                {/* ========================================================================= */}
+                {selectedNode.type === 'action_split_traffic' && (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl">
+                      <span className="text-xs font-bold text-amber-900 block mb-1">A/B Conversion Testing</span>
+                      <p className="text-[11px] text-amber-700 leading-snug">
+                        Randomly distributes inbound leads between Path A and Path B to measure which outreach channel produces higher booking rates.
+                      </p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Path A Percentage
+                        </label>
+                        <span className="text-xs font-mono font-bold text-indigo-700">
+                          {selectedNode.config.splitPercentage || 50}% Path A / {100 - (selectedNode.config.splitPercentage || 50)}% Path B
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="10"
+                        max="90"
+                        step="5"
+                        value={selectedNode.config.splitPercentage || 50}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, splitPercentage: parseInt(e.target.value, 10) }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        className="w-full accent-indigo-600 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Path A Label</label>
+                        <input
+                          type="text"
+                          value={selectedNode.config.pathALabel || 'Path A (AI Voice Call)'}
+                          onChange={(e) => {
+                            const updated = { ...selectedNode.config, pathALabel: e.target.value }
+                            setSelectedNode({ ...selectedNode, config: updated })
+                            setCurrentFlow({
+                              ...currentFlow,
+                              nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                            })
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Path B Label</label>
+                        <input
+                          type="text"
+                          value={selectedNode.config.pathBLabel || 'Path B (WhatsApp Interactive)'}
+                          onChange={(e) => {
+                            const updated = { ...selectedNode.config, pathBLabel: e.target.value }
+                            setSelectedNode({ ...selectedNode, config: updated })
+                            setCurrentFlow({
+                              ...currentFlow,
+                              nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                            })
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-900"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* 15. CONFIG: Tags, Notes & Fields                                          */}
+                {/* ========================================================================= */}
+                {(selectedNode.type === 'action_add_tag' || selectedNode.type === 'action_remove_tag') && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        {selectedNode.type === 'action_add_tag' ? 'Tag to Attach' : 'Tag to Remove'}
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config.tag || ''}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, tag: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        placeholder="Instagram Comment Lead"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {selectedNode.type === 'action_add_note' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        Internal Note Content
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={selectedNode.config.note || ''}
+                        onChange={(e) => {
+                          const updated = { ...selectedNode.config, note: e.target.value }
+                          setSelectedNode({ ...selectedNode, config: updated })
+                          setCurrentFlow({
+                            ...currentFlow,
+                            nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                          })
+                        }}
+                        placeholder="Lead engaged with Instagram reel comment automation. Requested project brochure."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium leading-relaxed outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {selectedNode.type === 'action_update_field' && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                          Custom Field Name
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config.fieldKey || ''}
+                          onChange={(e) => {
+                            const updated = { ...selectedNode.config, fieldKey: e.target.value }
+                            setSelectedNode({ ...selectedNode, config: updated })
+                            setCurrentFlow({
+                              ...currentFlow,
+                              nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                            })
+                          }}
+                          placeholder="buyer_budget / preferred_bhk"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                          Value to Set
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config.fieldValue || ''}
+                          onChange={(e) => {
+                            const updated = { ...selectedNode.config, fieldValue: e.target.value }
+                            setSelectedNode({ ...selectedNode, config: updated })
+                            setCurrentFlow({
+                              ...currentFlow,
+                              nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
+                            })
+                          }}
+                          placeholder="2.5 Cr"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </div>
 
               {/* Drawer Footer Actions */}
@@ -5125,65 +6539,196 @@ export default function FlowsPage() {
 
         </div>
 
-        {/* ADD STEP / NODE PALETTE MODAL (LIGHT THEME) */}
+        {/* ADD STEP / NODE PALETTE MODAL (LIGHT THEME OMNICHANNEL SUITE) */}
         {isNodePaletteOpen && (
           <div 
             onClick={() => setIsNodePaletteOpen(false)}
-            className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+            className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150"
           >
             <div 
               onClick={(e) => e.stopPropagation()}
-              className="bg-white border border-slate-200 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]"
+              className="bg-white border border-slate-200 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]"
             >
-              <div className="p-5 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between shrink-0">
+              {/* Header */}
+              <div className="p-5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between shrink-0">
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Add Automation Step</h3>
-                  <p className="text-xs text-slate-500">Select an action to insert into your pipeline</p>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-black text-slate-900">Add Automation Step</h3>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black border border-indigo-200">
+                      {NODE_DEFINITIONS.length} Available Nodes
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Select a channel action, trigger, or logic branch to insert into your pipeline
+                  </p>
                 </div>
                 <button
                   onClick={() => setIsNodePaletteOpen(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition-colors cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              <div className="p-6 overflow-y-auto space-y-6 custom-scrollbar bg-slate-50/40">
-                {(['Communication', 'AI & Logic', 'CRM & Routing'] as const).map((category) => {
-                  const items = NODE_DEFINITIONS.filter(n => n.category === category)
-                  return (
-                    <div key={category}>
-                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-600 mb-3 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
-                        <span>{category}</span>
-                      </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {items.map(item => {
-                          const IconComp = item.icon
-                          return (
-                            <div
-                              key={item.type}
-                              onClick={() => handleAddNode(item)}
-                              className="bg-white hover:bg-slate-50 border border-slate-200 hover:border-indigo-400 rounded-2xl p-4 flex items-start gap-3.5 cursor-pointer transition-all hover:scale-[1.01] group shadow-xs hover:shadow-md"
-                            >
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${item.color}`}>
-                                <IconComp size={18} />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <h5 className="text-xs font-black text-slate-900 group-hover:text-indigo-600 transition-colors">
-                                  {item.title}
-                                </h5>
-                                <p className="text-[11px] text-slate-500 mt-1 leading-snug line-clamp-2">
-                                  {item.description}
-                                </p>
-                              </div>
-                            </div>
-                          )
-                        })}
+              {/* Search Bar & Channel Category Filter Tabs */}
+              <div className="p-4 border-b border-slate-100 bg-white space-y-3 shrink-0">
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={paletteSearchQuery}
+                    onChange={(e) => setPaletteSearchQuery(e.target.value)}
+                    placeholder="Search actions & triggers (e.g. DM, Reel comment, WhatsApp, Gemini voice, Delay, Split)..."
+                    className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-2xl pl-10 pr-9 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 outline-none transition-all"
+                  />
+                  {paletteSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setPaletteSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Channel Filter Chips */}
+                <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 text-xs">
+                  {[
+                    { id: 'all', label: '⭐ All Channels', count: NODE_DEFINITIONS.length },
+                    { id: 'instagram', label: '🟣 Instagram', count: NODE_DEFINITIONS.filter(n => n.channel === 'instagram').length },
+                    { id: 'whatsapp', label: '🟢 WhatsApp', count: NODE_DEFINITIONS.filter(n => n.channel === 'whatsapp').length },
+                    { id: 'facebook', label: '🔵 Facebook', count: NODE_DEFINITIONS.filter(n => n.channel === 'facebook').length },
+                    { id: 'voice', label: '🎙️ AI Calling', count: NODE_DEFINITIONS.filter(n => n.channel === 'voice').length },
+                    { id: 'email', label: '📧 Email', count: NODE_DEFINITIONS.filter(n => n.channel === 'email').length },
+                    { id: 'logic', label: '🔀 Logic & Flow', count: NODE_DEFINITIONS.filter(n => n.channel === 'logic').length },
+                    { id: 'crm', label: '⚡ CRM & Actions', count: NODE_DEFINITIONS.filter(n => n.channel === 'crm').length },
+                    { id: 'triggers', label: '🎯 Inbound Triggers', count: NODE_DEFINITIONS.filter(n => n.channel === 'triggers').length },
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setPaletteChannelFilter(tab.id)}
+                      className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all text-xs flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                        paletteChannelFilter === tab.id
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200/80'
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        paletteChannelFilter === tab.id
+                          ? 'bg-white/20 text-white'
+                          : 'bg-white text-slate-500 border border-slate-200'
+                      }`}>
+                        {tab.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Node Cards Grid */}
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-6 custom-scrollbar bg-slate-50/50 flex-1">
+                {(() => {
+                  const filtered = NODE_DEFINITIONS.filter(item => {
+                    const matchChannel = paletteChannelFilter === 'all' || item.channel === paletteChannelFilter
+                    const q = paletteSearchQuery.toLowerCase().trim()
+                    const matchQuery = !q || 
+                      item.title.toLowerCase().includes(q) || 
+                      item.description.toLowerCase().includes(q) ||
+                      item.category.toLowerCase().includes(q) ||
+                      item.type.toLowerCase().includes(q)
+                    return matchChannel && matchQuery
+                  })
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="py-12 text-center">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                          <Search size={22} />
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-800">No matching automation steps</h4>
+                        <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                          Try searching for another keyword or switch channels to browse all available actions.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaletteSearchQuery('')
+                            setPaletteChannelFilter('all')
+                          }}
+                          className="mt-3 px-3 py-1.5 bg-white border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-bold text-slate-700 shadow-2xs cursor-pointer"
+                        >
+                          Clear Filters
+                        </button>
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  }
+
+                  // Group filtered nodes by category for clean visual hierarchy
+                  const categories = Array.from(new Set(filtered.map(f => f.category)))
+
+                  return categories.map((cat) => {
+                    const items = filtered.filter(n => n.category === cat)
+                    return (
+                      <div key={cat}>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-indigo-600" />
+                            <span>{cat}</span>
+                          </h4>
+                          <span className="text-[10px] font-bold text-slate-400">
+                            {items.length} {items.length === 1 ? 'Action' : 'Actions'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {items.map(item => {
+                            const IconComp = item.icon
+                            return (
+                              <div
+                                key={item.type}
+                                onClick={() => handleAddNode(item)}
+                                className="bg-white hover:bg-indigo-50/20 border border-slate-200 hover:border-indigo-400 rounded-2xl p-4 flex items-start gap-3.5 cursor-pointer transition-all hover:scale-[1.01] group shadow-2xs hover:shadow-md relative"
+                              >
+                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border shadow-2xs ${item.color}`}>
+                                  <IconComp size={20} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between gap-1 mb-1">
+                                    <h5 className="text-xs font-black text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
+                                      {item.title}
+                                    </h5>
+                                    <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded border shrink-0 ${item.badgeColor}`}>
+                                      {item.channel}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-snug line-clamp-2">
+                                    {item.description}
+                                  </p>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-3.5 px-5 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500 shrink-0">
+                <span>Click any step to insert into your active flow</span>
+                <button
+                  type="button"
+                  onClick={() => setIsNodePaletteOpen(false)}
+                  className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl font-bold transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>
@@ -5754,54 +7299,37 @@ export default function FlowsPage() {
   }
 
   // =========================================================================
-  // VIEW: FLOWS DIRECTORY & TEMPLATES
+  // VIEW: UNIFIED AUTOMATIONS SUITE
   // =========================================================================
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16 relative font-sans">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-        
-        {/* TOP HEADER */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <button
-                onClick={() => router.push(`/dashboard/profile${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
-                className="text-xs font-bold text-slate-400 hover:text-slate-700 flex items-center gap-1 transition-colors"
-              >
-                <ArrowLeft size={14} /> Back to Profile
-              </button>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-              <span>Automation Flow Builder</span>
-              <span className="text-xs bg-violet-100 text-violet-700 font-bold px-2.5 py-0.5 rounded-full border border-violet-200">
-                PRO Studio
-              </span>
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Design automated hiring pipelines, WhatsApp AI qualification bots, voice callbacks, and group lead routing.
-            </p>
-          </div>
+    <div className="min-h-screen bg-[#F8FAFC] pb-32 relative font-sans">
+      {/* SUITE HEADER & TAB NAVIGATION */}
+      <SuiteHeader
+        activeTab={activeSuiteTab}
+        onSelectTab={(tab) => {
+          if (tab === 'flows' && !isSuperAdmin) {
+            setActiveSuiteTab('ai_calling')
+            return
+          }
+          setActiveSuiteTab(tab)
+          if (tab !== 'flows') {
+            setCurrentFlow(null)
+          }
+        }}
+        impersonateId={impersonateId}
+        onOpenAiArchitect={() => setIsAiArchitectOpen(true)}
+        onCreateBlankFlow={handleCreateBlankFlow}
+        totalActiveCount={flows.filter(f => f.isActive).length}
+        isSuperAdmin={isSuperAdmin}
+      />
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={() => setIsAiArchitectOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 text-white font-bold text-xs sm:text-sm rounded-xl transition-all shadow-md shadow-violet-500/25 active:scale-95 cursor-pointer"
-            >
-              <Sparkles size={16} />
-              <span>AI Flow Architect (Voice / Prompt)</span>
-            </button>
-
-            <button
-              onClick={handleCreateBlankFlow}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs sm:text-sm rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
-            >
-              <Plus size={16} />
-              <span>Create Blank Flow</span>
-            </button>
-          </div>
-        </div>
-
-        {/* TEMPLATE GALLERY */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+        {/* ========================================================================= */}
+        {/* TAB 1: VISUAL FLOWS DIRECTORY & STUDIO (Super Admin Only)                 */}
+        {/* ========================================================================= */}
+        {activeSuiteTab === 'flows' && isSuperAdmin && (
+          <>
+            {/* TEMPLATE GALLERY */}
         <div className="mb-10">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -6036,6 +7564,50 @@ export default function FlowsPage() {
             </div>
           )}
         </div>
+        </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 2: AI CALLING & OUTBOUND TELEPHONY MODULE                             */}
+        {/* ========================================================================= */}
+        {activeSuiteTab === 'ai_calling' && (
+          <AiCallingAutomationsView flows={flows} />
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 3: DIRECT MESSAGE & KEYWORD AUTO-RESPONDER                            */}
+        {/* ========================================================================= */}
+        {activeSuiteTab === 'dm' && (
+          <DmAutomationsView flows={flows} />
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 3: INSTAGRAM COMMENT-TO-DM AUTOMATIONS                                */}
+        {/* ========================================================================= */}
+        {activeSuiteTab === 'ig_comments' && (
+          <IgCommentsView flows={flows} />
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 4: FACEBOOK PAGE & AD COMMENT AUTOMATIONS                             */}
+        {/* ========================================================================= */}
+        {activeSuiteTab === 'fb_comments' && (
+          <FbCommentsView flows={flows} />
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 5: MULTI-CHANNEL DRIP SEQUENCES                                       */}
+        {/* ========================================================================= */}
+        {activeSuiteTab === 'sequences' && (
+          <SequencesView flows={flows} />
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 6: UNIFIED AUTOMATIONS ANALYTICS & EVENT FEED                         */}
+        {/* ========================================================================= */}
+        {activeSuiteTab === 'analytics' && (
+          <SuiteAnalyticsView flows={flows} />
+        )}
 
         {/* AI Flow Architect Modal (Directory View) */}
         {renderAiArchitectModal()}

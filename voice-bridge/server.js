@@ -1725,10 +1725,29 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                         .eq('id', leadId);
                     console.log('[BRIDGE] Leads table summary, transcript, answers, and pipeline stage updated successfully!');
 
-                    // Recalculate lead score in background
+                    // Post-call notifications for Admin (WhatsApp + Email) and lead score calculation
                     try {
                         const appPort = process.env.PORT || 3000;
-                        fetch(`http://127.0.0.1:${appPort}/api/crm/recalculate-score`, {
+                        const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || `http://127.0.0.1:${appPort}`;
+                        const notifyUrl = `${appBaseUrl}/api/voice/post-call-notify`;
+                        
+                        fetch(notifyUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                leadId,
+                                profileId: profileData?.id || profileId,
+                                bookingTime,
+                                isQualified,
+                                leadPriority,
+                                summary,
+                                extractedAnswers,
+                                extractedBudget,
+                                skipProspectWhatsApp: true
+                            })
+                        }).catch(nErr => console.warn('[BRIDGE] Post-call notify fetch error:', nErr.message));
+
+                        fetch(`${appBaseUrl}/api/crm/recalculate-score`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ leadId, qualifyingQuestions: activeQuestionsList })

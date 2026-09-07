@@ -333,6 +333,7 @@ export async function sendAdminMultiChannelNotification({
             
             const isExpertAlert = type === 'connect_expert' || /expert|callback|connect/i.test(title || '') || /expert|callback|connect/i.test(body || '');
             const isBookingAlert = type === 'meeting_booked' || type === 'appointment_booked' || /booking|appointment/i.test(type || '') || /meeting booked|appointment booked/i.test(title || '');
+            const isInterestedAlert = type === 'lead_interested' || type === 'hot_lead' || /interested|hot lead|high priority/i.test(type || '') || /interested|hot lead/i.test(title || '');
 
             let payload: any;
             
@@ -345,6 +346,17 @@ export async function sendAdminMultiChannelNotification({
                 type: 'text',
                 text: { 
                   body: `☎️ HIGH-PRIORITY ALERT: Connect with Expert Requested!\n\nLead Name: ${leadName || 'Prospect'}\nPhone: ${targetLeadPhone}\n\n${body || 'Lead clicked "Connect with Expert" on WhatsApp.'}\n\n🔗 View CRM Record: ${leadPageUrl}` 
+                }
+              };
+            } else if (isInterestedAlert) {
+              // Direct clear text alert for Interested / Qualified Leads
+              payload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: cleanPhone,
+                type: 'text',
+                text: { 
+                  body: `🔥 HIGH-INTEREST LEAD ALERT!\n\nLead: ${leadName || 'Prospect'}\nPhone: ${targetLeadPhone}\n\n${body || 'Lead expressed interest during AI calling campaign.'}\n\n🔗 View CRM Record: ${leadPageUrl}` 
                 }
               };
             } else if (isBookingAlert) {
@@ -371,7 +383,7 @@ export async function sendAdminMultiChannelNotification({
                 }
               };
             } else {
-              // Not a booking or expert alert (e.g. new_lead event) — skip WhatsApp template to prevent bogus booking notifications
+              // Not a booking, expert, or interested alert (e.g. new_lead event) — skip WhatsApp template to prevent bogus booking notifications
               console.log(`[MULTI-CHANNEL WA SKIP] Event "${type}" is not a booking or expert alert. Skipping WhatsApp admin alert.`);
               return;
             }
@@ -433,13 +445,15 @@ export async function sendAdminMultiChannelNotification({
           'expert_requested',
           'expert_escalation',
           'expert_connection',
-          'urgent_alert'
+          'urgent_alert',
+          'lead_interested',
+          'hot_lead'
         ];
         
         const isHighPriorityEvent = (
           HIGH_PRIORITY_TYPES.includes((type || '').toLowerCase()) ||
-          /meeting|appointment|expert|escalat|connect with expert|urgent/i.test(title || '') ||
-          /meeting|appointment|expert|escalat|connect with expert|urgent/i.test(emailSubject || '')
+          /meeting|appointment|expert|escalat|connect with expert|urgent|interested|hot lead/i.test(title || '') ||
+          /meeting|appointment|expert|escalat|connect with expert|urgent|interested|hot lead/i.test(emailSubject || '')
         );
 
         if (!isHighPriorityEvent) {

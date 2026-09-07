@@ -723,6 +723,26 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                 }
             }
 
+            if (!updateErr && !bookingTime && isQualified) {
+                try {
+                    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
+                    fetch(`${appUrl}/api/voice/post-call-notify`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            leadId,
+                            profileId: lead.user_id,
+                            bookingTime: null,
+                            isQualified: true,
+                            leadPriority: 'HOT',
+                            summary,
+                            extractedAnswers,
+                            skipProspectWhatsApp: true
+                        })
+                    }).catch((e: any) => console.warn('[STATUS CALLBACK] Post-call notify fetch error:', e.message))
+                } catch (nErr) {}
+            }
+
             if (!updateErr) {
                 // Recalculate and persist dynamic Lead Score after voice call completion
                 updateLeadScoreInDB(supabaseAdmin, leadId, profile?.qualifying_questions).catch(err => {
