@@ -128,10 +128,9 @@ async function handleRequest(req: Request) {
 
         const escapedWsUrl = wsStreamUrl.replace(/&/g, '&amp;')
 
-        // Generate valid Vobiz XML with whole-call recording and bidirectional Linear PCM 16kHz stream
+        // Generate valid Vobiz XML with bidirectional Linear PCM 16kHz stream
         const vobizXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Record recordSession="true" redirect="false" fileFormat="mp3" callbackUrl="${statusCallbackUrl}" callbackMethod="POST" playBeep="false" />
     <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusCallbackUrl}">${escapedWsUrl}</Stream>
 </Response>`
 

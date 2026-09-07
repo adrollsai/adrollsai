@@ -101,7 +101,6 @@ app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Record recordSession="true" redirect="false" fileFormat="mp3" callbackUrl="${statusUrl}" callbackMethod="POST" playBeep="false" />
     <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusUrl}">${escapedWsUrl}</Stream>
 </Response>`;
 
@@ -653,6 +652,28 @@ wss.on('connection', (wsConnection, req) => {
                     greetingPlayed = (data.customParameters?.greetingPlayed || data.start?.customParameters?.greetingPlayed) === 'true';
                     voiceName = data.customParameters?.voiceName || data.start?.customParameters?.voiceName || 'Aoede';
                     console.log(`[BRIDGE] Vobiz stream started. StreamId: ${vobizStreamId}, CallId: ${vobizCallId}, Format: ${vobizContentType}, leadId: ${leadId}, profileId: ${profileId}`);
+
+                    // Trigger non-blocking background REST recording on active call
+                    if (vobizCallId) {
+                        const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+                        const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+                        const statusCallbackUrl = `https://${host}/vobiz-status?leadId=${leadId}`;
+                        fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Call/${vobizCallId}/Record/`, {
+                            method: 'POST',
+                            headers: {
+                                'X-Auth-ID': authId,
+                                'X-Auth-Token': authToken,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                file_format: 'mp3',
+                                time_limit: 600,
+                                callback_url: statusCallbackUrl
+                            })
+                        }).then(r => r.json()).then(d => {
+                            console.log(`[BRIDGE] Vobiz REST Record started for call ${vobizCallId}:`, d);
+                        }).catch(e => console.warn('[BRIDGE] Vobiz REST Record trigger warning:', e.message));
+                    }
                 } else {
                     twilioStreamSid = data.start?.streamSid;
                     twilioCallSid = data.start?.callSid;
