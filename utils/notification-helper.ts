@@ -314,7 +314,8 @@ export async function sendAdminMultiChannelNotification({
         message: body,
         type: type || 'meeting_booked',
         action_link: leadPageUrl,
-        is_read: false
+        is_read: false,
+        created_at: new Date().toISOString()
       });
     } catch (notifErr: any) {
       console.error('[MULTI-CHANNEL DB NOTIF ERROR]', notifErr.message);
@@ -329,7 +330,7 @@ export async function sendAdminMultiChannelNotification({
       }
     }
 
-    // 2. WhatsApp Notification to Admin (Template-first with text fallback)
+    // 3. WhatsApp Notification to Admin (Template-first with text fallback)
     if (!skipWhatsApp) {
       try {
         const rawPhone = ownerProfile.whatsapp_personal_number || ownerProfile.contact_number || ownerProfile.whatsapp_phone_number;
@@ -351,26 +352,27 @@ export async function sendAdminMultiChannelNotification({
 
             let payload: any;
             
-            if (isExpertAlert) {
-              // Direct clear text alert for Expert Connections / Callbacks
+            if (isExpertAlert || isInterestedAlert) {
+              // Approved Utility template guarantees delivery 24/7 even outside the 24-hour customer window
+              const leadSummary = isInterestedAlert
+                ? `🔥 Interested: ${leadName || 'Prospect'} (${title || 'Interested in property'})`
+                : `☎️ Expert Call: ${leadName || 'Prospect'}`;
               payload = {
                 messaging_product: 'whatsapp',
-                recipient_type: 'individual',
                 to: cleanPhone,
-                type: 'text',
-                text: { 
-                  body: `☎️ HIGH-PRIORITY ALERT: Connect with Expert Requested!\n\nLead Name: ${leadName || 'Prospect'}\nPhone: ${targetLeadPhone}\n\n${body || 'Lead clicked "Connect with Expert" on WhatsApp.'}\n\n🔗 View CRM Record: ${leadPageUrl}` 
-                }
-              };
-            } else if (isInterestedAlert) {
-              // Direct clear text alert for Interested / Qualified Leads
-              payload = {
-                messaging_product: 'whatsapp',
-                recipient_type: 'individual',
-                to: cleanPhone,
-                type: 'text',
-                text: { 
-                  body: `🔥 HIGH-INTEREST LEAD ALERT!\n\nLead: ${leadName || 'Prospect'}\nPhone: ${targetLeadPhone}\n\n${body || 'Lead expressed interest during AI calling campaign.'}\n\n🔗 View CRM Record: ${leadPageUrl}` 
+                type: 'template',
+                template: {
+                  name: 'expert_connection_notification',
+                  language: { code: 'en_US' },
+                  components: [
+                    {
+                      type: 'body',
+                      parameters: [
+                        { type: 'text', text: leadSummary.slice(0, 60) },
+                        { type: 'text', text: targetLeadPhone }
+                      ]
+                    }
+                  ]
                 }
               };
             } else if (isBookingAlert) {

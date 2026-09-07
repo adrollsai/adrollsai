@@ -189,10 +189,12 @@ export async function POST(request: Request) {
 
     if (nextActionDate && !isLostOrClosed) {
       customFields.next_action_date = nextActionDate
+      updatePayload.next_followup = nextActionDate
       if (nextActionType) customFields.next_action_type = nextActionType
       if (remarks) customFields.next_action_remark = remarks
     } else {
       customFields.next_action_date = null
+      updatePayload.next_followup = null
       customFields.next_action_type = null
       customFields.next_action_remark = null
     }

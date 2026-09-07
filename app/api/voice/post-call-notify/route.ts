@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
     const { data: ownerProfile } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, notification_email, whatsapp_personal_number, business_name')
+      .select('id, email, whatsapp_personal_number, business_name, business_info')
       .eq('id', ownerUserId)
       .single()
 

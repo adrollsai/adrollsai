@@ -1021,6 +1021,12 @@ export default function AnalyticsPage() {
         if (nextActionDateStr < todayStr) {
           if (!lastFollowupDateStr || lastFollowupDateStr < nextActionDateStr) {
             isPending = true
+          } else if (lastFollowupDateStr === nextActionDateStr) {
+            const nextActionTime = new Date(l.next_followup || cf?.next_action_date || l.booked_time).getTime()
+            const lastFollowupTime = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : (l.last_call_at ? new Date(l.last_call_at).getTime() : 0)
+            if (!lastFollowupTime || isNaN(lastFollowupTime) || lastFollowupTime <= (nextActionTime + 60000)) {
+              isPending = true
+            }
           }
         }
 
