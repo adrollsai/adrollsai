@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import { resolveImageDescriptions } from '@/utils/image-analysis';
+import { callDeepSeekWithUsage } from '@/utils/external-apis';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -233,13 +234,13 @@ Amenities/Features: ${property.amenities || "N/A"}
         let languageInstruction: string;
         
         if (isEnglish) {
-            languageInstruction = "The script dialogue MUST be written entirely in ENGLISH using standard English letters. Do NOT use any Hindi, Hinglish, or Devanagari script anywhere. All dialogue must be clear, professional, and natural-sounding English.";
+            languageInstruction = "The script dialogue MUST be written entirely in ENGLISH using standard English letters. Speak directly and conversationally 1-on-1 to the viewer with charismatic energy, natural warmth, and high-converting direct-response persuasion. Do NOT use any Hindi, Hinglish, or Devanagari script anywhere.";
         } else if (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')) {
-            languageInstruction = "The script dialogue MUST be written in ENGLISH using standard English letters.";
+            languageInstruction = "The script dialogue MUST be written in high-converting, conversational ENGLISH using standard English letters.";
         } else if (userText.includes('in hindi') || userText.includes('only hindi')) {
-            languageInstruction = "The script dialogue MUST be written in HINDI using native Devanagari script (Hindi characters).";
+            languageInstruction = "The script dialogue MUST be written in natural, conversational HINDI using native Devanagari script (Hindi characters).";
         } else {
-            languageInstruction = "The script dialogue MUST be written in Roman Hinglish (mixing Hindi words written in English/Latin letters and standard English words) from a strict 3rd-person perspective, focusing objectively on detailing product/property features and specifications. Avoid any first-person or second-person commands, calls, or conversational host words like 'dekhiye', 'check out', 'aapko milega', 'yahan', etc. Describe the property name and features objectively (e.g. 'IT City Mohaali ka ye luxury penthouse modern architecture aur spacious layout ke sath aata hai'). Specifically, you MUST write any Indian-specific city names (e.g. 'मोहाली' instead of 'Mohali', 'चंडीगढ़' instead of 'Chandigarh', 'दिल्ली' instead of 'Delhi', 'मुंबई' instead of 'Mumbai', 'नोएडा' instead of 'Noida', 'गुड़गांव' instead of 'Gurgaon', 'ज़िरकपुर' instead of 'Zirakpur', 'पंचकुला' instead of 'Panchkula', 'जयपुर' instead of 'Jaipur', etc.), project names (e.g. 'अमायरा स्काई सिटी' instead of 'Amayra Sky City'), and institutions/universities (e.g. 'रयात बहरा' instead of 'Rayat Bahra', 'चितकारा' instead of 'Chitkara', 'यूनिवर्सिटी' instead of 'University') in native Hindi Devanagari script to ensure perfect pronunciation by the voice model. All other words in the dialogue must be written in standard Roman characters. Everyday English loanwords (like 'dream home', 'perfect space', 'luxury flat', 'living room', 'security', 'location', 'get in touch') must remain in standard English letters.";
+            languageInstruction = "The script dialogue MUST be written in high-converting, natural conversational Roman Hinglish (a natural blend of everyday spoken Hindi words in English/Latin letters and standard English words), speaking warmly, persuasively, and directly 1-on-1 to the viewer like a trusted, enthusiastic insider host (e.g. 'Agar aap Mohali mein apna luxury home dhoondh rahe hain, toh ye space definitely dekhna banta hai'). Avoid stiff, robotic catalog speech. Specifically, you MUST write any Indian-specific city names (e.g. 'मोहाली' instead of 'Mohali', 'चंडीगढ़' instead of 'Chandigarh', 'दिल्ली' instead of 'Delhi', 'मुंबई' instead of 'Mumbai', 'नोएडा' instead of 'Noida', 'गुड़गांव' instead of 'Gurgaon', 'ज़िरकपुर' instead of 'Zirakpur', 'पंचकुला' instead of 'Panchkula', 'जयपुर' instead of 'Jaipur', etc.), project names (e.g. 'अमायरा स्काई सिटी' instead of 'Amayra Sky City'), and institutions/universities (e.g. 'रयात बहरा' instead of 'Rayat Bahra', 'चितकारा' instead of 'Chitkara', 'यूनिवर्सिटी' instead of 'University') in native Hindi Devanagari script to ensure perfect pronunciation by the voice model. All other words in the dialogue must be written in standard Roman characters. Everyday English loanwords (like 'dream home', 'perfect space', 'luxury flat', 'living room', 'security', 'location', 'get in touch') must remain in standard English letters.";
         }
 
         const variationInstruction = variation 
@@ -376,14 +377,11 @@ Output ONLY valid JSON. Do not include markdown code block tags around JSON.`;
         let script: any = null;
         let scriptJson = "";
 
+        // Primary: DeepSeek v4-flash for Video Script Generation
         try {
-            console.log("[Script API] Generating script with primary model: gemini-3.5-flash");
-            const res = await generateText({
-                model: google('gemini-3.5-flash'),
-                prompt: masterPrompt,
-            });
-            scriptJson = res.text;
-
+            console.log("[Script API] Generating script with primary model: DeepSeek v4-flash");
+            const dsRes = await callDeepSeekWithUsage(masterPrompt);
+            scriptJson = dsRes.text;
             let cleanJson = scriptJson.trim();
             const firstBrace = cleanJson.indexOf('{');
             const lastBrace = cleanJson.lastIndexOf('}');
@@ -392,22 +390,42 @@ Output ONLY valid JSON. Do not include markdown code block tags around JSON.`;
             }
             cleanJson = cleanJson.replace(/```json|```/g, '').trim();
             script = JSON.parse(cleanJson);
-        } catch (initialErr: any) {
-            console.warn("[Script API] Primary script generation/parse failed, retrying with fallback prompt...", initialErr.message);
+            console.log("[Script API] Script generated successfully with DeepSeek v4-flash!");
+        } catch (dsErr: any) {
+            console.warn("[Script API] DeepSeek script generation failed or notice:", dsErr.message, "- Falling back to Gemini...");
             try {
-                const retryRes = await generateText({
+                console.log("[Script API] Generating script with fallback model: gemini-3.5-flash");
+                const res = await generateText({
                     model: google('gemini-3.5-flash'),
-                    prompt: `${masterPrompt}\n\nCRITICAL: Respond ONLY with a valid raw JSON object. Do NOT wrap in markdown or commentary.`
+                    prompt: masterPrompt,
                 });
-                let retryJson = retryRes.text.trim();
-                const fb = retryJson.indexOf('{');
-                const lb = retryJson.lastIndexOf('}');
-                if (fb !== -1 && lb !== -1) {
-                    retryJson = retryJson.slice(fb, lb + 1);
+                scriptJson = res.text;
+
+                let cleanJson = scriptJson.trim();
+                const firstBrace = cleanJson.indexOf('{');
+                const lastBrace = cleanJson.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace !== -1) {
+                    cleanJson = cleanJson.slice(firstBrace, lastBrace + 1);
                 }
-                script = JSON.parse(retryJson);
-            } catch (retryErr: any) {
-                console.error("[Script API] Fallback script generation also failed:", retryErr.message);
+                cleanJson = cleanJson.replace(/```json|```/g, '').trim();
+                script = JSON.parse(cleanJson);
+            } catch (initialErr: any) {
+                console.warn("[Script API] Gemini fallback failed, retrying with raw JSON instruction...", initialErr.message);
+                try {
+                    const retryRes = await generateText({
+                        model: google('gemini-3.5-flash'),
+                        prompt: `${masterPrompt}\n\nCRITICAL: Respond ONLY with a valid raw JSON object. Do NOT wrap in markdown or commentary.`
+                    });
+                    let retryJson = retryRes.text.trim();
+                    const fb = retryJson.indexOf('{');
+                    const lb = retryJson.lastIndexOf('}');
+                    if (fb !== -1 && lb !== -1) {
+                        retryJson = retryJson.slice(fb, lb + 1);
+                    }
+                    script = JSON.parse(retryJson);
+                } catch (retryErr: any) {
+                    console.error("[Script API] Fallback script generation also failed:", retryErr.message);
+                }
             }
         }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { createKieTask, createGrokVideoTask, createGeminiTTS, queryKieTask } from '@/utils/external-apis';
+import { createKieTask, createGrokVideoTask, createGeminiTTS, queryKieTask, callDeepSeekWithUsage } from '@/utils/external-apis';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
@@ -721,14 +721,21 @@ export async function POST(request: Request) {
                         ? `\nUSER CUSTOM INSTRUCTIONS & MANDATORY CREATIVE DIRECTION (HIGHEST PRIORITY):\n"${customInstructions}"\n[CRITICAL DIRECTIVE: You MUST strictly prioritize and weave the above user instructions into the presenter's delivery, action, environment, and camera focus!]\n`
                         : '';
 
-                    const avatarScenePromptGen = `You are a world-class commercial ad director specializing in photorealistic live-action video generation with Grok Imagine 1.5.
+                    const avatarScenePromptGen = `You are an elite commercial video director specializing in photorealistic live-action video generation with Grok Imagine 1.5.
 Write an ultra-realistic, highly human-like 9:16 portrait video prompt for Scene ${i + 1} of ${requiredClips}.
 ${customInstructionsBlock}
+MANDATORY KINETIC OPENING (SECOND 0.0 — ZERO FREEZE DIRECTIVE):
+- Instant Active Motion: The scene opens with IMMEDIATE, fluid, lively motion and speech starting at the very first split-second (second 0.0). The presenter is ALREADY actively speaking, smiling warmly, with natural expressive facial micro-expressions, fluid lip-sync, and organic hand gestures.
+- Image 1 Disambiguation: Image 1 is strictly a character identity, facial likeness, hairstyle, skin tone, and wardrobe reference — it is NOT a static starting photo to freeze on. Absolutely DO NOT hold, freeze, or pause on the reference photo at the beginning. The video must start in live action immediately.
+
 AVATAR IDENTITY & PRESENTER DIRECTIVES (MANDATORY):
 - Visual Identity: Image 1 is the primary reference image for the presenter's exact face, identity, hair, facial features, skin tone, and styling. The presenter in the video MUST look identical to the person in Image 1 throughout the entire clip.
 - Lifelike Human Expressions & Body Language: The presenter must look completely natural and alive, with authentic warm smiles, subtle facial micro-expressions, natural eye contact, realistic blinking, and relaxed, fluid body posture (avoid all robotic, stiff, or frozen poses).
 - Expressive Natural Gestures: While speaking, the presenter uses lively, organic hand gestures and natural head movements to emphasize key points warmly to the viewer.
 - Authentic Human Voice & Delivery Tonality: The presenter speaks in an authentic, warm, charismatic, and natural human voice with rich vocal texture, subtle breathing pauses, lively conversational cadence, expressive pitch variations, emotional conviction, and flawless lip synchronization saying: "${sceneDialogue}". Strictly NO robotic, artificial, or monotone voice synthesis.
+
+REALISTIC REAL-WORLD SCENE ENVIRONMENT:
+- Authentic Environment: The presenter is situated in an authentic, believable real-world setting (such as a bright sunlit modern living space, real estate presentation lounge, or terrace with genuine architectural depth and 35mm shallow focus). Real atmospheric lighting, believable ambient reflections, and authentic live-action commercial photography aesthetics. Absolutely NO flat green screens, NO artificial CGI rooms, and NO sterile virtual voids.
 
 CONTINUOUS SPEECH & PRODUCT B-ROLL SYNCHRONIZATION:
 - Product/Property Title: "${productTitle}"
@@ -745,24 +752,42 @@ CINEMATOGRAPHY & AUDIO:
 
 Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
 
+                    let promptText = "";
+                    // Primary: DeepSeek v4-flash for Video Scene Prompt Generation
                     try {
-                        console.log(`[Grok Pipeline] Generating Hyper-Realistic Avatar prompt for scene ${i + 1} with gemini-3.5-flash...`);
-                        const res = await generateText({
-                            model: google('gemini-3.5-flash'),
-                            prompt: avatarScenePromptGen
-                        });
-                        let promptText = res.text.trim();
-                        if (!promptText.toLowerCase().includes('image 1') && !promptText.toLowerCase().includes('image_1')) {
-                            promptText = `The presenter shown in Image 1 is the main character. ${promptText}`;
-                        }
-                        if (!promptText.toLowerCase().includes('human voice') && !promptText.toLowerCase().includes('natural voice')) {
-                            promptText += ' Authentic, natural human speaking voice with warm conversational inflection, organic pauses, and perfectly synced lips. Strictly NO robotic tone.';
-                        }
-                        return promptText;
-                    } catch (genErr) {
-                        console.warn(`[Grok Pipeline] Avatar prompt generation fallback for scene ${i + 1}:`, genErr);
-                        return `The presenter shown in Image 1 is the main character and stands in a natural medium chest-up shot in an authentic ambient setting. With warm, lifelike facial micro-expressions, fluid head motion, and expressive natural hand gestures, she speaks continuously directly into the camera in a warm, authentic human voice with natural conversational cadence and flawless lip sync saying: "${sceneDialogue}". The shot flows seamlessly with dynamic camera cuts highlighting ${sceneVisuals || productTitle} from the reference product photos while her speech continues without interruption. 35mm live-action cinema lighting, realistic skin texture, 9:16 portrait ratio, crisp natural human voice. Strictly NO robotic stiffness, NO artificial monotone speech, NO dead air, and NO on-screen text or subtitles.`;
+                        console.log(`[Grok Pipeline] Synthesizing Hyper-Realistic Avatar prompt for scene ${i + 1} with DeepSeek v4-flash...`);
+                        const dsRes = await callDeepSeekWithUsage(avatarScenePromptGen);
+                        promptText = dsRes.text.trim();
+                    } catch (dsErr: any) {
+                        console.warn(`[Grok Pipeline] DeepSeek notice for scene ${i + 1}: ${dsErr.message}. Trying Gemini fallback...`);
                     }
+
+                    if (!promptText) {
+                        try {
+                            const res = await generateText({
+                                model: google('gemini-3.5-flash'),
+                                prompt: avatarScenePromptGen
+                            });
+                            promptText = res.text.trim();
+                        } catch (genErr) {
+                            console.warn(`[Grok Pipeline] Avatar prompt generation fallback for scene ${i + 1}:`, genErr);
+                        }
+                    }
+
+                    if (!promptText) {
+                        promptText = `The presenter shown in Image 1 is the main character and is ALREADY actively speaking from the very first frame at second 0.0 with zero freeze or pause. Standing in a natural medium chest-up shot in an authentic sunlit architectural room with natural 35mm depth of field, with warm, lifelike facial micro-expressions, fluid head motion, and expressive natural hand gestures, she speaks continuously directly to the viewer in a warm, authentic human voice with natural conversational cadence and flawless lip sync saying: "${sceneDialogue}". The shot flows seamlessly with dynamic camera cuts highlighting ${sceneVisuals || productTitle} from the reference product photos while her speech continues without interruption. 35mm live-action cinema lighting, realistic skin texture, 9:16 portrait ratio, crisp natural human voice. Strictly NO static photo freeze, NO robotic stiffness, NO artificial monotone speech, NO dead air, and NO on-screen text or subtitles.`;
+                    }
+
+                    if (!promptText.toLowerCase().includes('second 0') && !promptText.toLowerCase().includes('second 0.0')) {
+                        promptText = `From the very first frame at second 0.0, the presenter in Image 1 is in fluid active motion and speaks immediately without any static freeze. ${promptText}`;
+                    }
+                    if (!promptText.toLowerCase().includes('image 1') && !promptText.toLowerCase().includes('image_1')) {
+                        promptText = `The presenter shown in Image 1 is the main character. ${promptText}`;
+                    }
+                    if (!promptText.toLowerCase().includes('human voice') && !promptText.toLowerCase().includes('natural voice')) {
+                        promptText += ' Authentic, natural human speaking voice with warm conversational inflection, organic pauses, and perfectly synced lips. Strictly NO robotic tone.';
+                    }
+                    return promptText;
                 } else {
                     const targetEthnicity = extrapolateEthnicity(profile, property, customInstructions);
                     const customInstructionsBlock = (customInstructions && customInstructions !== 'None') 
@@ -795,27 +820,39 @@ MASTER AD PROMPTING RULES:
 
 Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
 
+                    let synthesized = "";
+                    // Primary: DeepSeek v4-flash for Non-Avatar scene prompt
                     try {
-                        console.log(`[Grok Pipeline] Generating Non-Avatar prompt for scene ${i + 1} with gemini-3.5-flash (${targetEthnicity} demographic, rapid 2s cuts)...`);
-                        const res = await generateText({
-                            model: google('gemini-3.5-flash'),
-                            prompt: showcaseScenePromptGen
-                        });
-                        let synthesized = res.text.trim();
-                        if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
-                            synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where... ${synthesized}`;
-                        }
-                        if (!synthesized.toLowerCase().includes('no voiceover') && !synthesized.toLowerCase().includes('zero voiceover')) {
-                            synthesized += ` People show emotion but strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera.`;
-                        }
-                        if (!synthesized.toLowerCase().includes(targetEthnicity.toLowerCase())) {
-                            synthesized += ` Any featured people or residents are authentic ${targetEthnicity}.`;
-                        }
-                        return synthesized;
-                    } catch (genErr) {
-                        console.warn(`[Grok Pipeline] Non-Avatar prompt generation fallback for scene ${i + 1}:`, genErr);
-                        return `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where an opening hero shot showcases "${productTitle}", cutting instantly every 2 seconds to ${sceneVisuals || 'the featured product in action'} with authentic ${targetEthnicity} people interacting, ending on a sleek macro texture close-up. Cinematic 35mm anamorphic camera, dynamic lighting, 9:16 portrait aspect ratio, upbeat background instrumental music track. Strictly NO voiceover, NO spoken dialogue, NO speech, and NO talking to camera. Absolutely NO text, NO titles, or text overlays of any kind.`;
+                        console.log(`[Grok Pipeline] Synthesizing Non-Avatar prompt for scene ${i + 1} with DeepSeek v4-flash...`);
+                        const dsRes = await callDeepSeekWithUsage(showcaseScenePromptGen);
+                        synthesized = dsRes.text.trim();
+                    } catch (dsErr: any) {
+                        console.warn(`[Grok Pipeline] DeepSeek notice for non-avatar scene ${i + 1}: ${dsErr.message}. Trying Gemini...`);
                     }
+
+                    if (!synthesized) {
+                        try {
+                            const res = await generateText({
+                                model: google('gemini-3.5-flash'),
+                                prompt: showcaseScenePromptGen
+                            });
+                            synthesized = res.text.trim();
+                        } catch (genErr) {
+                            console.warn(`[Grok Pipeline] Non-Avatar prompt generation fallback for scene ${i + 1}:`, genErr);
+                            synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where an opening hero shot showcases "${productTitle}", cutting instantly every 2 seconds to ${sceneVisuals || 'the featured product in action'} with authentic ${targetEthnicity} people interacting, ending on a sleek macro texture close-up. Cinematic 35mm anamorphic camera, dynamic lighting, 9:16 portrait aspect ratio, upbeat background instrumental music track. Strictly NO voiceover, NO spoken dialogue, NO speech, and NO talking to camera. Absolutely NO text, NO titles, or text overlays of any kind.`;
+                        }
+                    }
+
+                    if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
+                        synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where... ${synthesized}`;
+                    }
+                    if (!synthesized.toLowerCase().includes('no voiceover') && !synthesized.toLowerCase().includes('zero voiceover')) {
+                        synthesized += ` People show emotion but strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera.`;
+                    }
+                    if (!synthesized.toLowerCase().includes(targetEthnicity.toLowerCase())) {
+                        synthesized += ` Any featured people or residents are authentic ${targetEthnicity}.`;
+                    }
+                    return synthesized;
                 }
             });
             prompts = await Promise.all(promptPromises);
@@ -858,19 +895,32 @@ Dialogue
 
 Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or backticks.`;
 
-                console.log(`[Generate API] Generating prompt for scene ${i + 1} with primary model: gemini-3.5-flash`);
+                let seedancePrompt = "";
                 try {
-                    const res = await generateText({
-                        model: google('gemini-3.5-flash'),
-                        prompt: synthesisPrompt,
-                    });
-                    return res.text.trim();
-                } catch (fallbackErr: any) {
-                    console.error(`[Generate API] Prompt synthesis failed for scene ${i + 1}:`, fallbackErr);
-                    const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
-                    const cleanFallbackDialogue = scene.dialogue;
-                    return `${characterAppearanceText}\n\nThe presenter shown in Image 1 stands in a detailed medium chest-up shot looking directly into the camera in a warm, premium setting.\nShe speaks continuously throughout the scene in an authentic, warm human voice with natural conversational cadence saying:\n"${cleanFallbackDialogue}"\nThe camera dollies smoothly, transitioning dynamically to showcase the property features matching ${targetImageLabel} while her speech continues without interruption.\nPhotorealistic.\nUltra-realistic human motion.\nNatural body language.\nPerfect lip synchronization.\nContinuous dialogue with zero dead air.\nSmooth camera movement.\nCinematic lighting.\nNo AI artifacts.\nHigh-end commercial production quality.\n15-second continuous shot.`;
+                    console.log(`[Generate API] Generating prompt for scene ${i + 1} with primary model: DeepSeek v4-flash`);
+                    const dsRes = await callDeepSeekWithUsage(synthesisPrompt);
+                    seedancePrompt = dsRes.text.trim();
+                } catch (dsErr: any) {
+                    console.warn(`[Generate API] DeepSeek notice for scene ${i + 1}: ${dsErr.message}. Trying Gemini fallback...`);
                 }
+
+                if (!seedancePrompt) {
+                    try {
+                        const res = await generateText({
+                            model: google('gemini-3.5-flash'),
+                            prompt: synthesisPrompt,
+                        });
+                        seedancePrompt = res.text.trim();
+                    } catch (fallbackErr: any) {
+                        console.error(`[Generate API] Prompt synthesis failed for scene ${i + 1}:`, fallbackErr);
+                    }
+                }
+
+                if (seedancePrompt) return seedancePrompt;
+
+                const targetImageLabel = (avatarUrl && !isCharacterVideo) ? "Image_2" : "Image_1";
+                const cleanFallbackDialogue = scene.dialogue;
+                return `${characterAppearanceText}\n\nThe presenter shown in Image 1 stands in a detailed medium chest-up shot looking directly into the camera in a warm, premium setting.\nShe speaks continuously throughout the scene in an authentic, warm human voice with natural conversational cadence saying:\n"${cleanFallbackDialogue}"\nThe camera dollies smoothly, transitioning dynamically to showcase the property features matching ${targetImageLabel} while her speech continues without interruption.\nPhotorealistic.\nUltra-realistic human motion.\nNatural body language.\nPerfect lip synchronization.\nContinuous dialogue with zero dead air.\nSmooth camera movement.\nCinematic lighting.\nNo AI artifacts.\nHigh-end commercial production quality.\n15-second continuous shot.`;
             });
             prompts = await Promise.all(promptPromises);
         }

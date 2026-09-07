@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { createKieTask } from '@/utils/external-apis';
+import { createKieTask, callDeepSeekWithUsage } from '@/utils/external-apis';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
@@ -150,36 +150,8 @@ export async function POST(request: Request) {
         else if (catLower.includes('high')) normalizedCategory = 'high_converting';
     }
 
-    // Fetch random reference creative matching category
-    let fetchedRefUrl = null;
-    if (normalizedCategory) {
-        try {
-            const { data: refItems, error: refError } = await supabaseAdmin
-                .from('reference_creatives')
-                .select('url')
-                .eq('category', normalizedCategory)
-                .is('user_id', null);
-            
-            if (!refError && refItems && refItems.length > 0) {
-                const randomIndex = Math.floor(Math.random() * refItems.length);
-                fetchedRefUrl = refItems[randomIndex].url;
-                logToFile(`Selected random reference URL from database for category ${normalizedCategory}: ${fetchedRefUrl}`);
-            }
-        } catch (dbErr) {
-            console.error("Failed to fetch reference creatives from DB:", dbErr);
-        }
-
-        // Fallback to seeded R2 URLs if none found in DB (table not created yet, or empty)
-        if (!fetchedRefUrl) {
-            const fallbacks = {
-                premium: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/premium_seed_orchid.png',
-                edm: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/edm_seed_farmland.jpg',
-                high_converting: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/high_converting_seed_99acres.jpg'
-            };
-            fetchedRefUrl = fallbacks[normalizedCategory];
-            logToFile(`Using fallback reference URL for category ${normalizedCategory}: ${fetchedRefUrl}`);
-        }
-    }
+    // Only use reference design if explicitly selected by the user (via templateUrl)
+    // Never auto-inject fallback reference designs when not selected
 
     // Force organic smartphone style for high converting ads
     let isOrganicOverride = isOrganic;
@@ -373,8 +345,8 @@ Synthesize the extracted reference blueprint above into a 5-star luxury social m
 - VISUAL COMPOSITION: ${activeArchetype.composition}.
 - TYPOGRAPHY & OVERLAYS: ${activeArchetype.typography}.`;
 
-        const designComposerPrompt = `You are a Master Advertising Designer with 20+ years of experience in creating high-converting, visually stunning ad creatives for premium social media campaigns.
-Your job is to write a highly detailed, optimized image generation prompt that will be sent to an AI image model (like Stable Diffusion or DALL-E) to produce a professional, premium ad poster.
+        const designComposerPrompt = `You are an elite Master Advertising Designer and Creative Director with 20+ years of direct-response advertising experience crafting multi-million-dollar high-converting Meta, Instagram, and social ad campaigns.
+Your mission is to write a highly detailed, conversion-optimized image generation prompt that will be sent to an AI image model to produce an ultra-photorealistic, high-converting commercial ad poster.
 
 Here is the information provided by the user:
 - Product/Property Title: ${propertyTitle || 'N/A'}
@@ -388,68 +360,85 @@ Here is the information provided by the user:
 ${styleGuidanceSection}
 
 Your goal is to synthesize this information and output an extremely detailed, descriptive visual prompt for the image generation model.
-Follow these master designer rules to ensure the prompt is premium, attention-grabbing, and informative:
-1. DESIGN ARCHETYPE & ATMOSPHERE: Create a visually captivating layout with high-exposure, bright natural sunlight, clear skies, and a clean commercial aesthetic.
-2. INFORMATION & HAUTE-COUTURE COPYWRITING HOOKS: Unless the user's custom instructions explicitly request to exclude text overlays, make the creative highly informative. Include clear, high-converting text overlay instructions: a bold benefit-driven headline highlighting the product value proposition, and a sub-headline listing key features or pricing details. You MUST prominently include and highlight the property's city or location name (e.g. "Zirakpur", "Mohali", "Chandigarh", or "Near Chandigarh" based on the product description or details) in the text overlays so viewers immediately know where the property is located. If the city or location is NOT mentioned in the product description/details, keep it generic (e.g. "In a Prime Location"). Avoid boring generic slogans like "experience luxury". Write catchy, specific hooks.
-3. LUXURY BRAND TYPOGRAPHY DIRECTIVES: Instruct the model to render the main headline text in ultra-high-end haute-couture typography (such as an elegant serif with refined stroke contrast like Bodoni/Cormorant, or an ultra-sleek high-fashion geometric font like Trajan/Futura). ABSOLUTELY FORBID cheap flat yellow gradients or crude Arial fonts. Use subtle champagne gold foil, warm ivory-white, or metallic bronze lettering with natural directional lighting highlights. Sub-headers and location badges MUST feature wide, generous letter-spacing (wide tracking) for an expensive, agency-level aesthetic.
-4. MANDATORY CONTACT INFO & BRANDING: Unless the user's custom instructions explicitly request to exclude the contact number or business info, you MUST instruct the model to display the contact number "${finalContactNumber || ''}" cleanly, professionally, and prominently at the bottom footer or banner.
-5. LOGO INTEGRATION: Unless requested to exclude, place the business logo cleanly in a corner and integrate it seamlessly (blending the background smoothly into the surrounding theme/sky).
-6. DYNAMIC HUMAN SUBJECT PERSONA: ${activePersona.promptDirective} The ethnicity of the humans must match the geographical region/country of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).
-7. IMAGE HERO & FIDELITY: ${excludeHousePhoto ? 'CRITICAL EXCLUSION: The user explicitly specified not to show a kothi/house/building photo. OVERRIDE Rule 6 entirely. Do NOT describe or include any house, villa, kothi, or building exterior in the visual design or generated prompt.' : 'Instruct the model to analyze the provided product/property photos, keep the generated property/building visuals extremely close and faithful to the actual structures in the photos, and place it as the main hero of the canvas inside full-bleed or clean rectangular framing.'}
-8. OUTPUT FORMAT: The output should be a single cohesive, highly detailed, descriptive paragraph containing the exact scene description, layouts, styling, text overlays, and details for the image model. Do NOT include any intro, conversational text, or metadata in your output. Just output the final prompt.`;
+Follow these 20-year direct-response advertising master rules to maximize click-throughs and conversion:
+1. SCROLL-STOPPING COMMERCIAL PHOTOGRAPHY: The creative must look like authentic live-action commercial photography captured by a top advertising photographer. Never make it look like a 3D render, cartoon, architectural blueprint, or CGI illustration. Bright, airy, commercial natural morning or golden-hour lighting with crisp shadows and believable textures.
+2. 60-70% HERO PRODUCT/PROPERTY FOCUS: The real product or property must occupy 60-70% of the canvas as the undisputed hero. ${excludeHousePhoto ? 'CRITICAL EXCLUSION: The user explicitly specified NOT to show a kothi/house/building photo. Do NOT describe or include any house, villa, kothi, or building exterior.' : 'Keep the generated property/building visuals faithful to the real structures in the input photos.'}
+3. DIRECT-RESPONSE VISUAL HIERARCHY & BENEFIT HOOK: Include clear, high-converting direct-response text overlay instructions:
+   - Primary Benefit Headline: A bold, emotionally compelling hook calling out the dream lifestyle or solving the primary buyer friction.
+   - Location Badge: You MUST prominently highlight the property's city or location name (e.g. "Mohali", "Zirakpur", "Chandigarh") in high-contrast typography so local buyers immediately recognize it.
+   - Key Value Pills: Clean, semi-transparent frosted badges highlighting key specs or pricing (e.g. "3 & 4 BHK Luxury Floors", "Ready for Possession").
+4. LUXURY HAUTE-COUTURE TYPOGRAPHY: Render main headlines in high-contrast serif (Bodoni/Cormorant) or sleek architectural geometric sans-serif with wide tracking. Subtle champagne gold foil or crisp ivory-white lettering. Absolutely FORBID cheap flat yellow gradients or crude generic fonts.
+5. PROMINENT CONTACT FOOTER & LOGO: Place the business logo cleanly as a prestige seal in an upper corner. Place the contact number "${finalContactNumber || ''}" cleanly and prominently in a high-contrast footer strip at the bottom margin.
+6. AUTHENTIC HUMAN PERSONA: ${activePersona.promptDirective} Regional ethnicity must match the business location. Real skin pores and candid expressions of joy, strictly no plastic AI faces.
+7. OUTPUT FORMAT: Output ONLY a single cohesive, highly detailed, descriptive paragraph containing the exact scene description, layouts, styling, text overlays, and details for the image model. Do NOT include any intro, conversational text, or markdown code blocks.`;
 
-        const imageParts: any[] = [];
-        for (const imgUrl of validPropImages.slice(0, 4)) {
-          try {
-            const res = await fetch(imgUrl);
-            if (res.ok) {
-              const buffer = Buffer.from(await res.arrayBuffer());
-              const mimeType = res.headers.get('content-type') || 'image/png';
-              imageParts.push({
-                type: 'image',
-                image: buffer,
-                mimeType: mimeType
-              } as any);
-            }
-          } catch (err) {
-            logToFile(`Error fetching image for Master Designer: ${imgUrl}`);
-          }
-        }
-
-        const messagesContent: any[] = [
-          {
-            type: 'text',
-            text: designComposerPrompt
-          },
-          ...imageParts
-        ];
-
-        let geminiResult;
+        // Primary: DeepSeek v4-flash for Master Designer prompt synthesis
         try {
-          geminiResult = await generateText({
-            model: google('gemini-3.5-flash'),
-            messages: [
-              {
-                role: 'user',
-                content: messagesContent
-              }
-            ]
-          });
-        } catch (geminiErr1) {
-          logToFile(`Failed with gemini-3.5-flash for Master Designer: ${(geminiErr1 as Error).message}. Retrying with gemini-3-flash-preview...`);
-          geminiResult = await generateText({
-            model: google('gemini-3-flash-preview'),
-            messages: [
-              {
-                role: 'user',
-                content: messagesContent
-              }
-            ]
-          });
+          logToFile("Calling DeepSeek v4-flash Master Designer to compose optimized image generation prompt...");
+          const dsResult = await callDeepSeekWithUsage(designComposerPrompt);
+          if (dsResult.text && dsResult.text.trim()) {
+            designerPrompt = dsResult.text.trim();
+            logToFile(`Master Designer prompt composed via DeepSeek v4-flash: ${designerPrompt.slice(0, 100)}...`);
+          }
+        } catch (dsErr: any) {
+          logToFile(`DeepSeek Master Designer prompt generation notice: ${dsErr.message}. Falling back to Gemini...`);
         }
 
-        designerPrompt = geminiResult.text.trim();
-        logToFile(`Master Designer generated prompt: ${designerPrompt}`);
+        // Fallback: Gemini multimodal if DeepSeek was unavailable or failed
+        if (!designerPrompt) {
+          const imageParts: any[] = [];
+          for (const imgUrl of validPropImages.slice(0, 4)) {
+            try {
+              const res = await fetch(imgUrl);
+              if (res.ok) {
+                const buffer = Buffer.from(await res.arrayBuffer());
+                const mimeType = res.headers.get('content-type') || 'image/png';
+                imageParts.push({
+                  type: 'image',
+                  image: buffer,
+                  mimeType: mimeType
+                } as any);
+              }
+            } catch (err) {
+              logToFile(`Error fetching image for Master Designer: ${imgUrl}`);
+            }
+          }
+
+          const messagesContent: any[] = [
+            {
+              type: 'text',
+              text: designComposerPrompt
+            },
+            ...imageParts
+          ];
+
+          let geminiResult;
+          try {
+            geminiResult = await generateText({
+              model: google('gemini-3.5-flash'),
+              messages: [
+                {
+                  role: 'user',
+                  content: messagesContent
+                }
+              ]
+            });
+          } catch (geminiErr1) {
+            logToFile(`Failed with gemini-3.5-flash for Master Designer: ${(geminiErr1 as Error).message}. Retrying with gemini-3-flash-preview...`);
+            geminiResult = await generateText({
+              model: google('gemini-3-flash-preview'),
+              messages: [
+                {
+                  role: 'user',
+                  content: messagesContent
+                }
+              ]
+            });
+          }
+
+          designerPrompt = geminiResult.text.trim();
+          logToFile(`Master Designer generated prompt via Gemini fallback: ${designerPrompt}`);
+        }
       } catch (err: any) {
         logToFile(`Error in Master Designer LLM flow: ${err.message}`);
       }
@@ -587,11 +576,7 @@ Make the edits clean, professional, and blend seamlessly with the original conte
 
     // 2. Try the Caption Generation Safely
     let finalCaption = "";
-    try {
-        logToFile("Generating high-converting Meta ad caption via Gemini...");
-        const { text } = await generateText({
-          model: google('gemini-3.5-flash'),
-          prompt: `You are a world-class Direct Response Copywriter. 
+    const captionPrompt = `You are a world-class Direct Response Copywriter with 20+ years of experience. 
 Write a high-converting Meta ad caption for: "${propertyTitle}". 
 Context: "${propertyDescription}". 
 Business: "${businessName}". 
@@ -605,20 +590,38 @@ RULES:
 - DO NOT use any hashtags (#).
 - At the very end of the caption, add 5-6 important keywords relevant to the business/property inside a single bracket, e.g., [Keyword1, Keyword2, Keyword3...]
 - Make it stop the scroll.
-- Output ONLY the caption, NO extra text.`,
-        });
-        finalCaption = text;
-        logToFile("Caption generated successfully.");
-    } catch (chatError: any) {
-        logToFile(`Caption generation failed: ${chatError.message}. Trying fallback model...`);
+- Output ONLY the caption, NO extra text.`;
+
+    try {
+        logToFile("Generating high-converting Meta ad caption via DeepSeek v4-flash...");
+        const dsCaption = await callDeepSeekWithUsage(captionPrompt);
+        if (dsCaption.text && dsCaption.text.trim()) {
+            finalCaption = dsCaption.text.trim();
+            logToFile("Caption generated successfully via DeepSeek v4-flash.");
+        }
+    } catch (dsCapErr: any) {
+        logToFile(`DeepSeek caption notice: ${dsCapErr.message}. Falling back to Gemini...`);
+    }
+
+    if (!finalCaption) {
         try {
             const { text } = await generateText({
-              model: google('gemini-3-flash-preview'),
-              prompt: `Write a high-converting Meta ad caption for: "${propertyTitle}". Context: "${propertyDescription}". Business: "${businessName}". Contact: "${contactNumber || 'DM for details!'}" without bolding and without hashtags.`,
+              model: google('gemini-3.5-flash'),
+              prompt: captionPrompt,
             });
             finalCaption = text;
-        } catch {
-            finalCaption = "Check out this premium property! DM for more details.";
+            logToFile("Caption generated successfully via Gemini fallback.");
+        } catch (chatError: any) {
+            logToFile(`Caption generation failed: ${chatError.message}. Trying preview model...`);
+            try {
+                const { text } = await generateText({
+                  model: google('gemini-3-flash-preview'),
+                  prompt: `Write a high-converting Meta ad caption for: "${propertyTitle}". Context: "${propertyDescription}". Business: "${businessName}". Contact: "${contactNumber || 'DM for details!'}" without bolding and without hashtags.`,
+                });
+                finalCaption = text;
+            } catch {
+                finalCaption = "Check out this premium property! DM for more details.";
+            }
         }
     }
 
