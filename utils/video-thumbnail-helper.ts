@@ -5,7 +5,7 @@ import path from 'path';
 import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import ffmpegPath from 'ffmpeg-static';
+import { getFfmpegPath } from './ffmpeg-helper';
 
 const execPromise = promisify(exec);
 
@@ -19,13 +19,7 @@ export async function generateAndUploadVideoThumbnail(
     let thumbnailCreated = false;
 
     try {
-        const nodeModulesFfmpeg = path.join(
-            process.cwd(),
-            'node_modules',
-            'ffmpeg-static',
-            os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-        );
-        const ffmpeg = fs.existsSync(nodeModulesFfmpeg) ? nodeModulesFfmpeg : (ffmpegPath || 'ffmpeg');
+        const ffmpeg = getFfmpegPath();
         
         // Extract 1 frame at 1.0 second and scale it down to a web-optimized 360px width.
         const command = `"${ffmpeg}" -y -ss 00:00:01 -i "${localVideoPath}" -vf "scale=360:-1" -vframes 1 "${thumbnailPath}"`;

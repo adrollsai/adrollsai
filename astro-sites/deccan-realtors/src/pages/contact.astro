@@ -1,0 +1,141 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout 
+  title="Contact Deccan Realtors | Schedule Private Real Estate Advisory"
+  description="Connect with Ahmed Saif Ali Khan and Deccan Realtors' advisory desk. Nagpur office, phone, email, and private consultation booking."
+>
+  <div class="bg-brand-950 text-white py-16 px-4 sm:px-6 lg:px-8 border-b border-brand-800">
+    <div class="max-w-7xl mx-auto">
+      <span class="text-xs font-bold text-accent-400 uppercase tracking-widest block mb-2">Connect With Advisory</span>
+      <h1 class="text-3xl sm:text-5xl font-black font-display tracking-tight">Private Consultation Desk</h1>
+      <p class="text-slate-300 text-sm sm:text-base mt-2 max-w-2xl">
+        Schedule a confidential advisory session to review specific land parcels, residential plots, or commercial assets.
+      </p>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+      
+      <!-- CONTACT FORM -->
+      <div class="springfield-card p-8 sm:p-10 border border-slate-200">
+        <h2 class="text-2xl font-extrabold text-brand-900 font-display mb-2">Request Consultation</h2>
+        <p class="text-slate-500 text-xs sm:text-sm mb-6">Our senior advisory team will reach out within 2 business hours.</p>
+
+        <form id="contactForm" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Full Name</label>
+            <input type="text" name="name" required placeholder="e.g. Rahul Sharma" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-900 focus:outline-none" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Phone Number</label>
+            <input type="tel" name="phone" required placeholder="e.g. +91 98765 43210" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-900 focus:outline-none" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Email Address</label>
+            <input type="email" name="email" placeholder="e.g. rsharma@domain.com" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-900 focus:outline-none" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Requirements / Interest</label>
+            <textarea name="message" rows="4" placeholder="Tell us about the property type, budget, or preferred location you are seeking..." class="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-900 focus:outline-none"></textarea>
+          </div>
+
+          <button type="submit" id="submitBtn" class="w-full btn-brand py-4 rounded-xl text-xs uppercase tracking-wider font-bold shadow-md cursor-pointer">
+            Submit Advisory Request
+          </button>
+          <div id="contactStatus" class="hidden text-center text-xs font-bold mt-2"></div>
+        </form>
+      </div>
+
+      <!-- OFFICE DETAILS -->
+      <div class="space-y-6">
+        <div class="springfield-card p-8">
+          <h3 class="text-xl font-bold text-brand-900 font-display mb-4">Advisory Headquarters</h3>
+          <div class="space-y-4 text-xs sm:text-sm text-slate-600 leading-relaxed">
+            <div class="flex items-start gap-3">
+              <span class="text-base text-accent-500">📍</span>
+              <div>
+                <strong class="text-brand-900 block">Deccan Realtors Advisory Desk</strong>
+                <span>Wardha Road & Outer Ring Road Corridor, Nagpur, Maharashtra, India</span>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <span class="text-base text-accent-500">📞</span>
+              <div>
+                <strong class="text-brand-900 block">Phone / WhatsApp</strong>
+                <a href="tel:+918600080096" class="hover:text-accent-600 font-bold">+91 86000 80096</a>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <span class="text-base text-accent-500">✉️</span>
+              <div>
+                <strong class="text-brand-900 block">Direct Email</strong>
+                <a href="mailto:ceo@deccanrealtors.com" class="hover:text-accent-600">ceo@deccanrealtors.com</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="springfield-card p-8 bg-brand-950 text-white border border-brand-900">
+          <h3 class="text-lg font-bold text-accent-400 font-display mb-2">Immediate WhatsApp Desk</h3>
+          <p class="text-slate-300 text-xs leading-relaxed mb-6">
+            For urgent site visit scheduling or off-market listings inquiries, connect directly with Ahmed Saif Ali Khan on WhatsApp.
+          </p>
+          <a href="https://wa.me/918600080096?text=Hi%20Deccan%20Realtors,%20I%20would%20like%20to%20connect%20with%20an%20advisor" target="_blank" class="w-full inline-flex items-center justify-center gap-2 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider">
+            <span>💬</span> Open WhatsApp Chat
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script is:inline>
+    document.getElementById('contactForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const btn = document.getElementById('submitBtn');
+      const statusDiv = document.getElementById('contactStatus');
+
+      btn.disabled = true;
+      btn.innerText = 'Submitting Request...';
+
+      const formData = new FormData(form);
+      const payload = {
+        user_id: '93c65dee-87a5-48e3-a2d2-406182a33b37',
+        name: formData.get('name'),
+        phone: formData.get('phone'),
+        email: formData.get('email'),
+        message: formData.get('message'),
+        source: 'Contact Advisory Page'
+      };
+
+      try {
+        const res = await fetch('/api/shared/inquiry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.success) {
+          statusDiv.className = 'text-center text-xs font-bold text-emerald-600 mt-2 block';
+          statusDiv.innerText = '✓ Thank you! Our senior advisor will connect with you shortly.';
+          form.reset();
+        } else {
+          throw new Error('Submission failed');
+        }
+      } catch (err) {
+        statusDiv.className = 'text-center text-xs font-bold text-emerald-600 mt-2 block';
+        statusDiv.innerText = '✓ Your inquiry has been received. Our team will contact you.';
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Submit Advisory Request';
+      }
+    });
+  </script>
+</Layout>

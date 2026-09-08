@@ -84,14 +84,21 @@ export async function GET(req: Request) {
                     .neq('voice_twilio_number', '');
 
                 if (activeNumbers && activeNumbers.length > 0) {
-                    const whitelistedEmails = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com'];
+                    const whitelistedEmails = [
+                        'rchopra489@gmail.com',
+                        'infobluesquareinfra@gmail.com',
+                        'khushiramrealtor@gmail.com',
+                        'rajivkumaraggarwal81@gmail.com',
+                        'gnrhomes97@gmail.com',
+                        'alpinenesthomes01@gmail.com'
+                    ];
                     
                     for (const p of activeNumbers) {
                         // Skip whitelisted master accounts
                         if (whitelistedEmails.includes(p.email || '')) continue;
                         
                         const status = p.subscription_status?.toLowerCase() || '';
-                        const isSubscriptionActive = ['active', 'trialing', 'pro', 'growth'].includes(status);
+                        const isSubscriptionActive = ['active', 'trialing', 'pro', 'growth', 'enterprise'].includes(status);
                         
                         if (!isSubscriptionActive) {
                             console.log(`[SUBSCRIPTION CLEANUP] Inactive subscription detected for ${p.email} (Status: ${status}). Releasing number ${p.voice_twilio_number}...`);

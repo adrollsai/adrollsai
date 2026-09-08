@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { GET as getPropertiesCatalog } from '../properties/route'
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +63,10 @@ export async function GET(request: Request, { params }: RouteProps) {
         console.log("[Shared Route] Resolved page:", page ? { id: page.id, title: page.title } : null)
 
         if (!page) {
+            if (slug === 'index' || slug === 'home' || slug === 'properties' || slug === 'catalog') {
+                console.log(`[Shared Route] No explicit '${slug}' landing page found for ${profile.business_name}. Serving robust properties catalog fallback.`);
+                return getPropertiesCatalog(request, { params: Promise.resolve({ user_id: identifier }) });
+            }
             console.log("[Shared Route] Bailing out: Page Not Found (404)")
             return new Response("Lander Not Found", { status: 404 })
         }
@@ -1827,16 +1832,21 @@ export async function GET(request: Request, { params }: RouteProps) {
                                         ? (Array.isArray(p.configurations.units) ? p.configurations.units.slice(0, 2).join(' • ') : p.configurations.sizes || '')
                                         : (typeof p.configurations === 'string' ? p.configurations : '')
 
+                                    const propDetailUrl = profile.custom_domain ? `/properties/${p.id}` : `/shared/${profile.id}/properties/${p.id}`
                                     return `
                                     <div class="rounded-3xl overflow-hidden glass-card flex flex-col h-full group" style="box-sizing: border-box; display: flex; flex-direction: column;">
                                         <div class="relative aspect-[16/10] bg-slate-900 overflow-hidden" style="position: relative; aspect-ratio: 1.6; overflow: hidden;">
-                                            <img src="${p.image_url || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'}" alt="${p.title}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" style="width: 100%; height: 100%; object-fit: cover;" />
+                                            <a href="${propDetailUrl}">
+                                                <img src="${p.image_url || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'}" alt="${p.title}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" style="width: 100%; height: 100%; object-fit: cover;" />
+                                            </a>
                                             <div class="absolute inset-0 bg-gradient-to-t from-navy-900/90 via-transparent to-transparent"></div>
                                             ${p.property_type ? `<span class="absolute top-4 left-4 bg-navy-900/80 backdrop-blur border border-gold-400/30 text-gold-300 font-bold text-[10px] uppercase tracking-wider px-3 py-1 rounded-full shadow-lg" style="position: absolute; top: 1rem; left: 1rem; background: rgba(7, 12, 24, 0.85); color: #E6CA9E; font-weight: 700; font-size: 0.65rem; letter-spacing: 0.08em; padding: 0.25rem 0.75rem; border-radius: 9999px; border: 1px solid rgba(212, 175, 55, 0.4);">${p.property_type}</span>` : ''}
                                             ${p.price ? `<span class="absolute bottom-4 left-4 bg-navy-900/90 backdrop-blur border border-white/10 text-white font-extrabold text-xs px-3.5 py-1.5 rounded-full shadow-lg" style="position: absolute; bottom: 1rem; left: 1rem; background: rgba(7, 12, 24, 0.9); font-weight: 800; font-size: 0.75rem; padding: 0.375rem 0.875rem; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.15); color: #ffffff;">${p.price}</span>` : ''}
                                         </div>
                                         <div class="p-6 flex-1 flex flex-col" style="padding: 1.5rem; display: flex; flex-direction: column; flex-grow: 1;">
-                                            <h3 class="font-bold text-white text-xl mb-2 tracking-tight" style="font-weight: 800; font-size: 1.25rem; margin: 0 0 0.5rem; color: #ffffff;">${p.title}</h3>
+                                            <a href="${propDetailUrl}">
+                                                <h3 class="font-bold text-white text-xl mb-2 tracking-tight" style="font-weight: 800; font-size: 1.25rem; margin: 0 0 0.5rem; color: #ffffff;">${p.title}</h3>
+                                            </a>
                                             ${configs ? `<div class="text-xs text-gold-400 font-semibold mb-3 tracking-wide" style="color: #D4AF37; font-size: 0.75rem; margin-bottom: 0.75rem;">${configs}</div>` : ''}
                                             <p class="text-slate-400 font-normal text-xs mb-4 leading-relaxed line-clamp-3" style="color: #94a3b8; font-size: 0.75rem; line-height: 1.6; margin: 0 0 1rem; flex-grow: 1;">${p.description || ''}</p>
                                             ${p.address ? `
@@ -1846,10 +1856,10 @@ export async function GET(request: Request, { params }: RouteProps) {
                                                 </div>
                                             ` : ''}
                                             <div class="mt-auto pt-4 border-t border-white/5 flex gap-2" style="margin-top: auto; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.05); display: flex; gap: 0.5rem;">
-                                                <a href="/shared/${profile.id}?property=${p.id}" target="_parent" class="flex-1 gold-btn text-xs text-center py-2.5 rounded-full uppercase tracking-wider font-extrabold transition-all" style="flex: 1; background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%); color: #070C18; font-weight: 800; font-size: 0.7rem; letter-spacing: 0.08em; text-align: center; text-decoration: none; padding: 0.625rem; border-radius: 9999px; display: block;">
-                                                    View Listing
+                                                <a href="${propDetailUrl}" class="flex-1 gold-btn text-xs text-center py-2.5 rounded-full uppercase tracking-wider font-extrabold transition-all" style="flex: 1; background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%); color: #070C18; font-weight: 800; font-size: 0.7rem; letter-spacing: 0.08em; text-align: center; text-decoration: none; padding: 0.625rem; border-radius: 9999px; display: block;">
+                                                    View Details
                                                 </a>
-                                                <a href="https://wa.me/${(profile.contact_number || '919988772999').replace(/[^0-9]/g, '')}?text=Hi%20Bioque%20Estates,%20I%20am%20interested%20in%20${encodeURIComponent(p.title)}" target="_blank" class="px-3.5 py-2.5 rounded-full border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-all flex items-center justify-center" style="border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 9999px; padding: 0.625rem 0.875rem; color: #34d399; text-decoration: none; display: flex; align-items: center; justify-content: center;" title="Chat on WhatsApp">
+                                                <a href="https://wa.me/${(profile.contact_number || '919988772999').replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(profile.business_name || '')},%20I%20am%20interested%20in%20${encodeURIComponent(p.title)}" target="_blank" class="px-3.5 py-2.5 rounded-full border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-all flex items-center justify-center" style="border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 9999px; padding: 0.625rem 0.875rem; color: #34d399; text-decoration: none; display: flex; align-items: center; justify-center;" title="Chat on WhatsApp">
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
                                                 </a>
                                             </div>
@@ -1864,14 +1874,20 @@ export async function GET(request: Request, { params }: RouteProps) {
                             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16" style="font-family: system-ui, -apple-system, sans-serif;">
                                 <h2 class="text-3xl font-black text-slate-900 text-center mb-10">Our Featured Listings</h2>
                                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                    ${propertiesData.map(p => `
+                                    ${propertiesData.map(p => {
+                                        const propDetailUrl = profile.custom_domain ? `/properties/${p.id}` : `/shared/${profile.id}/properties/${p.id}`
+                                        return `
                                         <div class="bg-white rounded-3xl overflow-hidden shadow-md hover:shadow-xl transition-all border border-slate-100 flex flex-col h-full" style="box-sizing: border-box; display: flex; flex-direction: column;">
                                             <div class="relative aspect-[16/10] bg-slate-100" style="position: relative; aspect-ratio: 1.6; overflow: hidden;">
-                                                <img src="${p.image_url || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'}" alt="${p.title}" class="w-full h-full object-cover" style="width: 100%; height: 100%; object-fit: cover;" />
+                                                <a href="${propDetailUrl}">
+                                                    <img src="${p.image_url || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'}" alt="${p.title}" class="w-full h-full object-cover" style="width: 100%; height: 100%; object-fit: cover;" />
+                                                </a>
                                                 ${p.price ? `<span class="absolute bottom-4 left-4 bg-white/90 backdrop-blur text-slate-900 font-extrabold text-xs px-3 py-1.5 rounded-full shadow-sm" style="position: absolute; bottom: 1rem; left: 1rem; background: rgba(255, 255, 255, 0.9); font-weight: 800; font-size: 0.75rem; padding: 0.375rem 0.75rem; border-radius: 9999px;">${p.price}</span>` : ''}
                                             </div>
                                             <div class="p-6 flex-1 flex flex-col" style="padding: 1.5rem; display: flex; flex-direction: column; flex-grow: 1;">
-                                                <h3 class="font-extrabold text-slate-900 text-lg mb-2" style="font-weight: 800; font-size: 1.125rem; margin: 0 0 0.5rem; color: #0f172a;">${p.title}</h3>
+                                                <a href="${propDetailUrl}">
+                                                    <h3 class="font-extrabold text-slate-900 text-lg mb-2" style="font-weight: 800; font-size: 1.125rem; margin: 0 0 0.5rem; color: #0f172a;">${p.title}</h3>
+                                                </a>
                                                 <p class="text-slate-500 font-medium text-xs mb-4" style="color: #64748b; font-size: 0.75rem; line-height: 1.5; margin: 0 0 1rem; flex-grow: 1;">${p.description || ''}</p>
                                                 ${p.address ? `
                                                     <div class="flex items-center gap-1.5 text-slate-400 text-xs mb-4" style="display: flex; align-items: center; gap: 0.375rem; color: #94a3b8; font-size: 0.75rem; margin-bottom: 1rem;">
@@ -1880,13 +1896,14 @@ export async function GET(request: Request, { params }: RouteProps) {
                                                     </div>
                                                 ` : ''}
                                                 <div class="mt-auto pt-4 border-t border-slate-100" style="margin-top: auto; padding-top: 1rem; border-top: 1px solid #f1f5f9; display: flex;">
-                                                    <a href="/shared/${profile.id}?property=${p.id}" target="_parent" class="flex-1 bg-slate-900 text-white font-extrabold text-xs text-center py-2.5 rounded-xl hover:bg-slate-800 transition-colors" style="flex: 1; background: #0f172a; color: #ffffff; font-weight: 800; font-size: 0.75rem; text-align: center; text-decoration: none; padding: 0.625rem; border-radius: 0.75rem; display: block;">
-                                                        View Listing
+                                                    <a href="${propDetailUrl}" class="flex-1 bg-slate-900 text-white font-extrabold text-xs text-center py-2.5 rounded-xl hover:bg-slate-800 transition-colors" style="flex: 1; background: #0f172a; color: #ffffff; font-weight: 800; font-size: 0.75rem; text-align: center; text-decoration: none; padding: 0.625rem; border-radius: 0.75rem; display: block;">
+                                                        View Details
                                                     </a>
                                                 </div>
                                             </div>
                                         </div>
-                                    `).join('')}
+                                        `
+                                    }).join('')}
                                 </div>
                             </div>
                         `

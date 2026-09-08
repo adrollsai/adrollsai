@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, History, Clock, User, Phone, MessageSquare, AlertCircle, RefreshCw, FileText, ExternalLink, Package } from 'lucide-react'
+import { X, History, Clock, User, Phone, MessageSquare, AlertCircle, RefreshCw, FileText, ExternalLink, Package, Download } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { getLeadFollowupCount } from '@/utils/lead-helpers'
@@ -673,13 +673,32 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
 
                       {/* Call Audio Recording Player */}
                       {recordingUrl && (
-                        <div className="mt-2.5 p-2 bg-white rounded-xl border border-slate-200">
-                          <div className="flex items-center gap-2 mb-1.5 text-[11px] font-bold text-blue-700">
-                            <Phone size={14} />
-                            <span>Human Call Recording</span>
+                        <div className="mt-2.5 p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700">
+                              <Phone size={13} />
+                              <span>Call Audio Recording</span>
+                            </div>
+                            <a 
+                              href={recordingUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              download={`recording_${lead.name || 'call'}.mp3`}
+                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 hover:underline cursor-pointer"
+                            >
+                              <Download size={12} />
+                              <span>Download / Open</span>
+                            </a>
                           </div>
-                          <audio controls className="w-full h-8">
-                            <source src={recordingUrl} type="audio/mpeg" />
+                          <audio 
+                            key={recordingUrl}
+                            controls 
+                            preload="metadata"
+                            // @ts-ignore
+                            playsInline
+                            src={recordingUrl}
+                            className="w-full h-9 rounded-lg outline-none bg-slate-50"
+                          >
                             Your browser does not support audio playback.
                           </audio>
                         </div>

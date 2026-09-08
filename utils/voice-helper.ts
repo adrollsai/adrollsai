@@ -160,11 +160,18 @@ export async function triggerOutboundCall(
         const subscriptionStatus = profile.subscription_status?.toLowerCase() || ''
         const subscriptionValidUntil = profile.subscription_valid_until
         const userEmail = profile.email?.toLowerCase() || ''
-        const whitelistedEmails = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com']
+        const whitelistedEmails = [
+            'rchopra489@gmail.com',
+            'infobluesquareinfra@gmail.com',
+            'khushiramrealtor@gmail.com',
+            'rajivkumaraggarwal81@gmail.com',
+            'gnrhomes97@gmail.com',
+            'alpinenesthomes01@gmail.com'
+        ]
         const isWhitelisted = whitelistedEmails.includes(userEmail)
 
         const isSubscriptionExpired = subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date()
-        const isPaid = (subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro') && !isSubscriptionExpired
+        const isPaid = (subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro' || subscriptionStatus === 'enterprise') && !isSubscriptionExpired
 
         if (!isPaid && !isWhitelisted) {
             return { success: false, error: 'SUBSCRIPTION_EXPIRED' }

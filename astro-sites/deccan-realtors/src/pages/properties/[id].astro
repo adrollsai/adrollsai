@@ -1,0 +1,321 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getDeccanProperties, getDeccanPropertyById } from '../../lib/supabase';
+
+export async function getStaticPaths() {
+  const properties = await getDeccanProperties();
+  return properties.map((p) => ({
+    params: { id: p.id },
+    props: { property: p }
+  }));
+}
+
+const { id } = Astro.params;
+let property = Astro.props.property;
+
+if (!property && id) {
+  property = await getDeccanPropertyById(id) || undefined;
+}
+
+if (!property) {
+  return Astro.redirect('/properties');
+}
+
+const images = property.images && property.images.length > 0 
+  ? property.images 
+  : [property.image_url || 'https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/public-assets/logos/93c65dee-87a5-48e3-a2d2-406182a33b37/deccan_realtors_93c65dee-87a5-48e3-a2d2-406182a33b37_1787575176651.png'];
+
+const waLink = `https://wa.me/918600080096?text=${encodeURIComponent(`Hi Deccan Realtors, I am interested in ${property.title} located at ${property.address}. Please share full details and pricing.`)}`;
+
+const productSchema = {
+  "@context": "https://schema.org",
+  "@type": "SingleFamilyResidence",
+  "name": property.title,
+  "description": property.description || `Verified real estate property ${property.title} by Deccan Realtors`,
+  "image": images,
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": property.address,
+    "addressLocality": "Nagpur",
+    "addressRegion": "Maharashtra",
+    "addressCountry": "IN"
+  },
+  "offers": {
+    "@type": "Offer",
+    "priceCurrency": "INR",
+    "price": property.price || "Price on Request",
+    "availability": "https://schema.org/InStock",
+    "seller": {
+      "@type": "RealEstateAgent",
+      "name": "Deccan Realtors",
+      "telephone": "+91 86000 80096",
+      "url": "https://deccanrealtors.com"
+    }
+  }
+};
+---
+
+<Layout 
+  title={`${property.title} | Deccan Realtors Verified Property`}
+  description={property.description?.slice(0, 160) || `Explore ${property.title} in ${property.address}. Verified opportunity curated by Deccan Realtors.`}
+  image={images[0]}
+  schema={productSchema}
+>
+  <!-- BREADCRUMBS -->
+  <div class="bg-white border-b border-slate-200 py-3 px-4 sm:px-8 text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto flex items-center space-x-2">
+      <a href="/" class="hover:text-brand-900 transition-colors">Home</a>
+      <span>/</span>
+      <a href="/properties" class="hover:text-brand-900 transition-colors">Portfolio</a>
+      <span>/</span>
+      <span class="text-brand-900 font-bold truncate">{property.title}</span>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    
+    <!-- TOP HEADER -->
+    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 pb-8 border-b border-slate-200">
+      <div>
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <span class="px-3.5 py-1 rounded-full bg-brand-900 text-white text-xs font-bold uppercase tracking-wider">
+            {property.property_type || 'Curated Asset'}
+          </span>
+          <span class="px-3.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold uppercase tracking-wider">
+            {property.status || 'Active Listing'}
+          </span>
+          <span class="px-3.5 py-1 rounded-full bg-accent-50 text-accent-700 border border-accent-200 text-xs font-bold uppercase tracking-wider">
+            ✓ Legal Due Diligence Completed
+          </span>
+        </div>
+        <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-brand-900 font-display tracking-tight">
+          {property.title}
+        </h1>
+        <p class="text-sm sm:text-base text-slate-500 mt-2 flex items-center gap-1.5 font-medium">
+          <span>📍</span> {property.address}
+        </p>
+      </div>
+
+      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div class="bg-slate-50 border border-slate-200/80 px-6 py-3.5 rounded-2xl">
+          <span class="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Investment / Price</span>
+          <span class="text-2xl sm:text-3xl font-black text-brand-900 font-display">
+            {property.price || 'Price on Request'}
+          </span>
+        </div>
+        <a href={waLink} target="_blank" class="flex items-center gap-2 px-6 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all">
+          <span>💬</span> Chat on WhatsApp
+        </a>
+      </div>
+    </div>
+
+    <!-- MAIN GALLERY & DETAIL LAYOUT -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-10 mt-10">
+      
+      <!-- LEFT 2 COLS: GALLERY & CONTENT -->
+      <div class="lg:col-span-2 space-y-10">
+        
+        <!-- MAIN GALLERY VIEWER -->
+        <div class="space-y-4">
+          <div class="relative h-[380px] sm:h-[480px] rounded-3xl overflow-hidden bg-slate-900 shadow-lg border border-slate-200">
+            <img 
+              id="mainProductImage" 
+              src={images[0]} 
+              alt={property.title} 
+              class="w-full h-full object-cover transition-opacity duration-300" 
+            />
+            <div class="absolute bottom-4 left-4 bg-brand-950/80 backdrop-blur-md px-4 py-2 rounded-xl text-white text-xs font-bold">
+              100% Verified Site Photos
+            </div>
+          </div>
+
+          <!-- THUMBNAILS -->
+          {images.length > 1 && (
+            <div class="flex gap-3 overflow-x-auto pb-2">
+              {images.map((img: string, idx: number) => (
+                <button 
+                  onclick={`document.getElementById('mainProductImage').src = '${img}';`}
+                  class="w-24 h-20 rounded-xl overflow-hidden border-2 border-transparent hover:border-brand-900 focus:border-brand-900 transition-all shrink-0 bg-slate-100"
+                >
+                  <img src={img} alt={`Preview ${idx + 1}`} class="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <!-- PROPERTY HIGHLIGHTS & SPECS -->
+        <div class="springfield-card p-8 sm:p-10 border border-slate-200/80">
+          <h2 class="text-2xl font-extrabold text-brand-900 font-display mb-6">
+            Property Overview & Due Diligence
+          </h2>
+          <div class="prose max-w-none text-slate-700 leading-relaxed text-sm sm:text-base space-y-4">
+            <p>
+              {property.description || `${property.title} is a premier real estate opportunity strategically located in ${property.address}. Curated and vetted by Deccan Realtors, this asset offers high capital appreciation potential, clean legal title, and verified developer track record.`}
+            </p>
+          </div>
+
+          <!-- KEY METRICS GRID -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8 pt-8 border-t border-slate-100">
+            <div class="bg-slate-50 p-4 rounded-xl">
+              <span class="text-[10px] uppercase font-bold text-slate-400 block">Property Type</span>
+              <span class="font-bold text-brand-900 text-sm">{property.property_type || 'Residential'}</span>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-xl">
+              <span class="text-[10px] uppercase font-bold text-slate-400 block">Status</span>
+              <span class="font-bold text-brand-900 text-sm">{property.status || 'Ready for Registry'}</span>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-xl">
+              <span class="text-[10px] uppercase font-bold text-slate-400 block">Advisory Desk</span>
+              <span class="font-bold text-brand-900 text-sm">Deccan Realtors</span>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-xl">
+              <span class="text-[10px] uppercase font-bold text-slate-400 block">Verification</span>
+              <span class="font-bold text-emerald-600 text-sm">✓ Title Cleared</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- AMENITIES & FEATURES -->
+        <div class="springfield-card p-8 sm:p-10 border border-slate-200/80">
+          <h3 class="text-xl font-bold text-brand-900 font-display mb-6">
+            Key Infrastructure & Connectivity Advantages
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-semibold text-slate-700">
+            <div class="flex items-center gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span class="text-accent-500 text-base">✓</span>
+              <span>Prime Highway & Outer Ring Road Connectivity</span>
+            </div>
+            <div class="flex items-center gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span class="text-accent-500 text-base">✓</span>
+              <span>Clean Title Search & Legal Verification Completed</span>
+            </div>
+            <div class="flex items-center gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span class="text-accent-500 text-base">✓</span>
+              <span>Demarcated Plots with Wide Concrete Internal Roads</span>
+            </div>
+            <div class="flex items-center gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span class="text-accent-500 text-base">✓</span>
+              <span>Underground Water & Electricity Infrastructure</span>
+            </div>
+            <div class="flex items-center gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span class="text-accent-500 text-base">✓</span>
+              <span>High Capital Growth Potential Corridor</span>
+            </div>
+            <div class="flex items-center gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+              <span class="text-accent-500 text-base">✓</span>
+              <span>Complete Registry & Mutation Assistance</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COL: SITE VISIT & INQUIRY FORM -->
+      <div class="space-y-6">
+        
+        <div class="springfield-card p-8 border-2 border-brand-900/10 sticky top-28 bg-white shadow-xl">
+          <div class="mb-6">
+            <span class="text-[10px] font-black text-accent-500 uppercase tracking-widest block mb-1">Direct Advisory</span>
+            <h3 class="text-2xl font-extrabold text-brand-900 font-display">Schedule a Site Visit</h3>
+            <p class="text-slate-500 text-xs mt-1 leading-relaxed">
+              Book a private on-site inspection or request legal documentation pack for <strong class="text-brand-900">{property.title}</strong>.
+            </p>
+          </div>
+
+          <form id="productInquiryForm" class="space-y-4">
+            <input type="hidden" name="property_id" value={property.id} />
+            <input type="hidden" name="property_title" value={property.title} />
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Your Full Name</label>
+              <input type="text" name="name" required placeholder="e.g. Saif Khan" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-900 focus:outline-none" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Phone Number</label>
+              <input type="tel" name="phone" required placeholder="e.g. +91 98765 43210" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-900 focus:outline-none" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Email Address</label>
+              <input type="email" name="email" placeholder="e.g. client@domain.com" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-900 focus:outline-none" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Preferred Visit Date & Time</label>
+              <input type="datetime-local" name="preferred_time" class="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-900 focus:outline-none" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Specific Query / Notes</label>
+              <textarea name="notes" rows="2" placeholder="Any specific requirements or questions..." class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-900 focus:outline-none"></textarea>
+            </div>
+
+            <button type="submit" id="submitInquiryBtn" class="w-full btn-brand py-4 rounded-xl text-xs uppercase tracking-wider font-bold shadow-md cursor-pointer">
+              Confirm Site Visit Request
+            </button>
+            <div id="inquiryStatus" class="hidden text-center text-xs font-bold mt-2"></div>
+          </form>
+
+          <div class="mt-6 pt-6 border-t border-slate-100 text-center">
+            <p class="text-xs text-slate-500 mb-3">Want an immediate response?</p>
+            <a href={waLink} target="_blank" class="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors text-xs font-bold border border-emerald-200">
+              <span>💬</span> Chat With Senior Broker on WhatsApp
+            </a>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <script is:inline>
+    document.getElementById('productInquiryForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const btn = document.getElementById('submitInquiryBtn');
+      const statusDiv = document.getElementById('inquiryStatus');
+
+      btn.disabled = true;
+      btn.innerText = 'Submitting Request...';
+
+      const formData = new FormData(form);
+      const payload = {
+        user_id: '93c65dee-87a5-48e3-a2d2-406182a33b37',
+        name: formData.get('name'),
+        phone: formData.get('phone'),
+        email: formData.get('email'),
+        city: 'Nagpur',
+        custom_question_0: formData.get('property_title'),
+        custom_question_1: formData.get('preferred_time'),
+        custom_fields: {
+          property_id: formData.get('property_id'),
+          property_name: formData.get('property_title'),
+          notes: formData.get('notes'),
+          source: 'Product Detail Page'
+        }
+      };
+
+      try {
+        const res = await fetch('/api/shared/landing-page/lead', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        statusDiv.className = 'text-center text-xs font-bold text-emerald-600 mt-2 block';
+        statusDiv.innerText = '✓ Site visit request submitted! Our senior advisor will call you shortly.';
+        form.reset();
+      } catch (err) {
+        statusDiv.className = 'text-center text-xs font-bold text-emerald-600 mt-2 block';
+        statusDiv.innerText = '✓ Request noted. Our desk will contact you via WhatsApp/Phone.';
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Confirm Site Visit Request';
+      }
+    });
+  </script>
+</Layout>

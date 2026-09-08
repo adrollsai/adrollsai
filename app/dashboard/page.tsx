@@ -643,9 +643,11 @@ export default function ProductsPage() {
     if (!ownerId) return 
     const params = new URLSearchParams()
     if (searchQuery) params.set('q', searchQuery)
+    const queryString = params.toString() ? `?${params.toString()}` : ''
     
-    const baseUrl = adminCustomDomain ? `https://${adminCustomDomain}` : "https://app.nobogent.com";
-    const shareUrl = `${baseUrl}/shared/${ownerId}?${params.toString()}`
+    const shareUrl = adminCustomDomain 
+      ? `https://${adminCustomDomain}/properties${queryString}` 
+      : `https://app.nobogent.com/shared/${ownerId}/properties${queryString}`;
     
     navigator.clipboard.writeText(shareUrl)
     toast.success("✅ Link Copied!")

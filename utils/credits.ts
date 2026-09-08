@@ -55,7 +55,16 @@ export async function hasEnoughCredits(
 
     // Check if base subscription plan is active
     const subscriptionStatus = profile.subscription_status?.toLowerCase() || ''
-    const isSubscriptionActive = ['active', 'trialing', 'pro', 'growth'].includes(subscriptionStatus)
+    const whitelistedClients = [
+      'rchopra489@gmail.com',
+      'infobluesquareinfra@gmail.com',
+      'khushiramrealtor@gmail.com',
+      'rajivkumaraggarwal81@gmail.com',
+      'gnrhomes97@gmail.com',
+      'alpinenesthomes01@gmail.com'
+    ]
+    const isClientWhitelisted = whitelistedClients.includes(profile.email || '')
+    const isSubscriptionActive = ['active', 'trialing', 'pro', 'growth', 'enterprise'].includes(subscriptionStatus) || isClientWhitelisted
     if (!isSubscriptionActive) {
       console.warn(`[CREDITS HELPER] Action blocked. User ${primaryUserId} has credits but no active base subscription plan. Status: ${subscriptionStatus}`)
       return false

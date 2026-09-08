@@ -71,22 +71,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       let subscriptionStatus = userProfile?.subscription_status?.toLowerCase() || ''
       let subscriptionValidUntil = userProfile?.subscription_valid_until
       let onboardingCompleted = userProfile?.onboarding_completed
+      let parentEmail = ''
       const parentId = userProfile?.parent_id || userProfile?.agency_id
       if (parentId) {
           const { data: parentProfile } = await supabase
             .from('profiles')
-            .select('subscription_status, subscription_valid_until, onboarding_completed')
+            .select('email, subscription_status, subscription_valid_until, onboarding_completed')
             .eq('id', parentId)
             .single()
+          parentEmail = parentProfile?.email?.toLowerCase() || ''
           subscriptionStatus = parentProfile?.subscription_status?.toLowerCase() || ''
           subscriptionValidUntil = parentProfile?.subscription_valid_until
           onboardingCompleted = parentProfile?.onboarding_completed
       }
 
       // Whitelisted emails that do not get trapped by subscription expiry
-      const whitelistedEmails = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com', 'khushiramrealtor@gmail.com', 'meta-reviewer@nobogent.com']
+      const whitelistedEmails = [
+        'rchopra489@gmail.com',
+        'infobluesquareinfra@gmail.com',
+        'khushiramrealtor@gmail.com',
+        'rajivkumaraggarwal81@gmail.com',
+        'gnrhomes97@gmail.com',
+        'alpinenesthomes01@gmail.com',
+        'meta-reviewer@nobogent.com'
+      ]
       const userEmail = userProfile?.email?.toLowerCase() || ''
-      const isWhitelisted = whitelistedEmails.includes(userEmail)
+      const isWhitelisted = whitelistedEmails.includes(userEmail) || (parentEmail && whitelistedEmails.includes(parentEmail))
 
       // Dynamic chronological check
       if (subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date() && !isWhitelisted) {

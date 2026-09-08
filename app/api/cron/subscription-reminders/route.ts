@@ -20,16 +20,32 @@ const LOW_CREDIT_THRESHOLD = 100;
 const WA_TEMPLATE_SUBSCRIPTION = 'subscription_expiry_reminder';
 const WA_TEMPLATE_LOW_CREDITS = 'low_credits_alert';
 
+// Accounts that must NEVER receive subscription expiry notifications
+const NEVER_NOTIFY_EXPIRY_EMAILS = [
+    'rchopra489@gmail.com',
+    'meta-reviewer@nobogent.com'
+];
+
+// Protected clients whose access must never be blocked and who only get standard 3-time reminders in final week
+const PROTECTED_CLIENT_EMAILS = [
+    'khushiramrealtor@gmail.com',
+    'rajivkumaraggarwal81@gmail.com',
+    'gnrhomes97@gmail.com',
+    'alpinenesthomes01@gmail.com'
+];
+
 function daysBetween(a: Date, b: Date): number {
     const msPerDay = 24 * 60 * 60 * 1000;
     return Math.round((b.getTime() - a.getTime()) / msPerDay);
 }
 
 function getReminderLabel(daysLeft: number): string | null {
+    // Exactly 3 times in the final 7 days: 7 days, 3 days, and 1 day (tomorrow)
     if (daysLeft === 7) return '7 days';
     if (daysLeft === 3) return '3 days';
     if (daysLeft === 1) return 'tomorrow';
-    if (daysLeft <= 0) return 'today';
+    if (daysLeft === 0) return 'today';
+    // Do NOT send notifications after expiry to prevent daily spam loops
     return null;
 }
 
@@ -172,6 +188,10 @@ export async function GET(request: Request) {
             for (const profile of profiles) {
                 if (!profile.subscription_valid_until) continue;
 
+                const userEmail = profile.email?.toLowerCase() || '';
+                // Skip master accounts that must never receive expiry notifications
+                if (NEVER_NOTIFY_EXPIRY_EMAILS.includes(userEmail)) continue;
+
                 const expiryDate = new Date(profile.subscription_valid_until);
                 const daysLeft = daysBetween(now, expiryDate);
                 const reminderLabel = getReminderLabel(daysLeft);
@@ -181,9 +201,14 @@ export async function GET(request: Request) {
                 // Dedup check
                 if (sentSubRemindersToday.has(profile.id)) continue;
 
+                const isProtectedClient = PROTECTED_CLIENT_EMAILS.includes(userEmail);
+                const isExpired = daysLeft <= 0;
+
+                // If protected client has expired, do not send panic expired notifications as their access is preserved
+                if (isProtectedClient && isExpired) continue;
+
                 const businessName = profile.business_name || 'there';
                 const planName = profile.subscription_plan || 'Pro';
-                const isExpired = daysLeft <= 0;
 
                 const pushTitle = isExpired ? '⚠️ Plan Expired' : `⏰ Plan Expiring in ${reminderLabel}`;
                 const pushBody = isExpired
@@ -223,12 +248,13 @@ export async function GET(request: Request) {
                     await sendReminderEmail(profile.email, businessName, subject, html);
                 }
 
-                // 2. Send WhatsApp
+                // 2. Send WhatsApp (strictly 3 times in the final 7 days: day 7, day 3, day 1; or day 0 on expiry)
+                const shouldSendWhatsApp = [7, 3, 1, 0].includes(daysLeft);
                 const waPhone = profile.whatsapp_personal_number || profile.contact_number || profile.whatsapp_phone_number;
                 const waToken = profile.whatsapp_access_token || profile.facebook_token || process.env.WHATSAPP_ACCESS_TOKEN;
                 const waPhoneId = profile.whatsapp_phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID;
 
-                if (waPhone && waToken && waPhoneId) {
+                if (shouldSendWhatsApp && waPhone && waToken && waPhoneId) {
                     await sendReminderWhatsApp(
                         waPhone,
                         waToken,
@@ -259,6 +285,9 @@ export async function GET(request: Request) {
         // --- LOW CREDIT ALERTS ---
         if (lowCreditProfiles && lowCreditProfiles.length > 0) {
             for (const profile of lowCreditProfiles) {
+                const userEmail = profile.email?.toLowerCase() || '';
+                if (NEVER_NOTIFY_EXPIRY_EMAILS.includes(userEmail)) continue;
+
                 // Dedup check
                 if (sentCreditAlertsToday.has(profile.id)) continue;
 

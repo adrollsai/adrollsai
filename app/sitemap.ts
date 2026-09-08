@@ -34,19 +34,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         .maybeSingle()
 
       if (profile) {
-        // 3. Fetch active properties and published posts
-        const { data: properties } = await supabaseAdmin
-          .from('properties')
-          .select('id, updated_at')
-          .eq('user_id', profile.id)
-          .neq('status', 'Archived')
-          .neq('status', 'Sold')
-
-        const { data: posts } = await supabaseAdmin
-          .from('posts')
-          .select('id, updated_at')
-          .eq('user_id', profile.id)
-          .eq('status', 'published')
+        // 3. Fetch active properties, landing pages, and published posts
+        const [{ data: properties }, { data: landingPages }, { data: posts }] = await Promise.all([
+          supabaseAdmin
+            .from('properties')
+            .select('id, updated_at')
+            .eq('user_id', profile.id)
+            .neq('status', 'Archived')
+            .neq('status', 'Sold'),
+          supabaseAdmin
+            .from('landing_pages')
+            .select('slug, updated_at')
+            .eq('user_id', profile.id),
+          supabaseAdmin
+            .from('posts')
+            .select('id, updated_at')
+            .eq('user_id', profile.id)
+            .eq('status', 'published')
+        ])
 
         const urls: MetadataRoute.Sitemap = [
           {
@@ -54,13 +59,32 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             lastModified: new Date(),
             changeFrequency: 'daily',
             priority: 1.0,
+          },
+          {
+            url: `${baseUrl}/properties`,
+            lastModified: new Date(),
+            changeFrequency: 'daily',
+            priority: 0.9,
           }
         ]
+
+        if (landingPages) {
+          landingPages.forEach(lp => {
+            if (lp.slug && lp.slug !== 'index') {
+              urls.push({
+                url: `${baseUrl}/${lp.slug}`,
+                lastModified: lp.updated_at ? new Date(lp.updated_at) : new Date(),
+                changeFrequency: 'weekly',
+                priority: 0.85,
+              })
+            }
+          })
+        }
 
         if (properties) {
           properties.forEach(p => {
             urls.push({
-              url: `${baseUrl}?property=${p.id}`,
+              url: `${baseUrl}/properties/${p.id}`,
               lastModified: p.updated_at ? new Date(p.updated_at) : new Date(),
               changeFrequency: 'weekly',
               priority: 0.8,
@@ -151,6 +175,31 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           lastModified: profile.updated_at ? new Date(profile.updated_at) : new Date(),
           changeFrequency: 'weekly',
           priority: 0.6,
+        })
+        platformUrls.push({
+          url: `${baseUrl}/shared/${profile.id}/properties`,
+          lastModified: profile.updated_at ? new Date(profile.updated_at) : new Date(),
+          changeFrequency: 'weekly',
+          priority: 0.6,
+        })
+      }
+
+      // Also add active properties for platform domain
+      const { data: allActiveProperties } = await supabaseAdmin
+        .from('properties')
+        .select('id, user_id, updated_at')
+        .neq('status', 'Archived')
+        .neq('status', 'Sold')
+        .limit(200)
+
+      if (allActiveProperties) {
+        allActiveProperties.forEach(p => {
+          platformUrls.push({
+            url: `${baseUrl}/shared/${p.user_id}/properties/${p.id}`,
+            lastModified: p.updated_at ? new Date(p.updated_at) : new Date(),
+            changeFrequency: 'weekly',
+            priority: 0.5,
+          })
         })
       }
     }

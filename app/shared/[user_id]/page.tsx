@@ -493,12 +493,16 @@ export default function SharedCataloguePage() {
   const showCatalogMode = searchParams.get('catalog') === 'true' || !!selectedPropertyId
 
   if (profile?.business_landing_enabled && hasBusinessLanding && !showCatalogMode) {
+    if (typeof window !== 'undefined') {
+      const isCustomDomain = window.location.hostname !== 'nobogent.com' && 
+                             !window.location.hostname.includes('nobogent.com') && 
+                             !window.location.hostname.includes('localhost')
+      const targetUrl = isCustomDomain ? '/index' : `/shared/${profile.id}/index`
+      window.location.replace(targetUrl)
+    }
     return (
-      <div className="fixed inset-0 w-screen h-screen z-[999999] bg-white overflow-hidden">
-        <iframe 
-          src={`/shared/${profile.id}/index`} 
-          className="w-full h-full border-none"
-        />
+      <div className="flex h-screen items-center justify-center text-slate-400 bg-[#F8FAFC]">
+        <Loader2 className="animate-spin w-8 h-8 text-[#D4AF37]" />
       </div>
     )
   }

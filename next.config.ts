@@ -25,8 +25,12 @@ const nextConfig: NextConfig = {
     '@remotion/bundler',
     '@remotion/cli',
     '@remotion/lambda-client',
-    '@remotion/serverless-client'
+    '@remotion/serverless-client',
+    'ffmpeg-static'
   ],
+  outputFileTracingIncludes: {
+    '/api/**/*': ['./node_modules/ffmpeg-static/**/*'],
+  },
   images: {
     unoptimized: true,
   },

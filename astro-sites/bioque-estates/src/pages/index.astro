@@ -1,0 +1,359 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getBioqueProperties } from '../lib/supabase';
+
+const properties = await getBioqueProperties();
+
+const newChdCount = properties.filter(p => p.region === 'New Chandigarh').length;
+const triCityCount = properties.filter(p => p.region === 'Tri-City').length;
+const dubaiCount = properties.filter(p => p.region === 'Dubai').length;
+---
+
+<Layout 
+  title="Bioque Estates International Pvt. Ltd. | Tri-City, New Chandigarh & Dubai Luxury Properties"
+  description="Curated collection of Omaxe flagship developments, Tri-City luxury towers, and exclusive Dubai waterfront residences in partnership with Springfield Properties."
+>
+  <!-- HERO SECTION WITH HERO BACKGROUND -->
+  <section class="relative bg-dark-950 text-white min-h-[620px] flex items-center justify-center py-20 lg:py-28 overflow-hidden border-b border-dark-850">
+    
+    <!-- Hero Image Background with overlay -->
+    <div class="absolute inset-0 z-0">
+      <img 
+        src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=2000&q=85" 
+        alt="Luxury Villa" 
+        class="w-full h-full object-cover object-center opacity-30 filter brightness-90" 
+      />
+      <div class="absolute inset-0 bg-gradient-to-b from-dark-950/80 via-dark-950/60 to-dark-950"></div>
+    </div>
+
+    <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      
+      <!-- TOP BADGE -->
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dark-900/90 border border-[#D4AF37]/50 text-[#D4AF37] text-xs font-bold uppercase tracking-widest mb-6 backdrop-blur-md shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-[#D4AF37] animate-pulse"></span>
+        <span>NEW CHANDIGARH • TRI-CITY • DUBAI LUXURY</span>
+      </div>
+
+      <!-- MAIN HERO HEADING -->
+      <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold font-display tracking-tight text-white max-w-5xl mx-auto leading-[1.1]">
+        Luxury Residences in <span class="text-gold-gradient">New Chandigarh, Tri-City & Dubai</span>
+      </h1>
+
+      <p class="mt-6 text-base sm:text-lg text-slate-300 max-w-3xl mx-auto leading-relaxed font-normal">
+        Curated collection of Omaxe, flagship New Chandigarh enclaves, Tri-City high-rises, and exclusive Dubai waterfront residences in partnership with Springfield Properties.
+      </p>
+
+      <!-- HERO SEARCH & WORKING TOGGLES CARD -->
+      <div class="mt-10 max-w-4xl mx-auto bg-white rounded-3xl p-4 sm:p-6 shadow-2xl text-left border border-[#D4AF37]/30">
+        
+        <!-- WORKING REGION TOGGLE BUTTONS -->
+        <div class="flex flex-wrap gap-2 mb-5 border-b border-slate-100 pb-4" id="homeHeroToggleBar">
+          <button 
+            type="button"
+            class="hero-toggle-btn px-4 py-2 rounded-xl text-xs font-bold transition-all bg-dark-900 text-[#D4AF37] shadow-sm cursor-pointer" 
+            data-region="All"
+          >
+            All ({properties.length})
+          </button>
+          <button 
+            type="button"
+            class="hero-toggle-btn px-4 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 hover:bg-slate-100 cursor-pointer" 
+            data-region="Dubai"
+          >
+            🇦🇪 Dubai ({dubaiCount})
+          </button>
+          <button 
+            type="button"
+            class="hero-toggle-btn px-4 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 hover:bg-slate-100 cursor-pointer" 
+            data-region="New Chandigarh"
+          >
+            🌳 New Chandigarh ({newChdCount})
+          </button>
+          <button 
+            type="button"
+            class="hero-toggle-btn px-4 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 hover:bg-slate-100 cursor-pointer" 
+            data-region="Tri-City"
+          >
+            🏙️ Tri-City ({triCityCount})
+          </button>
+          <button 
+            type="button"
+            class="hero-toggle-btn px-4 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 hover:bg-slate-100 cursor-pointer" 
+            data-region="Villas"
+          >
+            Villas
+          </button>
+          <button 
+            type="button"
+            class="hero-toggle-btn px-4 py-2 rounded-xl text-xs font-bold transition-all text-slate-600 hover:bg-slate-100 cursor-pointer" 
+            data-region="Plots"
+          >
+            Plots
+          </button>
+        </div>
+
+        <!-- SEARCH INPUT & ACTION -->
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+          <div class="sm:col-span-5">
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Search Project or Location</label>
+            <input 
+              type="text" 
+              id="heroSearchInput" 
+              placeholder="e.g. Opus One, Palm Jebel Ali, The Tiara..." 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
+            />
+          </div>
+
+          <div class="sm:col-span-4">
+            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Category / Region</label>
+            <select 
+              id="heroCategorySelect" 
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#D4AF37] bg-white"
+            >
+              <option value="All">All Portfolios</option>
+              <option value="New Chandigarh">New Chandigarh (19)</option>
+              <option value="Tri-City">Tri-City (5)</option>
+              <option value="Dubai">Dubai Waterfront (16)</option>
+              <option value="Villas">Luxury Villas</option>
+              <option value="Plots">Residential Plots</option>
+            </select>
+          </div>
+
+          <div class="sm:col-span-3 pt-4 sm:pt-0">
+            <button 
+              type="button" 
+              id="executeHeroSearchBtn" 
+              class="w-full btn-dark py-3 rounded-xl text-xs uppercase tracking-wider font-bold shadow-md flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <svg class="w-4 h-4 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <span>Search</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- LIVE CURATED FEATURED SECTION (FILTERED BY TOGGLE BUTTONS) -->
+  <section class="py-20 bg-white" id="portfolioSection">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4 border-b border-slate-100 pb-8">
+        <div>
+          <span class="text-xs font-bold text-[#AA8222] uppercase tracking-widest block mb-2">Curated Residences</span>
+          <h2 class="text-3xl sm:text-4xl font-extrabold text-dark-900 font-display">
+            Featured International Collection
+          </h2>
+          <p class="text-xs sm:text-sm text-slate-500 mt-1">
+            Displaying <span id="visibleCountText" class="font-bold text-[#D4AF37]">{properties.length}</span> luxury residences. Click any property for full product specifications.
+          </p>
+        </div>
+        
+        <a href="/properties" class="text-xs font-bold uppercase tracking-wider text-[#D4AF37] hover:text-[#AA8222] flex items-center gap-1.5 transition-colors">
+          View Complete Global Portfolio ({properties.length}) →
+        </a>
+      </div>
+
+      <!-- PROPERTY GRID (ALL 36 PROPERTIES WITH CLIENT-SIDE INSTANT TOGGLING) -->
+      <div id="homePropertiesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {properties.map((p) => {
+          const img = p.image_url || (p.images && p.images[0]) || 'https://www.omaxe.com/projects/banner_1770812950769.jpeg';
+          const waLink = `https://wa.me/919888626786?text=${encodeURIComponent(`Hi Bioque Estates, I am interested in ${p.title}`)}`;
+          const regionBadge = p.region === 'Dubai' ? '🇦🇪 Dubai Luxury' : (p.region === 'Tri-City' ? '🏙️ Tri-City Flagship' : '🌳 New Chandigarh');
+          
+          return (
+            <div 
+              class="home-prop-card springfield-card overflow-hidden flex flex-col group cursor-pointer"
+              data-title={p.title.toLowerCase()}
+              data-region={p.region}
+              data-type={p.property_type || ''}
+              data-address={p.address?.toLowerCase() || ''}
+            >
+              <a href={`/properties/${p.id}`} class="block relative h-64 overflow-hidden bg-slate-100">
+                <img src={img} alt={p.title} class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                
+                <div class="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                  <span class="px-3 py-1 rounded-full bg-dark-900/90 backdrop-blur-md text-[#D4AF37] text-[10px] font-bold uppercase tracking-wider border border-[#D4AF37]/30">
+                    {regionBadge}
+                  </span>
+                  <span class="px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-md text-slate-800 text-[10px] font-bold uppercase tracking-wider">
+                    {p.property_type || 'Residential'}
+                  </span>
+                </div>
+
+                <div class="absolute bottom-3 left-3 right-3">
+                  <span class="text-base font-black text-dark-900 bg-white/95 backdrop-blur-md px-3.5 py-1 rounded-xl shadow-sm font-display border border-[#D4AF37]/20">
+                    {p.price || 'Price on Application'}
+                  </span>
+                </div>
+              </a>
+
+              <div class="p-6 flex-1 flex flex-col justify-between">
+                <div>
+                  <a href={`/properties/${p.id}`}>
+                    <h3 class="text-lg font-bold text-dark-900 mb-1.5 line-clamp-1 group-hover:text-[#AA8222] transition-colors font-display">
+                      {p.title}
+                    </h3>
+                  </a>
+                  <p class="text-xs text-slate-500 font-medium mb-3 flex items-center gap-1">
+                    <span class="text-[#D4AF37]">📍</span> <span class="truncate">{p.address}</span>
+                  </p>
+                  <p class="text-slate-600 text-xs line-clamp-2 leading-relaxed mb-4">
+                    {p.description}
+                  </p>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                  <a href={`/properties/${p.id}`} class="flex-1 text-center py-2.5 rounded-xl btn-gold text-xs uppercase tracking-wider font-extrabold shadow-sm">
+                    View Full Product Page →
+                  </a>
+                  <a href={waLink} target="_blank" class="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all shrink-0" title="Chat on WhatsApp">
+                    💬
+                  </a>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+    </div>
+  </section>
+
+  <!-- SPRINGFIELD PROPERTIES PARTNERSHIP SECTION -->
+  <section class="py-20 bg-dark-950 text-white border-t border-dark-850">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+        
+        <div class="space-y-6">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-dark-900 border border-[#D4AF37]/40 text-[#D4AF37] text-xs font-bold uppercase tracking-wider">
+            Official Global Partnership
+          </div>
+          <h2 class="text-3xl sm:text-5xl font-extrabold font-display tracking-tight text-white leading-tight">
+            Bioque Estates & <span class="text-gold-gradient">Springfield Properties UAE</span>
+          </h2>
+          <p class="text-slate-300 text-sm sm:text-base leading-relaxed">
+            Through our direct alliance with Springfield Properties, India's discerning investors gain VIP access to Dubai's premier off-plan and ready waterfront developments, tax-free rental yields, and 10-year Golden Visa advisory.
+          </p>
+          <div class="grid grid-cols-2 gap-4 pt-2">
+            <div class="bg-dark-900 p-4 rounded-2xl border border-dark-800">
+              <span class="text-2xl sm:text-3xl font-black text-[#D4AF37] font-display">8-10%</span>
+              <span class="text-xs text-slate-400 block mt-1">Net Rental Yields (Tax-Free)</span>
+            </div>
+            <div class="bg-dark-900 p-4 rounded-2xl border border-dark-800">
+              <span class="text-2xl sm:text-3xl font-black text-[#D4AF37] font-display">10-Year</span>
+              <span class="text-xs text-slate-400 block mt-1">UAE Golden Visa Eligibility</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="springfield-card p-8 bg-dark-900 border border-[#D4AF37]/30 text-white">
+          <h3 class="text-xl font-bold text-white font-display mb-3">Schedule Dubai Property Consultation</h3>
+          <p class="text-slate-400 text-xs leading-relaxed mb-6">
+            Meet with our international desk in Chandigarh or arrange a private virtual walkthrough of Palm Jebel Ali, Mercedes-Benz Places, and Sobha One.
+          </p>
+          <a href="/contact" class="w-full btn-gold text-center block py-3.5 rounded-xl text-xs uppercase tracking-wider font-extrabold">
+            Inquire Dubai Portfolio
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- JAVASCRIPT FOR INSTANT WORKING TOGGLES -->
+  <script is:inline>
+    const heroBtns = document.querySelectorAll('.hero-toggle-btn');
+    const heroSearchInput = document.getElementById('heroSearchInput');
+    const heroCategorySelect = document.getElementById('heroCategorySelect');
+    const executeBtn = document.getElementById('executeHeroSearchBtn');
+    const cards = document.querySelectorAll('.home-prop-card');
+    const countText = document.getElementById('visibleCountText');
+
+    let currentHeroRegion = 'All';
+
+    function filterHomeProperties() {
+      const q = (heroSearchInput?.value || '').toLowerCase().trim();
+      let visible = 0;
+
+      cards.forEach(card => {
+        const title = card.getAttribute('data-title') || '';
+        const region = card.getAttribute('data-region') || '';
+        const type = card.getAttribute('data-type') || '';
+        const address = card.getAttribute('data-address') || '';
+
+        const matchRegion = 
+          currentHeroRegion === 'All' ? true :
+          currentHeroRegion === 'New Chandigarh' ? region === 'New Chandigarh' :
+          currentHeroRegion === 'Tri-City' ? region === 'Tri-City' :
+          currentHeroRegion === 'Dubai' ? region === 'Dubai' :
+          type.toLowerCase().includes(currentHeroRegion.toLowerCase());
+
+        const matchQuery = !q || title.includes(q) || address.includes(q) || region.toLowerCase().includes(q) || type.toLowerCase().includes(q);
+
+        if (matchRegion && matchQuery) {
+          card.style.display = 'flex';
+          visible++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      if (countText) {
+        countText.innerText = visible;
+      }
+    }
+
+    // Toggle button click handlers
+    heroBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        currentHeroRegion = btn.getAttribute('data-region') || 'All';
+
+        heroBtns.forEach(b => {
+          b.classList.remove('bg-dark-900', 'text-[#D4AF37]', 'shadow-sm');
+          b.classList.add('text-slate-600');
+        });
+        btn.classList.remove('text-slate-600');
+        btn.classList.add('bg-dark-900', 'text-[#D4AF37]', 'shadow-sm');
+
+        if (heroCategorySelect) {
+          heroCategorySelect.value = currentHeroRegion;
+        }
+
+        filterHomeProperties();
+
+        // Smooth scroll down to portfolio section if on small screen
+        if (window.innerWidth < 768) {
+          document.getElementById('portfolioSection')?.scrollIntoView({ behavior: 'smooth' });
+        }
+      });
+    });
+
+    // Dropdown change handler
+    heroCategorySelect?.addEventListener('change', () => {
+      currentHeroRegion = heroCategorySelect.value;
+      heroBtns.forEach(b => {
+        if (b.getAttribute('data-region') === currentHeroRegion) {
+          b.classList.add('bg-dark-900', 'text-[#D4AF37]', 'shadow-sm');
+          b.classList.remove('text-slate-600');
+        } else {
+          b.classList.remove('bg-dark-900', 'text-[#D4AF37]', 'shadow-sm');
+          b.classList.add('text-slate-600');
+        }
+      });
+      filterHomeProperties();
+    });
+
+    // Real-time search typing
+    heroSearchInput?.addEventListener('input', filterHomeProperties);
+
+    // Search button click
+    executeBtn?.addEventListener('click', () => {
+      filterHomeProperties();
+      document.getElementById('portfolioSection')?.scrollIntoView({ behavior: 'smooth' });
+    });
+  </script>
+</Layout>

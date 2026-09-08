@@ -125,14 +125,10 @@ export async function POST(request: Request) {
                     const audioBuf = Buffer.from(await audioRes.arrayBuffer());
                     fs.writeFileSync(audioFile, audioBuf);
 
-                    const ffmpegBinary = path.join(
-                        process.cwd(),
-                        'node_modules',
-                        'ffmpeg-static',
-                        os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-                    );
+                    const { getFfmpegPath } = await import('@/utils/ffmpeg-helper');
+                    const ffmpegBinary = getFfmpegPath();
 
-                    const cmd = `"${ffmpegBinary}" -nostdin -y -i "${videoFile}" -i "${audioFile}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputFile}"`;
+                    const cmd = `"${ffmpegBinary}" -nostdin -y -i "${videoFile}" -i "${audioFile}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputFile}"`;
                     const { exec: execCmd } = await import('child_process');
                     await new Promise<void>((res, rej) => {
                         execCmd(cmd, { maxBuffer: 1024 * 1024 * 50 }, (err) => err ? rej(err) : res());

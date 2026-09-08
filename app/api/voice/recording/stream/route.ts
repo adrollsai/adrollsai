@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { ensureStandardMp3 } from '@/utils/audio-transcode'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -66,7 +67,8 @@ export async function GET(req: Request) {
             return new NextResponse(`Carrier media error: HTTP ${vobizRes.status}`, { status: vobizRes.status })
         }
 
-        const audioBuffer = Buffer.from(await vobizRes.arrayBuffer())
+        const rawBuffer = Buffer.from(await vobizRes.arrayBuffer())
+        const audioBuffer = await ensureStandardMp3(rawBuffer)
 
         // In background, upload to Supabase storage so future plays are direct
         if (leadId) {
@@ -95,7 +97,7 @@ export async function GET(req: Request) {
             })()
         }
 
-        return new NextResponse(audioBuffer, {
+        return new NextResponse(new Uint8Array(audioBuffer), {
             headers: {
                 'Content-Type': 'audio/mpeg',
                 'Content-Length': String(audioBuffer.length),

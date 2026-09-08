@@ -23,11 +23,12 @@ export async function middleware(request: NextRequest) {
 
   // If it's a custom domain...
   if (!isPlatformDomain) {
-    if (url.pathname.startsWith('/api/') || isStaticAsset) {
+    if (url.pathname.startsWith('/api/') || isStaticAsset || url.pathname === '/sitemap.xml' || url.pathname === '/robots.txt') {
         // Do nothing, let it fall through
     } else {
-        // Rewrite all other frontend paths to the shared profile route
-        return NextResponse.rewrite(new URL(`/shared/${hostname}${url.pathname}`, request.url));
+        // For root requests on custom domains, serve the SEO server-rendered landing page directly (no iframe)
+        const subpath = (url.pathname === '/' || url.pathname === '') ? '/index' : url.pathname;
+        return NextResponse.rewrite(new URL(`/shared/${hostname}${subpath}`, request.url));
     }
   }
 

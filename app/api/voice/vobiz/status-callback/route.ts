@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { dispatchNextCall } from '@/utils/voice-helper'
 import { deductCredits, CREDIT_COSTS } from '@/utils/credits'
 import { fetchVobizCallRecording } from '@/utils/vobiz-helper'
+import { ensureStandardMp3 } from '@/utils/audio-transcode'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -82,7 +83,8 @@ export async function POST(req: Request) {
                     })
 
                     if (recFetchRes.ok) {
-                        const audioBuffer = Buffer.from(await recFetchRes.arrayBuffer())
+                        const rawBuffer = Buffer.from(await recFetchRes.arrayBuffer())
+                        const audioBuffer = await ensureStandardMp3(rawBuffer)
                         const storagePath = `${leadId}/vobiz_${Date.now()}.mp3`
                         const { error: upErr } = await supabaseAdmin.storage
                             .from('lead-voice-recordings')

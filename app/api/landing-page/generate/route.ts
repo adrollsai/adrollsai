@@ -422,7 +422,11 @@ ${imageAnalysisSection}
 ### STYLING & DESIGN GUIDELINES (LIGHT THEME BY DEFAULT):
 - Use a soft, clean light theme background (no dark themes unless explicitly requested).
 - Configured Tailwind via CDN with custom brand color accents based on '${profile?.brand_color || "#9e755c"}'.
-- Ensure the page body is fully scrollable and does NOT cap layout height.
+### SEARCH ENGINE OPTIMIZATION & GOOGLE RANKABILITY (CRITICAL):
+- Include complete semantic HTML5 tags (<header>, <main>, <section>, <article>, <footer>).
+- Include comprehensive <head> tags with <title>, <meta name="description" content="...">, <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">, and OpenGraph/Twitter preview tags.
+- Include Schema.org JSON-LD structured data ("@type": "RealEstateAgent") with business name, telephone, and logo.
+- Ensure all navigation links to the catalog use crawlable anchor tags (e.g., '<a href="/properties">All Properties</a>' and '<a href="/">Home</a>') so search engine bots can discover all child pages.
 
 ### OUTPUT FORMAT:
 - Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".

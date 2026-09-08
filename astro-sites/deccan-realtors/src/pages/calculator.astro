@@ -1,0 +1,101 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout 
+  title="Home Loan EMI Calculator | Deccan Realtors"
+  description="Plan your monthly property outlays and evaluate loan affordability with our real-time interactive EMI calculator."
+>
+  <div class="bg-brand-950 text-white py-16 px-4 sm:px-6 lg:px-8 border-b border-brand-800">
+    <div class="max-w-7xl mx-auto">
+      <span class="text-xs font-bold text-accent-400 uppercase tracking-widest block mb-2">Financial Planning</span>
+      <h1 class="text-3xl sm:text-5xl font-black font-display tracking-tight">Home Loan & Investment Calculator</h1>
+      <p class="text-slate-300 text-sm sm:text-base mt-2 max-w-2xl">
+        Plan your monthly outlays and evaluate loan affordability with our real-time interactive EMI calculator.
+      </p>
+    </div>
+  </div>
+
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+    <div class="springfield-card p-8 sm:p-12">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
+        
+        <div class="space-y-6">
+          <div>
+            <div class="flex justify-between text-xs font-bold text-slate-700 uppercase mb-2">
+              <span>Loan Amount (₹)</span>
+              <span id="loanAmountDisplay" class="text-brand-900 font-black text-sm">₹ 75,00,000</span>
+            </div>
+            <input type="range" id="loanAmount" min="1000000" max="100000000" step="500000" value="7500000" class="w-full accent-brand-900 cursor-pointer" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs font-bold text-slate-700 uppercase mb-2">
+              <span>Interest Rate (% p.a.)</span>
+              <span id="interestRateDisplay" class="text-brand-900 font-black text-sm">8.5%</span>
+            </div>
+            <input type="range" id="interestRate" min="6.5" max="15.0" step="0.1" value="8.5" class="w-full accent-brand-900 cursor-pointer" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs font-bold text-slate-700 uppercase mb-2">
+              <span>Tenure (Years)</span>
+              <span id="tenureDisplay" class="text-brand-900 font-black text-sm">20 Years</span>
+            </div>
+            <input type="range" id="tenure" min="1" max="30" step="1" value="20" class="w-full accent-brand-900 cursor-pointer" />
+          </div>
+        </div>
+
+        <div class="bg-brand-950 text-white rounded-3xl p-8 text-center flex flex-col justify-between">
+          <div>
+            <span class="text-xs uppercase tracking-widest text-accent-400 font-bold block mb-2">Estimated Monthly Outlay</span>
+            <div id="emiResult" class="text-3xl sm:text-4xl font-black font-display text-white">₹ 65,082</div>
+            <p class="text-slate-400 text-xs mt-1">Per Month</p>
+          </div>
+
+          <div class="mt-8 pt-8 border-t border-brand-800 space-y-3 text-xs text-left">
+            <div class="flex justify-between">
+              <span class="text-slate-400">Principal Amount:</span>
+              <span id="principalDisplay" class="font-bold text-white">₹ 75,00,000</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Total Interest:</span>
+              <span id="interestDisplay" class="font-bold text-accent-400">₹ 81,19,680</span>
+            </div>
+            <div class="flex justify-between pt-2 border-t border-brand-900 font-bold text-sm">
+              <span class="text-white">Total Amount:</span>
+              <span id="totalDisplay" class="text-accent-400">₹ 1,56,19,680</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script is:inline>
+    function calculateEmi() {
+      const p = parseFloat(document.getElementById('loanAmount').value);
+      const r = parseFloat(document.getElementById('interestRate').value) / 12 / 100;
+      const n = parseFloat(document.getElementById('tenure').value) * 12;
+
+      document.getElementById('loanAmountDisplay').innerText = '₹ ' + p.toLocaleString('en-IN');
+      document.getElementById('interestRateDisplay').innerText = document.getElementById('interestRate').value + '%';
+      document.getElementById('tenureDisplay').innerText = document.getElementById('tenure').value + ' Years';
+
+      const emi = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+      const totalPayable = emi * n;
+      const totalInterest = totalPayable - p;
+
+      document.getElementById('emiResult').innerText = '₹ ' + Math.round(emi).toLocaleString('en-IN');
+      document.getElementById('principalDisplay').innerText = '₹ ' + p.toLocaleString('en-IN');
+      document.getElementById('interestDisplay').innerText = '₹ ' + Math.round(totalInterest).toLocaleString('en-IN');
+      document.getElementById('totalDisplay').innerText = '₹ ' + Math.round(totalPayable).toLocaleString('en-IN');
+    }
+
+    document.getElementById('loanAmount')?.addEventListener('input', calculateEmi);
+    document.getElementById('interestRate')?.addEventListener('input', calculateEmi);
+    document.getElementById('tenure')?.addEventListener('input', calculateEmi);
+    calculateEmi();
+  </script>
+</Layout>

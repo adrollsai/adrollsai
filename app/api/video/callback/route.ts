@@ -13,6 +13,8 @@ import os from 'os';
 import fs from 'fs';
 import { generateAndUploadVideoThumbnail } from '@/utils/video-thumbnail-helper';
 import { resolveVoiceoverAudio } from '@/utils/video-voiceover-helper';
+import { getFfmpegPath } from '@/utils/ffmpeg-helper';
+import { dispatchCloudRunStitch, stitchClipsLocally } from '@/utils/video-stitcher';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -504,14 +506,8 @@ export async function POST(request: Request) {
                     fs.writeFileSync(localPath, Buffer.from(await vRes.arrayBuffer()));
                     fs.writeFileSync(audioPath, Buffer.from(await aRes.arrayBuffer()));
 
-                    const ffmpegBinary = path.join(
-                        process.cwd(), 
-                        'node_modules', 
-                        'ffmpeg-static', 
-                        os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-                    );
-
-                    const cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                    const ffmpegBinary = getFfmpegPath();
+                    const cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`;
                     console.log(`[Video Callback] Running FFmpeg single-clip voiceover mux command: ${cmd}`);
 
                     await new Promise<void>((resolvePromise, rejectPromise) => {
@@ -654,113 +650,41 @@ export async function POST(request: Request) {
 
             console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambdaActual} frames per lambda (actual total frames: ${actualTotalFrames})`);
 
-            // --- HIGH-SPEED DIRECT FFMPEG STITCHING ENGINE ---
-            // Bypasses AWS Lambda concurrency limits & rate exceeded errors for instant, zero-cost 2-second video stitching
+            // --- HIGH-SPEED DEDICATED STITCHING ENGINE ---
+            // 1. Try Cloud Run Stitcher Worker (Dedicated FFmpeg container, zero timeout, instant async response)
+            try {
+                console.log(`[Video Callback] Attempting stitch via Cloud Run worker for Asset ID ${videoTask.asset_id}...`);
+                const cloudRunSuccess = await dispatchCloudRunStitch(
+                    siblings.map(s => ({ current_index: s.current_index, last_successful_task_id: s.last_successful_task_id })),
+                    { asset_id: videoTask.asset_id, user_id: videoTask.user_id, prompts: videoTask.prompts },
+                    finalAudioUrl
+                );
+                if (cloudRunSuccess) {
+                    if (videoTask.asset_id) {
+                        await supabaseAdmin.from('assets').update({ status: 'Draft' }).eq('id', videoTask.asset_id);
+                    }
+                    return NextResponse.json({
+                        success: true,
+                        message: `All ${siblings.length} scenes dispatched to Cloud Run stitcher worker successfully.`
+                    });
+                }
+            } catch (cloudRunErr: any) {
+                console.warn(`[Video Callback] Cloud Run stitch dispatch failed, attempting local stitch:`, cloudRunErr?.message || cloudRunErr);
+            }
+
+            // 2. Try fast direct local FFmpeg stitch
             try {
                 console.log(`[Video Callback] Starting fast local FFmpeg stitching for Asset ID ${videoTask.asset_id}...`);
-                const tempStitchDir = path.join(os.tmpdir(), `stitch_cb_${videoTask.asset_id}_${Date.now()}`);
-                if (!fs.existsSync(tempStitchDir)) {
-                    fs.mkdirSync(tempStitchDir, { recursive: true });
-                }
-
-                const localClipPaths: string[] = [];
-                for (let idx = 0; idx < siblings.length; idx++) {
-                    const s = siblings[idx];
-                    const clipPath = path.join(tempStitchDir, `scene_${idx}.mp4`);
-                    console.log(`[Video Callback] Downloading scene ${idx + 1}/${siblings.length}: ${s.last_successful_task_id}`);
-                    const clipRes = await fetch(s.last_successful_task_id);
-                    if (!clipRes.ok) throw new Error(`Failed to download scene ${idx + 1} for FFmpeg stitching`);
-                    fs.writeFileSync(clipPath, Buffer.from(await clipRes.arrayBuffer()));
-                    localClipPaths.push(clipPath);
-                }
-
-                const concatTxtContent = localClipPaths.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n');
-                const concatTxtPath = path.join(tempStitchDir, 'concat.txt');
-                fs.writeFileSync(concatTxtPath, concatTxtContent);
-
-                let localAudioPath: string | null = null;
-                if (finalAudioUrl && (finalAudioUrl.startsWith('http://') || finalAudioUrl.startsWith('https://'))) {
-                    try {
-                        console.log(`[Video Callback] Downloading voiceover audio for fast FFmpeg stitch: ${finalAudioUrl}`);
-                        const audioRes = await fetch(finalAudioUrl);
-                        if (audioRes.ok) {
-                            localAudioPath = path.join(tempStitchDir, 'voiceover.mp3');
-                            fs.writeFileSync(localAudioPath, Buffer.from(await audioRes.arrayBuffer()));
-                        }
-                    } catch (audErr) {
-                        console.warn(`[Video Callback] Failed to download voiceover audio for fast FFmpeg stitch:`, audErr);
-                    }
-                }
-
-                const ffmpegBinary = path.join(
-                    process.cwd(),
-                    'node_modules',
-                    'ffmpeg-static',
-                    os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+                await stitchClipsLocally(
+                    siblings.map(s => ({ current_index: s.current_index, last_successful_task_id: s.last_successful_task_id })),
+                    { asset_id: videoTask.asset_id, user_id: videoTask.user_id, prompts: videoTask.prompts },
+                    finalAudioUrl,
+                    supabaseAdmin
                 );
-                const ffmpegExec = fs.existsSync(ffmpegBinary) ? ffmpegBinary : 'ffmpeg';
-
-                const outputPath = path.join(tempStitchDir, 'final_stitched.mp4');
-                const ffmpegCmd = localAudioPath
-                    ? `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[1:a]volume=2.5[aout]" -map 0:v:0 -map "[aout]" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
-                    : `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
-
-                console.log(`[Video Callback] Executing fast FFmpeg command: ${ffmpegCmd}`);
-                await new Promise<void>((resolve, reject) => {
-                    exec(ffmpegCmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
-                        if (execErr) reject(execErr);
-                        else resolve();
-                    });
-                });
-
-                const stitchedBuffer = fs.readFileSync(outputPath);
-                const r2Key = `generated/${videoTask.user_id}/stitched_${Date.now()}.mp4`;
-                await r2.send(new PutObjectCommand({
-                    Bucket: R2_BUCKET,
-                    Key: r2Key,
-                    Body: stitchedBuffer,
-                    ContentType: 'video/mp4'
-                }));
-
-                const finalR2Url = `${R2_PUBLIC_URL}/${r2Key}`;
-                console.log(`[Video Callback] Fast FFmpeg stitch completed & uploaded to R2: ${finalR2Url}`);
-
-                let thumbnailUrl: string | null = null;
-                try {
-                    thumbnailUrl = await generateAndUploadVideoThumbnail(outputPath, videoTask.user_id, videoTask.asset_id);
-                } catch (thumbErr) {
-                    console.error("[Video Callback] Fast stitch thumbnail generation error:", thumbErr);
-                }
-
-                try { fs.rmSync(tempStitchDir, { recursive: true, force: true }); } catch (e) {}
-
-                if (videoTask.asset_id) {
-                    await supabaseAdmin.from('assets').update({
-                        url: finalR2Url,
-                        status: 'Draft',
-                        created_at: new Date().toISOString(),
-                        metadata: {
-                            ...(thumbnailUrl ? { thumbnailUrl } : {}),
-                            ...(finalAudioUrl ? { audioUrl: finalAudioUrl } : {})
-                        }
-                    }).eq('id', videoTask.asset_id);
-                }
-
-                await supabaseAdmin.from('video_tasks').delete().eq('asset_id', videoTask.asset_id);
-
-                await sendPushNotification(
-                    videoTask.user_id,
-                    `🎬 Grok Video Creative Ready!`,
-                    `Your multi-scene AI video ad has been generated & stitched successfully.`,
-                    "/dashboard/assets",
-                    "asset_ready"
-                );
-
                 return NextResponse.json({
                     success: true,
                     message: `All ${siblings.length} scenes stitched with fast FFmpeg successfully.`
                 });
-
             } catch (fastFfmpegErr: any) {
                 console.warn(`[Video Callback] Fast local FFmpeg stitching failed, falling back to AWS Lambda:`, fastFfmpegErr?.message || fastFfmpegErr);
             }

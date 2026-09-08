@@ -1,0 +1,218 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getDeccanProperties } from '../lib/supabase';
+
+const properties = await getDeccanProperties();
+const featuredProperties = properties.slice(0, 6);
+---
+
+<Layout 
+  title="Deccan Realtors | Trusted Real Estate Advisory & Curated Opportunities"
+  description="Deccan Realtors helps clients make informed real-estate decisions across India and international markets through trusted advisory, market intelligence, and due diligence."
+>
+  <!-- HERO SECTION -->
+  <section class="relative bg-brand-950 text-white overflow-hidden py-24 lg:py-32 border-b border-brand-800">
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/30 via-brand-950 to-brand-950"></div>
+    <div class="absolute inset-0 opacity-10 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:24px_24px]"></div>
+
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/15 text-accent-400 text-xs font-bold uppercase tracking-widest mb-6 backdrop-blur-md">
+        <span>⭐</span> RERA Certified & Legally Vetted Opportunities
+      </div>
+
+      <h1 class="text-4xl sm:text-6xl lg:text-7xl font-black font-display tracking-tight text-white max-w-4xl mx-auto leading-[1.1]">
+        Navigate Your Next <span class="bg-gradient-to-r from-accent-400 via-amber-200 to-accent-500 bg-clip-text text-transparent">Real Estate Move</span> With Confidence
+      </h1>
+
+      <p class="mt-6 text-base sm:text-xl text-slate-300 max-w-3xl mx-auto leading-relaxed font-normal">
+        Deccan Realtors helps individuals, families, and institutions make informed real estate decisions across India through verified market intelligence and complete due diligence.
+      </p>
+
+      <div class="mt-10 flex flex-wrap justify-center gap-4">
+        <a href="/properties" class="btn-gold px-8 py-4 rounded-full text-xs uppercase tracking-wider font-extrabold shadow-lg">
+          Explore Curated Portfolio ({properties.length})
+        </a>
+        <a href="/contact" class="px-8 py-4 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs uppercase tracking-wider font-bold border border-white/20 backdrop-blur-md transition-all">
+          Book Private Advisory
+        </a>
+      </div>
+
+      <!-- KEY METRICS CARDS -->
+      <div class="mt-16 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto text-left">
+        <div class="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
+          <div class="text-2xl sm:text-3xl font-black text-white font-display">Nagpur & India</div>
+          <div class="text-xs text-slate-400 uppercase font-semibold tracking-wider mt-1">High-Growth Corridors</div>
+        </div>
+        <div class="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
+          <div class="text-2xl sm:text-3xl font-black text-accent-400 font-display">100%</div>
+          <div class="text-xs text-slate-400 uppercase font-semibold tracking-wider mt-1">Legal Due Diligence</div>
+        </div>
+        <div class="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
+          <div class="text-2xl sm:text-3xl font-black text-white font-display">Zero Bias</div>
+          <div class="text-xs text-slate-400 uppercase font-semibold tracking-wider mt-1">Client-First Advisory</div>
+        </div>
+        <div class="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
+          <div class="text-2xl sm:text-3xl font-black text-accent-400 font-display">End-to-End</div>
+          <div class="text-xs text-slate-400 uppercase font-semibold tracking-wider mt-1">Registry Support</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- FEATURED PROPERTIES SECTION -->
+  <section class="py-20 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4 border-b border-slate-100 pb-8">
+        <div>
+          <span class="text-xs font-bold text-accent-500 uppercase tracking-widest block mb-2">Curated Listings</span>
+          <h2 class="text-3xl sm:text-4xl font-extrabold text-brand-900 font-display">Featured Real Estate Portfolio</h2>
+          <p class="text-xs sm:text-sm text-slate-500 mt-1">Click any property to view full specifications, floor details, and schedule a site visit.</p>
+        </div>
+        <a href="/properties" class="text-xs font-bold uppercase tracking-wider text-brand-900 hover:text-accent-500 flex items-center gap-1">
+          View All {properties.length} Properties →
+        </a>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {featuredProperties.map((p) => {
+          const img = p.image_url || (p.images && p.images[0]) || 'https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/public-assets/logos/93c65dee-87a5-48e3-a2d2-406182a33b37/deccan_realtors_93c65dee-87a5-48e3-a2d2-406182a33b37_1787575176651.png';
+          const waLink = `https://wa.me/918600080096?text=${encodeURIComponent(`Hi Deccan Realtors, I am interested in ${p.title}`)}`;
+          return (
+            <div class="springfield-card overflow-hidden flex flex-col group cursor-pointer">
+              <a href={`/properties/${p.id}`} class="block relative h-64 overflow-hidden bg-slate-100">
+                <img src={img} alt={p.title} class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                <div class="absolute top-3 left-3">
+                  <span class="px-3 py-1 rounded-full bg-brand-900/90 backdrop-blur-md text-white text-[10px] font-bold uppercase tracking-wider">
+                    {p.property_type || 'Curated Asset'}
+                  </span>
+                </div>
+                <div class="absolute bottom-3 left-3 right-3">
+                  <span class="text-base font-black text-brand-900 bg-white/95 backdrop-blur-md px-3.5 py-1 rounded-xl shadow-sm font-display">
+                    {p.price || 'Price on Request'}
+                  </span>
+                </div>
+              </a>
+
+              <div class="p-6 flex-1 flex flex-col justify-between">
+                <div>
+                  <a href={`/properties/${p.id}`}>
+                    <h3 class="text-lg font-bold text-brand-900 mb-1.5 line-clamp-1 group-hover:text-accent-600 transition-colors font-display">
+                      {p.title}
+                    </h3>
+                  </a>
+                  <p class="text-xs text-slate-500 font-medium mb-3 flex items-center gap-1">
+                    <span>📍</span> <span class="truncate">{p.address || 'Nagpur Corridor'}</span>
+                  </p>
+                  <p class="text-slate-600 text-xs line-clamp-2 leading-relaxed mb-4">
+                    {p.description || 'Verified property opportunity curated by Deccan Realtors.'}
+                  </p>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                  <a href={`/properties/${p.id}`} class="flex-1 text-center py-2.5 rounded-xl bg-brand-900 text-white hover:bg-brand-800 font-bold text-xs uppercase tracking-wider transition-all">
+                    View Product Page →
+                  </a>
+                  <a href={waLink} target="_blank" class="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all shrink-0" title="Chat on WhatsApp">
+                    💬
+                  </a>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ADVISORY PILLARS -->
+  <section class="py-20 bg-slate-50 border-t border-b border-slate-200/60">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <span class="text-xs font-bold text-accent-500 uppercase tracking-widest block mb-2">Comprehensive Advisory</span>
+        <h2 class="text-3xl sm:text-4xl font-extrabold text-brand-900 font-display">Why Discerning Buyers Choose Deccan Realtors</h2>
+        <p class="text-slate-500 text-sm sm:text-base mt-3 leading-relaxed">
+          We provide institutional-grade property intelligence, vetting every development for title clarity, infrastructure connectivity, and capital growth potential.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div class="springfield-card p-8">
+          <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-900 flex items-center justify-center mb-6 font-bold text-xl">
+            🏢
+          </div>
+          <h3 class="text-xl font-bold text-brand-900 mb-3">Residential Plots & Enclaves</h3>
+          <p class="text-slate-600 text-sm leading-relaxed">
+            Curated access to prime gated townships and residential plots along high-growth corridors with verified demarcation and approvals.
+          </p>
+        </div>
+
+        <div class="springfield-card p-8">
+          <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-900 flex items-center justify-center mb-6 font-bold text-xl">
+            ⚖️
+          </div>
+          <h3 class="text-xl font-bold text-brand-900 mb-3">Exhaustive Legal Due Diligence</h3>
+          <p class="text-slate-600 text-sm leading-relaxed">
+            Complete 30-year title search, RERA compliance audit, layout sanction review, and encumbrance certificate verification before recommendation.
+          </p>
+        </div>
+
+        <div class="springfield-card p-8">
+          <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-900 flex items-center justify-center mb-6 font-bold text-xl">
+            🤝
+          </div>
+          <h3 class="text-xl font-bold text-brand-900 mb-3">End-to-End Handover Support</h3>
+          <p class="text-slate-600 text-sm leading-relaxed">
+            Seamless transaction management from initial site visit and home loan coordination to registry, mutation, and possession walkthroughs.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ABOUT TEASER WITH CEO -->
+  <section class="py-20 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+        
+        <div class="space-y-6">
+          <span class="text-xs font-bold text-accent-500 uppercase tracking-widest block">Leadership & Ethos</span>
+          <h2 class="text-3xl sm:text-4xl font-extrabold text-brand-900 font-display">
+            Informed Decisions Driven By Research, Not Aggressive Sales
+          </h2>
+          <p class="text-slate-600 text-sm sm:text-base leading-relaxed">
+            Deccan Realtors was founded on a simple premise: purchasing real estate is one of the most substantial financial decisions in a lifetime. Our team evaluates macro infrastructure drivers, developer delivery records, and micro-market growth to present curated investments that deliver enduring security and appreciation.
+          </p>
+          <div class="border-l-4 border-accent-500 pl-4 py-2 italic text-slate-800 text-sm font-medium">
+            "We help clients make informed real-estate decisions across India and international markets through trusted advisory, market intelligence, due diligence, and carefully curated opportunities."
+          </div>
+          <div class="pt-2">
+            <a href="/about" class="btn-brand px-7 py-3 rounded-full text-xs uppercase tracking-wider font-bold">
+              Read Our Full Story →
+            </a>
+          </div>
+        </div>
+
+        <div class="springfield-card p-8 border border-slate-200">
+          <img src="https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/public-assets/logos/93c65dee-87a5-48e3-a2d2-406182a33b37/deccan_realtors_93c65dee-87a5-48e3-a2d2-406182a33b37_1787575176651.png" alt="Deccan Realtors" class="w-20 h-20 rounded-2xl object-contain mb-6 border border-slate-100" />
+          <h3 class="text-xl font-bold text-brand-900 mb-1">Ahmed Saif Ali Khan</h3>
+          <p class="text-xs font-bold text-accent-500 uppercase tracking-wider mb-4">CEO, Deccan Realtors</p>
+          <p class="text-slate-600 text-xs leading-relaxed mb-6">
+            "Our objective is to deliver unmatched peace of mind. Every plot or residential asset featured in our portfolio undergoes rigorous legal scrutiny and market validation before we present it to our clients."
+          </p>
+          <div class="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-slate-500">
+            <span>Direct Email:</span>
+            <span class="text-brand-900 font-bold">ceo@deccanrealtors.com</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+</Layout>

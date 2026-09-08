@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://deccanrealtors.com/sitemap.xml

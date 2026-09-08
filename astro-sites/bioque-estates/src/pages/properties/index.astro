@@ -1,0 +1,225 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getBioqueProperties } from '../../lib/supabase';
+
+const properties = await getBioqueProperties();
+
+const newChdCount = properties.filter(p => p.region === 'New Chandigarh').length;
+const triCityCount = properties.filter(p => p.region === 'Tri-City').length;
+const dubaiCount = properties.filter(p => p.region === 'Dubai').length;
+
+const catalogSchema = {
+  "@context": "https://schema.org",
+  "@type": "CollectionPage",
+  "name": "Bioque Estates Global Portfolio | New Chandigarh, Tri-City & Dubai",
+  "description": "Explore 36 luxury waterfront residences, independent floors, duplex villas, and developer plots across New Chandigarh, Tri-City, and Dubai.",
+  "hasPart": properties.map((p, idx) => ({
+    "@type": "SingleFamilyResidence",
+    "name": p.title,
+    "position": idx + 1,
+    "url": `https://bioqueestatesinternational.com/properties/${p.id}`,
+    "image": p.image_url,
+    "address": p.address
+  }))
+};
+---
+
+<Layout 
+  title="Global Luxury Portfolio | Bioque Estates International Pvt. Ltd."
+  description="Explore 36 flagship developments across New Chandigarh, Tri-City, and Dubai waterfront residences in partnership with Springfield Properties."
+  schema={catalogSchema}
+>
+  <!-- HERO BANNER -->
+  <div class="bg-dark-950 text-white py-16 px-4 sm:px-6 lg:px-8 border-b border-dark-850">
+    <div class="max-w-7xl mx-auto">
+      <span class="text-xs font-bold text-[#D4AF37] uppercase tracking-widest block mb-2">Curated Global Portfolio</span>
+      <h1 class="text-3xl sm:text-5xl font-black font-display tracking-tight text-white">
+        Distinguished Residences Across <span class="text-gold-gradient">3 Premier Geographies</span>
+      </h1>
+      <p class="text-slate-300 text-sm sm:text-base mt-3 max-w-3xl leading-relaxed">
+        Filter through our curated collection of Omaxe New Chandigarh developments, Tri-City flagship high-rises (Homeland, Jubilee, Motiaz), and exclusive Dubai waterfront towers in partnership with Springfield Properties.
+      </p>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    
+    <!-- REGION TABS & SEARCH BAR -->
+    <div class="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 mb-10">
+      
+      <!-- WORKING REGION & CATEGORY TOGGLE TABS -->
+      <div class="flex flex-wrap gap-2 items-center" id="regionFilterBar">
+        <button class="portfolio-tab px-4 sm:px-5 py-2.5 rounded-xl bg-dark-900 text-[#D4AF37] border border-[#D4AF37]/50 text-xs font-bold cursor-pointer transition-all shadow-sm" data-region="All">
+          All Portfolios ({properties.length})
+        </button>
+        <button class="portfolio-tab px-4 sm:px-5 py-2.5 rounded-xl bg-white hover:bg-amber-50/50 text-slate-700 border border-slate-200 text-xs font-bold cursor-pointer transition-all" data-region="New Chandigarh">
+          🌳 New Chandigarh ({newChdCount})
+        </button>
+        <button class="portfolio-tab px-4 sm:px-5 py-2.5 rounded-xl bg-white hover:bg-amber-50/50 text-slate-700 border border-slate-200 text-xs font-bold cursor-pointer transition-all" data-region="Tri-City">
+          🏙️ Tri-City ({triCityCount})
+        </button>
+        <button class="portfolio-tab px-4 sm:px-5 py-2.5 rounded-xl bg-white hover:bg-amber-50/50 text-slate-700 border border-slate-200 text-xs font-bold cursor-pointer transition-all" data-region="Dubai">
+          🇦🇪 Dubai Luxury ({dubaiCount})
+        </button>
+        <button class="portfolio-tab px-4 sm:px-5 py-2.5 rounded-xl bg-white hover:bg-amber-50/50 text-slate-700 border border-slate-200 text-xs font-bold cursor-pointer transition-all" data-region="Villas">
+          Villas
+        </button>
+        <button class="portfolio-tab px-4 sm:px-5 py-2.5 rounded-xl bg-white hover:bg-amber-50/50 text-slate-700 border border-slate-200 text-xs font-bold cursor-pointer transition-all" data-region="Plots">
+          Plots
+        </button>
+      </div>
+
+      <!-- SEARCH INPUT -->
+      <div class="w-full lg:w-80">
+        <input 
+          type="text" 
+          id="bioqueSearch" 
+          placeholder="Search by project, developer or city..." 
+          class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-[#D4AF37] focus:outline-none bg-white shadow-xs"
+        />
+      </div>
+
+    </div>
+
+    <!-- PROPERTIES GRID -->
+    <div id="portfolioGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      {properties.map((p) => {
+        const img = p.image_url || (p.images && p.images[0]) || 'https://www.omaxe.com/projects/banner_1770812950769.jpeg';
+        const waLink = `https://wa.me/919888626786?text=${encodeURIComponent(`Hi Bioque Estates, I am interested in ${p.title}`)}`;
+        const regionBadge = p.region === 'Dubai' ? '🇦🇪 Dubai Luxury' : (p.region === 'Tri-City' ? '🏙️ Tri-City Flagship' : '🌳 New Chandigarh');
+        return (
+          <div 
+            class="bioque-card springfield-card overflow-hidden flex flex-col group cursor-pointer" 
+            data-title={p.title.toLowerCase()} 
+            data-region={p.region} 
+            data-type={p.property_type || ''} 
+            data-address={p.address?.toLowerCase() || ''}
+          >
+            <a href={`/properties/${p.id}`} class="block relative h-64 overflow-hidden bg-slate-100">
+              <img src={img} alt={p.title} class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+              
+              <div class="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                <span class="px-3 py-1 rounded-full bg-dark-900/90 backdrop-blur-md text-[#D4AF37] text-[10px] font-bold uppercase tracking-wider border border-[#D4AF37]/30">
+                  {regionBadge}
+                </span>
+                <span class="px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-md text-slate-800 text-[10px] font-bold uppercase tracking-wider">
+                  {p.property_type || 'Residential'}
+                </span>
+              </div>
+
+              <div class="absolute bottom-3 left-3 right-3">
+                <span class="text-base font-black text-dark-900 bg-white/95 backdrop-blur-md px-3.5 py-1 rounded-xl shadow-sm font-display border border-[#D4AF37]/20">
+                  {p.price || 'Price on Application'}
+                </span>
+              </div>
+            </a>
+
+            <div class="p-6 flex-1 flex flex-col justify-between">
+              <div>
+                <a href={`/properties/${p.id}`}>
+                  <h3 class="text-lg font-bold text-dark-900 mb-1.5 line-clamp-1 group-hover:text-[#AA8222] transition-colors font-display">
+                    {p.title}
+                  </h3>
+                </a>
+                <p class="text-xs text-slate-500 font-medium mb-3 flex items-center gap-1">
+                  <span class="text-[#D4AF37]">📍</span> <span class="truncate">{p.address}</span>
+                </p>
+                <p class="text-slate-600 text-xs line-clamp-2 leading-relaxed mb-4">
+                  {p.description}
+                </p>
+              </div>
+
+              <div class="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                <a href={`/properties/${p.id}`} class="flex-1 text-center py-2.5 rounded-xl btn-gold text-xs uppercase tracking-wider font-extrabold shadow-sm">
+                  View Residence Details →
+                </a>
+                <a href={waLink} target="_blank" class="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all shrink-0" title="Chat on WhatsApp">
+                  💬
+                </a>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    <!-- EMPTY STATE -->
+    <div id="noResultsNotice" class="hidden py-16 text-center text-slate-400 text-sm">
+      No properties found matching your selected criteria. Try adjusting the filter.
+    </div>
+
+  </div>
+
+  <script is:inline>
+    const searchInput = document.getElementById('bioqueSearch');
+    const tabs = document.querySelectorAll('.portfolio-tab');
+    const cards = document.querySelectorAll('.bioque-card');
+    const emptyNotice = document.getElementById('noResultsNotice');
+    let currentFilter = 'All';
+
+    // Handle URL search parameter ?region=...
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialRegion = urlParams.get('region');
+    if (initialRegion) {
+      currentFilter = initialRegion;
+      tabs.forEach(t => {
+        if (t.getAttribute('data-region') === initialRegion) {
+          t.classList.add('bg-dark-900', 'text-[#D4AF37]', 'border-[#D4AF37]/50');
+          t.classList.remove('bg-white', 'text-slate-700', 'border-slate-200');
+        } else {
+          t.classList.remove('bg-dark-900', 'text-[#D4AF37]', 'border-[#D4AF37]/50');
+          t.classList.add('bg-white', 'text-slate-700', 'border-slate-200');
+        }
+      });
+    }
+
+    function applyFilters() {
+      const q = (searchInput?.value || '').toLowerCase().trim();
+      let visibleCount = 0;
+
+      cards.forEach(card => {
+        const title = card.getAttribute('data-title') || '';
+        const region = card.getAttribute('data-region') || '';
+        const type = card.getAttribute('data-type') || '';
+        const address = card.getAttribute('data-address') || '';
+
+        const matchFilter = 
+          currentFilter === 'All' ? true :
+          currentFilter === 'New Chandigarh' ? region === 'New Chandigarh' :
+          currentFilter === 'Tri-City' ? region === 'Tri-City' :
+          currentFilter === 'Dubai' ? region === 'Dubai' :
+          type.toLowerCase().includes(currentFilter.toLowerCase());
+
+        const matchSearch = !q || title.includes(q) || address.includes(q) || region.toLowerCase().includes(q) || type.toLowerCase().includes(q);
+
+        if (matchFilter && matchSearch) {
+          card.style.display = 'flex';
+          visibleCount++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      if (emptyNotice) {
+        emptyNotice.style.display = visibleCount === 0 ? 'block' : 'none';
+      }
+    }
+
+    searchInput?.addEventListener('input', applyFilters);
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        currentFilter = tab.getAttribute('data-region') || 'All';
+        tabs.forEach(t => {
+          t.classList.remove('bg-dark-900', 'text-[#D4AF37]', 'border-[#D4AF37]/50');
+          t.classList.add('bg-white', 'text-slate-700', 'border-slate-200');
+        });
+        tab.classList.remove('bg-white', 'text-slate-700', 'border-slate-200');
+        tab.classList.add('bg-dark-900', 'text-[#D4AF37]', 'border-[#D4AF37]/50');
+        applyFilters();
+      });
+    });
+
+    applyFilters();
+  </script>
+</Layout>

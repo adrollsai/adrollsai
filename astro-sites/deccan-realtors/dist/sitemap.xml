@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  
+    <url>
+      <loc>https://deccanrealtors.com</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>daily</changefreq>
+      <priority>1.0</priority>
+    </url>
+  
+    <url>
+      <loc>https://deccanrealtors.com/properties</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>weekly</changefreq>
+      <priority>0.8</priority>
+    </url>
+  
+    <url>
+      <loc>https://deccanrealtors.com/about</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>weekly</changefreq>
+      <priority>0.8</priority>
+    </url>
+  
+    <url>
+      <loc>https://deccanrealtors.com/services</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>weekly</changefreq>
+      <priority>0.8</priority>
+    </url>
+  
+    <url>
+      <loc>https://deccanrealtors.com/calculator</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>weekly</changefreq>
+      <priority>0.8</priority>
+    </url>
+  
+    <url>
+      <loc>https://deccanrealtors.com/contact</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>weekly</changefreq>
+      <priority>0.8</priority>
+    </url>
+  
+  
+    <url>
+      <loc>https://deccanrealtors.com/properties/e673e853-3389-43cb-aab1-7297d87e44aa</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>daily</changefreq>
+      <priority>0.9</priority>
+    </url>
+  
+    <url>
+      <loc>https://deccanrealtors.com/properties/07d75514-651e-43a2-9f1b-85338827524f</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>daily</changefreq>
+      <priority>0.9</priority>
+    </url>
+  
+    <url>
+      <loc>https://deccanrealtors.com/properties/68d0410f-8a64-417c-827e-4fae21b6e6d5</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>daily</changefreq>
+      <priority>0.9</priority>
+    </url>
+  
+    <url>
+      <loc>https://deccanrealtors.com/properties/86737cf1-3af8-4b2e-9487-6618f4078ba7</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>daily</changefreq>
+      <priority>0.9</priority>
+    </url>
+  
+    <url>
+      <loc>https://deccanrealtors.com/properties/b5fddb29-69d2-4194-9b06-a3073b6a2b14</loc>
+      <lastmod>2026-09-08T07:34:28.354Z</lastmod>
+      <changefreq>daily</changefreq>
+      <priority>0.9</priority>
+    </url>
+  
+</urlset>

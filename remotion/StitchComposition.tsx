@@ -26,13 +26,13 @@ export const StitchComposition: React.FC<StitchCompositionProps> = ({
                             <OffthreadVideo
                                 src={url}
                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                volume={audioUrl ? 0.1 : 1.0}
+                                volume={audioUrl ? 0 : 1.0}
                             />
                         </Series.Sequence>
                     );
                 })}
             </Series>
-            {audioUrl && <Audio src={audioUrl} volume={1.0} />}
+            {audioUrl && <Audio src={audioUrl} volume={1.0} crossOrigin="anonymous" />}
         </AbsoluteFill>
     );
 };

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight, Target, Sparkles, Building2, Users, PhoneOff, PhoneCall, Pencil, Check, Edit2 } from 'lucide-react'
+import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight, Target, Sparkles, Building2, Users, PhoneOff, PhoneCall, Pencil, Check, Edit2, Download } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
@@ -2280,7 +2280,11 @@ END:VCARD`
                                             </a>
                                         </div>
                                         <audio 
+                                            key={effectiveRecordingUrl}
                                             controls 
+                                            preload="metadata"
+                                            // @ts-ignore
+                                            playsInline
                                             src={effectiveRecordingUrl.includes('media.vobiz.ai') ? `/api/voice/recording/stream?url=${encodeURIComponent(effectiveRecordingUrl)}&leadId=${lead.id}` : effectiveRecordingUrl} 
                                             className="w-full h-10 rounded-xl outline-none shadow-xs bg-white" 
                                         />
@@ -2601,10 +2605,28 @@ END:VCARD`
                                                                                 <span className="font-extrabold text-indigo-600 block">🎙️ AI Voice Call Summary:</span>
                                                                                 <p className="font-semibold text-slate-700">{parsed.summary}</p>
                                                                                 {parsed.recording_url && (
-                                                                                    <div className="my-1.5">
-                                                                                        <audio controls src={parsed.recording_url} className="w-full h-8 outline-none" />
-                                                                                    </div>
-                                                                                )}
+                                                                                     <div className="my-1.5 flex items-center gap-2">
+                                                                                         <audio 
+                                                                                             key={parsed.recording_url}
+                                                                                             controls 
+                                                                                             preload="metadata"
+                                                                                             // @ts-ignore
+                                                                                             playsInline
+                                                                                             src={parsed.recording_url} 
+                                                                                             className="w-full h-8 outline-none" 
+                                                                                         />
+                                                                                         <a 
+                                                                                             href={parsed.recording_url} 
+                                                                                             target="_blank" 
+                                                                                             rel="noopener noreferrer" 
+                                                                                             download
+                                                                                             className="p-1 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                                                                                             title="Download audio"
+                                                                                         >
+                                                                                             <Download size={14} />
+                                                                                         </a>
+                                                                                     </div>
+                                                                                 )}
                                                                                 <button 
                                                                                     onClick={() => {
                                                                                         setSelectedHistoryCall(parsed)
@@ -2634,7 +2656,27 @@ END:VCARD`
                                                                                     <Phone size={13} />
                                                                                     <span>Call Recording</span>
                                                                                 </div>
-                                                                                <audio controls src={audioUrl} className="w-full h-8 outline-none" />
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <audio 
+                                                                                        key={audioUrl}
+                                                                                        controls 
+                                                                                        preload="metadata"
+                                                                                        // @ts-ignore
+                                                                                        playsInline
+                                                                                        src={audioUrl} 
+                                                                                        className="w-full h-8 outline-none" 
+                                                                                    />
+                                                                                    <a 
+                                                                                        href={audioUrl} 
+                                                                                        target="_blank" 
+                                                                                        rel="noopener noreferrer" 
+                                                                                        download
+                                                                                        className="p-1 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                                                                                        title="Download audio"
+                                                                                    >
+                                                                                        <Download size={14} />
+                                                                                    </a>
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                     )
@@ -2954,8 +2996,28 @@ END:VCARD`
                             {/* Audio Player */}
                             {selectedHistoryCall.recording_url && (
                                 <div className="space-y-2">
-                                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Call Recording</span>
-                                    <audio controls src={selectedHistoryCall.recording_url} className="w-full h-10 rounded-xl outline-none" />
+                                    <div className="flex items-center justify-between ml-1">
+                                        <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Call Recording</span>
+                                        <a 
+                                            href={selectedHistoryCall.recording_url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            download="call_recording.mp3"
+                                            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 hover:underline cursor-pointer"
+                                        >
+                                            <Download size={12} />
+                                            <span>Download / Open</span>
+                                        </a>
+                                    </div>
+                                    <audio 
+                                        key={selectedHistoryCall.recording_url}
+                                        controls 
+                                        preload="metadata"
+                                        // @ts-ignore
+                                        playsInline
+                                        src={selectedHistoryCall.recording_url} 
+                                        className="w-full h-10 rounded-xl outline-none bg-slate-50" 
+                                    />
                                 </div>
                             )}
 

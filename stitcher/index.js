@@ -20,7 +20,7 @@ const supabaseAdmin = createClient(
 // Initialize R2 S3 Client
 const r2 = new S3Client({
     region: 'auto',
-    endpoint: process.env.R2_ENDPOINT,
+    endpoint: (process.env.R2_ENDPOINT || '').replace(/\/adrolls-storage\/?$/, '') || (process.env.R2_ACCOUNT_ID ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : undefined),
     credentials: {
         accessKeyId: process.env.R2_ACCESS_KEY_ID,
         secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,

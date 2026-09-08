@@ -11,6 +11,8 @@ import path from 'path';
 import os from 'os';
 import { exec } from 'child_process';
 import { resolveVoiceoverAudio } from '@/utils/video-voiceover-helper';
+import { getFfmpegPath } from '@/utils/ffmpeg-helper';
+import { dispatchCloudRunStitch, stitchClipsLocally } from '@/utils/video-stitcher';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -279,13 +281,7 @@ export async function POST(request: Request) {
                             const buffer = Buffer.from(await res.arrayBuffer());
                             fs.writeFileSync(localPath, buffer);
 
-                            const ffmpegBinary = path.join(
-                                process.cwd(), 
-                                'node_modules', 
-                                'ffmpeg-static', 
-                                os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-                            );
-
+                            const ffmpegBinary = getFfmpegPath();
                             const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
                             console.log(`[Sync Endpoint] Running FFmpeg command: ${cmd}`);
                             
@@ -364,14 +360,8 @@ export async function POST(request: Request) {
                                 fs.writeFileSync(localPath, Buffer.from(await vRes.arrayBuffer()));
                                 fs.writeFileSync(audioPath, Buffer.from(await aRes.arrayBuffer()));
 
-                                const ffmpegBinary = path.join(
-                                    process.cwd(), 
-                                    'node_modules', 
-                                    'ffmpeg-static', 
-                                    os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-                                );
-
-                                const cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                                const ffmpegBinary = getFfmpegPath();
+                                const cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`;
                                 console.log(`[Sync Endpoint] Running FFmpeg single-clip voiceover mux command: ${cmd}`);
 
                                 await new Promise<void>((resolvePromise, rejectPromise) => {
@@ -425,8 +415,40 @@ export async function POST(request: Request) {
                         }
                     }
 
-                    console.log(`[Sync Endpoint] All ${siblings.length} scenes completed. Initiating AWS Lambda stitching...`);
-                    
+                    // 1. Try Cloud Run Stitcher Worker
+                    try {
+                        console.log(`[Sync Endpoint] Attempting stitch via Cloud Run worker for Asset ID ${task.asset_id}...`);
+                        const cloudRunSuccess = await dispatchCloudRunStitch(
+                            siblings.map(s => ({ current_index: s.current_index, last_successful_task_id: s.last_successful_task_id })),
+                            { asset_id: task.asset_id, user_id: task.user_id, prompts: task.prompts },
+                            finalAudioUrl
+                        );
+                        if (cloudRunSuccess) {
+                            if (task.asset_id) {
+                                await supabaseAdmin.from('assets').update({ status: 'Draft' }).eq('id', task.asset_id);
+                            }
+                            syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
+                            continue;
+                        }
+                    } catch (cloudRunErr: any) {
+                        console.warn(`[Sync Endpoint] Cloud Run stitch dispatch failed, attempting local stitch:`, cloudRunErr?.message || cloudRunErr);
+                    }
+
+                    // 2. Try fast direct local FFmpeg stitch
+                    try {
+                        console.log(`[Sync Endpoint] Starting fast local FFmpeg stitching for Asset ID ${task.asset_id}...`);
+                        await stitchClipsLocally(
+                            siblings.map(s => ({ current_index: s.current_index, last_successful_task_id: s.last_successful_task_id })),
+                            { asset_id: task.asset_id, user_id: task.user_id, prompts: task.prompts },
+                            finalAudioUrl,
+                            supabaseAdmin
+                        );
+                        syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
+                        continue;
+                    } catch (fastFfmpegErr: any) {
+                        console.warn(`[Sync Endpoint] Fast local FFmpeg stitching failed, falling back to AWS Lambda:`, fastFfmpegErr?.message || fastFfmpegErr);
+                    }
+
                     try {
                         const forwardedHost = request.headers.get('x-forwarded-host');
                         const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
