@@ -183,7 +183,26 @@ export default function AdsPage() {
   const [statsTab, setStatsTab] = useState<'overview' | 'daily' | 'creatives'>('overview')
   const [chartMetric, setChartMetric] = useState<'spend' | 'leads' | 'clicks'>('spend')
   const [campaignLeadCounts, setCampaignLeadCounts] = useState<Record<string, number>>({})
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table')
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ads_view_mode') as 'table' | 'cards' | null
+      if (saved === 'table' || saved === 'cards') {
+        setViewMode(saved)
+      } else if (window.innerWidth >= 768) {
+        setViewMode('table')
+      }
+    }
+  }, [])
+
+  const handleSetViewMode = (mode: 'table' | 'cards') => {
+    setViewMode(mode)
+    try {
+      localStorage.setItem('ads_view_mode', mode)
+    } catch {}
+  }
+
   const [campaignSortBy, setCampaignSortBy] = useState<'active' | 'spend_high' | 'results_high' | 'cpl_low' | 'newest' | 'name_asc'>('active')
   const [activeLeadsModalCampaign, setActiveLeadsModalCampaign] = useState<Campaign | null>(null)
   const [campaignDatePreset, setCampaignDatePreset] = useState<string>('maximum')
@@ -1989,91 +2008,104 @@ export default function AdsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16 relative">
-      <button onClick={() => fetchAdsData(true)} className="fixed top-4 right-4 z-[60] bg-white/90 backdrop-blur-md p-2.5 rounded-full shadow-md border border-slate-200 text-slate-500 hover:text-blue-600 transition-all active:scale-95"><RefreshCw size={18} className={isRefreshing ? "animate-spin text-blue-600" : ""} /></button>
-
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6 mb-8">
+    <div className="min-h-screen bg-[#F8FAFC] pb-36 sm:pb-32 pt-8 sm:pt-14 relative">
+      <div className="max-w-6xl mx-auto px-3.5 sm:px-6 lg:px-8 pt-4 sm:pt-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 sm:gap-6 mb-6 sm:mb-8">
             <div>
-                <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight ml-1">AI Ads Manager</h1>
-                <p className="text-slate-500 text-sm mt-1 font-medium ml-1">Self-Optimizing Smart Campaigns</p>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight ml-1">AI Ads Manager</h1>
+                <p className="text-slate-500 text-xs sm:text-sm mt-0.5 sm:mt-1 font-medium ml-1">Self-Optimizing Smart Campaigns</p>
             </div>
-            <div className="flex gap-3 w-full sm:w-auto">
-                <button onClick={() => setIsModalOpen(true)} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-full shadow-md shadow-blue-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 font-bold"><Plus size={20} strokeWidth={3} /> <span className="hidden sm:inline">New Campaign</span></button>
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                <button 
+                  onClick={() => fetchAdsData(true)} 
+                  disabled={isRefreshing}
+                  className="p-3 sm:px-4 sm:py-3.5 bg-white hover:bg-slate-50 text-slate-700 rounded-full border border-slate-200 shadow-sm transition-all active:scale-95 flex items-center gap-2 font-bold text-xs sm:text-sm shrink-0"
+                  title="Refresh Campaigns & Metrics"
+                >
+                  <RefreshCw size={16} className={isRefreshing ? "animate-spin text-blue-600" : ""} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+                <button 
+                  onClick={() => setIsModalOpen(true)} 
+                  className="flex-1 sm:flex-initial bg-blue-600 hover:bg-blue-700 text-white px-6 sm:px-8 py-3 sm:py-3.5 rounded-full shadow-md shadow-blue-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 font-bold text-xs sm:text-sm"
+                >
+                  <Plus size={18} strokeWidth={3} /> 
+                  <span>New Campaign</span>
+                </button>
             </div>
         </div>
 
         {/* META INTEGRATION HEALTH & FUNDS STATUS */}
         {selectedAdAccountId && (
-          <div className="mb-8 bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
+          <div className="mb-6 sm:mb-8 bg-white border border-slate-200/60 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm hover:shadow-md transition-all">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6 pb-3 sm:pb-4 border-b border-slate-100">
               <div>
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  <CheckCircle size={18} className="text-emerald-500 animate-pulse" /> Meta Account Health & Funds
+                <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <CheckCircle size={18} className="text-emerald-500 animate-pulse shrink-0" /> Meta Account Health & Funds
                 </h2>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                <p className="text-[11px] sm:text-xs text-slate-500 font-medium mt-0.5">
                   Real-time status of your Meta Ads integration and billing configurations
                 </p>
               </div>
-              <div className="flex items-center gap-3 self-end md:self-auto">
+              <div className="flex items-center gap-2 self-start sm:self-auto">
                 {checkingSanity ? (
-                  <span className="text-xs font-bold text-slate-400 animate-pulse flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
-                    <Loader2 size={13} className="animate-spin text-blue-500" /> Verifying Meta Integration...
+                  <span className="text-[11px] sm:text-xs font-bold text-slate-400 animate-pulse flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+                    <Loader2 size={12} className="animate-spin text-blue-500" /> Verifying...
                   </span>
                 ) : (
                   <button 
                     onClick={() => checkAccountStatus(selectedAdAccountId, adForm.pageId)}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50/80 px-3.5 py-1.5 rounded-full border border-blue-100 transition-all active:scale-95 flex items-center gap-1.5 bg-white shadow-sm font-semibold"
+                    className="text-[11px] sm:text-xs font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50/80 px-3 py-1.5 rounded-full border border-blue-100 transition-all active:scale-95 flex items-center gap-1.5 bg-white shadow-sm font-semibold"
                   >
-                    <RefreshCw size={12} className={checkingSanity ? "animate-spin" : ""} /> Force Check
+                    <RefreshCw size={11} className={checkingSanity ? "animate-spin" : ""} /> Force Check
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-5">
               {/* 1. Available Funds */}
-              <div className="bg-slate-50/80 border border-slate-200/50 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-blue-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Available Funds</span>
-                  <div className="p-2 rounded-xl bg-blue-50 text-blue-600 border border-blue-100/30">
-                    <CreditCard size={16} />
+              <div className="bg-slate-50/80 border border-slate-200/50 rounded-xl sm:rounded-2xl p-3 sm:p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-16 sm:w-24 h-16 sm:h-24 bg-gradient-to-bl from-blue-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-extrabold text-slate-400 uppercase tracking-wider">Available Funds</span>
+                  <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-blue-50 text-blue-600 border border-blue-100/30">
+                    <CreditCard size={14} className="sm:w-4 sm:h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-slate-800 tracking-tight leading-none">
+                  <div className="text-base sm:text-2xl font-black text-slate-800 tracking-tight leading-none truncate">
                     {checkingSanity ? (
-                      <span className="text-slate-300 animate-pulse">Checking...</span>
+                      <span className="text-slate-300 animate-pulse text-xs">Checking...</span>
                     ) : accountStatus?.prepaid_balance !== undefined && accountStatus?.prepaid_balance !== null ? (
                       `${(accountStatus.currency || currency) === 'INR' ? '₹' : (accountStatus.currency || currency) === 'AED' ? 'د.إ' : (accountStatus.currency || currency) === 'GBP' ? '£' : (accountStatus.currency || currency) === 'EUR' ? '€' : '$'}${accountStatus.prepaid_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     ) : accountStatus?.balance !== undefined && accountStatus?.balance !== null ? (
                       `${(accountStatus.currency || currency) === 'INR' ? '₹' : (accountStatus.currency || currency) === 'AED' ? 'د.إ' : (accountStatus.currency || currency) === 'GBP' ? '£' : (accountStatus.currency || currency) === 'EUR' ? '€' : '$'}${((accountStatus.balance / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     ) : (
-                      <span className="text-slate-400 text-sm font-semibold">Postpaid / Credit</span>
+                      <span className="text-slate-400 text-xs sm:text-sm font-semibold">Postpaid</span>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-500 font-medium mt-2">
-                    {accountStatus?.prepaid_balance !== undefined && accountStatus?.prepaid_balance !== null ? `Prepaid Balance (${accountStatus?.currency || currency})` : accountStatus?.balance !== undefined && accountStatus?.balance !== null ? `Unbilled Accrued Spend (${accountStatus?.currency || currency})` : 'Automatic Postpaid Billing'}
+                  <p className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-1 sm:mt-2 truncate">
+                    {accountStatus?.prepaid_balance !== undefined && accountStatus?.prepaid_balance !== null ? `Prepaid (${accountStatus?.currency || currency})` : accountStatus?.balance !== undefined && accountStatus?.balance !== null ? `Accrued (${accountStatus?.currency || currency})` : 'Postpaid Billing'}
                   </p>
                 </div>
               </div>
 
               {/* 2. Ad Account Status */}
-              <div className="bg-slate-50/80 border border-slate-200/50 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-emerald-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Ad Account Status</span>
-                  <div className={`p-2 rounded-xl border ${accountStatus?.account_status === 1 ? 'bg-emerald-50 text-emerald-600 border-emerald-100/30' : 'bg-rose-50 text-rose-600 border-rose-100/30'}`}>
-                    <Zap size={16} />
+              <div className="bg-slate-50/80 border border-slate-200/50 rounded-xl sm:rounded-2xl p-3 sm:p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-16 sm:w-24 h-16 sm:h-24 bg-gradient-to-bl from-emerald-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-extrabold text-slate-400 uppercase tracking-wider">Account Status</span>
+                  <div className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl border ${accountStatus?.account_status === 1 ? 'bg-emerald-50 text-emerald-600 border-emerald-100/30' : 'bg-rose-50 text-rose-600 border-rose-100/30'}`}>
+                    <Zap size={14} className="sm:w-4 sm:h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${accountStatus?.account_status === 1 ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
-                    <div className="text-xl font-extrabold text-slate-800 leading-none">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <span className={`w-2 h-2 rounded-full ${accountStatus?.account_status === 1 ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
+                    <div className="text-base sm:text-xl font-extrabold text-slate-800 leading-none">
                       {checkingSanity ? (
-                        <span className="text-slate-300 animate-pulse">Checking...</span>
+                        <span className="text-slate-300 animate-pulse text-xs">Checking...</span>
                       ) : accountStatus?.account_status === 1 ? (
                         'Active'
                       ) : (
@@ -2081,58 +2113,58 @@ export default function AdsPage() {
                       )}
                     </div>
                   </div>
-                  <p className="text-[10px] text-slate-500 font-medium mt-2">
-                    Meta Ad Account is {accountStatus?.account_status === 1 ? 'healthy & ready' : 'restricted/disabled'}
+                  <p className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-1 sm:mt-2 truncate">
+                    {accountStatus?.account_status === 1 ? 'Account is healthy' : 'Restricted/disabled'}
                   </p>
                 </div>
               </div>
 
               {/* 3. Payment Method */}
-              <div className="bg-slate-50/80 border border-slate-200/50 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-indigo-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Payment Details</span>
-                  <div className={`p-2 rounded-xl border ${accountStatus?.has_payment_method ? 'bg-emerald-50 text-emerald-600 border-emerald-100/30' : 'bg-rose-50 text-rose-600 border-rose-100/30'}`}>
-                    <CreditCard size={16} />
+              <div className="bg-slate-50/80 border border-slate-200/50 rounded-xl sm:rounded-2xl p-3 sm:p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-16 sm:w-24 h-16 sm:h-24 bg-gradient-to-bl from-indigo-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-extrabold text-slate-400 uppercase tracking-wider">Payment</span>
+                  <div className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl border ${accountStatus?.has_payment_method ? 'bg-emerald-50 text-emerald-600 border-emerald-100/30' : 'bg-rose-50 text-rose-600 border-rose-100/30'}`}>
+                    <CreditCard size={14} className="sm:w-4 sm:h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-[15px] font-extrabold text-slate-800 leading-snug break-words">
+                  <div className="text-sm sm:text-[15px] font-extrabold text-slate-800 leading-snug break-words truncate">
                     {checkingSanity ? (
-                      <span className="text-slate-300 animate-pulse">Checking...</span>
+                      <span className="text-slate-300 animate-pulse text-xs">Checking...</span>
                     ) : accountStatus?.has_payment_method ? (
                       accountStatus?.funding_source_details?.display_string || 'Linked'
                     ) : (
                       'Missing Card'
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-500 font-medium mt-2">
-                    {accountStatus?.has_payment_method ? 'Payment method linked to Ads account' : 'Funding source not found'}
+                  <p className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-1 sm:mt-2 truncate">
+                    {accountStatus?.has_payment_method ? 'Card linked' : 'No card found'}
                   </p>
                 </div>
               </div>
 
               {/* 4. Lead Ads TOS */}
-              <div className="bg-slate-50/80 border border-slate-200/50 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-purple-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Lead Ads TOS</span>
-                  <div className={`p-2 rounded-xl border ${accountStatus?.leadgenTos?.leadgen_tos?.accepted ? 'bg-emerald-50 text-emerald-600 border-emerald-100/30' : 'bg-rose-50 text-rose-600 border-rose-100/30'}`}>
-                    <Settings2 size={16} />
+              <div className="bg-slate-50/80 border border-slate-200/50 rounded-xl sm:rounded-2xl p-3 sm:p-5 flex flex-col justify-between hover:border-slate-300 transition-colors shadow-sm relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-16 sm:w-24 h-16 sm:h-24 bg-gradient-to-bl from-purple-500/5 to-transparent rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-500" />
+                <div className="flex items-center justify-between mb-2 sm:mb-3">
+                  <span className="text-[10px] sm:text-xs font-extrabold text-slate-400 uppercase tracking-wider">Lead Ads TOS</span>
+                  <div className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl border ${accountStatus?.leadgenTos?.leadgen_tos?.accepted ? 'bg-emerald-50 text-emerald-600 border-emerald-100/30' : 'bg-rose-50 text-rose-600 border-rose-100/30'}`}>
+                    <Settings2 size={14} className="sm:w-4 sm:h-4" />
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-extrabold text-slate-800 leading-none">
+                  <div className="text-base sm:text-xl font-extrabold text-slate-800 leading-none">
                     {checkingSanity ? (
-                      <span className="text-slate-300 animate-pulse">Checking...</span>
+                      <span className="text-slate-300 animate-pulse text-xs">Checking...</span>
                     ) : accountStatus?.leadgenTos?.leadgen_tos?.accepted ? (
                       'Accepted'
                     ) : (
-                      'Not Accepted'
+                      'Outstanding'
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-500 font-medium mt-2">
-                    Page Lead Gen Terms of Service
+                  <p className="text-[9px] sm:text-[10px] text-slate-500 font-medium mt-1 sm:mt-2 truncate">
+                    Lead Gen Terms
                   </p>
                 </div>
               </div>
@@ -2218,45 +2250,45 @@ export default function AdsPage() {
               const avgCpl = totalResults > 0 ? (totalSpend / totalResults) : 0;
 
               return (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                      <PlayCircle size={13} className="text-emerald-500" /> Active Campaigns
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
+                  <div className="bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-sm">
+                    <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <PlayCircle size={12} className="text-emerald-500 shrink-0" /> Active
                     </p>
-                    <p className="text-xl sm:text-2xl font-black text-slate-800 mt-1">
-                      {activeCount} <span className="text-xs font-semibold text-slate-400">/ {campaigns.length} Total</span>
+                    <p className="text-lg sm:text-2xl font-black text-slate-800 mt-0.5 sm:mt-1">
+                      {activeCount} <span className="text-[10px] sm:text-xs font-semibold text-slate-400">/ {campaigns.length} Total</span>
                     </p>
                   </div>
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                      <CreditCard size={13} className="text-blue-500" /> Total Spend
+                  <div className="bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-sm">
+                    <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <CreditCard size={12} className="text-blue-500 shrink-0" /> Spend
                     </p>
-                    <p className="text-xl sm:text-2xl font-black text-slate-800 mt-1">
+                    <p className="text-lg sm:text-2xl font-black text-slate-800 mt-0.5 sm:mt-1">
                       ₹{Math.round(totalSpend).toLocaleString('en-IN')}
                     </p>
                   </div>
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                      <Users size={13} className="text-indigo-500" /> Total Results / Leads
+                  <div className="bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-sm">
+                    <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <Users size={12} className="text-indigo-500 shrink-0" /> Results
                     </p>
-                    <p className="text-xl sm:text-2xl font-black text-indigo-600 mt-1">
-                      {totalResults.toLocaleString('en-IN')} <span className="text-xs font-semibold text-slate-400">Leads</span>
+                    <p className="text-lg sm:text-2xl font-black text-indigo-600 mt-0.5 sm:mt-1">
+                      {totalResults.toLocaleString('en-IN')} <span className="text-[10px] sm:text-xs font-semibold text-slate-400">Leads</span>
                     </p>
                   </div>
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                      <TrendingUp size={13} className="text-emerald-500" /> Avg Cost / Result
+                  <div className="bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-sm">
+                    <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <TrendingUp size={12} className="text-emerald-500 shrink-0" /> Avg CPL
                     </p>
-                    <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-1">
+                    <p className="text-lg sm:text-2xl font-black text-emerald-600 mt-0.5 sm:mt-1">
                       {avgCpl > 0 ? `₹${avgCpl.toFixed(2)}` : '—'}
                     </p>
                   </div>
-                  <div className="col-span-2 sm:col-span-1 bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                      <MousePointerClick size={13} className="text-purple-500" /> Engagement
+                  <div className="col-span-2 sm:col-span-1 bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-sm">
+                    <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <MousePointerClick size={12} className="text-purple-500 shrink-0" /> Engagement
                     </p>
-                    <p className="text-lg sm:text-xl font-black text-slate-800 mt-1">
-                      {totalClicks.toLocaleString('en-IN')} <span className="text-xs font-semibold text-slate-400">Clicks • {(totalImpressions / 1000).toFixed(1)}k Imp</span>
+                    <p className="text-base sm:text-xl font-black text-slate-800 mt-0.5 sm:mt-1">
+                      {totalClicks.toLocaleString('en-IN')} <span className="text-[10px] sm:text-xs font-semibold text-slate-400">Clicks • {(totalImpressions / 1000).toFixed(1)}k Imp</span>
                     </p>
                   </div>
                 </div>
@@ -2264,7 +2296,7 @@ export default function AdsPage() {
             })()}
 
             {/* SEARCH, DURATION FILTER, SORT & VIEW SWITCHER BAR */}
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200/80 shadow-sm">
               {/* Search input */}
               <div className="relative flex-1 max-w-md">
                 <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -2276,7 +2308,7 @@ export default function AdsPage() {
                     setCurrentPage(1);
                   }}
                   placeholder="Search campaigns by name, ID or objective..." 
-                  className="w-full bg-slate-50 border border-slate-200 py-2.5 pl-10 pr-8 rounded-xl text-xs sm:text-sm font-medium text-slate-700 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all" 
+                  className="w-full bg-slate-50 border border-slate-200 py-2 sm:py-2.5 pl-10 pr-8 rounded-xl text-xs sm:text-sm font-medium text-slate-700 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all" 
                 />
                 {campaignSearchQuery && (
                   <button 
@@ -2292,74 +2324,76 @@ export default function AdsPage() {
               </div>
 
               {/* Controls: Date Duration, Sorting & View Mode */}
-              <div className="flex items-center gap-2 flex-wrap justify-between lg:justify-end">
-                {/* Duration / Date Preset Selector */}
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 shadow-xs">
-                  <Calendar size={14} className="text-slate-400 shrink-0" />
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden xs:inline">Date:</span>
-                  <select
-                    value={campaignDatePreset}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === 'custom') {
-                        setShowCustomDateModal(true);
-                        return;
-                      }
-                      setCampaignDatePreset(val);
-                      setCampaignSince('');
-                      setCampaignUntil('');
-                      setCurrentPage(1);
-                      fetchAdsData(true, val, '', '');
-                    }}
-                    className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer pr-1"
-                  >
-                    <option value="maximum">Lifetime (All Time)</option>
-                    <option value="today">Today</option>
-                    <option value="yesterday">Yesterday</option>
-                    <option value="last_7d">Last 7 Days</option>
-                    <option value="last_14d">Last 14 Days</option>
-                    <option value="last_30d">Last 30 Days</option>
-                    <option value="this_month">This Month</option>
-                    <option value="last_month">Last Month</option>
-                    <option value="custom">Custom Range...</option>
-                  </select>
-                  {campaignDatePreset === 'custom' && campaignSince && campaignUntil && (
-                    <button
-                      onClick={() => setShowCustomDateModal(true)}
-                      className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 hover:bg-blue-100"
-                      title="Edit Custom Date Range"
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+                <div className="grid grid-cols-2 gap-2 flex-1 sm:flex-initial">
+                  {/* Duration / Date Preset Selector */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 sm:px-2.5 py-1.5 shadow-xs min-w-0">
+                    <Calendar size={13} className="text-slate-400 shrink-0" />
+                    <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden xs:inline shrink-0">Date:</span>
+                    <select
+                      value={campaignDatePreset}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'custom') {
+                          setShowCustomDateModal(true);
+                          return;
+                        }
+                        setCampaignDatePreset(val);
+                        setCampaignSince('');
+                        setCampaignUntil('');
+                        setCurrentPage(1);
+                        fetchAdsData(true, val, '', '');
+                      }}
+                      className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer pr-1 w-full truncate"
                     >
-                      {campaignSince.slice(5)} - {campaignUntil.slice(5)}
-                    </button>
-                  )}
-                </div>
+                      <option value="maximum">Lifetime (All Time)</option>
+                      <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="last_7d">Last 7 Days</option>
+                      <option value="last_14d">Last 14 Days</option>
+                      <option value="last_30d">Last 30 Days</option>
+                      <option value="this_month">This Month</option>
+                      <option value="last_month">Last Month</option>
+                      <option value="custom">Custom Range...</option>
+                    </select>
+                    {campaignDatePreset === 'custom' && campaignSince && campaignUntil && (
+                      <button
+                        onClick={() => setShowCustomDateModal(true)}
+                        className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 hover:bg-blue-100 shrink-0"
+                        title="Edit Custom Date Range"
+                      >
+                        {campaignSince.slice(5)} - {campaignUntil.slice(5)}
+                      </button>
+                    )}
+                  </div>
 
-                {/* Sort Selector */}
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 shadow-xs">
-                  <ArrowUpDown size={14} className="text-slate-400 shrink-0" />
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden xs:inline">Sort:</span>
-                  <select
-                    value={campaignSortBy}
-                    onChange={(e: any) => {
-                      setCampaignSortBy(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer pr-1"
-                  >
-                    <option value="active">Active First</option>
-                    <option value="spend_high">Spend: High to Low</option>
-                    <option value="results_high">Results: Most Leads</option>
-                    <option value="cpl_low">CPL: Lowest Cost</option>
-                    <option value="newest">Newest Created</option>
-                    <option value="name_asc">Name: A to Z</option>
-                  </select>
+                  {/* Sort Selector */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 sm:px-2.5 py-1.5 shadow-xs min-w-0">
+                    <ArrowUpDown size={13} className="text-slate-400 shrink-0" />
+                    <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden xs:inline shrink-0">Sort:</span>
+                    <select
+                      value={campaignSortBy}
+                      onChange={(e: any) => {
+                        setCampaignSortBy(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer pr-1 w-full truncate"
+                    >
+                      <option value="active">Active First</option>
+                      <option value="spend_high">Spend: High to Low</option>
+                      <option value="results_high">Results: Most Leads</option>
+                      <option value="cpl_low">CPL: Lowest Cost</option>
+                      <option value="newest">Newest Created</option>
+                      <option value="name_asc">Name: A to Z</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* View Mode Toggle (Table / Cards) */}
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
                   <button
-                    onClick={() => setViewMode('table')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    onClick={() => handleSetViewMode('table')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                       viewMode === 'table'
                         ? 'bg-white text-blue-600 shadow-sm'
                         : 'text-slate-500 hover:text-slate-800'
@@ -2370,8 +2404,8 @@ export default function AdsPage() {
                     <span>Table</span>
                   </button>
                   <button
-                    onClick={() => setViewMode('cards')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    onClick={() => handleSetViewMode('cards')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                       viewMode === 'cards'
                         ? 'bg-white text-blue-600 shadow-sm'
                         : 'text-slate-500 hover:text-slate-800'
@@ -2478,10 +2512,23 @@ export default function AdsPage() {
                   <div 
                     ref={topScrollRef} 
                     onScroll={handleTopScroll}
-                    className="overflow-x-auto custom-scrollbar h-2 bg-slate-100/90 rounded-full border border-slate-200/80 shadow-inner"
+                    className="hidden sm:block overflow-x-auto custom-scrollbar h-2 bg-slate-100/90 rounded-full border border-slate-200/80 shadow-inner"
                     title="Drag to scroll table horizontally"
                   >
                     <div className="w-[1250px] h-1" />
+                  </div>
+
+                  {/* MOBILE HORIZONTAL SWIPE HINT BANNER */}
+                  <div className="md:hidden flex items-center justify-between gap-2 px-3.5 py-2.5 bg-blue-50/90 border border-blue-200/70 text-blue-800 text-xs font-medium rounded-xl shadow-xs">
+                    <span className="flex items-center gap-1.5">
+                      <span>👉</span> Swipe sideways to see all 12 columns
+                    </span>
+                    <button 
+                      onClick={() => handleSetViewMode('cards')} 
+                      className="bg-white text-blue-700 px-2.5 py-1 rounded-lg font-bold border border-blue-200 shadow-xs active:scale-95 text-[11px] shrink-0"
+                    >
+                      Cards View
+                    </button>
                   </div>
 
                   {/* TABLE WRAPPER WITH STICKY HEADERS & STICKY COLUMNS */}
@@ -2490,11 +2537,11 @@ export default function AdsPage() {
                     onScroll={handleTableScroll}
                     className="overflow-x-auto custom-scrollbar border border-slate-200/80 rounded-2xl bg-white shadow-sm"
                   >
-                    <table className="w-full text-left border-collapse min-w-[1250px]">
+                    <table className="w-full text-left border-collapse min-w-[1150px] md:min-w-[1250px]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider font-extrabold text-slate-500 select-none">
-                          <th className="py-3.5 px-4 w-16 text-center sticky left-0 z-30 bg-slate-50 border-r border-slate-200/60">Off / On</th>
-                          <th className="py-3.5 px-4 min-w-[260px] sticky left-16 z-30 bg-slate-50 border-r border-slate-200/60 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.06)]">Campaign</th>
+                          <th className="py-3.5 px-4 w-16 text-center md:sticky md:left-0 z-20 bg-slate-50 md:border-r md:border-slate-200/60">Off / On</th>
+                          <th className="py-3.5 px-4 min-w-[240px] md:min-w-[260px] md:sticky md:left-16 z-20 bg-slate-50 md:border-r md:border-slate-200/60 md:shadow-[4px_0_10px_-3px_rgba(0,0,0,0.06)]">Campaign</th>
                           <th className="py-3.5 px-4 w-28">Delivery</th>
                           <th className="py-3.5 px-4 w-32">Budget</th>
                           <th className="py-3.5 px-4 w-32 text-right">Results</th>
@@ -2504,7 +2551,7 @@ export default function AdsPage() {
                           <th className="py-3.5 px-4 w-24 text-right">Clicks</th>
                           <th className="py-3.5 px-4 w-24 text-right">CTR</th>
                           <th className="py-3.5 px-4 w-24 text-right">CPC</th>
-                          <th className="py-3.5 px-5 min-w-[340px] text-right sticky right-0 z-30 bg-slate-50 border-l border-slate-200/60 shadow-[-4px_0_10px_-3px_rgba(0,0,0,0.06)]">Actions</th>
+                          <th className="py-3.5 px-5 min-w-[320px] md:min-w-[340px] text-right md:sticky md:right-0 z-20 bg-slate-50 md:border-l md:border-slate-200/60 md:shadow-[-4px_0_10px_-3px_rgba(0,0,0,0.06)]">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs">
@@ -2532,8 +2579,8 @@ export default function AdsPage() {
                               key={campaign.id} 
                               className="hover:bg-blue-50/40 transition-colors group"
                             >
-                              {/* ON / OFF TOGGLE (STICKY LEFT 1) */}
-                              <td className="py-3.5 px-4 text-center sticky left-0 z-10 bg-white group-hover:bg-blue-50/70 border-r border-slate-100">
+                              {/* ON / OFF TOGGLE (STICKY ON MD+) */}
+                              <td className="py-3.5 px-4 text-center md:sticky md:left-0 z-10 bg-white group-hover:bg-blue-50/70 md:border-r md:border-slate-100">
                                 <div className="inline-flex items-center justify-center">
                                   {togglingId === campaign.id ? (
                                     <Loader2 size={16} className="animate-spin text-blue-500" />
@@ -2553,14 +2600,14 @@ export default function AdsPage() {
                                 </div>
                               </td>
 
-                              {/* CAMPAIGN NAME & METADATA (STICKY LEFT 2) */}
-                              <td className="py-3.5 px-4 sticky left-16 z-10 bg-white group-hover:bg-blue-50/70 border-r border-slate-200/60 shadow-[4px_0_10px_-3px_rgba(0,0,0,0.06)]">
+                              {/* CAMPAIGN NAME & METADATA (STICKY ON MD+) */}
+                              <td className="py-3.5 px-4 md:sticky md:left-16 z-10 bg-white group-hover:bg-blue-50/70 md:border-r md:border-slate-200/60 md:shadow-[4px_0_10px_-3px_rgba(0,0,0,0.06)]">
                                 <div className="flex flex-col min-w-0">
                                   <div 
                                     onClick={() => handleOpenExplorer(campaign)}
                                     className="font-bold text-slate-800 hover:text-blue-600 transition-colors cursor-pointer flex items-center gap-1.5"
                                   >
-                                    <span className="truncate max-w-[260px]" title={campaign.name}>
+                                    <span className="truncate max-w-[240px] md:max-w-[260px]" title={campaign.name}>
                                       {campaign.name}
                                     </span>
                                     <ArrowUpRight size={13} className="text-slate-300 group-hover:text-blue-500 shrink-0 transition-colors" />
@@ -2639,14 +2686,14 @@ export default function AdsPage() {
                                 {cpc > 0 ? `₹${cpc.toFixed(2)}` : '—'}
                               </td>
 
-                              {/* ACTION BUTTONS (STICKY RIGHT) */}
-                              <td className="py-3.5 px-5 text-right sticky right-0 z-10 bg-white group-hover:bg-blue-50/70 border-l border-slate-200/60 shadow-[-4px_0_10px_-3px_rgba(0,0,0,0.06)]">
-                                <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                  {/* LEADS BUTTON (PRIMARY HIGHLIGHT) */}
+                              {/* ACTION BUTTONS (STICKY ON MD+) */}
+                              <td className="py-3.5 px-5 text-right md:sticky md:right-0 z-10 bg-white group-hover:bg-blue-50/70 md:border-l md:border-slate-200/60 md:shadow-[-4px_0_10px_-3px_rgba(0,0,0,0.06)]">
+                                <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                                  {/* LEADS BUTTON */}
                                   <button
                                     onClick={() => setActiveLeadsModalCampaign(campaign)}
                                     className="flex items-center gap-1 text-xs font-bold text-blue-700 hover:text-white bg-blue-50 hover:bg-blue-600 border border-blue-200/80 hover:border-blue-600 py-1.5 px-2.5 rounded-xl transition-all shadow-sm"
-                                    title="View Campaign Leads (Paginated & Filterable)"
+                                    title="View Campaign Leads"
                                   >
                                     <Users size={13} />
                                     <span>Leads</span>
@@ -2698,7 +2745,7 @@ export default function AdsPage() {
 
                                   {/* META LINK */}
                                   <a 
-                                    href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} 
+                                    href="https://adsmanager.facebook.com/ads/manager/account/campaigns/" 
                                     target="_blank" 
                                     rel="noreferrer" 
                                     className="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition-colors"
@@ -2803,30 +2850,54 @@ export default function AdsPage() {
             // ==========================================
             return (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6">
                   {paginatedCampaigns.map(campaign => {
                     const resultsCount = campaign.metrics?.results ?? (campaignLeadCounts[campaign.id] || 0);
                     const spend = campaign.metrics?.spend || 0;
                     const cpl = campaign.metrics?.cpl || (resultsCount > 0 && spend > 0 ? (spend / resultsCount) : null);
 
+                    // Format Budget for cards
+                    let budgetStr = 'Ad set budget';
+                    if (campaign.daily_budget) {
+                      const val = parseFloat(campaign.daily_budget);
+                      budgetStr = `₹${(val > 100 ? val / 100 : val).toLocaleString('en-IN')}/day`;
+                    } else if (campaign.lifetime_budget) {
+                      const val = parseFloat(campaign.lifetime_budget);
+                      budgetStr = `₹${(val > 100 ? val / 100 : val).toLocaleString('en-IN')} total`;
+                    }
+
                     return (
-                      <div key={campaign.id} className="bg-white p-6 rounded-[1.5rem] xs:rounded-[2rem] shadow-sm border border-slate-200/60 transition-all hover:shadow-lg hover:border-blue-200 flex flex-col h-full group">
-                        <div className="flex justify-between items-start mb-4 gap-3">
+                      <div key={campaign.id} className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] shadow-sm border border-slate-200/80 transition-all hover:shadow-lg hover:border-blue-200 flex flex-col h-full group">
+                        {/* Header: Name, Status, Switch, Trash */}
+                        <div className="flex justify-between items-start mb-3 gap-3">
                           <div onClick={() => handleOpenExplorer(campaign)} className="flex-1 min-w-0 cursor-pointer">
                             <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition-colors flex items-center gap-1.5 w-full">
-                              <span className="truncate flex-1">{campaign.name}</span>
+                              <span className="truncate flex-1" title={campaign.name}>{campaign.name}</span>
                               <ExternalLink size={12} className="text-slate-300 group-hover:text-blue-400 transition-colors shrink-0" />
                             </h3>
-                            <div className="flex items-center gap-2 mt-2 flex-wrap">
-                              <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${campaign.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
-                                {campaign.status === 'ACTIVE' ? <PlayCircle size={10}/> : <PauseCircle size={10}/>} {campaign.status}
+                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                              <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full ${
+                                campaign.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' : 'bg-slate-100 text-slate-600 border border-slate-200/60'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${campaign.status === 'ACTIVE' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                                {campaign.status}
                               </span>
                               <span className="text-[10px] font-mono text-slate-400">ID: {campaign.id}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             {togglingId === campaign.id && <Loader2 size={14} className="animate-spin text-slate-400" />}
-                            <button onClick={() => handleToggleStatus(campaign.id, campaign.status)} className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${campaign.status === 'ACTIVE' ? 'bg-green-500 focus:ring-green-500' : 'bg-slate-200 focus:ring-slate-400'}`}><div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'}`} /></button>
+                            <button 
+                              onClick={() => handleToggleStatus(campaign.id, campaign.status)} 
+                              className={`w-11 h-6.5 sm:w-12 sm:h-7 rounded-full p-0.5 sm:p-1 transition-colors duration-300 ease-in-out focus:outline-none ${
+                                campaign.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-slate-300 hover:bg-slate-400'
+                              }`}
+                              title={campaign.status === 'ACTIVE' ? 'Turn campaign off' : 'Turn campaign on'}
+                            >
+                              <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${
+                                campaign.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0'
+                              }`} />
+                            </button>
                             <button 
                               onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
                               disabled={deletingId === campaign.id}
@@ -2839,36 +2910,71 @@ export default function AdsPage() {
                         </div>
 
                         {/* METRICS SNIPPET ON CARD */}
-                        <div className="grid grid-cols-3 gap-2 py-3 px-3 bg-slate-50/70 rounded-xl border border-slate-100 my-2 text-center">
+                        <div className="grid grid-cols-4 gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-2 sm:px-3 bg-slate-50/80 rounded-xl border border-slate-100 my-2 text-center">
                           <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Leads</p>
-                            <p className="text-sm font-black text-indigo-600 mt-0.5">{resultsCount}</p>
+                            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate">Budget</p>
+                            <p className="text-xs sm:text-sm font-black text-slate-800 mt-0.5 truncate">{budgetStr}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Spend</p>
-                            <p className="text-sm font-black text-slate-800 mt-0.5">₹{Math.round(spend).toLocaleString('en-IN')}</p>
+                            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate">Leads</p>
+                            <p className="text-xs sm:text-sm font-black text-blue-600 mt-0.5">{resultsCount.toLocaleString('en-IN')}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">CPL</p>
-                            <p className="text-sm font-black text-emerald-600 mt-0.5">{cpl ? `₹${cpl.toFixed(0)}` : '—'}</p>
+                            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate">Spend</p>
+                            <p className="text-xs sm:text-sm font-black text-slate-800 mt-0.5">₹{Math.round(spend).toLocaleString('en-IN')}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate">CPL</p>
+                            <p className="text-xs sm:text-sm font-black text-emerald-600 mt-0.5">{cpl ? `₹${cpl.toFixed(0)}` : '—'}</p>
                           </div>
                         </div>
 
                         <div className="flex-grow"></div>
-                        <div className="flex justify-between items-center text-xs text-slate-500 pt-4 border-t border-slate-100 gap-1.5 flex-wrap">
-                          <button 
-                            onClick={() => setActiveLeadsModalCampaign(campaign)} 
-                            className="flex items-center justify-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 py-2 px-2.5 rounded-xl transition-colors border border-blue-200/80"
-                          >
-                            <Users size={14} /> Leads {resultsCount > 0 ? `(${resultsCount})` : ''}
-                          </button>
-                          <button onClick={() => handleOpenStats(campaign)} className="flex items-center justify-center gap-1 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 py-2 px-2.5 rounded-xl transition-colors"><TrendingUp size={14} /> Stats</button>
-                          <button onClick={() => handleOpenAnalysis(campaign)} className="flex items-center justify-center gap-1 text-xs font-bold text-slate-600 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 py-2 px-2.5 rounded-xl transition-colors"><BarChart4 size={14} /> Analyse</button>
-                          <button onClick={() => handleOptimize(campaign)} disabled={orchestrator.isOpen && orchestrator.mode === 'optimize'} className={`flex items-center justify-center gap-1 text-xs font-bold py-2 px-2.5 rounded-xl transition-all ${orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'optimize' ? 'bg-purple-100 text-purple-400 cursor-not-allowed' : optimizedCampaigns.includes(campaign.id) ? 'bg-purple-50 text-purple-600 border border-purple-100 hover:bg-purple-100' : campaign.status !== 'ACTIVE' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : 'bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 shadow-sm'}`}>
-                            <Sparkles size={14} /> 
-                            {orchestrator.isOpen && orchestrator.campaign?.id === campaign.id ? 'Optimizing...' : optimizedCampaigns.includes(campaign.id) ? 'Re-optimize' : 'Optimize'}
-                          </button>
-                          <a href={`https://adsmanager.facebook.com/ads/manager/account/campaigns/`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-xl transition-colors"><ExternalLink size={16} /></a>
+
+                        {/* CARD ACTION BUTTONS */}
+                        <div className="pt-3 sm:pt-4 border-t border-slate-100 space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <button 
+                              onClick={() => setActiveLeadsModalCampaign(campaign)} 
+                              className="flex items-center justify-center gap-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-600 hover:text-white py-2 px-2.5 rounded-xl transition-all border border-blue-200/80 shadow-xs"
+                            >
+                              <Users size={13} />
+                              <span>Leads {resultsCount > 0 ? `(${resultsCount})` : ''}</span>
+                            </button>
+                            <button 
+                              onClick={() => handleOptimize(campaign)} 
+                              disabled={orchestrator.isOpen && orchestrator.mode === 'optimize'} 
+                              className={`flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-2.5 rounded-xl transition-all border shadow-xs ${
+                                orchestrator.isOpen && orchestrator.campaign?.id === campaign.id && orchestrator.mode === 'optimize' 
+                                  ? 'bg-purple-100 text-purple-400 border-purple-200 cursor-not-allowed' 
+                                  : optimizedCampaigns.includes(campaign.id) 
+                                  ? 'bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100' 
+                                  : campaign.status !== 'ACTIVE' 
+                                  ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' 
+                                  : 'bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white border-purple-200'
+                              }`}
+                            >
+                              <Sparkles size={13} /> 
+                              <span>{orchestrator.isOpen && orchestrator.campaign?.id === campaign.id ? 'Optimizing...' : optimizedCampaigns.includes(campaign.id) ? 'Re-optimize' : 'Optimize'}</span>
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between gap-1.5 text-xs text-slate-500">
+                            <button onClick={() => handleOpenStats(campaign)} className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl transition-colors border border-slate-200/60">
+                              <TrendingUp size={13} /> Stats
+                            </button>
+                            <button onClick={() => handleOpenAnalysis(campaign)} className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 text-xs font-bold text-slate-600 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 rounded-xl transition-colors border border-slate-200/60">
+                              <BarChart4 size={13} /> Analyse
+                            </button>
+                            <a 
+                              href="https://adsmanager.facebook.com/ads/manager/account/campaigns/" 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors border border-slate-200/60"
+                              title="Open in Meta Ads Manager"
+                            >
+                              <ExternalLink size={14} />
+                            </a>
+                          </div>
                         </div>
                       </div>
                     );
