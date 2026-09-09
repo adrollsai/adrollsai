@@ -6,12 +6,12 @@ import { extractJsonFromText } from "./json-parser";
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
 const fileManager = new GoogleAIFileManager(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
 
-export async function transcribeVideoWithGemini(videoUrl: string, fallbackAudioUrl?: string) {
+export async function transcribeVideoWithGemini(videoUrl: string, fallbackAudioUrl?: string, targetLanguage: string = 'hinglish') {
     let localTempPath = '';
     let uploadedFileName = '';
     try {
         const targetUrl = fallbackAudioUrl || videoUrl;
-        console.log(`[Gemini Video] Starting transcription for target URL: ${targetUrl}`);
+        console.log(`[Gemini Video] Starting transcription for target URL: ${targetUrl} in language: ${targetLanguage}`);
 
         const response = await fetch(targetUrl);
         const buffer = await response.arrayBuffer();
@@ -47,12 +47,12 @@ export async function transcribeVideoWithGemini(videoUrl: string, fallbackAudioU
             // If video failed and we haven't tried fallback audio yet, attempt with fallbackAudioUrl if present
             if (!isAudio && fallbackAudioUrl && fallbackAudioUrl !== videoUrl) {
                 console.warn(`[Gemini Video] MP4 video processing failed in Gemini, retrying with fallback audio: ${fallbackAudioUrl}`);
-                return await transcribeVideoWithGemini(fallbackAudioUrl);
+                return await transcribeVideoWithGemini(fallbackAudioUrl, undefined, targetLanguage);
             }
             throw new Error("Video processing failed in Gemini");
         }
 
-        console.log(`[Gemini Video] File ready (${file.state}). Generating transcript...`);
+        console.log(`[Gemini Video] File ready (${file.state}). Generating transcript in ${targetLanguage}...`);
 
         const videoTranscriptionSchema = {
             type: "OBJECT",
@@ -73,7 +73,41 @@ export async function transcribeVideoWithGemini(videoUrl: string, fallbackAudioU
             required: ["segments"]
         };
 
-        // 4. Generate Transcript using Gemini 2.5 Flash with fallback to 3.5 Flash
+        const langLower = (targetLanguage || '').toLowerCase();
+        let languageSpecificInstruction = "Generate a precise transcript of this video/audio.";
+        if (langLower === 'hinglish') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio. MANDATORY LANGUAGE RULE: Transcribe the speech into natural HINGLISH using Roman/Latin alphabet (English letters, e.g., 'Agar aap Nagpur mein apna dream home dekh rahe hain...'). ABSOLUTELY DO NOT use Devanagari script.";
+        } else if (langLower === 'english') {
+            languageSpecificInstruction = "Generate a precise transcript and translation of this video/audio into clear, conversational ENGLISH. If any other language is spoken, translate the speech into high-converting English subtitles.";
+        } else if (langLower === 'hindi') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in HINDI using native Devanagari script (हिन्दी).";
+        } else if (langLower === 'punjabi') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in PUNJABI (ਪੰਜਾਬੀ).";
+        } else if (langLower === 'marathi') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in MARATHI (मराठी).";
+        } else if (langLower === 'gujarati') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in GUJARATI (ગુજરાતી).";
+        } else if (langLower === 'bengali') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in BENGALI (বাংলা).";
+        } else if (langLower === 'tamil') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in TAMIL (தமிழ்).";
+        } else if (langLower === 'telugu') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in TELUGU (తెలుగు).";
+        } else if (langLower === 'kannada') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in KANNADA (ಕನ್ನಡ).";
+        } else if (langLower === 'malayalam') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in MALAYALAM (മലയാളം).";
+        } else if (langLower === 'arabic') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in ARABIC (العربية).";
+        } else if (langLower === 'spanish') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in SPANISH (Español).";
+        } else if (langLower === 'french') {
+            languageSpecificInstruction = "Generate a precise transcript of this video/audio in FRENCH (Français).";
+        } else if (langLower && langLower !== 'auto') {
+            languageSpecificInstruction = `Generate a precise transcript of this video/audio translated or transcribed into ${targetLanguage}.`;
+        }
+
+        // 4. Generate Transcript using Gemini with fallback
         const result = await generateContentWithFallback(
             genAI,
             [
@@ -83,7 +117,7 @@ export async function transcribeVideoWithGemini(videoUrl: string, fallbackAudioU
                         fileUri: file.uri,
                     },
                 },
-                { text: "Generate a precise transcript of this video/audio. For every segment of speech, provide the start time, end time, and text. Return the result in a clean JSON format matching the schema." },
+                { text: `${languageSpecificInstruction} For every segment of speech, provide the exact start time, end time, and text. Return the result in a clean JSON format matching the schema.` },
             ],
             "gemini-3.5-flash",
             "gemini-3.5-flash",

@@ -272,11 +272,12 @@ async function handleSync(request: Request) {
                 } else if (fieldName.includes('email') || fieldName.includes('e-mail')) {
                   email = fieldValue;
                 } else if (
-                  fieldName.includes('phone') || 
+                  (fieldName.includes('phone') || 
                   fieldName.includes('mobile') || 
                   fieldName.includes('contact') || 
                   fieldName.includes('whatsapp') || 
-                  fieldName.includes('tel')
+                  fieldName.includes('tel')) &&
+                  !fieldName.includes('verified')
                 ) {
                   phone = fieldValue;
                 } else if (fieldName === 'city') {

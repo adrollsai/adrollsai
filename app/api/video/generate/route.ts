@@ -348,7 +348,7 @@ export async function POST(request: Request) {
         }
 
         // Replace English spelling of Indian cities and proper nouns with Devanagari equivalents when in Hinglish/Hindi mode (prevents mispronunciation by TTS)
-        if (language !== 'english') {
+        if (language === 'hinglish' || language === 'hindi' || !language) {
             const cityReplacements: { [key: string]: string } = {
                 'Mohali': 'मोहाली',
                 'Mohaali': 'मोहाली',

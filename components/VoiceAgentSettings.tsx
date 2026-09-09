@@ -34,7 +34,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
-  Eye
+  Eye,
+  MessageCircle
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
@@ -138,6 +139,42 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   const [leadPreviewSearch, setLeadPreviewSearch] = useState('')
   const [modalDisplayLimit, setModalDisplayLimit] = useState(60)
   const [previewDisplayLimit, setPreviewDisplayLimit] = useState(60)
+  const [leadFilterTab, setLeadFilterTab] = useState<'all' | 'interested' | 'booked' | 'completed' | 'unreachable'>('all')
+  const [modalSearchQuery, setModalSearchQuery] = useState('')
+
+  const isLeadInterested = (lead: any): boolean => {
+    if (!lead) return false
+    const stage = (lead.pipeline_stage || lead.status || '').toLowerCase()
+    if (stage.includes('appointment') || stage.includes('visit') || stage.includes('qualified')) return true
+    
+    let cf = lead.custom_fields || {}
+    if (typeof cf === 'string') {
+      try { cf = JSON.parse(cf); } catch (e) { cf = {}; }
+    }
+    if (cf.is_interested === true || cf.is_qualified === true) return true
+    if (cf.lead_priority === 'HOT' || cf.lead_priority === 'WARM') return true
+    if (lead.booked_time) return true
+    
+    const summary = (lead.voice_call_summary || '').toLowerCase()
+    const notes = (lead.notes || '').toLowerCase()
+    const combined = `${summary} ${notes}`
+    
+    if (combined.includes('not interested') || combined.includes('no requirement') || combined.includes('no money') || combined.includes('wrong number') || combined.includes('job') || combined.includes('unemployed')) {
+      return false
+    }
+    
+    if (combined.includes('site visit') || combined.includes('interested') || combined.includes('office') || combined.includes('showroom') || combined.includes('shop') || combined.includes('pre-leased') || combined.includes('investment') || combined.includes('call back') || combined.includes('callback') || combined.includes('commercial')) {
+      return true
+    }
+    
+    return false
+  }
+
+  const isLeadBooked = (lead: any): boolean => {
+    if (!lead) return false
+    const stage = (lead.pipeline_stage || lead.status || '').toLowerCase()
+    return stage.includes('appointment') || stage.includes('visit') || Boolean(lead.booked_time) || lead.voice_call_status === 'scheduled_callback'
+  }
 
   const [campaignForm, setCampaignForm] = useState({
     name: '',
@@ -2021,6 +2058,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                   const callingLeads = c.stats ? c.stats.dialing : campaignLeads.filter(l => l.voice_call_status === 'calling').length
                   const pendingLeads = c.stats ? c.stats.queue : totalLeads - (completedLeads + failedLeads + callingLeads)
                   const progressPercent = totalLeads > 0 ? Math.round(((completedLeads + failedLeads) / totalLeads) * 100) : 0
+                  const interestedLeadsCount = campaignLeads.filter(isLeadInterested).length
+                  const bookedLeadsCount = campaignLeads.filter(isLeadBooked).length
 
                   return (
                     <div key={c.id} className="p-5 bg-slate-50/80 border border-slate-200/80 rounded-2xl flex flex-col gap-4 font-sans shadow-2xs hover:shadow-xs transition-all">
@@ -2249,6 +2288,14 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                             <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md border border-emerald-100 flex items-center gap-1">
                               ✅ Spoke: {completedLeads}
                             </span>
+                            <span className="bg-amber-50 text-amber-800 px-2.5 py-1 rounded-md border border-amber-200/80 flex items-center gap-1 font-black shadow-2xs">
+                              🔥 Interested: {interestedLeadsCount}
+                            </span>
+                            {bookedLeadsCount > 0 && (
+                              <span className="bg-purple-50 text-purple-700 px-2.5 py-1 rounded-md border border-purple-200 flex items-center gap-1 font-black">
+                                📅 Booked/Callback: {bookedLeadsCount}
+                              </span>
+                            )}
                             <span className="bg-rose-50 text-rose-700 px-2.5 py-1 rounded-md border border-rose-100 flex items-center gap-1">
                               ❌ Unreachable: {failedLeads}
                             </span>
@@ -2264,14 +2311,23 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                             )}
                           </div>
 
-                          <div className="pt-2">
+                          <div className="pt-2 flex flex-wrap items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => { setModalDisplayLimit(60); setSelectedCampaignForModal(c); }}
+                              onClick={() => { setModalDisplayLimit(60); setLeadFilterTab('all'); setModalSearchQuery(''); setSelectedCampaignForModal(c); }}
                               className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200/80 rounded-xl text-xs font-black transition-all shadow-xs active:scale-95 cursor-pointer"
                             >
                               <Users size={14} />
-                              <span>View Campaign Leads ({totalLeads})</span>
+                              <span>View All Leads ({totalLeads})</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => { setModalDisplayLimit(60); setLeadFilterTab('interested'); setModalSearchQuery(''); setSelectedCampaignForModal(c); }}
+                              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-xs font-black transition-all shadow-xs active:scale-95 cursor-pointer"
+                            >
+                              <Sparkles size={13} />
+                              <span>Filter Interested Leads ({interestedLeadsCount})</span>
                             </button>
                           </div>
                         </div>
@@ -2455,39 +2511,148 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                 }
               }
               const modalLeads = Array.from(modalLeadsMap.values())
+              const interestedModalLeads = modalLeads.filter(isLeadInterested)
+              const bookedModalLeads = modalLeads.filter(isLeadBooked)
+              const completedModalLeads = modalLeads.filter(l => l.voice_call_status === 'completed')
+              const unreachableModalLeads = modalLeads.filter(l => ['failed', 'failed_max_retries', 'no_answer'].includes(l.voice_call_status))
+
+              let displayedLeads = modalLeads
+              if (leadFilterTab === 'interested') displayedLeads = interestedModalLeads
+              else if (leadFilterTab === 'booked') displayedLeads = bookedModalLeads
+              else if (leadFilterTab === 'completed') displayedLeads = completedModalLeads
+              else if (leadFilterTab === 'unreachable') displayedLeads = unreachableModalLeads
+
+              if (modalSearchQuery.trim()) {
+                const q = modalSearchQuery.toLowerCase()
+                displayedLeads = displayedLeads.filter(l => {
+                  const name = (l.name || '').toLowerCase()
+                  const phone = (l.phone || '').toLowerCase()
+                  const summary = (l.voice_call_summary || '').toLowerCase()
+                  const notes = (l.notes || '').toLowerCase()
+                  const cfStr = JSON.stringify(l.custom_fields || {}).toLowerCase()
+                  return name.includes(q) || phone.includes(q) || summary.includes(q) || notes.includes(q) || cfStr.includes(q)
+                })
+              }
 
               return (
                 <>
                   <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-extrabold text-base text-slate-900">{selectedCampaignForModal.name}</h3>
                         <span className="text-xs font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
-                          {modalLeads.length} Unique Leads Tagged
+                          {modalLeads.length} Total Leads
+                        </span>
+                        <span className="text-xs font-black text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                          🔥 {interestedModalLeads.length} Interested
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                        Click "Open Lead CRM Page" to see full history, conversation transcript, and listen to recorded voice calls.
+                        Filter by interested prospects and contact them instantly via WhatsApp, direct call, or CRM.
                       </p>
                     </div>
                     <button
-                      onClick={() => setSelectedCampaignForModal(null)}
+                      onClick={() => { setSelectedCampaignForModal(null); setModalSearchQuery(''); setLeadFilterTab('all'); }}
                       className="p-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200/60 transition-colors cursor-pointer"
                     >
                       <X size={20} />
                     </button>
                   </div>
 
+                  {/* Filter Tabs & Search Bar */}
+                  <div className="p-3.5 bg-white border-b border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => { setLeadFilterTab('all'); setModalDisplayLimit(60); }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                          leadFilterTab === 'all'
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80'
+                        }`}
+                      >
+                        All ({modalLeads.length})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setLeadFilterTab('interested'); setModalDisplayLimit(60); }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1 ${
+                          leadFilterTab === 'interested'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/80'
+                        }`}
+                      >
+                        🔥 Interested ({interestedModalLeads.length})
+                      </button>
+
+                      {bookedModalLeads.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setLeadFilterTab('booked'); setModalDisplayLimit(60); }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1 ${
+                            leadFilterTab === 'booked'
+                              ? 'bg-purple-700 text-white shadow-xs'
+                              : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200/80'
+                          }`}
+                        >
+                          📅 Booked/Callback ({bookedModalLeads.length})
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => { setLeadFilterTab('completed'); setModalDisplayLimit(60); }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                          leadFilterTab === 'completed'
+                            ? 'bg-emerald-700 text-white shadow-xs'
+                            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60'
+                        }`}
+                      >
+                        ✅ Spoke ({completedModalLeads.length})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setLeadFilterTab('unreachable'); setModalDisplayLimit(60); }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                          leadFilterTab === 'unreachable'
+                            ? 'bg-rose-700 text-white shadow-xs'
+                            : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/60'
+                        }`}
+                      >
+                        ❌ Unreachable ({unreachableModalLeads.length})
+                      </button>
+                    </div>
+
+                    <div className="relative min-w-[220px]">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={modalSearchQuery}
+                        onChange={(e) => setModalSearchQuery(e.target.value)}
+                        placeholder="Search leads..."
+                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-indigo-400 focus:bg-white transition-all"
+                      />
+                    </div>
+                  </div>
+
                   <div className="p-6 overflow-y-auto flex-1 space-y-3">
-                    {modalLeads.length === 0 ? (
+                    {displayedLeads.length === 0 ? (
                       <div className="text-center py-12 text-slate-400 text-xs font-semibold">
-                        No unique leads currently tagged for this campaign.
+                        {modalSearchQuery
+                          ? 'No leads matching your search criteria.'
+                          : leadFilterTab === 'interested'
+                          ? 'No leads classified as interested yet in this campaign.'
+                          : 'No leads found in this view.'}
                       </div>
                     ) : (
                       <>
-                        {modalLeads.slice(0, modalDisplayLimit).map((lead) => {
+                        {displayedLeads.slice(0, modalDisplayLimit).map((lead) => {
                           const impersonateId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('impersonate') : null
                           const crmUrl = `/dashboard/crm/${lead.id}${impersonateId ? `?impersonate=${impersonateId}` : ''}`
+                          const cleanPhoneDigits = (lead.phone || '').replace(/\D/g, '')
+                          const isInterested = isLeadInterested(lead)
                           
                           let statusBadgeClass = 'bg-slate-100 text-slate-600 border-slate-200'
                           let statusText = lead.voice_call_status || 'not_called'
@@ -2509,18 +2674,67 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                             statusText = '🕒 Callback Scheduled'
                           }
 
+                          let cf = lead.custom_fields || {}
+                          if (typeof cf === 'string') {
+                            try { cf = JSON.parse(cf); } catch (e) { cf = {}; }
+                          }
+                          const budget = lead.budget || cf.budget
+                          const propertyType = cf.property_type || cf.interested_property
+
                           return (
-                            <div key={lead.id} className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-slate-300 transition-all">
+                            <div 
+                              key={lead.id} 
+                              className={`p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all ${
+                                isInterested 
+                                  ? 'bg-amber-50/40 border-2 border-amber-200 shadow-2xs hover:border-amber-300' 
+                                  : 'bg-slate-50/80 border border-slate-200/80 hover:border-slate-300'
+                              }`}
+                            >
                               <div className="space-y-1.5 flex-1 pr-2">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="font-extrabold text-sm text-slate-900">{lead.name || 'Unnamed Lead'}</span>
-                                  <span className="text-xs font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200/60">{lead.phone}</span>
+                                  <span className="text-xs font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200/60 font-mono">{lead.phone}</span>
+                                  
+                                  {isInterested && (
+                                    <span className="text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-500 text-white shadow-2xs flex items-center gap-1">
+                                      🔥 Interested
+                                    </span>
+                                  )}
+
                                   <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border ${statusBadgeClass}`}>
                                     {statusText}
                                   </span>
+
+                                  {lead.booked_time && (
+                                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+                                      📅 Booked: {new Date(lead.booked_time).toLocaleDateString()}
+                                    </span>
+                                  )}
+
+                                  {lead.voice_call_scheduled_at && !lead.booked_time && (
+                                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
+                                      🕒 Callback: {new Date(lead.voice_call_scheduled_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                    </span>
+                                  )}
                                 </div>
+
+                                {(budget || propertyType) && (
+                                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                    {propertyType && (
+                                      <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">
+                                        Type: {propertyType}
+                                      </span>
+                                    )}
+                                    {budget && (
+                                      <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-100">
+                                        Budget: {budget}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
                                 {lead.voice_call_summary ? (
-                                  <p className="text-xs text-slate-600 line-clamp-2 bg-white p-2.5 rounded-xl border border-slate-200/60 italic font-medium leading-relaxed">
+                                  <p className="text-xs text-slate-600 line-clamp-2 bg-white p-2.5 rounded-xl border border-slate-200/60 italic font-medium leading-relaxed mt-1">
                                     "{lead.voice_call_summary}"
                                   </p>
                                 ) : (
@@ -2528,27 +2742,54 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                                 )}
                               </div>
 
-                              <a
-                                href={crmUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs shrink-0 active:scale-95 cursor-pointer"
-                              >
-                                <span>Open Lead CRM Page</span>
-                                <ExternalLink size={13} className="text-slate-500" />
-                              </a>
+                              {/* Action Buttons to Get In Touch */}
+                              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                {cleanPhoneDigits && (
+                                  <>
+                                    <a
+                                      href={`https://wa.me/${cleanPhoneDigits}?text=${encodeURIComponent(`Hi ${lead.name || ''}, this is regarding your interest in commercial properties with ${selectedCampaignForModal.name}.`)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-2xs active:scale-95 cursor-pointer"
+                                      title="Open WhatsApp Chat"
+                                    >
+                                      <MessageCircle size={13} />
+                                      <span>WhatsApp</span>
+                                    </a>
+
+                                    <a
+                                      href={`tel:${lead.phone}`}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-extrabold transition-all shadow-2xs active:scale-95 cursor-pointer"
+                                      title="Call Lead Phone"
+                                    >
+                                      <Phone size={13} />
+                                      <span>Call</span>
+                                    </a>
+                                  </>
+                                )}
+
+                                <a
+                                  href={crmUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer"
+                                >
+                                  <span>Open CRM</span>
+                                  <ExternalLink size={13} className="text-slate-400" />
+                                </a>
+                              </div>
                             </div>
                           )
                         })}
 
-                        {modalLeads.length > modalDisplayLimit && (
+                        {displayedLeads.length > modalDisplayLimit && (
                           <div className="pt-2 text-center pb-2">
                             <button
                               type="button"
                               onClick={() => setModalDisplayLimit(prev => prev + 100)}
                               className="px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl transition-all cursor-pointer shadow-2xs"
                             >
-                              Load More Leads ({modalLeads.length - modalDisplayLimit} remaining)
+                              Load More Leads ({displayedLeads.length - modalDisplayLimit} remaining)
                             </button>
                           </div>
                         )}

@@ -179,12 +179,17 @@ export async function POST(req: Request) {
 
     // 3. Upsert Profile
     if (targetUserId) {
+        const payload: any = { 
+            id: targetUserId,
+            ...profileUpdates 
+        };
+        if (isNewUser) {
+            payload.created_at = new Date().toISOString();
+        }
+
         const { error: profileError } = await supabaseAdmin
             .from('profiles')
-            .upsert({ 
-                id: targetUserId,
-                ...profileUpdates 
-            });
+            .upsert(payload);
         
         if (profileError) {
             console.error("Profile Upsert Error:", profileError);
@@ -469,6 +474,7 @@ export async function GET(req: Request) {
 
       return {
         ...m,
+        created_at: m.created_at || authUser?.created_at || new Date().toISOString(),
         is_disabled: isDisabled
       };
     });

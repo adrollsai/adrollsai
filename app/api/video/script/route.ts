@@ -228,20 +228,191 @@ Amenities/Features: ${property.amenities || "N/A"}
             imageDescriptions = await resolveImageDescriptions(supabaseAdmin, refImages, propertyId);
         }
 
-        // Determine language based on the explicit language toggle first, then fall back to instruction text parsing
-        const isEnglish = language === 'english';
-        const userText = (userInstructions || '').toLowerCase();
-        let languageInstruction: string;
-        
-        if (isEnglish) {
-            languageInstruction = "The script dialogue MUST be written entirely in ENGLISH using standard English letters. Speak directly and conversationally 1-on-1 to the viewer with charismatic energy, natural warmth, and high-converting direct-response persuasion. Do NOT use any Hindi, Hinglish, or Devanagari script anywhere.";
-        } else if (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')) {
-            languageInstruction = "The script dialogue MUST be written in high-converting, conversational ENGLISH using standard English letters.";
-        } else if (userText.includes('in hindi') || userText.includes('only hindi')) {
-            languageInstruction = "The script dialogue MUST be written in natural, conversational HINDI using native Devanagari script (Hindi characters).";
-        } else {
-            languageInstruction = "The script dialogue MUST be written in high-converting, natural conversational Roman Hinglish (a natural blend of everyday spoken Hindi words in English/Latin letters and standard English words), speaking warmly, persuasively, and directly 1-on-1 to the viewer like a trusted, enthusiastic insider host (e.g. 'Agar aap Mohali mein apna luxury home dhoondh rahe hain, toh ye space definitely dekhna banta hai'). Avoid stiff, robotic catalog speech. Specifically, you MUST write any Indian-specific city names (e.g. 'मोहाली' instead of 'Mohali', 'चंडीगढ़' instead of 'Chandigarh', 'दिल्ली' instead of 'Delhi', 'मुंबई' instead of 'Mumbai', 'नोएडा' instead of 'Noida', 'गुड़गांव' instead of 'Gurgaon', 'ज़िरकपुर' instead of 'Zirakpur', 'पंचकुला' instead of 'Panchkula', 'जयपुर' instead of 'Jaipur', etc.), project names (e.g. 'अमायरा स्काई सिटी' instead of 'Amayra Sky City'), and institutions/universities (e.g. 'रयात बहरा' instead of 'Rayat Bahra', 'चितकारा' instead of 'Chitkara', 'यूनिवर्सिटी' instead of 'University') in native Hindi Devanagari script to ensure perfect pronunciation by the voice model. All other words in the dialogue must be written in standard Roman characters. Everyday English loanwords (like 'dream home', 'perfect space', 'luxury flat', 'living room', 'security', 'location', 'get in touch') must remain in standard English letters.";
+        // Helper to resolve language instructions for any supported language
+        function getScriptLanguageRules(langCode: string, userInstructionsText?: string) {
+            const code = (langCode || 'hinglish').toLowerCase().trim();
+            const userText = (userInstructionsText || '').toLowerCase();
+
+            if (code === 'english' || (code === 'hinglish' && (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')))) {
+                return {
+                    isEnglish: true,
+                    isHinglish: false,
+                    langLabel: 'English',
+                    instruction: "The script dialogue MUST be written entirely in ENGLISH using standard English letters. Speak directly and conversationally 1-on-1 to the viewer with charismatic energy, natural warmth, and high-converting direct-response persuasion. Do NOT use any Hindi, Hinglish, or Devanagari script anywhere.",
+                    calloutRule: "The script's spoken dialogue MUST be entirely in English from the very first word. No Hindi, Hinglish, or Devanagari script.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use clear, standard English vocabulary. Keep the language accessible and professional. Avoid jargon or overly complex words."
+                };
+            }
+
+            if (code === 'hindi' || userText.includes('in hindi') || userText.includes('only hindi')) {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Hindi',
+                    instruction: "The script dialogue MUST be written entirely in natural, conversational HINDI using native Devanagari script (e.g. 'अगर आप अपने सपनों का घर ढूंढ रहे हैं...'). Write in an engaging, charismatic, spoken conversational tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in natural Hindi using native Devanagari script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use everyday spoken Hindi words in Devanagari script. Avoid overly complex Sanskritized vocabulary."
+                };
+            }
+
+            if (code === 'punjabi') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Punjabi',
+                    instruction: "The script dialogue MUST be written entirely in conversational PUNJABI using native Gurmukhi script (e.g. 'ਜੇ ਤੁਸੀਂ ਆਪਣੇ ਸੁਪਨਿਆਂ ਦਾ ਘਰ ਲੱਭ ਰਹੇ ਹੋ...'). Write in a lively, warm, and authentic conversational tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Punjabi using native Gurmukhi script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, conversational Punjabi in Gurmukhi script for authentic voice generation."
+                };
+            }
+
+            if (code === 'marathi') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Marathi',
+                    instruction: "The script dialogue MUST be written entirely in conversational MARATHI using native Devanagari script (e.g. 'जर तुम्ही तुमच्या स्वप्नातील घर शोधत असाल...'). Write in an authentic, warm, and engaging tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Marathi using native Devanagari script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, everyday conversational Marathi in Devanagari script."
+                };
+            }
+
+            if (code === 'gujarati') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Gujarati',
+                    instruction: "The script dialogue MUST be written entirely in conversational GUJARATI using native Gujarati script (e.g. 'જો તમે તમારા સપનાનું ઘર શોધી રહ્યા છો...'). Write in an authentic, warm, and engaging tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Gujarati using native Gujarati script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, everyday conversational Gujarati in Gujarati script."
+                };
+            }
+
+            if (code === 'bengali') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Bengali',
+                    instruction: "The script dialogue MUST be written entirely in conversational BENGALI using native Bengali script (e.g. 'আপনি যদি আপনার স্বপ্নের বাড়ি খুঁজছেন...'). Write in an authentic, warm, and engaging tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Bengali using native Bengali script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, everyday conversational Bengali in Bengali script."
+                };
+            }
+
+            if (code === 'tamil') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Tamil',
+                    instruction: "The script dialogue MUST be written entirely in conversational TAMIL using native Tamil script (e.g. 'உங்கள் கனவு இல்லத்தை நீங்கள் தேடுகிறீர்களா...'). Write in an authentic, warm, and engaging tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Tamil using native Tamil script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, everyday spoken Tamil in Tamil script."
+                };
+            }
+
+            if (code === 'telugu') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Telugu',
+                    instruction: "The script dialogue MUST be written entirely in conversational TELUGU using native Telugu script (e.g. 'మీ కలల ఇంటి కోసం మీరు చూస్తున్నారా...'). Write in an authentic, warm, and engaging tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Telugu using native Telugu script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, everyday spoken Telugu in Telugu script."
+                };
+            }
+
+            if (code === 'kannada') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Kannada',
+                    instruction: "The script dialogue MUST be written entirely in conversational KANNADA using native Kannada script (e.g. 'ನಿಮ್ಮ ಕನಸಿನ ಮನೆಯನ್ನು ಹುಡುಕುತ್ತಿದ್ದೀरा...'). Write in an authentic, warm, and engaging tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Kannada using native Kannada script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, everyday spoken Kannada in Kannada script."
+                };
+            }
+
+            if (code === 'malayalam') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Malayalam',
+                    instruction: "The script dialogue MUST be written entirely in conversational MALAYALAM using native Malayalam script (e.g. 'നിങ്ങളുടെ സ്വപ്ന ഭവനം അന്വേഷിക്കുകയാണോ...'). Write in an authentic, warm, and engaging tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Malayalam using native Malayalam script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, everyday spoken Malayalam in Malayalam script."
+                };
+            }
+
+            if (code === 'urdu') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Urdu',
+                    instruction: "The script dialogue MUST be written entirely in conversational URDU using standard Urdu Arabic script (e.g. 'اگر آپ اپنے خوابوں کے گھر کی تلاش میں ہیں...'). Write warmly and engagingly.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Urdu using standard Urdu script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, everyday spoken Urdu in standard Urdu script."
+                };
+            }
+
+            if (code === 'arabic') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Arabic',
+                    instruction: "The script dialogue MUST be written entirely in conversational modern ARABIC using Arabic script (e.g. 'إذا كنت تبحث عن منزل أحلامك...'). Write in a charismatic, persuasive commercial tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Arabic using standard Arabic script from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, modern conversational Arabic."
+                };
+            }
+
+            if (code === 'spanish') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'Spanish',
+                    instruction: "The script dialogue MUST be written entirely in conversational SPANISH using standard Spanish alphabet (e.g. '¿Estás buscando la casa de tus sueños...?'). Write in an engaging, charismatic commercial tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in Spanish from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, conversational Spanish vocabulary."
+                };
+            }
+
+            if (code === 'french') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'French',
+                    instruction: "The script dialogue MUST be written entirely in conversational FRENCH using standard French alphabet (e.g. 'Vous cherchez la maison de vos rêves...?'). Write in an engaging, charismatic commercial tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in French from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, conversational French vocabulary."
+                };
+            }
+
+            if (code === 'german') {
+                return {
+                    isEnglish: false,
+                    isHinglish: false,
+                    langLabel: 'German',
+                    instruction: "The script dialogue MUST be written entirely in conversational GERMAN using standard German alphabet (e.g. 'Suchen Sie nach Ihrem Traumhaus...?'). Write in an engaging, charismatic commercial tone.",
+                    calloutRule: "The script's spoken dialogue MUST be written in German from the very first word.",
+                    pronunciationRule: "4.2. PRONUNCIATION: Use natural, conversational German vocabulary."
+                };
+            }
+
+            // Default: Hinglish
+            return {
+                isEnglish: false,
+                isHinglish: true,
+                langLabel: 'Hinglish',
+                instruction: "The script dialogue MUST be written in high-converting, natural conversational Roman Hinglish (a natural blend of everyday spoken Hindi words in English/Latin letters and standard English words), speaking warmly, persuasively, and directly 1-on-1 to the viewer like a trusted, enthusiastic insider host (e.g. 'Agar aap Mohali mein apna luxury home dhoondh rahe hain, toh ye space definitely dekhna banta hai'). Avoid stiff, robotic catalog speech. Specifically, you MUST write any Indian-specific city names (e.g. 'मोहाली' instead of 'Mohali', 'चंडीगढ़' instead of 'Chandigarh', 'दिल्ली' instead of 'Delhi', 'मुंबई' instead of 'Mumbai', 'नोएडा' instead of 'Noida', 'गुड़गांव' instead of 'Gurgaon', 'ज़िरकपुर' instead of 'Zirakpur', 'पंचकुला' instead of 'Panchkula', 'जयपुर' instead of 'Jaipur', etc.), project names (e.g. 'अमायरा स्काई सिटी' instead of 'Amayra Sky City'), and institutions/universities (e.g. 'रयात बहरा' instead of 'Rayat Bahra', 'चितकारा' instead of 'Chitkara', 'यूनिवर्सिटी' instead of 'University') in native Hindi Devanagari script to ensure perfect pronunciation by the voice model. All other words in the dialogue must be written in standard Roman characters. Everyday English loanwords (like 'dream home', 'perfect space', 'luxury flat', 'living room', 'security', 'location', 'get in touch') must remain in standard English letters.",
+                calloutRule: "The script's spoken dialogue MUST be written in Hinglish using standard Roman/English characters, EXCEPT for Indian proper nouns, location names, project names, and institution names (like मोहाली, चंडीगढ़, चितकारा, रयात बहरा, अमायरा स्काई सिटी) which MUST be written in native Hindi Devanagari script.",
+                pronunciationRule: `4.2. PRONUNCIATION WORKAROUND (STRICTLY AVOID COMPLEX HINDI WORDS):
+   - To guarantee flawless natural pronunciation, you MUST strictly avoid complex, bookish, or heavy Hindi vocabulary (e.g. absolutely DO NOT write words phonetically like 'susajjit', 'aalishan', 'vastukala', 'pratishthit', 'suvidhajanak', 'vatankoolit', 'aakanksha', 'pratishtha', 'surakshit', 'parikalpana', 'keemat').
+   - Instead, ALWAYS use extremely simple, clear, conversational, everyday spoken Hindi words phonetically (e.g. 'ghar' instead of complex synonyms, 'chain', 'sukoon', 'khushi', 'aasan', 'budget', 'best').
+   - Write Hindi words in Roman letters phonetically as they are pronounced (e.g., 'shuruaat', 'dhoondh', 'apna', 'achha'). Everyday English loanwords (like 'luxury', 'location', 'perfect', 'amenities', 'living', 'security', 'space', 'safe', 'family', 'balance') are highly preferred.`
+            };
         }
+
+        const { isEnglish, isHinglish, langLabel, instruction: languageInstruction, calloutRule, pronunciationRule } = getScriptLanguageRules(language, userInstructions);
 
         const variationInstruction = variation 
             ? "This is a request for an alternate variation/concept angle. Generate a completely different, fresh visual hook and messaging angle from any previously generated script for this concept, making it even more unique and engaging!"
@@ -254,9 +425,7 @@ Amenities/Features: ${property.amenities || "N/A"}
         const numClips = Math.ceil(duration / 15);
         let scenesSchema = "";
         for (let i = 1; i <= numClips; i++) {
-            const dialogueExample = isEnglish 
-                ? `Plain text of the English speech for Scene ${i} (comfortably spoken in 15 seconds, strictly under 30 words)`
-                : `Plain text of the Hinglish speech in Roman characters for Scene ${i} (comfortably spoken in 15 seconds, strictly under 30 words)`;
+            const dialogueExample = `Plain text of the ${langLabel} speech for Scene ${i} (comfortably spoken in 15 seconds, strictly under 30 words)`;
             scenesSchema += `    {
       "dialogue": "${dialogueExample}",
       "visuals": "Highly detailed visual instructions describing Scene ${i} (15s). Detail the outfit and location of the presenter altered and customized based on the project theme. Describe property/product B-rolls cuts showcasing key features (using matching reference image details) with the presenter temporarily off-screen."
@@ -266,7 +435,9 @@ Amenities/Features: ${property.amenities || "N/A"}
         // Build language-appropriate framework prompts with examples
         const hookExampleText = isEnglish 
             ? '"Looking for your dream home in Mohali but can\'t find the right space?"'
-            : '"Mohali mein apna dream home dhoond rahe ho par perfect space nahi mil raha?"';
+            : isHinglish
+            ? '"Mohali mein apna dream home dhoond rahe ho par perfect space nahi mil raha?"'
+            : `a captivating opening hook in ${langLabel}`;
 
         let frameworkPrompt = "";
         if (numClips === 1) {
@@ -329,7 +500,7 @@ CONSTRAINTS & RULES:
    - Do NOT ignore the Selected Concept! Cohesion between the chosen concept/angle and the generated script is a top-level rule.
 0.2. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT & VISUAL HOOK RULE:
    - The very first line of the spoken dialogue (Scene 1, first 2 seconds) MUST call out the target audience explicitly (e.g. if selling homes in Mohali, call out home buyers in Mohali in the first line, like: "Mohali mein apna dream home dhoondh rahe ho?").
-   - ${isEnglish ? 'The script\'s spoken dialogue MUST be entirely in English from the very first word. No Hindi, Hinglish, or Devanagari script.' : 'The script\'s spoken dialogue MUST be written in Hinglish using standard Roman/English characters, EXCEPT for Indian proper nouns, location names, project names, and institution names (like मोहाली, चंडीगढ़, चितकारा, रयात बहरा, अमायरा स्काई सिटी) which MUST be written in native Hindi Devanagari script.'}
+   - ${calloutRule}
    - Scene 1 visuals MUST open with an instant, scroll-stopping visual hook.
 1. Duration: STRICTLY ${duration} seconds total, split into exactly ${numClips} sequential 15-second clips (Scene 1 to Scene ${numClips}).
 2. Dialogue language: ${languageInstruction}
@@ -343,10 +514,7 @@ ${speakerLayoutRule}
    - You MUST explicitly weave the actual, concrete facts, features, price, and specifications of the product/property (such as the specific location, name, price, unique layouts, or key amenities) directly into the spoken dialogue. Describe the features that actually matter to the viewer (e.g. only 2 apartments per floor, fully automated smart features, rooftop pool) to drive conversions.
    - Do NOT use vague marketing terms, generic placeholders (like "[price]", "[location]", "[insert details]"), or broad fluff. The script must communicate real, informative details about the product so that the video provides actual, concrete information to the viewer. Do NOT mention RERA IDs or registration numbers in the video dialogue.
 4.1. NATURAL BODY LANGUAGE & GESTURES: In all visual instructions, movements should feel organic and alive like a real UGC creator.
-${isEnglish ? `4.2. PRONUNCIATION: Use clear, standard English vocabulary. Keep the language accessible and professional. Avoid jargon or overly complex words.` : `4.2. PRONUNCIATION WORKAROUND (STRICTLY AVOID COMPLEX HINDI WORDS):
-   - To guarantee flawless natural pronunciation, you MUST strictly avoid complex, bookish, or heavy Hindi vocabulary (e.g. absolutely DO NOT write words phonetically like 'susajjit', 'aalishan', 'vastukala', 'pratishthit', 'suvidhajanak', 'vatankoolit', 'aakanksha', 'pratishtha', 'surakshit', 'parikalpana', 'keemat').
-   - Instead, ALWAYS use extremely simple, clear, conversational, everyday spoken Hindi words phonetically (e.g. 'ghar' instead of complex synonyms, 'chain', 'sukoon', 'khushi', 'aasan', 'budget', 'best').
-   - Write Hindi words in Roman letters phonetically as they are pronounced (e.g., 'shuruaat', 'dhoondh', 'apna', 'achha'). Everyday English loanwords (like 'luxury', 'location', 'perfect', 'amenities', 'living', 'security', 'space', 'safe', 'family', 'balance') are highly preferred.`}
+${pronunciationRule}
 5. STRICT NO-CTA IN EARLY SCENES RULE: Under no circumstances should early scenes contain any call to action. The Call to Action (CTA) must ONLY appear at the very end of the script.
 6. DYNAMIC AUDIENCE & NICHING ALIGNMENT: Tailor the hook and pain points exactly to the product's value tier.
 7. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue.

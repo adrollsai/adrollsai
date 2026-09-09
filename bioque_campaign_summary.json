@@ -1,0 +1,260 @@
+{
+  "completedAt": "2026-09-09T08:55:01.305Z",
+  "totalAttempted": 42,
+  "successCount": 42,
+  "failCount": 0,
+  "results": [
+    {
+      "name": "Deraiya Abdul",
+      "phone": "918511160786",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE4NTExMTYwNzg2FQIAERgSQTU0OTdGMjNERTJDQjc3QjVGAA=="
+    },
+    {
+      "name": "Amiet Naik",
+      "phone": "919922000020",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5OTIyMDAwMDIwFQIAERgSRTFFMTc3Q0RBODQyMDBERjA1AA=="
+    },
+    {
+      "name": "Mann Shah",
+      "phone": "919033537252",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5MDMzNTM3MjUyFQIAERgSN0M2MUZBM0RGMDNFMUVGN0ZFAA=="
+    },
+    {
+      "name": "Ashraf K",
+      "phone": "919526915923",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5NTI2OTE1OTIzFQIAERgSQzU5RUM0RDYxQzk1NUQ1MUFCAA=="
+    },
+    {
+      "name": "Manish Ramani",
+      "phone": "8613157974931",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgNODYxMzE1Nzk3NDkzMRUCABEYEjUyRjA0NTQwQzJGQTZFMEE5QQA="
+    },
+    {
+      "name": "Dixit Kharbanda",
+      "phone": "918813044092",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE4ODEzMDQ0MDkyFQIAERgSNzgwRDgyMDI0ODM4QURFNUIyAA=="
+    },
+    {
+      "name": "Nissha Goyal",
+      "phone": "919217781713",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5MjE3NzgxNzEzFQIAERgSREY5QUIxNzk4OTI2MTIyMkY2AA=="
+    },
+    {
+      "name": "Ashok Modi",
+      "phone": "919470144111",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5NDcwMTQ0MTExFQIAERgSQTA3RjYwRDRBQjU0MjYxRDkwAA=="
+    },
+    {
+      "name": "Sanjay Behl",
+      "phone": "919810007207",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5ODEwMDA3MjA3FQIAERgSRkQyQTlBMjFGQTI2N0U5ODM4AA=="
+    },
+    {
+      "name": "Rohan Sharma",
+      "phone": "917042507097",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE3MDQyNTA3MDk3FQIAERgSMjZGMzY2OTE4MTM3REI2NUU4AA=="
+    },
+    {
+      "name": "Rituu Agarwaal",
+      "phone": "919049019312",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5MDQ5MDE5MzEyFQIAERgSMjZDQkQ1MzBDOERDMTNFQUQwAA=="
+    },
+    {
+      "name": "Gurnek Pannu",
+      "phone": "917690000096",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE3NjkwMDAwMDk2FQIAERgSOEUwRDVGNDVFOTE0OTUzMUVGAA=="
+    },
+    {
+      "name": "Siddhartha jain",
+      "phone": "919313373753",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5MzEzMzczNzUzFQIAERgSOTFEODVBRjBBOEU0NkJDN0FDAA=="
+    },
+    {
+      "name": "Daruwala Asif",
+      "phone": "919422053456",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5NDIyMDUzNDU2FQIAERgSMEI2ODNDMTg2QUIxOEU4OEUzAA=="
+    },
+    {
+      "name": "Amayraa yadav",
+      "phone": "919711400055",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5NzExNDAwMDU1FQIAERgSMDIwNzVBOTZGNUQ2MTUzMEJCAA=="
+    },
+    {
+      "name": "Akshay Sharma",
+      "phone": "919717374444",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5NzE3Mzc0NDQ0FQIAERgSOTk4MDVBOUM3RDhDMjg2RUREAA=="
+    },
+    {
+      "name": "Vijay Vishnoi",
+      "phone": "919784803865",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5Nzg0ODAzODY1FQIAERgSRkQ5RjVENDQyRjlFM0FBRTc3AA=="
+    },
+    {
+      "name": "Babu",
+      "phone": "919310803803",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5MzEwODAzODAzFQIAERgSMzFDQURDOTRGMzRBRDZBNTY5AA=="
+    },
+    {
+      "name": "Addpro",
+      "phone": "918591216425",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE4NTkxMjE2NDI1FQIAERgSOTNDNzhDMTRGMDU3MDY2OEZGAA=="
+    },
+    {
+      "name": "Dalmia Dalmi",
+      "phone": "919538078952",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5NTM4MDc4OTUyFQIAERgSMTIzQUE1MDBFN0I4MzJGN0MyAA=="
+    },
+    {
+      "name": "Sanjay Bahadur",
+      "phone": "919987029494",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5OTg3MDI5NDk0FQIAERgSNTIxM0M4RUVFN0I2N0RGQkM2AA=="
+    },
+    {
+      "name": "Sachin",
+      "phone": "919999789565",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5OTk5Nzg5NTY1FQIAERgSOTVFN0UwRjE3MTg2NzIxMjRCAA=="
+    },
+    {
+      "name": "Sriram Rangaswami",
+      "phone": "919791007565",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5NzkxMDA3NTY1FQIAERgSOUM5Q0U0MzY3ODU4RTZFMDExAA=="
+    },
+    {
+      "name": "Arunabh Madhur",
+      "phone": "919810508246",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5ODEwNTA4MjQ2FQIAERgSOTAzMUE1QjQyQ0IwMzU4QkVBAA=="
+    },
+    {
+      "name": "yash rathi",
+      "phone": "918975477353",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE4OTc1NDc3MzUzFQIAERgSOEUxRTZBM0Y2RTcxRjc4RTZDAA=="
+    },
+    {
+      "name": "Tejinder S Oberoi",
+      "phone": "918803944444",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE4ODAzOTQ0NDQ0FQIAERgSMTgyMzg3Rjc5RDZGNkIwMUQxAA=="
+    },
+    {
+      "name": "Balbir Singh",
+      "phone": "919811168898",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5ODExMTY4ODk4FQIAERgSRDVEODBGOTk3OTJBNzYxN0Y2AA=="
+    },
+    {
+      "name": "G Jawahar",
+      "phone": "919843096119",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5ODQzMDk2MTE5FQIAERgSQjY1RDZFQzE4MjI4NTk1OUE3AA=="
+    },
+    {
+      "name": "Lilgar Malik",
+      "phone": "918511286387",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE4NTExMjg2Mzg3FQIAERgSODVBNTBGNzQ3RDQ2NEVGMUY0AA=="
+    },
+    {
+      "name": "Gaming Chronicles",
+      "phone": "919818578166",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5ODE4NTc4MTY2FQIAERgSM0NGMEMwQzExMjI2QUMwODRBAA=="
+    },
+    {
+      "name": "Sophiya Khan",
+      "phone": "919597536555",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5NTk3NTM2NTU1FQIAERgSMEIzQzQyMzdEODFBQzBERUQyAA=="
+    },
+    {
+      "name": "Mirza Fahad",
+      "phone": "919045306054",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5MDQ1MzA2MDU0FQIAERgSNzQwQkJENjEyMjlGM0RDMkE0AA=="
+    },
+    {
+      "name": "Ritisha Sharma",
+      "phone": "919892331611",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5ODkyMzMxNjExFQIAERgSNDYyNkZDMzU0RjExMTA5N0U3AA=="
+    },
+    {
+      "name": "Ayeishah (first just share detailed information about this ad of yours on whatsapp)",
+      "phone": "919824404692",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5ODI0NDA0NjkyFQIAERgSM0M4OEFGMkJGMjBGMjE2MzVDAA=="
+    },
+    {
+      "name": "Kushal Mehta",
+      "phone": "917015068626",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE3MDE1MDY4NjI2FQIAERgSODVENUNBNTc2OEJEMkZBRkQ5AA=="
+    },
+    {
+      "name": "Mahesh reddy",
+      "phone": "919740151639",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5NzQwMTUxNjM5FQIAERgSRTgwMDU1Mjg1RDExOUVGMDIxAA=="
+    },
+    {
+      "name": "Raman Lamba",
+      "phone": "919891096088",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5ODkxMDk2MDg4FQIAERgSOTM2QzgzNzgxQ0QxOTNFNzQ0AA=="
+    },
+    {
+      "name": "Adarsh",
+      "phone": "918075958075",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE4MDc1OTU4MDc1FQIAERgSMUJEMzc5MEY4QjhBNDAxQTNBAA=="
+    },
+    {
+      "name": "Subham Kumar Sahu",
+      "phone": "917008639980",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE3MDA4NjM5OTgwFQIAERgSM0I0M0UxNTNGNDhGNkM2RDJGAA=="
+    },
+    {
+      "name": "Gulshan Dhupar",
+      "phone": "919838005959",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5ODM4MDA1OTU5FQIAERgSRDg0N0NCRUM2Q0NFODYzMUU2AA=="
+    },
+    {
+      "name": "Vikram Jain",
+      "phone": "919050838485",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE5MDUwODM4NDg1FQIAERgSQjg0Mzk5Nzk0MTg2Mzc0QjIxAA=="
+    },
+    {
+      "name": "Rajdeep Choudhury",
+      "phone": "918130624052",
+      "status": "SUCCESS",
+      "messageId": "wamid.HBgMOTE4MTMwNjI0MDUyFQIAERgSN0NCNDY0MEM2NDEzRDU3NkRFAA=="
+    }
+  ]
+}

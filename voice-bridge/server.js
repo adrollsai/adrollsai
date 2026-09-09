@@ -23,6 +23,11 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
 
 function computeValidCallingSlot(targetDate = new Date(), timeZone = 'Asia/Kolkata') {
+    // Ensure targetDate is in the future
+    if (targetDate.getTime() <= Date.now() + (5 * 60 * 1000)) {
+        targetDate = new Date(Date.now() + (60 * 60 * 1000)); // Default to 1 hour from now
+    }
+
     const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone,
         hour: 'numeric',
@@ -466,20 +471,23 @@ function calculateRMS(pcm16Array) {
 
 class NoiseSuppressedAudioProcessor {
     constructor(options = {}) {
-        this.noiseThreshold = options.noiseThreshold || 380; // RMS noise floor threshold
-        this.bargeInThreshold = options.bargeInThreshold || 1800; // RMS needed for barge-in during AI playback
+        this.noiseThreshold = options.noiseThreshold || 360; // RMS noise floor threshold for caller
+        this.bargeInThreshold = options.bargeInThreshold || 1850; // RMS needed for barge-in during AI playback
         this.isAiSpeaking = false;
         this.aiSpeakingTimeout = null;
         this.userSpeechDurationMs = 0;
         this.lastBackchannelTime = 0;
+        this.sustainedBargeInFrames = 0; // Number of consecutive frames exceeding bargeInThreshold
     }
 
     markAiSpeaking(durationMs = 1200) {
         this.isAiSpeaking = true;
         this.userSpeechDurationMs = 0;
+        this.sustainedBargeInFrames = 0;
         if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
         this.aiSpeakingTimeout = setTimeout(() => {
             this.isAiSpeaking = false;
+            this.sustainedBargeInFrames = 0;
         }, durationMs);
     }
 
@@ -487,26 +495,39 @@ class NoiseSuppressedAudioProcessor {
         const rms = calculateRMS(pcm16Chunk);
         let shouldBackchannel = false;
 
-        // If AI is currently outputting voice to caller, filter out mic noise completely unless loud barge-in
+        // If AI is currently outputting voice to caller, filter out passive murmurs ("hmm", "haan", "huhn"),
+        // ambient line static, and speakerphone echo. Only allow deliberate, sustained barge-in (>280ms loud speech).
         if (this.isAiSpeaking) {
             this.userSpeechDurationMs = 0;
-            if (rms < this.bargeInThreshold) {
-                return { pcmOutput: new Int16Array(pcm16Chunk.length).fill(0), rms, isVoice: false, shouldBackchannel: false };
+            if (rms >= this.bargeInThreshold) {
+                this.sustainedBargeInFrames++;
+                // 14 frames * 20ms = 280ms of sustained loud speech needed to interrupt
+                if (this.sustainedBargeInFrames >= 14) {
+                    this.isAiSpeaking = false;
+                    this.sustainedBargeInFrames = 0;
+                    if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
+                    console.log(`[AUDIO PROCESSOR] True human barge-in detected (RMS: ${Math.round(rms)}). Unmuting caller to Gemini.`);
+                    return { pcmOutput: pcm16Chunk, rms, isVoice: true, shouldBackchannel: false };
+                }
             } else {
-                this.isAiSpeaking = false;
-                if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
+                this.sustainedBargeInFrames = 0;
             }
+
+            // Suppress: send pure zero silence to Gemini so it does NOT cut off mid-sentence
+            return { pcmOutput: new Int16Array(pcm16Chunk.length).fill(0), rms, isVoice: false, shouldBackchannel: false };
         }
+
+        // AI is listening (not speaking)
+        this.sustainedBargeInFrames = 0;
 
         if (rms < this.noiseThreshold) {
             this.userSpeechDurationMs = 0;
-            // Replace room noise/static/hum with pure zero silence
+            // Replace line static/background noise with pure zero silence
             return { pcmOutput: new Int16Array(pcm16Chunk.length).fill(0), rms, isVoice: false, shouldBackchannel: false };
         } else {
-            // Active human voice detected! Pass raw audio frame
+            // Active human voice detected! Pass clean audio frame
             this.userSpeechDurationMs += 20; // 20ms frame
             const now = Date.now();
-            // Trigger mid-speech backchannel at 1.0s into continuous user speech
             if (this.userSpeechDurationMs >= 1000 && (now - this.lastBackchannelTime > 2800)) {
                 this.lastBackchannelTime = now;
                 this.userSpeechDurationMs = 0;
@@ -1402,6 +1423,8 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                 
                                 if (part.inlineData && part.inlineData.data) {
                                     const base64PCM = part.inlineData.data;
+                                    const chunkDurationMs = Math.round((Buffer.byteLength(base64PCM, 'base64') / 2) / 24);
+                                    audioProcessor.markAiSpeaking(Math.max(1200, chunkDurationMs + 800));
 
                                     if (isVobiz && wsConnection.readyState === ws.OPEN && vobizStreamId) {
                                         // Direct high-quality 24kHz Linear PCM to Vobiz!
@@ -1533,8 +1556,10 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                         pcm16 = upsample8To16(pcm8);
                     }
 
-                    // Directly stream full-fidelity unclipped 16kHz PCM audio to Gemini Live
-                    sendPcmChunkToGemini(pcm16);
+                    // Process incoming caller frame through speech gating to eliminate
+                    // false interruptions from "hmm", "haan", line hiss, and speaker acoustic feedback
+                    const procRes = audioProcessor.processFrame(pcm16);
+                    sendPcmChunkToGemini(procRes.pcmOutput);
                 }
             }
 
@@ -1608,11 +1633,11 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                 
                 console.log('[BRIDGE] Conversation Transcript Compiled:\n', fullTranscript);
 
-                // Use Gemini Flash API (REST) to generate summary & extract appointment booking slot and qualification answers
                 let summary = 'Conversation took place via Gemini Voice AI.';
                 let bookingTime = null;
                 let callbackTime = null;
                 let isQualified = false;
+                let isInterested = false;
                 let leadPriority = null;
                 let extractedBudget = null;
                 let extractedAnswers = {};
@@ -1626,27 +1651,66 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                         }).join('\n');
                     }
 
+                    const nowUtc = new Date();
+                    const istDateStr = nowUtc.toLocaleString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+
                     const analysisPrompt = `
-You are analyzing a phone call transcript between an AI voice agent and a prospect.
+You are analyzing an audio phone call transcript between an AI real estate voice agent and a prospect.
 Here is the transcript:
 ${fullTranscript}
 
-${questionsForPrompt ? `The AI caller was qualifying the prospect on the following campaign questions:
+${questionsForPrompt ? `The AI caller attempted to qualify the prospect on the following campaign questions:
 ${questionsForPrompt}
-
-Please extract the prospect's answers or choices for these qualification questions from the transcript.
 ` : ''}
 
-Extract the following details as a valid JSON object ONLY. Do NOT use markdown tags, ticks, or backticks:
+CURRENT TIME IN INDIA (IST, Asia/Kolkata, UTC+5:30): ${istDateStr}
+(UTC Timestamp: ${nowUtc.toISOString()})
+
+STRICT QUALIFICATION & CLASSIFICATION CRITERIA:
+1. "is_interested": boolean (true/false)
+   - MUST be TRUE ONLY IF: The prospect explicitly expressed genuine interest in purchasing, investing in, or exploring commercial or residential property (e.g. asked for prices, location, showroom/office/shop options, or agreed to explore properties).
+   - MUST be FALSE IF:
+     * The prospect stated they have no money, are poor, or cannot afford it.
+     * The prospect asked for employment, jobs, or work.
+     * The prospect asked for free property, free rental, or charity.
+     * The prospect hung up quickly, gave only passive "hello / haan / okay" without confirming any interest, or stated wrong number / not interested.
+     * The call was answered by an automated voicemail or answering machine.
+
+2. "is_qualified": boolean (true/false)
+   - true ONLY IF is_interested is true AND the prospect shared at least one specific requirement (budget, preferred property type, timeline, or site visit willingness).
+
+3. "lead_priority": "HOT" | "WARM" | "COLD"
+   - "HOT": Genuine commercial/property buyer who wants a site visit or has immediate purchase readiness.
+   - "WARM": Showed genuine interest in property or requested callback to discuss details.
+   - "COLD": Not interested, job seeker, no money, wrong number, or disconnected immediately.
+
+4. "booking_time": string or null
+   - Return an ISO-8601 string (with +05:30 offset or UTC) ONLY IF the prospect EXPLICITLY agreed to or scheduled a future in-person site visit or meeting on a specific future day/date (e.g. "Saturday", "this weekend", "Monday at 11 AM").
+   - CRITICAL PROHIBITION: NEVER return the current call timestamp (${nowUtc.toISOString()})! If no specific future appointment date was confirmed, or if the prospect only gave vague filler words like "theek hai / yes / okay", booking_time MUST be null.
+
+5. "callback_time": string or null
+   - Return an ISO-8601 string ONLY IF the prospect asked to be called back at a specific future time (e.g. "call tomorrow morning", "call in the evening after 5"). Calculate relative to the reference IST time above. Otherwise null.
+
+Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks, or backticks:
 {
-  "summary": "A concise, clean 2-3 sentence paragraph summarizing the call. Do NOT use markdown headers, bold, bullets, or lists.",
-  "callback_time": "ISO-8601 string of requested callback date/time if requested/agreed (including 'call me tomorrow', 'connect Saturday', etc.). Current system UTC time is: ${new Date().toISOString()}",
-  "booking_time": "ISO-8601 string of confirmed appointment/meeting/consultation/site visit date/time if the prospect agreed to, confirmed, requested, or accepted a meeting/appointment/visit slot (including 'tomorrow', 'Saturday', 'yes', 'okay', or confirming a proposed time), otherwise null. Current system UTC time is: ${new Date().toISOString()}",
-  "is_qualified": true/false (true if the lead confirmed interest, answered questions, agreed to a visit/callback, or expressed interest),
+  "summary": "A concise, clean 2-3 sentence paragraph summarizing what transpired. Explicitly mention if the caller was interested, not interested, a job seeker, or requested callback.",
+  "is_interested": true/false,
+  "is_qualified": true/false,
   "lead_priority": "HOT" | "WARM" | "COLD",
-  "extracted_budget": "extracted budget string or number if stated/discussed (e.g. '1.5 Cr', '₹70 Lakhs'), else null",
+  "callback_time": "ISO-8601 string or null",
+  "booking_time": "ISO-8601 string or null",
+  "extracted_budget": "extracted budget string/number if mentioned (e.g. '₹1.5 Cr', '₹70 Lakhs'), else null",
   "extracted_answers": {
-    /* Key-value pairs of answers provided by the prospect during the call, e.g. "property_type": "Commercial Showroom", "budget": "₹1.5 Cr", "timeline": "Immediate" */
+    /* Key-value pairs of answers provided by the prospect, e.g. "property_type": "Commercial Showroom", "budget": "₹1.5 Cr" */
   }
 }
 `.trim();
@@ -1689,14 +1753,15 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                                     if (parsed.summary) summary = parsed.summary.trim();
                                     if (parsed.booking_time) bookingTime = parsed.booking_time;
                                     if (parsed.callback_time) callbackTime = parsed.callback_time;
-                                    if (parsed.is_qualified) isQualified = true;
+                                    if (parsed.is_interested !== undefined) isInterested = parsed.is_interested === true;
+                                    if (parsed.is_qualified !== undefined) isQualified = parsed.is_qualified === true && isInterested;
                                     if (parsed.lead_priority) leadPriority = parsed.lead_priority;
                                     if (parsed.extracted_budget) extractedBudget = parsed.extracted_budget;
                                     if (parsed.extracted_answers && typeof parsed.extracted_answers === 'object') {
                                         extractedAnswers = parsed.extracted_answers;
                                     }
                                     analysisDone = true;
-                                    console.log('[BRIDGE] Call evaluation completed successfully with DeepSeek v4-flash!');
+                                    console.log('[BRIDGE] Call evaluation completed successfully with DeepSeek v4-flash!', { isInterested, isQualified, leadPriority, bookingTime });
                                 }
                             } else {
                                 console.warn('[BRIDGE] DeepSeek call returned non-OK status:', dsRes.status, await dsRes.text());
@@ -1726,7 +1791,8 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                                 if (parsed.summary) summary = parsed.summary.trim();
                                 if (parsed.booking_time) bookingTime = parsed.booking_time;
                                 if (parsed.callback_time) callbackTime = parsed.callback_time;
-                                if (parsed.is_qualified) isQualified = true;
+                                if (parsed.is_interested !== undefined) isInterested = parsed.is_interested === true;
+                                if (parsed.is_qualified !== undefined) isQualified = parsed.is_qualified === true && isInterested;
                                 if (parsed.lead_priority) leadPriority = parsed.lead_priority;
                                 if (parsed.extracted_budget) extractedBudget = parsed.extracted_budget;
                                 if (parsed.extracted_answers && typeof parsed.extracted_answers === 'object') {
@@ -1819,18 +1885,33 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                     }
                 }
 
+                mergedCf.is_interested = isInterested;
+                mergedCf.is_qualified = isQualified;
                 updatePayload.custom_fields = mergedCf;
 
+                let isValidBooking = false;
                 if (bookingTime) {
-                    console.log(`[BRIDGE] Detected booking slot from Gemini call: ${bookingTime}. Updating stage to Appointment Booked!`);
-                    updatePayload.status = 'Appointment Booked';
-                    updatePayload.pipeline_stage = 'Appointment Booked';
-                    updatePayload.booked_time = bookingTime;
-                } else if (callbackTime) {
+                    const bDate = new Date(bookingTime);
+                    // Must be a valid date at least 15 minutes in the future
+                    if (!isNaN(bDate.getTime()) && bDate.getTime() > Date.now() + (15 * 60 * 1000)) {
+                        console.log(`[BRIDGE] Detected VALID future booking slot from call: ${bookingTime}. Updating stage to Appointment Booked!`);
+                        updatePayload.status = 'Appointment Booked';
+                        updatePayload.pipeline_stage = 'Appointment Booked';
+                        updatePayload.booked_time = bDate.toISOString();
+                        isValidBooking = true;
+                        mergedCf.is_interested = true;
+                        mergedCf.is_qualified = true;
+                    } else {
+                        console.warn(`[BRIDGE] Rejected invalid/immediate booking time "${bookingTime}". Not a future appointment.`);
+                        bookingTime = null;
+                    }
+                }
+
+                if (!isValidBooking && callbackTime) {
                     console.log(`[BRIDGE] Detected prospect requested callback time: ${callbackTime}`);
                     try {
                         const reqDate = new Date(callbackTime);
-                        if (!isNaN(reqDate.getTime())) {
+                        if (!isNaN(reqDate.getTime()) && reqDate.getTime() > Date.now() + (5 * 60 * 1000)) {
                             const { scheduledTime } = computeValidCallingSlot(reqDate, 'Asia/Kolkata');
                             updatePayload.voice_call_scheduled_at = scheduledTime.toISOString();
                             updatePayload.voice_call_status = 'scheduled_callback';
@@ -1838,10 +1919,20 @@ Extract the following details as a valid JSON object ONLY. Do NOT use markdown t
                     } catch (cbErr) {
                         console.error('[BRIDGE] Error parsing callback time:', cbErr);
                     }
-                } else {
-                    if (!lead || !lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.status === 'New Lead' || lead.status === 'New') {
-                        updatePayload.status = 'Ongoing';
-                        updatePayload.pipeline_stage = 'Ongoing';
+                }
+
+                if (!isValidBooking) {
+                    if (isQualified && isInterested) {
+                        updatePayload.status = 'Qualified';
+                        updatePayload.pipeline_stage = 'Qualified';
+                    } else if (isInterested) {
+                        updatePayload.status = 'Contacted';
+                        updatePayload.pipeline_stage = 'Contacted';
+                    } else {
+                        if (!lead || !lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.status === 'New Lead' || lead.status === 'New') {
+                            updatePayload.status = 'Contacted';
+                            updatePayload.pipeline_stage = 'Contacted';
+                        }
                     }
                 }
 

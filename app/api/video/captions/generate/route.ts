@@ -18,7 +18,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { videoUrl, assetId } = await request.json();
+        const { videoUrl, assetId, language = 'hinglish' } = await request.json();
 
         if (!videoUrl) {
             return NextResponse.json({ error: 'Missing video URL' }, { status: 400 });
@@ -29,13 +29,13 @@ export async function POST(request: Request) {
             : {};
         const audioUrl = currentMetadata?.audioUrl || null;
 
-        // 1. Get Raw Transcript using Gemini
-        console.log(`[Captions API] Transcribing video (audioUrl: ${audioUrl || 'none'})...`);
-        const rawTranscript = await transcribeVideoWithGemini(videoUrl, audioUrl);
+        // 1. Get Raw Transcript using Gemini in selected language
+        console.log(`[Captions API] Transcribing video (language: ${language}, audioUrl: ${audioUrl || 'none'})...`);
+        const rawTranscript = await transcribeVideoWithGemini(videoUrl, audioUrl, language);
 
-        // 2. Optimize for Viral Retention & Visual Effects
-        console.log(`[Captions API] Optimizing captions and effects...`);
-        const { captions, effects } = await optimizeCaptionsForRetention(rawTranscript?.segments || []);
+        // 2. Optimize for Viral Retention & Visual Effects in target language
+        console.log(`[Captions API] Optimizing captions and effects in ${language}...`);
+        const { captions, effects } = await optimizeCaptionsForRetention(rawTranscript?.segments || [], language);
 
         // 3. Store in Supabase via Admin Client (bypassing RLS for impersonated assets)
         if (assetId) {

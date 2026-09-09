@@ -357,7 +357,7 @@ export default function TeamPage() {
 
                 <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                        <span className="flex items-center gap-1"><Calendar size={12} /> Added {new Date(member.created_at).toLocaleDateString()}</span>
+                        <span className="flex items-center gap-1"><Calendar size={12} /> Added {member.created_at && !isNaN(new Date(member.created_at).getTime()) ? new Date(member.created_at).toLocaleDateString() : 'Recently'}</span>
                     </div>
                     
                     <div className="flex items-center gap-3">

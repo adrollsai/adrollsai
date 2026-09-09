@@ -19,9 +19,30 @@ import {
     RefreshCw,
     Play,
     Pause,
-    History
+    History,
+    Globe,
+    Languages
 } from 'lucide-react'
 import { toast } from 'sonner'
+
+const CAPTION_LANGUAGES = [
+    { value: 'hinglish', label: 'Hinglish (हिंग्लिश - Roman/English Alphabet)', flag: '🇮🇳' },
+    { value: 'english', label: 'English (Clear English Subtitles)', flag: '🇬🇧' },
+    { value: 'hindi', label: 'Hindi (हिन्दी - Native Devanagari)', flag: '🇮🇳' },
+    { value: 'punjabi', label: 'Punjabi (ਪੰਜਾਬੀ)', flag: '🇮🇳' },
+    { value: 'marathi', label: 'Marathi (मराठी)', flag: '🇮🇳' },
+    { value: 'gujarati', label: 'Gujarati (ગુજરાતી)', flag: '🇮🇳' },
+    { value: 'bengali', label: 'Bengali (বাংলা)', flag: '🇮🇳' },
+    { value: 'tamil', label: 'Tamil (தமிழ்)', flag: '🇮🇳' },
+    { value: 'telugu', label: 'Telugu (తెలుగు)', flag: '🇮🇳' },
+    { value: 'kannada', label: 'Kannada (ಕನ್ನಡ)', flag: '🇮🇳' },
+    { value: 'malayalam', label: 'Malayalam (മലയാളം)', flag: '🇮🇳' },
+    { value: 'urdu', label: 'Urdu (اردو)', flag: '🇵🇰' },
+    { value: 'arabic', label: 'Arabic (العربية)', flag: '🇦🇪' },
+    { value: 'spanish', label: 'Spanish (Español)', flag: '🇪🇸' },
+    { value: 'french', label: 'French (Français)', flag: '🇫🇷' },
+    { value: 'german', label: 'German (Deutsch)', flag: '🇩🇪' },
+]
 
 export default function VideoEditorPage() {
     const { id } = useParams()
@@ -48,6 +69,7 @@ export default function VideoEditorPage() {
     const [effects, setEffects] = useState<Effect[]>([])
     const [profile, setProfile] = useState<any>(null)
     const [selectedTheme, setSelectedTheme] = useState<string>('hormozi')
+    const [captionLanguage, setCaptionLanguage] = useState<string>('hinglish')
     const [isGenerating, setIsGenerating] = useState(false)
     const [isRendering, setIsRendering] = useState(false)
     const [durationInFrames, setDurationInFrames] = useState<number>(30 * 30) // fallback default
@@ -149,19 +171,26 @@ export default function VideoEditorPage() {
         fetchAssetAndProfile()
     }, [id])
 
-    const generateCaptions = async () => {
+    const generateCaptions = async (langOverride?: string) => {
         if (!asset) return
         setIsGenerating(true)
+        const activeLang = langOverride || captionLanguage
         try {
             const res = await fetch('/api/video/captions/generate', {
                 method: 'POST',
-                body: JSON.stringify({ videoUrl: fixR2Url(asset.url), assetId: asset.id })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    videoUrl: fixR2Url(asset.url), 
+                    assetId: asset.id,
+                    language: activeLang
+                })
             })
             const data = await res.json()
             if (data.success && data.captions) {
                 setCaptions(data.captions)
                 setEffects(data.effects || [])
-                toast.success("Captions generated successfully!")
+                const langObj = CAPTION_LANGUAGES.find(l => l.value === activeLang)
+                toast.success(`Captions generated in ${langObj ? langObj.label.split(' ')[0] : activeLang}!`)
             } else {
                 throw new Error(data.error)
             }
@@ -282,7 +311,7 @@ export default function VideoEditorPage() {
                         <History size={20} className="text-slate-400" />
                     </button>
                     <button
-                        onClick={generateCaptions}
+                        onClick={() => generateCaptions()}
                         disabled={isGenerating || !videoReady || loading}
                         className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 px-8 py-4 rounded-2xl font-black flex items-center gap-2 transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 active:scale-95 disabled:cursor-not-allowed"
                     >
@@ -306,6 +335,43 @@ export default function VideoEditorPage() {
 
                     {/* Theme Selector */}
                     <div className="space-y-6">
+                        {/* Caption Language Selector */}
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+                                    <Globe size={13} className="text-blue-400" /> Caption Language
+                                </label>
+                                {captions.length > 0 && (
+                                    <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                        Active
+                                    </span>
+                                )}
+                            </div>
+                            <div className="relative">
+                                <select
+                                    value={captionLanguage}
+                                    onChange={(e) => {
+                                        const newLang = e.target.value
+                                        setCaptionLanguage(newLang)
+                                        if (captions.length > 0) {
+                                            generateCaptions(newLang)
+                                        }
+                                    }}
+                                    className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl py-3.5 pl-4 pr-10 text-xs font-bold text-white outline-none focus:border-blue-500 transition-all cursor-pointer appearance-none"
+                                >
+                                    {CAPTION_LANGUAGES.map((lang) => (
+                                        <option key={lang.value} value={lang.value} className="bg-slate-900 text-white">
+                                            {lang.flag} {lang.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <Languages size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-1.5 ml-1">
+                                Generates subtitles in this language (Hinglish, English, Hindi, etc.)
+                            </p>
+                        </div>
+
                         <div>
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1 mb-3 block">AI Editing Styles</label>
                             <div className="grid grid-cols-2 gap-3">
@@ -327,7 +393,19 @@ export default function VideoEditorPage() {
 
                         {/* Caption Editor List */}
                         <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1 mb-3 block">Adjust AI Subtitles</label>
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Adjust AI Subtitles</label>
+                                {captions.length > 0 && (
+                                    <button
+                                        onClick={() => generateCaptions()}
+                                        disabled={isGenerating}
+                                        className="text-[10px] font-extrabold text-blue-400 hover:text-blue-300 flex items-center gap-1 bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1 rounded-lg border border-blue-500/20 transition-all"
+                                    >
+                                        <RefreshCw size={10} className={isGenerating ? 'animate-spin' : ''} />
+                                        Re-transcribe
+                                    </button>
+                                )}
+                            </div>
                             <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                                 {captions.map((caption, i) => (
                                     <div key={i} className="bg-white/5 border border-white/5 rounded-xl p-3 flex gap-3">

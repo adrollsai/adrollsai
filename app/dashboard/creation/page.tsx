@@ -81,6 +81,31 @@ const ASPECT_RATIOS = [
   { label: '9:16', value: '9:16', icon: Smartphone }
 ]
 
+const CREATION_LANGUAGES = [
+  { code: 'hinglish', label: 'Hinglish (हिंग्लिश / Roman)', flag: '🇮🇳' },
+  { code: 'english', label: 'English', flag: '🇬🇧' },
+  { code: 'hindi', label: 'Hindi (हिंदी)', flag: '🇮🇳' },
+  { code: 'punjabi', label: 'Punjabi (ਪੰਜਾਬੀ)', flag: '🇮🇳' },
+  { code: 'marathi', label: 'Marathi (मराठी)', flag: '🇮🇳' },
+  { code: 'gujarati', label: 'Gujarati (ગુજરાતી)', flag: '🇮🇳' },
+  { code: 'bengali', label: 'Bengali (বাংলা)', flag: '🇮🇳' },
+  { code: 'tamil', label: 'Tamil (தமிழ்)', flag: '🇮🇳' },
+  { code: 'telugu', label: 'Telugu (తెలుగు)', flag: '🇮🇳' },
+  { code: 'kannada', label: 'Kannada (ಕನ್ನಡ)', flag: '🇮🇳' },
+  { code: 'malayalam', label: 'Malayalam (മലയാളം)', flag: '🇮🇳' },
+  { code: 'urdu', label: 'Urdu (اردو)', flag: '🇵🇰' },
+  { code: 'arabic', label: 'Arabic (العربية)', flag: '🇦🇪' },
+  { code: 'spanish', label: 'Spanish (Español)', flag: '🇪🇸' },
+  { code: 'french', label: 'French (Français)', flag: '🇫🇷' },
+  { code: 'german', label: 'German (Deutsch)', flag: '🇩🇪' },
+]
+
+const getLanguageLabel = (code: string) => {
+  const found = CREATION_LANGUAGES.find(l => l.code === code)
+  return found ? found.label : (code.charAt(0).toUpperCase() + code.slice(1))
+}
+
+
 const renderVisualsWithBadges = (visualsText: string) => {
   if (!visualsText) return "";
   const parts = visualsText.split(/(@Image \d)/g);
@@ -453,8 +478,8 @@ export default function CreationPage() {
   // Dynamic Video Duration State (15s, 30s, 45s, 60s, 90s, 120s)
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 45 | 60 | 90 | 120>(15)
 
-  // Language Toggle for Video (Hinglish = Devanagari-English mix, English = pure English)
-  const [videoLanguage, setVideoLanguage] = useState<'hinglish' | 'english'>('hinglish')
+  // Language Selection for Video (Hinglish, English, Hindi, Punjabi, etc.)
+  const [videoLanguage, setVideoLanguage] = useState<string>('hinglish')
 
   // Deselected catalog images state
   const [deselectedCatalogImages, setDeselectedCatalogImages] = useState<string[]>([])
@@ -735,7 +760,7 @@ export default function CreationPage() {
   const handleSelectConcept = async (concept: any, refImages: string[], imageDescriptions?: string[], msgIdToReplace?: number) => {
     if (isThinking) return
     setIsThinking(true)
-    setCurrentStep(`AI Creative Director is writing your ${selectedDuration}s ${videoLanguage === 'hinglish' ? 'Hinglish' : 'English'} script...`)
+    setCurrentStep(`AI Creative Director is writing your ${selectedDuration}s ${getLanguageLabel(videoLanguage)} script...`)
 
     const activeMsgId = msgIdToReplace || Date.now()
 
@@ -1506,23 +1531,22 @@ export default function CreationPage() {
 
             {/* Creative category dropdown removed as per user instruction to only follow master prompt and custom instructions */}
 
-            {/* Language Toggle (only in video mode) */}
+            {/* Language Selector Pill (only in video mode) */}
             {creationMode === 'video' && (
-                <div className="flex bg-slate-100/80 rounded-[1rem] p-1 border border-slate-200/60 w-full animate-in fade-in duration-200">
-                    <button 
-                        type="button"
-                        onClick={() => setVideoLanguage('hinglish')}
-                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${videoLanguage === 'hinglish' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                <div className="relative w-full animate-in fade-in duration-200">
+                    <Languages size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-500 pointer-events-none" />
+                    <select 
+                        value={videoLanguage}
+                        onChange={(e) => setVideoLanguage(e.target.value)}
+                        className="w-full bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/80 text-slate-800 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer h-full"
                     >
-                        <Languages size={12} className="hidden sm:block" /> हिंग्लिश
-                    </button>
-                    <button 
-                        type="button"
-                        onClick={() => setVideoLanguage('english')}
-                        className={`flex-1 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-extrabold transition-all duration-300 flex items-center justify-center gap-1 ${videoLanguage === 'english' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Globe size={12} className="hidden sm:block" /> English
-                    </button>
+                        {CREATION_LANGUAGES.map(lang => (
+                            <option key={lang.code} value={lang.code}>
+                                {lang.flag} {lang.label}
+                            </option>
+                        ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
             )}
 
@@ -2027,7 +2051,7 @@ export default function CreationPage() {
                               {/* Dialogue/Voiceover */}
                               <div className="flex flex-col gap-1 border-t border-slate-200/40 pt-2.5">
                                 <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
-                                  <User size={10} /> Dialogue ({videoLanguage === 'hinglish' ? 'Hinglish' : 'English'})
+                                  <User size={10} /> Dialogue ({getLanguageLabel(videoLanguage)})
                                 </span>
                                 <textarea
                                   value={scene.dialogue}
@@ -2071,7 +2095,7 @@ export default function CreationPage() {
                           {/* Dialogue/Voiceover */}
                           <div className="flex flex-col gap-1.5">
                             <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
-                              <User size={12} /> Conversational Audio/Dialogue ({videoLanguage === 'hinglish' ? 'Hinglish' : 'English'})
+                              <User size={12} /> Conversational Audio/Dialogue ({getLanguageLabel(videoLanguage)})
                             </span>
                             <textarea
                               value={msg.script.dialogue}

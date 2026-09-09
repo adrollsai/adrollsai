@@ -377,29 +377,29 @@ const RemotionOutro: React.FC<{
                     <img 
                         src={logoUrl} 
                         style={{
-                            width: '270px',
-                            height: '270px',
-                            borderRadius: '54px',
+                            width: '260px',
+                            height: '260px',
+                            borderRadius: '52px',
                             objectFit: 'contain',
                             backgroundColor: '#FFFFFF',
                             padding: '20px',
-                            marginBottom: '45px',
+                            marginBottom: '28px',
                             boxShadow: `0 30px 60px ${displayBrandColor}22`,
                             border: `5px solid ${displayBrandColor}`,
                         }} 
                     />
                 ) : (
                     <div style={{
-                        width: '270px',
-                        height: '270px',
-                        borderRadius: '54px',
+                        width: '260px',
+                        height: '260px',
+                        borderRadius: '52px',
                         background: `linear-gradient(135deg, ${displayBrandColor} 0%, #1f2937 100%)`,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: '110px',
-                        fontWeight: 'black',
-                        marginBottom: '45px',
+                        fontSize: '100px',
+                        fontWeight: 900,
+                        marginBottom: '28px',
                         boxShadow: `0 30px 60px ${displayBrandColor}22`,
                         border: '5px solid rgba(0,0,0,0.05)',
                         color: 'white',
@@ -408,22 +408,51 @@ const RemotionOutro: React.FC<{
                     </div>
                 )}
 
+                {/* Company Name */}
+                <h1 style={{
+                    fontSize: '62px',
+                    fontWeight: 900,
+                    color: '#0F172A',
+                    margin: '0 0 10px 0',
+                    letterSpacing: '-1px',
+                    lineHeight: 1.15,
+                    maxWidth: '880px',
+                    textTransform: 'uppercase',
+                }}>
+                    {businessName}
+                </h1>
+
+                {/* Mission / Tagline Subtitle if present */}
+                {subtitle && (
+                    <p style={{
+                        fontSize: '28px',
+                        fontWeight: 600,
+                        color: '#64748B',
+                        margin: '0 0 10px 0',
+                        maxWidth: '820px',
+                        lineHeight: 1.35,
+                    }}>
+                        {subtitle}
+                    </p>
+                )}
+
+                {/* Separator Line */}
                 <div style={{
-                    width: '200px',
+                    width: '180px',
                     height: '6px',
-                    background: '#1E293B', // Darker solid line for strong separator contrast
+                    background: displayBrandColor || '#1E293B',
                     borderRadius: '4px',
-                    marginBottom: '55px',
-                    marginTop: '25px',
+                    marginBottom: '40px',
+                    marginTop: '20px',
                 }} />
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '26px', alignItems: 'center' }}>
                     {contactNumber && (
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
                             gap: '16px',
-                            fontSize: '60px',
+                            fontSize: '56px',
                             fontWeight: 950, // Extra bold
                             color: '#0F172A',
                             textShadow: '0 2px 4px rgba(0,0,0,0.05)',

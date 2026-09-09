@@ -4,7 +4,10 @@ import { extractJsonFromText } from "./json-parser";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
 
-export async function optimizeCaptionsForRetention(segments: { start: number; end: number; text: string }[] = []) {
+export async function optimizeCaptionsForRetention(
+    segments: { start: number; end: number; text: string }[] = [],
+    targetLanguage: string = 'hinglish'
+) {
     if (!segments || !Array.isArray(segments) || segments.length === 0) {
         return { captions: [], effects: [] };
     }
@@ -18,6 +21,57 @@ export async function optimizeCaptionsForRetention(segments: { start: number; en
             text: seg.text
         }));
 
+        const lang = (targetLanguage || 'hinglish').toLowerCase();
+        let langFormattingRule = "- Output the captions in UPPERCASE with a few relevant emojis.";
+        if (lang === 'hinglish') {
+            langFormattingRule = `- Make it UPPERCASE.
+           - MANDATORY SCRIPT RULE: Write strictly in HINGLISH using Roman/Latin alphabet (English letters, e.g. "NAGPUR MEIN APNA DREAM HOME 🏡"). ABSOLUTELY DO NOT output any Devanagari script (no देवनागरी). If the input text is in Devanagari Hindi, transliterate it into natural, clean Roman Hinglish characters.
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'english') {
+            langFormattingRule = `- Make it UPPERCASE.
+           - Write strictly in clear, compelling ENGLISH using standard English letters (e.g. "LOOKING FOR YOUR DREAM HOME IN NAGPUR? 🏡"). If input is in another language, translate it to English.
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'hindi') {
+            langFormattingRule = `- Write in natural HINDI using native Devanagari script (हिन्दी, e.g. "नागपुर में परफेक्ट प्रॉपर्टी 🏢").
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'punjabi') {
+            langFormattingRule = `- Write in natural PUNJABI using native Gurmukhi script (ਪੰਜਾਬੀ).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'marathi') {
+            langFormattingRule = `- Write in natural MARATHI using Devanagari script (मराठी).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'gujarati') {
+            langFormattingRule = `- Write in natural GUJARATI using Gujarati script (ગુજરાતી).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'bengali') {
+            langFormattingRule = `- Write in natural BENGALI using Bengali script (বাংলা).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'tamil') {
+            langFormattingRule = `- Write in natural TAMIL using Tamil script (தமிழ்).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'telugu') {
+            langFormattingRule = `- Write in natural TELUGU using Telugu script (తెలుగు).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'kannada') {
+            langFormattingRule = `- Write in natural KANNADA using Kannada script (ಕನ್ನಡ).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'malayalam') {
+            langFormattingRule = `- Write in natural MALAYALAM using Malayalam script (മലയാളം).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'arabic') {
+            langFormattingRule = `- Write in natural ARABIC using Arabic script (العربية).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'spanish') {
+            langFormattingRule = `- Write in natural SPANISH (Español).
+           - Add a few relevant emojis to key words.`;
+        } else if (lang === 'french') {
+            langFormattingRule = `- Write in natural FRENCH (Français).
+           - Add a few relevant emojis to key words.`;
+        } else {
+            langFormattingRule = `- Output all captions in ${targetLanguage}.
+           - Add a few relevant emojis to key words.`;
+        }
+
         const prompt = `
         You are a world-class short-form video editor specialized in viral captions (Alex Hormozi style) and code-generated motion graphic effects.
         
@@ -26,9 +80,7 @@ export async function optimizeCaptionsForRetention(segments: { start: number; en
         
         TASK:
         1. For each input segment, optimize the text:
-           - Make it UPPERCASE.
-           - If Hindi is spoken, write it in HINGLISH (English characters/Latin script). Do NOT use Devanagari script.
-           - Add a few relevant emojis to key words.
+           ${langFormattingRule}
         2. Identify which words in each optimized segment should be emphasized (highly styled/highlighted, e.g. key high-impact nouns, verbs, or adjectives).
         3. Map visual effects to key moments in the video:
            - "zoom": a temporary camera zoom (scale up to 1.15) to emphasize a bold point or transition (typically 1.0 - 2.5 seconds duration).
