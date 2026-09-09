@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
+import { extractJsonFromText } from '@/utils/json-parser';
 
 export const maxDuration = 300; // Allow 5 minutes for video analysis
 export const runtime = 'nodejs';
+
+const supabaseAdmin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: Request) {
     try {
@@ -12,10 +19,64 @@ export async function POST(req: Request) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        const { url, type, assetId, propertyId, customInstructions } = await req.json();
+        const reqUrl = new URL(req.url);
+        const queryImpersonate = reqUrl.searchParams.get('impersonate');
+
+        const { url, type, assetId, propertyId, customInstructions, impersonateId: bodyImpersonate } = await req.json();
         if (!url) return NextResponse.json({ error: 'No asset URL provided' }, { status: 400 });
 
-        console.log(`[Generate Caption] Fetching and analyzing asset: ${url} (${type})`);
+        const requestedImpersonateId = bodyImpersonate || queryImpersonate;
+
+        // 1. Resolve asset details if assetId exists
+        let assetOwnerId: string | null = null;
+        let resolvedPropertyId = propertyId;
+
+        if (assetId) {
+            const { data: assetData } = await supabaseAdmin
+                .from('assets')
+                .select('id, user_id, property_id')
+                .eq('id', assetId)
+                .single();
+
+            if (assetData) {
+                assetOwnerId = assetData.user_id;
+                if (!resolvedPropertyId && assetData.property_id) {
+                    resolvedPropertyId = assetData.property_id;
+                }
+            }
+        }
+
+        // 2. Determine target user context (support impersonation & asset ownership)
+        const { data: authProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('role, agency_id, parent_id')
+            .eq('id', user.id)
+            .single();
+
+        let targetUserId = user.id;
+        const candidateUserId = requestedImpersonateId || assetOwnerId;
+
+        if (candidateUserId && candidateUserId !== user.id) {
+            if (['super_admin', 'agency', 'admin', 'agent'].includes(authProfile?.role || '')) {
+                if (authProfile?.role === 'super_admin') {
+                    targetUserId = candidateUserId;
+                } else {
+                    const isParent = (authProfile?.agency_id === candidateUserId || authProfile?.parent_id === candidateUserId);
+                    const { data: subAccount } = await supabaseAdmin
+                        .from('profiles')
+                        .select('id')
+                        .eq('id', candidateUserId)
+                        .eq('agency_id', authProfile?.agency_id || user.id)
+                        .single();
+
+                    if (isParent || subAccount) {
+                        targetUserId = candidateUserId;
+                    }
+                }
+            }
+        }
+
+        console.log(`[Generate Caption] Processing for targetUserId: ${targetUserId} (caller: ${user.id}, assetId: ${assetId || 'none'})`);
 
         // Multi-candidate URL fetching & S3 GetObject fallback for bulletproof media loading
         const urlCandidates: string[] = [url];
@@ -30,16 +91,14 @@ export async function POST(req: Request) {
 
         for (const candUrl of urlCandidates) {
             try {
-                console.log(`[Generate Caption] Trying URL candidate: ${candUrl}`);
                 const res = await fetch(candUrl);
                 if (res.ok) {
                     buffer = Buffer.from(await res.arrayBuffer());
                     mimeType = res.headers.get('content-type') || mimeType;
-                    console.log(`[Generate Caption] Media fetched successfully from candidate URL!`);
                     break;
                 }
             } catch (e) {
-                console.warn(`[Generate Caption] Failed fetching URL candidate ${candUrl}:`, e);
+                console.warn(`[Generate Caption] Failed fetching candidate ${candUrl}:`, e);
             }
         }
 
@@ -53,7 +112,6 @@ export async function POST(req: Request) {
                     ? url.split('/adrolls-storage/')[1]
                     : url.replace(`${R2_PUBLIC_URL}/`, '').replace(/^\//, '');
 
-                console.log(`[Generate Caption] Attempting direct S3 GetObject for key: ${cleanKey}`);
                 const s3Res = await r2.send(new GetObjectCommand({
                     Bucket: R2_BUCKET,
                     Key: cleanKey
@@ -63,7 +121,6 @@ export async function POST(req: Request) {
                     const byteArray = await s3Res.Body.transformToByteArray();
                     buffer = Buffer.from(byteArray);
                     mimeType = s3Res.ContentType || mimeType;
-                    console.log(`[Generate Caption] S3 GetObject fallback succeeded!`);
                 }
             } catch (s3Err) {
                 console.error(`[Generate Caption] S3 GetObject fallback failed:`, s3Err);
@@ -71,20 +128,40 @@ export async function POST(req: Request) {
         }
 
         if (!buffer) {
-            throw new Error(`Failed to fetch media file from R2. Status: 404`);
+            throw new Error(`Failed to fetch media file from storage.`);
         }
 
-        // Fetch comprehensive business context
-        const { data: profile } = await supabase
+        // Fetch comprehensive business context for targetUserId (bypassing RLS with supabaseAdmin)
+        const { data: profile } = await supabaseAdmin
             .from('profiles')
             .select('business_name, contact_number, business_info, mission_statement, custom_prompt')
-            .eq('id', user.id)
+            .eq('id', targetUserId)
             .single();
+
+        // Extract clean business overview from bio or description
+        let businessOverview = profile?.business_info || profile?.mission_statement || '';
+        if (typeof businessOverview === 'string' && businessOverview.trim().startsWith('{')) {
+            try {
+                const parsed = JSON.parse(businessOverview);
+                if (parsed.bio) {
+                    businessOverview = parsed.bio;
+                } else if (parsed.description) {
+                    businessOverview = parsed.description;
+                }
+            } catch (_) {}
+        }
+        if (!businessOverview) {
+            businessOverview = profile?.mission_statement || profile?.business_name || 'Real Estate Advisory and Property Investment';
+        }
 
         // Fetch product context if propertyId is provided
         let propertyContext = "";
-        if (propertyId) {
-            const { data: prop } = await supabase.from('properties').select('title, description, price, location').eq('id', propertyId).single();
+        if (resolvedPropertyId) {
+            const { data: prop } = await supabaseAdmin
+                .from('properties')
+                .select('title, description, price, location')
+                .eq('id', resolvedPropertyId)
+                .single();
             if (prop) {
                 propertyContext = `
 Target Product/Property Details:
@@ -96,24 +173,32 @@ Target Product/Property Details:
             }
         }
 
-        const businessOverview = profile?.business_info || profile?.mission_statement || 'AI Lead Automation & Real Estate Marketing Software';
+        const businessName = profile?.business_name?.trim() || '';
+        const contactNumber = profile?.contact_number?.trim() || '';
+        const customPrompt = profile?.custom_prompt?.trim() || '';
 
         const prompt = `You are a world-class Direct Response Copywriter and Social Media Growth Expert.
-Analyze the provided ${type === 'video' ? 'video' : 'image'} and write high-converting copy for it matching the user's exact business domain.
+Analyze the provided ${type === 'video' ? 'video' : 'image'} and write high-converting copy for it matching the client's exact business identity and market.
 
-Business Name: "${profile?.business_name || 'Nobogent'}"
-Business Overview & Offerings: "${businessOverview}"
-Brand Tone & Instructions: "${profile?.custom_prompt || 'Professional, high converting, direct response'}"
-Contact Number: "${profile?.contact_number || 'DM for details'}"
+CLIENT IDENTITY (MANDATORY):
+- Business / Brand Name: "${businessName || 'Our Real Estate Advisory'}"
+- Contact Phone / WhatsApp: "${contactNumber || 'DM for details'}"
+- Business Overview & Offerings: "${businessOverview}"
+${customPrompt ? `- Brand Tone & Custom Guidance: "${customPrompt}"` : ''}
 
 ${propertyContext}
 
-${customInstructions ? `Custom Copywriting Instructions (MUST FOLLOW STRICTLY):\n"${customInstructions}"\n` : ''}
+${customInstructions ? `Additional User Instructions (MUST FOLLOW STRICTLY):\n"${customInstructions}"\n` : ''}
+
+STRICT BRANDING & COMPLIANCE RULES:
+1. All copywriting MUST be written specifically for "${businessName || 'our agency'}".
+2. When including a contact phone number or call-to-action to call/WhatsApp, you MUST use "${contactNumber}". NEVER invent other phone numbers, and NEVER use administrative or platform phone numbers.
+3. Hashtags: Generate hashtags relevant to "${businessName}", the property or location shown (e.g. Nagpur), and real estate investment. NEVER include #Nobogent in the hashtags or caption.
 
 You must generate exactly three pieces of copy:
 1. "headline": A short, catchy, attention-grabbing headline (maximum 40 characters) suitable for ads. Do NOT use markdown or hashtags here.
 2. "primary_text": A compelling ad primary text (maximum 150 characters) focusing on a single high-converting hook. Do NOT use bold markdown or hashtags here.
-3. "social_post_description": An engaging, rich social media post description (maximum 400 characters) designed for all organic platforms (Facebook, Instagram, LinkedIn). Use bullet points, emojis, and relevant hashtags here to make it complete and ready to publish.
+3. "social_post_description": An engaging, rich social media post description (maximum 400 characters) designed for all organic platforms (Facebook, Instagram, LinkedIn). Use bullet points, emojis, and relevant hashtags here to make it complete and ready to publish. Include the contact number "${contactNumber}" in the call-to-action.
 
 Output ONLY a JSON object:
 {"headline": "...", "primary_text": "...", "social_post_description": "..."}`;
@@ -137,21 +222,26 @@ Output ONLY a JSON object:
             ]
         });
 
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        const captions = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+        const captions = extractJsonFromText<{ headline: string; primary_text: string; social_post_description: string }>(text, {
+            headline: '',
+            primary_text: '',
+            social_post_description: ''
+        });
 
-        // Update database record for the asset if assetId or url is matched
-        const targetAssetId = assetId;
-        let finalAssetId = targetAssetId;
-
+        // Update database record for the asset using supabaseAdmin to bypass RLS for impersonated assets
+        let finalAssetId = assetId;
         if (!finalAssetId) {
-            // Fallback: lookup by URL
-            const { data: matchedAsset } = await supabase.from('assets').select('id').eq('url', url).limit(1).maybeSingle();
+            const { data: matchedAsset } = await supabaseAdmin
+                .from('assets')
+                .select('id')
+                .eq('url', url)
+                .limit(1)
+                .maybeSingle();
             if (matchedAsset) finalAssetId = matchedAsset.id;
         }
 
         if (finalAssetId) {
-            const { data: asset } = await supabase.from('assets').select('metadata').eq('id', finalAssetId).single();
+            const { data: asset } = await supabaseAdmin.from('assets').select('metadata').eq('id', finalAssetId).single();
             const existingMetadata = asset?.metadata || {};
             const updatedMetadata = {
                 ...existingMetadata,
@@ -159,7 +249,7 @@ Output ONLY a JSON object:
                 primary_text: captions.primary_text
             };
 
-            await supabase
+            await supabaseAdmin
                 .from('assets')
                 .update({
                     caption: captions.social_post_description,

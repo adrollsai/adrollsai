@@ -155,9 +155,12 @@ export default function AssetsPage() {
         if (!selectedAsset) return;
         setIsGeneratingCaptions(true);
 
+        const urlParams = new URLSearchParams(window.location.search);
+        const impersonateId = urlParams.get('impersonate');
+
         const generatePromise = async () => {
             try {
-                const response = await fetch('/api/assets/generate-caption', {
+                const response = await fetch(`/api/assets/generate-caption${impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : ''}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -165,7 +168,8 @@ export default function AssetsPage() {
                         type: selectedAsset.type,
                         assetId: selectedAsset.id,
                         propertyId: selectedAsset.property_id,
-                        customInstructions: customInstructions
+                        customInstructions: customInstructions,
+                        impersonateId: impersonateId || null
                     })
                 });
 
