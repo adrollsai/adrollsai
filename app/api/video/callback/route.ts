@@ -340,7 +340,8 @@ export async function POST(request: Request) {
         try {
             const videoRes = await fetch(resultUrl);
             const buffer = Buffer.from(await videoRes.arrayBuffer());
-            const fileName = `generated/${videoTask.user_id}/scene_${videoTask.current_index}_${Date.now()}.mp4`;
+            const scenePrefix = videoTask.asset_id ? `${videoTask.asset_id}_` : '';
+            const fileName = `generated/${videoTask.user_id}/${scenePrefix}scene_${videoTask.current_index}.mp4`;
             
             await r2.send(new PutObjectCommand({
                 Bucket: R2_BUCKET,
@@ -650,33 +651,16 @@ export async function POST(request: Request) {
 
             console.log(`[Video Callback] Dispatching stitch render using site ${siteName} on region ${region} with ${framesPerLambdaActual} frames per lambda (actual total frames: ${actualTotalFrames})`);
 
-            // --- HIGH-SPEED DEDICATED STITCHING ENGINE ---
-            // 1. Try Cloud Run Stitcher Worker (Dedicated FFmpeg container, zero timeout, instant async response)
-            try {
-                console.log(`[Video Callback] Attempting stitch via Cloud Run worker for Asset ID ${videoTask.asset_id}...`);
-                const cloudRunSuccess = await dispatchCloudRunStitch(
-                    siblings.map(s => ({ current_index: s.current_index, last_successful_task_id: s.last_successful_task_id })),
-                    { asset_id: videoTask.asset_id, user_id: videoTask.user_id, prompts: videoTask.prompts },
-                    finalAudioUrl
-                );
-                if (cloudRunSuccess) {
-                    if (videoTask.asset_id) {
-                        await supabaseAdmin.from('assets').update({ status: 'Draft' }).eq('id', videoTask.asset_id);
-                    }
-                    return NextResponse.json({
-                        success: true,
-                        message: `All ${siblings.length} scenes dispatched to Cloud Run stitcher worker successfully.`
-                    });
-                }
-            } catch (cloudRunErr: any) {
-                console.warn(`[Video Callback] Cloud Run stitch dispatch failed, attempting local stitch:`, cloudRunErr?.message || cloudRunErr);
-            }
-
-            // 2. Try fast direct local FFmpeg stitch
+            // --- HIGH-SPEED RESILIENT STITCHING ENGINE ---
+            // 1. Try fast direct local FFmpeg stitch first (instant 2s completion, zero cold start)
             try {
                 console.log(`[Video Callback] Starting fast local FFmpeg stitching for Asset ID ${videoTask.asset_id}...`);
                 await stitchClipsLocally(
-                    siblings.map(s => ({ current_index: s.current_index, last_successful_task_id: s.last_successful_task_id })),
+                    siblings.map(s => ({
+                        current_index: s.current_index,
+                        last_successful_task_id: s.last_successful_task_id,
+                        last_task_id: s.last_task_id
+                    })),
                     { asset_id: videoTask.asset_id, user_id: videoTask.user_id, prompts: videoTask.prompts },
                     finalAudioUrl,
                     supabaseAdmin
@@ -686,7 +670,32 @@ export async function POST(request: Request) {
                     message: `All ${siblings.length} scenes stitched with fast FFmpeg successfully.`
                 });
             } catch (fastFfmpegErr: any) {
-                console.warn(`[Video Callback] Fast local FFmpeg stitching failed, falling back to AWS Lambda:`, fastFfmpegErr?.message || fastFfmpegErr);
+                console.warn(`[Video Callback] Fast local FFmpeg stitching failed, attempting Cloud Run worker:`, fastFfmpegErr?.message || fastFfmpegErr);
+            }
+
+            // 2. Fallback to Cloud Run Stitcher Worker
+            try {
+                console.log(`[Video Callback] Attempting stitch via Cloud Run worker for Asset ID ${videoTask.asset_id}...`);
+                const cloudRunSuccess = await dispatchCloudRunStitch(
+                    siblings.map(s => ({
+                        current_index: s.current_index,
+                        last_successful_task_id: s.last_successful_task_id,
+                        last_task_id: s.last_task_id
+                    })),
+                    { asset_id: videoTask.asset_id, user_id: videoTask.user_id, prompts: videoTask.prompts },
+                    finalAudioUrl
+                );
+                if (cloudRunSuccess) {
+                    if (videoTask.asset_id) {
+                        await supabaseAdmin.from('assets').update({ status: 'Rendering' }).eq('id', videoTask.asset_id);
+                    }
+                    return NextResponse.json({
+                        success: true,
+                        message: `All ${siblings.length} scenes dispatched to Cloud Run stitcher worker successfully.`
+                    });
+                }
+            } catch (cloudRunErr: any) {
+                console.warn(`[Video Callback] Cloud Run stitch dispatch failed, attempting AWS Lambda:`, cloudRunErr?.message || cloudRunErr);
             }
 
             // --- FALLBACK TO AWS LAMBDA (IF LOCAL FFMPEG FAILS) ---

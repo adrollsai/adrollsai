@@ -1,9 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { generateContentWithFallback } from "./gemini-fallback";
+import { extractJsonFromText } from "./json-parser";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
 
-export async function optimizeCaptionsForRetention(segments: { start: number, end: number, text: string }[]) {
+export async function optimizeCaptionsForRetention(segments: { start: number; end: number; text: string }[] = []) {
+    if (!segments || !Array.isArray(segments) || segments.length === 0) {
+        return { captions: [], effects: [] };
+    }
+
     try {
         // Map input segments with unique ID indices so LLM matching is 100% reliable
         const inputSegments = segments.map((seg, idx) => ({
@@ -83,7 +88,7 @@ export async function optimizeCaptionsForRetention(segments: { start: number, en
             }
         );
         const text = result.response.text();
-        const responseData = JSON.parse(text);
+        const responseData = extractJsonFromText<{ segments?: any[]; effects?: any[] }>(text, { segments: [], effects: [] });
 
         // Reconstruct the captions array deterministically in Javascript to guarantee perfect audio sync
         const finalCaptions: { text: string; start: number; end: number; emphasis: boolean }[] = [];
@@ -101,42 +106,28 @@ export async function optimizeCaptionsForRetention(segments: { start: number, en
             
             const textToSplit = optSeg ? optSeg.optimized_text : rawSeg.text.toUpperCase();
             const emphasisWords = optSeg ? optSeg.emphasis_words : [];
-            const cleanEmpWords = new Set(emphasisWords.map((w: string) => w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
+            const cleanEmpWords = new Set((emphasisWords || []).map((w: string) => w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
             
             const words = textToSplit.trim().split(/\s+/).filter(Boolean);
             if (words.length === 0) continue;
 
-            const duration = rawSeg.end - rawSeg.start;
+            const duration = Math.max(0.5, rawSeg.end - rawSeg.start);
             const totalWords = words.length;
             
             // Mathematically group words into 1-2 words per chunk for Hormozi style
             const groupSize = 2;
             const totalGroups = Math.ceil(totalWords / groupSize);
             const groupDuration = duration / totalGroups;
-            
-            for (let i = 0; i < totalGroups; i++) {
-                const startIdx = i * groupSize;
-                const endIdx = Math.min(startIdx + groupSize, totalWords);
-                const groupWords = words.slice(startIdx, endIdx);
-                
-                const groupStart = rawSeg.start + i * groupDuration;
-                const groupEnd = rawSeg.start + (i + 1) * groupDuration;
-                
-                // Set emphasis true if any word in this group is flagged by LLM
-                let hasEmphasis = false;
-                for (const w of groupWords) {
-                    const cleanW = w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '');
-                    if (cleanEmpWords.has(cleanW)) {
-                        hasEmphasis = true;
-                        break;
-                    }
-                }
-                
+
+            for (let g = 0; g < totalGroups; g++) {
+                const groupWords = words.slice(g * groupSize, (g + 1) * groupSize);
+                const isEmphasized = groupWords.some((w: string) => cleanEmpWords.has(w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
+
                 finalCaptions.push({
-                    text: groupWords.join(" "),
-                    start: parseFloat(groupStart.toFixed(2)),
-                    end: parseFloat(groupEnd.toFixed(2)),
-                    emphasis: hasEmphasis
+                    text: groupWords.join(' '),
+                    start: Number((rawSeg.start + (g * groupDuration)).toFixed(2)),
+                    end: Number((rawSeg.start + ((g + 1) * groupDuration)).toFixed(2)),
+                    emphasis: isEmphasized
                 });
             }
         }
@@ -147,8 +138,28 @@ export async function optimizeCaptionsForRetention(segments: { start: number, en
         };
 
     } catch (error: any) {
-        console.error("[Caption Optimizer] Error:", error);
-        throw error;
+        console.error("[Caption Optimizer] Optimization failed, generating baseline captions:", error?.message || error);
+        // Fallback: build baseline captions directly from raw segments
+        const fallbackCaptions: { text: string; start: number; end: number; emphasis: boolean }[] = [];
+        for (const rawSeg of (segments || [])) {
+            const words = (rawSeg.text || '').toUpperCase().trim().split(/\s+/).filter(Boolean);
+            if (words.length === 0) continue;
+            const duration = Math.max(0.5, rawSeg.end - rawSeg.start);
+            const totalGroups = Math.ceil(words.length / 2);
+            const groupDuration = duration / totalGroups;
+            for (let g = 0; g < totalGroups; g++) {
+                const chunkWords = words.slice(g * 2, (g + 1) * 2);
+                fallbackCaptions.push({
+                    text: chunkWords.join(' '),
+                    start: Number((rawSeg.start + g * groupDuration).toFixed(2)),
+                    end: Number((rawSeg.start + (g + 1) * groupDuration).toFixed(2)),
+                    emphasis: g % 2 === 0
+                });
+            }
+        }
+        return {
+            captions: fallbackCaptions,
+            effects: []
+        };
     }
 }
-

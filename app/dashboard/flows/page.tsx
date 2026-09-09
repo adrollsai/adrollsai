@@ -25,6 +25,7 @@ import { IgCommentsView } from './components/ig-comments-view'
 import { FbCommentsView } from './components/fb-comments-view'
 import { SequencesView } from './components/sequences-view'
 import { SuiteAnalyticsView } from './components/suite-analytics-view'
+import { ManyChatCanvas } from './components/manychat-canvas'
 
 // Types
 export type FlowNodeType = 
@@ -42,9 +43,17 @@ export type FlowNodeType =
   | 'trigger_whatsapp_inbound'
   | 'trigger_whatsapp_ctwa'
   | 'trigger_ai_call_request'
+  | 'portal_lead'
   | 'trigger_portal_lead'
   | 'trigger_crm_lead'
   | 'trigger_webhook'
+  | 'triggerNode'
+  | 'whatsappMessageNode'
+  | 'actionNode'
+  | 'inventoryDeliveryNode'
+  | 'conditionNode'
+  | 'delayNode'
+  | 'aiAgentNode'
   // Instagram Actions
   | 'action_ig_send_dm'
   | 'action_ig_comment_reply'
@@ -80,11 +89,13 @@ export type FlowNodeType =
 
 export interface FlowNode {
   id: string
-  type: FlowNodeType
+  type: FlowNodeType | string
   title: string
   description?: string
   config: Record<string, any>
   branch?: 'true' | 'false' | 'main'
+  position?: { x: number; y: number }
+  data?: any
 }
 
 export interface AutomationFlow {
@@ -106,8 +117,12 @@ export interface AutomationFlow {
     csvMapping?: { nameCol?: string; phoneCol?: string; emailCol?: string; budgetCol?: string }
     customGroupName?: string
     customGroupId?: string
+    config?: Record<string, any>
   }
-  nodes: FlowNode[]
+  nodes: FlowNode[] | any[]
+  edges?: any[]
+  xyNodes?: any[]
+  xyEdges?: any[]
   stats?: {
     runs: number
     completed: number
@@ -165,6 +180,65 @@ const FLOW_TEMPLATES: {
   icon: any
   flow: Omit<AutomationFlow, 'id'>
 }[] = [
+  {
+    id: 'whatsapp_broadcast_inventory',
+    title: 'Template Quick Reply ➔ Inventory Link & Admin Alert',
+    category: 'WhatsApp Broadcasts',
+    tag: '⭐ Highly Recommended',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    description: 'When prospect taps "Interested" on your WhatsApp broadcast template, instantly deliver your live inventory catalog link and alert admin via push, in-app bell & WhatsApp.',
+    icon: MessageSquare,
+    flow: {
+      name: 'Broadcast Interested ➔ Inventory & Admin Alert',
+      description: 'Triggered when prospect taps "Interested" on WhatsApp broadcast template message.',
+      isActive: true,
+      trigger: {
+        type: 'trigger_whatsapp_template_button',
+        label: 'Template Button Click: "Interested"',
+        config: {
+          trigger_on: 'button_click',
+          button_text: 'Interested',
+          button_id: 'interested_btn'
+        }
+      },
+      nodes: [
+        {
+          id: 'step_1',
+          type: 'action_whatsapp_msg',
+          title: 'Deliver Live Property Inventory Link',
+          description: 'Sends live property catalog link with interactive CTA button',
+          branch: 'main',
+          config: {
+            message: 'Thank you for your interest! 🌟 Here is our latest inventory and property catalog for {{business_name}}:\n\n👉 {{inventory_url}}\n\nFeel free to explore available units, floor plans, and pricing.',
+            buttonText: 'View Inventory 🏢',
+            buttonUrl: '{{inventory_url}}'
+          }
+        },
+        {
+          id: 'step_2',
+          type: 'action_notify_team',
+          title: 'High-Priority Alert to Admin',
+          description: 'Dispatches instant push, in-app bell, and WhatsApp alert to Admin with direct CRM lead link',
+          branch: 'main',
+          config: {
+            title: '🔥 Lead Clicked Interested on WhatsApp Broadcast!',
+            body: 'Prospect {{lead_name}} ({{lead_phone}}) clicked "Interested" for {{business_name}}! Follow up now.'
+          }
+        },
+        {
+          id: 'step_3',
+          type: 'action_crm_stage',
+          title: 'Move Lead to "Interested" Stage',
+          description: 'Updates CRM lead pipeline stage to Interested',
+          branch: 'main',
+          config: {
+            stage: 'Interested',
+            tags: 'WhatsApp Campaign, Clicked Interested'
+          }
+        }
+      ]
+    }
+  },
   {
     id: 'ig_comment_dm_growth',
     title: 'Instagram Reel Comment to Instant DM & WhatsApp',
@@ -1329,13 +1403,8 @@ export default function FlowsPage() {
       }
       setTargetUserId(resolvedUserId)
 
-      // Only super admins see and land on the Flow Builder; everyone else lands on AI Calling
-      if (superAdminUser) {
-        setActiveSuiteTab('flows')
-      } else {
-        setActiveSuiteTab('ai_calling')
-        setCurrentFlow(null)
-      }
+      // Land on Flows by default so all clients and admins can build and run flows
+      setActiveSuiteTab('flows')
 
       // Fetch Flows from API (Safe Content-Type check to prevent <!DOCTYPE HTML syntax crashes)
       const impParam = impersonateId ? `?impersonate=${impersonateId}` : ''
@@ -1711,10 +1780,6 @@ export default function FlowsPage() {
 
   // Template instantiation
   const handleUseTemplate = (tpl: typeof FLOW_TEMPLATES[0]) => {
-    if (!isSuperAdmin) {
-      toast.error('Flow Builder is restricted to Super Admins')
-      return
-    }
     const newFlow: AutomationFlow = {
       ...JSON.parse(JSON.stringify(tpl.flow)),
       id: undefined,
@@ -1727,10 +1792,6 @@ export default function FlowsPage() {
 
   // Create Blank Flow
   const handleCreateBlankFlow = () => {
-    if (!isSuperAdmin) {
-      toast.error('Flow Builder is restricted to Super Admins')
-      return
-    }
     const blank: AutomationFlow = {
       name: 'New Custom Automation Flow',
       description: 'Custom multi-step automation workflow',
@@ -2858,7 +2919,7 @@ export default function FlowsPage() {
   // VIEW: VISUAL CANVAS BUILDER (LIGHT THEME STUDIO ARCHITECTURE)
   // Restricted exclusively to Super Admin
   // =========================================================================
-  if (currentFlow && isSuperAdmin) {
+  if (currentFlow) {
     return (
       <div className="fixed inset-0 z-40 bg-slate-50 text-slate-900 flex flex-col overflow-hidden font-sans">
         
@@ -3075,771 +3136,49 @@ export default function FlowsPage() {
         {/* BUILDER CANVAS BODY CONTAINER */}
         <div className="flex-1 flex overflow-hidden relative bg-slate-50">
           
-          {/* === CANVAS BUILDER VIEW === */}
+          {/* === CANVAS BUILDER VIEW (MANYCHAT / CHATBOTX 2D INFINITE GRAPH) === */}
           {studioTab === 'builder' && (
-          <div className="flex-1 overflow-auto p-6 sm:p-12 flex flex-col items-center bg-[radial-gradient(#CBD5E1_1.5px,transparent_1.5px)] [background-size:24px_24px] relative custom-scrollbar">
-            
-            {/* Floating Zoom Controls for Mobile / Quick Access */}
-            <div className="fixed bottom-6 left-6 z-30 flex items-center gap-1.5 bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl p-1.5 shadow-xl">
-              <button
-                onClick={handleZoomOut}
-                disabled={zoomLevel <= 50}
-                className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-40 transition-colors cursor-pointer"
-                title="Zoom Out"
-              >
-                <ZoomOut size={16} />
-              </button>
-              <button
-                onClick={handleResetZoom}
-                className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors font-mono cursor-pointer"
-                title="Reset to 100%"
-              >
-                {zoomLevel}%
-              </button>
-              <button
-                onClick={handleZoomIn}
-                disabled={zoomLevel >= 150}
-                className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-40 transition-colors cursor-pointer"
-                title="Zoom In"
-              >
-                <ZoomIn size={16} />
-              </button>
-              <div className="w-px h-4 bg-slate-200 mx-0.5" />
-              <button
-                onClick={handleResetZoom}
-                className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
-                title="Reset Zoom"
-              >
-                <RotateCcw size={14} />
-              </button>
-            </div>
+            <div className="flex-1 h-full w-full relative">
+              <ManyChatCanvas
+                flowName={currentFlow.name}
+                onUpdateFlowName={(name) => setCurrentFlow(prev => prev ? ({ ...prev, name }) : null)}
+                isActive={currentFlow.isActive}
+                onToggleActive={() => setCurrentFlow(prev => prev ? ({ ...prev, isActive: !prev.isActive }) : null)}
+                initialNodes={currentFlow.xyNodes || (currentFlow.nodes?.length && currentFlow.nodes[0]?.type?.includes('Node') ? currentFlow.nodes : undefined)}
+                initialEdges={currentFlow.xyEdges || currentFlow.edges}
+                saving={saving}
+                onSave={async (nodes, edges) => {
+                  try {
+                    setSaving(true)
+                    const updatedFlow = {
+                      ...currentFlow,
+                      xyNodes: nodes,
+                      xyEdges: edges,
+                      nodes: nodes,
+                      edges: edges
+                    }
+                    setCurrentFlow(updatedFlow)
 
-            {/* FLOATING LIVE EXECUTION CONTROL BANNER (GOHIGHLEVEL REAL-TIME ENGINE) */}
-            {isLiveRunActive && (
-              <div className="w-full max-w-2xl mb-6 bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-indigo-500/30 flex flex-col gap-3 animate-fadeIn">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shrink-0">
-                      <Activity size={18} className="animate-pulse" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                          Live Flow Execution
-                        </span>
-                        <span className="text-xs font-bold text-slate-200 truncate">
-                          {liveRunAudience.name}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        {liveRunProgress.current} of {liveRunProgress.total} leads processed ({liveRunProgress.percent}%) • {nodeExecutionStats[currentFlow.nodes[1]?.id]?.passed || Math.round(liveRunProgress.current * 0.32)} Qualified Leads
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={handlePauseResumeLiveRun}
-                      className="flex items-center gap-1 px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer border border-white/10"
-                    >
-                      {isLiveRunPaused ? <Play size={12} className="fill-white" /> : <Pause size={12} />}
-                      <span>{isLiveRunPaused ? 'Resume' : 'Pause'}</span>
-                    </button>
-                    <button
-                      onClick={handleStopLiveRun}
-                      className="flex items-center gap-1 px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded-lg text-xs font-bold transition-colors cursor-pointer border border-rose-500/30"
-                    >
-                      <StopCircle size={12} />
-                      <span>Stop</span>
-                    </button>
-                    <button
-                      onClick={() => setIsLiveLogsDrawerOpen(!isLiveLogsDrawerOpen)}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer border ${
-                        isLiveLogsDrawerOpen
-                          ? 'bg-indigo-600 text-white border-indigo-400'
-                          : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
-                      }`}
-                    >
-                      <FileText size={12} />
-                      <span className="hidden sm:inline">Feed ({liveRunLogs.length})</span>
-                    </button>
-                    <button
-                      onClick={() => setStudioTab('analytics')}
-                      className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm shadow-emerald-500/30"
-                    >
-                      <BarChart3 size={12} />
-                      <span>Analytics</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700/60">
-                  <div 
-                    className="bg-gradient-to-r from-indigo-500 via-emerald-400 to-teal-400 h-full transition-all duration-300 rounded-full"
-                    style={{ width: `${liveRunProgress.percent}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Scaled Flow Graph */}
-            <div 
-              className="w-full max-w-xl flex flex-col items-center space-y-6 transition-transform duration-150"
-              style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
-            >
-              
-              {/* TRIGGER CARD (Step 0) */}
-              <div 
-                onClick={() => setSelectedNode({
-                  id: 'trigger',
-                  type: currentFlow.trigger.type as any || 'trigger_campaign_audience',
-                  title: currentFlow.trigger.label || 'Trigger: Lead Audience',
-                  description: 'Select the trigger source for this pipeline',
-                  config: currentFlow.trigger
-                })}
-                className="w-full bg-white hover:bg-slate-50/90 border-2 border-indigo-400 rounded-2xl p-5 shadow-sm hover:shadow-md cursor-pointer transition-all hover:scale-[1.01] relative group"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
-                      {currentFlow.trigger.type === 'trigger_csv_audience' ? <FileText size={20} /> :
-                       currentFlow.trigger.type === 'trigger_custom_audience_group' ? <Users size={20} /> :
-                       currentFlow.trigger.type === 'portal_lead' ? <Globe size={20} /> : <PhoneCall size={20} />}
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 block">
-                        Pipeline Trigger
-                      </span>
-                      <h3 className="text-base font-bold text-slate-900">
-                        {currentFlow.trigger.label || 'Campaign Calling Audience'}
-                      </h3>
-                    </div>
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
-                    Step 0
-                  </span>
-                </div>
-
-                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
-                  <span className="truncate max-w-[320px] font-medium">
-                    {currentFlow.trigger.type === 'trigger_csv_audience'
-                      ? `CSV: ${currentFlow.trigger.csvFileName || 'Mohali-Luxury-HNIs-Calling-List.csv'} (${currentFlow.trigger.csvLeadCount || 450} verified leads)`
-                      : currentFlow.trigger.type === 'trigger_custom_audience_group'
-                      ? `Custom Group: ${currentFlow.trigger.customGroupName || 'Mohali Luxury Segment (HNIs > 2 Cr)'}`
-                      : currentFlow.trigger.type === 'portal_lead'
-                      ? `Portal: ${currentFlow.trigger.portalName || 'Housing.com & 99Acres'}`
-                      : currentFlow.trigger.campaignName 
-                      ? `Target Campaign: ${currentFlow.trigger.campaignName}`
-                      : 'Audience: All Active Campaign Leads'}
-                  </span>
-                  <span className="text-indigo-600 group-hover:underline font-bold text-[11px]">Configure →</span>
-                </div>
-
-                {/* GoHighLevel Live Execution Badge on Trigger */}
-                {(nodeExecutionStats['trigger'] || isLiveRunActive) && (
-                  <div className="mt-3 pt-3 border-t border-indigo-100 flex items-center justify-between flex-wrap gap-2 text-xs">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-black border border-indigo-200 flex items-center gap-1">
-                        <Users size={11} />
-                        Enrolled: {nodeExecutionStats['trigger']?.completed || liveRunAudience.total}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                        ✓ Dispatched: {liveRunProgress.current || nodeExecutionStats['trigger']?.completed || liveRunAudience.total}
-                      </span>
-                      {(nodeExecutionStats['trigger']?.enroute || 0) > 0 && (
-                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black animate-pulse">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                          <span>{nodeExecutionStats['trigger']?.enroute} Enroute</span>
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-medium truncate max-w-[200px]">
-                      Audience: {liveRunAudience.name}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* CONNECTOR LINE TO FIRST ACTION */}
-              <div className="flex flex-col items-center relative">
-                <div className="w-0.5 h-6 bg-slate-300 relative">
-                  {isLiveRunActive && !isLiveRunPaused && (
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500 absolute -left-[4px] animate-bounce" />
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    setInsertAtIndex(0)
-                    setIsNodePaletteOpen(true)
-                  }}
-                  className="w-6 h-6 rounded-full bg-white hover:bg-indigo-600 text-slate-500 hover:text-white border border-slate-300 hover:border-indigo-600 flex items-center justify-center transition-all shadow-xs cursor-pointer"
-                  title="Insert step here"
-                >
-                  <Plus size={12} />
-                </button>
-                <div className="w-0.5 h-6 bg-slate-300"></div>
-                <ArrowDown size={14} className="text-slate-400 -mt-1" />
-              </div>
-
-              {/* ACTION NODES CHAIN */}
-              {currentFlow.nodes.map((node, index) => {
-                const nodeDef = NODE_DEFINITIONS.find(n => n.type === node.type)
-                const IconComponent = nodeDef?.icon || Sparkles
-                const isSelected = selectedNode?.id === node.id
-                const isSimActive = activeSimNodeId === node.id
-
-                return (
-                  <React.Fragment key={node.id}>
-                    <div
-                      onClick={() => setSelectedNode(node)}
-                      className={`w-full bg-white hover:bg-slate-50/90 rounded-2xl p-5 border-2 transition-all cursor-pointer shadow-sm relative group ${
-                        isSimActive
-                          ? 'border-emerald-500 shadow-lg shadow-emerald-500/10 ring-2 ring-emerald-500/30 scale-[1.02]'
-                          : isSelected 
-                          ? 'border-indigo-500 shadow-md ring-2 ring-indigo-500/20 scale-[1.01]' 
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      {/* Node Header */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${nodeDef?.color || 'bg-slate-100 text-slate-700'}`}>
-                            <IconComponent size={20} />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded border ${nodeDef?.badgeColor || 'bg-slate-100 text-slate-700'}`}>
-                                {nodeDef?.channel || 'Step'}
-                              </span>
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                {nodeDef?.category}
-                              </span>
-                            </div>
-                            <h4 className="text-sm sm:text-base font-bold text-slate-900 truncate">
-                              {node.title}
-                            </h4>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200">
-                            Step {index + 1}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDuplicateNode(node)
-                            }}
-                            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                            title="Duplicate step"
-                          >
-                            <Copy size={13} />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRemoveNode(node.id)
-                            }}
-                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                            title="Remove step"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Rich Visual Card Preview (Light Theme) */}
-                      <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
-                        
-                        {/* 1. Automated AI Voice Call (Gemini Live) Preview */}
-                        {node.type === 'action_ai_call' && (
-                          <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3 text-xs text-indigo-950 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 text-indigo-700 font-bold text-[10px] uppercase">
-                                <Radio size={12} className="animate-pulse text-indigo-600" />
-                                <span>Gemini 3.1 Live Voice: {node.config.voiceAgent || 'Fenrir (Crisp & Focused)'}</span>
-                              </div>
-                              <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-bold">
-                                Multi-Question Qualification
-                              </span>
-                            </div>
-                            <p className="text-slate-700 italic text-[11px] line-clamp-2 bg-white/70 p-2 rounded-lg border border-indigo-100">
-                              "{node.config.firstLine || 'Hi {{lead.name}}, calling from Bluesquare Infra.'}"
-                            </p>
-                            {/* Structured Questions Preview Chips */}
-                            <div className="space-y-1">
-                              {(node.config.questions || [
-                                { question: node.config.qualificationQuestion || 'Are you interested in scheduling a site visit this weekend?', fieldKey: 'site_visit_interest' }
-                              ]).map((q: any, qi: number) => (
-                                <div key={qi} className="flex items-center justify-between text-[10px] bg-white px-2 py-1 rounded border border-indigo-100">
-                                  <span className="truncate max-w-[240px] font-medium text-slate-800">Q{qi + 1}: {q.question}</span>
-                                  <span className="text-indigo-600 font-mono text-[9px] font-bold shrink-0 bg-indigo-50 px-1.5 py-0.5 rounded">
-                                    💾 {q.fieldKey || 'answer'}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 2. Live Call Transfer Preview */}
-                        {node.type === 'action_ai_call_transfer' && (
-                          <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3 text-xs text-purple-950 space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 text-purple-700 font-bold text-[10px] uppercase">
-                                <PhoneForwarded size={12} />
-                                <span>Warm Call Transfer</span>
-                              </div>
-                              <span className="text-[9px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded">
-                                Live Closer Handoff
-                              </span>
-                            </div>
-                            <p className="text-slate-800 font-medium text-[11px]">
-                              Transferring active call to: <span className="font-bold text-purple-800">{node.config.closerName || 'Senior Closer'}</span> ({node.config.transferNumber || '+91 98765 43210'})
-                            </p>
-                          </div>
-                        )}
-
-                        {/* 3. Deterministic Qualification Preview */}
-                        {(node.type === 'action_qualify' || node.type === 'action_ai_qualify') && (
-                          <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-[10px] uppercase">
-                                <Shield size={12} />
-                                <span>Deterministic Rules Engine</span>
-                              </div>
-                              <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 text-[9px] font-black uppercase">
-                                Pass ≥ {node.config.passScore || 70} pts
-                              </span>
-                            </div>
-                            <div className="space-y-1">
-                              {(node.config.rules || [
-                                { label: 'Prospect Agreed / Said Yes to Site Visit', points: 100 }
-                              ]).slice(0, 3).map((r: any, ri: number) => (
-                                <div key={ri} className="flex items-center justify-between text-[10px] text-slate-800 bg-white px-2 py-1 rounded border border-emerald-100">
-                                  <span className="truncate max-w-[240px] font-medium">✓ {r.label || `${r.field} == ${r.value}`}</span>
-                                  <span className="text-emerald-600 font-mono font-bold shrink-0">+{r.points || 25} pts</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 4. Logic Branch Condition Preview */}
-                        {node.type === 'action_condition' && (
-                          <div className="bg-rose-50/60 border border-rose-200 rounded-xl p-3 text-xs space-y-2 text-rose-950">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 text-rose-700 font-bold text-[10px] uppercase">
-                                <GitFork size={12} />
-                                <span>Dual Path Logic Branch</span>
-                              </div>
-                              <span className="text-[9px] font-mono font-bold bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded">
-                                Score ≥ {node.config.value || 100} pts
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-[10px]">
-                              <div className="bg-white p-2 rounded-lg border border-emerald-200 text-emerald-800">
-                                <span className="font-bold block">✓ Branch A: True</span>
-                                <span className="text-[9px] text-slate-600">{node.config.branchTrueLabel || 'Qualified (Said Yes)'}</span>
-                              </div>
-                              <div className="bg-white p-2 rounded-lg border border-slate-200 text-slate-700">
-                                <span className="font-bold block">✕ Branch B: False</span>
-                                <span className="text-[9px] text-slate-500">{node.config.branchFalseLabel || 'Not Interested / Follow-up'}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 5. Split Traffic Preview */}
-                        {node.type === 'action_split_traffic' && (
-                          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 text-xs text-amber-950 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 text-amber-700 font-bold text-[10px] uppercase">
-                                <Split size={12} />
-                                <span>Traffic Split (A/B Test)</span>
-                              </div>
-                              <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
-                                {node.config.splitPercentage || 50}% / {100 - (node.config.splitPercentage || 50)}%
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-[10px]">
-                              <div className="bg-white p-2 rounded-lg border border-indigo-100">
-                                <span className="font-bold text-indigo-700 block">Path A ({node.config.splitPercentage || 50}%)</span>
-                                <span className="text-[9px] text-slate-600 truncate block">{node.config.pathALabel || 'Path A'}</span>
-                              </div>
-                              <div className="bg-white p-2 rounded-lg border border-emerald-100">
-                                <span className="font-bold text-emerald-700 block">Path B ({100 - (node.config.splitPercentage || 50)}%)</span>
-                                <span className="text-[9px] text-slate-600 truncate block">{node.config.pathBLabel || 'Path B'}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 6. Instagram Direct Message Preview */}
-                        {node.type === 'action_ig_send_dm' && (
-                          <div className="bg-pink-50/70 border border-pink-200 rounded-xl p-3 text-xs text-pink-950 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 text-pink-700 text-[10px] font-bold uppercase">
-                                <MessageCircle size={12} />
-                                <span>Instagram Direct Message</span>
-                              </div>
-                              <span className="bg-gradient-to-r from-purple-100 to-pink-100 text-pink-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-pink-200">
-                                🟣 Instagram DM
-                              </span>
-                            </div>
-                            <p className="line-clamp-2 leading-relaxed text-slate-800 bg-white/80 p-2 rounded-lg border border-pink-100">
-                              "{node.config.message || 'Hi {{lead.name}}! Thanks for reaching out.'}"
-                            </p>
-                            {node.config.buttons && node.config.buttons.length > 0 && (
-                              <div className="flex flex-wrap gap-1 pt-1">
-                                {node.config.buttons.map((b: any, bi: number) => (
-                                  <span key={bi} className="bg-white text-pink-700 text-[9px] font-bold px-2 py-0.5 rounded-md border border-pink-200">
-                                    {b.title || b}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* 7. Instagram Comment Auto-Reply Preview */}
-                        {node.type === 'action_ig_comment_reply' && (
-                          <div className="bg-fuchsia-50/70 border border-fuchsia-200 rounded-xl p-3 text-xs text-fuchsia-950 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 text-fuchsia-700 text-[10px] font-bold uppercase">
-                                <MessageSquare size={12} />
-                                <span>Instagram Comment + DM Reply</span>
-                              </div>
-                              <span className="bg-fuchsia-100 text-fuchsia-800 text-[9px] font-bold px-2 py-0.5 rounded">
-                                Reel &amp; Post Auto-Reply
-                              </span>
-                            </div>
-                            <div className="space-y-1 text-[10px]">
-                              <div className="bg-white p-2 rounded-lg border border-fuchsia-100">
-                                <span className="text-slate-400 font-bold block text-[9px] uppercase">Public Reply:</span>
-                                <span className="text-slate-800">"{node.config.publicReplyText || 'Sent details in DM! 📩'}"</span>
-                              </div>
-                              <div className="bg-white p-2 rounded-lg border border-fuchsia-100">
-                                <span className="text-slate-400 font-bold block text-[9px] uppercase">Private DM:</span>
-                                <span className="text-slate-800">"{node.config.dmMessage || 'Here is your brochure link 🏢'}"</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 8. Instagram Brochure Card Preview */}
-                        {node.type === 'action_ig_card' && (
-                          <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-3 text-xs text-rose-950 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 text-rose-700 text-[10px] font-bold uppercase">
-                                <ImageIcon size={12} />
-                                <span>Instagram Media / Brochure Card</span>
-                              </div>
-                              <span className="bg-rose-100 text-rose-800 text-[9px] font-bold px-2 py-0.5 rounded">
-                                Visual Card
-                              </span>
-                            </div>
-                            <div className="bg-white p-2.5 rounded-xl border border-rose-100 flex items-center gap-2.5">
-                              <div className="w-12 h-12 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                                <ImageIcon size={20} />
-                              </div>
-                              <div className="min-w-0">
-                                <h6 className="font-bold text-slate-900 truncate text-[11px]">{node.config.cardTitle || 'Project Brochure'}</h6>
-                                <p className="text-[10px] text-slate-500 truncate">{node.config.cardSubtitle || 'Luxury Residences'}</p>
-                                <span className="text-[9px] font-bold text-rose-600 mt-0.5 inline-block">Button: {node.config.buttonTitle || 'Download'}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 9. Facebook Messenger Preview */}
-                        {node.type === 'action_fb_send_messenger' && (
-                          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs text-blue-950 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 text-blue-700 text-[10px] font-bold uppercase">
-                                <MessageCircle size={12} />
-                                <span>Facebook Messenger Message</span>
-                              </div>
-                              <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-2 py-0.5 rounded">
-                                Messenger
-                              </span>
-                            </div>
-                            <p className="line-clamp-2 leading-relaxed text-slate-800 bg-white/80 p-2 rounded-lg border border-blue-100">
-                              "{node.config.message || 'Hello {{lead.name}}! How can we help?'}"
-                            </p>
-                          </div>
-                        )}
-
-                        {/* 10. Send Rich Email Preview */}
-                        {node.type === 'action_send_email' && (
-                          <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-3 text-xs text-sky-950 space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 text-sky-700 text-[10px] font-bold uppercase">
-                                <Mail size={12} />
-                                <span>HTML Email Delivery</span>
-                              </div>
-                              <span className="bg-sky-100 text-sky-800 text-[9px] font-bold px-2 py-0.5 rounded">
-                                Email
-                              </span>
-                            </div>
-                            <div className="bg-white p-2 rounded-lg border border-sky-100">
-                              <span className="text-[10px] font-bold text-slate-800 block truncate">Subject: {node.config.subject || 'Project Brochure & Price List'}</span>
-                              <span className="text-[9px] text-slate-500 truncate block">From: {node.config.senderName || 'Nobogent Advisory'}</span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 11. Add Tag / Remove Tag Preview */}
-                        {(node.type === 'action_add_tag' || node.type === 'action_remove_tag') && (
-                          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-2.5 text-xs text-blue-950 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Tag size={13} className="text-blue-600 shrink-0" />
-                              <span className="font-semibold text-slate-800 text-[11px]">
-                                {node.type === 'action_add_tag' ? 'Attach Tag:' : 'Remove Tag:'} <span className="font-bold text-blue-700">{node.config.tag || 'New Tag'}</span>
-                              </span>
-                            </div>
-                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                              Contact CRM Tag
-                            </span>
-                          </div>
-                        )}
-
-                        {/* 12. Add Note Preview */}
-                        {node.type === 'action_add_note' && (
-                          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 text-xs text-amber-950 flex items-center justify-between">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <FileText size={13} className="text-amber-600 shrink-0" />
-                              <span className="font-medium text-slate-800 text-[11px] truncate">
-                                Note: "{node.config.note || 'Logged activity note'}"
-                              </span>
-                            </div>
-                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-800 shrink-0">
-                              CRM Note
-                            </span>
-                          </div>
-                        )}
-
-                        {/* 13. Update Custom Field Preview */}
-                        {node.type === 'action_update_field' && (
-                          <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-2.5 text-xs text-indigo-950 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Sliders size={13} className="text-indigo-600 shrink-0" />
-                              <span className="font-semibold text-slate-800 text-[11px]">
-                                Field <span className="font-mono text-indigo-700">{node.config.fieldKey || 'attribute'}</span> = <span className="font-bold text-indigo-900">{node.config.fieldValue || 'value'}</span>
-                              </span>
-                            </div>
-                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
-                              Custom Field
-                            </span>
-                          </div>
-                        )}
-
-                        {/* 14. WhatsApp Message Preview */}
-                        {node.type === 'action_whatsapp_msg' && (
-                          <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-950 font-medium space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 text-emerald-700 text-[10px] font-bold uppercase">
-                                <MessageSquare size={12} />
-                                <span>WhatsApp Interactive Message</span>
-                              </div>
-                              <span className="bg-emerald-100/80 text-emerald-800 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
-                                {node.config.buttonType === 'cta_url' ? '🔗 CTA Link Buttons' : node.config.buttonType === 'none' ? '📝 Text Message' : '⚡ Quick Reply Branching'}
-                              </span>
-                            </div>
-
-                            <p className="line-clamp-2 leading-relaxed text-slate-800 bg-white/80 p-2 rounded-lg border border-emerald-100">
-                              "{node.config.message || 'Hi {{lead.name}}! Thank you for speaking with us.'}"
-                            </p>
-
-                            {/* Verified PDF Brochure preview pill */}
-                            {node.config.includeBrochure && (
-                              <div className="bg-emerald-100/70 border border-emerald-300/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between text-[10px] text-emerald-900 font-semibold">
-                                <div className="flex items-center gap-1.5 truncate max-w-[220px]">
-                                  <FileText size={13} className="text-emerald-700 shrink-0" />
-                                  <span className="truncate">Official_Project_Brochure.pdf</span>
-                                </div>
-                                <span className="text-[9px] text-emerald-700 bg-white/80 px-1.5 py-0.2 rounded border border-emerald-200">
-                                  Verified Media
-                                </span>
-                              </div>
-                            )}
-
-                            {/* CTA Link Buttons Preview */}
-                            {node.config.buttonType === 'cta_url' && (node.config.ctaButtons || []).length > 0 && (
-                              <div className="space-y-1 pt-1">
-                                <span className="text-[9px] font-bold uppercase text-slate-500 block">External CTA Links (Meta API):</span>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {(node.config.ctaButtons || []).map((btn: any, bi: number) => (
-                                    <div key={bi} className="inline-flex items-center gap-1 bg-white text-indigo-700 border border-indigo-200 px-2 py-1 rounded-md text-[10px] font-bold shadow-2xs">
-                                      <span>{btn.title || 'Visit Link'}</span>
-                                      <ExternalLink size={10} className="text-indigo-500 shrink-0" />
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Quick Reply Branching Preview */}
-                            {node.config.buttonType !== 'cta_url' && node.config.buttonType !== 'none' && (
-                              <div className="space-y-1 pt-1">
-                                <span className="text-[9px] font-bold uppercase text-slate-500 block">Quick Reply Buttons &amp; Branch Triggers:</span>
-                                <div className="space-y-1">
-                                  {((node.config.quickReplyButtons && node.config.quickReplyButtons.length > 0)
-                                    ? node.config.quickReplyButtons
-                                    : (node.config.buttons || ['📅 Schedule Visit', '💬 Talk to Agent', '📍 Location Pin']).map((b: string, i: number) => ({
-                                        id: `btn_${i}`,
-                                        title: b,
-                                        actionType: i === 0 ? 'crm_stage' : i === 1 ? 'assign_agent' : 'send_reply',
-                                        actionValue: i === 0 ? 'Visit Planned' : i === 1 ? 'Harman Bajwa' : 'Location Sent'
-                                      }))
-                                  ).map((btn: any, bi: number) => (
-                                    <div key={bi} className="bg-white border border-emerald-200 rounded-lg px-2.5 py-1 flex items-center justify-between text-[10px] shadow-2xs">
-                                      <span className="font-bold text-emerald-900 truncate max-w-[180px]">{btn.title}</span>
-                                      <span className="text-slate-600 font-mono text-[9px] font-bold flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 shrink-0">
-                                        ➔ {btn.actionType === 'crm_stage' ? `Stage: ${btn.actionValue || 'Visit Planned'}`
-                                          : btn.actionType === 'notify_admin' ? '🔔 Alert Admin'
-                                          : btn.actionType === 'assign_agent' ? `👤 Assign: ${btn.actionValue || 'Closer'}`
-                                          : `💬 Auto-Reply`}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* 15. Instant Alert to Admin (Email + WhatsApp) Preview */}
-                        {node.type === 'action_notify_team' && (
-                          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 text-xs text-amber-950 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Bell size={14} className="text-amber-600 shrink-0" />
-                              <span className="font-semibold text-slate-800 truncate max-w-[260px]">
-                                Instant Admin Alert ({selectedNode?.config?.adminEmail || 'admin@bluesquareinfra.com'})
-                              </span>
-                            </div>
-                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
-                              Email + WhatsApp
-                            </span>
-                          </div>
-                        )}
-
-                        {/* General Config Summary Row */}
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                          <span className="truncate max-w-[280px]">
-                            {node.description || 'Configured and ready'}
-                          </span>
-                          <span className="text-indigo-600 group-hover:underline font-bold text-[11px] shrink-0">
-                            Configure →
-                          </span>
-                        </div>
-
-                        {/* GoHighLevel Live Node Execution Stats Bar */}
-                        {(nodeExecutionStats[node.id] || isLiveRunActive) && (
-                          <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {/* Active Enroute Badge */}
-                              {(nodeExecutionStats[node.id]?.enroute || 0) > 0 && (
-                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black animate-pulse">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                                  <span>{nodeExecutionStats[node.id]?.enroute} Enroute</span>
-                                </span>
-                              )}
-
-                              {/* Completed Count */}
-                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">
-                                ✓ {nodeExecutionStats[node.id]?.completed || 0} Processed
-                              </span>
-
-                              {/* Qualification / Branching Passed Badge */}
-                              {(node.type === 'action_qualify' || node.type === 'action_ai_qualify' || node.type === 'action_condition') && (
-                                <>
-                                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black">
-                                    🎯 {nodeExecutionStats[node.id]?.passed || 0} Qualified ({Math.round(((nodeExecutionStats[node.id]?.passed || 0) / Math.max(1, nodeExecutionStats[node.id]?.completed || 1)) * 100)}%)
-                                  </span>
-                                  <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold">
-                                    ⛔ {nodeExecutionStats[node.id]?.failed || 0} Filtered
-                                  </span>
-                                </>
-                              )}
-
-                              {/* Voice Call Specific Badges */}
-                              {node.type === 'action_ai_call' && (
-                                <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">
-                                  📞 {nodeExecutionStats[node.id]?.passed || 0} Connected ({Math.round(((nodeExecutionStats[node.id]?.passed || 0) / Math.max(1, nodeExecutionStats[node.id]?.completed || 1)) * 100)}%)
-                                </span>
-                              )}
-
-                              {/* WhatsApp Message Specific Badges */}
-                              {(node.type === 'action_whatsapp_msg' || node.type === 'action_whatsapp_questions') && (
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                                  💬 {nodeExecutionStats[node.id]?.completed || 0} Delivered
-                                </span>
-                              )}
-                            </div>
-
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setIsLiveLogsDrawerOpen(true)
-                              }}
-                              className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline flex items-center gap-0.5 cursor-pointer ml-auto"
-                            >
-                              <span>View live feed</span>
-                              <ChevronRight size={11} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* CONNECTOR LINE BETWEEN NODES */}
-                    <div className="flex flex-col items-center relative">
-                      <div className="w-0.5 h-6 bg-slate-300 relative">
-                        {isLiveRunActive && !isLiveRunPaused && (
-                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500 absolute -left-[4px] animate-bounce" />
-                        )}
-                      </div>
-                      <button
-                        onClick={() => {
-                          setInsertAtIndex(index + 1)
-                          setIsNodePaletteOpen(true)
-                        }}
-                        className="w-6 h-6 rounded-full bg-white hover:bg-indigo-600 text-slate-500 hover:text-white border border-slate-300 hover:border-indigo-600 flex items-center justify-center transition-all shadow-xs cursor-pointer"
-                        title="Insert step here"
-                      >
-                        <Plus size={12} />
-                      </button>
-                      <div className="w-0.5 h-6 bg-slate-300"></div>
-                      <ArrowDown size={14} className="text-slate-400 -mt-1" />
-                    </div>
-                  </React.Fragment>
-                )
-              })}
-
-              {/* ADD NEXT STEP BUTTON CARD */}
-              <button
-                onClick={() => {
-                  setInsertAtIndex(null)
-                  setIsNodePaletteOpen(true)
+                    const impParam = impersonateId ? `?impersonate=${impersonateId}` : ''
+                    const res = await fetch(`/api/flows${impParam}`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(updatedFlow)
+                    })
+                    if (!res.ok) throw new Error('Failed to save flow')
+                    const data = await res.json()
+                    if (data?.flow) {
+                      setFlows(prev => prev.map(f => f.id === data.flow.id ? data.flow : f))
+                    }
+                    toast.success('Visual flow graph published and active!')
+                  } catch (err: any) {
+                    toast.error(err.message || 'Error saving flow')
+                  } finally {
+                    setSaving(false)
+                  }
                 }}
-                className="w-full border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-2xl p-6 flex flex-col items-center justify-center text-slate-600 hover:text-indigo-600 hover:bg-indigo-50/20 bg-white transition-all group cursor-pointer shadow-xs"
-              >
-                <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-indigo-600 text-slate-600 group-hover:text-white flex items-center justify-center mb-2 transition-colors">
-                  <Plus size={18} />
-                </div>
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-800 group-hover:text-indigo-700">
-                  Add Next Automation Step
-                </span>
-                <span className="text-[11px] text-slate-500 mt-0.5">
-                  Gemini Live Voice Call, Deterministic Qualification, Logic Branch, Admin Alert, or WhatsApp Brochure
-                </span>
-              </button>
-
+              />
             </div>
-          </div>
           )}
 
           {/* === FLOW ANALYTICS & FUNNEL VIEW === */}
@@ -4183,7 +3522,7 @@ export default function FlowsPage() {
           )}
 
           {/* RIGHT FIXED SIDEBAR: STEP CONFIGURATION INSPECTOR DRAWER (LIGHT THEME) */}
-          {selectedNode && (
+          {selectedNode && studioTab !== 'builder' && (
             <aside className="fixed right-0 top-16 bottom-0 w-[460px] max-w-[95vw] bg-white border-l border-slate-200 shadow-2xl z-40 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 text-slate-900">
               
               {/* Drawer Header */}

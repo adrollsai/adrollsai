@@ -19,6 +19,7 @@ export interface StitchTaskContext {
 export interface StitchSibling {
     current_index: number;
     last_successful_task_id: string;
+    last_task_id?: string | null;
 }
 
 /**
@@ -63,6 +64,74 @@ export async function dispatchCloudRunStitch(
 }
 
 /**
+ * Resiliently downloads a scene clip with automatic retry and Kie.ai emergency fallback.
+ */
+async function downloadSceneClipResiliently(s: StitchSibling, tempPath: string): Promise<void> {
+    const urlsToTry: string[] = [];
+    if (s.last_successful_task_id) {
+        urlsToTry.push(s.last_successful_task_id);
+        if (s.last_successful_task_id.includes('r2.dev/adrolls-storage/')) {
+            urlsToTry.unshift(s.last_successful_task_id.replace('r2.dev/adrolls-storage/', 'r2.dev/'));
+        }
+    }
+
+    let downloadSuccess = false;
+    for (const url of urlsToTry) {
+        if (!url || !url.startsWith('http')) continue;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                console.log(`[Local Stitch] Downloading scene ${s.current_index + 1} (attempt ${attempt}) from: ${url}`);
+                const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+                if (res.ok) {
+                    const buf = Buffer.from(await res.arrayBuffer());
+                    if (buf.length > 1000) {
+                        fs.writeFileSync(tempPath, buf);
+                        downloadSuccess = true;
+                        break;
+                    }
+                }
+            } catch (fetchErr: any) {
+                console.warn(`[Local Stitch] Scene download attempt ${attempt} failed for ${url}:`, fetchErr.message);
+            }
+        }
+        if (downloadSuccess) break;
+    }
+
+    // Emergency Fallback: If R2 failed or returned 404, query Kie.ai directly using the original task ID!
+    if (!downloadSuccess && s.last_task_id && process.env.KIE_API_KEY) {
+        console.log(`[Local Stitch] Primary URL failed for scene ${s.current_index + 1}. Attempting emergency Kie API lookup: ${s.last_task_id}`);
+        try {
+            const kieRes = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${s.last_task_id}`, {
+                headers: { 'Authorization': `Bearer ${process.env.KIE_API_KEY}` },
+                signal: AbortSignal.timeout(10000)
+            });
+            if (kieRes.ok) {
+                const kieData = await kieRes.json();
+                const kieVideoUrl = kieData?.data?.response?.resultUrls?.[0] ||
+                    (kieData?.data?.resultJson ? JSON.parse(kieData.data.resultJson)?.resultUrls?.[0] : null);
+                if (kieVideoUrl && typeof kieVideoUrl === 'string' && kieVideoUrl.startsWith('http')) {
+                    console.log(`[Local Stitch] Recovered direct Kie video URL for scene ${s.current_index + 1}: ${kieVideoUrl}`);
+                    const directRes = await fetch(kieVideoUrl, { signal: AbortSignal.timeout(30000) });
+                    if (directRes.ok) {
+                        const buf = Buffer.from(await directRes.arrayBuffer());
+                        if (buf.length > 1000) {
+                            fs.writeFileSync(tempPath, buf);
+                            downloadSuccess = true;
+                        }
+                    }
+                }
+            }
+        } catch (kieErr: any) {
+            console.error(`[Local Stitch] Emergency Kie fallback failed for scene ${s.current_index + 1}:`, kieErr.message);
+        }
+    }
+
+    if (!downloadSuccess) {
+        throw new Error(`Failed to download scene clip ${s.current_index + 1} (${s.last_successful_task_id}) from any source.`);
+    }
+}
+
+/**
  * Performs fast direct FFmpeg stitching locally or inside the serverless execution environment.
  * Replaces clip audio with the voiceover stream (-map 0:v:0 -map 1:a:0) and uploads to R2.
  */
@@ -78,15 +147,12 @@ export async function stitchClipsLocally(
     }
 
     try {
-        // 1. Download all scene clips
+        // 1. Download all scene clips with resilient fallback
         const localClipPaths: string[] = [];
         for (let idx = 0; idx < siblings.length; idx++) {
             const s = siblings[idx];
             const clipPath = path.join(tempStitchDir, `scene_${idx}.mp4`);
-            console.log(`[Local Stitch] Downloading scene ${idx + 1}/${siblings.length}: ${s.last_successful_task_id}`);
-            const clipRes = await fetch(s.last_successful_task_id);
-            if (!clipRes.ok) throw new Error(`Failed to download scene ${idx + 1} (${s.last_successful_task_id})`);
-            fs.writeFileSync(clipPath, Buffer.from(await clipRes.arrayBuffer()));
+            await downloadSceneClipResiliently(s, clipPath);
             localClipPaths.push(clipPath);
         }
 
@@ -144,7 +210,7 @@ export async function stitchClipsLocally(
         const finalR2Url = `${R2_PUBLIC_URL}/${r2Key}`;
         console.log(`[Local Stitch] Successfully uploaded stitched MP4 to R2: ${finalR2Url}`);
 
-        // 5. Generate thumbnail
+        // 5. Generate crisp thumbnail
         let thumbnailUrl: string | null = null;
         try {
             thumbnailUrl = await generateAndUploadVideoThumbnail(outputPath, videoTask.user_id, videoTask.asset_id);
@@ -152,16 +218,25 @@ export async function stitchClipsLocally(
             console.error("[Local Stitch] Thumbnail generation error:", thumbErr);
         }
 
-        // 6. Update Supabase asset
+        // 6. Update Supabase asset safely merging metadata
         if (videoTask.asset_id) {
+            const { data: existingAsset } = await supabaseAdmin
+                .from('assets')
+                .select('metadata')
+                .eq('id', videoTask.asset_id)
+                .single();
+
+            const mergedMeta = {
+                ...(existingAsset?.metadata || {}),
+                ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                ...(audioUrl ? { audioUrl } : {}),
+                videoModel: 'grok'
+            };
+
             await supabaseAdmin.from('assets').update({
                 url: finalR2Url,
                 status: 'Draft',
-                created_at: new Date().toISOString(),
-                metadata: {
-                    ...(thumbnailUrl ? { thumbnailUrl } : {}),
-                    ...(audioUrl ? { audioUrl } : {})
-                }
+                metadata: mergedMeta
             }).eq('id', videoTask.asset_id);
         }
 

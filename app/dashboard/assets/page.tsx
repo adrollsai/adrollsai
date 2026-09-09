@@ -373,8 +373,8 @@ export default function AssetsPage() {
                 
                 // Sort active 'Processing' or 'Rendering' tasks to the very top, preserving created_at order for the rest
                 const sortedAssets = [...cleanAssets].sort((a, b) => {
-                    const aActive = ['Processing', 'Rendering'].includes(a.status);
-                    const bActive = ['Processing', 'Rendering'].includes(b.status);
+                    const aActive = ['Processing', 'Rendering'].includes(a.status) || (a.url && a.url.includes('/processing'));
+                    const bActive = ['Processing', 'Rendering'].includes(b.status) || (b.url && b.url.includes('/processing'));
                     
                     if (aActive && !bActive) return -1;
                     if (!aActive && bActive) return 1;
@@ -412,7 +412,7 @@ export default function AssetsPage() {
 
     // Background polling for assets that are still in "Processing" or "Rendering" state
     useEffect(() => {
-        const hasActiveTasks = assets.some(asset => ['Processing', 'Rendering'].includes(asset.status))
+        const hasActiveTasks = assets.some(asset => ['Processing', 'Rendering'].includes(asset.status) || (asset.url && asset.url.includes('/processing')))
         if (!hasActiveTasks) return
 
         const interval = setInterval(async () => {
@@ -1371,13 +1371,15 @@ export default function AssetsPage() {
                         ))}
 
                         {/* Rendering actual assets */}
-                        {filteredAssets.slice(0, displayLimit).map((asset) => (
+                        {filteredAssets.slice(0, displayLimit).map((asset) => {
+                            const isPending = ['Processing', 'Rendering'].includes(asset.status) || (asset.url && asset.url.includes('/processing'));
+                            return (
                             <div
                                 key={asset.id}
                                 onClick={() => {
                                     if (selectedIds.size > 0) {
                                         toggleSelection(asset.id);
-                                    } else if (!['Processing', 'Rendering', 'Failed'].includes(asset.status)) {
+                                    } else if (!isPending && asset.status !== 'Failed') {
                                         setPreviewImage({ isOpen: true, url: asset.url, title: 'Asset Preview', type: asset.type });
                                     }
                                 }}
@@ -1393,19 +1395,19 @@ export default function AssetsPage() {
                                         {selectedIds.has(asset.id) && <Check size={16} className="text-white" strokeWidth={4} />}
                                     </div>
 
-                                    {['Processing', 'Rendering'].includes(asset.status) ? (
+                                    {isPending ? (
                                         <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4 text-center">
                                             <div className="relative">
-                                                <Loader2 size={28} className={`animate-spin ${asset.status === 'Rendering' ? 'text-blue-500' : 'text-purple-500'}`} />
+                                                <Loader2 size={28} className={`animate-spin ${asset.status === 'Rendering' || asset.url?.includes('/processing') ? 'text-blue-500' : 'text-purple-500'}`} />
                                                 <Sparkles size={12} className="absolute -top-1 -right-1 text-amber-400 animate-pulse" />
                                             </div>
                                             <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] mt-3">
-                                                {asset.status === 'Rendering' ? 'AI EDITING...' : 'AI Designing...'}
+                                                {asset.status === 'Rendering' ? 'AI EDITING...' : asset.url?.includes('/processing') ? 'FINALIZING VIDEO...' : 'AI Designing...'}
                                             </p>
                                             <p className="text-[9px] text-slate-400 font-medium mt-1">
-                                                {asset.status === 'Rendering' ? 'Compiling subtitles & outro' : 'Check back in a bit'}
+                                                {asset.status === 'Rendering' ? 'Compiling subtitles & outro' : asset.url?.includes('/processing') ? 'Stitching scenes & audio' : 'Check back in a bit'}
                                             </p>
-                                            {asset.status !== 'Rendering' && (
+                                            {asset.status !== 'Rendering' && !asset.url?.includes('/processing') && (
                                                 <button 
                                                     onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
                                                     className="mt-3 text-[9px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest"
@@ -1419,12 +1421,11 @@ export default function AssetsPage() {
                                             <div className="bg-red-100 p-3 rounded-full mb-2">
                                                 <X className="text-red-500" size={24} />
                                             </div>
-                                            <p className="text-[10px] font-black text-red-600 uppercase tracking-widest">Failed</p>
-                                            <p 
-                                                className="text-[9px] text-red-400 font-medium mt-1 max-w-[120px] line-clamp-2"
-                                                title={asset.metadata?.error || "AI generation failed"}
-                                            >
-                                                {asset.metadata?.error || "AI generation failed"}
+                                            <p className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em]">
+                                                Generation Failed
+                                            </p>
+                                            <p className="text-[9px] text-red-400 mt-1 max-w-[120px] truncate" title={asset.metadata?.error || 'AI limits exceeded'}>
+                                                {asset.metadata?.error || 'Rate limit hit'}
                                             </p>
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
@@ -1463,7 +1464,7 @@ export default function AssetsPage() {
                                     )}
 
                                     {/* Overlay Actions */}
-                                    {asset.status !== 'Processing' ? (
+                                    {!isPending ? (
                                         <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                                             <div className="flex gap-3">
                                                 <button 
@@ -1502,8 +1503,8 @@ export default function AssetsPage() {
 
                                     {/* Status Badge */}
                                     <div className="absolute top-4 right-4 shadow-md z-10">
-                                        {['Processing', 'Rendering'].includes(asset.status) ? (
-                                            <div className={`text-white p-1.5 rounded-full border-2 border-white animate-pulse ${asset.status === 'Rendering' ? 'bg-blue-500' : 'bg-purple-500'}`} title={asset.status}>
+                                        {isPending ? (
+                                            <div className={`text-white p-1.5 rounded-full border-2 border-white animate-pulse ${asset.status === 'Rendering' || asset.url?.includes('/processing') ? 'bg-blue-500' : 'bg-purple-500'}`} title={asset.status}>
                                                 <Sparkles size={14} />
                                             </div>
                                         ) : asset.status === 'Published' ? (
@@ -1515,7 +1516,9 @@ export default function AssetsPage() {
                                                 <X size={14} strokeWidth={3} />
                                             </div>
                                         ) : (
-                                            <div className="bg-amber-400 w-4 h-4 rounded-full border-2 border-white" title="Draft / Unused" />
+                                            <div className="bg-slate-700/80 backdrop-blur-md text-white p-1.5 rounded-full border border-white/20" title={asset.status}>
+                                                <Check size={14} strokeWidth={2.5} />
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -1535,7 +1538,8 @@ export default function AssetsPage() {
                                     </select>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                         
                         {/* Load More Button for client-side pagination */}
                         {filteredAssets.length > displayLimit && (

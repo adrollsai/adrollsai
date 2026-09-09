@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
         // 2. Optimize for Viral Retention & Visual Effects
         console.log(`[Captions API] Optimizing captions and effects...`);
-        const { captions, effects } = await optimizeCaptionsForRetention(rawTranscript.segments);
+        const { captions, effects } = await optimizeCaptionsForRetention(rawTranscript?.segments || []);
 
         // 3. Store in Supabase via Admin Client (bypassing RLS for impersonated assets)
         if (assetId) {

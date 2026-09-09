@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleAIFileManager } from "@google/generative-ai/server";
 import { generateContentWithFallback } from "./gemini-fallback";
+import { extractJsonFromText } from "./json-parser";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
 const fileManager = new GoogleAIFileManager(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
@@ -95,7 +96,7 @@ export async function transcribeVideoWithGemini(videoUrl: string, fallbackAudioU
         );
 
         const transcriptText = result.response.text();
-        const data = JSON.parse(transcriptText);
+        const data = extractJsonFromText<{ segments?: any[] }>(transcriptText, { segments: [] });
 
         // Cleanup
         try {

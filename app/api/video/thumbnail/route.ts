@@ -22,8 +22,8 @@ export async function GET(request: Request) {
         const videoUrl = searchParams.get('url');
         const assetId = searchParams.get('assetId');
 
-        if (!videoUrl) {
-            return new NextResponse('Missing video URL', { status: 400 });
+        if (!videoUrl || videoUrl.includes('/processing')) {
+            return new NextResponse('Missing or pending video URL', { status: 400 });
         }
 
         // 1. Check if asset already has a generated thumbnailUrl in Supabase DB metadata

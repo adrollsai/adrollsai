@@ -155,13 +155,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Database fetch error' }, { status: 500 });
         }
 
-        if (!activeTasks || activeTasks.length === 0) {
-            console.log("[Sync Endpoint] No active processing tasks to sync.");
-            return NextResponse.json({ success: true, synced: [] });
-        }
+        const syncedResults: any[] = [];
 
-        console.log(`[Sync Endpoint] Found ${activeTasks.length} active tasks to synchronize.`);
-        const syncedResults = [];
+        if (activeTasks && activeTasks.length > 0) {
+            console.log(`[Sync Endpoint] Found ${activeTasks.length} active tasks to synchronize.`);
 
         // 3. Proactively sync each task against Kie.ai
         for (const task of activeTasks) {
@@ -208,7 +205,8 @@ export async function POST(request: Request) {
                     try {
                         const videoRes = await fetch(videoUrl);
                         const buffer = Buffer.from(await videoRes.arrayBuffer());
-                        const fileName = `generated/${task.user_id}/scene_${task.current_index}_${Date.now()}.mp4`;
+                        const scenePrefix = task.asset_id ? `${task.asset_id}_` : '';
+                        const fileName = `generated/${task.user_id}/${scenePrefix}scene_${task.current_index}.mp4`;
                         
                         await r2.send(new PutObjectCommand({
                             Bucket: R2_BUCKET,
@@ -415,30 +413,15 @@ export async function POST(request: Request) {
                         }
                     }
 
-                    // 1. Try Cloud Run Stitcher Worker
-                    try {
-                        console.log(`[Sync Endpoint] Attempting stitch via Cloud Run worker for Asset ID ${task.asset_id}...`);
-                        const cloudRunSuccess = await dispatchCloudRunStitch(
-                            siblings.map(s => ({ current_index: s.current_index, last_successful_task_id: s.last_successful_task_id })),
-                            { asset_id: task.asset_id, user_id: task.user_id, prompts: task.prompts },
-                            finalAudioUrl
-                        );
-                        if (cloudRunSuccess) {
-                            if (task.asset_id) {
-                                await supabaseAdmin.from('assets').update({ status: 'Draft' }).eq('id', task.asset_id);
-                            }
-                            syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
-                            continue;
-                        }
-                    } catch (cloudRunErr: any) {
-                        console.warn(`[Sync Endpoint] Cloud Run stitch dispatch failed, attempting local stitch:`, cloudRunErr?.message || cloudRunErr);
-                    }
-
-                    // 2. Try fast direct local FFmpeg stitch
+                    // 1. Try fast direct local FFmpeg stitch first (instant 2s completion, zero cold-start)
                     try {
                         console.log(`[Sync Endpoint] Starting fast local FFmpeg stitching for Asset ID ${task.asset_id}...`);
                         await stitchClipsLocally(
-                            siblings.map(s => ({ current_index: s.current_index, last_successful_task_id: s.last_successful_task_id })),
+                            siblings.map(s => ({
+                                current_index: s.current_index,
+                                last_successful_task_id: s.last_successful_task_id,
+                                last_task_id: s.last_task_id
+                            })),
                             { asset_id: task.asset_id, user_id: task.user_id, prompts: task.prompts },
                             finalAudioUrl,
                             supabaseAdmin
@@ -446,7 +429,30 @@ export async function POST(request: Request) {
                         syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
                         continue;
                     } catch (fastFfmpegErr: any) {
-                        console.warn(`[Sync Endpoint] Fast local FFmpeg stitching failed, falling back to AWS Lambda:`, fastFfmpegErr?.message || fastFfmpegErr);
+                        console.warn(`[Sync Endpoint] Fast local FFmpeg stitching failed, attempting Cloud Run worker:`, fastFfmpegErr?.message || fastFfmpegErr);
+                    }
+
+                    // 2. Fallback to Cloud Run Stitcher Worker
+                    try {
+                        console.log(`[Sync Endpoint] Attempting stitch via Cloud Run worker for Asset ID ${task.asset_id}...`);
+                        const cloudRunSuccess = await dispatchCloudRunStitch(
+                            siblings.map(s => ({
+                                current_index: s.current_index,
+                                last_successful_task_id: s.last_successful_task_id,
+                                last_task_id: s.last_task_id
+                            })),
+                            { asset_id: task.asset_id, user_id: task.user_id, prompts: task.prompts },
+                            finalAudioUrl
+                        );
+                        if (cloudRunSuccess) {
+                            if (task.asset_id) {
+                                await supabaseAdmin.from('assets').update({ status: 'Rendering' }).eq('id', task.asset_id);
+                            }
+                            syncedResults.push({ taskId, assetId: task.asset_id, status: 'rendering' });
+                            continue;
+                        }
+                    } catch (cloudRunErr: any) {
+                        console.warn(`[Sync Endpoint] Cloud Run stitch dispatch failed, attempting AWS Lambda:`, cloudRunErr?.message || cloudRunErr);
                     }
 
                     try {
@@ -559,6 +565,60 @@ export async function POST(request: Request) {
             } catch (taskErr: any) {
                 console.error(`[Sync Endpoint] Error synchronizing task ${taskId}:`, taskErr.message);
             }
+        }
+    }
+
+        // 4. SELF-HEALING RECOVERY: Automatically detect and finalize any completed scenes whose parent asset is still stuck in processing
+        try {
+            const { data: allUserTasks } = await supabaseAdmin
+                .from('video_tasks')
+                .select('*')
+                .eq('user_id', targetUserId);
+
+            if (allUserTasks && allUserTasks.length > 0) {
+                const tasksByAsset = new Map<string, any[]>();
+                for (const t of allUserTasks) {
+                    if (!t.asset_id) continue;
+                    if (!tasksByAsset.has(t.asset_id)) tasksByAsset.set(t.asset_id, []);
+                    tasksByAsset.get(t.asset_id)!.push(t);
+                }
+
+                for (const [assetId, siblings] of tasksByAsset.entries()) {
+                    const allCompleted = siblings.length > 0 && siblings.every(s => s.status === 'Completed' && s.last_successful_task_id);
+                    if (allCompleted) {
+                        const { data: assetRec } = await supabaseAdmin
+                            .from('assets')
+                            .select('id, url, status')
+                            .eq('id', assetId)
+                            .single();
+
+                        if (assetRec && (assetRec.url?.includes('/processing') || ['Processing', 'Rendering'].includes(assetRec.status))) {
+                            console.log(`[Sync Endpoint] 🚑 Self-Healing Recovery triggered for Asset ${assetId}: All ${siblings.length} scenes completed! Stitching now...`);
+                            siblings.sort((a, b) => a.current_index - b.current_index);
+                            const finalAudioUrl = await resolveVoiceoverAudio(siblings[0], assetId);
+
+                            try {
+                                await stitchClipsLocally(
+                                    siblings.map(s => ({
+                                        current_index: s.current_index,
+                                        last_successful_task_id: s.last_successful_task_id,
+                                        last_task_id: s.last_task_id
+                                    })),
+                                    { asset_id: assetId, user_id: targetUserId, prompts: siblings[0].prompts },
+                                    finalAudioUrl,
+                                    supabaseAdmin
+                                );
+                                syncedResults.push({ assetId, status: 'recovered_and_stitched' });
+                                console.log(`[Sync Endpoint] ✅ Successfully auto-recovered and finalized Asset ${assetId}!`);
+                            } catch (recoveryErr: any) {
+                                console.error(`[Sync Endpoint] Self-healing stitch attempt failed:`, recoveryErr.message);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (healErr: any) {
+            console.error("[Sync Endpoint] Self-healing scan warning:", healErr.message);
         }
 
         return NextResponse.json({ success: true, synced: syncedResults });
