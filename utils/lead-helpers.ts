@@ -289,3 +289,89 @@ export function getLeadLatestRemark(lead: any, currentRole?: string): { remark: 
 
   return { remark: rawRemark, formattedTime, timestamp };
 }
+
+/**
+ * Robust extractor for the Next Action Remark.
+ * Checks explicit custom fields, specific note tags, and falls back to the latest followup remark.
+ */
+export function getLeadNextActionRemark(lead: any): string | null {
+  if (!lead) return null;
+  const cf = parseCustomFields(lead.custom_fields);
+
+  // 1. Explicit next action remark fields
+  if (cf.next_action_remark && typeof cf.next_action_remark === 'string' && cf.next_action_remark.trim() && !isGenericDnpText(cf.next_action_remark)) {
+    return cf.next_action_remark.trim();
+  }
+  if (cf.next_remarks && typeof cf.next_remarks === 'string' && cf.next_remarks.trim() && !isGenericDnpText(cf.next_remarks)) {
+    return cf.next_remarks.trim();
+  }
+  if (lead.next_action_remark && typeof lead.next_action_remark === 'string' && lead.next_action_remark.trim() && !isGenericDnpText(lead.next_action_remark)) {
+    return lead.next_action_remark.trim();
+  }
+  if (lead.next_remarks && typeof lead.next_remarks === 'string' && lead.next_remarks.trim() && !isGenericDnpText(lead.next_remarks)) {
+    return lead.next_remarks.trim();
+  }
+
+  // 2. Scan lead.notes for explicit Next Action remark patterns
+  if (lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
+    const notesStr = lead.notes.trim();
+
+    const patterns = [
+      /next action note:\s*([^.\n\]]+)/i,
+      /next action remark:\s*([^.\n\]]+)/i,
+      /next remarks?:\s*([^.\n\]]+)/i,
+      /\|\s*Next:\s*([^.\n\]]+)/i,
+      /\[Next Action\]:\s*([^\n]+)/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = notesStr.match(pattern);
+      if (match && match[1] && match[1].trim() && !isGenericDnpText(match[1])) {
+        return match[1].trim();
+      }
+    }
+
+    // 3. Fallback: Check the latest followup note entry (which was entered when setting the action)
+    const entries = notesStr.split(/\n\n+|---+|\n(?=\[\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/);
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i].trim();
+      if (!entry) continue;
+      const lower = entry.toLowerCase();
+
+      // Skip opening or non-followup headers
+      if (
+        lower.startsWith('[opening remarks]') ||
+        lower.startsWith('advertisment') ||
+        lower.startsWith('[followups taken]') ||
+        lower.startsWith('lead created from')
+      ) {
+        continue;
+      }
+
+      if (isGenericDnpText(entry)) continue;
+
+      let body = entry.includes(']:') ? entry.split(']:').slice(1).join(']:').trim() : entry;
+      if (body.startsWith('Stage:')) {
+        const dotIdx = body.indexOf('.');
+        if (dotIdx !== -1) body = body.slice(dotIdx + 1).trim();
+      }
+      if (body.startsWith('Status:')) {
+        const dotIdx = body.indexOf('.');
+        if (dotIdx !== -1) body = body.slice(dotIdx + 1).trim();
+      }
+
+      let manualPortion = '';
+      if (body.includes('Remarks:')) {
+        const rIdx = body.indexOf('Remarks:');
+        manualPortion = body.slice(rIdx + 8).trim();
+      }
+
+      const candidate = (manualPortion || body).trim();
+      if (candidate && !isGenericDnpText(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}

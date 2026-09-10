@@ -22,7 +22,7 @@ import CsvImportModal from '@/components/CsvImportModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle, extractStagesFromProfile } from '@/utils/pipeline-stages'
-import { getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp } from '@/utils/lead-helpers'
+import { getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
 
 
 
@@ -3206,17 +3206,19 @@ END:VCARD\n`
                                                 {(() => {
                                                     const rawNextDate = lead.next_followup || lead.custom_fields?.next_action_date;
                                                     if (!rawNextDate) return null;
-                                                    const cf = typeof lead.custom_fields === 'object' ? lead.custom_fields : null;
-                                                    const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || lead.next_action_remark || '').trim();
+                                                    const nextActionRemark = getLeadNextActionRemark(lead);
                                                     return (
-                                                        <div className="mt-1.5 flex flex-col gap-0.5">
+                                                        <div className="mt-1.5 flex flex-col gap-1">
                                                             <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded flex items-center gap-1 w-fit whitespace-nowrap">
                                                                 ⏰ {lead.custom_fields?.next_action_type || 'Followup'}: {new Date(rawNextDate).toLocaleDateString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
                                                             </span>
                                                             {nextActionRemark && (
-                                                                <span className="text-[10px] text-indigo-950 font-medium italic truncate max-w-[170px]" title={nextActionRemark}>
-                                                                    💬 {nextActionRemark}
-                                                                </span>
+                                                                <div className="bg-indigo-50/90 border border-indigo-200/90 px-2 py-0.5 rounded-lg text-[10px] text-indigo-950 font-semibold leading-tight max-w-[190px] shadow-2xs" title={nextActionRemark}>
+                                                                    <div className="flex items-center gap-1 text-[9px] font-black uppercase text-indigo-700 tracking-wider">
+                                                                        <span>💬 Remark</span>
+                                                                    </div>
+                                                                    <span className="italic line-clamp-2">{nextActionRemark}</span>
+                                                                </div>
                                                             )}
                                                         </div>
                                                     );
@@ -3562,16 +3564,15 @@ END:VCARD\n`
                                 {(() => {
                                     const rawNextDate = lead.next_followup || lead.custom_fields?.next_action_date;
                                     if (!rawNextDate) return null;
-                                    const cf = typeof lead.custom_fields === 'object' ? lead.custom_fields : null;
-                                    const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || lead.next_action_remark || '').trim();
+                                    const nextActionRemark = getLeadNextActionRemark(lead);
                                     return (
                                         <div className="flex flex-col gap-1 mt-1 max-w-full">
                                             <span className="text-xs font-black bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-200/80 flex items-center gap-1.5 shadow-sm shrink-0">
                                                 ⏰ Next Action: {lead.custom_fields?.next_action_type || 'Followup'} on {new Date(rawNextDate).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
                                             </span>
                                             {nextActionRemark && (
-                                                <div className="text-[11px] font-semibold text-indigo-950 bg-indigo-50/70 border border-indigo-200/60 px-2.5 py-1 rounded-lg flex items-start gap-1.5 leading-snug">
-                                                    <span className="shrink-0">💬</span>
+                                                <div className="text-[11px] font-semibold text-indigo-950 bg-indigo-50/80 border border-indigo-200/80 px-2.5 py-1 rounded-lg flex items-start gap-1.5 leading-snug shadow-2xs">
+                                                    <span className="text-indigo-700 font-bold shrink-0">💬 Remark:</span>
                                                     <span className="italic line-clamp-2">{nextActionRemark}</span>
                                                 </div>
                                             )}

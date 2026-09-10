@@ -52,7 +52,7 @@ import LeadHistoryModal from '@/components/LeadHistoryModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES } from '@/utils/pipeline-stages'
-import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark, isLeadLastStatusDnp } from '@/utils/lead-helpers'
+import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
 
 // Render simple markdown headers, bolding, and lists into JSX
 function MarkdownRenderer({ text }: { text: string }) {
@@ -248,6 +248,7 @@ export default function AnalyticsPage() {
   const [drilldownNextActionType, setDrilldownNextActionType] = useState<string>('ALL')
   const [drilldownDnpFilter, setDrilldownDnpFilter] = useState<'ALL' | 'DNP_ONLY' | 'DNP_1' | 'DNP_2' | 'DNP_3PLUS' | 'NO_DNP'>('ALL')
   const [drilldownDateRange, setDrilldownDateRange] = useState<string>('ALL')
+  const [drilldownDateBasis, setDrilldownDateBasis] = useState<'action' | 'created' | 'any'>('action')
   const [drilldownCustomDate, setDrilldownCustomDate] = useState<string>('')
   const [drilldownStartDate, setDrilldownStartDate] = useState<string>('')
   const [drilldownEndDate, setDrilldownEndDate] = useState<string>('')
@@ -304,6 +305,7 @@ export default function AnalyticsPage() {
     setDrilldownNextActionType('ALL')
     setDrilldownDnpFilter('ALL')
     setDrilldownDateRange('ALL')
+    setDrilldownDateBasis('action')
     setDrilldownCustomDate('')
     setDrilldownStartDate('')
     setDrilldownEndDate('')
@@ -1643,6 +1645,16 @@ export default function AnalyticsPage() {
         setDrilldownSort('created_desc')
       }
     }
+    const isActionOriented = 
+      title.toLowerCase().includes('pending') || 
+      title.toLowerCase().includes('schedule') || 
+      title.toLowerCase().includes('today') || 
+      title.toLowerCase().includes('action') || 
+      title.toLowerCase().includes('call') || 
+      title.toLowerCase().includes('visit') || 
+      title.toLowerCase().includes('meeting') ||
+      title.toLowerCase().includes('followup');
+    setDrilldownDateBasis(isActionOriented ? 'action' : 'created')
     setDrilldownStageFilter('all')
     setDrilldownAgentFilter('ALL')
     setDrilldownNextActionFilter('ALL')
@@ -3294,12 +3306,40 @@ export default function AnalyticsPage() {
                       </div>
                     </div>
 
-                    {/* 5. Date Created Preset */}
+                    {/* 5. Date Preset with Basis Switcher */}
                     <div className="relative flex-1">
-                      <label className="block text-[9px] font-black text-slate-500 uppercase mb-1 flex items-center gap-1">
-                        <Calendar size={10} />
-                        <span>Date Created</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[9px] font-black text-slate-500 uppercase flex items-center gap-1">
+                          <Calendar size={10} />
+                          <span>Date ({drilldownDateBasis === 'action' ? 'Action Date' : drilldownDateBasis === 'created' ? 'Lead Created' : 'Any Date'})</span>
+                        </label>
+                        <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg text-[9px] font-black">
+                          <button
+                            type="button"
+                            onClick={() => { setDrilldownDateBasis('action'); setDrilldownPage(1); }}
+                            className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${drilldownDateBasis === 'action' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'}`}
+                            title="Filter by Next Action / Schedule Date"
+                          >
+                            Action
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setDrilldownDateBasis('created'); setDrilldownPage(1); }}
+                            className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${drilldownDateBasis === 'created' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'}`}
+                            title="Filter by Lead Creation Date"
+                          >
+                            Created
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setDrilldownDateBasis('any'); setDrilldownPage(1); }}
+                            className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${drilldownDateBasis === 'any' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'}`}
+                            title="Match Either Action Date or Created Date"
+                          >
+                            Any
+                          </button>
+                        </div>
+                      </div>
                       <div className="relative">
                         <select
                           value={drilldownDateRange}
@@ -3546,21 +3586,21 @@ export default function AnalyticsPage() {
 
                   {drilldownCustomDate && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-800 border border-blue-200">
-                      <span>Date: {drilldownCustomDate}</span>
+                      <span>Date ({drilldownDateBasis === 'action' ? 'Action' : drilldownDateBasis === 'created' ? 'Created' : 'Any'}): {drilldownCustomDate}</span>
                       <button onClick={() => { setDrilldownCustomDate(''); setDrilldownPage(1); }} className="hover:text-blue-950 p-0.5 cursor-pointer"><X size={11} /></button>
                     </span>
                   )}
 
                   {drilldownStartDate && drilldownEndDate && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-800 border border-blue-200">
-                      <span>Date: {drilldownStartDate} → {drilldownEndDate}</span>
+                      <span>Date ({drilldownDateBasis === 'action' ? 'Action' : drilldownDateBasis === 'created' ? 'Created' : 'Any'}): {drilldownStartDate} → {drilldownEndDate}</span>
                       <button onClick={() => { setDrilldownStartDate(''); setDrilldownEndDate(''); setDrilldownPage(1); }} className="hover:text-blue-950 p-0.5 cursor-pointer"><X size={11} /></button>
                     </span>
                   )}
 
                   {!drilldownCustomDate && (!drilldownStartDate || !drilldownEndDate) && drilldownDateRange !== 'ALL' && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-800 border border-blue-200">
-                      <span>Created: {drilldownDateRange}</span>
+                      <span>Date ({drilldownDateBasis === 'action' ? 'Action' : drilldownDateBasis === 'created' ? 'Created' : 'Any'}): {drilldownDateRange}</span>
                       <button onClick={() => { setDrilldownDateRange('ALL'); setDrilldownPage(1); }} className="hover:text-blue-950 p-0.5 cursor-pointer"><X size={11} /></button>
                     </span>
                   )}
@@ -3665,62 +3705,83 @@ export default function AnalyticsPage() {
                   }
                 }
 
-                // 4. Date Created Preset Filter
+                // 4. Date Preset Filter (Action Date vs Lead Created Date)
+                const getLeadDatesForBasis = (leadItem: any, basis: 'action' | 'created' | 'any'): Date[] => {
+                  const dates: Date[] = []
+                  let cfItem: any = leadItem.custom_fields
+                  if (typeof cfItem === 'string') { try { cfItem = JSON.parse(cfItem) } catch (e) {} }
+
+                  if (basis === 'action' || basis === 'any') {
+                    const rawAction = leadItem.next_followup || cfItem?.next_action_date || leadItem.booked_time || cfItem?.last_followup_at || cfItem?.last_action_date
+                    if (rawAction) {
+                      const d = new Date(rawAction)
+                      if (!isNaN(d.getTime())) dates.push(d)
+                    }
+                  }
+
+                  if (basis === 'created' || basis === 'any') {
+                    const rawCreated = leadItem.facebook_created_at || leadItem.created_at
+                    if (rawCreated) {
+                      const d = new Date(rawCreated)
+                      if (!isNaN(d.getTime())) dates.push(d)
+                    }
+                  }
+
+                  return dates
+                }
+
                 const hasCustomDate = !!drilldownCustomDate || (!!drilldownStartDate && !!drilldownEndDate)
                 if (!hasCustomDate && drilldownDateRange !== 'ALL') {
-                  const rawDateStr = l.facebook_created_at || l.created_at
-                  if (!rawDateStr) return false
-                  const leadDate = new Date(rawDateStr)
-                  const now = new Date()
-                  if (isNaN(leadDate.getTime())) return false
+                  const targetDates = getLeadDatesForBasis(l, drilldownDateBasis)
+                  if (targetDates.length === 0) return false
 
-                  if (drilldownDateRange === 'TODAY') {
-                    const match = leadDate.getFullYear() === now.getFullYear() &&
-                                  leadDate.getMonth() === now.getMonth() &&
-                                  leadDate.getDate() === now.getDate()
-                    if (!match) return false
-                  } else if (drilldownDateRange === 'YESTERDAY') {
-                    const yest = new Date(now)
-                    yest.setDate(now.getDate() - 1)
-                    const match = leadDate.getFullYear() === yest.getFullYear() &&
-                                  leadDate.getMonth() === yest.getMonth() &&
-                                  leadDate.getDate() === yest.getDate()
-                    if (!match) return false
-                  } else if (drilldownDateRange === '7D') {
-                    const limit = new Date(now)
-                    limit.setDate(now.getDate() - 7)
-                    if (leadDate < limit) return false
-                  } else if (drilldownDateRange === '30D') {
-                    const limit = new Date(now)
-                    limit.setDate(now.getDate() - 30)
-                    if (leadDate < limit) return false
-                  }
+                  const now = new Date()
+                  const matchesPreset = targetDates.some(leadDate => {
+                    if (drilldownDateRange === 'TODAY') {
+                      return leadDate.getFullYear() === now.getFullYear() &&
+                             leadDate.getMonth() === now.getMonth() &&
+                             leadDate.getDate() === now.getDate()
+                    } else if (drilldownDateRange === 'YESTERDAY') {
+                      const yest = new Date(now)
+                      yest.setDate(now.getDate() - 1)
+                      return leadDate.getFullYear() === yest.getFullYear() &&
+                             leadDate.getMonth() === yest.getMonth() &&
+                             leadDate.getDate() === yest.getDate()
+                    } else if (drilldownDateRange === '7D') {
+                      const limit = new Date(now)
+                      limit.setDate(now.getDate() - 7)
+                      return leadDate >= limit
+                    } else if (drilldownDateRange === '30D') {
+                      const limit = new Date(now)
+                      limit.setDate(now.getDate() - 30)
+                      return leadDate >= limit
+                    }
+                    return true
+                  })
+
+                  if (!matchesPreset) return false
                 }
 
                 // 5. Custom Date / Range Filter
                 if (drilldownCustomDate) {
-                  const rawDateStr = l.created_at || l.facebook_created_at || l.last_call_at
-                  if (!rawDateStr) return false
-                  const leadDate = new Date(rawDateStr)
-                  if (isNaN(leadDate.getTime())) return false
+                  const targetDates = getLeadDatesForBasis(l, drilldownDateBasis)
+                  if (targetDates.length === 0) return false
                   const [tY, tM, tD] = drilldownCustomDate.split('-').map(Number)
-                  if (tY && tM && tD) {
-                    if (leadDate.getFullYear() !== tY || (leadDate.getMonth() + 1) !== tM || leadDate.getDate() !== tD) {
-                      return false
-                    }
-                  }
+                  const matchesCustom = targetDates.some(leadDate => 
+                    leadDate.getFullYear() === tY &&
+                    (leadDate.getMonth() + 1) === tM &&
+                    leadDate.getDate() === tD
+                  )
+                  if (!matchesCustom) return false
                 } else if (drilldownStartDate && drilldownEndDate) {
-                  const rawDateStr = l.created_at || l.facebook_created_at || l.last_call_at
-                  if (!rawDateStr) return false
-                  const leadDate = new Date(rawDateStr)
-                  if (isNaN(leadDate.getTime())) return false
+                  const targetDates = getLeadDatesForBasis(l, drilldownDateBasis)
+                  if (targetDates.length === 0) return false
                   const [sY, sM, sD] = drilldownStartDate.split('-').map(Number)
                   const [eY, eM, eD] = drilldownEndDate.split('-').map(Number)
-                  if (sY && sM && sD && eY && eM && eD) {
-                    const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
-                    const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
-                    if (leadDate < start || leadDate > end) return false
-                  }
+                  const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
+                  const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
+                  const matchesRange = targetDates.some(leadDate => leadDate >= start && leadDate <= end)
+                  if (!matchesRange) return false
                 }
 
                 // 6. DNP Filter
@@ -3903,7 +3964,18 @@ export default function AnalyticsPage() {
                     {totalFilteredCount === 0 ? (
                       <div className="text-center py-12 text-slate-400">
                         <Users size={32} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-xs font-extrabold">No active leads found for this view.</p>
+                        <p className="text-xs font-extrabold text-slate-600">
+                          {activeDrilldownFilterCount > 0 ? 'No leads match the selected filters.' : 'No active leads found for this view.'}
+                        </p>
+                        {activeDrilldownFilterCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={clearAllDrilldownFilters}
+                            className="mt-3 px-3.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-black hover:bg-blue-100 transition-colors cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
+                          >
+                            <span>Reset All Filters</span>
+                          </button>
+                        )}
                       </div>
                     ) : drilldownViewMode === 'list' ? (
                       /* COMPACT LIST VIEW WITH LAST REMARKS GLIMPSE */
@@ -3962,7 +4034,7 @@ export default function AnalyticsPage() {
 
                               const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                               const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
-                              const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || lead.next_action_remark || '').trim()
+                              const nextActionRemark = getLeadNextActionRemark(lead)
 
                               let nextActionFormatted = ''
                               if (rawNextDate) {
@@ -4045,15 +4117,20 @@ export default function AnalyticsPage() {
 
                                   <td className="py-2.5 px-3">
                                     {nextActionFormatted ? (
-                                      <div className="text-[11px] font-bold text-slate-800">
-                                        <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-black text-[10px] block mb-0.5 w-fit">
-                                          {nextActionType}
-                                        </span>
-                                        <span>{nextActionFormatted}</span>
-                                        {nextActionRemark && (
-                                          <span className="block text-[10px] text-indigo-950 font-semibold italic mt-0.5 truncate max-w-[200px]" title={nextActionRemark}>
-                                            💬 {nextActionRemark}
+                                      <div className="text-[11px] font-bold text-slate-800 space-y-1">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-black text-[10px] w-fit">
+                                            {nextActionType}
                                           </span>
+                                          <span>{nextActionFormatted}</span>
+                                        </div>
+                                        {nextActionRemark && (
+                                          <div className="bg-indigo-50/90 border border-indigo-200/90 px-2 py-1 rounded-lg text-[10.5px] text-indigo-950 font-semibold leading-tight max-w-[210px] shadow-2xs" title={nextActionRemark}>
+                                            <div className="flex items-center gap-1 text-[9px] font-black uppercase text-indigo-700 tracking-wider mb-0.5">
+                                              <span>💬 Next Remark</span>
+                                            </div>
+                                            <span className="italic line-clamp-2">{nextActionRemark}</span>
+                                          </div>
                                         )}
                                       </div>
                                     ) : (
@@ -4132,7 +4209,7 @@ export default function AnalyticsPage() {
 
                         const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                         const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
-                        const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || '').trim()
+                        const nextActionRemark = getLeadNextActionRemark(lead)
 
                         let nextActionFormatted = ''
                         if (rawNextDate) {
@@ -4259,13 +4336,16 @@ export default function AnalyticsPage() {
                                 )}
 
                                 {nextActionFormatted && (
-                                  <div className="bg-blue-50/80 border border-blue-200/80 p-2.5 rounded-xl text-xs text-blue-950 font-medium leading-relaxed flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                  <div className="bg-blue-50/80 border border-blue-200/80 p-2.5 rounded-xl text-xs text-blue-950 font-medium leading-relaxed flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                                     <div>
                                       <span className="font-extrabold text-blue-800 uppercase text-[10px] tracking-wider inline mr-2">🗓️ Next Action ({nextActionType}):</span>
                                       <span className="font-bold text-slate-800">{nextActionFormatted}</span>
                                     </div>
                                     {nextActionRemark && (
-                                      <span className="text-slate-600 text-[11px] font-semibold italic">Note: {nextActionRemark}</span>
+                                      <div className="bg-indigo-50/90 border border-indigo-200/90 px-2.5 py-1 rounded-lg text-indigo-950 text-[11px] font-semibold flex items-center gap-1.5 mt-1 sm:mt-0 max-w-full shadow-2xs">
+                                        <span className="font-extrabold text-indigo-700 shrink-0">💬 Remark:</span>
+                                        <span className="italic truncate">{nextActionRemark}</span>
+                                      </div>
                                     )}
                                   </div>
                                 )}
