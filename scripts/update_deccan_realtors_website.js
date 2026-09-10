@@ -87,7 +87,7 @@ function generateDeccanHtml(properties) {
         "url": "https://deccanrealtors.com",
         "logo": LOGO_URL,
         "image": LOGO_URL,
-        "description": "Deccan Realtors helps clients make informed real-estate decisions across India and international markets through trusted advisory, market intelligence, and due diligence.",
+        "description": "Deccan Realtors helps clients make informed real-estate decisions across Nagpur and Dubai through trusted advisory, market intelligence, and due diligence.",
         "telephone": PHONE_DISPLAY,
         "email": "ceo@deccanrealtors.com",
         "address": {
@@ -113,13 +113,13 @@ function generateDeccanHtml(properties) {
   <title>Deccan Realtors | Trusted Real Estate Advisory & Curated Opportunities</title>
   
   <meta name="title" content="Deccan Realtors | Trusted Real Estate Advisory & Curated Opportunities">
-  <meta name="description" content="Deccan Realtors helps clients make informed real-estate decisions across India and international markets through trusted advisory, market intelligence, due diligence, and curated opportunities.">
+  <meta name="description" content="Deccan Realtors helps clients make informed real-estate decisions across Nagpur and Dubai through trusted advisory, market intelligence, due diligence, and curated opportunities.">
   <meta name="keywords" content="Deccan Realtors, Real Estate Advisory, Luxury Properties, Nagpur Plots, Mauli Upavan, Mauli Crystal, Indian Real Estate, Global Property Investment">
   <meta name="robots" content="index, follow">
   
   <meta property="og:type" content="website">
   <meta property="og:title" content="Deccan Realtors | Navigate Your Next Move">
-  <meta property="og:description" content="Trusted real estate advisory, market intelligence, and curated property opportunities across India and international markets.">
+  <meta property="og:description" content="Trusted real estate advisory, market intelligence, and curated property opportunities across Nagpur and Dubai.">
   <meta property="og:image" content="${LOGO_URL}">
 
   <script type="application/ld+json">
@@ -228,7 +228,7 @@ function generateDeccanHtml(properties) {
       <div class="flex items-center space-x-6">
         <span class="flex items-center gap-1.5">
           <span class="text-accent-400">📍</span>
-          Nagpur & Across India Real Estate Advisory
+          Nagpur & Dubai Real Estate Advisory
         </span>
         <span class="hidden md:flex items-center gap-1.5">
           <span class="text-accent-400">✉️</span>
@@ -324,7 +324,7 @@ function generateDeccanHtml(properties) {
         </h1>
 
         <p class="mt-6 text-base sm:text-xl text-slate-300 max-w-3xl mx-auto leading-relaxed font-normal">
-          Deccan Realtors helps individuals, families, and institutions make informed real estate decisions across India through verified market intelligence and complete due diligence.
+          Deccan Realtors helps individuals, families, and institutions make informed real estate decisions across Nagpur and Dubai through verified market intelligence and complete due diligence.
         </p>
 
         <div class="mt-10 flex flex-wrap justify-center gap-4">
@@ -339,7 +339,7 @@ function generateDeccanHtml(properties) {
         <!-- KEY METRICS CARDS -->
         <div class="mt-16 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto text-left">
           <div class="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
-            <div class="text-2xl sm:text-3xl font-black text-white font-display">Nagpur & India</div>
+            <div class="text-2xl sm:text-3xl font-black text-white font-display">Nagpur & Dubai</div>
             <div class="text-xs text-slate-400 uppercase font-semibold tracking-wider mt-1">High-Growth Corridors</div>
           </div>
           <div class="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
@@ -533,13 +533,23 @@ function generateDeccanHtml(properties) {
           
           <!-- IMAGE VIEWER -->
           <div class="space-y-4">
-            <div class="relative h-[380px] sm:h-[480px] rounded-3xl overflow-hidden bg-slate-900 shadow-lg border border-slate-200">
-              <img id="detail-main-img" src="" alt="Property" class="w-full h-full object-cover" />
-              <div class="absolute bottom-4 left-4 bg-brand-950/80 backdrop-blur-md px-4 py-2 rounded-xl text-white text-xs font-bold">
-                100% Verified Site Photos
+            <div id="detailGalleryContainer" class="relative h-[320px] sm:h-[440px] md:h-[500px] rounded-3xl overflow-hidden bg-slate-950 shadow-xl border border-slate-800 flex items-center justify-center select-none group">
+              <img id="detail-main-img" src="" alt="Property" class="max-w-full max-h-full w-auto h-auto object-contain transition-opacity duration-300 pointer-events-none" />
+              <div class="absolute bottom-4 left-4 bg-brand-950/85 backdrop-blur-md px-3.5 py-1.5 rounded-xl text-white text-xs font-bold border border-slate-800 shadow-md flex items-center gap-1.5 pointer-events-none">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>100% Verified Site Photos</span>
               </div>
+              <div id="detail-slide-counter" class="absolute top-4 right-4 bg-slate-950/85 backdrop-blur-md px-3 py-1 rounded-xl text-white text-xs font-extrabold border border-slate-800 shadow-md hidden">
+                1 / 1
+              </div>
+              <button id="detail-prev-btn" onclick="prevDetailSlide()" type="button" aria-label="Previous Image" class="hidden absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/80 hover:bg-brand-900 border border-slate-700/80 text-white flex items-center justify-center backdrop-blur-md shadow-xl transition-all active:scale-90 cursor-pointer z-10 hover:scale-105">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <button id="detail-next-btn" onclick="nextDetailSlide()" type="button" aria-label="Next Image" class="hidden absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/80 hover:bg-brand-900 border border-slate-700/80 text-white flex items-center justify-center backdrop-blur-md shadow-xl transition-all active:scale-90 cursor-pointer z-10 hover:scale-105">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" /></svg>
+              </button>
             </div>
-            <div id="detail-thumbnails" class="flex gap-3 overflow-x-auto pb-2">
+            <div id="detail-thumbnails" class="flex gap-2.5 overflow-x-auto pb-2 scrollbar-thin">
               <!-- Thumbnails Injected Here -->
             </div>
           </div>
@@ -699,7 +709,7 @@ function generateDeccanHtml(properties) {
           <h2 class="text-2xl sm:text-3xl font-extrabold text-brand-900 font-display">Pioneering Informed Real Estate Decisions</h2>
           <p>Deccan Realtors was founded on a simple premise: real estate decisions are among the most significant financial commitments an individual or institution ever makes. They should never be driven by aggressive salesmanship, but by verified market intelligence and legal transparency.</p>
           <div class="border-l-4 border-accent-500 pl-4 py-2 italic text-slate-800 font-medium">
-            "Deccan Realtors help people make informed real-estate decisions: across India and international markets through trusted advisory, market intelligence, due diligence, and carefully curated property opportunities."
+            "Deccan Realtors help people make informed real-estate decisions: across Nagpur and Dubai through trusted advisory, market intelligence, due diligence, and carefully curated property opportunities."
           </div>
         </div>
         <div class="springfield-card p-8 border border-slate-200">
@@ -816,7 +826,7 @@ function generateDeccanHtml(properties) {
             <img src="${LOGO_URL}" alt="Deccan Realtors" class="h-10 w-auto object-contain rounded-xl" />
             <div><span class="font-display text-lg font-bold text-white block">DECCAN REALTORS</span><span class="text-[8px] uppercase tracking-widest text-accent-400 block font-bold">Advisory Desk</span></div>
           </div>
-          <p class="text-slate-400 leading-relaxed text-xs">Helping individuals, families, and institutions make informed real-estate decisions across India through rigorous due diligence.</p>
+          <p class="text-slate-400 leading-relaxed text-xs">Helping individuals, families, and institutions make informed real-estate decisions across Nagpur and Dubai through rigorous due diligence.</p>
         </div>
         <div>
           <h4 class="text-white font-bold uppercase tracking-wider text-xs mb-4">Navigation</h4>
@@ -934,6 +944,47 @@ function generateDeccanHtml(properties) {
       \`;
     }
 
+    let detailActiveImages = [];
+    let detailActiveSlideIdx = 0;
+
+    function updateDetailSlide(idx) {
+      if (!detailActiveImages || detailActiveImages.length === 0) return;
+      if (idx < 0) idx = detailActiveImages.length - 1;
+      if (idx >= detailActiveImages.length) idx = 0;
+      detailActiveSlideIdx = idx;
+
+      const mainImg = document.getElementById('detail-main-img');
+      if (mainImg) {
+        mainImg.style.opacity = '0.5';
+        mainImg.src = detailActiveImages[idx];
+        setTimeout(() => {
+          mainImg.style.opacity = '1';
+        }, 50);
+      }
+
+      const counter = document.getElementById('detail-slide-counter');
+      if (counter) {
+        counter.innerText = \`\${detailActiveSlideIdx + 1} / \${detailActiveImages.length}\`;
+      }
+
+      document.querySelectorAll('.detail-thumb-btn').forEach((btn, i) => {
+        if (i === detailActiveSlideIdx) {
+          btn.className = 'detail-thumb-btn w-20 sm:w-24 h-16 sm:h-20 rounded-xl overflow-hidden border-2 transition-all shrink-0 bg-slate-950 cursor-pointer p-0.5 border-amber-400 ring-2 ring-amber-400/30 opacity-100 scale-[1.02]';
+          btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        } else {
+          btn.className = 'detail-thumb-btn w-20 sm:w-24 h-16 sm:h-20 rounded-xl overflow-hidden border-2 transition-all shrink-0 bg-slate-950 cursor-pointer p-0.5 border-slate-800 opacity-60 hover:opacity-100';
+        }
+      });
+    }
+
+    function prevDetailSlide() {
+      updateDetailSlide(detailActiveSlideIdx - 1);
+    }
+
+    function nextDetailSlide() {
+      updateDetailSlide(detailActiveSlideIdx + 1);
+    }
+
     function renderPropertyDetail(propId) {
       const p = LIVE_PROPERTIES.find(item => item.id === propId) || LIVE_PROPERTIES[0];
       if (!p) return;
@@ -946,16 +997,38 @@ function generateDeccanHtml(properties) {
       document.getElementById('detail-spec-type').innerText = p.property_type || 'Plots';
       document.getElementById('detail-description').innerText = p.description || (p.title + ' is a verified property opportunity curated by Deccan Realtors.');
 
-      const images = p.images && p.images.length > 0 ? p.images : [p.image_url || '${LOGO_URL}'];
+      detailActiveImages = (p.images && p.images.length > 0) ? p.images : [p.image_url || '${LOGO_URL}'];
+      detailActiveSlideIdx = 0;
+
       const mainImg = document.getElementById('detail-main-img');
-      if (mainImg) mainImg.src = images[0];
+      if (mainImg) {
+        mainImg.src = detailActiveImages[0];
+        mainImg.style.opacity = '1';
+      }
+
+      const counter = document.getElementById('detail-slide-counter');
+      const prevBtn = document.getElementById('detail-prev-btn');
+      const nextBtn = document.getElementById('detail-next-btn');
+
+      if (detailActiveImages.length > 1) {
+        if (counter) {
+          counter.innerText = \`1 / \${detailActiveImages.length}\`;
+          counter.classList.remove('hidden');
+        }
+        if (prevBtn) prevBtn.classList.remove('hidden');
+        if (nextBtn) nextBtn.classList.remove('hidden');
+      } else {
+        if (counter) counter.classList.add('hidden');
+        if (prevBtn) prevBtn.classList.add('hidden');
+        if (nextBtn) nextBtn.classList.add('hidden');
+      }
 
       const thumbContainer = document.getElementById('detail-thumbnails');
       if (thumbContainer) {
-        if (images.length > 1) {
-          thumbContainer.innerHTML = images.map((img, idx) => \`
-            <button onclick="document.getElementById('detail-main-img').src = '\${img}'" class="w-20 h-16 rounded-xl overflow-hidden border-2 border-transparent hover:border-brand-900 focus:border-brand-900 transition-all shrink-0 bg-slate-100 cursor-pointer">
-              <img src="\${img}" class="w-full h-full object-cover" />
+        if (detailActiveImages.length > 1) {
+          thumbContainer.innerHTML = detailActiveImages.map((img, idx) => \`
+            <button onclick="updateDetailSlide(\${idx})" class="detail-thumb-btn w-20 sm:w-24 h-16 sm:h-20 rounded-xl overflow-hidden border-2 transition-all shrink-0 bg-slate-950 cursor-pointer p-0.5 \${idx === 0 ? 'border-amber-400 ring-2 ring-amber-400/30 opacity-100 scale-[1.02]' : 'border-slate-800 opacity-60 hover:opacity-100'}">
+              <img src="\${img}" class="w-full h-full object-contain" />
             </button>
           \`).join('');
           thumbContainer.classList.remove('hidden');
@@ -1135,6 +1208,21 @@ function generateDeccanHtml(properties) {
       renderPropertyGrids();
       syncDynamicCatalog();
       calculateEmi();
+
+      const detailGallery = document.getElementById('detailGalleryContainer');
+      let touchStartX = 0;
+      let touchEndX = 0;
+      detailGallery?.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+      }, { passive: true });
+      detailGallery?.addEventListener('touchend', (e) => {
+        touchEndX = e.changedTouches[0].screenX;
+        const diffX = touchStartX - touchEndX;
+        if (Math.abs(diffX) > 40) {
+          if (diffX > 0) nextDetailSlide();
+          else prevDetailSlide();
+        }
+      }, { passive: true });
 
       const hash = window.location.hash.replace('#', '');
       if (hash.startsWith('property-')) {

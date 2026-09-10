@@ -115,29 +115,58 @@ const productSchema = {
       <!-- LEFT 2 COLS: GALLERY & CONTENT -->
       <div class="lg:col-span-2 space-y-10">
         
-        <!-- MAIN GALLERY VIEWER -->
+        <!-- MAIN GALLERY VIEWER (Full contain, responsive, slidable) -->
         <div class="space-y-4">
-          <div class="relative h-[380px] sm:h-[480px] rounded-3xl overflow-hidden bg-slate-900 shadow-lg border border-slate-200">
+          <div id="productGalleryContainer" class="relative h-[320px] sm:h-[440px] md:h-[500px] lg:h-[540px] rounded-3xl overflow-hidden bg-slate-950 shadow-xl border border-slate-800 flex items-center justify-center select-none group">
             <img 
               id="mainProductImage" 
               src={images[0]} 
               alt={property.title} 
-              class="w-full h-full object-cover transition-opacity duration-300" 
+              class="max-w-full max-h-full w-auto h-auto object-contain transition-opacity duration-300 pointer-events-none" 
             />
-            <div class="absolute bottom-4 left-4 bg-brand-950/80 backdrop-blur-md px-4 py-2 rounded-xl text-white text-xs font-bold">
-              100% Verified Site Photos
+            
+            <div class="absolute bottom-4 left-4 bg-brand-950/85 backdrop-blur-md px-3.5 py-1.5 rounded-xl text-white text-xs font-bold border border-slate-800 shadow-md flex items-center gap-1.5 pointer-events-none">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>100% Verified Site Photos</span>
             </div>
+
+            {images.length > 1 && (
+              <>
+                <div id="slideCounter" class="absolute top-4 right-4 bg-slate-950/85 backdrop-blur-md px-3 py-1 rounded-xl text-white text-xs font-extrabold border border-slate-800 shadow-md">
+                  1 / {images.length}
+                </div>
+
+                <button 
+                  id="prevImgBtn" 
+                  type="button" 
+                  aria-label="Previous Image" 
+                  class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/80 hover:bg-brand-900 border border-slate-700/80 text-white flex items-center justify-center backdrop-blur-md shadow-xl transition-all active:scale-90 cursor-pointer z-10 hover:scale-105"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+
+                <button 
+                  id="nextImgBtn" 
+                  type="button" 
+                  aria-label="Next Image" 
+                  class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/80 hover:bg-brand-900 border border-slate-700/80 text-white flex items-center justify-center backdrop-blur-md shadow-xl transition-all active:scale-90 cursor-pointer z-10 hover:scale-105"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" /></svg>
+                </button>
+              </>
+            )}
           </div>
 
-          <!-- THUMBNAILS -->
+          <!-- THUMBNAILS (Slidable Strip) -->
           {images.length > 1 && (
-            <div class="flex gap-3 overflow-x-auto pb-2">
+            <div id="detailThumbnailsStrip" class="flex gap-2.5 overflow-x-auto pb-2 scrollbar-thin">
               {images.map((img: string, idx: number) => (
                 <button 
-                  onclick={`document.getElementById('mainProductImage').src = '${img}';`}
-                  class="w-24 h-20 rounded-xl overflow-hidden border-2 border-transparent hover:border-brand-900 focus:border-brand-900 transition-all shrink-0 bg-slate-100"
+                  type="button"
+                  data-index={idx}
+                  class={`gallery-thumb-btn w-20 sm:w-24 h-16 sm:h-20 rounded-xl overflow-hidden border-2 transition-all shrink-0 bg-slate-950 cursor-pointer p-0.5 ${idx === 0 ? 'border-amber-400 ring-2 ring-amber-400/30 opacity-100 scale-[1.02]' : 'border-slate-800 opacity-60 hover:opacity-100'}`}
                 >
-                  <img src={img} alt={`Preview ${idx + 1}`} class="w-full h-full object-cover" />
+                  <img src={img} alt={`Preview ${idx + 1}`} class="w-full h-full object-contain" />
                 </button>
               ))}
             </div>
@@ -272,7 +301,80 @@ const productSchema = {
 
   </div>
 
-  <script is:inline>
+  <script is:inline define:vars={{ images }}>
+    // Image Slider Logic with Next / Prev and Touch Swipe
+    const galleryImages = images || [];
+    let activeSlideIdx = 0;
+
+    function updateGallerySlide(index) {
+      if (!galleryImages || galleryImages.length === 0) return;
+      if (index < 0) index = galleryImages.length - 1;
+      if (index >= galleryImages.length) index = 0;
+      activeSlideIdx = index;
+
+      const mainImg = document.getElementById('mainProductImage');
+      if (mainImg) {
+        mainImg.style.opacity = '0.3';
+        setTimeout(() => {
+          mainImg.src = galleryImages[activeSlideIdx];
+          mainImg.style.opacity = '1';
+        }, 100);
+      }
+
+      const counter = document.getElementById('slideCounter');
+      if (counter) {
+        counter.innerText = (activeSlideIdx + 1) + ' / ' + galleryImages.length;
+      }
+
+      // Update thumbnail active states
+      document.querySelectorAll('.gallery-thumb-btn').forEach((btn, i) => {
+        if (i === activeSlideIdx) {
+          btn.className = 'gallery-thumb-btn w-20 sm:w-24 h-16 sm:h-20 rounded-xl overflow-hidden border-2 transition-all shrink-0 bg-slate-950 cursor-pointer p-0.5 border-amber-400 ring-2 ring-amber-400/30 opacity-100 scale-[1.02]';
+          btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        } else {
+          btn.className = 'gallery-thumb-btn w-20 sm:w-24 h-16 sm:h-20 rounded-xl overflow-hidden border-2 transition-all shrink-0 bg-slate-950 cursor-pointer p-0.5 border-slate-800 opacity-60 hover:opacity-100';
+        }
+      });
+    }
+
+    document.getElementById('prevImgBtn')?.addEventListener('click', () => {
+      updateGallerySlide(activeSlideIdx - 1);
+    });
+
+    document.getElementById('nextImgBtn')?.addEventListener('click', () => {
+      updateGallerySlide(activeSlideIdx + 1);
+    });
+
+    document.querySelectorAll('.gallery-thumb-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-index') || '0', 10);
+        updateGallerySlide(idx);
+      });
+    });
+
+    // Touch Swipe Support
+    const galleryContainer = document.getElementById('productGalleryContainer');
+    let touchStartX = 0;
+    let touchEndX = 0;
+
+    galleryContainer?.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    galleryContainer?.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      const diffX = touchStartX - touchEndX;
+      if (Math.abs(diffX) > 40) {
+        if (diffX > 0) {
+          // Swiped left -> Next
+          updateGallerySlide(activeSlideIdx + 1);
+        } else {
+          // Swiped right -> Prev
+          updateGallerySlide(activeSlideIdx - 1);
+        }
+      }
+    }, { passive: true });
+
     document.getElementById('productInquiryForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;

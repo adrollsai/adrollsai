@@ -9,7 +9,7 @@ export interface Props {
 
 const { 
   title = "Deccan Realtors | Trusted Real Estate Advisory & Curated Opportunities", 
-  description = "Deccan Realtors helps clients make informed real-estate decisions across India and international markets through trusted advisory, market intelligence, due diligence, and curated opportunities.",
+  description = "Deccan Realtors helps clients make informed real-estate decisions across Nagpur and Dubai through trusted advisory, market intelligence, due diligence, and curated opportunities.",
   image = "https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/public-assets/logos/93c65dee-87a5-48e3-a2d2-406182a33b37/deccan_realtors_93c65dee-87a5-48e3-a2d2-406182a33b37_1787575176651.png",
   canonical = Astro.url.href,
   schema
@@ -124,13 +124,12 @@ const finalSchema = schema || defaultSchema;
 </head>
 <body class="selection:bg-amber-200 selection:text-slate-900 flex flex-col min-h-screen">
 
-  <!-- TOP BAR -->
   <div class="bg-brand-950 border-b border-brand-800/80 py-2 px-4 sm:px-8 text-xs text-slate-400">
     <div class="max-w-7xl mx-auto flex justify-between items-center">
       <div class="flex items-center space-x-6">
         <span class="flex items-center gap-1.5">
           <span class="text-accent-400">📍</span>
-          Nagpur & Across India Real Estate Advisory
+          Nagpur & Dubai Real Estate Advisory
         </span>
         <span class="hidden md:flex items-center gap-1.5">
           <span class="text-accent-400">✉️</span>
@@ -147,67 +146,76 @@ const finalSchema = schema || defaultSchema;
     </div>
   </div>
 
-  <!-- NAVIGATION HEADER -->
-  <header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm">
+  <!-- NAVIGATION BAR -->
+  <header class="sticky top-0 z-50 bg-brand-950/95 backdrop-blur-md border-b border-brand-900 transition-all">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center h-20">
         
-        <!-- LOGO -->
+        <!-- LOGO & DESK -->
         <a href="/" class="flex items-center space-x-3 group">
-          <img src="https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/public-assets/logos/93c65dee-87a5-48e3-a2d2-406182a33b37/deccan_realtors_93c65dee-87a5-48e3-a2d2-406182a33b37_1787575176651.png" alt="Deccan Realtors" class="h-12 w-auto object-contain rounded-xl" />
+          <img src={image} alt="Deccan Realtors" class="h-12 w-auto object-contain rounded-xl border border-brand-800" />
           <div>
-            <span class="font-display text-xl font-extrabold tracking-tight text-brand-900 block leading-tight">DECCAN REALTORS</span>
-            <span class="text-[9px] uppercase tracking-[0.25em] text-accent-600 block font-black mt-0.5">Real Estate Advisory</span>
+            <span class="font-display text-xl font-bold tracking-tight text-white group-hover:text-accent-400 transition-colors">
+              DECCAN REALTORS
+            </span>
+            <span class="text-[9px] uppercase tracking-widest text-accent-400 block font-bold">
+              Real Estate Advisory Desk
+            </span>
           </div>
         </a>
 
-        <!-- DESKTOP NAV -->
-        <nav class="hidden lg:flex items-center space-x-8 text-xs font-bold uppercase tracking-wider text-slate-600">
-          <a href="/" class="hover:text-brand-900 transition-colors">Home</a>
-          <a href="/properties" class="hover:text-brand-900 transition-colors">Inventory Portfolio</a>
-          <a href="/services" class="hover:text-brand-900 transition-colors">Services</a>
-          <a href="/about" class="hover:text-brand-900 transition-colors">About Us</a>
-          <a href="/calculator" class="hover:text-brand-900 transition-colors">EMI Calculator</a>
-          <a href="/contact" class="hover:text-brand-900 transition-colors">Contact</a>
+        <!-- NAV LINKS -->
+        <nav class="hidden lg:flex items-center space-x-8 text-xs font-bold uppercase tracking-wider text-slate-300">
+          <a href="/" class="hover:text-accent-400 transition-colors">Home</a>
+          <a href="/properties" class="hover:text-accent-400 transition-colors">Inventory</a>
+          <a href="/services" class="hover:text-accent-400 transition-colors">Advisory</a>
+          <a href="/about" class="hover:text-accent-400 transition-colors">About Us</a>
+          <a href="/calculator" class="hover:text-accent-400 transition-colors">Loan Calculator</a>
+          <a href="/contact" class="hover:text-accent-400 transition-colors">Contact</a>
         </nav>
 
-        <!-- CTA BUTTONS -->
+        <!-- CTA ACTIONS -->
         <div class="hidden sm:flex items-center space-x-4">
-          <a href="https://wa.me/918600080096?text=Hi%20Deccan%20Realtors,%20I%20would%20like%20to%20inquire%20about%20your%20property%20opportunities" target="_blank" class="flex items-center gap-2 px-4 py-2.5 rounded-full border border-emerald-500/40 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100/60 transition-colors text-xs font-bold">
+          <a href="https://wa.me/918600080096" target="_blank" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all">
             <span>💬</span> WhatsApp
           </a>
-          <a href="/contact" class="btn-brand px-5 py-2.5 rounded-full text-xs uppercase tracking-wider">
-            Consult Advisor
+          <a href="/properties" class="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-500 hover:bg-accent-600 text-slate-900 font-extrabold text-xs shadow-md transition-all">
+            <span>Browse Plots</span> →
           </a>
         </div>
 
         <!-- MOBILE MENU BUTTON -->
-        <button id="mobileMenuBtn" class="lg:hidden p-2 text-slate-600 hover:text-brand-900 focus:outline-none" aria-label="Toggle Menu">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
-          </svg>
-        </button>
+        <div class="lg:hidden flex items-center">
+          <button id="mobileMenuBtn" class="text-slate-300 hover:text-white p-2" aria-label="Toggle Menu">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        </div>
 
-      </div>
-    </div>
-
-    <!-- MOBILE MENU -->
-    <div id="mobileMenu" class="hidden lg:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 space-y-3">
-      <a href="/" class="block py-2 text-sm font-bold text-slate-700 hover:text-brand-900">Home</a>
-      <a href="/properties" class="block py-2 text-sm font-bold text-slate-700 hover:text-brand-900">Inventory Portfolio</a>
-      <a href="/services" class="block py-2 text-sm font-bold text-slate-700 hover:text-brand-900">Services</a>
-      <a href="/about" class="block py-2 text-sm font-bold text-slate-700 hover:text-brand-900">About Us</a>
-      <a href="/calculator" class="block py-2 text-sm font-bold text-slate-700 hover:text-brand-900">EMI Calculator</a>
-      <a href="/contact" class="block py-2 text-sm font-bold text-slate-700 hover:text-brand-900">Contact</a>
-      <div class="pt-4 flex flex-col gap-2">
-        <a href="https://wa.me/918600080096?text=Hi%20Deccan%20Realtors,%20I%20would%20like%20to%20inquire" class="btn-brand text-center py-2.5 rounded-xl text-xs font-bold">
-          WhatsApp Direct
-        </a>
       </div>
     </div>
   </header>
 
-  <!-- MAIN CONTENT SLOT -->
+  <!-- MOBILE MENU DROPDOWN -->
+  <div id="mobileMenu" class="hidden lg:hidden bg-brand-950 border-b border-brand-900 px-6 py-6 space-y-4 text-sm font-bold text-slate-300">
+    <a href="/" class="block hover:text-accent-400">Home</a>
+    <a href="/properties" class="block hover:text-accent-400">Inventory</a>
+    <a href="/services" class="block hover:text-accent-400">Advisory</a>
+    <a href="/about" class="block hover:text-accent-400">About Us</a>
+    <a href="/calculator" class="block hover:text-accent-400">Loan Calculator</a>
+    <a href="/contact" class="block hover:text-accent-400">Contact</a>
+    <div class="pt-4 border-t border-brand-900 flex flex-col gap-3">
+      <a href="https://wa.me/918600080096" target="_blank" class="text-center py-3 bg-emerald-600 rounded-xl text-white">
+        WhatsApp Desk
+      </a>
+      <a href="/properties" class="text-center py-3 bg-accent-500 rounded-xl text-slate-900 font-black">
+        Browse Inventory
+      </a>
+    </div>
+  </div>
+
+  <!-- MAIN VIEWPORT CONTENT -->
   <main class="flex-grow">
     <slot />
   </main>
@@ -219,14 +227,14 @@ const finalSchema = schema || defaultSchema;
         
         <div class="space-y-4">
           <div class="flex items-center space-x-3">
-            <img src="https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/public-assets/logos/93c65dee-87a5-48e3-a2d2-406182a33b37/deccan_realtors_93c65dee-87a5-48e3-a2d2-406182a33b37_1787575176651.png" alt="Deccan Realtors" class="h-10 w-auto object-contain rounded-xl" />
+            <img src={image} alt="Deccan Realtors" class="h-10 w-auto object-contain rounded-xl" />
             <div>
               <span class="font-display text-lg font-bold text-white block">DECCAN REALTORS</span>
               <span class="text-[8px] uppercase tracking-widest text-accent-400 block font-bold">Advisory Desk</span>
             </div>
           </div>
           <p class="text-slate-400 leading-relaxed">
-            Helping individuals, families, and institutions make informed real-estate decisions across India and international markets through rigorous due diligence and verified opportunities.
+            Helping individuals, families, and institutions make informed real-estate decisions across Nagpur and Dubai through rigorous due diligence and verified opportunities.
           </p>
         </div>
 

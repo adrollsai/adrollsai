@@ -169,7 +169,6 @@ export async function POST(request: Request) {
     }
 
     if (body.object === 'whatsapp_business_account') {
-        console.log("🟢 WhatsApp Webhook matched whatsapp_business_account");
         for (const entry of body.entry) {
             for (const change of entry.changes) {
                 if (change.field === 'messages') {
@@ -177,7 +176,6 @@ export async function POST(request: Request) {
                     const statuses = val.statuses || [];
                     if (statuses.length > 0) {
                         for (const statusObj of statuses) {
-                            console.log(`[WHATSAPP WEBHOOK STATUS] Message ID: ${statusObj.id}, Status: ${statusObj.status}, Recipient: ${statusObj.recipient_id}`);
                             if (statusObj.errors && statusObj.errors.length > 0) {
                                 console.error(`[WHATSAPP WEBHOOK STATUS ERROR] Message ID: ${statusObj.id}, Errors:`, JSON.stringify(statusObj.errors, null, 2));
                                 const firstErr = statusObj.errors[0];

@@ -163,6 +163,14 @@ export default function UpdateFollowupModal({
     }
   }, [isOpen, properties])
 
+  const getTomorrowDefaultIso = (baseDate = new Date()) => {
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    const tomorrow = new Date(baseDate)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setHours(11, 0, 0, 0)
+    return `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T${pad(tomorrow.getHours())}:${pad(tomorrow.getMinutes())}`
+  }
+
   useEffect(() => {
     if (lead && isOpen) {
       setError(null)
@@ -189,21 +197,8 @@ export default function UpdateFollowupModal({
       
       setFollowupDate(formatLocalIso(now))
       
-      const getTomorrowDefaultIso = (baseDate = new Date()) => {
-        const tomorrow = new Date(baseDate)
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        tomorrow.setHours(11, 0, 0, 0)
-        return formatLocalIso(tomorrow)
-      }
-
-      const isClosed = isNotInterestedOrLostStage(currentStage)
-      if (isClosed) {
-        // Blank out for not interested/lost stages so there is no confusion or ambiguity
-        setNextActionDate('')
-      } else {
-        // Always default to next day (tomorrow) date and time for new followup reminders
-        setNextActionDate(getTomorrowDefaultIso(now))
-      }
+      // Next Action Date & Time is EMPTY by default so agent specifies it intentionally
+      setNextActionDate('')
     }
   }, [lead, isOpen])
 
@@ -240,7 +235,9 @@ export default function UpdateFollowupModal({
           clientStatus: isDnp ? lead.client_status : clientStatus,
           propertyId: selectedPropertyId || null,
           budget: budget || null,
-          remarks: isDnp ? nextRemarks : remarks,
+          remarks: remarks || '',
+          nextActionRemark: nextRemarks || null,
+          nextRemarks: nextRemarks || null,
           nextActionDate: hasNextAction ? new Date(nextActionDate).toISOString() : null,
           nextActionType: hasNextAction ? nextActionType : null,
           assignedTo: assignedTo || null,
@@ -466,9 +463,23 @@ export default function UpdateFollowupModal({
             </div>
           ) : (
             /* DNP View Banner */
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center space-x-3 text-amber-900 text-sm">
-              <PhoneCall className="w-5 h-5 text-amber-600 shrink-0" />
-              <span>Call marked as <strong>Did Not Pick (DNP)</strong>. Schedule the next follow up attempt below.</span>
+            <div className="space-y-3">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center space-x-3 text-amber-900 text-sm">
+                <PhoneCall className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>Call marked as <strong>Did Not Pick (DNP)</strong>. Schedule the next follow up attempt below.</span>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Optional DNP Call Note / Remarks
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Call rang full, tried twice, or customer hung up"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-medium focus:outline-none focus:border-blue-500 focus:bg-white"
+                />
+              </div>
             </div>
           )}
 
@@ -502,6 +513,16 @@ export default function UpdateFollowupModal({
                       required={!isClosedStatus}
                       value={nextActionDate}
                       onChange={(e) => setNextActionDate(e.target.value)}
+                      onFocus={() => {
+                        if (!nextActionDate) {
+                          setNextActionDate(getTomorrowDefaultIso())
+                        }
+                      }}
+                      onClick={() => {
+                        if (!nextActionDate) {
+                          setNextActionDate(getTomorrowDefaultIso())
+                        }
+                      }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 font-medium focus:outline-none focus:border-blue-500 focus:bg-white"
                     />
                     {nextActionDate ? (

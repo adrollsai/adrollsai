@@ -22,7 +22,7 @@ import CsvImportModal from '@/components/CsvImportModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle, extractStagesFromProfile } from '@/utils/pipeline-stages'
-import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
+import { getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp } from '@/utils/lead-helpers'
 
 
 
@@ -110,6 +110,14 @@ function hasLeadVisited(lead: any): boolean {
   return false;
 }
 
+function isGenericDnpText(text: string): boolean {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  if (t === 'call not picked (dnp)' || t === 'call not picked' || t === 'dnp' || t === 'did not pick') return true;
+  if (t.startsWith('next action scheduled for') && !t.includes('remarks:')) return true;
+  return false;
+}
+
 function getLeadLastRemark(lead: any, currentRole?: string): string | null {
   if (!lead) return null;
   let cf = lead.custom_fields;
@@ -133,9 +141,8 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
     }
   }
   
-  // 1. Explicit latest followup / action remarks take absolute top priority
-  if (cf?.last_followup_remark && typeof cf.last_followup_remark === 'string' && cf.last_followup_remark.trim()) {
-    // If agent and cutoff is set, ensure the remark is post-cutoff
+  // 1. Explicit latest followup / action remarks take priority only if NOT generic DNP text
+  if (cf?.last_followup_remark && typeof cf.last_followup_remark === 'string' && cf.last_followup_remark.trim() && !isGenericDnpText(cf.last_followup_remark)) {
     if (isAgent && cutoff) {
       const cutoffTime = new Date(cutoff).getTime();
       const tFollowup = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : 0;
@@ -143,51 +150,85 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
     }
     return cf.last_followup_remark.trim();
   }
-  if (cf?.last_remark && typeof cf.last_remark === 'string' && cf.last_remark.trim()) {
+  if (cf?.last_remark && typeof cf.last_remark === 'string' && cf.last_remark.trim() && !isGenericDnpText(cf.last_remark)) {
     return cf.last_remark.trim();
   }
-  if (lead.last_followup_remark && typeof lead.last_followup_remark === 'string' && lead.last_followup_remark.trim()) {
+  if (lead.last_followup_remark && typeof lead.last_followup_remark === 'string' && lead.last_followup_remark.trim() && !isGenericDnpText(lead.last_followup_remark)) {
     return lead.last_followup_remark.trim();
   }
-  if (lead.last_call_remark && typeof lead.last_call_remark === 'string' && lead.last_call_remark.trim()) {
+  if (lead.last_call_remark && typeof lead.last_call_remark === 'string' && lead.last_call_remark.trim() && !isGenericDnpText(lead.last_call_remark)) {
     return lead.last_call_remark.trim();
   }
 
-  // 2. Parse from notes: look for [Last Remarks]: or newest chronological note
+  // 2. Parse from notes: look for actual human written remarks (skip purely automated DNP logs)
   if (lead.notes && typeof lead.notes === 'string' && lead.notes.trim()) {
     if (isAgent && cutoff) {
-      // Notes before cutoff are hidden for agent
       const cutoffTime = new Date(cutoff).getTime();
       const tFollowup = cf?.last_followup_at ? new Date(cf.last_followup_at).getTime() : 0;
       if (tFollowup < cutoffTime) return null;
     }
 
     const notesStr = lead.notes.trim();
-
-    // Look for newest chronological note first (Nobogent prepends newer notes at the top)
     const entries = notesStr.split(/\n\n+|---+|\n(?=\[\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/);
+
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i].trim();
-      if (entry && !entry.toLowerCase().startsWith('[opening remarks]') && !entry.toLowerCase().startsWith('advertisment') && !entry.toLowerCase().startsWith('[followups taken]')) {
-        if (entry.includes(']:')) {
-          const clean = entry.split(']:').slice(1).join(']:').trim();
-          if (clean) return clean;
+      if (!entry) continue;
+      const lower = entry.toLowerCase();
+
+      if (
+        lower.startsWith('[opening remarks]') || 
+        lower.startsWith('advertisment') || 
+        lower.startsWith('[followups taken]') ||
+        lower.startsWith('lead created from')
+      ) {
+        continue;
+      }
+
+      const isDnpLog = lower.includes('call not picked') || lower.includes('dnp') || lower.includes('did not pick');
+
+      let body = entry.includes(']:') ? entry.split(']:').slice(1).join(']:').trim() : entry;
+      if (body.startsWith('Stage:')) {
+        const dotIdx = body.indexOf('.');
+        if (dotIdx !== -1) body = body.slice(dotIdx + 1).trim();
+      }
+      if (body.startsWith('Status:')) {
+        const dotIdx = body.indexOf('.');
+        if (dotIdx !== -1) body = body.slice(dotIdx + 1).trim();
+      }
+
+      let manualRemarkPortion = '';
+      if (body.includes('Remarks:')) {
+        const remIdx = body.indexOf('Remarks:');
+        manualRemarkPortion = body.slice(remIdx + 8).trim();
+      }
+
+      // If it's a DNP log, only accept if there is an explicit human remark
+      if (isDnpLog) {
+        if (manualRemarkPortion && !isGenericDnpText(manualRemarkPortion)) {
+          return manualRemarkPortion;
         }
-        return entry;
+        // Skip pure DNP log to search for earlier manual notes
+        continue;
+      }
+
+      const candidate = manualRemarkPortion || body || entry;
+      if (candidate && !isGenericDnpText(candidate)) {
+        return candidate;
       }
     }
 
     if (notesStr.includes('[Last Remarks]:')) {
       const parts = notesStr.split('[Last Remarks]:');
       const lastSection = parts[parts.length - 1].split(/\[Followups Taken\]:|\[Next Action\]:|\[Opening Remarks\]:/i)[0].trim();
-      if (lastSection) return lastSection;
+      if (lastSection && !isGenericDnpText(lastSection)) return lastSection;
     }
   }
 
-  if (lead.summary && typeof lead.summary === 'string' && lead.summary.trim()) {
+  if (lead.summary && typeof lead.summary === 'string' && lead.summary.trim() && !isGenericDnpText(lead.summary)) {
     return lead.summary.trim();
   }
-  if (cf?.notes && typeof cf.notes === 'string' && cf.notes.trim()) {
+  if (cf?.notes && typeof cf.notes === 'string' && cf.notes.trim() && !isGenericDnpText(cf.notes)) {
     return cf.notes.trim();
   }
 
@@ -3116,6 +3157,14 @@ END:VCARD\n`
                                                     <div className="flex items-center gap-1.5 flex-wrap">
                                                         <span className="font-extrabold text-slate-900 text-sm group-hover:text-blue-600 transition-colors truncate max-w-[200px] block" title={lead.name || 'Unknown Lead'}>{lead.name || 'Unknown Lead'}</span>
                                                         <LeadScoreBadge lead={lead} size="sm" showDetails />
+                                                        {isLeadLastStatusDnp(lead) && (
+                                                            <span 
+                                                                className="px-2 py-0.5 text-[9px] font-black rounded-md bg-rose-100 text-rose-800 border border-rose-300 shrink-0 inline-flex items-center gap-1 shadow-2xs"
+                                                                title="Last call attempt was DNP (Did Not Pick)"
+                                                            >
+                                                                <PhoneOff size={10} /> DNP
+                                                            </span>
+                                                        )}
                                                         {hasLeadVisited(lead) && (
                                                             <span 
                                                                 className="px-2 py-0.5 text-[10px] font-black rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-1 shadow-xs"
@@ -3154,6 +3203,24 @@ END:VCARD\n`
                                                 >
                                                     {customStages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                                 </select>
+                                                {(() => {
+                                                    const rawNextDate = lead.next_followup || lead.custom_fields?.next_action_date;
+                                                    if (!rawNextDate) return null;
+                                                    const cf = typeof lead.custom_fields === 'object' ? lead.custom_fields : null;
+                                                    const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || lead.next_action_remark || '').trim();
+                                                    return (
+                                                        <div className="mt-1.5 flex flex-col gap-0.5">
+                                                            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded flex items-center gap-1 w-fit whitespace-nowrap">
+                                                                ⏰ {lead.custom_fields?.next_action_type || 'Followup'}: {new Date(rawNextDate).toLocaleDateString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                                            </span>
+                                                            {nextActionRemark && (
+                                                                <span className="text-[10px] text-indigo-950 font-medium italic truncate max-w-[170px]" title={nextActionRemark}>
+                                                                    💬 {nextActionRemark}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </td>
                                             <td className="p-4 max-w-[240px]" onClick={e => e.stopPropagation()}>
                                                  {(() => {
@@ -3350,11 +3417,15 @@ END:VCARD\n`
                                     </div>
                                     <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                         <span className="text-[11px] font-bold text-slate-500">{displayPhone || 'No phone number'}</span>
-                                        {dnpCount > 0 && (
+                                        {isLeadLastStatusDnp(lead) ? (
+                                            <span className="px-2 py-0.5 text-[9px] font-black rounded-md bg-rose-100 text-rose-800 border border-rose-300 shrink-0 flex items-center gap-1 shadow-2xs" title="Last call attempt was DNP (Did Not Pick)">
+                                                <PhoneOff size={10} /> Last Call: DNP {dnpCount > 1 ? `(${dnpCount}x)` : ''}
+                                            </span>
+                                        ) : dnpCount > 0 ? (
                                             <span className="px-1.5 py-0.5 text-[9px] font-black rounded bg-rose-50 text-rose-600 border border-rose-200 shrink-0 flex items-center gap-1">
                                                 <PhoneOff size={10} /> DNP x{dnpCount}
                                             </span>
-                                        )}
+                                        ) : null}
                                     </div>
                                 </div>
                             </div>
@@ -3488,11 +3559,25 @@ END:VCARD\n`
                                     </select>
                                     <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
                                 </div>
-                                {(lead.next_followup || lead.custom_fields?.next_action_date) && (
-                                    <span className="text-xs font-black bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-200/80 flex items-center gap-1.5 shadow-sm shrink-0 mt-1">
-                                        ⏰ Next Action: {lead.custom_fields?.next_action_type || 'Followup'} on {new Date(lead.next_followup || lead.custom_fields?.next_action_date).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
-                                    </span>
-                                )}
+                                {(() => {
+                                    const rawNextDate = lead.next_followup || lead.custom_fields?.next_action_date;
+                                    if (!rawNextDate) return null;
+                                    const cf = typeof lead.custom_fields === 'object' ? lead.custom_fields : null;
+                                    const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || lead.next_action_remark || '').trim();
+                                    return (
+                                        <div className="flex flex-col gap-1 mt-1 max-w-full">
+                                            <span className="text-xs font-black bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-200/80 flex items-center gap-1.5 shadow-sm shrink-0">
+                                                ⏰ Next Action: {lead.custom_fields?.next_action_type || 'Followup'} on {new Date(rawNextDate).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                            </span>
+                                            {nextActionRemark && (
+                                                <div className="text-[11px] font-semibold text-indigo-950 bg-indigo-50/70 border border-indigo-200/60 px-2.5 py-1 rounded-lg flex items-start gap-1.5 leading-snug">
+                                                    <span className="shrink-0">💬</span>
+                                                    <span className="italic line-clamp-2">{nextActionRemark}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             <span className="text-[11px] font-bold text-slate-400 shrink-0">
                                 {new Date(lead.facebook_created_at || lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}

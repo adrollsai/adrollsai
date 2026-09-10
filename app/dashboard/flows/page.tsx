@@ -49,6 +49,12 @@ export type FlowNodeType =
   | 'trigger_webhook'
   | 'triggerNode'
   | 'whatsappMessageNode'
+  | 'notifyNode'
+  | 'crmStageNode'
+  | 'tagNode'
+  | 'customApiNode'
+  | 'aiCallNode'
+  | 'emailNode'
   | 'actionNode'
   | 'inventoryDeliveryNode'
   | 'conditionNode'
@@ -3147,6 +3153,7 @@ export default function FlowsPage() {
                 initialNodes={currentFlow.xyNodes || (currentFlow.nodes?.length && currentFlow.nodes[0]?.type?.includes('Node') ? currentFlow.nodes : undefined)}
                 initialEdges={currentFlow.xyEdges || currentFlow.edges}
                 saving={saving}
+                onTestRun={handleStartSimulation}
                 onSave={async (nodes, edges) => {
                   try {
                     setSaving(true)

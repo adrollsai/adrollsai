@@ -117,6 +117,36 @@ export function getLeadReopenCount(lead: any): number {
 }
 
 /**
+ * Helper to identify automated or generic DNP text lines
+ */
+function isGenericDnpText(text: string): boolean {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  if (t === 'call not picked (dnp)' || t === 'call not picked' || t === 'dnp' || t === 'did not pick') return true;
+  if (t.startsWith('next action scheduled for') && !t.includes('remarks:')) return true;
+  return false;
+}
+
+/**
+ * Checks if the last interaction or status of the lead was DNP
+ */
+export function isLeadLastStatusDnp(lead: any): boolean {
+  if (!lead) return false;
+  const cf = parseCustomFields(lead.custom_fields);
+  if (cf.last_call_dnp === true) return true;
+  const stage = (lead.pipeline_stage || lead.status || '').toLowerCase();
+  if (stage === 'never picked' || stage === 'dnp') return true;
+  if (lead.notes && typeof lead.notes === 'string') {
+    const firstNote = lead.notes.trim().split(/\n\n+|---+/)[0] || '';
+    const lower = firstNote.toLowerCase();
+    if (lower.includes('call not picked') || lower.includes('dnp') || lower.includes('did not pick')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Extracts the latest manual/followup remark (strictly prioritizing the newest note, not the oldest).
  */
 export function getLeadLatestRemark(lead: any, currentRole?: string): { remark: string | null; formattedTime: string; timestamp: number } {
@@ -150,7 +180,11 @@ export function getLeadLatestRemark(lead: any, currentRole?: string): { remark: 
         continue;
       }
 
+      // Check if this entry is a DNP log
+      const isDnpLog = lower.includes('call not picked') || lower.includes('dnp') || lower.includes('did not pick');
+
       // Extract timestamp if present in header, e.g. [📝 Followup (Call) - 24/8/2026, 3:20:01 pm by ...]
+      let entryTimeStr: string | null = null;
       const timeMatch = entry.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?)?/i);
       if (timeMatch) {
         const [_, d, m, y, h, min, ampm] = timeMatch;
@@ -161,7 +195,7 @@ export function getLeadLatestRemark(lead: any, currentRole?: string): { remark: 
         }
         const parsed = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hour, min ? parseInt(min, 10) : 0);
         if (!isNaN(parsed.getTime())) {
-          remarkTimeStr = parsed.toISOString();
+          entryTimeStr = parsed.toISOString();
         }
       }
 
@@ -175,25 +209,48 @@ export function getLeadLatestRemark(lead: any, currentRole?: string): { remark: 
         const dotIdx = body.indexOf('.');
         if (dotIdx !== -1) body = body.slice(dotIdx + 1).trim();
       }
+
+      let manualRemarkPortion = '';
       if (body.includes('Remarks:')) {
         const remIdx = body.indexOf('Remarks:');
-        body = body.slice(remIdx + 8).trim();
+        manualRemarkPortion = body.slice(remIdx + 8).trim();
       }
 
-      rawRemark = body || entry;
-      break; // Found newest valid remark!
+      // If it is a DNP log, only use it if it has an actual human written remark
+      if (isDnpLog) {
+        if (manualRemarkPortion && !isGenericDnpText(manualRemarkPortion)) {
+          rawRemark = manualRemarkPortion;
+          if (entryTimeStr) remarkTimeStr = entryTimeStr;
+          break;
+        }
+        // Pure DNP log without extra manual remark: skip and look for previous human remark!
+        continue;
+      }
+
+      const candidate = manualRemarkPortion || body || entry;
+      if (candidate && !isGenericDnpText(candidate)) {
+        rawRemark = candidate;
+        if (entryTimeStr) remarkTimeStr = entryTimeStr;
+        break; // Found newest valid manual remark!
+      }
     }
   }
 
-  // 2. Fallback to custom_fields.last_followup_remark or cf.last_remark
+  // 2. Fallback to custom_fields.last_followup_remark or cf.last_remark (if not generic DNP text)
   if (!rawRemark) {
-    rawRemark = (cf.last_followup_remark || cf.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim() || null;
-    if (cf.last_followup_at) remarkTimeStr = cf.last_followup_at;
+    const candidateRemark = (cf.last_followup_remark || cf.last_remark || lead.last_followup_remark || lead.last_call_remark || '').trim();
+    if (candidateRemark && !isGenericDnpText(candidateRemark)) {
+      rawRemark = candidateRemark;
+      if (cf.last_followup_at) remarkTimeStr = cf.last_followup_at;
+    }
   }
 
   // 3. Fallback to summary
   if (!rawRemark && lead.summary && typeof lead.summary === 'string' && lead.summary.trim()) {
-    rawRemark = lead.summary.trim();
+    const sum = lead.summary.trim();
+    if (!isGenericDnpText(sum)) {
+      rawRemark = sum;
+    }
   }
 
   if (!remarkTimeStr) {

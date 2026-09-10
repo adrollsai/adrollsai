@@ -137,14 +137,14 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except for:
+     * - api (All API routes authenticate internally, bypassing edge middleware saves invocations)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - auth (auth callback routes)
      * - shared (custom domain internal routes)
-     * - api/shared (public shared API routes - no auth required)
-     * - api/webhooks (webhook routes - no auth required)
+     * - service workers & offline assets
      */
-    '/((?!_next/static|_next/image|favicon.ico|auth|shared|api/shared|api/webhooks|sw.js|sw-v2.js|custom-sw.js|workbox-[a-f0-9]+.js).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|auth|shared|sw.js|sw-v2.js|custom-sw.js|workbox-[a-f0-9]+.js).*)',
   ],
 }

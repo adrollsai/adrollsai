@@ -58,12 +58,16 @@ export async function POST(request: Request) {
     referenceName,
     referenceNo,
     remarks,
+    nextActionRemark,
+    nextRemarks,
     interestedProperties,
     nextActionDate,
     nextActionType = 'Call',
     assignedTo,
     remindMe = true
   } = body
+
+  const effectiveNextActionRemark = (nextActionRemark || nextRemarks || '').trim()
 
   if (!leadId) {
     return NextResponse.json({ error: 'Missing leadId' }, { status: 400 })
@@ -176,13 +180,10 @@ export async function POST(request: Request) {
     }
 
     customFields.last_followup_at = new Date().toISOString()
-    customFields.last_followup_type = followupType
-    if (remarks) {
-      customFields.last_followup_remark = remarks
-      customFields.last_remark = remarks
-    } else if (isDnp) {
-      customFields.last_followup_remark = remarks || 'Call Not Picked (DNP)'
-      customFields.last_remark = remarks || 'Call Not Picked (DNP)'
+    customFields.last_followup_type = isDnp ? 'Call (DNP)' : followupType
+    if (remarks && typeof remarks === 'string' && remarks.trim()) {
+      customFields.last_followup_remark = remarks.trim()
+      customFields.last_remark = remarks.trim()
     }
 
     customFields.followup_count = (customFields.followup_count || 0) + 1
@@ -191,12 +192,19 @@ export async function POST(request: Request) {
       customFields.next_action_date = nextActionDate
       updatePayload.next_followup = nextActionDate
       if (nextActionType) customFields.next_action_type = nextActionType
-      if (remarks) customFields.next_action_remark = remarks
+      if (effectiveNextActionRemark) {
+        customFields.next_action_remark = effectiveNextActionRemark
+        customFields.next_remarks = effectiveNextActionRemark
+      } else {
+        customFields.next_action_remark = null
+        customFields.next_remarks = null
+      }
     } else {
       customFields.next_action_date = null
       updatePayload.next_followup = null
       customFields.next_action_type = null
       customFields.next_action_remark = null
+      customFields.next_remarks = null
     }
 
     if (clientStatus) {
@@ -269,10 +277,13 @@ export async function POST(request: Request) {
     const formattedDateStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
     
     if (isDnp) {
-      const dnpNote = `[⚠️ Call Not Picked - DNP (${formattedDateStr}) by ${callerName}]: Next action scheduled for ${nextActionDate || 'TBD'} (${nextActionType}). ${remarks ? `Remarks: ${remarks}` : ''}`
+      const nextDateFormatted = nextActionDate 
+        ? new Date(nextActionDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) 
+        : 'TBD'
+      const dnpNote = `[⚠️ Call Not Picked - DNP (${formattedDateStr}) by ${callerName}]: Next action scheduled for ${nextDateFormatted} (${nextActionType}).${effectiveNextActionRemark ? ` Next Action Note: ${effectiveNextActionRemark}.` : ''}${remarks && remarks.trim() ? ` Remarks: ${remarks.trim()}` : ''}`
       newNotes = dnpNote + (newNotes ? `\n\n${newNotes}` : '')
-    } else if (remarks) {
-      const remarkNote = `[📝 Followup (${followupType}) - ${formattedDateStr} by ${callerName}]: Stage: ${activeStage}. ${remarks}`
+    } else if (remarks && remarks.trim()) {
+      const remarkNote = `[📝 Followup (${followupType}) - ${formattedDateStr} by ${callerName}]: Stage: ${activeStage}. ${remarks.trim()}${effectiveNextActionRemark ? ` | Next: ${effectiveNextActionRemark}` : ''}`
       newNotes = remarkNote + (newNotes ? `\n\n${newNotes}` : '')
     }
 
@@ -301,8 +312,8 @@ export async function POST(request: Request) {
       : 'TBD'
 
     const historyDesc = isDnp
-      ? `⚠️ Call Not Picked (DNP) logged by ${callerName}. Next Action: ${nextActionType} on ${formattedNextActionText}. ${remarks ? `Remarks: ${remarks}` : ''}`
-      : `📝 Followup (${followupType}) updated by ${callerName}. Stage: ${activeStage}${clientStatus ? `, Rating: ${clientStatus}` : ''}. ${remarks ? `Remarks: ${remarks}` : ''}`
+      ? `⚠️ Call Not Picked (DNP) logged by ${callerName}. Next Action: ${nextActionType} on ${formattedNextActionText}.${effectiveNextActionRemark ? ` Note: ${effectiveNextActionRemark}.` : ''}${remarks && remarks.trim() ? ` Remarks: ${remarks.trim()}` : ''}`
+      : `📝 Followup (${followupType}) updated by ${callerName}. Stage: ${activeStage}${clientStatus ? `, Rating: ${clientStatus}` : ''}.${remarks && remarks.trim() ? ` Remarks: ${remarks.trim()}` : ''}${effectiveNextActionRemark ? ` Next Action: ${nextActionType} on ${formattedNextActionText} (${effectiveNextActionRemark})` : ''}`
 
     const isExplicitStageChange = Boolean(leadStatus && leadStatus !== lead.pipeline_stage && leadStatus !== 'Ongoing')
 

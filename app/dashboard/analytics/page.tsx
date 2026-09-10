@@ -45,13 +45,14 @@ import {
   Flame,
   Maximize2,
   Minimize2,
-  ArrowLeft
+  ArrowLeft,
+  ChevronDown
 } from 'lucide-react'
 import LeadHistoryModal from '@/components/LeadHistoryModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES } from '@/utils/pipeline-stages'
-import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark } from '@/utils/lead-helpers'
+import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark, isLeadLastStatusDnp } from '@/utils/lead-helpers'
 
 // Render simple markdown headers, bolding, and lists into JSX
 function MarkdownRenderer({ text }: { text: string }) {
@@ -239,6 +240,79 @@ export default function AnalyticsPage() {
   const [drilldownPage, setDrilldownPage] = useState<number>(1)
   const [drilldownPageSize, setDrilldownPageSize] = useState<number>(25)
   const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string } | null>(null)
+
+  // Advanced Drilldown Filters (Matching CRM Filters)
+  const [drilldownShowFilters, setDrilldownShowFilters] = useState(false)
+  const [drilldownAgentFilter, setDrilldownAgentFilter] = useState<string>('ALL')
+  const [drilldownNextActionFilter, setDrilldownNextActionFilter] = useState<'ALL' | 'HAS_ACTION' | 'TODAY' | 'OVERDUE' | 'UPCOMING' | 'NO_ACTION'>('ALL')
+  const [drilldownNextActionType, setDrilldownNextActionType] = useState<string>('ALL')
+  const [drilldownDnpFilter, setDrilldownDnpFilter] = useState<'ALL' | 'DNP_ONLY' | 'DNP_1' | 'DNP_2' | 'DNP_3PLUS' | 'NO_DNP'>('ALL')
+  const [drilldownDateRange, setDrilldownDateRange] = useState<string>('ALL')
+  const [drilldownCustomDate, setDrilldownCustomDate] = useState<string>('')
+  const [drilldownStartDate, setDrilldownStartDate] = useState<string>('')
+  const [drilldownEndDate, setDrilldownEndDate] = useState<string>('')
+  const [drilldownDatePickerOpen, setDrilldownDatePickerOpen] = useState<boolean>(false)
+  const [drilldownDateFilterMode, setDrilldownDateFilterMode] = useState<'single' | 'range'>('single')
+  const [drilldownCampaign, setDrilldownCampaign] = useState<string>('')
+  const [drilldownForm, setDrilldownForm] = useState<string>('')
+
+  // Dynamic extraction of unique campaigns and forms from drilldown modal leads (fallback to all leads)
+  const modalCampaigns = useMemo(() => {
+    if (!drilldownModal.isOpen) return []
+    const sourceList = drilldownModal.leads && drilldownModal.leads.length > 0 ? drilldownModal.leads : leads
+    const list: string[] = []
+    sourceList.forEach((l: any) => {
+      const camp = l.campaign_name || l.ad_name || l.custom_fields?.campaign_name
+      if (camp && typeof camp === 'string' && camp.trim() && camp !== 'null' && camp !== 'undefined') {
+        list.push(camp.trim())
+      }
+    })
+    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b))
+  }, [drilldownModal.isOpen, drilldownModal.leads, leads])
+
+  const modalForms = useMemo(() => {
+    if (!drilldownModal.isOpen) return []
+    const sourceList = drilldownModal.leads && drilldownModal.leads.length > 0 ? drilldownModal.leads : leads
+    const list: string[] = []
+    sourceList.forEach((l: any) => {
+      const fName = l.form_name || l.source
+      if (fName && typeof fName === 'string' && fName.trim() && fName !== 'null' && fName !== 'undefined') {
+        list.push(fName.trim())
+      }
+    })
+    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b))
+  }, [drilldownModal.isOpen, drilldownModal.leads, leads])
+
+  // Count active drilldown filters (excluding default values)
+  const activeDrilldownFilterCount = useMemo(() => {
+    let count = 0
+    if (drilldownAgentFilter !== 'ALL') count++
+    if (drilldownNextActionFilter !== 'ALL') count++
+    if (drilldownNextActionType !== 'ALL') count++
+    if (drilldownDnpFilter !== 'ALL') count++
+    if (drilldownDateRange !== 'ALL' || !!drilldownCustomDate || (!!drilldownStartDate && !!drilldownEndDate)) count++
+    if (drilldownCampaign) count++
+    if (drilldownForm) count++
+    if (drilldownStageFilter !== 'all') count++
+    return count
+  }, [drilldownAgentFilter, drilldownNextActionFilter, drilldownNextActionType, drilldownDnpFilter, drilldownDateRange, drilldownCustomDate, drilldownStartDate, drilldownEndDate, drilldownCampaign, drilldownForm, drilldownStageFilter])
+
+  // Reset all drilldown filters to defaults
+  const clearAllDrilldownFilters = () => {
+    setDrilldownAgentFilter('ALL')
+    setDrilldownNextActionFilter('ALL')
+    setDrilldownNextActionType('ALL')
+    setDrilldownDnpFilter('ALL')
+    setDrilldownDateRange('ALL')
+    setDrilldownCustomDate('')
+    setDrilldownStartDate('')
+    setDrilldownEndDate('')
+    setDrilldownCampaign('')
+    setDrilldownForm('')
+    setDrilldownStageFilter('all')
+    setDrilldownDatePickerOpen(false)
+    setDrilldownPage(1)
+  }
 
   // Stage counts for active drilldown modal
   const modalStages = useMemo(() => {
@@ -1570,6 +1644,18 @@ export default function AnalyticsPage() {
       }
     }
     setDrilldownStageFilter('all')
+    setDrilldownAgentFilter('ALL')
+    setDrilldownNextActionFilter('ALL')
+    setDrilldownNextActionType('ALL')
+    setDrilldownDnpFilter('ALL')
+    setDrilldownDateRange('ALL')
+    setDrilldownCustomDate('')
+    setDrilldownStartDate('')
+    setDrilldownEndDate('')
+    setDrilldownCampaign('')
+    setDrilldownForm('')
+    setDrilldownShowFilters(false)
+    setDrilldownDatePickerOpen(false)
     setDrilldownPage(1)
     setDrilldownModal({
       isOpen: true,
@@ -2986,7 +3072,7 @@ export default function AnalyticsPage() {
               </div>
             </div>
 
-            {/* Modal Search Bar, Stage Filter Pills & View Mode Toggle */}
+            {/* Modal Search Bar, Filter Button, Stage Filter Pills & View Mode Toggle */}
             <div className="p-3 sm:p-4 border-b border-slate-100 bg-white space-y-2.5 shrink-0">
               <div className="flex flex-col md:flex-row items-center justify-between gap-2.5">
                 <div className="relative flex-1 w-full">
@@ -2999,11 +3085,42 @@ export default function AnalyticsPage() {
                       setDrilldownPage(1)
                       setDrilldownModal(prev => ({ ...prev, searchFilter: e.target.value }))
                     }}
-                    className="w-full bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 rounded-xl pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 rounded-xl pl-9 pr-8 py-2 focus:ring-2 focus:ring-blue-500/20"
                   />
+                  {drilldownModal.searchFilter && (
+                    <button
+                      onClick={() => {
+                        setDrilldownPage(1)
+                        setDrilldownModal(prev => ({ ...prev, searchFilter: '' }))
+                      }}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end flex-wrap">
+                  {/* Filters Toggle Button (with active count badge) */}
+                  <button
+                    onClick={() => setDrilldownShowFilters(prev => !prev)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
+                      drilldownShowFilters || activeDrilldownFilterCount > 0
+                        ? 'bg-slate-800 text-white border-slate-800 shadow-xs font-black'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                    title="Toggle CRM Filters"
+                  >
+                    <Filter size={13} />
+                    <span>Filters</span>
+                    {activeDrilldownFilterCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-blue-500 text-white text-[10px] font-black leading-none">
+                        {activeDrilldownFilterCount}
+                      </span>
+                    )}
+                  </button>
+
                   {/* Sort Selector Dropdown */}
                   <div className="flex items-center gap-1 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200 text-xs font-bold shrink-0">
                     <ArrowUpDown size={13} className="text-slate-500 shrink-0" />
@@ -3063,6 +3180,421 @@ export default function AnalyticsPage() {
                 </div>
               </div>
 
+              {/* EXPANDABLE ADVANCED CRM FILTERS DRAWER */}
+              {drilldownShowFilters && (
+                <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-3 sm:p-4 space-y-3 animate-in slide-in-from-top-2 duration-150">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+                    {/* 1. Assigned Agent */}
+                    <div className="relative flex-1">
+                      <label className="block text-[9px] font-black text-slate-500 uppercase mb-1 flex items-center gap-1">
+                        <User size={10} className="text-blue-600" />
+                        <span>Assigned Agent</span>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={drilldownAgentFilter}
+                          onChange={(e) => {
+                            setDrilldownAgentFilter(e.target.value)
+                            setDrilldownPage(1)
+                          }}
+                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                            drilldownAgentFilter !== 'ALL' ? 'bg-indigo-50/80 border-indigo-300 text-indigo-950 font-black' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <option value="ALL">All Team Members ({allSalesReps.length})</option>
+                          <option value="UNASSIGNED">⚠️ Unassigned Only</option>
+                          {allSalesReps.map(rep => (
+                            <option key={rep.id} value={rep.id}>👤 {rep.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* 2. Next Action Schedule Timing */}
+                    <div className="relative flex-1">
+                      <label className="block text-[9px] font-black text-purple-600 uppercase mb-1 flex items-center gap-1">
+                        <Clock size={10} />
+                        <span>Action Schedule</span>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={drilldownNextActionFilter}
+                          onChange={(e) => {
+                            setDrilldownNextActionFilter(e.target.value as any)
+                            setDrilldownPage(1)
+                          }}
+                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                            drilldownNextActionFilter !== 'ALL' ? 'bg-purple-100/90 border-purple-400 text-purple-950 font-black' : 'bg-purple-50/50 border-purple-200/80 text-purple-900 hover:bg-purple-100/40'
+                          }`}
+                        >
+                          <option value="ALL">All Next Actions</option>
+                          <option value="TODAY">📅 Due Today</option>
+                          <option value="OVERDUE">⚠️ Overdue Actions</option>
+                          <option value="UPCOMING">⚡ Upcoming / Future</option>
+                          <option value="HAS_ACTION">🔔 Any Scheduled Action</option>
+                          <option value="NO_ACTION">❌ No Action Scheduled</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* 3. Action Type */}
+                    <div className="relative flex-1">
+                      <label className="block text-[9px] font-black text-purple-600 uppercase mb-1">Action Type</label>
+                      <div className="relative">
+                        <select
+                          value={drilldownNextActionType}
+                          onChange={(e) => {
+                            setDrilldownNextActionType(e.target.value)
+                            setDrilldownPage(1)
+                          }}
+                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                            drilldownNextActionType !== 'ALL' ? 'bg-purple-100/90 border-purple-400 text-purple-950 font-black' : 'bg-purple-50/50 border-purple-200/80 text-purple-900 hover:bg-purple-100/40'
+                          }`}
+                        >
+                          <option value="ALL">All Action Types</option>
+                          <option value="Call">📞 Call</option>
+                          <option value="Visit">🏠 Visit</option>
+                          <option value="Revisit">🔄 Revisit</option>
+                          <option value="Closing Meeting">💼 Closing Meeting</option>
+                          <option value="Home Meeting">🏡 Home Meeting</option>
+                          <option value="WhatsApp">💬 WhatsApp</option>
+                          <option value="Email">✉️ Email</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* 4. DNP Status */}
+                    <div className="relative flex-1">
+                      <label className="block text-[9px] font-black text-rose-600 uppercase mb-1 flex items-center gap-1">
+                        <PhoneOff size={10} />
+                        <span>DNP Status</span>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={drilldownDnpFilter}
+                          onChange={(e) => {
+                            setDrilldownDnpFilter(e.target.value as any)
+                            setDrilldownPage(1)
+                          }}
+                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                            drilldownDnpFilter !== 'ALL' ? 'bg-rose-100/90 border-rose-400 text-rose-950 font-black' : 'bg-rose-50/50 border-rose-200/80 text-rose-900 hover:bg-rose-100/40'
+                          }`}
+                        >
+                          <option value="ALL">All Leads (No DNP Filter)</option>
+                          <option value="DNP_ONLY">🔥 DNP Only (&gt; 0)</option>
+                          <option value="DNP_1">DNP 1</option>
+                          <option value="DNP_2">DNP 2</option>
+                          <option value="DNP_3PLUS">DNP 3+ (Retry Queue)</option>
+                          <option value="NO_DNP">No DNP (0)</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-rose-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* 5. Date Created Preset */}
+                    <div className="relative flex-1">
+                      <label className="block text-[9px] font-black text-slate-500 uppercase mb-1 flex items-center gap-1">
+                        <Calendar size={10} />
+                        <span>Date Created</span>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={drilldownDateRange}
+                          onChange={(e) => {
+                            setDrilldownDateRange(e.target.value)
+                            setDrilldownPage(1)
+                          }}
+                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                            drilldownDateRange !== 'ALL' ? 'bg-blue-50/80 border-blue-300 text-blue-950 font-black' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <option value="ALL">All Time</option>
+                          <option value="TODAY">Today</option>
+                          <option value="YESTERDAY">Yesterday</option>
+                          <option value="7D">Last 7 Days</option>
+                          <option value="30D">Last 30 Days</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* 6. Custom Date / Range Popover */}
+                    <div className="relative flex-1">
+                      <label className="block text-[9px] font-black text-blue-600 uppercase mb-1">Custom Date / Range</label>
+                      <button
+                        type="button"
+                        onClick={() => setDrilldownDatePickerOpen(prev => !prev)}
+                        className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-between transition-all border shadow-xs cursor-pointer ${
+                          (drilldownCustomDate || (drilldownStartDate && drilldownEndDate))
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-xs font-black'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-blue-400'
+                        }`}
+                      >
+                        <span className="truncate">
+                          {drilldownCustomDate
+                            ? `Date: ${drilldownCustomDate}`
+                            : (drilldownStartDate && drilldownEndDate)
+                            ? `${drilldownStartDate} → ${drilldownEndDate}`
+                            : 'Pick Custom Date'}
+                        </span>
+                        <Calendar size={12} className={(drilldownCustomDate || (drilldownStartDate && drilldownEndDate)) ? 'text-white' : 'text-blue-600'} />
+                      </button>
+
+                      {drilldownDatePickerOpen && (
+                        <>
+                          <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-50 sm:hidden" onClick={() => setDrilldownDatePickerOpen(false)} />
+                          <div className="fixed inset-x-4 top-24 z-50 bg-white border border-slate-200 rounded-2xl p-4 shadow-2xl space-y-3 sm:absolute sm:inset-auto sm:right-0 sm:top-14 sm:w-72">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                              <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                                <Calendar size={14} className="text-blue-600" /> Filter Leads by Date
+                              </span>
+                              <button type="button" onClick={() => setDrilldownDatePickerOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                                <X size={15} />
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                              <button
+                                type="button"
+                                onClick={() => { setDrilldownDateFilterMode('single'); setDrilldownStartDate(''); setDrilldownEndDate(''); setDrilldownPage(1); }}
+                                className={`py-1 rounded-lg transition-all cursor-pointer ${drilldownDateFilterMode === 'single' ? 'bg-white text-blue-700 shadow-xs font-black' : 'text-slate-500'}`}
+                              >
+                                Single Date
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setDrilldownDateFilterMode('range'); setDrilldownCustomDate(''); setDrilldownPage(1); }}
+                                className={`py-1 rounded-lg transition-all cursor-pointer ${drilldownDateFilterMode === 'range' ? 'bg-white text-blue-700 shadow-xs font-black' : 'text-slate-500'}`}
+                              >
+                                Date Range
+                              </button>
+                            </div>
+
+                            {drilldownDateFilterMode === 'single' ? (
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-500 block">Select Specific Date:</label>
+                                <input
+                                  type="date"
+                                  value={drilldownCustomDate}
+                                  onChange={(e) => {
+                                    setDrilldownCustomDate(e.target.value)
+                                    setDrilldownStartDate('')
+                                    setDrilldownEndDate('')
+                                    setDrilldownPage(1)
+                                  }}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                />
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                <div>
+                                  <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Start Date:</label>
+                                  <input
+                                    type="date"
+                                    value={drilldownStartDate}
+                                    onChange={(e) => {
+                                      setDrilldownStartDate(e.target.value)
+                                      setDrilldownCustomDate('')
+                                      setDrilldownPage(1)
+                                    }}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-bold text-slate-500 block mb-0.5">End Date:</label>
+                                  <input
+                                    type="date"
+                                    value={drilldownEndDate}
+                                    onChange={(e) => {
+                                      setDrilldownEndDate(e.target.value)
+                                      setDrilldownCustomDate('')
+                                      setDrilldownPage(1)
+                                    }}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDrilldownCustomDate('')
+                                  setDrilldownStartDate('')
+                                  setDrilldownEndDate('')
+                                  setDrilldownDatePickerOpen(false)
+                                  setDrilldownPage(1)
+                                }}
+                                className="text-xs font-extrabold text-slate-400 hover:text-slate-600 cursor-pointer"
+                              >
+                                Clear Filter
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDrilldownDatePickerOpen(false)}
+                                className="bg-blue-600 text-white px-4 py-1.5 rounded-xl text-xs font-bold shadow-sm hover:bg-blue-500 cursor-pointer"
+                              >
+                                Apply Filter
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* 7. Campaign Filter */}
+                    <div className="relative flex-1">
+                      <label className="block text-[9px] font-black text-slate-500 uppercase mb-1">Campaign</label>
+                      <div className="relative">
+                        <select
+                          value={drilldownCampaign}
+                          onChange={(e) => {
+                            setDrilldownCampaign(e.target.value)
+                            setDrilldownPage(1)
+                          }}
+                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                            drilldownCampaign ? 'bg-blue-50/80 border-blue-300 text-blue-950 font-black' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <option value="">All Campaigns ({modalCampaigns.length})</option>
+                          {modalCampaigns.map((camp, idx) => (
+                            <option key={idx} value={camp}>{camp}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* 8. Lead Form / Source Filter */}
+                    <div className="relative flex-1">
+                      <label className="block text-[9px] font-black text-purple-600 uppercase mb-1">Lead Form / Source</label>
+                      <div className="relative">
+                        <select
+                          value={drilldownForm}
+                          onChange={(e) => {
+                            setDrilldownForm(e.target.value)
+                            setDrilldownPage(1)
+                          }}
+                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                            drilldownForm ? 'bg-purple-50/80 border-purple-300 text-purple-950 font-black' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <option value="">All Forms / Sources ({modalForms.length})</option>
+                          {modalForms.map((f, idx) => (
+                            <option key={idx} value={f}>{f}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Drawer Footer Actions */}
+                  {activeDrilldownFilterCount > 0 && (
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200/60">
+                      <span className="text-[11px] font-extrabold text-slate-500">
+                        {activeDrilldownFilterCount} filter{activeDrilldownFilterCount > 1 ? 's' : ''} applied
+                      </span>
+                      <button
+                        type="button"
+                        onClick={clearAllDrilldownFilters}
+                        className="text-xs font-black text-red-500 hover:text-red-700 hover:underline cursor-pointer"
+                      >
+                        Clear All Filters
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ACTIVE FILTER CHIPS (Visible even when filter drawer is collapsed) */}
+              {activeDrilldownFilterCount > 0 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar pt-0.5 flex-wrap">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-0.5">Active Filters:</span>
+                  
+                  {drilldownAgentFilter !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                      <span>Agent: {drilldownAgentFilter === 'UNASSIGNED' ? 'Unassigned' : (allSalesReps.find(r => r.id === drilldownAgentFilter)?.name || drilldownAgentFilter)}</span>
+                      <button onClick={() => { setDrilldownAgentFilter('ALL'); setDrilldownPage(1); }} className="hover:text-indigo-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  {drilldownNextActionFilter !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-purple-50 text-purple-800 border border-purple-200">
+                      <span>Schedule: {drilldownNextActionFilter}</span>
+                      <button onClick={() => { setDrilldownNextActionFilter('ALL'); setDrilldownPage(1); }} className="hover:text-purple-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  {drilldownNextActionType !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-purple-50 text-purple-800 border border-purple-200">
+                      <span>Type: {drilldownNextActionType}</span>
+                      <button onClick={() => { setDrilldownNextActionType('ALL'); setDrilldownPage(1); }} className="hover:text-purple-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  {drilldownDnpFilter !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-50 text-rose-800 border border-rose-200">
+                      <span>DNP: {drilldownDnpFilter}</span>
+                      <button onClick={() => { setDrilldownDnpFilter('ALL'); setDrilldownPage(1); }} className="hover:text-rose-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  {drilldownCustomDate && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-800 border border-blue-200">
+                      <span>Date: {drilldownCustomDate}</span>
+                      <button onClick={() => { setDrilldownCustomDate(''); setDrilldownPage(1); }} className="hover:text-blue-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  {drilldownStartDate && drilldownEndDate && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-800 border border-blue-200">
+                      <span>Date: {drilldownStartDate} → {drilldownEndDate}</span>
+                      <button onClick={() => { setDrilldownStartDate(''); setDrilldownEndDate(''); setDrilldownPage(1); }} className="hover:text-blue-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  {!drilldownCustomDate && (!drilldownStartDate || !drilldownEndDate) && drilldownDateRange !== 'ALL' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-800 border border-blue-200">
+                      <span>Created: {drilldownDateRange}</span>
+                      <button onClick={() => { setDrilldownDateRange('ALL'); setDrilldownPage(1); }} className="hover:text-blue-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  {drilldownCampaign && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-800 border border-blue-200">
+                      <span>Campaign: {drilldownCampaign}</span>
+                      <button onClick={() => { setDrilldownCampaign(''); setDrilldownPage(1); }} className="hover:text-blue-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  {drilldownForm && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-purple-50 text-purple-800 border border-purple-200">
+                      <span>Form: {drilldownForm}</span>
+                      <button onClick={() => { setDrilldownForm(''); setDrilldownPage(1); }} className="hover:text-purple-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  {drilldownStageFilter !== 'all' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-slate-200 text-slate-800 border border-slate-300">
+                      <span>Stage: {drilldownStageFilter}</span>
+                      <button onClick={() => { setDrilldownStageFilter('all'); setDrilldownPage(1); }} className="hover:text-slate-950 p-0.5 cursor-pointer"><X size={11} /></button>
+                    </span>
+                  )}
+
+                  <button
+                    onClick={clearAllDrilldownFilters}
+                    className="text-xs font-black text-red-500 hover:text-red-700 hover:underline px-2 py-0.5 cursor-pointer"
+                  >
+                    Reset all
+                  </button>
+                </div>
+              )}
+
               {/* Stage Filter Pills */}
               {modalStages.length > 1 && (
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar pt-1 border-t border-slate-100">
@@ -3102,18 +3634,176 @@ export default function AnalyticsPage() {
             {/* Modal Leads List */}
             {(() => {
               const filtered = drilldownModal.leads.filter(l => {
+                // 1. Stage filter
                 if (drilldownStageFilter !== 'all') {
                   const st = (l.pipeline_stage || l.status || 'New Lead').toLowerCase()
                   if (st !== drilldownStageFilter.toLowerCase()) return false
                 }
-                if (!drilldownModal.searchFilter.trim()) return true
-                const q = drilldownModal.searchFilter.toLowerCase().trim()
-                return (
-                  (l.name || '').toLowerCase().includes(q) ||
-                  (l.phone || '').includes(q) ||
-                  (l.pipeline_stage || '').toLowerCase().includes(q) ||
-                  (l.status || '').toLowerCase().includes(q)
-                )
+
+                // 2. Search query filter
+                if (drilldownModal.searchFilter.trim()) {
+                  const q = drilldownModal.searchFilter.toLowerCase().trim()
+                  const nameMatch = (l.name || '').toLowerCase().includes(q)
+                  const phoneMatch = (l.phone || '').includes(q)
+                  const emailMatch = (l.email || '').toLowerCase().includes(q)
+                  const stageMatch = (l.pipeline_stage || '').toLowerCase().includes(q)
+                  const statusMatch = (l.status || '').toLowerCase().includes(q)
+                  const notesMatch = (l.notes || '').toLowerCase().includes(q)
+                  const campMatch = (l.campaign_name || l.ad_name || '').toLowerCase().includes(q)
+                  const formMatch = (l.form_name || l.source || '').toLowerCase().includes(q)
+                  if (!nameMatch && !phoneMatch && !emailMatch && !stageMatch && !statusMatch && !notesMatch && !campMatch && !formMatch) {
+                    return false
+                  }
+                }
+
+                // 3. Assigned Agent Filter
+                if (drilldownAgentFilter !== 'ALL') {
+                  if (drilldownAgentFilter === 'UNASSIGNED') {
+                    if (l.assigned_to || l.user_id) return false
+                  } else {
+                    if (l.assigned_to !== drilldownAgentFilter && l.user_id !== drilldownAgentFilter) return false
+                  }
+                }
+
+                // 4. Date Created Preset Filter
+                const hasCustomDate = !!drilldownCustomDate || (!!drilldownStartDate && !!drilldownEndDate)
+                if (!hasCustomDate && drilldownDateRange !== 'ALL') {
+                  const rawDateStr = l.facebook_created_at || l.created_at
+                  if (!rawDateStr) return false
+                  const leadDate = new Date(rawDateStr)
+                  const now = new Date()
+                  if (isNaN(leadDate.getTime())) return false
+
+                  if (drilldownDateRange === 'TODAY') {
+                    const match = leadDate.getFullYear() === now.getFullYear() &&
+                                  leadDate.getMonth() === now.getMonth() &&
+                                  leadDate.getDate() === now.getDate()
+                    if (!match) return false
+                  } else if (drilldownDateRange === 'YESTERDAY') {
+                    const yest = new Date(now)
+                    yest.setDate(now.getDate() - 1)
+                    const match = leadDate.getFullYear() === yest.getFullYear() &&
+                                  leadDate.getMonth() === yest.getMonth() &&
+                                  leadDate.getDate() === yest.getDate()
+                    if (!match) return false
+                  } else if (drilldownDateRange === '7D') {
+                    const limit = new Date(now)
+                    limit.setDate(now.getDate() - 7)
+                    if (leadDate < limit) return false
+                  } else if (drilldownDateRange === '30D') {
+                    const limit = new Date(now)
+                    limit.setDate(now.getDate() - 30)
+                    if (leadDate < limit) return false
+                  }
+                }
+
+                // 5. Custom Date / Range Filter
+                if (drilldownCustomDate) {
+                  const rawDateStr = l.created_at || l.facebook_created_at || l.last_call_at
+                  if (!rawDateStr) return false
+                  const leadDate = new Date(rawDateStr)
+                  if (isNaN(leadDate.getTime())) return false
+                  const [tY, tM, tD] = drilldownCustomDate.split('-').map(Number)
+                  if (tY && tM && tD) {
+                    if (leadDate.getFullYear() !== tY || (leadDate.getMonth() + 1) !== tM || leadDate.getDate() !== tD) {
+                      return false
+                    }
+                  }
+                } else if (drilldownStartDate && drilldownEndDate) {
+                  const rawDateStr = l.created_at || l.facebook_created_at || l.last_call_at
+                  if (!rawDateStr) return false
+                  const leadDate = new Date(rawDateStr)
+                  if (isNaN(leadDate.getTime())) return false
+                  const [sY, sM, sD] = drilldownStartDate.split('-').map(Number)
+                  const [eY, eM, eD] = drilldownEndDate.split('-').map(Number)
+                  if (sY && sM && sD && eY && eM && eD) {
+                    const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
+                    const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
+                    if (leadDate < start || leadDate > end) return false
+                  }
+                }
+
+                // 6. DNP Filter
+                if (drilldownDnpFilter !== 'ALL') {
+                  let cf: any = l.custom_fields
+                  if (typeof cf === 'string') {
+                    try { cf = JSON.parse(cf) } catch (e) {}
+                  }
+                  const count = l.dnp_count || cf?.dnp_count || 0
+                  if (drilldownDnpFilter === 'DNP_ONLY' && count <= 0) return false
+                  if (drilldownDnpFilter === 'DNP_1' && count !== 1) return false
+                  if (drilldownDnpFilter === 'DNP_2' && count !== 2) return false
+                  if (drilldownDnpFilter === 'DNP_3PLUS' && count < 3) return false
+                  if (drilldownDnpFilter === 'NO_DNP' && count > 0) return false
+                }
+
+                // 7. Next Action Timing & Type Filter
+                let cf: any = l.custom_fields
+                if (typeof cf === 'string') {
+                  try { cf = JSON.parse(cf) } catch (e) {}
+                }
+                const actionDateStr = l.next_action_date || l.next_followup || cf?.next_action_date || l.booked_time
+                const hasActionDate = !!actionDateStr
+
+                if (drilldownNextActionFilter !== 'ALL') {
+                  let isPast = false
+                  let isToday = false
+                  let isFuture = false
+
+                  if (hasActionDate) {
+                    const actionDateObj = new Date(actionDateStr)
+                    if (!isNaN(actionDateObj.getTime())) {
+                      const now = new Date()
+                      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+                      if (actionDateObj < startOfToday) {
+                        isPast = true
+                      } else if (actionDateObj >= startOfToday && actionDateObj <= endOfToday) {
+                        isToday = true
+                      } else {
+                        isFuture = true
+                      }
+                    }
+                  }
+
+                  if (drilldownNextActionFilter === 'HAS_ACTION' && !hasActionDate) return false
+                  if (drilldownNextActionFilter === 'TODAY' && (!hasActionDate || !isToday)) return false
+                  if (drilldownNextActionFilter === 'OVERDUE' && (!hasActionDate || !isPast)) return false
+                  if (drilldownNextActionFilter === 'UPCOMING' && (!hasActionDate || !isFuture)) return false
+                  if (drilldownNextActionFilter === 'NO_ACTION' && hasActionDate) return false
+                }
+
+                if (drilldownNextActionType !== 'ALL') {
+                  const rawActType = (cf?.next_action_type || l.next_action_type || l.last_followup_type || 'Call').trim().toLowerCase()
+                  let actType = 'Call'
+                  if (rawActType === 'revisit' || rawActType.includes('revisit')) actType = 'Revisit'
+                  else if (rawActType.includes('closing')) actType = 'Closing Meeting'
+                  else if (rawActType.includes('home')) actType = 'Home Meeting'
+                  else if (rawActType === 'visit' || rawActType.includes('visit') || rawActType.includes('site')) actType = 'Visit'
+                  else if (rawActType.includes('whatsapp')) actType = 'WhatsApp'
+                  else if (rawActType.includes('email')) actType = 'Email'
+                  else if (rawActType.includes('call')) actType = 'Call'
+                  else actType = 'Call'
+
+                  if (actType.toLowerCase() !== drilldownNextActionType.toLowerCase()) return false
+                }
+
+                // 8. Campaign Filter
+                if (drilldownCampaign) {
+                  const campTarget = drilldownCampaign.toLowerCase().trim()
+                  const campName = (l.campaign_name || l.ad_name || cf?.campaign_name || '').toLowerCase()
+                  if (!campName.includes(campTarget)) return false
+                }
+
+                // 9. Lead Form / Source Filter
+                if (drilldownForm) {
+                  const formTarget = drilldownForm.toLowerCase().trim()
+                  const formName = (l.form_name || l.source || '').toLowerCase()
+                  if (!formName.includes(formTarget)) return false
+                }
+
+                return true
               })
 
               const sortedFiltered = [...filtered].sort((a, b) => {
@@ -3259,7 +3949,7 @@ export default function AnalyticsPage() {
                           </thead>
                           <tbody className="divide-y divide-slate-100 text-xs">
                             {paginatedLeads.map((lead: any) => {
-                              const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
+                      const assignedRep = allSalesReps.find(r => r.id === lead.assigned_to)?.name || 'Unassigned'
                               let cf: any = lead.custom_fields
                               if (typeof cf === 'string') {
                                 try { cf = JSON.parse(cf) } catch (e) {}
@@ -3272,6 +3962,7 @@ export default function AnalyticsPage() {
 
                               const rawNextDate = lead.next_followup || cf?.next_action_date || lead.booked_time
                               const nextActionType = (cf?.next_action_type || lead.next_action_type || 'Call').trim()
+                              const nextActionRemark = (cf?.next_action_remark || cf?.next_remarks || lead.next_action_remark || '').trim()
 
                               let nextActionFormatted = ''
                               if (rawNextDate) {
@@ -3298,6 +3989,11 @@ export default function AnalyticsPage() {
                                       title="Open Lead Details"
                                     >
                                       <span>{lead.name || 'Unknown Prospect'}</span>
+                                      {isLeadLastStatusDnp(lead) && (
+                                        <span className="px-1.5 py-0.2 text-[9px] font-black rounded bg-rose-100 text-rose-800 border border-rose-300 shrink-0 inline-flex items-center gap-0.5 shadow-2xs">
+                                          <PhoneOff size={9} /> DNP
+                                        </span>
+                                      )}
                                       {isVisited && (
                                         <span className="px-1.5 py-0.2 text-[9px] font-black rounded bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-0.5 shadow-2xs">
                                           <span className="w-1 h-1 rounded-full bg-emerald-500"></span>
@@ -3354,6 +4050,11 @@ export default function AnalyticsPage() {
                                           {nextActionType}
                                         </span>
                                         <span>{nextActionFormatted}</span>
+                                        {nextActionRemark && (
+                                          <span className="block text-[10px] text-indigo-950 font-semibold italic mt-0.5 truncate max-w-[200px]" title={nextActionRemark}>
+                                            💬 {nextActionRemark}
+                                          </span>
+                                        )}
                                       </div>
                                     ) : (
                                       <span className="text-slate-400 text-[11px] italic">—</span>
@@ -3463,6 +4164,11 @@ export default function AnalyticsPage() {
                                     {lead.name || 'Unknown Prospect'}
                                   </h4>
                                   <LeadScoreBadge lead={lead} size="sm" showDetails />
+                                  {isLeadLastStatusDnp(lead) && (
+                                    <span className="px-2 py-0.5 text-[10px] font-black rounded-md bg-rose-100 text-rose-800 border border-rose-300 shrink-0 inline-flex items-center gap-1 shadow-2xs">
+                                      <PhoneOff size={10} /> DNP
+                                    </span>
+                                  )}
                                   {isVisited && (
                                     <span className="px-2 py-0.5 text-[10px] font-black rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-1 shadow-2xs">
                                       <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse"></span>
