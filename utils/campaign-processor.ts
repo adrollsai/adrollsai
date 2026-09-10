@@ -710,6 +710,8 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         logToFile("--- CREATING ADS ---");
         let successfulAds = 0;
         let lastDraftError = false;
+        let lastAdError: any = null;
+        let lastCreativeError: any = null;
 
         for (let i = 0; i < uploadedCreatives.length; i++) {
             const creativeItem = uploadedCreatives[i];
@@ -717,9 +719,9 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
             const ctaType = campaignType === 'whatsapp_chat' ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
             const ctaValue: any = {};
-            if (isWebsiteCampaign) {
-                ctaValue.link = linkUrl;
-            } else if (campaignType === 'whatsapp_chat') {
+            if (campaignType === 'whatsapp_chat') {
+                ctaValue.app_destination = 'WHATSAPP';
+            } else if (isWebsiteCampaign) {
                 ctaValue.link = linkUrl;
             } else {
                 ctaValue.lead_gen_form_id = leadFormId;
@@ -733,20 +735,19 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             };
 
             if (creativeItem.type === 'video') {
-                const videoCtaValue = campaignType === 'whatsapp_chat' ? { app_destination: 'WHATSAPP' } : ctaValue;
                 creativePayload.object_story_spec.video_data = {
                     video_id: creativeItem.videoId,
                     message: copy.primary_text,
                     title: copy.headline,
                     image_hash: globalThumbHash,
-                    call_to_action: { type: ctaType, value: videoCtaValue }
+                    call_to_action: { type: ctaType, value: ctaValue }
                 };
             } else {
                 creativePayload.object_story_spec.link_data = {
                     message: copy.primary_text,
                     name: copy.headline,
                     description: copy.description,
-                    link: linkUrl,
+                    link: campaignType === 'whatsapp_chat' ? `https://api.whatsapp.com/send?phone=${(whatsappNumber || '').replace(/[^0-9]/g, '')}` : linkUrl,
                     image_hash: creativeItem.hash,
                     call_to_action: { type: ctaType, value: ctaValue }
                 };
@@ -758,7 +759,12 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 body: JSON.stringify(creativePayload),
             });
             const creativeData = await creativeRes.json();
-            if (!creativeRes.ok) { logToFile(`Creative ${i + 1} Failed:`, creativeData); continue; }
+            if (!creativeRes.ok) { 
+                lastCreativeError = creativeData.error;
+                const creativeErr = creativeData.error?.error_user_msg || creativeData.error?.message || JSON.stringify(creativeData);
+                logToFile(`Creative ${i + 1} Failed: ${creativeErr}`, creativeData);
+                continue; 
+            }
 
             // Persist copy to assets table
             try {
@@ -800,6 +806,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
                 if (!retryRes.ok) {
                     logToFile(`Ad ${i + 1} Retry with status PAUSED also Failed:`, retryData);
+                    lastAdError = retryData.error || adData.error;
                     if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) lastDraftError = true;
                 } else {
                     logToFile(`Ad ${i + 1} Created successfully as PAUSED/Draft.`);
@@ -817,7 +824,38 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             if (lastDraftError) {
                 finalMessage = "Campaign DRAFTED! ⚠️ Payment Method Missing: Saved in Ads Manager.";
             } else {
-                const errMsg = firstUploadError?.message || "All ad creative creations failed. Please check your Meta Ad Account permissions and settings.";
+                // Auto-cleanup: Pause orphan campaign on Meta so an empty campaign doesn't remain ACTIVE
+                if (campaignId) {
+                    try {
+                        await fetch(`${FB_MARKETING_URL}/${campaignId}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'PAUSED', access_token: facebookToken })
+                        });
+                        logToFile(`Paused orphan campaign ${campaignId} on Meta due to ad creation failure.`);
+                    } catch (cleanupErr) { /* ignore cleanup error */ }
+                }
+
+                let errMsg = "Ad creation failed on Meta. Please check your Meta Ad Account settings.";
+                if (lastAdError) {
+                    const subcode = lastAdError.error_subcode;
+                    const userMsg = lastAdError.error_user_msg;
+                    const userTitle = lastAdError.error_user_title;
+                    const rawMsg = lastAdError.message;
+                    
+                    if (subcode === 2859002 || userTitle?.toLowerCase().includes('certification') || userMsg?.toLowerCase().includes('nondiscrimination') || rawMsg?.toLowerCase().includes('nondiscrimination')) {
+                        errMsg = `Meta Non-Discrimination Certification Required: ${userMsg || 'You must certify compliance with Meta\'s non-discrimination policy before running ads. Visit facebook.com/certification/nondiscrimination to certify.'}`;
+                    } else if (userMsg) {
+                        errMsg = `Meta Ad Error (${userTitle || 'Policy'}): ${userMsg}`;
+                    } else if (rawMsg) {
+                        errMsg = `Meta Ad Error: ${rawMsg}`;
+                    }
+                } else if (lastCreativeError) {
+                    const cMsg = lastCreativeError.error_user_msg || lastCreativeError.message || JSON.stringify(lastCreativeError);
+                    errMsg = `Meta Ad Creative Error: ${cMsg}`;
+                } else if (firstUploadError?.message) {
+                    errMsg = `Creative Upload Error: ${firstUploadError.message}`;
+                }
                 throw new Error(errMsg);
             }
         } else {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil, BarChart4, Trash2, Search, Table as TableIcon, ArrowUpDown, ChevronDown, Filter, SlidersHorizontal, Layers, ArrowUpRight, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Plus, X, LayoutGrid, Zap, Sparkles, MapPin, RefreshCw, Loader2, CreditCard, Eye, MousePointerClick, Users, Image as ImageIcon, Upload, CheckCircle, Check, Settings2, PlusCircle, Maximize2, TrendingUp, ExternalLink, PlayCircle, PauseCircle, Video, XCircle, ArrowRight, Link2, Pencil, BarChart4, Trash2, Search, Table as TableIcon, ArrowUpDown, ChevronDown, Filter, SlidersHorizontal, Layers, ArrowUpRight, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
@@ -437,10 +437,25 @@ export default function AdsPage() {
         } else if (data.status === 'failed') {
           clearInterval(poll);
           setLaunchJobStatus('failed');
-          toast.error('❌ Campaign Launch Failed', { 
-            description: data.message || 'Meta rejected the campaign request. Your launch credit has been refunded.',
-            duration: 15000 
-          });
+          const errorMsg = data.message || 'Meta rejected the campaign request. Your launch credit has been refunded.';
+          const isCertificationError = errorMsg.toLowerCase().includes('certification') || errorMsg.toLowerCase().includes('nondiscrimination') || errorMsg.toLowerCase().includes('non-discrimination');
+          
+          if (isCertificationError) {
+            toast.error('⚠️ Non-Discrimination Policy Certification Required', { 
+              description: errorMsg,
+              duration: 25000,
+              action: {
+                label: 'Certify on Meta',
+                onClick: () => window.open('https://www.facebook.com/certification/nondiscrimination', '_blank')
+              }
+            });
+            if (selectedAdAccountId) checkAccountStatus(selectedAdAccountId, adForm.pageId);
+          } else {
+            toast.error('❌ Campaign Launch Failed', { 
+              description: errorMsg,
+              duration: 15000 
+            });
+          }
           setLaunchJobId(null);
         } else {
           setLaunchJobStatus(data.status === 'processing' ? 'processing' : 'queued');
@@ -2173,6 +2188,27 @@ export default function AdsPage() {
             {/* Warnings / Error banner section */}
             {!checkingSanity && (
               <div className="mt-5 space-y-2.5">
+                {accountStatus?.certificationRequired && (
+                  <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl text-xs text-amber-950 font-medium leading-relaxed flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-300">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold text-amber-900 block text-sm mb-0.5">Meta Non-Discrimination Certification Required</span>
+                        <p className="text-amber-800 text-xs">
+                          {accountStatus.certificationMessage || 'Meta requires this ad account to certify compliance with the Non-Discrimination Policy before ads can be published.'}
+                        </p>
+                      </div>
+                    </div>
+                    <a
+                      href="https://www.facebook.com/certification/nondiscrimination"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold shadow-sm transition-all text-xs shrink-0 self-start sm:self-auto"
+                    >
+                      Certify on Facebook <ExternalLink size={13} />
+                    </a>
+                  </div>
+                )}
                 {accountStatus?.error && (
                   <div className="bg-rose-50 border border-rose-100/80 p-4 rounded-2xl text-xs text-rose-800 font-semibold leading-relaxed flex items-start gap-3 animate-in fade-in duration-300">
                     <XCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />

@@ -149,13 +149,35 @@ export async function GET(request: Request) {
             }
         }
 
+        let certificationRequired = false;
+        let certificationMessage = '';
+        try {
+            const { data: latestJob } = await supabase
+                .from('campaign_jobs')
+                .select('status, message')
+                .eq('target_user_id', targetUserId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (latestJob?.status === 'failed' && (
+                latestJob.message?.toLowerCase().includes('certification') || 
+                latestJob.message?.toLowerCase().includes('nondiscrimination') ||
+                latestJob.message?.toLowerCase().includes('non-discrimination')
+            )) {
+                certificationRequired = true;
+                certificationMessage = latestJob.message;
+            }
+        } catch (jobErr) {}
+
         logToFile(`[Check-Account API] Success check results`, {
             account_status: data.account_status,
             has_payment_method: hasPaymentMethod,
             balance: data.balance,
             prepaid_balance: prepaidBalance,
             currency: data.currency,
-            leadgenTosAccepted: leadgenTos?.leadgen_tos?.accepted
+            leadgenTosAccepted: leadgenTos?.leadgen_tos?.accepted,
+            certificationRequired
         });
 
         return NextResponse.json({
@@ -169,7 +191,9 @@ export async function GET(request: Request) {
             funding_source_details: data.funding_source_details,
             currency: data.currency,
             leadgenTos,
-            pageId: effectivePageId
+            pageId: effectivePageId,
+            certificationRequired,
+            certificationMessage
         })
     } catch (error: any) {
         logToFile(`[Check-Account API] Catch block error: ${error.message}`);
