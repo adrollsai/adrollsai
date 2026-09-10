@@ -471,7 +471,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
         // --- Step 4: Create Lead Form ---
         let leadFormId = null;
-        if (!isWebsiteCampaign) {
+        if (campaignType === 'instant_form') {
             logToFile("--- CREATING LEAD FORM ---");
 
             let metaCustomQuestions: any[] = [];
