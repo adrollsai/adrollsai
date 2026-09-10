@@ -2199,14 +2199,24 @@ export default function AdsPage() {
                         </p>
                       </div>
                     </div>
-                    <a
-                      href="https://www.facebook.com/certification/nondiscrimination"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold shadow-sm transition-all text-xs shrink-0 self-start sm:self-auto"
-                    >
-                      Certify on Facebook <ExternalLink size={13} />
-                    </a>
+                    <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                      <button
+                        onClick={() => {
+                          setAccountStatus((prev: any) => prev ? { ...prev, certificationRequired: false } : null);
+                        }}
+                        className="px-3 py-2 text-amber-800 hover:text-amber-950 font-bold hover:bg-amber-100/60 rounded-xl transition-all text-xs"
+                      >
+                        Dismiss
+                      </button>
+                      <a
+                        href="https://www.facebook.com/certification/nondiscrimination"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold shadow-sm transition-all text-xs whitespace-nowrap"
+                      >
+                        Certify on Facebook <ExternalLink size={13} />
+                      </a>
+                    </div>
                   </div>
                 )}
                 {accountStatus?.error && (
