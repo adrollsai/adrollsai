@@ -2195,14 +2195,16 @@ RULES:
 
                                     const parsedQuestionsList: { index: number; key: string; question: string; options: string[] }[] = [];
                                     if (Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
-                                        ownerQualifyingQuestions.forEach((item: any, idx: number) => {
-                                            if (typeof item === 'string') {
-                                                const match = item.match(/\(([^)]+)\)/);
-                                                const qText = item.replace(/\s*\([^)]+\)/, '').trim();
-                                                const options = match ? match[1].split(',').map((s: string) => s.trim()).filter(Boolean) : [];
-                                                const key = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
-                                                parsedQuestionsList.push({ index: idx, key, question: qText || item, options });
-                                            } else if (typeof item === 'object' && item !== null) {
+                                        ownerQualifyingQuestions.forEach((rawItem: any, idx: number) => {
+                                            let item = rawItem;
+                                            if (typeof item === 'string' && item.trim().startsWith('{')) {
+                                                try {
+                                                    const parsed = JSON.parse(item);
+                                                    if (parsed && typeof parsed === 'object') item = parsed;
+                                                } catch (e) {}
+                                            }
+
+                                            if (typeof item === 'object' && item !== null) {
                                                 const qText = item.question || item.text || `Question ${idx + 1}`;
                                                 const key = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
                                                 parsedQuestionsList.push({
@@ -2211,6 +2213,12 @@ RULES:
                                                     question: qText,
                                                     options: Array.isArray(item.options) ? item.options : []
                                                 });
+                                            } else if (typeof item === 'string') {
+                                                const match = item.match(/\(([^)]+)\)/);
+                                                const qText = item.replace(/\s*\([^)]+\)/, '').trim();
+                                                const options = match ? match[1].split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+                                                const key = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
+                                                parsedQuestionsList.push({ index: idx, key, question: qText || item, options });
                                             }
                                         });
                                     }
