@@ -340,6 +340,26 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [broadcastTargetAudienceType, setBroadcastTargetAudienceType] = useState<'all' | 'custom' | 'audience_group'>('all')
   const [selectedBroadcastAudienceGroup, setSelectedBroadcastAudienceGroup] = useState<string>('')
   const [audienceGroups, setAudienceGroups] = useState<any[]>([])
+  const [loadingAudienceGroups, setLoadingAudienceGroups] = useState(false)
+
+  const fetchAudienceGroups = async () => {
+    if (!userId) return
+    try {
+      setLoadingAudienceGroups(true)
+      const res = await fetch(`/api/audiences?impersonate=${userId}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && Array.isArray(data.audiences)) {
+          setAudienceGroups(data.audiences)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load fresh audience groups:', err)
+    } finally {
+      setLoadingAudienceGroups(false)
+    }
+  }
+
   const [campaignsWithCounts, setCampaignsWithCounts] = useState<{ name: string; count: number }[]>([])
   const [broadcastCampaignSearch, setBroadcastCampaignSearch] = useState('')
   const [selectedBroadcastSources, setSelectedBroadcastSources] = useState<string[]>([])
@@ -558,9 +578,21 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   // Refetch lists depending on active tab
   useEffect(() => {
     if (activeTab === 'templates') fetchTemplates()
-    if (activeTab === 'broadcasts') fetchBroadcasts()
+    if (activeTab === 'broadcasts') {
+      fetchBroadcasts()
+      fetchAudienceGroups()
+    }
     if (activeTab === 'drips') fetchFlows()
   }, [activeTab])
+
+  // Refetch audience groups when window refocuses (e.g. returning from audience maker tab)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (userId) fetchAudienceGroups()
+    }
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [userId])
 
   // Facebook SDK Load (Standard Onboarding)
   useEffect(() => {
@@ -2169,14 +2201,27 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                           <label className="text-[11px] font-black text-emerald-900 uppercase tracking-wider">
                             Choose Saved Audience Group
                           </label>
-                          <a 
-                            href={`/dashboard/audiences${userId ? `?impersonate=${userId}` : ''}`} 
-                            target="_blank" 
-                            rel="noreferrer"
-                            className="text-[10px] font-bold text-emerald-700 hover:underline"
-                          >
-                            + Create New Group
-                          </a>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={fetchAudienceGroups}
+                              disabled={loadingAudienceGroups}
+                              className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              title="Refresh saved audience groups"
+                            >
+                              <RefreshCw size={11} className={loadingAudienceGroups ? 'animate-spin' : ''} />
+                              Refresh
+                            </button>
+                            <span className="text-emerald-300">|</span>
+                            <a 
+                              href={`/dashboard/audiences${userId ? `?impersonate=${userId}` : ''}`} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-[10px] font-bold text-emerald-700 hover:underline"
+                            >
+                              + Create New Group
+                            </a>
+                          </div>
                         </div>
                         {audienceGroups.length > 0 ? (
                           <select
@@ -2197,11 +2242,17 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                             No audience groups created yet. Click above to build your first audience group!
                           </div>
                         )}
-                        {selectedBroadcastAudienceGroup && (
-                          <p className="text-[10px] font-semibold text-emerald-800">
-                            ✓ Targeting all verified leads tagged under "{selectedBroadcastAudienceGroup}"
-                          </p>
-                        )}
+                        {selectedBroadcastAudienceGroup && (() => {
+                          const currentGrp = audienceGroups.find((g: any) => g.name === selectedBroadcastAudienceGroup)
+                          return (
+                            <div className="text-[10px] font-semibold text-emerald-800 flex items-center justify-between bg-white/80 p-2 rounded-lg border border-emerald-200/60">
+                              <span>✓ Targeting all verified leads tagged under "{selectedBroadcastAudienceGroup}"</span>
+                              <span className="font-black text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded-full">
+                                {currentGrp?.leadCount ?? 0} leads
+                              </span>
+                            </div>
+                          )
+                        })()}
                       </div>
                     )}
 
