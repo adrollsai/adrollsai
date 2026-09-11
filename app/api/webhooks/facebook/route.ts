@@ -84,6 +84,80 @@ async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
     return selectedAgent;
 }
 
+async function extractLeadNameWithAI(rawText: string): Promise<{ hasName: boolean; name: string | null; isQuestionOrRefusal: boolean }> {
+    const raw = (rawText || '').trim();
+    if (!raw || raw.length < 2) {
+        return { hasName: false, name: null, isQuestionOrRefusal: false };
+    }
+
+    const dsKey = process.env.DEEPSEEK_API_KEY || 'sk-20cf24c78eeb44669f22cd92b2d0382f';
+    const prompt = `You are an entity extractor. A WhatsApp bot asked: "May I know your good name please?".
+The user replied: "${raw}"
+
+Task:
+1. Determine if the user provided their name (e.g. "My name is Rahul", "Rahul", "my name is rahul sharma", "mera naam Gaurav hai", "Rahul Sharma here from Mohali", "Dr. Mehta", "call me Rohan", "Amit").
+   - If YES: Extract ONLY the clean, Title-Cased person's name (e.g. "Rahul", "Rahul Sharma", "Gaurav Sharma"). Remove all filler words ("my name is", "mera naam", "here", "from Mohali", "i am", "call me", "hai", "this is").
+   - Set "has_name": true, "name": "<Clean Title-Cased Name>", "is_question_or_refusal": false.
+2. If the user did NOT provide a name (e.g. they asked a question "what is the price?", "send brochure first", "location?", or said "why?", "no", "nahi", "pehle details do"):
+   - Set "has_name": false, "name": null, "is_question_or_refusal": true.
+
+Return ONLY a valid JSON object without markdown formatting:
+{"has_name": boolean, "name": string | null, "is_question_or_refusal": boolean}`;
+
+    try {
+        let content = '';
+        if (dsKey) {
+            try {
+                const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${dsKey}`
+                    },
+                    body: JSON.stringify({
+                        model: 'deepseek-chat',
+                        messages: [{ role: 'user', content: prompt }],
+                        temperature: 0.1
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    content = data.choices?.[0]?.message?.content || '';
+                }
+            } catch (dsErr) {
+                console.warn('[extractLeadNameWithAI] DeepSeek fetch failed, falling back to Gemini:', dsErr);
+            }
+        }
+
+        if (!content && process.env.GEMINI_API_KEY) {
+            const { text } = await callGeminiWithUsage(prompt);
+            content = text;
+        }
+
+        if (content) {
+            const cleanJson = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(cleanJson);
+            if (parsed && typeof parsed.has_name === 'boolean') {
+                return {
+                    hasName: !!parsed.has_name && !!parsed.name,
+                    name: parsed.name ? String(parsed.name).trim() : null,
+                    isQuestionOrRefusal: !!parsed.is_question_or_refusal
+                };
+            }
+        }
+    } catch (err) {
+        console.error('[extractLeadNameWithAI] Error parsing AI response:', err);
+    }
+
+    // Heuristic fallback if AI is completely unavailable
+    const cleaned = raw.replace(/^(my name is|i am|this is|name:|mera naam|call me)\s*/i, '').split('\n')[0].trim().slice(0, 40);
+    if (cleaned.includes('?') || cleaned.split(' ').length > 4 || /\b(price|brochure|location|details|kahan|cost|budget|rates|no|nahi)\b/i.test(cleaned)) {
+        return { hasName: false, name: null, isQuestionOrRefusal: true };
+    }
+    const titleCased = cleaned.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    return { hasName: titleCased.length >= 2, name: titleCased, isQuestionOrRefusal: false };
+}
+
 async function logPastWhatsAppHistory(supabaseAdmin: any, chatId: string, leadId: string, cutoffCreatedAt: string | null) {
   try {
     let query = supabaseAdmin
@@ -2340,45 +2414,77 @@ RULES:
                                     }
 
                                         // Check if we are waiting for the lead's name after qualification questions
-                                        if (currentCustomFields?.awaiting_lead_name && messageText && messageText.trim().length > 1 && !buttonReplyId) {
-                                            const cleanedName = messageText.trim()
-                                                .replace(/^(my name is|i am|this is|name:)\s*/i, '')
-                                                .split('\n')[0]
-                                                .slice(0, 50);
+                                        if (currentCustomFields?.awaiting_lead_name && messageText && messageText.trim().length > 0 && !buttonReplyId) {
+                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} is in awaiting_lead_name state. Analyzing reply: "${messageText}" with AI.`);
+                                            const nameAnalysis = await extractLeadNameWithAI(messageText);
 
-                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} provided their name: "${cleanedName}". Updating CRM lead record.`);
+                                            if (nameAnalysis.hasName && nameAnalysis.name) {
+                                                const cleanedName = nameAnalysis.name;
+                                                console.log(`[WhatsApp Bot] Lead ${cleanFrom} provided their name: "${cleanedName}". Updating CRM lead record.`);
 
-                                            if (latestLead?.id) {
-                                                await supabaseAdmin.from('leads').update({ name: cleanedName }).eq('id', latestLead.id);
-                                            }
-                                            await supabaseAdmin.from('whatsapp_chats').update({ recipient_name: cleanedName }).eq('id', chat.id);
+                                                if (latestLead?.id) {
+                                                    await supabaseAdmin.from('leads').update({ name: cleanedName }).eq('id', latestLead.id);
+                                                }
+                                                await supabaseAdmin.from('whatsapp_chats').update({ recipient_name: cleanedName }).eq('id', chat.id);
 
-                                            await syncFieldsAndScore({
-                                                awaiting_lead_name: false,
-                                                lead_name_captured: true,
-                                                qualification_completed: true,
-                                                full_name: cleanedName
-                                            });
+                                                await syncFieldsAndScore({
+                                                    awaiting_lead_name: false,
+                                                    lead_name_captured: true,
+                                                    qualification_completed: true,
+                                                    full_name: cleanedName
+                                                });
 
-                                            // Send tailored lead magnet catalog link
-                                            if (isNobogentAccount) {
-                                                await sendCtaUrlMessage(
-                                                    `🎁 Platform Information for ${cleanedName}`,
-                                                    `Thank you, ${cleanedName}! 🎉 Here is your customized overview of Nobogent AI sales automation and capabilities:`,
-                                                    "Explore Nobogent 🚀",
-                                                    catalogueLink
-                                                );
+                                                // Send tailored lead magnet catalog link
+                                                if (isNobogentAccount) {
+                                                    await sendCtaUrlMessage(
+                                                        `🎁 Platform Information for ${cleanedName}`,
+                                                        `Thank you, ${cleanedName}! 🎉 Here is your customized overview of Nobogent AI sales automation and capabilities:`,
+                                                        "Explore Nobogent 🚀",
+                                                        catalogueLink
+                                                    );
+                                                } else {
+                                                    await sendCtaUrlMessage(
+                                                        `🎁 Tailored Catalog for ${cleanedName}`,
+                                                        `Thank you, ${cleanedName}! 🎉 Based on your requirements, here is your customized properties & inventory list with pricing and floor plans:`,
+                                                        "View Properties 🏢",
+                                                        catalogueLink
+                                                    );
+                                                }
+                                                await new Promise(r => setTimeout(r, 800));
+                                                await sendThreeButtons("What would you like to do next?");
+                                                return;
                                             } else {
-                                                await sendCtaUrlMessage(
-                                                    `🎁 Tailored Catalog for ${cleanedName}`,
-                                                    `Thank you, ${cleanedName}! 🎉 Based on your requirements, here is your customized properties & inventory list with pricing and floor plans:`,
-                                                    "View Properties 🏢",
-                                                    catalogueLink
-                                                );
+                                                // Prospect did not give their name (e.g. asked a question like "what is the price?" or refused)
+                                                console.log(`[WhatsApp Bot] Lead ${cleanFrom} did not provide a name (question/refusal). Answering inquiry and delivering catalog.`);
+                                                
+                                                // Answer their question/inquiry via AI without 3 generic action buttons
+                                                await answerCustomerQueryWithAI(messageText, true);
+
+                                                await syncFieldsAndScore({
+                                                    awaiting_lead_name: false,
+                                                    qualification_completed: true
+                                                });
+
+                                                await new Promise(r => setTimeout(r, 1000));
+                                                if (isNobogentAccount) {
+                                                    await sendCtaUrlMessage(
+                                                        "🚀 Nobogent AI Platform Overview",
+                                                        "Here is your customized overview of Nobogent AI sales automation and capabilities:",
+                                                        "Explore Nobogent 🚀",
+                                                        catalogueLink
+                                                    );
+                                                } else {
+                                                    await sendCtaUrlMessage(
+                                                        "🏢 Your Curated Details",
+                                                        "Here is your customized properties & inventory list with pricing and floor plans:",
+                                                        "View Properties 🏢",
+                                                        catalogueLink
+                                                    );
+                                                }
+                                                await new Promise(r => setTimeout(r, 800));
+                                                await sendThreeButtons("What would you like to do next?");
+                                                return;
                                             }
-                                            await new Promise(r => setTimeout(r, 800));
-                                            await sendThreeButtons("What would you like to do next?");
-                                            return;
                                         }
 
                                         // Dynamic MCQ button clicks (q_opt_{qIndex}_{optIndex})
