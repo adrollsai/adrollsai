@@ -468,6 +468,8 @@ async function handleSync(request: Request) {
 
                   cf = {
                     ...cf,
+                    is_instant_form: true,
+                    qualification_completed: true,
                     reopened_count: reopenedCount,
                     reopened_sources: updatedSources,
                     last_reopened_at: new Date().toISOString(),
@@ -520,7 +522,7 @@ async function handleSync(request: Request) {
                 facebook_created_at: fbLead.created_time,
                 form_id: formId,
                 form_name: formName,
-                custom_fields: customFields,
+                custom_fields: { ...(customFields || {}), is_instant_form: true, qualification_completed: true },
                 pipeline_stage: 'New Lead',
                 status: 'New Lead',
                 ad_name: adCampaignString,

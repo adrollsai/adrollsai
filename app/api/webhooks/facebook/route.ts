@@ -1297,7 +1297,7 @@ IMPORTANT RULES:
 
                                     let { data: latestLead } = await supabaseAdmin
                                         .from('leads')
-                                        .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, voice_call_status, voice_call_scheduled_at')
+                                        .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, voice_call_status, voice_call_scheduled_at')
                                         .eq('user_id', ownerUserId)
                                         .ilike('phone', `%${cleanFrom.slice(-10)}%`)
                                         .order('created_at', { ascending: false, nullsFirst: false })
@@ -1342,7 +1342,7 @@ IMPORTANT RULES:
                                         const { data: createdLead, error: createLeadErr } = await supabaseAdmin
                                             .from('leads')
                                             .insert(newLeadPayload)
-                                            .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, voice_call_status, voice_call_scheduled_at')
+                                            .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, voice_call_status, voice_call_scheduled_at')
                                             .single();
 
                                         if (createdLead) {
@@ -2175,6 +2175,37 @@ RULES:
                                     // Load existing lead custom fields
                                     let currentCustomFields = parseCustomFields(latestLead?.custom_fields || chat.flow_answers || {});
 
+                                    // Detect if this lead originated from a Meta/Facebook Lead Ad Instant Form
+                                    const isInstantFormLead = Boolean(
+                                        latestLead?.facebook_lead_id ||
+                                        latestLead?.form_id ||
+                                        (latestLead?.source && (latestLead.source === 'Facebook Ads' || latestLead.source.toLowerCase().includes('form'))) ||
+                                        currentCustomFields?.is_instant_form ||
+                                        (chat as any)?.flow_answers?.is_instant_form
+                                    );
+
+                                    if (isInstantFormLead) {
+                                        if (!currentCustomFields.is_instant_form || !currentCustomFields.qualification_completed) {
+                                            currentCustomFields.is_instant_form = true;
+                                            currentCustomFields.qualification_completed = true;
+                                            // Persist silently so future messages also recognize it immediately
+                                            try {
+                                                await supabaseAdmin.from('whatsapp_chats').update({
+                                                    flow_completed: true,
+                                                    flow_answers: currentCustomFields,
+                                                    updated_at: new Date().toISOString()
+                                                }).eq('id', chat.id);
+                                                if (latestLead?.id) {
+                                                    await supabaseAdmin.from('leads').update({
+                                                        custom_fields: currentCustomFields
+                                                    }).eq('id', latestLead.id);
+                                                }
+                                            } catch (persistErr) {
+                                                console.warn('[WhatsApp Bot] Failed to persist instant form status:', persistErr);
+                                            }
+                                        }
+                                    }
+
                                     // Helper: Sync Custom Fields and Recalculate Lead Score
                                     const syncFieldsAndScore = async (fieldsToMerge: Record<string, any>) => {
                                         currentCustomFields = { ...currentCustomFields, ...fieldsToMerge };
@@ -2185,6 +2216,8 @@ RULES:
                                         
                                         if (latestLead?.id) {
                                             const leadUpdates: Record<string, any> = { custom_fields: currentCustomFields };
+                                            if (currentCustomFields?.budget) leadUpdates.budget = currentCustomFields.budget;
+                                            if (currentCustomFields?.timeline) leadUpdates.timeline = currentCustomFields.timeline;
 
                                             // If qualification is completed on WhatsApp, cancel any scheduled voice call
                                             if (currentCustomFields?.qualification_completed) {
@@ -2200,7 +2233,7 @@ RULES:
                                                 .update(leadUpdates)
                                                 .eq('id', latestLead.id);
                                             
-                                            await updateLeadScoreInDB(supabaseAdmin, latestLead.id, ['property_type', 'budget', 'timeline']);
+                                            await updateLeadScoreInDB(supabaseAdmin, latestLead.id, ownerQualifyingQuestions || undefined);
                                         }
                                     };
 
@@ -2208,7 +2241,7 @@ RULES:
                                     const leadCampaignId = campaignId || latestLead?.campaign_id || adId;
                                     let matchedFlowQuestions: any[] | null = null;
 
-                                    if (leadCampaignId) {
+                                    if (!isInstantFormLead && leadCampaignId) {
                                         try {
                                             const { data: matchedFlow } = await supabaseAdmin
                                                 .from('whatsapp_question_flows')
@@ -2229,7 +2262,7 @@ RULES:
                                     }
 
                                     // Fallback: If no campaign-specific flow matched, check if there is any active flow for this user
-                                    if (!matchedFlowQuestions) {
+                                    if (!isInstantFormLead && !matchedFlowQuestions) {
                                         try {
                                             const { data: defaultFlow } = await supabaseAdmin
                                                 .from('whatsapp_question_flows')
@@ -2250,12 +2283,12 @@ RULES:
                                         }
                                     }
 
-                                    if (Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
+                                    if (!isInstantFormLead && Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
                                         ownerQualifyingEnabled = true;
                                     }
 
                                     const parsedQuestionsList: { index: number; key: string; question: string; options: string[] }[] = [];
-                                    if (Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
+                                    if (!isInstantFormLead && Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
                                         ownerQualifyingQuestions.forEach((rawItem: any, idx: number) => {
                                             let item = rawItem;
                                             if (typeof item === 'string' && item.trim().startsWith('{')) {
@@ -2295,7 +2328,7 @@ RULES:
                                         });
                                     }
 
-                                    if (parsedQuestionsList.length === 0) {
+                                    if (!isInstantFormLead && parsedQuestionsList.length === 0) {
                                         parsedQuestionsList.push(
                                             { index: 0, key: 'property_type', question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
                                             { index: 1, key: 'budget', question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
@@ -2352,8 +2385,8 @@ RULES:
                                             );
                                         }
 
-                                        // If qualification is not yet completed, gently follow up with the pending qualification question
-                                        if (!currentCustomFields?.qualification_completed) {
+                                        // If qualification is not yet completed, gently follow up with the pending qualification question (NON-instant form leads only)
+                                        if (!isInstantFormLead && !currentCustomFields?.qualification_completed) {
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
                                                 await new Promise(r => setTimeout(r, 1000));
@@ -2395,8 +2428,8 @@ RULES:
                                             leadId: targetLeadId
                                         }).catch(err => console.error('[WhatsApp Bot] Expert alert failed:', err));
 
-                                        // If qualification is not yet completed, ask pending question so expert gets lead context
-                                        if (!currentCustomFields?.qualification_completed) {
+                                        // If qualification is not yet completed, ask pending question so expert gets lead context (NON-instant form leads only)
+                                        if (!isInstantFormLead && !currentCustomFields?.qualification_completed) {
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
                                                 await new Promise(r => setTimeout(r, 1000));
@@ -2424,8 +2457,8 @@ RULES:
                                             bookingLink
                                         );
 
-                                        // If qualification is not yet completed, follow up with pending question
-                                        if (!currentCustomFields?.qualification_completed) {
+                                        // If qualification is not yet completed, follow up with pending question (NON-instant form leads only)
+                                        if (!isInstantFormLead && !currentCustomFields?.qualification_completed) {
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
                                                 await new Promise(r => setTimeout(r, 1000));
@@ -2563,9 +2596,9 @@ RULES:
                                             }
                                         }
 
-                                        // Dynamic Free-Text & Number reply handler for active qualification questions
-                                        const activeQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
-                                        if (activeQIndex !== -1 && messageText && messageText.trim().length > 0 && !buttonReplyId) {
+                                        // Dynamic Free-Text & Number reply handler for active qualification questions (NON-instant form leads only)
+                                        const activeQIndex = !isInstantFormLead ? parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]) : -1;
+                                        if (!isInstantFormLead && activeQIndex !== -1 && messageText && messageText.trim().length > 0 && !buttonReplyId) {
                                             const activeQ = parsedQuestionsList[activeQIndex];
                                             const hasAnyAnswer = parsedQuestionsList.some(q => currentCustomFields[q.key]);
 
@@ -2707,9 +2740,9 @@ RULES:
                                             }
                                         }
 
-                                        // 6. Default Fallback for New or In-Progress Leads:
+                                        // 6. Default Fallback for New or In-Progress Leads (NON-instant form leads only):
                                         // Check if any configured question is unanswered
-                                        const unansweredQ = parsedQuestionsList.find(q => !currentCustomFields[q.key]);
+                                        const unansweredQ = !isInstantFormLead ? parsedQuestionsList.find(q => !currentCustomFields[q.key]) : null;
                                         if (unansweredQ) {
                                             // If starting question 1, send encouraging lead magnet intro
                                             if (unansweredQ.index === 0 && Object.keys(currentCustomFields).filter(k => k !== 'lead_score' && k !== 'lead_tier').length === 0) {
@@ -2720,17 +2753,19 @@ RULES:
                                             return;
                                         }
 
-                                        // If all questions are answered but name not yet asked
-                                        if (!currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
+                                        // If all questions are answered but name not yet asked (NON-instant form leads only)
+                                        if (!isInstantFormLead && !currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
                                             await syncFieldsAndScore({ awaiting_lead_name: true });
                                             await sendTextMessage("Great! 🎉 To receive your tailored inventory list & brochure matched to your preferences, may I know your good name please?");
                                             return;
                                         }
 
-                                        // All questions answered: if user sends a greeting, greet warmly; otherwise answer with AI + inventory!
+                                        // All questions answered (or Instant Form lead): if user sends a greeting, greet warmly; otherwise answer with AI + inventory!
                                         const isGreeting = /^(hi|hello|hey|namaste|good morning|good afternoon|good evening|start|menu)$/i.test(messageText.trim().toLowerCase());
                                         if (isGreeting) {
-                                            await sendThreeButtons(`Hello! Welcome to ${ownerBusinessName || 'our team'}. What would you like to do?`);
+                                            const leadDisplayName = chat.recipient_name || latestLead?.name;
+                                            const greetingText = `Hello${leadDisplayName ? ' ' + leadDisplayName : ''}! 👋 Welcome to *${ownerBusinessName || 'our team'}*. How can we assist you today?`;
+                                            await sendThreeButtons(greetingText);
                                             return;
                                         }
 
@@ -3221,6 +3256,8 @@ RULES:
 
               cf = {
                 ...cf,
+                is_instant_form: true,
+                qualification_completed: true,
                 reopened_count: reopenedCount,
                 reopened_sources: updatedSources,
                 last_reopened_at: new Date().toISOString(),
@@ -3292,6 +3329,7 @@ RULES:
             facebook_created_at: fbLead.created_time,
             form_id: fbLead.form_id,
             form_name: formName,
+            custom_fields: { ...(customFields || {}), is_instant_form: true, qualification_completed: true },
             pipeline_stage: 'New Lead',
             status: 'New Lead',
             ad_name: adCampaignString,

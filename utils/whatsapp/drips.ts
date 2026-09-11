@@ -253,168 +253,96 @@ export async function sendInstantFormCatalogMessage(
         let messageSent = false;
         let sentMessageText = '';
 
-        // 1. Primary: Send real_estate_tailored_inventory qualification lead magnet template
+        // 1. Primary: auto_lead_welcome (Utility category, guaranteed delivery, no survey questions)
         try {
-            const qualifyPayload = {
+            const welcomePayload = {
                 messaging_product: 'whatsapp',
                 to: cleanPhone,
                 type: 'template',
                 template: {
-                    name: 'real_estate_tailored_inventory',
-                    language: { code: 'en_US' }
-                }
-            };
-
-            const qRes = await fetch(metaUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(qualifyPayload)
-            });
-            const qData = await qRes.json();
-            if (qRes.ok && qData.messages?.[0]?.id) {
-                messageSent = true;
-                sentMessageText = `Hi! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢`;
-                console.log(`[INSTANT CATALOG WA] Sent 'real_estate_tailored_inventory' to ${cleanPhone}: ${qData.messages[0].id}`);
-            } else {
-                console.log('[INSTANT CATALOG WA] real_estate_tailored_inventory not yet active/sent, trying lead_inventory_survey fallback:', qData);
-            }
-        } catch (qErr) {
-            console.warn('[INSTANT CATALOG WA] real_estate_tailored_inventory exception:', qErr);
-        }
-
-        // 2. Secondary: Try lead_inventory_survey (personalized version)
-        if (!messageSent) {
-            try {
-                const persPayload = {
-                    messaging_product: 'whatsapp',
-                    to: cleanPhone,
-                    type: 'template',
-                    template: {
-                        name: 'lead_inventory_survey',
-                        language: { code: 'en_US' },
-                        components: [
-                            {
-                                type: 'body',
-                                parameters: [
-                                    { type: 'text', text: leadName || 'there' }
-                                ]
-                            }
-                        ]
-                    }
-                };
-
-                const pRes = await fetch(metaUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(persPayload)
-                });
-                const pData = await pRes.json();
-                if (pRes.ok && pData.messages?.[0]?.id) {
-                    messageSent = true;
-                    sentMessageText = `Hi ${leadName || ''}! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢`;
-                    console.log(`[INSTANT CATALOG WA] Sent 'lead_inventory_survey' to ${cleanPhone}: ${pData.messages[0].id}`);
-                } else {
-                    console.log('[INSTANT CATALOG WA] lead_inventory_survey not yet active, falling back to auto_lead_welcome:', pData);
-                }
-            } catch (pErr) {
-                console.warn('[INSTANT CATALOG WA] lead_inventory_survey exception:', pErr);
-            }
-        }
-
-        // 3. Fallback: auto_lead_welcome (Utility category, guaranteed delivery)
-        if (!messageSent) {
-            try {
-                const welcomePayload = {
-                    messaging_product: 'whatsapp',
-                    to: cleanPhone,
-                    type: 'template',
-                    template: {
-                        name: 'auto_lead_welcome',
-                        language: { code: 'en_US' },
-                        components: [
-                            {
-                                type: 'body',
-                                parameters: [
-                                    { type: 'text', text: leadName || 'Valued Client' },
-                                    { type: 'text', text: companyName },
-                                    { type: 'text', text: campaignName || 'our premium properties' }
-                                ]
-                            }
-                        ]
-                    }
-                };
-
-                const autoRes = await fetch(metaUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(welcomePayload)
-                });
-                const autoData = await autoRes.json();
-                if (autoRes.ok && autoData.messages?.[0]?.id) {
-                    messageSent = true;
-                    sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for reaching out to ${companyName}. We have received your inquiry regarding ${campaignName || 'our premium properties'} and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!`;
-                    console.log(`[INSTANT CATALOG WA] Sent 'auto_lead_welcome' to ${cleanPhone}: ${autoData.messages[0].id}`);
-                } else {
-                    console.warn('[INSTANT CATALOG WA] auto_lead_welcome failed, trying instant_lead_catalog_welcome fallback:', autoData);
-                }
-            } catch (autoErr) {
-                console.warn('[INSTANT CATALOG WA] auto_lead_welcome exception:', autoErr);
-            }
-        }
-
-        // 2. Fallback to instant_lead_catalog_welcome
-        if (!messageSent) {
-            const catalogPayload = {
-                messaging_product: 'whatsapp',
-                to: cleanPhone,
-                type: 'template',
-                template: {
-                    name: 'instant_lead_catalog_welcome',
+                    name: 'auto_lead_welcome',
                     language: { code: 'en_US' },
                     components: [
                         {
                             type: 'body',
                             parameters: [
                                 { type: 'text', text: leadName || 'Valued Client' },
-                                { type: 'text', text: companyName }
-                            ]
-                        },
-                        {
-                            type: 'button',
-                            sub_type: 'url',
-                            index: '0',
-                            parameters: [
-                                { type: 'text', text: catalogUrlParam }
+                                { type: 'text', text: companyName },
+                                { type: 'text', text: campaignName || 'our premium properties' }
                             ]
                         }
                     ]
                 }
             };
 
-            const metaRes = await fetch(metaUrl, {
+            const autoRes = await fetch(metaUrl, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(catalogPayload)
+                body: JSON.stringify(welcomePayload)
             });
-            const metaData = await metaRes.json();
-            if (metaRes.ok && metaData.messages?.[0]?.id) {
+            const autoData = await autoRes.json();
+            if (autoRes.ok && autoData.messages?.[0]?.id) {
                 messageSent = true;
-                sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for showing interest in ${companyName}! We have received your inquiry. Click the button below to view our complete inventory catalog and current listings:`;
-                console.log(`[INSTANT CATALOG WA] Sent 'instant_lead_catalog_welcome' to ${cleanPhone}: ${metaData.messages[0].id}`);
+                sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for reaching out to ${companyName}. We have received your inquiry regarding ${campaignName || 'our premium properties'} and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!`;
+                console.log(`[INSTANT CATALOG WA] Sent 'auto_lead_welcome' to ${cleanPhone}: ${autoData.messages[0].id}`);
             } else {
-                console.error('[INSTANT CATALOG WA] instant_lead_catalog_welcome also failed:', metaData);
+                console.warn('[INSTANT CATALOG WA] auto_lead_welcome failed, trying instant_lead_catalog_welcome fallback:', autoData);
+            }
+        } catch (autoErr) {
+            console.warn('[INSTANT CATALOG WA] auto_lead_welcome exception:', autoErr);
+        }
+
+        // 2. Fallback: instant_lead_catalog_welcome (Direct catalog link button)
+        if (!messageSent) {
+            try {
+                const catalogPayload = {
+                    messaging_product: 'whatsapp',
+                    to: cleanPhone,
+                    type: 'template',
+                    template: {
+                        name: 'instant_lead_catalog_welcome',
+                        language: { code: 'en_US' },
+                        components: [
+                            {
+                                type: 'body',
+                                parameters: [
+                                    { type: 'text', text: leadName || 'Valued Client' },
+                                    { type: 'text', text: companyName }
+                                ]
+                            },
+                            {
+                                type: 'button',
+                                sub_type: 'url',
+                                index: '0',
+                                parameters: [
+                                    { type: 'text', text: catalogUrlParam }
+                                ]
+                            }
+                        ]
+                    }
+                };
+
+                const metaRes = await fetch(metaUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(catalogPayload)
+                });
+                const metaData = await metaRes.json();
+                if (metaRes.ok && metaData.messages?.[0]?.id) {
+                    messageSent = true;
+                    sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for showing interest in ${companyName}! We have received your inquiry. Click the button below to view our complete inventory catalog and current listings:`;
+                    console.log(`[INSTANT CATALOG WA] Sent 'instant_lead_catalog_welcome' to ${cleanPhone}: ${metaData.messages[0].id}`);
+                } else {
+                    console.error('[INSTANT CATALOG WA] instant_lead_catalog_welcome also failed:', metaData);
+                }
+            } catch (catErr) {
+                console.error('[INSTANT CATALOG WA] instant_lead_catalog_welcome exception:', catErr);
             }
         }
 
@@ -423,10 +351,16 @@ export async function sendInstantFormCatalogMessage(
             try {
                 let { data: existingChat } = await supabaseAdmin
                     .from('whatsapp_chats')
-                    .select('id')
+                    .select('id, flow_answers')
                     .eq('user_id', ownerId)
                     .eq('recipient_phone', cleanPhone)
                     .maybeSingle();
+
+                const updatedFlowAnswers = {
+                    ...(existingChat?.flow_answers || {}),
+                    is_instant_form: true,
+                    qualification_completed: true
+                };
 
                 let chatId = existingChat?.id;
                 if (!chatId) {
@@ -438,7 +372,9 @@ export async function sendInstantFormCatalogMessage(
                             recipient_name: leadName || null,
                             lead_id: leadId || null,
                             last_message_text: sentMessageText,
-                            unread_count: 0
+                            unread_count: 0,
+                            flow_completed: true,
+                            flow_answers: updatedFlowAnswers
                         })
                         .select('id')
                         .single();
@@ -450,6 +386,8 @@ export async function sendInstantFormCatalogMessage(
                             last_message_text: sentMessageText,
                             lead_id: leadId || undefined,
                             recipient_name: leadName || undefined,
+                            flow_completed: true,
+                            flow_answers: updatedFlowAnswers,
                             updated_at: new Date().toISOString()
                         })
                         .eq('id', chatId);
@@ -463,6 +401,25 @@ export async function sendInstantFormCatalogMessage(
                             direction: 'outbound',
                             message_text: sentMessageText
                         });
+                }
+
+                if (leadId) {
+                    try {
+                        const { data: leadRec } = await supabaseAdmin
+                            .from('leads')
+                            .select('custom_fields')
+                            .eq('id', leadId)
+                            .maybeSingle();
+                        const cf = (leadRec?.custom_fields && typeof leadRec.custom_fields === 'object') ? leadRec.custom_fields : {};
+                        await supabaseAdmin
+                            .from('leads')
+                            .update({
+                                custom_fields: { ...cf, is_instant_form: true, qualification_completed: true }
+                            })
+                            .eq('id', leadId);
+                    } catch (cfErr) {
+                        console.warn('[INSTANT CATALOG WA] Error syncing lead custom_fields:', cfErr);
+                    }
                 }
             } catch (chatLogErr) {
                 console.error('[INSTANT CATALOG WA] Error logging welcome chat message:', chatLogErr);

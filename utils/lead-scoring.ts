@@ -39,6 +39,68 @@ export function parseCustomFields(customFields: any): Record<string, any> {
   }
 }
 
+export interface NormalizedQuestion {
+  index: number;
+  key: string;
+  field_name: string;
+  question: string;
+  text: string;
+  options: string[];
+}
+
+/**
+ * Normalizes any qualifying question item (object, JSON string, text with options)
+ * into a standardized structure with intelligent key mapping (budget, timeline, property_type).
+ */
+export function normalizeQualifyingQuestion(rawItem: any, idx: number): NormalizedQuestion {
+  let item = rawItem;
+  if (typeof item === 'string' && item.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(item);
+      if (parsed && typeof parsed === 'object') item = parsed;
+    } catch (e) {}
+  }
+
+  let questionText = '';
+  let options: string[] = [];
+  let customKey = '';
+
+  if (typeof item === 'object' && item !== null) {
+    questionText = item.question || item.text || `Question ${idx + 1}`;
+    options = Array.isArray(item.options) ? item.options : [];
+    customKey = item.field_name || item.key || '';
+  } else if (typeof item === 'string') {
+    const match = item.match(/\(([^)]+)\)/);
+    questionText = item.replace(/\s*\([^)]+\)/, '').trim() || item;
+    options = match ? match[1].split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+  } else {
+    questionText = `Question ${idx + 1}`;
+  }
+
+  const qLower = questionText.toLowerCase();
+  let key = customKey;
+  if (!key) {
+    if (qLower.includes('budget') || qLower.includes('price') || qLower.includes('cost') || qLower.includes('range')) {
+      key = 'budget';
+    } else if (qLower.includes('timeline') || qLower.includes('when') || qLower.includes('month') || qLower.includes('possession') || qLower.includes('purchase')) {
+      key = 'timeline';
+    } else if (qLower.includes('property') || qLower.includes('project') || qLower.includes('type') || qLower.includes('looking for') || qLower.includes('bhk') || qLower.includes('plot') || qLower.includes('commercial') || qLower.includes('residential')) {
+      key = 'property_type';
+    } else {
+      key = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
+    }
+  }
+
+  return {
+    index: idx,
+    key,
+    field_name: key,
+    question: questionText,
+    text: questionText,
+    options
+  };
+}
+
 /**
  * Deterministic Real Estate Lead Scoring Engine (100% Zero-AI)
  * Calculated strictly based on:
@@ -71,38 +133,19 @@ export function calculateLeadScore(
     ? qualifyingQuestions
     : ['property_type', 'budget', 'timeline'];
   
-  const effectiveQuestions: { key: string; text: string }[] = [];
-  rawQuestions.forEach((item: any, idx: number) => {
-    if (typeof item === 'string') {
-      const qClean = item.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
-      const defaultKey = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
-      effectiveQuestions.push({ key: defaultKey, text: item });
-      if (!effectiveQuestions.some(e => e.key === qClean)) {
-        effectiveQuestions.push({ key: qClean, text: item });
-      }
-    } else if (typeof item === 'object' && item !== null) {
-      const qText = item.question || item.text || `Question ${idx + 1}`;
-      const defaultKey = item.field_name || (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
-      effectiveQuestions.push({ key: defaultKey, text: qText });
-    }
-  });
-
-  const totalQuestions = rawQuestions.length || 3;
+  const normalizedQuestions = rawQuestions.map((q: any, idx: number) => normalizeQualifyingQuestion(q, idx));
+  const totalQuestions = normalizedQuestions.length;
   let answeredCount = 0;
 
-  // Check how many questions from rawQuestions have answers in cf or lead
-  rawQuestions.forEach((item: any, idx: number) => {
-    const defaultKey = typeof item === 'object' && item?.field_name 
-      ? item.field_name 
-      : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
-    
-    const itemText = typeof item === 'string' ? item : (item?.question || item?.text || '');
-    const qClean = itemText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+  // Check how many questions from normalizedQuestions have answers in cf or lead
+  normalizedQuestions.forEach((q) => {
+    const qKey = q.key;
+    const qClean = q.question.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
 
-    const val = cf[defaultKey] || cf[qClean] || cf[`q_${qClean}`] || 
-                (qClean.includes('property') || defaultKey.includes('property') ? (cf.property_type || cf.interested_property || lead.property_id) : undefined) ||
-                (qClean.includes('budget') || defaultKey.includes('budget') ? (cf.budget || lead.budget) : undefined) ||
-                (qClean.includes('timeline') || defaultKey.includes('timeline') ? (cf.timeline || lead.timeline) : undefined);
+    const val = cf[qKey] || cf[qClean] || cf[`q_${qClean}`] || 
+                (qKey === 'budget' || qKey.includes('budget') ? (cf.budget || lead.budget) : undefined) ||
+                (qKey === 'timeline' || qKey.includes('timeline') ? (cf.timeline || lead.timeline) : undefined) ||
+                (qKey === 'property_type' || qKey.includes('property') ? (cf.property_type || cf.interested_property || lead.property_id) : undefined);
 
     if (val !== undefined && val !== null && String(val).trim().length > 0) {
       answeredCount++;
@@ -199,12 +242,45 @@ export async function updateLeadScoreInDB(
     // 2. Fetch owner's qualifying questions if not passed
     let questions = qualifyingQuestions;
     if (!questions && lead.user_id) {
-      const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('qualifying_questions')
-        .eq('id', lead.user_id)
-        .single();
-      questions = profile?.qualifying_questions || [];
+      const targetCampaignId = lead.voice_campaign_id || lead.campaign_id;
+      if (targetCampaignId) {
+        try {
+          const { data: campaignFlow } = await supabaseAdmin
+            .from('whatsapp_question_flows')
+            .select('questions')
+            .eq('user_id', lead.user_id)
+            .eq('linked_campaign_id', targetCampaignId)
+            .maybeSingle();
+          if (campaignFlow?.questions && Array.isArray(campaignFlow.questions) && campaignFlow.questions.length > 0) {
+            questions = campaignFlow.questions;
+          }
+        } catch (e) {}
+      }
+
+      if (!questions || questions.length === 0) {
+        try {
+          const { data: defaultFlow } = await supabaseAdmin
+            .from('whatsapp_question_flows')
+            .select('questions')
+            .eq('user_id', lead.user_id)
+            .eq('is_active', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (defaultFlow?.questions && Array.isArray(defaultFlow.questions) && defaultFlow.questions.length > 0) {
+            questions = defaultFlow.questions;
+          }
+        } catch (e) {}
+      }
+
+      if (!questions || questions.length === 0) {
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('qualifying_questions')
+          .eq('id', lead.user_id)
+          .single();
+        questions = profile?.qualifying_questions || [];
+      }
     }
 
     // 3. Compute score
@@ -217,11 +293,15 @@ export async function updateLeadScoreInDB(
     cf.score_breakdown = result.breakdown;
     cf.score_updated_at = new Date().toISOString();
 
+    const updateData: Record<string, any> = {
+      custom_fields: cf
+    };
+    if (cf.budget && !lead.budget) updateData.budget = cf.budget;
+    if (cf.timeline && !lead.timeline) updateData.timeline = cf.timeline;
+
     await supabaseAdmin
       .from('leads')
-      .update({
-        custom_fields: cf
-      })
+      .update(updateData)
       .eq('id', leadId);
 
     return result;

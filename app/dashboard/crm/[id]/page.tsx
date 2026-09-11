@@ -10,6 +10,7 @@ import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
 import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
+import { normalizeQualifyingQuestion, parseCustomFields } from '@/utils/lead-scoring'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
 
@@ -624,7 +625,24 @@ export default function LeadProfilePage() {
                             let loadedQuestions: any[] = [];
                             let flowTitle = 'Standard Real Estate Qualification';
 
-                            if (targetCampaignId) {
+                            // 1. Try API first to bypass RLS during impersonation
+                            try {
+                                const targetParam = impersonateId || data.user_id;
+                                const apiRes = await fetch(`/api/whatsapp/question-flows?impersonate=${targetParam}`).then(r => r.json());
+                                if (apiRes.success && Array.isArray(apiRes.flows) && apiRes.flows.length > 0) {
+                                    const campaignMatch = targetCampaignId ? apiRes.flows.find((f: any) => f.linked_campaign_id === targetCampaignId) : null;
+                                    const activeMatch = apiRes.flows.find((f: any) => f.is_active);
+                                    const chosen = campaignMatch || activeMatch || apiRes.flows[0];
+                                    if (chosen && Array.isArray(chosen.questions) && chosen.questions.length > 0) {
+                                        loadedQuestions = chosen.questions;
+                                        flowTitle = chosen.name || flowTitle;
+                                    }
+                                }
+                            } catch (apiErr) {
+                                console.warn('[CRM Lead Page] API fetch for question flows failed, falling back to DB:', apiErr);
+                            }
+
+                            if (loadedQuestions.length === 0 && targetCampaignId) {
                                 const { data: campaignFlow } = await supabase
                                     .from('whatsapp_question_flows')
                                     .select('*')
@@ -643,7 +661,7 @@ export default function LeadProfilePage() {
                                     .from('whatsapp_question_flows')
                                     .select('*')
                                     .eq('user_id', data.user_id)
-                                    .or('is_active.eq.true,linked_campaign_id.is.null')
+                                    .eq('is_active', true)
                                     .order('created_at', { ascending: false })
                                     .limit(1)
                                     .maybeSingle();
@@ -671,7 +689,8 @@ export default function LeadProfilePage() {
                                 ];
                             }
 
-                            setFlowQuestions(loadedQuestions);
+                            const normalized = loadedQuestions.map((q: any, idx: number) => normalizeQualifyingQuestion(q, idx));
+                            setFlowQuestions(normalized);
                             setLinkedFlowName(flowTitle);
                         } catch (fErr) {
                             console.error('[CRM Lead Page] Error fetching question flow:', fErr);
@@ -723,15 +742,25 @@ export default function LeadProfilePage() {
             const currentCf = typeof lead.custom_fields === 'object' && lead.custom_fields !== null ? { ...lead.custom_fields } : {}
             currentCf[key] = value
             if (key === 'property_type') currentCf.interested_property = value
-            if (key === 'budget') lead.budget = value
+            if (key === 'budget') {
+                lead.budget = value
+                currentCf.budget = value
+            }
+            if (key === 'timeline') {
+                lead.timeline = value
+                currentCf.timeline = value
+            }
 
             // Check if all questions in flow are completed
             let allCompleted = true
             flowQuestions.forEach((q: any, idx: number) => {
-                const qKey = typeof q === 'object' && q.field_name ? q.field_name : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`)
-                const qText = typeof q === 'string' ? q : (q.question || q.text || '')
-                const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30)
-                const val = currentCf[qKey] || currentCf[qClean] || (qKey.includes('property') ? currentCf.property_type : undefined) || (qKey.includes('budget') ? currentCf.budget : undefined)
+                const normQ = normalizeQualifyingQuestion(q, idx)
+                const qKey = normQ.key
+                const qClean = normQ.question.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30)
+                const val = currentCf[qKey] || currentCf[qClean] || 
+                    (qKey === 'budget' ? (currentCf.budget || lead.budget) : undefined) ||
+                    (qKey === 'timeline' ? (currentCf.timeline || lead.timeline) : undefined) ||
+                    (qKey === 'property_type' ? (currentCf.property_type || currentCf.interested_property) : undefined)
                 if (!val || String(val).trim().length === 0) {
                     allCompleted = false
                 }
@@ -741,13 +770,22 @@ export default function LeadProfilePage() {
                 currentCf.qualification_completed = true
             }
 
-            const nextLead = { ...lead, custom_fields: currentCf, budget: currentCf.budget || lead.budget }
+            const nextLead = { 
+                ...lead, 
+                custom_fields: currentCf, 
+                budget: currentCf.budget || lead.budget,
+                timeline: currentCf.timeline || lead.timeline
+            }
             setLead(nextLead)
             updateLocalCRMCache(nextLead)
 
             await supabase
                 .from('leads')
-                .update({ custom_fields: currentCf, budget: currentCf.budget || lead.budget })
+                .update({ 
+                    custom_fields: currentCf, 
+                    budget: currentCf.budget || lead.budget,
+                    timeline: currentCf.timeline || lead.timeline
+                })
                 .eq('id', lead.id)
 
             // Recalculate lead score
@@ -1903,16 +1941,20 @@ END:VCARD`
 
                                  {/* Interactive Qualification Questions (Linked Campaign / Default Flow) */}
                                 {flowQuestions && flowQuestions.length > 0 && (() => {
-                                    const cf = lead.custom_fields || {};
+                                    const cf = parseCustomFields(lead.custom_fields);
+                                    const normalizedFlow = flowQuestions.map((q: any, idx: number) => normalizeQualifyingQuestion(q, idx));
                                     let answeredCount = 0;
-                                    flowQuestions.forEach((q: any, idx: number) => {
-                                        const qKey = typeof q === 'object' && q.field_name ? q.field_name : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
-                                        const qText = typeof q === 'string' ? q : (q.question || q.text || '');
-                                        const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
-                                        const val = cf[qKey] || cf[qClean] || (qKey.includes('property') ? cf.property_type : undefined) || (qKey.includes('budget') ? cf.budget : undefined);
-                                        if (val && String(val).trim().length > 0) answeredCount++;
+
+                                    normalizedFlow.forEach((q) => {
+                                        const qKey = q.key;
+                                        const qClean = q.question.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
+                                        const val = cf[qKey] || cf[qClean] || 
+                                            (qKey === 'budget' ? (cf.budget || lead.budget) : undefined) ||
+                                            (qKey === 'timeline' ? (cf.timeline || lead.timeline) : undefined) ||
+                                            (qKey === 'property_type' ? (cf.property_type || cf.interested_property) : undefined);
+                                        if (val !== undefined && val !== null && String(val).trim().length > 0) answeredCount++;
                                     });
-                                    const isAllDone = answeredCount >= flowQuestions.length || cf.qualification_completed;
+                                    const isAllDone = answeredCount >= normalizedFlow.length || cf.qualification_completed;
 
                                     return (
                                         <div className="bg-gradient-to-r from-emerald-50/70 via-teal-50/50 to-slate-50 border border-emerald-200/80 rounded-2xl p-4 space-y-3.5 shadow-xs">
@@ -1929,16 +1971,19 @@ END:VCARD`
                                                         ? 'bg-emerald-500 text-white border-emerald-600' 
                                                         : 'bg-amber-100 text-amber-800 border-amber-300'
                                                 }`}>
-                                                    {isAllDone ? '✅ Complete (+40 pts)' : `${answeredCount}/${flowQuestions.length} Answered`}
+                                                    {isAllDone ? '✅ Complete (+40 pts)' : `${answeredCount}/${normalizedFlow.length} Answered`}
                                                 </span>
                                             </div>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-                                                {flowQuestions.map((q: any, idx: number) => {
-                                                    const qKey = typeof q === 'object' && q.field_name ? q.field_name : (idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`);
-                                                    const qText = typeof q === 'string' ? q : (q.question || q.text || `Question ${idx + 1}`);
+                                                {normalizedFlow.map((q, idx) => {
+                                                    const qKey = q.key;
+                                                    const qText = q.question;
                                                     const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
-                                                    const rawVal = cf[qKey] || cf[qClean] || (qKey.includes('property') ? cf.property_type : undefined) || (qKey.includes('budget') ? cf.budget : undefined) || '';
+                                                    const rawVal = cf[qKey] || cf[qClean] || 
+                                                        (qKey === 'budget' ? (cf.budget || lead.budget) : undefined) ||
+                                                        (qKey === 'timeline' ? (cf.timeline || lead.timeline) : undefined) ||
+                                                        (qKey === 'property_type' ? (cf.property_type || cf.interested_property) : undefined) || '';
                                                     const options: string[] = Array.isArray(q.options) ? q.options : [];
                                                     const isSaving = savingQuestionKey === qKey;
 
@@ -2006,14 +2051,22 @@ END:VCARD`
 
                                 {/* Custom Fields Grid & Meta Ad Origin */}
                                 {(() => {
-                                    let customFields = lead.custom_fields || {};
-                                    if (customFields && typeof customFields === 'string') {
-                                        try {
-                                            while (typeof customFields === 'string') customFields = JSON.parse(customFields);
-                                        } catch (e) {}
-                                    }
+                                    const customFields = parseCustomFields(lead.custom_fields);
                                     const origin = customFields?.meta_ad_origin;
-                                    const entries = Object.entries(customFields).filter(([k]) => k !== 'meta_ad_origin');
+                                    const HIDDEN_INTERNAL_FIELDS = [
+                                        'meta_ad_origin',
+                                        'score_breakdown',
+                                        'lead_score',
+                                        'lead_tier',
+                                        'score_updated_at',
+                                        'awaiting_lead_name',
+                                        'qualification_completed',
+                                        'voice_campaign_id',
+                                        'campaign_id',
+                                        'is_qualified',
+                                        'full_name'
+                                    ];
+                                    const entries = Object.entries(customFields).filter(([k]) => !HIDDEN_INTERNAL_FIELDS.includes(k));
                                     const matchedProp = properties.find(p => p.id === lead.property_id || p.id === origin?.product_id || p.title === origin?.product_name);
                                     const productName = origin?.product_name || matchedProp?.title || null;
 
@@ -2048,7 +2101,9 @@ END:VCARD`
                                                         <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-start group">
                                                             <div className="min-w-0 flex-1">
                                                                 <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{key.replace(/_/g, ' ')}</span>
-                                                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">{String(value)}</span>
+                                                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">
+                                                                    {typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)}
+                                                                </span>
                                                             </div>
                                                             <button 
                                                                 onClick={() => handleDeleteCustomField(key)}

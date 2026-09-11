@@ -130,11 +130,12 @@ export async function triggerVobizOutboundCall(
     }
 
     // 5. Auth Credentials & Caller ID
-    const authId = profile.voice_vobiz_auth_id || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
-    const authToken = profile.voice_vobiz_auth_token || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+    const bi = typeof profile.business_info === 'string' ? JSON.parse(profile.business_info) : (profile.business_info || {})
+    const authId = profile.voice_vobiz_auth_id || bi.voice_vobiz_auth_id || bi.kyc_data?.vobizSubAuthId || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+    const authToken = profile.voice_vobiz_auth_token || bi.voice_vobiz_auth_token || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
     
-    // Priority for caller ID: passed fromPhone -> profile.voice_vobiz_number -> profile.voice_twilio_number -> env.VOBIZ_TEST_NUMBER -> default
-    let callerId = fromPhone || profile.voice_vobiz_number || profile.voice_twilio_number || process.env.VOBIZ_TEST_NUMBER || '+911171366938'
+    // Priority for caller ID: passed fromPhone -> profile.voice_vobiz_number -> bi.claimed_vobiz_number -> bi.voice_vobiz_number -> profile.voice_twilio_number -> env.VOBIZ_TEST_NUMBER -> default
+    let callerId = fromPhone || profile.voice_vobiz_number || bi.claimed_vobiz_number || bi.voice_vobiz_number || profile.voice_twilio_number || process.env.VOBIZ_TEST_NUMBER || '+911171366938'
 
     let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
     if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com') || appUrl.includes('127.0.0.1')) {
