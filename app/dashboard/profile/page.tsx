@@ -3214,12 +3214,11 @@ export default function ProfilePage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => window.open(`/dashboard/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`, '_blank', 'noopener,noreferrer')}
+                    onClick={() => router.push(`/dashboard/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
                     className="hidden sm:flex bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-sm items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
                   >
                     <Layers size={13} />
                     <span>Open Audience Maker</span>
-                    <ExternalLink size={12} />
                   </button>
                 </div>
 
@@ -3230,12 +3229,11 @@ export default function ProfilePage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => window.open(`/dashboard/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`, '_blank', 'noopener,noreferrer')}
+                    onClick={() => router.push(`/dashboard/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
                     className="w-full sm:hidden bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                   >
                     <Layers size={13} />
                     <span>Open Audience Maker</span>
-                    <ExternalLink size={12} />
                   </button>
                 </div>
               </div>
@@ -3401,10 +3399,10 @@ export default function ProfilePage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => window.open(`/dashboard/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`, '_blank', 'noopener,noreferrer')}
+                              onClick={() => router.push(`/dashboard/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
                               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                             >
-                              <Layers size={14} /> Audience Maker <ExternalLink size={12} />
+                              <Layers size={14} /> Audience Maker
                             </button>
                           </div>
                         </div>
