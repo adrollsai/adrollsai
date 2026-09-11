@@ -1890,6 +1890,7 @@ export default function AutomationPage() {
                               headerType={selectedHeaderFormat}
                               mediaUrl={selectedHeaderMediaUrl}
                               onMediaSelect={(url: string) => setSelectedHeaderMediaUrl(url)}
+                              userId={profile?.id}
                             />
                           )}
 
@@ -2286,6 +2287,7 @@ export default function AutomationPage() {
                   headerType={selectedHeaderFormat}
                   mediaUrl={selectedHeaderMediaUrl}
                   onMediaSelect={(url: string) => setSelectedHeaderMediaUrl(url)}
+                  userId={profile?.id}
                 />
               )}
 

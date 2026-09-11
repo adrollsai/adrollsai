@@ -299,49 +299,103 @@ export async function POST(req: Request) {
             broadcast = bData
         }
 
-        // Filter and find matching leads in DB
-        let leadQuery = supabaseAdmin
+        // Fetch and filter matching leads with zero discrepancies (paginating through all user leads)
+        const { count: totalLeadsCount } = await supabaseAdmin
             .from('leads')
-            .select('*')
+            .select('*', { count: 'exact', head: true })
             .eq('user_id', targetUserId)
 
-        if (audienceFilter && audienceFilter.targetType === 'custom') {
-            const { csvAudiences, sources, metaCampaigns, pipelineStages, propertyIds } = audienceFilter
+        const totalUserLeads = totalLeadsCount || 0
+        const pageSize = 1000
+        const numPages = Math.min(Math.ceil(totalUserLeads / pageSize), 30) // up to 30,000 leads
+        const fetchPromises = []
 
-            if (csvAudiences && Array.isArray(csvAudiences) && csvAudiences.length > 0) {
-                leadQuery = leadQuery.in('csv_audience', csvAudiences)
+        for (let p = 0; p < numPages; p++) {
+            fetchPromises.push(
+                supabaseAdmin
+                    .from('leads')
+                    .select('id, name, phone, source, ad_name, csv_audience, pipeline_stage, property_id, custom_fields, created_at')
+                    .eq('user_id', targetUserId)
+                    .range(p * pageSize, (p + 1) * pageSize - 1)
+            )
+        }
+
+        const fetchResults = await Promise.all(fetchPromises)
+        let allUserLeads: any[] = []
+        for (const r of fetchResults) {
+            if (r.data) allUserLeads = allUserLeads.concat(r.data)
+        }
+
+        // Filter leads based on broadcast criteria
+        const leads = allUserLeads.filter(lead => {
+            if (audienceFilter) {
+                // Pre-built Audience Group target
+                if (audienceFilter.targetType === 'audience_group') {
+                    const groupName = audienceFilter.audienceGroupName || ''
+                    if (!groupName) return false
+                    const csvList = (lead.csv_audience || '').split(',').map((s: string) => s.trim())
+                    let cf = lead.custom_fields
+                    if (typeof cf === 'string') {
+                        try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+                    }
+                    const groups = Array.isArray(cf?.audience_groups) ? cf.audience_groups : (cf?.audience_groups ? [cf.audience_groups] : [])
+                    return csvList.includes(groupName) || groups.includes(groupName)
+                }
+
+                // Custom multi-filter target
+                if (audienceFilter.targetType === 'custom') {
+                    const { csvAudiences, sources, metaCampaigns, pipelineStages, propertyIds } = audienceFilter
+
+                    if (csvAudiences && Array.isArray(csvAudiences) && csvAudiences.length > 0) {
+                        const csvList = (lead.csv_audience || '').split(',').map((s: string) => s.trim())
+                        const matchesCsv = csvAudiences.some((aud: string) => csvList.includes(aud))
+                        if (!matchesCsv) return false
+                    }
+
+                    if (sources && Array.isArray(sources) && sources.length > 0) {
+                        if (!lead.source || !sources.includes(lead.source)) return false
+                    }
+
+                    if (pipelineStages && Array.isArray(pipelineStages) && pipelineStages.length > 0) {
+                        if (!lead.pipeline_stage || !pipelineStages.includes(lead.pipeline_stage)) return false
+                    }
+
+                    if (propertyIds && Array.isArray(propertyIds) && propertyIds.length > 0) {
+                        if (!lead.property_id || !propertyIds.includes(lead.property_id)) return false
+                    }
+
+                    if (metaCampaigns && Array.isArray(metaCampaigns) && metaCampaigns.length > 0) {
+                        let camp = lead.ad_name ? lead.ad_name.trim() : null
+                        if (!camp && lead.custom_fields) {
+                            let cf = lead.custom_fields
+                            if (typeof cf === 'string') {
+                                try { cf = JSON.parse(cf) } catch (e) { cf = null }
+                            }
+                            camp = cf?.lead_source_details?.trim() || cf?.meta_ad_origin?.campaign_name?.trim() || null
+                        }
+                        if (!camp || !metaCampaigns.includes(camp)) return false
+                    }
+
+                    return true
+                }
             }
 
-            if (sources && Array.isArray(sources) && sources.length > 0) {
-                leadQuery = leadQuery.in('source', sources)
-            }
-
-            if (metaCampaigns && Array.isArray(metaCampaigns) && metaCampaigns.length > 0) {
-                leadQuery = leadQuery.in('ad_name', metaCampaigns)
-            }
-
-            if (pipelineStages && Array.isArray(pipelineStages) && pipelineStages.length > 0) {
-                leadQuery = leadQuery.in('pipeline_stage', pipelineStages)
-            }
-
-            if (propertyIds && Array.isArray(propertyIds) && propertyIds.length > 0) {
-                leadQuery = leadQuery.in('property_id', propertyIds)
-            }
-        } else {
+            // Fallback to basic legacy filters
             if (recipientStage && recipientStage !== 'All') {
-                leadQuery = leadQuery.eq('pipeline_stage', recipientStage)
+                if (lead.pipeline_stage !== recipientStage) return false
             }
 
             if (recipientPropertyId) {
-                leadQuery = leadQuery.eq('property_id', recipientPropertyId)
+                if (lead.property_id !== recipientPropertyId) return false
             }
 
             if (recipientCsvAudience) {
-                leadQuery = leadQuery.eq('csv_audience', recipientCsvAudience)
+                const csvList = (lead.csv_audience || '').split(',').map((s: string) => s.trim())
+                if (!csvList.includes(recipientCsvAudience)) return false
             }
-        }
 
-        const { data: leads } = await leadQuery
+            return true
+        })
 
 
 

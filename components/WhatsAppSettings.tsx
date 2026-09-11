@@ -337,7 +337,11 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
 
   const [csvAudiences, setCsvAudiences] = useState<string[]>([])
   const [leadSources, setLeadSources] = useState<string[]>([])
-  const [broadcastTargetAudienceType, setBroadcastTargetAudienceType] = useState<'all' | 'custom'>('all')
+  const [broadcastTargetAudienceType, setBroadcastTargetAudienceType] = useState<'all' | 'custom' | 'audience_group'>('all')
+  const [selectedBroadcastAudienceGroup, setSelectedBroadcastAudienceGroup] = useState<string>('')
+  const [audienceGroups, setAudienceGroups] = useState<any[]>([])
+  const [campaignsWithCounts, setCampaignsWithCounts] = useState<{ name: string; count: number }[]>([])
+  const [broadcastCampaignSearch, setBroadcastCampaignSearch] = useState('')
   const [selectedBroadcastSources, setSelectedBroadcastSources] = useState<string[]>([])
   const [selectedBroadcastMetaCampaigns, setSelectedBroadcastMetaCampaigns] = useState<string[]>([])
   const [selectedBroadcastCsvAudiences, setSelectedBroadcastCsvAudiences] = useState<string[]>([])
@@ -400,25 +404,24 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
         .eq('user_id', userId)
       if (propData) setProperties(propData)
 
-      // Fetch unique campaigns, sources, and csv_audiences from leads
-      const { data: leadData } = await supabase
-        .from('leads')
-        .select('source, ad_name, csv_audience')
-        .eq('user_id', userId)
-
-      const uniqueCamps = new Set<string>()
-      const uniqueCsvs = new Set<string>()
-      const uniqueSources = new Set<string>()
-      if (leadData) {
-        leadData.forEach((l: any) => {
-          if (l.source) uniqueSources.add(l.source)
-          if (l.ad_name) uniqueCamps.add(l.ad_name)
-          if (l.csv_audience) uniqueCsvs.add(l.csv_audience)
-        })
+      // Fetch all campaigns, sources, csv_audiences, and audience groups across ALL leads (no 1000 row cutoff)
+      try {
+        const metaRes = await fetch(`/api/crm/audiences/metadata?impersonate=${userId}`)
+        if (metaRes.ok) {
+          const metaData = await metaRes.json()
+          if (metaData.success) {
+            if (metaData.campaigns) {
+              setCampaignsWithCounts(metaData.campaigns)
+              setCampaigns(metaData.campaignNames || metaData.campaigns.map((c: any) => c.name))
+            }
+            if (metaData.sourceNames) setLeadSources(metaData.sourceNames)
+            if (metaData.csvAudienceNames) setCsvAudiences(metaData.csvAudienceNames)
+            if (metaData.audienceGroups) setAudienceGroups(metaData.audienceGroups)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load audience metadata:', err)
       }
-      setLeadSources(Array.from(uniqueSources))
-      setCampaigns(Array.from(uniqueCamps))
-      setCsvAudiences(Array.from(uniqueCsvs))
 
 
 
@@ -862,6 +865,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
           variableMappings: newBroadcast.variableMappings,
           audienceFilter: {
             targetType: broadcastTargetAudienceType,
+            audienceGroupName: selectedBroadcastAudienceGroup,
             sources: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastSources,
             metaCampaigns: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastMetaCampaigns,
             csvAudiences: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastCsvAudiences,
@@ -2086,6 +2090,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                           headerType={headerType as any}
                           mediaUrl={newBroadcast.headerMediaUrl}
                           onMediaSelect={(url) => setNewBroadcast(prev => ({ ...prev, headerMediaUrl: url }))}
+                          userId={userId || undefined}
                         />
                       </div>
                     )
@@ -2148,13 +2153,57 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                       <label className="text-[10px] font-black text-slate-500 uppercase block ml-1">Target Audience Selection</label>
                       <select 
                         value={broadcastTargetAudienceType}
-                        onChange={(e) => setBroadcastTargetAudienceType(e.target.value as 'all' | 'custom')}
+                        onChange={(e) => setBroadcastTargetAudienceType(e.target.value as 'all' | 'custom' | 'audience_group')}
                         className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2.5 px-4 rounded-xl text-xs font-bold outline-none cursor-pointer"
                       >
                         <option value="all">All Contacts / Leads (No Filters)</option>
-                        <option value="custom">Custom Multi-Filter Audience (Checkboxes)</option>
+                        <option value="audience_group">⭐ Saved Audience Group (e.g. Anmol Avenue Leads)</option>
+                        <option value="custom">Custom Multi-Filter Audience (Checkboxes & Filters)</option>
                       </select>
                     </div>
+
+                    {/* PRE-BUILT AUDIENCE GROUP SELECTOR */}
+                    {broadcastTargetAudienceType === 'audience_group' && (
+                      <div className="space-y-2 border border-emerald-200 bg-emerald-50/60 p-4 rounded-2xl animate-in fade-in duration-200">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-black text-emerald-900 uppercase tracking-wider">
+                            Choose Saved Audience Group
+                          </label>
+                          <a 
+                            href={`/dashboard/audiences${userId ? `?impersonate=${userId}` : ''}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="text-[10px] font-bold text-emerald-700 hover:underline"
+                          >
+                            + Create New Group
+                          </a>
+                        </div>
+                        {audienceGroups.length > 0 ? (
+                          <select
+                            value={selectedBroadcastAudienceGroup}
+                            onChange={(e) => setSelectedBroadcastAudienceGroup(e.target.value)}
+                            className="w-full bg-white border border-emerald-300 py-2.5 px-3 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/30"
+                            required
+                          >
+                            <option value="">-- Select an Audience Group --</option>
+                            {audienceGroups.map((grp: any) => (
+                              <option key={grp.id || grp.name} value={grp.name}>
+                                {grp.name} ({grp.leadCount ?? 0} leads)
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="bg-white p-3 rounded-xl border border-emerald-200 text-xs text-slate-600 text-center">
+                            No audience groups created yet. Click above to build your first audience group!
+                          </div>
+                        )}
+                        {selectedBroadcastAudienceGroup && (
+                          <p className="text-[10px] font-semibold text-emerald-800">
+                            ✓ Targeting all verified leads tagged under "{selectedBroadcastAudienceGroup}"
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {broadcastTargetAudienceType === 'custom' && (
                       <div className="space-y-4 border border-slate-200/80 bg-slate-50/60 p-4 rounded-2xl animate-in fade-in duration-200">
@@ -2262,39 +2311,96 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                           </div>
                         )}
 
-                        {/* 4. Meta Ads Campaigns Checkboxes */}
-                        {campaigns.length > 0 && (
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-600 uppercase block ml-1 flex items-center justify-between">
-                              <span>🎯 Meta Ads Campaigns ({campaigns.length})</span>
-                              {selectedBroadcastMetaCampaigns.length > 0 && (
-                                <span className="text-[9px] text-indigo-600 font-bold">{selectedBroadcastMetaCampaigns.length} Selected</span>
-                              )}
-                            </label>
-                            <div className="grid grid-cols-1 gap-2 bg-white p-3 rounded-xl border border-slate-200 max-h-32 overflow-y-auto">
-                              {campaigns.map(camp => {
-                                const isChecked = selectedBroadcastMetaCampaigns.includes(camp);
-                                return (
-                                  <label key={camp} className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none truncate" title={camp}>
-                                    <input 
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={() => {
-                                        if (isChecked) {
-                                          setSelectedBroadcastMetaCampaigns(selectedBroadcastMetaCampaigns.filter(c => c !== camp));
-                                        } else {
-                                          setSelectedBroadcastMetaCampaigns([...selectedBroadcastMetaCampaigns, camp]);
-                                        }
-                                      }}
-                                      className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
-                                    />
-                                    <span className="truncate">{camp}</span>
-                                  </label>
-                                )
-                              })}
+                        {/* 4. Meta Ads Campaigns Checkboxes with SEARCH & EXACT LEADS COUNT */}
+                        {(campaignsWithCounts.length > 0 || campaigns.length > 0) && (() => {
+                          const displayCampaigns = campaignsWithCounts.length > 0
+                            ? campaignsWithCounts
+                            : campaigns.map(c => ({ name: c, count: 0 }));
+
+                          const filteredList = broadcastCampaignSearch.trim()
+                            ? displayCampaigns.filter(c => c.name.toLowerCase().includes(broadcastCampaignSearch.toLowerCase()))
+                            : displayCampaigns;
+
+                          return (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[10px] font-black text-slate-700 uppercase flex items-center gap-1.5">
+                                  <span>🎯 Meta Ads Campaigns ({displayCampaigns.length})</span>
+                                  {selectedBroadcastMetaCampaigns.length > 0 && (
+                                    <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[9px] font-extrabold">
+                                      {selectedBroadcastMetaCampaigns.length} Selected
+                                    </span>
+                                  )}
+                                </label>
+                                <div className="flex gap-2 text-[10px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const allFilteredNames = filteredList.map(c => c.name);
+                                      setSelectedBroadcastMetaCampaigns(Array.from(new Set([...selectedBroadcastMetaCampaigns, ...allFilteredNames])));
+                                    }}
+                                    className="text-indigo-600 hover:underline"
+                                  >
+                                    Select All Filtered
+                                  </button>
+                                  <span className="text-slate-300">|</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedBroadcastMetaCampaigns([])}
+                                    className="text-red-500 hover:underline"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Search Input for Campaigns */}
+                              <input
+                                type="text"
+                                placeholder="Search campaign name (e.g. Anmol Avenue)..."
+                                value={broadcastCampaignSearch}
+                                onChange={(e) => setBroadcastCampaignSearch(e.target.value)}
+                                className="w-full bg-white border border-slate-200 py-1.5 px-3 rounded-lg text-xs outline-none focus:border-indigo-400 placeholder-slate-400"
+                              />
+
+                              <div className="grid grid-cols-1 gap-1.5 bg-white p-2.5 rounded-xl border border-slate-200 max-h-48 overflow-y-auto custom-scrollbar">
+                                {filteredList.length > 0 ? (
+                                  filteredList.map(camp => {
+                                    const isChecked = selectedBroadcastMetaCampaigns.includes(camp.name);
+                                    return (
+                                      <label key={camp.name} className="flex items-center justify-between gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer select-none text-xs font-semibold text-slate-700" title={camp.name}>
+                                        <div className="flex items-center gap-2 truncate">
+                                          <input 
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={() => {
+                                              if (isChecked) {
+                                                setSelectedBroadcastMetaCampaigns(selectedBroadcastMetaCampaigns.filter(c => c !== camp.name));
+                                              } else {
+                                                setSelectedBroadcastMetaCampaigns([...selectedBroadcastMetaCampaigns, camp.name]);
+                                              }
+                                            }}
+                                            className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                                          />
+                                          <span className="truncate">{camp.name}</span>
+                                        </div>
+                                        {camp.count > 0 && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
+                                            {camp.count} leads
+                                          </span>
+                                        )}
+                                      </label>
+                                    )
+                                  })
+                                ) : (
+                                  <div className="text-center py-3 text-xs text-slate-400 font-semibold">
+                                    No campaigns match "{broadcastCampaignSearch}"
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )
+                        })()}
 
                         {/* 5. Project Interest Checkboxes */}
                         {properties.length > 0 && (

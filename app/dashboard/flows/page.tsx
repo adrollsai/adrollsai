@@ -1298,6 +1298,7 @@ export default function FlowsPage() {
   const [selectedAudienceType, setSelectedAudienceType] = useState<'csv' | 'custom_group' | 'campaign'>('csv')
   const [selectedCsvId, setSelectedCsvId] = useState<string>('csv_1')
   const [selectedGroupId, setSelectedGroupId] = useState<string>('grp_1')
+  const [userAudienceGroups, setUserAudienceGroups] = useState<any[]>([])
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('')
   const [executionSampleSize, setExecutionSampleSize] = useState<'all' | '50' | '20' | '5'>('all')
   const [executionSpeed, setExecutionSpeed] = useState<'1x' | '3x' | '10x'>('3x')
@@ -1473,6 +1474,17 @@ export default function FlowsPage() {
         }
       })
       setDistributionGroups(parsedGroups)
+
+      // Fetch saved audience groups from API
+      try {
+        const audRes = await fetch(`/api/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+        const audData = await audRes.json()
+        if (audData.success && Array.isArray(audData.audiences)) {
+          setUserAudienceGroups(audData.audiences)
+        }
+      } catch (e) {
+        console.error('Failed to load audience groups for flows:', e)
+      }
 
     } catch (err) {
       console.error('Failed to load flows page data:', err)
@@ -3742,30 +3754,38 @@ export default function FlowsPage() {
                           </span>
                         </div>
 
-                        <select
-                          value={currentFlow.trigger.customGroupName || 'Mohali Luxury Segment (HNIs > 2 Cr)'}
-                          onChange={(e) => {
-                            const found = SAMPLE_AUDIENCE_GROUPS.find(x => x.name === e.target.value)
-                            const gName = e.target.value
-                            const count = found ? found.count : 640
-                            setCurrentFlow({
-                              ...currentFlow,
-                              trigger: { 
-                                ...currentFlow.trigger, 
-                                customGroupName: gName,
-                                csvLeadCount: count,
-                                label: `Custom Group: ${gName}`
-                              }
-                            })
-                          }}
-                          className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 outline-none cursor-pointer"
-                        >
-                          {SAMPLE_AUDIENCE_GROUPS.map(grp => (
-                            <option key={grp.id} value={grp.name}>
-                              {grp.name} ({grp.count} leads • {grp.tag})
-                            </option>
-                          ))}
-                        </select>
+                        {(() => {
+                          const groupsToDisplay = userAudienceGroups.length > 0
+                            ? userAudienceGroups.map((g: any) => ({ id: g.id, name: g.name, count: g.leadCount, tag: 'Saved Audience' }))
+                            : SAMPLE_AUDIENCE_GROUPS;
+
+                          return (
+                            <select
+                              value={currentFlow.trigger.customGroupName || (groupsToDisplay[0]?.name || '')}
+                              onChange={(e) => {
+                                const found = groupsToDisplay.find((x: any) => x.name === e.target.value)
+                                const gName = e.target.value
+                                const count = found ? found.count : 0
+                                setCurrentFlow({
+                                  ...currentFlow,
+                                  trigger: { 
+                                    ...currentFlow.trigger, 
+                                    customGroupName: gName,
+                                    csvLeadCount: count,
+                                    label: `Custom Group: ${gName}`
+                                  }
+                                })
+                              }}
+                              className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 outline-none cursor-pointer"
+                            >
+                              {groupsToDisplay.map((grp: any) => (
+                                <option key={grp.id} value={grp.name}>
+                                  {grp.name} ({grp.count} leads • {grp.tag})
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
 
                         <p className="text-[11px] text-slate-600 leading-snug">
                           Target prospects dynamically grouped in CRM segments, re-engagement campaigns, or DNP follow-up queues.
