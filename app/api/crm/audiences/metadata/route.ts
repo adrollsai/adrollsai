@@ -119,7 +119,7 @@ export async function GET(req: Request) {
             promises.push(
                 supabaseAdmin
                     .from('leads')
-                    .select('ad_name, source, csv_audience, pipeline_stage, property_id, custom_fields')
+                    .select('ad_name, form_name, source, csv_audience, pipeline_stage, property_id, custom_fields')
                     .eq('user_id', targetId)
                     .range(p * pageSize, (p + 1) * pageSize - 1)
             )
@@ -128,6 +128,7 @@ export async function GET(req: Request) {
         const results = await Promise.all(promises)
 
         const campaignCounts = new Map<string, number>()
+        const formCounts = new Map<string, number>()
         const stageCounts = new Map<string, number>()
         const sourceCounts = new Map<string, number>()
         const csvCounts = new Map<string, number>()
@@ -136,6 +137,10 @@ export async function GET(req: Request) {
         for (const res of results) {
             if (!res.data) continue
             for (const l of res.data) {
+                if (l.form_name && l.form_name.trim()) {
+                    const fn = l.form_name.trim()
+                    formCounts.set(fn, (formCounts.get(fn) || 0) + 1)
+                }
                 if (l.source) {
                     sourceCounts.set(l.source, (sourceCounts.get(l.source) || 0) + 1)
                 }
@@ -168,8 +173,12 @@ export async function GET(req: Request) {
             }
         }
 
-        // Format sorted campaign list
+        // Format sorted lists
         const campaignsList = Array.from(campaignCounts.entries())
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+
+        const formsList = Array.from(formCounts.entries())
             .map(([name, count]) => ({ name, count }))
             .sort((a, b) => b.count - a.count)
 
@@ -189,6 +198,8 @@ export async function GET(req: Request) {
             totalLeads: totalCount,
             campaigns: campaignsList,
             campaignNames: campaignsList.map(c => c.name),
+            forms: formsList,
+            formNames: formsList.map(f => f.name),
             sources: sourcesList,
             sourceNames: sourcesList.map(s => s.name),
             stages: stagesList,

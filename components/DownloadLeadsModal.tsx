@@ -339,7 +339,7 @@ interface DownloadLeadsModalProps {
     crmCustomDate?: string
     crmStartDate?: string
     crmEndDate?: string
-    selectedCampaign?: string
+    selectedCampaign?: string | string[]
     selectedForm?: string
     selectedCsvAudience?: string
     selectedDnpFilter?: string
@@ -390,7 +390,17 @@ export default function DownloadLeadsModal({
       if (initialFilters) {
         setFilterStages(initialFilters.selectedSpecificStage && initialFilters.selectedSpecificStage !== 'ALL' && initialFilters.selectedSpecificStage !== 'All Leads' ? [initialFilters.selectedSpecificStage] : ['ALL'])
         setFilterAgents(initialFilters.selectedAgentFilter && initialFilters.selectedAgentFilter !== 'ALL' ? [initialFilters.selectedAgentFilter] : ['ALL'])
-        setFilterCampaigns(initialFilters.selectedCampaign && initialFilters.selectedCampaign !== 'ALL' ? [initialFilters.selectedCampaign] : ['ALL'])
+        if (initialFilters.selectedCampaign) {
+          if (Array.isArray(initialFilters.selectedCampaign)) {
+            setFilterCampaigns(initialFilters.selectedCampaign.length > 0 ? initialFilters.selectedCampaign : ['ALL'])
+          } else if (initialFilters.selectedCampaign !== 'ALL') {
+            setFilterCampaigns([initialFilters.selectedCampaign])
+          } else {
+            setFilterCampaigns(['ALL'])
+          }
+        } else {
+          setFilterCampaigns(['ALL'])
+        }
         setFilterForms(initialFilters.selectedForm && initialFilters.selectedForm !== 'ALL' ? [initialFilters.selectedForm] : ['ALL'])
         setFilterDateRange(initialFilters.selectedDateRange || 'ALL')
         setFilterStartDate(initialFilters.crmStartDate || '')
@@ -755,7 +765,17 @@ export default function DownloadLeadsModal({
     if (initialFilters) {
       setFilterStages(initialFilters.selectedSpecificStage && initialFilters.selectedSpecificStage !== 'ALL' && initialFilters.selectedSpecificStage !== 'All Leads' ? [initialFilters.selectedSpecificStage] : ['ALL'])
       setFilterAgents(initialFilters.selectedAgentFilter && initialFilters.selectedAgentFilter !== 'ALL' ? [initialFilters.selectedAgentFilter] : ['ALL'])
-      setFilterCampaigns(initialFilters.selectedCampaign && initialFilters.selectedCampaign !== 'ALL' ? [initialFilters.selectedCampaign] : ['ALL'])
+      if (initialFilters.selectedCampaign) {
+        if (Array.isArray(initialFilters.selectedCampaign)) {
+          setFilterCampaigns(initialFilters.selectedCampaign.length > 0 ? initialFilters.selectedCampaign : ['ALL'])
+        } else if (initialFilters.selectedCampaign !== 'ALL') {
+          setFilterCampaigns([initialFilters.selectedCampaign])
+        } else {
+          setFilterCampaigns(['ALL'])
+        }
+      } else {
+        setFilterCampaigns(['ALL'])
+      }
       setFilterForms(initialFilters.selectedForm && initialFilters.selectedForm !== 'ALL' ? [initialFilters.selectedForm] : ['ALL'])
       setFilterDateRange(initialFilters.selectedDateRange || 'ALL')
       setFilterStartDate(initialFilters.crmStartDate || '')

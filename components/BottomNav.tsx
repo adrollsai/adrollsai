@@ -105,7 +105,6 @@ export default function BottomNav() {
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
-    { name: 'Audiences', icon: Layers, path: '/dashboard/audiences' },
     { name: 'WhatsApp', icon: MessageCircle, path: '/dashboard/whatsapp' },
     ...(showDistribute ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
@@ -134,7 +133,7 @@ export default function BottomNav() {
     }
 
     if (role === 'agent') {
-      return ['Analytics', 'Inventory', 'CRM', 'Audiences', 'Assets', 'Profile', 'WhatsApp'].includes(item.name)
+      return ['Analytics', 'Inventory', 'CRM', 'Assets', 'Profile', 'WhatsApp'].includes(item.name)
     }
     return true
   })

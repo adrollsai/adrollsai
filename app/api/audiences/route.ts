@@ -153,11 +153,14 @@ export async function POST(req: Request) {
         // Extract filters
         const {
             campaigns = [],
+            forms = [],
             sources = [],
             pipelineStages = [],
             propertyIds = [],
             csvAudiences = [],
-            dateRange = 'all'
+            dateRange = 'all',
+            startDate = null,
+            endDate = null
         } = filters || {}
 
         // 1. Fetch total leads for target user to prepare batch pagination
@@ -175,7 +178,7 @@ export async function POST(req: Request) {
             fetchPromises.push(
                 supabaseAdmin
                     .from('leads')
-                    .select('id, name, phone, source, ad_name, csv_audience, pipeline_stage, property_id, custom_fields, created_at')
+                    .select('id, name, phone, source, ad_name, form_name, csv_audience, pipeline_stage, property_id, custom_fields, created_at')
                     .eq('user_id', targetId)
                     .range(p * pageSize, (p + 1) * pageSize - 1)
             )
@@ -198,12 +201,28 @@ export async function POST(req: Request) {
 
         // 3. Date range threshold
         let minDate: Date | null = null
+        let maxDate: Date | null = null
         if (dateRange === '7d') {
             minDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         } else if (dateRange === '30d') {
             minDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
         } else if (dateRange === '90d') {
             minDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+        } else if (dateRange === 'custom') {
+            if (startDate) {
+                const d = new Date(startDate)
+                if (!isNaN(d.getTime())) {
+                    d.setHours(0, 0, 0, 0)
+                    minDate = d
+                }
+            }
+            if (endDate) {
+                const d = new Date(endDate)
+                if (!isNaN(d.getTime())) {
+                    d.setHours(23, 59, 59, 999)
+                    maxDate = d
+                }
+            }
         }
 
         // 4. Filter matching leads
@@ -217,7 +236,7 @@ export async function POST(req: Request) {
                 matchedLeadIds.add(lead.id)
             } else {
                 // If filters are applied, test criteria
-                const hasFilters = campaigns.length > 0 || sources.length > 0 || pipelineStages.length > 0 || propertyIds.length > 0 || csvAudiences.length > 0 || minDate !== null
+                const hasFilters = campaigns.length > 0 || forms.length > 0 || sources.length > 0 || pipelineStages.length > 0 || propertyIds.length > 0 || csvAudiences.length > 0 || minDate !== null || maxDate !== null
 
                 if (!hasFilters && manualPhoneSet.size === 0) {
                     // No filters and no manual phones means include all leads
@@ -228,9 +247,18 @@ export async function POST(req: Request) {
                         if (new Date(lead.created_at) < minDate) continue
                     }
 
+                    if (maxDate && lead.created_at) {
+                        if (new Date(lead.created_at) > maxDate) continue
+                    }
+
                     // Source test
                     if (sources.length > 0) {
                         if (!lead.source || !sources.includes(lead.source)) continue
+                    }
+
+                    // Form test
+                    if (forms.length > 0) {
+                        if (!lead.form_name || !forms.includes(lead.form_name.trim())) continue
                     }
 
                     // Stage test
@@ -324,11 +352,14 @@ export async function POST(req: Request) {
             description: description || '',
             filters: {
                 campaigns,
+                forms,
                 sources,
                 pipelineStages,
                 propertyIds,
                 csvAudiences,
-                dateRange
+                dateRange,
+                startDate,
+                endDate
             },
             leadCount: finalLeadCount,
             lastSyncedAt: new Date().toISOString()

@@ -3197,6 +3197,50 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* Audience Maker Section */}
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
+              <div className="p-6 sm:p-7 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="bg-blue-100 text-blue-600 p-3 rounded-full shadow-md shadow-blue-500/5">
+                      <Layers size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-slate-900">Audience Maker</h4>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        Build and segment targeted audiences with multi-select campaigns, forms, stages & custom date ranges
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.open(`/dashboard/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`, '_blank', 'noopener,noreferrer')}
+                    className="hidden sm:flex bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-sm items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+                  >
+                    <Layers size={13} />
+                    <span>Open Audience Maker</span>
+                    <ExternalLink size={12} />
+                  </button>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="pr-2">
+                    <span className="text-xs font-bold text-slate-700 block">Smart Audience Groups</span>
+                    <span className="text-[10px] text-slate-400 font-medium">Segment leads for personalized WhatsApp broadcasts, custom export tagging, and ad targeting.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.open(`/dashboard/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`, '_blank', 'noopener,noreferrer')}
+                    className="w-full sm:hidden bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <Layers size={13} />
+                    <span>Open Audience Maker</span>
+                    <ExternalLink size={12} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {isAdminLike && authRole !== 'agent' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md">
                 <div className="p-6 sm:p-7">
@@ -3348,12 +3392,21 @@ export default function ProfilePage() {
                           <p className="text-xs text-slate-500 leading-relaxed font-medium">
                             Create, upload, and manage custom audience segments directly inside Meta Ads Manager.
                           </p>
-                          <button
-                            onClick={() => router.push(`/dashboard/profile/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
-                            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-3 px-5 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
-                          >
-                            <Users size={14} /> Manage Custom Audiences
-                          </button>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button
+                              onClick={() => router.push(`/dashboard/profile/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
+                              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-3 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                            >
+                              <Users size={14} /> Meta Audiences
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => window.open(`/dashboard/audiences${impersonateId ? `?impersonate=${impersonateId}` : ''}`, '_blank', 'noopener,noreferrer')}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                            >
+                              <Layers size={14} /> Audience Maker <ExternalLink size={12} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>

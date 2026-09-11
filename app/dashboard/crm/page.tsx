@@ -362,7 +362,7 @@ export default function CRMPage() {
 
   const [searchQuery, setSearchQuery] = useState('')
   const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string; attemptDate?: Date | null } | null>(null)
-  const [selectedCampaign, setSelectedCampaign] = useState('')
+  const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([])
   const [isCampaignFilterOpen, setIsCampaignFilterOpen] = useState(false)
   const [campaignFilterSearch, setCampaignFilterSearch] = useState('')
   const campaignFilterRef = useRef<HTMLDivElement>(null)
@@ -2023,15 +2023,18 @@ END:VCARD\n`
                           l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           l.phone?.includes(searchQuery) || 
                           l.email?.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchCampaign = selectedCampaign === '' || (() => {
+      const matchCampaign = selectedCampaigns.length === 0 || (() => {
+        const cleanSelected = selectedCampaigns.map(c => c.trim().toLowerCase())
         if (l.campaign_id) {
-          const camp = campaigns.find(c => c.id === l.campaign_id);
-          if (camp && camp.name.trim() === selectedCampaign.trim()) return true;
+          const camp = campaigns.find(c => c.id === l.campaign_id)
+          if (camp && cleanSelected.includes(camp.name.trim().toLowerCase())) return true
         }
-        const leadCamp = getLeadCampaignName(l);
-        if (leadCamp && leadCamp.trim() === selectedCampaign.trim()) return true;
-        return l.ad_name?.trim() === selectedCampaign.trim() || 
-               l.campaign_name?.trim() === selectedCampaign.trim();
+        const leadCamp = getLeadCampaignName(l)
+        if (leadCamp && cleanSelected.includes(leadCamp.trim().toLowerCase())) return true
+        const adName = l.ad_name?.trim().toLowerCase()
+        const campName = l.campaign_name?.trim().toLowerCase()
+        return (adName && cleanSelected.includes(adName)) || 
+               (campName && cleanSelected.includes(campName))
       })()
       const matchForm = selectedForm === '' || 
                         l.form_name?.trim() === selectedForm.trim() || 
@@ -2041,7 +2044,7 @@ END:VCARD\n`
       
       return matchAgent && matchDate && matchDnp && matchNextAction && matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
-  }, [leads, campaigns, searchQuery, selectedCampaign, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, crmCustomDate, crmStartDate, crmEndDate, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
+  }, [leads, campaigns, searchQuery, selectedCampaigns, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, crmCustomDate, crmStartDate, crmEndDate, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
 
   const matchLeadToStage = (l: any, stageName: string): boolean => {
     if (!stageName || stageName === 'All Leads' || stageName === 'ALL') return true
@@ -2434,7 +2437,7 @@ END:VCARD\n`
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal size={14} className="text-blue-600" />
                     <span>View & Filter Controls</span>
-                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL') && (
+                    {(selectedCampaigns.length > 0 || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL') && (
                       <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
                     )}
                   </div>
@@ -2509,9 +2512,9 @@ END:VCARD\n`
 
                     <button 
                         onClick={() => setShowFilters(!showFilters)}
-                        className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto ${showFilters || selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                        className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto ${showFilters || selectedCampaigns.length > 0 || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
                     >
-                        <Filter size={18} /> Filters {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL') && <span className="w-2 h-2 rounded-full bg-blue-400"></span>}
+                        <Filter size={18} /> Filters {(selectedCampaigns.length > 0 || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL') && <span className="w-2 h-2 rounded-full bg-blue-400"></span>}
                     </button>
                 </div>
             </div>
@@ -2709,9 +2712,11 @@ END:VCARD\n`
                         )}
                     </div>
 
-                    {/* Searchable Campaign Filter */}
+                    {/* Searchable Campaign Filter (Multi-Select) */}
                     <div className="relative flex-1" ref={campaignFilterRef}>
-                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Campaign</label>
+                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">
+                            Campaign {selectedCampaigns.length > 0 && `(${selectedCampaigns.length})`}
+                        </label>
                         <button
                             type="button"
                             onClick={() => {
@@ -2719,27 +2724,38 @@ END:VCARD\n`
                                 if (!isCampaignFilterOpen) setCampaignFilterSearch('')
                             }}
                             className={`w-full bg-slate-50 hover:bg-slate-100/80 border ${
-                                selectedCampaign ? 'border-blue-500 bg-blue-50/40 text-blue-900' : 'border-slate-200/60 text-slate-700'
+                                selectedCampaigns.length > 0 ? 'border-blue-500 bg-blue-50/40 text-blue-900' : 'border-slate-200/60 text-slate-700'
                             } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer flex items-center justify-between shadow-xs`}
-                            title={selectedCampaign || 'All Campaigns'}
+                            title={selectedCampaigns.length === 0 ? 'All Campaigns' : selectedCampaigns.join(', ')}
                         >
-                            <span className="truncate flex-1 flex items-center gap-1.5" title={selectedCampaign || 'All Campaigns'}>
-                                <span className="truncate">{selectedCampaign ? selectedCampaign : 'All Campaigns'}</span>
-                                {selectedCampaign && activeCampaignSet.names.has(selectedCampaign.toLowerCase()) && (
+                            <span className="truncate flex-1 flex items-center gap-1.5" title={selectedCampaigns.length === 0 ? 'All Campaigns' : selectedCampaigns.join(', ')}>
+                                <span className="truncate">
+                                    {selectedCampaigns.length === 0
+                                        ? 'All Campaigns'
+                                        : selectedCampaigns.length === 1
+                                            ? selectedCampaigns[0]
+                                            : `${selectedCampaigns.length} Campaigns Selected`}
+                                </span>
+                                {selectedCampaigns.length === 1 && activeCampaignSet.names.has(selectedCampaigns[0].toLowerCase()) && (
                                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                         <span>Active</span>
                                     </span>
                                 )}
+                                {selectedCampaigns.length > 1 && (
+                                    <span className="bg-blue-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md shrink-0">
+                                        {selectedCampaigns.length}
+                                    </span>
+                                )}
                             </span>
-                            {selectedCampaign ? (
+                            {selectedCampaigns.length > 0 ? (
                                 <span
                                     onClick={(e) => {
                                         e.stopPropagation()
-                                        setSelectedCampaign('')
+                                        setSelectedCampaigns([])
                                         setCurrentPage(1)
                                     }}
-                                    className="p-0.5 hover:bg-blue-200/60 rounded-md text-blue-600 ml-1 transition-colors shrink-0"
+                                    className="p-0.5 hover:bg-blue-200/60 rounded-md text-blue-600 ml-1 transition-colors shrink-0 cursor-pointer"
                                     title="Clear Campaign Filter"
                                 >
                                     <X size={13} />
@@ -2750,7 +2766,7 @@ END:VCARD\n`
                         </button>
 
                         {isCampaignFilterOpen && (
-                            <div className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200/80 rounded-2xl shadow-2xl z-50 p-2 space-y-1.5 min-w-[320px] sm:min-w-[460px] md:min-w-[540px] max-w-[92vw] sm:max-w-2xl animate-in fade-in zoom-in-95 duration-150">
+                            <div className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200/80 rounded-2xl shadow-2xl z-50 p-2.5 space-y-2 min-w-[320px] sm:min-w-[460px] md:min-w-[540px] max-w-[92vw] sm:max-w-2xl animate-in fade-in zoom-in-95 duration-150">
                                 {/* Search input */}
                                 <div className="relative">
                                     <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -2766,11 +2782,44 @@ END:VCARD\n`
                                         <button
                                             type="button"
                                             onClick={() => setCampaignFilterSearch('')}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
                                         >
                                             <X size={12} />
                                         </button>
                                     )}
+                                </div>
+
+                                {/* Multi-select quick action header */}
+                                <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-500">
+                                    <span>
+                                        {selectedCampaigns.length > 0
+                                            ? `${selectedCampaigns.length} of ${uniqueCampaigns.length} campaigns selected`
+                                            : 'Filter by one or multiple campaigns'}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const filtered = uniqueCampaigns.filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim()))
+                                                setSelectedCampaigns(Array.from(new Set([...selectedCampaigns, ...filtered])))
+                                                setCurrentPage(1)
+                                            }}
+                                            className="text-blue-600 hover:underline cursor-pointer"
+                                        >
+                                            Select All Filtered
+                                        </button>
+                                        <span className="text-slate-300">•</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedCampaigns([])
+                                                setCurrentPage(1)
+                                            }}
+                                            className="text-slate-400 hover:text-red-500 hover:underline cursor-pointer"
+                                        >
+                                            Clear
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Options List */}
@@ -2778,50 +2827,56 @@ END:VCARD\n`
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            setSelectedCampaign('')
+                                            setSelectedCampaigns([])
                                             setCurrentPage(1)
-                                            setIsCampaignFilterOpen(false)
                                         }}
-                                        className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
-                                            !selectedCampaign ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100'
+                                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
+                                            selectedCampaigns.length === 0 ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100'
                                         }`}
                                     >
                                         <span>All Campaigns</span>
-                                        {!selectedCampaign && <CheckCircle2 size={13} />}
+                                        {selectedCampaigns.length === 0 && <CheckCircle2 size={13} />}
                                     </button>
 
                                     {uniqueCampaigns
                                         .filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim()))
                                         .map((camp, idx) => {
-                                            const isSelected = selectedCampaign === camp
+                                            const isSelected = selectedCampaigns.includes(camp)
                                             const isCampActive = activeCampaignSet.names.has(camp.toLowerCase())
                                             return (
-                                                <button
+                                                <div
                                                     key={idx}
-                                                    type="button"
                                                     onClick={() => {
-                                                        setSelectedCampaign(camp)
+                                                        setSelectedCampaigns(prev =>
+                                                            prev.includes(camp) ? prev.filter(c => c !== camp) : [...prev, camp]
+                                                        )
                                                         setCurrentPage(1)
-                                                        setIsCampaignFilterOpen(false)
                                                     }}
                                                     title={camp}
-                                                    className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
-                                                        isSelected ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                                                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between gap-2.5 transition-all cursor-pointer select-none border ${
+                                                        isSelected
+                                                            ? 'bg-blue-50/80 text-blue-900 border-blue-200/80 shadow-xs font-black'
+                                                            : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 border-transparent'
                                                     }`}
                                                 >
-                                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => {}}
+                                                            className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer shrink-0 pointer-events-none"
+                                                        />
                                                         <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{camp}</span>
                                                         {isCampActive && (
                                                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 shadow-2xs ${
-                                                                isSelected ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                isSelected ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                                             }`}>
-                                                                <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'} animate-pulse`}></span>
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                                                 <span>Active</span>
                                                             </span>
                                                         )}
                                                     </div>
-                                                    {isSelected && <CheckCircle2 size={14} className="shrink-0 mt-0.5" />}
-                                                </button>
+                                                </div>
                                             )
                                         })}
 
@@ -2830,6 +2885,20 @@ END:VCARD\n`
                                             No matching campaigns found
                                         </div>
                                     )}
+                                </div>
+
+                                {/* Footer Action Bar */}
+                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                                    <span className="text-[10px] font-bold text-slate-400">
+                                        Click options to toggle multiple
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsCampaignFilterOpen(false)}
+                                        className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+                                    >
+                                        Apply & Close
+                                    </button>
                                 </div>
                             </div>
                         )}
@@ -2993,9 +3062,9 @@ END:VCARD\n`
                         <ChevronDown size={14} className="absolute right-3 bottom-3 text-indigo-400 pointer-events-none" />
                     </div>
 
-                    {(selectedCampaign || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || crmCustomDate || (crmStartDate && crmEndDate) || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' || selectedSpecificStage !== 'ALL') && (
+                    {(selectedCampaigns.length > 0 || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || crmCustomDate || (crmStartDate && crmEndDate) || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' || selectedSpecificStage !== 'ALL') && (
                         <div className="col-span-full flex justify-end">
-                            <button onClick={() => { setSelectedCampaign(''); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setCrmCustomDate(''); setCrmStartDate(''); setCrmEndDate(''); setSelectedDnpFilter('ALL'); setSelectedNextActionFilter('ALL'); setSelectedNextActionType('ALL'); setSelectedSpecificStage('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors cursor-pointer">Clear All Filters</button>
+                            <button onClick={() => { setSelectedCampaigns([]); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setCrmCustomDate(''); setCrmStartDate(''); setCrmEndDate(''); setSelectedDnpFilter('ALL'); setSelectedNextActionFilter('ALL'); setSelectedNextActionType('ALL'); setSelectedSpecificStage('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors cursor-pointer">Clear All Filters</button>
                         </div>
                     )}
                 </div>
@@ -4689,7 +4758,7 @@ END:VCARD\n`
             crmCustomDate,
             crmStartDate,
             crmEndDate,
-            selectedCampaign,
+            selectedCampaign: selectedCampaigns,
             selectedForm,
             selectedCsvAudience,
             selectedDnpFilter,

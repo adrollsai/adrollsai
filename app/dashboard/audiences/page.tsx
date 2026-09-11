@@ -32,11 +32,14 @@ type AudienceGroup = {
   description?: string
   filters: {
     campaigns?: string[]
+    forms?: string[]
     sources?: string[]
     pipelineStages?: string[]
     propertyIds?: string[]
     csvAudiences?: string[]
     dateRange?: string
+    startDate?: string
+    endDate?: string
   }
   leadCount: number
   is_active: boolean
@@ -64,6 +67,7 @@ export default function AudienceGroupPage() {
   const [metadata, setMetadata] = useState<{
     totalLeads: number
     campaigns: MetadataCampaign[]
+    forms: { name: string; count: number }[]
     sources: { name: string; count: number }[]
     stages: { name: string; count: number }[]
     csvAudiences: { name: string; count: number }[]
@@ -71,6 +75,7 @@ export default function AudienceGroupPage() {
   }>({
     totalLeads: 0,
     campaigns: [],
+    forms: [],
     sources: [],
     stages: [],
     csvAudiences: [],
@@ -84,14 +89,18 @@ export default function AudienceGroupPage() {
   const [audName, setAudName] = useState('')
   const [audDesc, setAudDesc] = useState('')
   const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([])
+  const [selectedForms, setSelectedForms] = useState<string[]>([])
   const [selectedSources, setSelectedSources] = useState<string[]>([])
   const [selectedStages, setSelectedStages] = useState<string[]>([])
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([])
   const [selectedDateRange, setSelectedDateRange] = useState('all')
+  const [customStartDate, setCustomStartDate] = useState('')
+  const [customEndDate, setCustomEndDate] = useState('')
   const [manualPhonesText, setManualPhonesText] = useState('')
 
-  // Builder campaign search
+  // Builder search states
   const [builderCampaignSearch, setBuilderCampaignSearch] = useState('')
+  const [builderFormSearch, setBuilderFormSearch] = useState('')
 
   // Live Count & Preview in Builder
   const [evaluatingCount, setEvaluatingCount] = useState(false)
@@ -139,6 +148,7 @@ export default function AudienceGroupPage() {
         setMetadata({
           totalLeads: data.totalLeads || 0,
           campaigns: data.campaigns || [],
+          forms: data.forms || [],
           sources: data.sources || [],
           stages: data.stages || [],
           csvAudiences: data.csvAudiences || [],
@@ -162,10 +172,13 @@ export default function AudienceGroupPage() {
   }, [
     isBuilderOpen,
     selectedCampaigns,
+    selectedForms,
     selectedSources,
     selectedStages,
     selectedPropertyIds,
     selectedDateRange,
+    customStartDate,
+    customEndDate,
     manualPhonesText
   ])
 
@@ -180,10 +193,13 @@ export default function AudienceGroupPage() {
       const payload = {
         filters: {
           campaigns: selectedCampaigns,
+          forms: selectedForms,
           sources: selectedSources,
           pipelineStages: selectedStages,
           propertyIds: selectedPropertyIds,
-          dateRange: selectedDateRange
+          dateRange: selectedDateRange,
+          startDate: selectedDateRange === 'custom' ? customStartDate : undefined,
+          endDate: selectedDateRange === 'custom' ? customEndDate : undefined
         },
         manualPhoneNumbers: manualPhones
       }
@@ -213,10 +229,15 @@ export default function AudienceGroupPage() {
     setAudName('')
     setAudDesc('')
     setSelectedCampaigns([])
+    setSelectedForms([])
     setSelectedSources([])
     setSelectedStages([])
     setSelectedPropertyIds([])
     setSelectedDateRange('all')
+    setCustomStartDate('')
+    setCustomEndDate('')
+    setBuilderCampaignSearch('')
+    setBuilderFormSearch('')
     setManualPhonesText('')
     setLiveCount(null)
     setPreviewLeads([])
@@ -229,10 +250,15 @@ export default function AudienceGroupPage() {
     setAudName(aud.name)
     setAudDesc(aud.description || '')
     setSelectedCampaigns(aud.filters?.campaigns || [])
+    setSelectedForms(aud.filters?.forms || [])
     setSelectedSources(aud.filters?.sources || [])
     setSelectedStages(aud.filters?.pipelineStages || [])
     setSelectedPropertyIds(aud.filters?.propertyIds || [])
     setSelectedDateRange(aud.filters?.dateRange || 'all')
+    setCustomStartDate(aud.filters?.startDate || '')
+    setCustomEndDate(aud.filters?.endDate || '')
+    setBuilderCampaignSearch('')
+    setBuilderFormSearch('')
     setManualPhonesText('')
     setLiveCount(aud.leadCount)
     setIsBuilderOpen(true)
@@ -259,10 +285,13 @@ export default function AudienceGroupPage() {
         description: audDesc.trim(),
         filters: {
           campaigns: selectedCampaigns,
+          forms: selectedForms,
           sources: selectedSources,
           pipelineStages: selectedStages,
           propertyIds: selectedPropertyIds,
-          dateRange: selectedDateRange
+          dateRange: selectedDateRange,
+          startDate: selectedDateRange === 'custom' ? customStartDate : undefined,
+          endDate: selectedDateRange === 'custom' ? customEndDate : undefined
         },
         manualPhoneNumbers: manualPhones
       }
@@ -507,19 +536,28 @@ export default function AudienceGroupPage() {
                         🎯 {campaignCount} Campaign{campaignCount > 1 ? 's' : ''}
                       </span>
                     )}
+                    {(aud.filters?.forms?.length || 0) > 0 && (
+                      <span className="text-[10px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md truncate max-w-[200px]" title={aud.filters.forms?.join(', ')}>
+                        📋 {aud.filters.forms?.length} Form{(aud.filters.forms?.length || 0) > 1 ? 's' : ''}
+                      </span>
+                    )}
                     {stageCount > 0 && (
                       <span className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md">
                         📊 {stageCount} Stage{stageCount > 1 ? 's' : ''}
                       </span>
                     )}
                     {sourceCount > 0 && (
-                      <span className="text-[10px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md">
+                      <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md">
                         🏷️ {sourceCount} Source{sourceCount > 1 ? 's' : ''}
                       </span>
                     )}
                     {aud.filters?.dateRange && aud.filters.dateRange !== 'all' && (
                       <span className="text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md">
-                        📅 Last {aud.filters.dateRange}
+                        📅 {aud.filters.dateRange === 'custom'
+                          ? (aud.filters.startDate && aud.filters.endDate
+                              ? `${aud.filters.startDate} to ${aud.filters.endDate}`
+                              : aud.filters.startDate ? `From ${aud.filters.startDate}` : `Until ${aud.filters.endDate}`)
+                          : `Last ${aud.filters.dateRange}`}
                       </span>
                     )}
                   </div>
@@ -793,7 +831,97 @@ export default function AudienceGroupPage() {
                   </div>
                 </div>
 
-                {/* 2. Pipeline Stages & Sources side-by-side */}
+                {/* 2. Lead Forms Filter with Instant Search & Lead Counts */}
+                <div className="space-y-2 bg-slate-50/70 border border-slate-200/80 p-4 rounded-2xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="text-xs font-black text-slate-800 uppercase flex items-center gap-1.5">
+                      📋 Lead Forms ({metadata.forms.length} available)
+                      {selectedForms.length > 0 && (
+                        <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
+                          {selectedForms.length} Selected
+                        </span>
+                      )}
+                    </label>
+
+                    <div className="flex items-center gap-2 text-[11px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const matching = metadata.forms
+                            .filter(f => !builderFormSearch || f.name.toLowerCase().includes(builderFormSearch.toLowerCase()))
+                            .map(f => f.name)
+                          setSelectedForms(Array.from(new Set([...selectedForms, ...matching])))
+                        }}
+                        className="text-blue-600 hover:underline cursor-pointer"
+                      >
+                        Select All Filtered
+                      </button>
+                      <span className="text-slate-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedForms([])}
+                        className="text-red-500 hover:underline cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Form Search Input */}
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search lead forms..."
+                      value={builderFormSearch}
+                      onChange={(e) => setBuilderFormSearch(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-blue-400"
+                    />
+                  </div>
+
+                  {/* Forms List */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto custom-scrollbar bg-white p-2 rounded-xl border border-slate-200">
+                    {metadata.forms
+                      .filter(f => !builderFormSearch || f.name.toLowerCase().includes(builderFormSearch.toLowerCase()))
+                      .map(form => {
+                        const isChecked = selectedForms.includes(form.name)
+                        return (
+                          <label
+                            key={form.name}
+                            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors text-xs ${
+                              isChecked ? 'bg-purple-50 text-purple-900 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate pr-2">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  if (isChecked) {
+                                    setSelectedForms(selectedForms.filter(f => f !== form.name))
+                                  } else {
+                                    setSelectedForms([...selectedForms, form.name])
+                                  }
+                                }}
+                                className="rounded text-purple-600 focus:ring-purple-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                              />
+                              <span className="truncate">{form.name}</span>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
+                              {form.count}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    {metadata.forms.filter(f => !builderFormSearch || f.name.toLowerCase().includes(builderFormSearch.toLowerCase())).length === 0 && (
+                      <div className="col-span-full py-4 text-center text-xs text-slate-400 font-semibold">
+                        No lead forms found
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Pipeline Stages & Sources side-by-side */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Pipeline Stages */}
                   <div className="space-y-2 bg-slate-50/70 border border-slate-200/80 p-4 rounded-2xl">
@@ -861,17 +989,18 @@ export default function AudienceGroupPage() {
                   </div>
                 </div>
 
-                {/* 3. Date Range Selector */}
+                {/* 4. Date Range Selector */}
                 <div className="space-y-2 bg-slate-50/70 border border-slate-200/80 p-4 rounded-2xl">
                   <label className="text-xs font-black text-slate-800 uppercase block">
                     📅 Lead Creation Date Range
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {[
                       { id: 'all', label: 'All Time' },
                       { id: '7d', label: 'Last 7 Days' },
                       { id: '30d', label: 'Last 30 Days' },
-                      { id: '90d', label: 'Last 90 Days' }
+                      { id: '90d', label: 'Last 90 Days' },
+                      { id: 'custom', label: 'Custom Duration' }
                     ].map(dr => (
                       <button
                         key={dr.id}
@@ -887,6 +1016,29 @@ export default function AudienceGroupPage() {
                       </button>
                     ))}
                   </div>
+
+                  {selectedDateRange === 'custom' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 bg-white p-3 rounded-xl border border-slate-200 animate-in fade-in duration-150">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Start Date</label>
+                        <input
+                          type="date"
+                          value={customStartDate}
+                          onChange={(e) => setCustomStartDate(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">End Date</label>
+                        <input
+                          type="date"
+                          value={customEndDate}
+                          onChange={(e) => setCustomEndDate(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 4. Optional Manual Phone Numbers */}

@@ -59,11 +59,14 @@ export async function POST(req: Request) {
 
         const {
             campaigns = [],
+            forms = [],
             sources = [],
             pipelineStages = [],
             propertyIds = [],
             csvAudiences = [],
-            dateRange = 'all'
+            dateRange = 'all',
+            startDate = null,
+            endDate = null
         } = filters || {}
 
         // 1. Fetch total leads for target user to prepare batch pagination
@@ -81,7 +84,7 @@ export async function POST(req: Request) {
             fetchPromises.push(
                 supabaseAdmin
                     .from('leads')
-                    .select('id, name, phone, email, source, ad_name, csv_audience, pipeline_stage, property_id, custom_fields, created_at')
+                    .select('id, name, phone, email, source, ad_name, form_name, csv_audience, pipeline_stage, property_id, custom_fields, created_at')
                     .eq('user_id', targetId)
                     .range(p * pageSize, (p + 1) * pageSize - 1)
             )
@@ -102,12 +105,29 @@ export async function POST(req: Request) {
         }
 
         let minDate: Date | null = null
+        let maxDate: Date | null = null
+
         if (dateRange === '7d') {
             minDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         } else if (dateRange === '30d') {
             minDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
         } else if (dateRange === '90d') {
             minDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+        } else if (dateRange === 'custom') {
+            if (startDate) {
+                const d = new Date(startDate)
+                if (!isNaN(d.getTime())) {
+                    d.setHours(0, 0, 0, 0)
+                    minDate = d
+                }
+            }
+            if (endDate) {
+                const d = new Date(endDate)
+                if (!isNaN(d.getTime())) {
+                    d.setHours(23, 59, 59, 999)
+                    maxDate = d
+                }
+            }
         }
 
         const matchedLeads: any[] = []
@@ -117,7 +137,7 @@ export async function POST(req: Request) {
             if (manualPhoneSet.size > 0 && leadPhoneNorm && manualPhoneSet.has(leadPhoneNorm)) {
                 matchedLeads.push(lead)
             } else {
-                const hasFilters = campaigns.length > 0 || sources.length > 0 || pipelineStages.length > 0 || propertyIds.length > 0 || csvAudiences.length > 0 || minDate !== null
+                const hasFilters = campaigns.length > 0 || forms.length > 0 || sources.length > 0 || pipelineStages.length > 0 || propertyIds.length > 0 || csvAudiences.length > 0 || minDate !== null || maxDate !== null
 
                 if (!hasFilters && manualPhoneSet.size === 0) {
                     matchedLeads.push(lead)
@@ -126,8 +146,16 @@ export async function POST(req: Request) {
                         if (new Date(lead.created_at) < minDate) continue
                     }
 
+                    if (maxDate && lead.created_at) {
+                        if (new Date(lead.created_at) > maxDate) continue
+                    }
+
                     if (sources.length > 0) {
                         if (!lead.source || !sources.includes(lead.source)) continue
+                    }
+
+                    if (forms.length > 0) {
+                        if (!lead.form_name || !forms.includes(lead.form_name.trim())) continue
                     }
 
                     if (pipelineStages.length > 0) {
@@ -179,6 +207,7 @@ export async function POST(req: Request) {
                 phone: l.phone || '—',
                 email: l.email || '—',
                 source: l.source || '—',
+                form: l.form_name || '—',
                 campaign: camp || '—',
                 stage: l.pipeline_stage || 'New',
                 created_at: l.created_at
