@@ -952,6 +952,7 @@ IMPORTANT RULES:
                                     let ownerUserId: string | null = null;
                                     let ownerWaToken: string | null = null;
                                     let ownerWaPhoneId: string | null = null;
+                                    let ownerFacebookToken: string | null = null;
                                     let catalogueBtnText = 'View Products';
                                     let ownerCustomDomain: string | null = null;
                                     let ownerButtons: any[] = [];
@@ -981,6 +982,7 @@ IMPORTANT RULES:
                                             
                                             ownerUserId = selectedProfile.id;
                                             ownerWaToken = selectedProfile.whatsapp_access_token || selectedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
+                                            ownerFacebookToken = selectedProfile.facebook_token || null;
                                             ownerWaPhoneId = selectedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
                                             catalogueBtnText = selectedProfile.whatsapp_catalogue_button_text || 'View Products';
                                             ownerCustomDomain = selectedProfile.custom_domain || null;
@@ -1031,6 +1033,7 @@ IMPORTANT RULES:
                                                 .maybeSingle();
                                             if (ownerProfile) {
                                                 ownerWaToken = ownerProfile.whatsapp_access_token || ownerProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
+                                                ownerFacebookToken = ownerProfile.facebook_token || null;
                                                 ownerWaPhoneId = ownerProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
                                                 catalogueBtnText = ownerProfile.whatsapp_catalogue_button_text || 'View Products';
                                                 ownerCustomDomain = ownerProfile.custom_domain || null;
@@ -1088,16 +1091,21 @@ IMPORTANT RULES:
                                     let adNameStr = adHeadline || 'WhatsApp Ad';
                                     let adCampaignString = adNameStr;
 
-                                    if (adId && ownerWaToken) {
+                                    if (adId) {
                                         try {
-                                            const metaToken = ownerWaToken;
-                                            const adRes = await fetch(`https://graph.facebook.com/v20.0/${adId}?fields=id,name,adset{id,name},campaign{id,name}&access_token=${metaToken}`);
-                                            if (adRes.ok) {
-                                                const adDetails = await adRes.json();
-                                                campaignId = adDetails.campaign?.id || '';
-                                                campaignName = adDetails.campaign?.name || '';
-                                                adNameStr = adDetails.name || adHeadline || 'WhatsApp Ad';
-                                                adCampaignString = campaignName ? `${campaignName} / ${adNameStr}` : adNameStr;
+                                            const metaToken = ownerFacebookToken || process.env.META_ACCESS_TOKEN || ownerWaToken;
+                                            if (metaToken) {
+                                                const adRes = await fetch(`https://graph.facebook.com/v20.0/${adId}?fields=id,name,adset{id,name},campaign{id,name}&access_token=${metaToken}`);
+                                                if (adRes.ok) {
+                                                    const adDetails = await adRes.json();
+                                                    campaignId = adDetails.campaign?.id || '';
+                                                    campaignName = adDetails.campaign?.name || '';
+                                                    adNameStr = adDetails.name || adHeadline || 'WhatsApp Ad';
+                                                    adCampaignString = campaignName ? `${campaignName} / ${adNameStr}` : adNameStr;
+                                                    console.log(`[WhatsApp Webhook] Resolved ad ${adId}: Campaign ${campaignName} (${campaignId}), Ad ${adNameStr}`);
+                                                } else {
+                                                    console.warn(`[WhatsApp Webhook] Error response from Meta ad fetch (${adId}):`, await adRes.json());
+                                                }
                                             }
                                         } catch (adFetchErr) {
                                             console.error('[WhatsApp Webhook] Error fetching ad details from Meta:', adFetchErr);
@@ -1850,7 +1858,7 @@ IMPORTANT RULES:
                                     };
 
                                     // Helper: Answer customer free-form property inquiry with AI + 3 Action Buttons
-                                    const answerCustomerQueryWithAI = async (queryText: string) => {
+                                    const answerCustomerQueryWithAI = async (queryText: string, skipActionButtons = false) => {
                                         try {
                                             console.log(`🤖 [Customer AI] Answering query from ${cleanFrom} for ${ownerBusinessName}: "${queryText}"`);
                                             
@@ -1927,13 +1935,18 @@ RULES:
 
                                             // Send AI answer as clear message
                                             await sendTextMessage(aiReply);
-                                            await new Promise(r => setTimeout(r, 600));
                                             
-                                            // Send 3 action buttons for easy next steps
-                                            await sendThreeButtons("What would you like to do next?");
+                                            if (!skipActionButtons) {
+                                                await new Promise(r => setTimeout(r, 600));
+                                                
+                                                // Send 3 action buttons for easy next steps
+                                                await sendThreeButtons("What would you like to do next?");
+                                            }
                                         } catch (err) {
                                             console.error('[Customer AI] Failed to generate AI reply:', err);
-                                            await sendThreeButtons("What would you like to do next?");
+                                            if (!skipActionButtons) {
+                                                await sendThreeButtons("What would you like to do next?");
+                                            }
                                         }
                                     };
 
@@ -2089,7 +2102,122 @@ RULES:
                                         }
                                     };
 
-                                    // 1. Check for Opt-Out / Stop / Not Interested
+                                    // 1. Dynamic Qualification MCQ Handlers & Parsers
+                                    const leadCampaignId = campaignId || latestLead?.campaign_id || adId;
+                                    let matchedFlowQuestions: any[] | null = null;
+
+                                    if (leadCampaignId) {
+                                        try {
+                                            const { data: matchedFlow } = await supabaseAdmin
+                                                .from('whatsapp_question_flows')
+                                                .select('questions, name, is_active')
+                                                .eq('user_id', ownerUserId)
+                                                .eq('linked_campaign_id', leadCampaignId)
+                                                .maybeSingle();
+
+                                            if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
+                                                console.log(`[WhatsApp Bot] Using campaign-specific flow "${matchedFlow.name}" for campaign ${leadCampaignId}`);
+                                                matchedFlowQuestions = matchedFlow.questions;
+                                                ownerQualifyingQuestions = matchedFlow.questions;
+                                                ownerQualifyingEnabled = true;
+                                            }
+                                        } catch (fErr) {
+                                            console.warn('[WhatsApp Bot] Failed to fetch campaign question flow:', fErr);
+                                        }
+                                    }
+
+                                    // Fallback: If no campaign-specific flow matched, check if there is any active flow for this user
+                                    if (!matchedFlowQuestions) {
+                                        try {
+                                            const { data: defaultFlow } = await supabaseAdmin
+                                                .from('whatsapp_question_flows')
+                                                .select('questions, name')
+                                                .eq('user_id', ownerUserId)
+                                                .eq('is_active', true)
+                                                .order('created_at', { ascending: false })
+                                                .limit(1)
+                                                .maybeSingle();
+
+                                            if (defaultFlow && Array.isArray(defaultFlow.questions) && defaultFlow.questions.length > 0) {
+                                                console.log(`[WhatsApp Bot] Using active default flow "${defaultFlow.name}" for user ${ownerUserId}`);
+                                                ownerQualifyingQuestions = defaultFlow.questions;
+                                                ownerQualifyingEnabled = true;
+                                            }
+                                        } catch (dfErr) {
+                                            console.warn('[WhatsApp Bot] Failed to fetch default question flow:', dfErr);
+                                        }
+                                    }
+
+                                    if (Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
+                                        ownerQualifyingEnabled = true;
+                                    }
+
+                                    const parsedQuestionsList: { index: number; key: string; question: string; options: string[] }[] = [];
+                                    if (Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
+                                        ownerQualifyingQuestions.forEach((rawItem: any, idx: number) => {
+                                            let item = rawItem;
+                                            if (typeof item === 'string' && item.trim().startsWith('{')) {
+                                                try {
+                                                    const parsed = JSON.parse(item);
+                                                    if (parsed && typeof parsed === 'object') item = parsed;
+                                                } catch (e) {}
+                                            }
+
+                                            if (typeof item === 'object' && item !== null) {
+                                                const qText = item.question || item.text || `Question ${idx + 1}`;
+                                                const qLower = qText.toLowerCase();
+                                                let key = item.key;
+                                                if (!key) {
+                                                    if (qLower.includes('budget') || qLower.includes('price')) key = 'budget';
+                                                    else if (qLower.includes('timeline') || qLower.includes('when') || qLower.includes('month')) key = 'timeline';
+                                                    else if (qLower.includes('property') || qLower.includes('project') || qLower.includes('type') || qLower.includes('looking for')) key = 'property_type';
+                                                    else key = `custom_q_${idx}`;
+                                                }
+                                                parsedQuestionsList.push({
+                                                    index: idx,
+                                                    key,
+                                                    question: qText,
+                                                    options: Array.isArray(item.options) ? item.options : []
+                                                });
+                                            } else if (typeof item === 'string') {
+                                                const match = item.match(/\(([^)]+)\)/);
+                                                const qText = item.replace(/\s*\([^)]+\)/, '').trim();
+                                                const options = match ? match[1].split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+                                                const qLower = (qText || item).toLowerCase();
+                                                let key = `custom_q_${idx}`;
+                                                if (qLower.includes('budget') || qLower.includes('price')) key = 'budget';
+                                                else if (qLower.includes('timeline') || qLower.includes('when') || qLower.includes('month')) key = 'timeline';
+                                                else if (qLower.includes('property') || qLower.includes('project') || qLower.includes('type') || qLower.includes('looking for')) key = 'property_type';
+                                                parsedQuestionsList.push({ index: idx, key, question: qText || item, options });
+                                            }
+                                        });
+                                    }
+
+                                    if (parsedQuestionsList.length === 0) {
+                                        parsedQuestionsList.push(
+                                            { index: 0, key: 'property_type', question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
+                                            { index: 1, key: 'budget', question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
+                                            { index: 2, key: 'timeline', question: 'What is your timeline to purchase?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
+                                        );
+                                    }
+
+                                    const askQuestionMCQ = async (qIndex: number) => {
+                                        const qObj = parsedQuestionsList[qIndex];
+                                        if (!qObj) return;
+                                        if (Array.isArray(qObj.options) && qObj.options.length > 0) {
+                                            const rawOptions = qObj.options.slice(0, 3);
+                                            const buttons = rawOptions.map((opt, optIdx) => ({
+                                                id: `q_opt_${qIndex}_${optIdx}`,
+                                                title: String(opt).slice(0, 20)
+                                            }));
+                                            await sendMCQButtons(qObj.question, buttons);
+                                        } else {
+                                            // Open-ended question without options -> Send as clean text without dummy Option 1/2/3 buttons!
+                                            await sendTextMessage(qObj.question);
+                                        }
+                                    };
+
+                                    // 2. Check for Opt-Out / Stop / Not Interested
                                     const isOptOut = buttonReplyId === 'not_interested' || /^(stop|unsubscribe|not interested|no thanks|cancel)$/i.test(messageText.trim());
                                     if (isOptOut) {
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} requested opt-out.`);
@@ -2101,7 +2229,7 @@ RULES:
                                         return;
                                     }
 
-                                    // 2. Action Button 1: "View properties"
+                                    // 3. Action Button 1: "View properties"
                                     const isViewProperties = buttonReplyId === 'view_properties' || /view propert|view product|explore propert|catalog|listings/i.test(messageText);
                                     if (isViewProperties) {
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "View properties".`);
@@ -2121,12 +2249,25 @@ RULES:
                                                 catalogueLink
                                             );
                                         }
+
+                                        // If qualification is not yet completed, gently follow up with the pending qualification question
+                                        if (!currentCustomFields?.qualification_completed) {
+                                            const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
+                                            if (pendingQIndex !== -1) {
+                                                await new Promise(r => setTimeout(r, 1000));
+                                                await sendTextMessage("To help us share the best matching options for you, please answer:");
+                                                await new Promise(r => setTimeout(r, 500));
+                                                await askQuestionMCQ(pendingQIndex);
+                                                return;
+                                            }
+                                        }
+
                                         await new Promise(r => setTimeout(r, 800));
                                         await sendThreeButtons("What would you like to do next?");
                                         return;
                                     }
 
-                                    // 3. Action Button 2: "Talk to an expert"
+                                    // 4. Action Button 2: "Talk to an expert"
                                     const isTalkExpert = buttonReplyId === 'talk_expert' || buttonReplyId === 'connect_expert' || /talk to an expert|talk to expert|connect with expert|speak with expert|call expert/i.test(messageText);
                                     if (isTalkExpert) {
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "Talk to an expert".`);
@@ -2152,12 +2293,24 @@ RULES:
                                             leadId: targetLeadId
                                         }).catch(err => console.error('[WhatsApp Bot] Expert alert failed:', err));
 
+                                        // If qualification is not yet completed, ask pending question so expert gets lead context
+                                        if (!currentCustomFields?.qualification_completed) {
+                                            const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
+                                            if (pendingQIndex !== -1) {
+                                                await new Promise(r => setTimeout(r, 1000));
+                                                await sendTextMessage("While our specialist connects with you, please share:");
+                                                await new Promise(r => setTimeout(r, 500));
+                                                await askQuestionMCQ(pendingQIndex);
+                                                return;
+                                            }
+                                        }
+
                                         await new Promise(r => setTimeout(r, 600));
                                         await sendThreeButtons("What would you like to do?");
                                         return;
                                     }
 
-                                    // 4. Action Button 3: "Book an appointment"
+                                    // 5. Action Button 3: "Book an appointment"
                                     const isBookAppointment = buttonReplyId === 'book_appointment' || /book an appointment|book appointment|schedule visit|book site visit|schedule meeting/i.test(messageText);
                                     if (isBookAppointment) {
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "Book an appointment".`);
@@ -2168,84 +2321,23 @@ RULES:
                                             "Book Appointment 📅",
                                             bookingLink
                                         );
+
+                                        // If qualification is not yet completed, follow up with pending question
+                                        if (!currentCustomFields?.qualification_completed) {
+                                            const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
+                                            if (pendingQIndex !== -1) {
+                                                await new Promise(r => setTimeout(r, 1000));
+                                                await sendTextMessage("To prepare the best options for your visit, please answer:");
+                                                await new Promise(r => setTimeout(r, 500));
+                                                await askQuestionMCQ(pendingQIndex);
+                                                return;
+                                            }
+                                        }
+
                                         await new Promise(r => setTimeout(r, 800));
                                         await sendThreeButtons("What would you like to do next?");
                                         return;
                                     }
-
-                                    // 5. Dynamic Qualification MCQ Handlers & Parsers
-                                    const leadCampaignId = campaignId || latestLead?.campaign_id || adId;
-                                    if (leadCampaignId) {
-                                        try {
-                                            const { data: matchedFlow } = await supabaseAdmin
-                                                .from('whatsapp_question_flows')
-                                                .select('questions, name')
-                                                .eq('user_id', ownerUserId)
-                                                .eq('linked_campaign_id', leadCampaignId)
-                                                .maybeSingle();
-
-                                            if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
-                                                console.log(`[WhatsApp Bot] Using campaign-specific flow "${matchedFlow.name}" for campaign ${leadCampaignId}`);
-                                                ownerQualifyingQuestions = matchedFlow.questions;
-                                            }
-                                        } catch (fErr) {
-                                            console.warn('[WhatsApp Bot] Failed to fetch campaign question flow:', fErr);
-                                        }
-                                    }
-
-                                    const parsedQuestionsList: { index: number; key: string; question: string; options: string[] }[] = [];
-                                    if (Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
-                                        ownerQualifyingQuestions.forEach((rawItem: any, idx: number) => {
-                                            let item = rawItem;
-                                            if (typeof item === 'string' && item.trim().startsWith('{')) {
-                                                try {
-                                                    const parsed = JSON.parse(item);
-                                                    if (parsed && typeof parsed === 'object') item = parsed;
-                                                } catch (e) {}
-                                            }
-
-                                            if (typeof item === 'object' && item !== null) {
-                                                const qText = item.question || item.text || `Question ${idx + 1}`;
-                                                const key = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
-                                                parsedQuestionsList.push({
-                                                    index: idx,
-                                                    key,
-                                                    question: qText,
-                                                    options: Array.isArray(item.options) ? item.options : []
-                                                });
-                                            } else if (typeof item === 'string') {
-                                                const match = item.match(/\(([^)]+)\)/);
-                                                const qText = item.replace(/\s*\([^)]+\)/, '').trim();
-                                                const options = match ? match[1].split(',').map((s: string) => s.trim()).filter(Boolean) : [];
-                                                const key = idx === 0 ? 'property_type' : idx === 1 ? 'budget' : idx === 2 ? 'timeline' : `custom_q_${idx}`;
-                                                parsedQuestionsList.push({ index: idx, key, question: qText || item, options });
-                                            }
-                                        });
-                                    }
-
-                                    if (parsedQuestionsList.length === 0) {
-                                        parsedQuestionsList.push(
-                                            { index: 0, key: 'property_type', question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
-                                            { index: 1, key: 'budget', question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
-                                            { index: 2, key: 'timeline', question: 'What is your timeline to purchase?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
-                                        );
-                                    }
-
-                                        const askQuestionMCQ = async (qIndex: number) => {
-                                            const qObj = parsedQuestionsList[qIndex];
-                                            if (!qObj) return;
-                                            if (Array.isArray(qObj.options) && qObj.options.length > 0) {
-                                                const rawOptions = qObj.options.slice(0, 3);
-                                                const buttons = rawOptions.map((opt, optIdx) => ({
-                                                    id: `q_opt_${qIndex}_${optIdx}`,
-                                                    title: String(opt).slice(0, 20)
-                                                }));
-                                                await sendMCQButtons(qObj.question, buttons);
-                                            } else {
-                                                // Open-ended question without options -> Send as clean text without dummy Option 1/2/3 buttons!
-                                                await sendTextMessage(qObj.question);
-                                            }
-                                        };
 
                                         // Check if we are waiting for the lead's name after qualification questions
                                         if (currentCustomFields?.awaiting_lead_name && messageText && messageText.trim().length > 1 && !buttonReplyId) {
@@ -2341,39 +2433,50 @@ RULES:
                                         const activeQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                         if (activeQIndex !== -1 && messageText && messageText.trim().length > 0 && !buttonReplyId) {
                                             const activeQ = parsedQuestionsList[activeQIndex];
-                                            const isGenericGreeting = /^(hi|hello|hey|namaste|good morning|good afternoon|good evening|info|more info|details|can i get more info|start|menu)$/i.test(messageText.trim().toLowerCase());
                                             const hasAnyAnswer = parsedQuestionsList.some(q => currentCustomFields[q.key]);
 
-                                            // If first message is a greeting, send intro and ask question 1
-                                            if (activeQIndex === 0 && !hasAnyAnswer && isGenericGreeting) {
-                                                await sendTextMessage("Hi! 👋 Please answer a few quick questions so we can assist you with the right options & details: 🎁🏢");
+                                            // Check if user's text matches one of the options of the active question (e.g. "1", "2", "3", or exact option text)
+                                            let matchedOptionValue: string | null = null;
+                                            if (Array.isArray(activeQ.options) && activeQ.options.length > 0) {
+                                                const numMatch = messageText.trim().match(/^(?:option\s*)?([1-3])$/i);
+                                                if (numMatch) {
+                                                    const idx = parseInt(numMatch[1], 10) - 1;
+                                                    if (activeQ.options[idx]) matchedOptionValue = activeQ.options[idx];
+                                                } else {
+                                                    const matchedOpt = activeQ.options.find(opt => opt.toLowerCase() === messageText.trim().toLowerCase());
+                                                    if (matchedOpt) matchedOptionValue = matchedOpt;
+                                                }
+                                            }
+
+                                            // CASE 1: Initial message from new prospect or Ad Click (e.g. "Hello! Can I get more info on this?", "Hi", etc.)
+                                            // If they have not answered any question yet and didn't directly type an MCQ option
+                                            if (activeQIndex === 0 && !hasAnyAnswer && !matchedOptionValue) {
+                                                console.log(`[WhatsApp Bot] Initial message for lead ${cleanFrom}: "${messageText}". Starting qualification flow with Q#0.`);
+                                                const welcomeMsg = `Hello! 👋 Welcome to *${ownerBusinessName || 'our team'}*. Please answer 2 quick questions so we can assist you with the right options & details: 🎁🏢`;
+                                                await sendTextMessage(welcomeMsg);
                                                 await new Promise(r => setTimeout(r, 600));
                                                 await askQuestionMCQ(0);
                                                 return;
                                             }
 
-                                            // Check if user is asking a specific question/inquiry about projects, location, address, price, etc.
+                                            // CASE 2: Prospect asks a question / inquiry mid-qualification (e.g. "where is the site located?", "what is the price?")
                                             const isQuestionOrInquiry = messageText.includes('?') ||
                                                 /\b(which|what|where|when|who|how|why|options|option|project|projects|flat|flats|villa|villas|apartment|apartments|plot|plots|floor|floors|commercial|residential|price|cost|budget|rates|rate|location|located|address|chandigarh|omaxe|lake|mulberry|celestia|cassia|resort|birch|ambrosia|gardenia|mullanpur|mohali|panchkula|zirakpur|site|visit|office|brochure|detail|details|tell me|show me|explain|available|availability|kahan|kidhar|pata|headquarters|hq|contact)\b/i.test(messageText);
 
-                                            if (isQuestionOrInquiry) {
-                                                await answerCustomerQueryWithAI(messageText);
+                                            if (isQuestionOrInquiry && !matchedOptionValue) {
+                                                // Answer query using AI without the 3 distracting buttons
+                                                await answerCustomerQueryWithAI(messageText, true);
+                                                if (activeQIndex !== -1 && activeQIndex < parsedQuestionsList.length) {
+                                                    await new Promise(r => setTimeout(r, 1000));
+                                                    await sendTextMessage("To help us share the best options for you, please answer:");
+                                                    await new Promise(r => setTimeout(r, 500));
+                                                    await askQuestionMCQ(activeQIndex);
+                                                }
                                                 return;
                                             }
 
-                                            // Determine answer value
-                                            let selectedValue = messageText.trim();
-                                            if (Array.isArray(activeQ.options) && activeQ.options.length > 0) {
-                                                const numMatch = messageText.trim().match(/^(?:option\s*)?([1-3])$/i);
-                                                if (numMatch) {
-                                                    const idx = parseInt(numMatch[1], 10) - 1;
-                                                    if (activeQ.options[idx]) selectedValue = activeQ.options[idx];
-                                                } else {
-                                                    const matchedOpt = activeQ.options.find(opt => opt.toLowerCase() === messageText.trim().toLowerCase());
-                                                    if (matchedOpt) selectedValue = matchedOpt;
-                                                }
-                                            }
-
+                                            // CASE 3: Prospect provided an answer (matched option or free-text)
+                                            let selectedValue = matchedOptionValue || messageText.trim();
                                             console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered active Q#${activeQIndex + 1} (${activeQ.key}) via free-text: ${selectedValue}`);
                                             const updateObj: Record<string, any> = { [activeQ.key]: selectedValue };
                                             if (activeQ.key === 'property_type') updateObj.interested_property = selectedValue;
@@ -2386,7 +2489,7 @@ RULES:
                                             } else {
                                                 if (!currentCustomFields?.lead_name_captured) {
                                                     await syncFieldsAndScore({ awaiting_lead_name: true });
-                                                    await sendTextMessage("Great! 🎉 To receive your tailored information matched to your preferences, may I know your good name please?");
+                                                    await sendTextMessage("Great! 🎉 To receive your tailored brochure & details matched to your preferences, may I know your good name please?");
                                                     return;
                                                 } else {
                                                     await syncFieldsAndScore({ qualification_completed: true });
