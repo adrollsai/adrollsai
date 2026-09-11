@@ -472,7 +472,10 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
             : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHA hoon", "Main aapki help kar SAKTA hoon", "Main check kar KE BATA DETA hoon", "Call kar RAHA tha").`;
 
         // Direct context instruction
-        const contextInstruction = `After the lead responds to your greeting, say: "Aapne ${companyName} ka ek ad dekha tha, usi ke regarding call kiya hai." Then naturally ask about their requirement.`
+        const isWhatsappOrigin = (lead?.source || '').toLowerCase().includes('whatsapp') || !!lead?.custom_fields?.meta_ad_origin;
+        const contextInstruction = isWhatsappOrigin
+            ? `After the lead responds to your greeting, say: "Aapne ${companyName} ka WhatsApp par inquiry start kiya tha, usi ke regarding call kiya hai taaki aapko right details provide kar sakein." Then naturally ask about their requirement.`
+            : `After the lead responds to your greeting, say: "Aapne ${companyName} ka ek ad dekha tha, usi ke regarding call kiya hai." Then naturally ask about their requirement.`;
 
         let parsedQuestions: { question: string; options: string[] }[] = [];
         if (Array.isArray(activeQualifyingQuestions) && activeQualifyingQuestions.length > 0) {

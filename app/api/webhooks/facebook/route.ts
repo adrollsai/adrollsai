@@ -1297,7 +1297,7 @@ IMPORTANT RULES:
 
                                     let { data: latestLead } = await supabaseAdmin
                                         .from('leads')
-                                        .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id')
+                                        .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, voice_call_status, voice_call_scheduled_at')
                                         .eq('user_id', ownerUserId)
                                         .ilike('phone', `%${cleanFrom.slice(-10)}%`)
                                         .order('created_at', { ascending: false, nullsFirst: false })
@@ -1333,12 +1333,16 @@ IMPORTANT RULES:
                                                     source_url: adSourceUrl
                                                 }
                                             };
+                                            // Schedule automated AI voice call for 15 minutes in case prospect drops off on WhatsApp
+                                            newLeadPayload.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                                            newLeadPayload.voice_call_status = 'pending_qualification';
+                                            newLeadPayload.voice_campaign_id = campaignId || null;
                                         }
 
                                         const { data: createdLead, error: createLeadErr } = await supabaseAdmin
                                             .from('leads')
                                             .insert(newLeadPayload)
-                                            .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id')
+                                            .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, voice_call_status, voice_call_scheduled_at')
                                             .single();
 
                                         if (createdLead) {
@@ -1358,27 +1362,40 @@ IMPORTANT RULES:
                                             console.error('[Flow] Error creating CRM lead for WhatsApp contact:', createLeadErr);
                                         }
                                     } else {
-                                        // If existing lead was unassigned and we now have an assigned agent from group rules, update it
-                                        if (!latestLead.assigned_to && assignedAgentId) {
-                                            await supabaseAdmin
-                                                .from('leads')
-                                                .update({
-                                                    assigned_to: assignedAgentId,
-                                                    ad_name: adCampaignString || latestLead.ad_name,
-                                                    campaign_id: campaignId || latestLead.campaign_id
-                                                })
-                                                .eq('id', latestLead.id);
-                                            latestLead.assigned_to = assignedAgentId;
+                                        // Existing lead: update assignment & if arrived from ad and not yet qualified, schedule drop-off call
+                                        const existingCf = parseCustomFields(latestLead.custom_fields);
+                                        const updatePayload: Record<string, any> = {};
 
-                                            if (assignedAgentId !== ownerUserId) {
-                                                sendAdminMultiChannelNotification({
-                                                    ownerUserId: assignedAgentId,
-                                                    title: "🎯 WhatsApp Lead Assigned to You!",
-                                                    body: `Lead: ${latestLead.name || defaultLeadName}\nPhone: ${formattedPhone}\nSource: ${adCampaignString || 'WhatsApp Inbound'}`,
-                                                    url: `/dashboard/crm/${latestLead.id}`,
-                                                    type: 'new_lead'
-                                                }).catch(err => console.error('[Notification] Error notifying assigned agent:', err));
-                                            }
+                                        if (!latestLead.assigned_to && assignedAgentId) {
+                                            updatePayload.assigned_to = assignedAgentId;
+                                            latestLead.assigned_to = assignedAgentId;
+                                        }
+                                        if (adCampaignString && (!latestLead.ad_name || latestLead.ad_name === 'WhatsApp Inbound')) {
+                                            updatePayload.ad_name = adCampaignString;
+                                        }
+                                        if (campaignId && !latestLead.campaign_id) {
+                                            updatePayload.campaign_id = campaignId;
+                                            latestLead.campaign_id = campaignId;
+                                        }
+
+                                        if (inboundReferral && !existingCf?.qualification_completed && (!latestLead.voice_call_status || latestLead.voice_call_status === 'pending_qualification' || latestLead.voice_call_status === 'not_called')) {
+                                            updatePayload.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                                            updatePayload.voice_call_status = 'pending_qualification';
+                                            updatePayload.voice_campaign_id = campaignId || latestLead.campaign_id;
+                                        }
+
+                                        if (Object.keys(updatePayload).length > 0) {
+                                            await supabaseAdmin.from('leads').update(updatePayload).eq('id', latestLead.id);
+                                        }
+
+                                        if (updatePayload.assigned_to && assignedAgentId && assignedAgentId !== ownerUserId) {
+                                            sendAdminMultiChannelNotification({
+                                                ownerUserId: assignedAgentId,
+                                                title: "🎯 WhatsApp Lead Assigned to You!",
+                                                body: `Lead: ${latestLead.name || defaultLeadName}\nPhone: ${formattedPhone}\nSource: ${adCampaignString || 'WhatsApp Inbound'}`,
+                                                url: `/dashboard/crm/${latestLead.id}`,
+                                                type: 'new_lead'
+                                            }).catch(err => console.error('[Notification] Error notifying assigned agent:', err));
                                         }
                                     }
 
@@ -2167,9 +2184,20 @@ RULES:
                                             .eq('id', chat.id);
                                         
                                         if (latestLead?.id) {
+                                            const leadUpdates: Record<string, any> = { custom_fields: currentCustomFields };
+
+                                            // If qualification is completed on WhatsApp, cancel any scheduled voice call
+                                            if (currentCustomFields?.qualification_completed) {
+                                                leadUpdates.voice_call_scheduled_at = null;
+                                                leadUpdates.voice_call_status = 'qualified_via_whatsapp';
+                                            } else if ((latestLead as any).voice_call_status === 'pending_qualification') {
+                                                // Mid-flow answer: give the user another 15 minutes of grace before initiating voice call
+                                                leadUpdates.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                                            }
+
                                             await supabaseAdmin
                                                 .from('leads')
-                                                .update({ custom_fields: currentCustomFields })
+                                                .update(leadUpdates)
                                                 .eq('id', latestLead.id);
                                             
                                             await updateLeadScoreInDB(supabaseAdmin, latestLead.id, ['property_type', 'budget', 'timeline']);
@@ -2558,6 +2586,13 @@ RULES:
                                             // If they have not answered any question yet and didn't directly type an MCQ option
                                             if (activeQIndex === 0 && !hasAnyAnswer && !matchedOptionValue) {
                                                 console.log(`[WhatsApp Bot] Initial message for lead ${cleanFrom}: "${messageText}". Starting qualification flow with Q#0.`);
+                                                if (latestLead?.id && !currentCustomFields?.qualification_completed) {
+                                                    await supabaseAdmin.from('leads').update({
+                                                        voice_call_scheduled_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+                                                        voice_call_status: 'pending_qualification',
+                                                        voice_campaign_id: leadCampaignId || latestLead.campaign_id
+                                                    }).eq('id', latestLead.id);
+                                                }
                                                 const welcomeMsg = `Hello! 👋 Welcome to *${ownerBusinessName || 'our team'}*. Please answer 2 quick questions so we can assist you with the right options & details: 🎁🏢`;
                                                 await sendTextMessage(welcomeMsg);
                                                 await new Promise(r => setTimeout(r, 600));

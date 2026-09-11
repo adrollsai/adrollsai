@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
+import { parseCustomFields } from '@/utils/lead-scoring'
 
 // Force dynamic execution to bypass Vercel static build cache
 export const dynamic = 'force-dynamic'
@@ -55,8 +56,23 @@ export async function GET(request: Request) {
 
     if (bookingErr) throw bookingErr
 
-    if ((!leadsToRemind || leadsToRemind.length === 0) && (!bookingsToRemind || bookingsToRemind.length === 0)) {
-      return NextResponse.json({ success: true, message: 'No reminders due at this time.' })
+    // 3. Fetch leads due for Automated Voice Calling (WhatsApp Qualification Drop-Offs & Retries)
+    const { data: voiceLeadsToCall, error: voiceErr } = await supabaseAdmin
+      .from('leads')
+      .select('id, user_id, name, phone, campaign_id, custom_fields, voice_call_status, voice_call_scheduled_at, calling_enabled')
+      .not('voice_call_scheduled_at', 'is', null)
+      .lte('voice_call_scheduled_at', nowUtcString)
+      .neq('voice_call_status', 'calling')
+      .neq('voice_call_status', 'failed')
+      .neq('voice_call_status', 'completed')
+      .neq('voice_call_status', 'qualified_via_whatsapp')
+      .neq('calling_enabled', false)
+      .limit(10)
+
+    if (voiceErr) console.warn('[Reminders Dispatcher] Error querying voiceLeadsToCall:', voiceErr)
+
+    if ((!leadsToRemind || leadsToRemind.length === 0) && (!bookingsToRemind || bookingsToRemind.length === 0) && (!voiceLeadsToCall || voiceLeadsToCall.length === 0)) {
+      return NextResponse.json({ success: true, message: 'No reminders or calls due at this time.' })
     }
 
     // Process due followup push notifications directly
@@ -132,7 +148,39 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, processedCount: processedIds.length })
+    // 2. Dispatch Automated Outbound Calls for WhatsApp qualification drop-offs & scheduled retries
+    let voiceDispatchedCount = 0
+    if (voiceLeadsToCall && voiceLeadsToCall.length > 0) {
+      const { triggerOutboundCall } = await import('@/utils/voice-helper')
+      for (const vLead of voiceLeadsToCall) {
+        try {
+          const cf = parseCustomFields(vLead.custom_fields)
+          // If already qualified on WhatsApp in the meantime, cancel call and skip
+          if (cf?.qualification_completed) {
+            await supabaseAdmin.from('leads').update({
+              voice_call_scheduled_at: null,
+              voice_call_status: 'qualified_via_whatsapp'
+            }).eq('id', vLead.id)
+            continue
+          }
+
+          // Clear scheduled_at first to prevent race condition re-dials
+          await supabaseAdmin.from('leads').update({
+            voice_call_scheduled_at: null
+          }).eq('id', vLead.id)
+
+          console.log(`[Reminders Cron] Triggering outbound AI call for lead ${vLead.id} (${vLead.name || vLead.phone})...`)
+          const callRes = await triggerOutboundCall(supabaseAdmin, vLead.id, vLead.user_id, true, vLead.campaign_id)
+          if (callRes?.success || callRes?.scheduled) {
+            voiceDispatchedCount++
+          }
+        } catch (vErr) {
+          console.error(`[Reminders Cron] Failed to trigger voice call for lead ${vLead.id}:`, vErr)
+        }
+      }
+    }
+
+    return NextResponse.json({ success: true, processedCount: processedIds.length, voiceDispatchedCount })
   } catch (error: any) {
     console.error('[Reminders Dispatcher] Error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
