@@ -48,6 +48,7 @@ type Profile = {
   logo_url: string
   brand_color: string
   mission_statement: string
+  business_info?: string
   character_url?: string
   character_audio_url?: string
   avatar_url?: string
@@ -613,7 +614,10 @@ export default function CreationPage() {
   })
 
   const handleGenerateAngles = async () => {
-    if (!creativeFlow.product) return;
+    if (!creativeFlow.product && !creativeFlow.instructions.trim()) {
+      toast.error("Please select a product or enter custom instructions.");
+      return;
+    }
     setCreativeFlow(prev => ({ ...prev, status: 'loading' }));
     try {
       const strategyRes = await fetch('/api/agent/strategy', { 
@@ -624,17 +628,26 @@ export default function CreationPage() {
               quantity: creativeFlow.quantity,
               instructions: creativeFlow.instructions,
               previousAngles: (creativeFlow.angles || []).map((a: any) => a.title).join(', '),
-              creativeCategory: creativeFlow.creativeCategory || 'Premium'
+              creativeCategory: creativeFlow.creativeCategory || 'Premium',
+              businessInfo: profile?.business_info,
+              businessName: profile?.business_name,
+              missionStatement: profile?.mission_statement
           })
       });
       const strategyData = await strategyRes.json();
+      if (!strategyData.success) {
+        toast.error(strategyData.error || "Failed to generate creative angles");
+        setCreativeFlow(prev => ({ ...prev, status: 'idle' }));
+        return;
+      }
       setCreativeFlow(prev => ({ 
           ...prev, 
           step: 'angles', 
           angles: [...prev.angles, ...(strategyData.angles || [])],
           status: 'idle' 
       }));
-    } catch (e) {
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to generate angles");
       setCreativeFlow(prev => ({ ...prev, status: 'error' }));
     }
   }
@@ -646,6 +659,10 @@ export default function CreationPage() {
     
     // Batch process
     const results: any[] = [];
+    const isBrandOnly = !creativeFlow.product;
+    const effectiveTitle = creativeFlow.product?.title || profile?.business_name || "Brand Creative";
+    const effectiveDescription = creativeFlow.product?.description || profile?.business_info || profile?.mission_statement || "";
+
     for (const angle of selected) {
         try {
             let propImages: string[] = [];
@@ -663,18 +680,19 @@ export default function CreationPage() {
             const isLogoExcluded = profile?.logo_url ? creativeFlow.batchExcludedImages.includes(profile.logo_url) : false;
 
             const payload = {
-                propertyTitle: creativeFlow.product?.title,
-                propertyDescription: creativeFlow.product?.description || "",
+                propertyTitle: effectiveTitle,
+                propertyDescription: effectiveDescription,
                 creativeCategory: creativeFlow.creativeCategory || '',
                 styleAesthetic: angle.title ? `${angle.title} - ${angle.visual_concept}` : undefined,
-                userInstructions: creativeFlow.instructions + (angle.visual_concept ? `\nVisual Concept to follow: ${angle.visual_concept}` : ""),
+                userInstructions: (creativeFlow.instructions ? `${creativeFlow.instructions}\n` : '') + (angle.visual_concept ? `Visual Concept to follow: ${angle.visual_concept}` : ""),
                 propImages: filteredPropImages,
                 isOrganic: creativeFlow.isOrganic || angle.title?.toLowerCase().includes('raw') || angle.title?.toLowerCase().includes('smartphone') || creativeFlow.creativeCategory === 'High Converting',
                 aspectRatio: "4:5",
                 model: 'image-2.0',
                 contactNumber: profile?.contact_number,
                 logoUrl: isLogoExcluded ? null : profile?.logo_url,
-                excludedImages: creativeFlow.batchExcludedImages
+                excludedImages: creativeFlow.batchExcludedImages,
+                isBrandOnly: isBrandOnly
             };
 
             const res = await fetch(`/api/chat${window.location.search}`, {
@@ -691,8 +709,8 @@ export default function CreationPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         userId: targetUserId || userId,
-                        propId: creativeFlow.product?.id,
-                        propertyTitle: creativeFlow.product?.title,
+                        propId: creativeFlow.product?.id || null,
+                        propertyTitle: effectiveTitle,
                         existingTaskId: data.taskId,
                         existingCaption: data.caption,
                         batchId: batchId
@@ -3254,36 +3272,84 @@ function CreativeFlowModal({
             {currentStep === 'setup' && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">1. Select Product to Promote</label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {properties.map((p: any) => (
-                      <div 
-                        key={p.id}
-                        onClick={() => setCreativeFlow((prev: any) => ({ ...prev, product: p, batchExcludedImages: [] }))}
-                        className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all ${
-                          creativeFlow.product?.id === p.id ? 'border-blue-600 ring-4 ring-blue-500/10' : 'border-transparent hover:border-slate-200'
-                        }`}
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block">
+                      1. Select Target Product or Custom Brand Mode
+                    </label>
+                    {creativeFlow.product && (
+                      <button
+                        type="button"
+                        onClick={() => setCreativeFlow((prev: any) => ({ ...prev, product: null, batchExcludedImages: [] }))}
+                        className="text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors"
                       >
-                        <img src={p.image_url} className="w-full h-full object-cover" alt={p.title} />
-                        <div className="absolute inset-0 bg-black/20" />
-                        <div className="absolute bottom-2 left-2 right-2 truncate text-[10px] font-bold text-white drop-shadow-sm">{p.title}</div>
-                        {creativeFlow.product?.id === p.id && (
-                          <div className="absolute top-2 right-2 bg-blue-600 text-white p-1 rounded-full"><CheckCircle size={12} /></div>
+                        Clear (Use Brand Mode)
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {/* Brand / Custom Option Card */}
+                    <div 
+                      onClick={() => setCreativeFlow((prev: any) => ({ ...prev, product: null, batchExcludedImages: [] }))}
+                      className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all p-3.5 flex flex-col justify-between ${
+                        creativeFlow.product === null 
+                          ? 'border-blue-600 bg-gradient-to-br from-blue-50 via-indigo-50/40 to-white ring-4 ring-blue-500/10 shadow-sm' 
+                          : 'border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className={`p-2.5 rounded-xl ${creativeFlow.product === null ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'bg-slate-200 text-slate-600'}`}>
+                          <Sparkles size={18} />
+                        </div>
+                        {creativeFlow.product === null && (
+                          <div className="bg-blue-600 text-white p-1 rounded-full"><CheckCircle size={12} /></div>
                         )}
                       </div>
-                    ))}
+                      <div>
+                        <div className="text-[11px] font-extrabold text-slate-900 leading-tight">Brand / Custom</div>
+                        <div className="text-[9px] font-medium text-slate-500 leading-tight mt-1">
+                          No product • Custom instructions & business info
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Properties list */}
+                    {properties.map((p: any) => {
+                      const isSelected = creativeFlow.product?.id === p.id;
+                      return (
+                        <div 
+                          key={p.id}
+                          onClick={() => setCreativeFlow((prev: any) => ({ 
+                            ...prev, 
+                            product: isSelected ? null : p, 
+                            batchExcludedImages: [] 
+                          }))}
+                          className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all ${
+                            isSelected ? 'border-blue-600 ring-4 ring-blue-500/10' : 'border-transparent hover:border-slate-200'
+                          }`}
+                        >
+                          <img src={p.image_url} className="w-full h-full object-cover" alt={p.title} />
+                          <div className="absolute inset-0 bg-black/20" />
+                          <div className="absolute bottom-2 left-2 right-2 truncate text-[10px] font-bold text-white drop-shadow-sm">{p.title}</div>
+                          {isSelected && (
+                            <div className="absolute top-2 right-2 bg-blue-600 text-white p-1 rounded-full"><CheckCircle size={12} /></div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
                 {/* IMAGE SELECTOR: Show product images and brand logo for include/exclude */}
-                {creativeFlow.product && (() => {
+                {(() => {
                   const allImages: { url: string; label: string; isLogo?: boolean }[] = [];
-                  if (creativeFlow.product.images && creativeFlow.product.images.length > 0) {
-                    creativeFlow.product.images.slice(0, 10).forEach((url: string, idx: number) => {
-                      allImages.push({ url, label: `Photo ${idx + 1}` });
-                    });
-                  } else if (creativeFlow.product.image_url) {
-                    allImages.push({ url: creativeFlow.product.image_url, label: `Main Photo` });
+                  if (creativeFlow.product) {
+                    if (creativeFlow.product.images && creativeFlow.product.images.length > 0) {
+                      creativeFlow.product.images.slice(0, 10).forEach((url: string, idx: number) => {
+                        allImages.push({ url, label: `Photo ${idx + 1}` });
+                      });
+                    } else if (creativeFlow.product.image_url) {
+                      allImages.push({ url: creativeFlow.product.image_url, label: `Main Photo` });
+                    }
                   }
                   if (profile?.logo_url) {
                     allImages.push({ url: profile.logo_url, label: 'Brand Logo', isLogo: true });
@@ -3293,7 +3359,7 @@ function CreativeFlowModal({
                   if (allImages.length === 0) return null;
                   return (
                     <div>
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">2. Select Photos & Logo to Include</label>
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">2. Assets & Logo to Include</label>
                       <p className="text-[10px] text-slate-400 font-medium mb-4">
                         {includedCount} of {allImages.length} assets will be sent to the AI model. Click to exclude/include.
                       </p>
@@ -3340,7 +3406,7 @@ function CreativeFlowModal({
   
                 <div className="grid grid-cols-1 gap-6">
                   <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">{creativeFlow.product && ((creativeFlow.product.images?.length || 0) > 0 || creativeFlow.product.image_url) ? '3' : '2'}. Quantity</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">Quantity</label>
                     <select 
                       value={creativeFlow.quantity}
                       onChange={(e) => setCreativeFlow((prev: any) => ({ ...prev, quantity: parseInt(e.target.value) }))}
@@ -3352,13 +3418,36 @@ function CreativeFlowModal({
                 </div>
   
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-4">{creativeFlow.product && ((creativeFlow.product.images?.length || 0) > 0 || creativeFlow.product.image_url) ? '4' : '3'}. Additional Context (Optional)</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block">
+                      {creativeFlow.product ? 'Additional Context (Optional)' : 'Custom Campaign Instructions'}
+                    </label>
+                    {!creativeFlow.product && (
+                      <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        Required (No Product Selected)
+                      </span>
+                    )}
+                  </div>
                   <textarea 
                     value={creativeFlow.instructions}
                     onChange={(e) => setCreativeFlow((prev: any) => ({ ...prev, instructions: e.target.value }))}
-                    placeholder="e.g. Focus on the spacious balcony or the premium marble flooring..."
-                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl text-sm font-medium outline-none h-24"
+                    placeholder={
+                      creativeFlow.product 
+                        ? "e.g. Focus on the spacious balcony, sunset lighting, or premium marble flooring..." 
+                        : "e.g. Create multiple creative angles highlighting our 15+ years experience in luxury real estate, client testimonials, and trusted advisory services in Mohali..."
+                    }
+                    className={`w-full bg-slate-50 border p-4 rounded-2xl text-sm font-medium outline-none h-28 transition-all ${
+                      !creativeFlow.product && !creativeFlow.instructions.trim() ? 'border-amber-300 focus:border-blue-500' : 'border-slate-200 focus:border-blue-500'
+                    }`}
                   />
+                  {!creativeFlow.product && (
+                    <p className="text-[11px] text-slate-500 font-medium mt-2 flex items-start gap-1.5">
+                      <Sparkles size={13} className="text-blue-500 flex-shrink-0 mt-0.5" />
+                      <span>
+                        AI will generate multiple angles from your instructions, create images, and write ad copy using your business info ({profile?.business_name || 'your business profile'}).
+                      </span>
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -3473,7 +3562,7 @@ function CreativeFlowModal({
   
             <button 
               disabled={
-                (currentStep === 'setup' && !creativeFlow.product) ||
+                (currentStep === 'setup' && !creativeFlow.product && !creativeFlow.instructions.trim()) ||
                 (currentStep === 'angles' && creativeFlow.selectedAngles.length === 0) ||
                 creativeFlow.status === 'loading'
               }

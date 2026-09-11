@@ -105,8 +105,15 @@ export async function POST(request: Request) {
         styleAesthetic,
         creativeCategory,
         excludedImages = [],
-        isEdit = false
+        isEdit = false,
+        isBrandOnly = false
     } = body;
+
+    const effectiveIsBrandOnly = isBrandOnly || 
+      !propertyTitle || 
+      propertyTitle === 'Brand Campaign' || 
+      propertyTitle === 'Brand Creative' || 
+      propertyTitle === 'Brand Ad';
 
     const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, 10);
     if (!hasCredits) {
@@ -349,10 +356,11 @@ Synthesize the extracted reference blueprint above into a 5-star luxury social m
 Your mission is to write a highly detailed, conversion-optimized image generation prompt that will be sent to an AI image model to produce an ultra-photorealistic, high-converting commercial ad poster.
 
 Here is the information provided by the user:
-- Product/Property Title: ${propertyTitle || 'N/A'}
-- Product/Property Description: ${propertyDescription || 'N/A'}
+- Campaign Type: ${effectiveIsBrandOnly ? 'Brand & Service Campaign (No Specific Product Selected)' : 'Product / Property Campaign'}
+- Product/Property Title: ${effectiveIsBrandOnly ? 'N/A (Brand / Service Ad)' : (propertyTitle || 'N/A')}
+- Product/Property Description: ${effectiveIsBrandOnly ? 'N/A' : (propertyDescription || 'N/A')}
 - Business Name: ${businessName || 'N/A'}
-- Brand/Business Info: ${profile?.business_info || 'N/A'}
+- Brand/Business Info: ${profile?.business_info || profile?.mission_statement || 'N/A'}
 - Target Industry: ${industry || 'N/A'}
 - Contact Number / Call to Action: ${finalContactNumber || 'N/A'}
 - Custom User Instructions: ${userInstructions || 'None'}
@@ -362,10 +370,10 @@ ${styleGuidanceSection}
 Your goal is to synthesize this information and output an extremely detailed, descriptive visual prompt for the image generation model.
 Follow these 20-year direct-response advertising master rules to maximize click-throughs and conversion:
 1. SCROLL-STOPPING COMMERCIAL PHOTOGRAPHY: The creative must look like authentic live-action commercial photography captured by a top advertising photographer. Never make it look like a 3D render, cartoon, architectural blueprint, or CGI illustration. Bright, airy, commercial natural morning or golden-hour lighting with crisp shadows and believable textures.
-2. 60-70% HERO PRODUCT/PROPERTY FOCUS: The real product or property must occupy 60-70% of the canvas as the undisputed hero. ${excludeHousePhoto ? 'CRITICAL EXCLUSION: The user explicitly specified NOT to show a kothi/house/building photo. Do NOT describe or include any house, villa, kothi, or building exterior.' : 'Keep the generated property/building visuals faithful to the real structures in the input photos.'}
+${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific product is selected. Focus the visual canvas on high-impact brand aesthetic, aspirational lifestyle imagery, luxury graphic typography, and scene setting representing ${businessName || 'the brand'} in the ${industry || 'commercial'} sector according to the custom user instructions.` : `2. 60-70% HERO PRODUCT/PROPERTY FOCUS: The real product or property must occupy 60-70% of the canvas as the undisputed hero. ${excludeHousePhoto ? 'CRITICAL EXCLUSION: The user explicitly specified NOT to show a kothi/house/building photo. Do NOT describe or include any house, villa, kothi, or building exterior.' : 'Keep the generated property/building visuals faithful to the real structures in the input photos.'}`}
 3. DIRECT-RESPONSE VISUAL HIERARCHY & BENEFIT HOOK: Include clear, high-converting direct-response text overlay instructions:
-   - Primary Benefit Headline: A bold, emotionally compelling hook calling out the dream lifestyle or solving the primary buyer friction.
-   - Location Badge: You MUST prominently highlight the property's city or location name (e.g. "Mohali", "Zirakpur", "Chandigarh") in high-contrast typography so local buyers immediately recognize it.
+   - Primary Benefit Headline: A bold, emotionally compelling hook calling out ${effectiveIsBrandOnly ? 'the core service benefit or campaign hook from the instructions' : 'the dream lifestyle or solving the primary buyer friction'}.
+   - ${effectiveIsBrandOnly ? `Brand Identification: Highlight "${businessName || 'the business'}" with prestigious typography.` : `Location Badge: You MUST prominently highlight the property's city or location name (e.g. "Mohali", "Zirakpur", "Chandigarh") in high-contrast typography so local buyers immediately recognize it.`}
    - Key Value Pills: Clean, semi-transparent frosted badges highlighting key specs or pricing (e.g. "3 & 4 BHK Luxury Floors", "Ready for Possession").
 4. LUXURY HAUTE-COUTURE TYPOGRAPHY: Render main headlines in high-contrast serif (Bodoni/Cormorant) or sleek architectural geometric sans-serif with wide tracking. Subtle champagne gold foil or crisp ivory-white lettering. Absolutely FORBID cheap flat yellow gradients or crude generic fonts.
 5. PROMINENT CONTACT FOOTER & LOGO: Place the business logo cleanly as a prestige seal in an upper corner. Place the contact number "${finalContactNumber || ''}" cleanly and prominently in a high-contrast footer strip at the bottom margin.
@@ -460,10 +468,12 @@ Make the edits clean, professional, and blend seamlessly with the original conte
           `- PROHIBITION ON OVAL MASKS & CHEAP GRAPHICS: Render the property visual as full-bleed commercial photography or a clean rectangular architectural frame. ABSOLUTELY NEVER enclose the image inside an oval mask, circular cut-out, or heavy white border frame.`,
           `- NO 3D GOLD EMBOSSED FONTS OR DOTTED ICON LINES: Typography must be modern, flat, clean, and crisp (minimalist geometric sans-serif or elegant high-contrast serif). Avoid fake 3D gold bevel gradients or lines of circular clip-art icons connected by dotted lines across the header.`,
           `- SEAMLESS NATURAL INTEGRATION: Human subjects and property visuals must be seamlessly integrated into natural photorealistic scene lighting, never floating over graphic shapes.`,
-          `CRITICAL RULE FOR HERO SUBJECT: The building, product, or property MUST come 100% strictly from the provided input property photos (or property description). Do NOT invent or copy any building/structure. Place the user's property inside the design layout specified below.`,
+          effectiveIsBrandOnly
+            ? `CRITICAL RULE FOR HERO SUBJECT: No specific product is selected. Focus on high-impact visual commercial imagery representing ${businessName || 'the business'} matching the user's custom instructions.`
+            : `CRITICAL RULE FOR HERO SUBJECT: The building, product, or property MUST come 100% strictly from the provided input property photos (or property description). Do NOT invent or copy any building/structure. Place the user's property inside the design layout specified below.`,
           excludeHousePhoto 
             ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any house, kothi, villa, or building exterior image. Focus on abstract luxury backgrounds, minimalist typography, location map graphics, or lifestyle close-ups.` 
-            : `Use the user's actual property photos as the central visual hero asset of the canvas.`,
+            : (effectiveIsBrandOnly ? '' : `Use the user's actual property photos as the central visual hero asset of the canvas.`),
           propertyTitle ? `Subject: ${propertyTitle}` : '',
           propertyDescription ? `Details/Description: ${propertyDescription}` : '',
           (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
@@ -480,15 +490,15 @@ Make the edits clean, professional, and blend seamlessly with the original conte
       const disambiguationPreamble = buildImageDisambiguationPreamble(validPropImages.length, validLogo.length > 0);
       const fallbackPrompt = [
           `Create a highly detailed, premium, and professional ad creative design.`,
-          propertyTitle ? `Subject: ${propertyTitle}` : '',
-          propertyDescription ? `Details/Description: ${propertyDescription}` : '',
+          effectiveIsBrandOnly ? `Subject: Brand Campaign for ${businessName || 'Business'}` : (propertyTitle ? `Subject: ${propertyTitle}` : ''),
+          effectiveIsBrandOnly ? `Business Info & Context: ${profile?.business_info || profile?.mission_statement || propertyDescription || ''}` : (propertyDescription ? `Details/Description: ${propertyDescription}` : ''),
           (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
           (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly. Integrate the brand logo seamlessly with the design and background. Do NOT place it inside a raw, unblended black or white box/circle; blend its background shape smoothly into the background sky/theme.` : '',
           (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly in a banner or footer at the bottom of the poster (e.g. "Call: ${finalContactNumber}").` : '',
-          excludeHousePhoto ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any house, kothi, villa, or building exterior image. Focus on abstract luxury backgrounds, minimalist typography, location map graphics, or lifestyle close-ups.` : `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`,
+          effectiveIsBrandOnly ? `Create a brand-focused commercial visual emphasizing ${businessName || 'the business'}, industry prestige, and the user's custom instructions.` : (excludeHousePhoto ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any house, kothi, villa, or building exterior image. Focus on abstract luxury backgrounds, minimalist typography, location map graphics, or lifestyle close-ups.` : `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`),
           `Ensure the overall composition is highly professional, balanced, featuring cinematic warm lighting, detailed textures, and a luxury editorial aesthetic.`,
           (!userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i)) ? `Include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (e.g. a happy family, an elegant couple, or a professional individual, depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy. Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) looking completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. The ethnicity of the humans must match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).` : '',
-          !excludeBusinessInfo ? `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline (based on ${propertyTitle || 'the product'}), a sub-headline highlighting key details, BHK specifications, and prominently including and highlighting the property's city or location name (based on ${propertyDescription || 'the product description'}, but only if explicitly mentioned; do NOT hallucinate or invent a location if it is not in the text, in which case omit it or keep it generic like "In a Prime Location"), and display the brand logo and contact details clearly.` : '',
+          !excludeBusinessInfo ? (effectiveIsBrandOnly ? `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline based on the brand and custom instructions, and display the brand logo and contact details clearly.` : `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline (based on ${propertyTitle || 'the product'}), a sub-headline highlighting key details, BHK specifications, and prominently including and highlighting the property's city or location name (based on ${propertyDescription || 'the product description'}, but only if explicitly mentioned; do NOT hallucinate or invent a location if it is not in the text, in which case omit it or keep it generic like "In a Prime Location"), and display the brand logo and contact details clearly.`) : '',
           excludeBusinessInfo ? `Do NOT add any text overlays, slogans, contact numbers, writing, or labels on the image. Keep it purely as a clean, raw photograph.` : '',
           excludeLogo ? `Do NOT include any brand logo or watermark on the image.` : '',
           userInstructions ? `Custom Instructions: ${userInstructions}` : ''
@@ -576,11 +586,35 @@ Make the edits clean, professional, and blend seamlessly with the original conte
 
     // 2. Try the Caption Generation Safely
     let finalCaption = "";
-    const captionPrompt = `You are a world-class Direct Response Copywriter with 20+ years of experience. 
+    const effectiveContact = contactNumber || profile?.contact_number || 'DM for details!';
+
+    const captionPrompt = effectiveIsBrandOnly ? `You are a world-class Direct Response Copywriter with 20+ years of experience.
+Write a high-converting Meta ad caption and copy for our business: "${businessName || 'Our Business'}".
+
+BUSINESS INFORMATION & PROFILE CONTEXT:
+"${profile?.business_info || profile?.mission_statement || propertyDescription || 'Leading professional business committed to exceptional quality and service.'}"
+${profile?.mission_statement ? `MISSION: "${profile.mission_statement}"` : ''}
+${userInstructions ? `CUSTOM CAMPAIGN INSTRUCTIONS / HOOK:\n"${userInstructions}"` : ''}
+
+CONTACT / CTA: "${effectiveContact}".
+
+CRITICAL INSTRUCTION:
+No specific product is selected for this ad. You MUST write the ad copy and description highlighting the business services, authority, credibility, and value proposition using ONLY the Business Information and Campaign Instructions provided above.
+
+RULES: 
+- Use Alex Hormozi frameworks (Hook, Retain, Reward). 
+- Keep the length MODERATE (max 400 characters). Avoid long, exhausting paragraphs.
+- Use bullet points and emojis. 
+- No bold markdown (**). 
+- DO NOT use any hashtags (#).
+- At the very end of the caption, add 5-6 important keywords relevant to the business inside a single bracket, e.g., [Keyword1, Keyword2, Keyword3...]
+- Make it stop the scroll.
+- Output ONLY the caption, NO extra text.`
+    : `You are a world-class Direct Response Copywriter with 20+ years of experience. 
 Write a high-converting Meta ad caption for: "${propertyTitle}". 
 Context: "${propertyDescription}". 
 Business: "${businessName}". 
-Contact: "${contactNumber || 'DM for details!'}". 
+Contact: "${effectiveContact}". 
 
 RULES: 
 - Use Alex Hormozi frameworks (Hook, Retain, Reward). 
@@ -614,13 +648,19 @@ RULES:
         } catch (chatError: any) {
             logToFile(`Caption generation failed: ${chatError.message}. Trying preview model...`);
             try {
+                const fallbackPrompt = effectiveIsBrandOnly
+                    ? `Write a high-converting Meta ad copy for business: "${businessName}". Business info: "${profile?.business_info || profile?.mission_statement || ''}". Instructions: "${userInstructions || ''}". Contact: "${effectiveContact}" without bolding and without hashtags.`
+                    : `Write a high-converting Meta ad caption for: "${propertyTitle}". Context: "${propertyDescription}". Business: "${businessName}". Contact: "${effectiveContact}" without bolding and without hashtags.`;
+
                 const { text } = await generateText({
                   model: google('gemini-3-flash-preview'),
-                  prompt: `Write a high-converting Meta ad caption for: "${propertyTitle}". Context: "${propertyDescription}". Business: "${businessName}". Contact: "${contactNumber || 'DM for details!'}" without bolding and without hashtags.`,
+                  prompt: fallbackPrompt,
                 });
                 finalCaption = text;
             } catch {
-                finalCaption = "Check out this premium property! DM for more details.";
+                finalCaption = effectiveIsBrandOnly
+                    ? `Discover exceptional services with ${businessName || 'us'}! Contact ${effectiveContact} for more details.`
+                    : "Check out this premium property! DM for more details.";
             }
         }
     }
