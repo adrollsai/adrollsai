@@ -31,6 +31,7 @@ type AudienceGroup = {
   name: string
   description?: string
   filters: {
+    matchMode?: 'OR' | 'AND'
     campaigns?: string[]
     forms?: string[]
     sources?: string[]
@@ -88,6 +89,7 @@ export default function AudienceGroupPage() {
   const [editingAudienceId, setEditingAudienceId] = useState<string | null>(null)
   const [audName, setAudName] = useState('')
   const [audDesc, setAudDesc] = useState('')
+  const [matchMode, setMatchMode] = useState<'OR' | 'AND'>('OR')
   const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([])
   const [selectedForms, setSelectedForms] = useState<string[]>([])
   const [selectedSources, setSelectedSources] = useState<string[]>([])
@@ -107,6 +109,10 @@ export default function AudienceGroupPage() {
   const [liveCount, setLiveCount] = useState<number | null>(null)
   const [previewLeads, setPreviewLeads] = useState<any[]>([])
   const [savingAudience, setSavingAudience] = useState(false)
+
+  // Abort controller and request ID to prevent async debounce race conditions
+  const abortControllerRef = React.useRef<AbortController | null>(null)
+  const requestIdRef = React.useRef(0)
 
   // Inspection Modal State
   const [inspectingAudience, setInspectingAudience] = useState<AudienceGroup | null>(null)
@@ -167,10 +173,11 @@ export default function AudienceGroupPage() {
     if (!isBuilderOpen) return
     const timer = setTimeout(() => {
       evaluateLiveCount()
-    }, 350)
+    }, 250)
     return () => clearTimeout(timer)
   }, [
     isBuilderOpen,
+    matchMode,
     selectedCampaigns,
     selectedForms,
     selectedSources,
@@ -183,6 +190,14 @@ export default function AudienceGroupPage() {
   ])
 
   const evaluateLiveCount = async () => {
+    // Abort previous in-flight evaluation request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+    const currentRequestId = ++requestIdRef.current
+
     try {
       setEvaluatingCount(true)
       const manualPhones = manualPhonesText
@@ -192,6 +207,7 @@ export default function AudienceGroupPage() {
 
       const payload = {
         filters: {
+          matchMode,
           campaigns: selectedCampaigns,
           forms: selectedForms,
           sources: selectedSources,
@@ -208,18 +224,26 @@ export default function AudienceGroupPage() {
       const res = await fetch(`/api/audiences/count${impParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       })
 
       const data = await res.json()
-      if (data.success) {
+      // Only set state if this is still the most recent request
+      if (currentRequestId === requestIdRef.current && data.success) {
         setLiveCount(data.count ?? 0)
         setPreviewLeads(data.previewLeads || [])
       }
-    } catch (e) {
-      console.error(e)
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        // Request superseded by newer user input, ignore
+        return
+      }
+      console.error('Count evaluation failed:', e)
     } finally {
-      setEvaluatingCount(false)
+      if (currentRequestId === requestIdRef.current) {
+        setEvaluatingCount(false)
+      }
     }
   }
 
@@ -228,6 +252,7 @@ export default function AudienceGroupPage() {
     setEditingAudienceId(null)
     setAudName('')
     setAudDesc('')
+    setMatchMode('OR')
     setSelectedCampaigns([])
     setSelectedForms([])
     setSelectedSources([])
@@ -249,6 +274,7 @@ export default function AudienceGroupPage() {
     setEditingAudienceId(aud.id)
     setAudName(aud.name)
     setAudDesc(aud.description || '')
+    setMatchMode(aud.filters?.matchMode || 'OR')
     setSelectedCampaigns(aud.filters?.campaigns || [])
     setSelectedForms(aud.filters?.forms || [])
     setSelectedSources(aud.filters?.sources || [])
@@ -284,6 +310,7 @@ export default function AudienceGroupPage() {
         name: audName.trim(),
         description: audDesc.trim(),
         filters: {
+          matchMode,
           campaigns: selectedCampaigns,
           forms: selectedForms,
           sources: selectedSources,
@@ -531,6 +558,9 @@ export default function AudienceGroupPage() {
 
                   {/* Filter Badges */}
                   <div className="flex flex-wrap gap-1.5 mb-3">
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${aud.filters?.matchMode === 'AND' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/70' : 'bg-blue-50 text-blue-700 border border-blue-200/70'}`}>
+                      {aud.filters?.matchMode === 'AND' ? 'Match ALL (AND)' : 'Match ANY (OR)'}
+                    </span>
                     {campaignCount > 0 && (
                       <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md truncate max-w-[200px]" title={aud.filters.campaigns?.join(', ')}>
                         🎯 {campaignCount} Campaign{campaignCount > 1 ? 's' : ''}
@@ -742,6 +772,62 @@ export default function AudienceGroupPage() {
 
               {/* FILTER SECTION */}
               <div className="space-y-5">
+                {/* MATCH LOGIC SELECTOR: OR (UNION) vs AND (INTERSECTION) */}
+                <div className="bg-slate-50 border border-slate-200/90 p-4 rounded-2xl space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles size={14} className="text-blue-600" /> Filter Matching Logic (AND / OR)
+                      </span>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Choose how multiple categories (e.g. Campaigns + Lead Forms) combine
+                      </p>
+                    </div>
+
+                    <div className="flex items-center bg-white p-1 rounded-xl border border-slate-200 shadow-xs">
+                      <button
+                        type="button"
+                        onClick={() => setMatchMode('OR')}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                          matchMode === 'OR'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Match ANY (OR)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMatchMode('AND')}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                          matchMode === 'AND'
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Match ALL (AND)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-slate-600 bg-white/90 p-2.5 rounded-xl border border-slate-200/70 flex items-center gap-2">
+                    <span className={`font-extrabold px-2 py-0.5 rounded text-[10px] uppercase tracking-wide shrink-0 ${
+                      matchMode === 'OR' ? 'bg-blue-100 text-blue-800' : 'bg-indigo-100 text-indigo-800'
+                    }`}>
+                      {matchMode === 'OR' ? 'Union (OR)' : 'Strict Intersection (AND)'}
+                    </span>
+                    {matchMode === 'OR' ? (
+                      <span>
+                        <strong>Match ANY (OR):</strong> Includes contacts matching <em>either</em> your selected campaigns <em>or</em> your selected lead forms. Lead count will <strong>combine</strong> rather than shrink.
+                      </span>
+                    ) : (
+                      <span>
+                        <strong>Match ALL (AND):</strong> Contacts must strictly match <em>both</em> the selected campaigns <em>and</em> the selected lead forms simultaneously.
+                      </span>
+                    )}
+                  </div>
+                </div>
+
                 <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-2 flex items-center gap-2">
                   <Filter size={14} className="text-blue-600" /> Filter Criteria (Multi-Select)
                 </h4>

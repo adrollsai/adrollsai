@@ -152,6 +152,7 @@ export async function POST(req: Request) {
 
         // Extract filters
         const {
+            matchMode = 'OR',
             campaigns = [],
             forms = [],
             sources = [],
@@ -235,51 +236,35 @@ export async function POST(req: Request) {
             if (manualPhoneSet.size > 0 && leadPhoneNorm && manualPhoneSet.has(leadPhoneNorm)) {
                 matchedLeadIds.add(lead.id)
             } else {
-                // If filters are applied, test criteria
-                const hasFilters = campaigns.length > 0 || forms.length > 0 || sources.length > 0 || pipelineStages.length > 0 || propertyIds.length > 0 || csvAudiences.length > 0 || minDate !== null || maxDate !== null
+                const hasCampaigns = campaigns.length > 0
+                const hasForms = forms.length > 0
+                const hasSources = sources.length > 0
+                const hasStages = pipelineStages.length > 0
+                const hasProps = propertyIds.length > 0
+                const hasCsvs = csvAudiences.length > 0
+                const hasCategoryFilters = hasCampaigns || hasForms || hasSources || hasStages || hasProps || hasCsvs
+                const hasDateFilters = minDate !== null || maxDate !== null
+                const hasFilters = hasCategoryFilters || hasDateFilters
 
                 if (!hasFilters && manualPhoneSet.size === 0) {
-                    // No filters and no manual phones means include all leads
                     matchedLeadIds.add(lead.id)
                 } else if (hasFilters) {
-                    // Date range test
+                    // Date boundary check
                     if (minDate && lead.created_at) {
                         if (new Date(lead.created_at) < minDate) continue
                     }
-
                     if (maxDate && lead.created_at) {
                         if (new Date(lead.created_at) > maxDate) continue
                     }
 
-                    // Source test
-                    if (sources.length > 0) {
-                        if (!lead.source || !sources.includes(lead.source)) continue
+                    if (!hasCategoryFilters) {
+                        matchedLeadIds.add(lead.id)
+                        continue
                     }
 
-                    // Form test
-                    if (forms.length > 0) {
-                        if (!lead.form_name || !forms.includes(lead.form_name.trim())) continue
-                    }
-
-                    // Stage test
-                    if (pipelineStages.length > 0) {
-                        if (!lead.pipeline_stage || !pipelineStages.includes(lead.pipeline_stage)) continue
-                    }
-
-                    // Property test
-                    if (propertyIds.length > 0) {
-                        if (!lead.property_id || !propertyIds.includes(lead.property_id)) continue
-                    }
-
-                    // CSV audience test
-                    if (csvAudiences.length > 0) {
-                        const leadCsvs = (lead.csv_audience || '').split(',').map((s: string) => s.trim())
-                        const matchesCsv = csvAudiences.some((aud: string) => leadCsvs.includes(aud))
-                        if (!matchesCsv) continue
-                    }
-
-                    // Campaign test (searches ad_name and custom_fields)
-                    if (campaigns.length > 0) {
+                    // 1. Campaign match
+                    let matchesCampaign = false
+                    if (hasCampaigns) {
                         let leadCamp = lead.ad_name ? lead.ad_name.trim() : null
                         if (!leadCamp && lead.custom_fields) {
                             let cf = lead.custom_fields
@@ -288,11 +273,64 @@ export async function POST(req: Request) {
                             }
                             leadCamp = cf?.lead_source_details?.trim() || cf?.meta_ad_origin?.campaign_name?.trim() || null
                         }
-
-                        if (!leadCamp || !campaigns.includes(leadCamp)) continue
+                        matchesCampaign = Boolean(leadCamp && campaigns.includes(leadCamp))
                     }
 
-                    matchedLeadIds.add(lead.id)
+                    // 2. Form match
+                    let matchesForm = false
+                    if (hasForms) {
+                        matchesForm = Boolean(lead.form_name && forms.includes(lead.form_name.trim()))
+                    }
+
+                    // 3. Source match
+                    let matchesSource = false
+                    if (hasSources) {
+                        matchesSource = Boolean(lead.source && sources.includes(lead.source))
+                    }
+
+                    // 4. Stage match
+                    let matchesStage = false
+                    if (hasStages) {
+                        matchesStage = Boolean(lead.pipeline_stage && pipelineStages.includes(lead.pipeline_stage))
+                    }
+
+                    // 5. Property match
+                    let matchesProp = false
+                    if (hasProps) {
+                        matchesProp = Boolean(lead.property_id && propertyIds.includes(lead.property_id))
+                    }
+
+                    // 6. CSV Audience match
+                    let matchesCsv = false
+                    if (hasCsvs) {
+                        const leadCsvs = (lead.csv_audience || '').split(',').map((s: string) => s.trim())
+                        matchesCsv = csvAudiences.some((aud: string) => leadCsvs.includes(aud))
+                    }
+
+                    let isMatch = false
+                    if (matchMode === 'OR') {
+                        isMatch = (
+                            (hasCampaigns && matchesCampaign) ||
+                            (hasForms && matchesForm) ||
+                            (hasSources && matchesSource) ||
+                            (hasStages && matchesStage) ||
+                            (hasProps && matchesProp) ||
+                            (hasCsvs && matchesCsv)
+                        )
+                    } else {
+                        isMatch = (
+                            (!hasCampaigns || matchesCampaign) &&
+                            (!hasForms || matchesForm) &&
+                            (!hasSources || matchesSource) &&
+                            (!hasStages || matchesStage) &&
+                            (!hasProps || matchesProp) &&
+                            (!hasCsvs || matchesCsv)
+                        )
+                    }
+
+                    if (isMatch) {
+                        matchedLeadIds.add(lead.id)
+                    }
                 }
             }
 
@@ -351,6 +389,7 @@ export async function POST(req: Request) {
             name: cleanName,
             description: description || '',
             filters: {
+                matchMode,
                 campaigns,
                 forms,
                 sources,

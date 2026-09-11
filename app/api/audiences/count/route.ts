@@ -58,6 +58,7 @@ export async function POST(req: Request) {
         const { filters, manualPhoneNumbers } = body || {}
 
         const {
+            matchMode = 'OR',
             campaigns = [],
             forms = [],
             sources = [],
@@ -137,42 +138,35 @@ export async function POST(req: Request) {
             if (manualPhoneSet.size > 0 && leadPhoneNorm && manualPhoneSet.has(leadPhoneNorm)) {
                 matchedLeads.push(lead)
             } else {
-                const hasFilters = campaigns.length > 0 || forms.length > 0 || sources.length > 0 || pipelineStages.length > 0 || propertyIds.length > 0 || csvAudiences.length > 0 || minDate !== null || maxDate !== null
+                const hasCampaigns = campaigns.length > 0
+                const hasForms = forms.length > 0
+                const hasSources = sources.length > 0
+                const hasStages = pipelineStages.length > 0
+                const hasProps = propertyIds.length > 0
+                const hasCsvs = csvAudiences.length > 0
+                const hasCategoryFilters = hasCampaigns || hasForms || hasSources || hasStages || hasProps || hasCsvs
+                const hasDateFilters = minDate !== null || maxDate !== null
+                const hasFilters = hasCategoryFilters || hasDateFilters
 
                 if (!hasFilters && manualPhoneSet.size === 0) {
                     matchedLeads.push(lead)
                 } else if (hasFilters) {
+                    // Date boundary check
                     if (minDate && lead.created_at) {
                         if (new Date(lead.created_at) < minDate) continue
                     }
-
                     if (maxDate && lead.created_at) {
                         if (new Date(lead.created_at) > maxDate) continue
                     }
 
-                    if (sources.length > 0) {
-                        if (!lead.source || !sources.includes(lead.source)) continue
+                    if (!hasCategoryFilters) {
+                        matchedLeads.push(lead)
+                        continue
                     }
 
-                    if (forms.length > 0) {
-                        if (!lead.form_name || !forms.includes(lead.form_name.trim())) continue
-                    }
-
-                    if (pipelineStages.length > 0) {
-                        if (!lead.pipeline_stage || !pipelineStages.includes(lead.pipeline_stage)) continue
-                    }
-
-                    if (propertyIds.length > 0) {
-                        if (!lead.property_id || !propertyIds.includes(lead.property_id)) continue
-                    }
-
-                    if (csvAudiences.length > 0) {
-                        const leadCsvs = (lead.csv_audience || '').split(',').map((s: string) => s.trim())
-                        const matchesCsv = csvAudiences.some((aud: string) => leadCsvs.includes(aud))
-                        if (!matchesCsv) continue
-                    }
-
-                    if (campaigns.length > 0) {
+                    // 1. Campaign match
+                    let matchesCampaign = false
+                    if (hasCampaigns) {
                         let leadCamp = lead.ad_name ? lead.ad_name.trim() : null
                         if (!leadCamp && lead.custom_fields) {
                             let cf = lead.custom_fields
@@ -181,11 +175,64 @@ export async function POST(req: Request) {
                             }
                             leadCamp = cf?.lead_source_details?.trim() || cf?.meta_ad_origin?.campaign_name?.trim() || null
                         }
-
-                        if (!leadCamp || !campaigns.includes(leadCamp)) continue
+                        matchesCampaign = Boolean(leadCamp && campaigns.includes(leadCamp))
                     }
 
-                    matchedLeads.push(lead)
+                    // 2. Form match
+                    let matchesForm = false
+                    if (hasForms) {
+                        matchesForm = Boolean(lead.form_name && forms.includes(lead.form_name.trim()))
+                    }
+
+                    // 3. Source match
+                    let matchesSource = false
+                    if (hasSources) {
+                        matchesSource = Boolean(lead.source && sources.includes(lead.source))
+                    }
+
+                    // 4. Stage match
+                    let matchesStage = false
+                    if (hasStages) {
+                        matchesStage = Boolean(lead.pipeline_stage && pipelineStages.includes(lead.pipeline_stage))
+                    }
+
+                    // 5. Property match
+                    let matchesProp = false
+                    if (hasProps) {
+                        matchesProp = Boolean(lead.property_id && propertyIds.includes(lead.property_id))
+                    }
+
+                    // 6. CSV Audience match
+                    let matchesCsv = false
+                    if (hasCsvs) {
+                        const leadCsvs = (lead.csv_audience || '').split(',').map((s: string) => s.trim())
+                        matchesCsv = csvAudiences.some((aud: string) => leadCsvs.includes(aud))
+                    }
+
+                    let isMatch = false
+                    if (matchMode === 'OR') {
+                        isMatch = (
+                            (hasCampaigns && matchesCampaign) ||
+                            (hasForms && matchesForm) ||
+                            (hasSources && matchesSource) ||
+                            (hasStages && matchesStage) ||
+                            (hasProps && matchesProp) ||
+                            (hasCsvs && matchesCsv)
+                        )
+                    } else {
+                        isMatch = (
+                            (!hasCampaigns || matchesCampaign) &&
+                            (!hasForms || matchesForm) &&
+                            (!hasSources || matchesSource) &&
+                            (!hasStages || matchesStage) &&
+                            (!hasProps || matchesProp) &&
+                            (!hasCsvs || matchesCsv)
+                        )
+                    }
+
+                    if (isMatch) {
+                        matchedLeads.push(lead)
+                    }
                 }
             }
         }
