@@ -7,6 +7,9 @@ const supabaseAdmin = createSupabaseAdmin(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300 // Max 5 minutes for processing broadcasts
+
 export async function GET(req: Request) {
     try {
         const supabase = await createClient()
@@ -555,208 +558,222 @@ async function executeBroadcastImmediately(
         }
     }
 
-    for (const r of recipients) {
-        const lead = leads.find(l => l.id === r.lead_id)
-        if (!lead) continue
+    const CONCURRENCY = 8
+    let currIdx = 0
 
-        let cleanPhone = r.phone_number.replace(/\D/g, '')
-        if (!cleanPhone) continue
-        if (cleanPhone.length === 10) {
-            cleanPhone = '91' + cleanPhone; // Auto-format 10-digit Indian numbers with country code
-        }
+    async function dispatchWorker() {
+        while (currIdx < recipients.length) {
+            const index = currIdx++
+            const r = recipients[index]
+            const lead = leads.find(l => l.id === r.lead_id)
+            if (!lead) continue
 
-        // Resolve property title
-        const property = (properties || []).find(p => p.id === lead.property_id)
-        const propertyTitle = property ? property.title : 'Premium Listings'
-
-        // Map template variables dynamically ONLY if template requires variables
-        let bodyParameters: any[] = []
-        
-        if (templateVarCount > 0) {
-            for (let i = 1; i <= templateVarCount; i++) {
-                const k = i.toString()
-                const mappedField = variableMappings?.[k] || (i === 1 ? 'name' : i === 2 ? 'property_title' : 'business_name')
-                
-                let val = ''
-                if (mappedField === 'name') val = lead.name || 'Valued Customer'
-                else if (mappedField === 'phone') val = lead.phone || ''
-                else if (mappedField === 'email') val = lead.email || ''
-                else if (mappedField === 'property_title') val = propertyTitle
-                else if (mappedField === 'business_name') val = businessName
-                else if (mappedField === 'csv_audience') val = lead.csv_audience || ''
-                else if (mappedField === 'pipeline_stage') val = lead.pipeline_stage || ''
-                else val = mappedField || 'Valued Customer'
-
-                // Strip non-printable unicode whitespace (e.g. U+3164) that triggers Meta Error #132018
-                val = val.replace(/[\u3164\u200B-\u200D\uFEFF]/g, '').trim() || 'Valued Customer'
-                
-                bodyParameters.push({ type: 'text', text: val })
+            let cleanPhone = r.phone_number.replace(/\D/g, '')
+            if (!cleanPhone) continue
+            if (cleanPhone.length === 10) {
+                cleanPhone = '91' + cleanPhone; // Auto-format 10-digit Indian numbers with country code
             }
-        }
 
-        const components: any[] = []
+            // Resolve property title
+            const property = (properties || []).find(p => p.id === lead.property_id)
+            const propertyTitle = property ? property.title : 'Premium Listings'
 
-        // 1. Header Component (IMAGE, VIDEO, DOCUMENT)
-        if (headerFormat && resolvedHeaderUrl) {
-            if (headerFormat === 'IMAGE') {
+            // Map template variables dynamically ONLY if template requires variables
+            let bodyParameters: any[] = []
+            
+            if (templateVarCount > 0) {
+                for (let i = 1; i <= templateVarCount; i++) {
+                    const k = i.toString()
+                    const mappedField = variableMappings?.[k] || (i === 1 ? 'name' : i === 2 ? 'property_title' : 'business_name')
+                    
+                    let val = ''
+                    if (mappedField === 'name') val = lead.name || 'Valued Customer'
+                    else if (mappedField === 'phone') val = lead.phone || ''
+                    else if (mappedField === 'email') val = lead.email || ''
+                    else if (mappedField === 'property_title') val = propertyTitle
+                    else if (mappedField === 'business_name') val = businessName
+                    else if (mappedField === 'csv_audience') val = lead.csv_audience || ''
+                    else if (mappedField === 'pipeline_stage') val = lead.pipeline_stage || ''
+                    else val = mappedField || 'Valued Customer'
+
+                    // Strip non-printable unicode whitespace (e.g. U+3164) that triggers Meta Error #132018
+                    val = val.replace(/[\u3164\u200B-\u200D\uFEFF]/g, '').trim() || 'Valued Customer'
+                    
+                    bodyParameters.push({ type: 'text', text: val })
+                }
+            }
+
+            const components: any[] = []
+
+            // 1. Header Component (IMAGE, VIDEO, DOCUMENT)
+            if (headerFormat && resolvedHeaderUrl) {
+                if (headerFormat === 'IMAGE') {
+                    components.push({
+                        type: 'header',
+                        parameters: [
+                            {
+                                type: 'image',
+                                image: { link: resolvedHeaderUrl }
+                            }
+                        ]
+                    })
+                } else if (headerFormat === 'VIDEO') {
+                    components.push({
+                        type: 'header',
+                        parameters: [
+                            {
+                                type: 'video',
+                                video: { link: resolvedHeaderUrl }
+                            }
+                        ]
+                    })
+                } else if (headerFormat === 'DOCUMENT') {
+                    components.push({
+                        type: 'header',
+                        parameters: [
+                            {
+                                type: 'document',
+                                document: { link: resolvedHeaderUrl }
+                            }
+                        ]
+                    })
+                }
+            }
+
+            // 2. Body Component (ONLY when template has {{1}} parameters)
+            if (templateVarCount > 0 && bodyParameters.length > 0) {
                 components.push({
-                    type: 'header',
-                    parameters: [
-                        {
-                            type: 'image',
-                            image: { link: resolvedHeaderUrl }
-                        }
-                    ]
-                })
-            } else if (headerFormat === 'VIDEO') {
-                components.push({
-                    type: 'header',
-                    parameters: [
-                        {
-                            type: 'video',
-                            video: { link: resolvedHeaderUrl }
-                        }
-                    ]
-                })
-            } else if (headerFormat === 'DOCUMENT') {
-                components.push({
-                    type: 'header',
-                    parameters: [
-                        {
-                            type: 'document',
-                            document: { link: resolvedHeaderUrl }
-                        }
-                    ]
+                    type: 'body',
+                    parameters: bodyParameters
                 })
             }
-        }
 
-        // 2. Body Component (ONLY when template has {{1}} parameters)
-        if (templateVarCount > 0 && bodyParameters.length > 0) {
-            components.push({
-                type: 'body',
-                parameters: bodyParameters
-            })
-        }
+            const templatePayload: any = {
+                name: templateName,
+                language: { code: templateLanguageCode }
+            }
 
-        const templatePayload: any = {
-            name: templateName,
-            language: { code: templateLanguageCode }
-        }
+            if (components.length > 0) {
+                templatePayload.components = components
+            }
 
-        if (components.length > 0) {
-            templatePayload.components = components
-        }
+            const messagePayload = {
+                messaging_product: 'whatsapp',
+                to: cleanPhone,
+                type: 'template',
+                template: templatePayload
+            }
 
-        const messagePayload = {
-            messaging_product: 'whatsapp',
-            to: cleanPhone,
-            type: 'template',
-            template: templatePayload
-        }
+            try {
+                const metaRes = await fetch(metaUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(messagePayload)
+                })
 
-        try {
-            const metaRes = await fetch(metaUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(messagePayload)
-            })
+                const metaData = await metaRes.json()
 
-            const metaData = await metaRes.json()
+                if (metaData.error) {
+                    console.error(`[BROADCAST EXECUTION] Meta API send failed for phone ${cleanPhone}:`, metaData.error)
+                    await supabaseAdmin
+                        .from('whatsapp_broadcast_recipients')
+                        .update({ 
+                            status: 'failed', 
+                            error_message: metaData.error.message || 'Meta API returned error' 
+                        })
+                        .eq('broadcast_id', broadcastId)
+                        .eq('lead_id', r.lead_id)
+                } else {
+                    const nowIso = new Date().toISOString()
+                    await supabaseAdmin
+                        .from('whatsapp_broadcast_recipients')
+                        .update({ 
+                            status: 'sent', 
+                            sent_at: nowIso 
+                        })
+                        .eq('broadcast_id', broadcastId)
+                        .eq('lead_id', r.lead_id)
 
-            if (metaData.error) {
-                console.error(`[BROADCAST EXECUTION] Meta API send failed for phone ${cleanPhone}:`, metaData.error)
+                    // Log outbound chat & message in WhatsApp CRM tab
+                    try {
+                        const recipientName = lead.name || 'Prospect'
+                        const summaryText = `Sent Template: ${templateName}`
+
+                        let { data: chat } = await supabaseAdmin
+                            .from('whatsapp_chats')
+                            .select('id')
+                            .eq('user_id', userId)
+                            .eq('recipient_phone', cleanPhone)
+                            .maybeSingle()
+
+                        if (!chat) {
+                            const { data: newChat } = await supabaseAdmin
+                                .from('whatsapp_chats')
+                                .insert({
+                                    user_id: userId,
+                                    recipient_phone: cleanPhone,
+                                    recipient_name: recipientName,
+                                    lead_id: lead.id,
+                                    last_message_text: summaryText,
+                                    unread_count: 0,
+                                    flow_answers: {},
+                                    flow_completed: false,
+                                    updated_at: nowIso
+                                })
+                                .select('id')
+                                .maybeSingle()
+
+                            chat = newChat
+                        } else {
+                            await supabaseAdmin
+                                .from('whatsapp_chats')
+                                .update({
+                                    last_message_text: summaryText,
+                                    lead_id: lead.id,
+                                    recipient_name: recipientName,
+                                    updated_at: nowIso
+                                })
+                                .eq('id', chat.id)
+                        }
+
+                        if (chat) {
+                            await supabaseAdmin
+                                .from('whatsapp_messages')
+                                .insert({
+                                    chat_id: chat.id,
+                                    direction: 'outbound',
+                                    message_text: summaryText,
+                                    media_url: resolvedHeaderUrl || null,
+                                    media_type: headerFormat === 'IMAGE' ? 'image' : headerFormat === 'VIDEO' ? 'video' : null,
+                                    created_at: nowIso
+                                })
+                        }
+                    } catch (chatErr) {
+                        console.error('[BROADCAST EXECUTION] Error syncing chat message:', chatErr)
+                    }
+                }
+            } catch (sendErr: any) {
+                console.error(`[BROADCAST EXECUTION] Exception sending to phone ${cleanPhone}:`, sendErr)
                 await supabaseAdmin
                     .from('whatsapp_broadcast_recipients')
                     .update({ 
                         status: 'failed', 
-                        error_message: metaData.error.message || 'Meta API returned error' 
+                        error_message: sendErr.message || 'HTTP fetch exception' 
                     })
                     .eq('broadcast_id', broadcastId)
                     .eq('lead_id', r.lead_id)
-            } else {
-                await supabaseAdmin
-                    .from('whatsapp_broadcast_recipients')
-                    .update({ 
-                        status: 'sent', 
-                        sent_at: new Date().toISOString() 
-                    })
-                    .eq('broadcast_id', broadcastId)
-                    .eq('lead_id', r.lead_id)
-
-                // Log outbound chat & message in WhatsApp CRM tab
-                try {
-                    const recipientName = lead.name || 'Prospect'
-                    const summaryText = `Sent Template: ${templateName}`
-
-                    let { data: chat } = await supabaseAdmin
-                        .from('whatsapp_chats')
-                        .select('id')
-                        .eq('user_id', userId)
-                        .eq('recipient_phone', cleanPhone)
-                        .maybeSingle()
-
-                    if (!chat) {
-                        const { data: newChat } = await supabaseAdmin
-                            .from('whatsapp_chats')
-                            .insert({
-                                user_id: userId,
-                                recipient_phone: cleanPhone,
-                                recipient_name: recipientName,
-                                lead_id: lead.id,
-                                last_message_text: summaryText,
-                                unread_count: 0,
-                                flow_answers: {},
-                                flow_completed: false,
-                                updated_at: new Date().toISOString()
-                            })
-                            .select('id')
-                            .maybeSingle()
-
-                        chat = newChat
-                    } else {
-                        await supabaseAdmin
-                            .from('whatsapp_chats')
-                            .update({
-                                last_message_text: summaryText,
-                                lead_id: lead.id,
-                                recipient_name: recipientName,
-                                updated_at: new Date().toISOString()
-                            })
-                            .eq('id', chat.id)
-                    }
-
-                    if (chat) {
-                        await supabaseAdmin
-                            .from('whatsapp_messages')
-                            .insert({
-                                chat_id: chat.id,
-                                direction: 'outbound',
-                                message_text: summaryText,
-                                media_url: resolvedHeaderUrl || null,
-                                media_type: headerFormat === 'IMAGE' ? 'image' : headerFormat === 'VIDEO' ? 'video' : null,
-                                created_at: new Date().toISOString()
-                            })
-                    }
-                } catch (chatErr) {
-                    console.error('[BROADCAST EXECUTION] Error syncing chat message:', chatErr)
-                }
             }
-        } catch (sendErr: any) {
-            console.error(`[BROADCAST EXECUTION] Exception sending to phone ${cleanPhone}:`, sendErr)
-            await supabaseAdmin
-                .from('whatsapp_broadcast_recipients')
-                .update({ 
-                    status: 'failed', 
-                    error_message: sendErr.message || 'HTTP fetch exception' 
-                })
-                .eq('broadcast_id', broadcastId)
-                .eq('lead_id', r.lead_id)
+
+            // Small throttle per worker (40ms) to ensure smooth outbound rate
+            await new Promise(res => setTimeout(res, 40))
         }
     }
+
+    const workers = Array.from({ length: Math.min(CONCURRENCY, recipients.length) }, () => dispatchWorker())
+    await Promise.all(workers)
 
     // Mark broadcast complete
     await supabaseAdmin

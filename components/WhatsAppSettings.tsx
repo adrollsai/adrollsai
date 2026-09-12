@@ -139,9 +139,10 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [statsData, setStatsData] = useState<any>(null)
   const [statsSearchQuery, setStatsSearchQuery] = useState('')
   const [statsFilterStatus, setStatsFilterStatus] = useState<'all' | 'sent' | 'replied' | 'pending' | 'failed'>('all')
+  const [resumingBroadcast, setResumingBroadcast] = useState(false)
 
-  const fetchBroadcastStats = async (broadcastId: string) => {
-    setLoadingStats(true)
+  const fetchBroadcastStats = async (broadcastId: string, silent = false) => {
+    if (!silent) setLoadingStats(true)
     try {
       const urlParams = new URLSearchParams(window.location.search)
       const impersonate = urlParams.get('impersonate')
@@ -152,13 +153,48 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       const data = await res.json()
       if (data.success) {
         setStatsData(data)
-      } else {
+      } else if (!silent) {
         toast.error('Failed to load campaign stats: ' + (data.error || ''))
       }
     } catch (e: any) {
-      toast.error('Error fetching broadcast stats: ' + e.message)
+      if (!silent) toast.error('Error fetching broadcast stats: ' + e.message)
     } finally {
-      setLoadingStats(false)
+      if (!silent) setLoadingStats(false)
+    }
+  }
+
+  // Auto-refresh stats every 4s while modal is open and pending leads remain
+  useEffect(() => {
+    if (!selectedStatsBroadcast) return
+    const hasPending = statsData?.stats?.pending && statsData.stats.pending > 0
+    if (hasPending) {
+      const timer = setInterval(() => {
+        fetchBroadcastStats(selectedStatsBroadcast.id, true)
+      }, 4000)
+      return () => clearInterval(timer)
+    }
+  }, [selectedStatsBroadcast, statsData?.stats?.pending])
+
+  const handleResumeBroadcast = async (broadcastId: string) => {
+    try {
+      setResumingBroadcast(true)
+      toast.loading('Triggering background worker to dispatch remaining pending leads...', { id: 'resume-broadcast' })
+      const res = await fetch('/api/whatsapp/broadcasts/worker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broadcastId })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`Dispatched ${data.sent} leads! (${data.remainingPending} remaining)`, { id: 'resume-broadcast' })
+        fetchBroadcastStats(broadcastId, true)
+      } else {
+        toast.error('Resume error: ' + (data.error || 'Failed'), { id: 'resume-broadcast' })
+      }
+    } catch (err: any) {
+      toast.error('Failed to trigger worker: ' + err.message, { id: 'resume-broadcast' })
+    } finally {
+      setResumingBroadcast(false)
     }
   }
 
@@ -2609,6 +2645,26 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               </div>
 
               <div className="flex items-center gap-2">
+                {statsData?.stats?.pending > 0 && (
+                  <button
+                    onClick={() => handleResumeBroadcast(selectedStatsBroadcast.id)}
+                    disabled={resumingBroadcast}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer transition-all disabled:opacity-50"
+                    title="Dispatch remaining pending leads via background worker"
+                  >
+                    {resumingBroadcast ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        <span>Dispatching...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send size={13} />
+                        <span>Resume ({statsData.stats.pending})</span>
+                      </>
+                    )}
+                  </button>
+                )}
                 <button
                   onClick={() => fetchBroadcastStats(selectedStatsBroadcast.id)}
                   disabled={loadingStats}
