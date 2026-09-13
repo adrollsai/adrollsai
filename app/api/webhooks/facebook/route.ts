@@ -1561,6 +1561,7 @@ CRITICAL CONVERSATIONAL RULES:
                                               customQuestionsStr = JSON.stringify(args.custom_questions.map(q => ({ type: 'CUSTOM', label: q })));
                                             }
 
+                                            const parsedLocations = args.target_city.split(/[,&/+]|\band\b/i).map(s => s.trim()).filter(Boolean);
                                             const { data: job, error } = await supabaseAdmin
                                               .from('campaign_jobs')
                                               .insert({
@@ -1571,7 +1572,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                   campaign_name: args.campaign_name,
                                                   daily_budget: args.daily_budget_inr,
                                                   dailyBudget: args.daily_budget_inr,
-                                                  target_locations: [args.target_city],
+                                                  target_locations: parsedLocations.length > 0 ? parsedLocations : [args.target_city],
                                                   property_id: args.property_id || null,
                                                   objective: selectedObjective,
                                                   campaignType: selectedType,
@@ -1665,10 +1666,14 @@ CRITICAL CONVERSATIONAL RULES:
                                               newCustomQuestionsStr = JSON.stringify(args.custom_questions.map(q => ({ type: 'CUSTOM', label: q })));
                                             }
 
+                                            const updatedLocations = args.target_city
+                                              ? args.target_city.split(/[,&/+]|\band\b/i).map(s => s.trim()).filter(Boolean)
+                                              : existingPayload.target_locations;
+
                                             const updatedPayload = {
                                               ...existingPayload,
                                               ...(args.daily_budget_inr ? { daily_budget: args.daily_budget_inr, dailyBudget: args.daily_budget_inr } : {}),
-                                              ...(args.target_city ? { target_locations: [args.target_city] } : {}),
+                                              target_locations: updatedLocations,
                                               ...(args.campaign_name ? { campaign_name: args.campaign_name } : {}),
                                               campaignType: newType,
                                               objective: newObjective,

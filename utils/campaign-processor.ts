@@ -670,22 +670,33 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             }
         }
 
-        // If not structured JSON, support plain text locations e.g. "Pune", "Delhi NCR", or array of city names
+        // If not structured JSON, support plain text locations e.g. "Pune", "Delhi NCR", "Chandigarh, Mohali & Panchkula"
         if (!parsedLocations) {
-            const rawLocs = Array.isArray(payload.target_locations)
-                ? payload.target_locations
-                : (typeof metaLocationsStr === 'string' ? metaLocationsStr.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+            let combinedLocsStr = '';
+            if (Array.isArray(payload.target_locations)) {
+                combinedLocsStr = payload.target_locations.join(', ');
+            } else if (typeof metaLocationsStr === 'string') {
+                combinedLocsStr = metaLocationsStr;
+            } else if (typeof payload.target_locations === 'string') {
+                combinedLocsStr = payload.target_locations;
+            }
+
+            // Split by comma, &, 'and', plus, and slashes e.g. "Chandigarh, Mohali & Panchkula" -> ["Chandigarh", "Mohali", "Panchkula"]
+            const rawLocs = combinedLocsStr
+                .split(/[,&/+]|\band\b/i)
+                .map((s: string) => s.trim())
+                .filter(Boolean);
 
             if (rawLocs.length > 0) {
                 const citiesFound: any[] = [];
                 for (const locName of rawLocs) {
                     try {
-                        const cleanQuery = locName.replace(/ncr/i, '').trim() || locName.trim();
+                        const cleanQuery = locName.replace(/\bncr\b/i, '').trim() || locName.trim();
                         const searchRes = await fetch(`${FB_MARKETING_URL}/search?type=adgeolocation&q=${encodeURIComponent(cleanQuery)}&location_types=["city"]&access_token=${facebookToken}`);
                         const searchData = await searchRes.json();
                         if (searchData.data && searchData.data.length > 0) {
                             const match = searchData.data.find((c: any) => c.country_code === 'IN') || searchData.data[0];
-                            if (match?.key) {
+                            if (match?.key && !citiesFound.some((c: any) => c.key === match.key)) {
                                 citiesFound.push({ key: match.key, radius: 25, distance_unit: 'kilometer' });
                             }
                         }
