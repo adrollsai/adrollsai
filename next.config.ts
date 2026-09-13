@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
     'ffmpeg-static'
   ],
   outputFileTracingIncludes: {
-    '/api/**/*': ['./node_modules/ffmpeg-static/**/*'],
+    '/api/**/*': ['./node_modules/ffmpeg-static/**/*', './public/**/*'],
   },
   images: {
     unoptimized: true,

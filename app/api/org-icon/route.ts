@@ -7,23 +7,75 @@ import path from 'path';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// In-memory cache to serve repeated splash & icon requests with 0ms latency
+const splashMemoryCache = new Map<string, Buffer>();
+
+async function getFallbackLogoBuffer(requestUrl: string): Promise<Buffer> {
+  // 1. Try local filesystem
+  try {
+    const filePath = path.join(process.cwd(), 'public', 'logo.png');
+    if (fs.existsSync(filePath)) {
+      return fs.readFileSync(filePath);
+    }
+  } catch (fsErr) {
+    console.warn('[ORG ICON] Filesystem read error for logo.png:', fsErr);
+  }
+
+  // 2. Try HTTP fetch from origin
+  try {
+    const originUrl = new URL('/logo.png', requestUrl).toString();
+    const res = await fetch(originUrl);
+    if (res.ok) {
+      const arrayBuffer = await res.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    }
+  } catch (netErr) {
+    console.warn('[ORG ICON] Network fetch error for logo.png:', netErr);
+  }
+
+  // 3. Ultra-minimal fallback SVG if logo is unavailable
+  return Buffer.from(
+    `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <rect width="512" height="512" rx="100" fill="#0F172A"/>
+      <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="160">N</text>
+    </svg>`
+  );
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const iconType = searchParams.get('type') || 'icon'; 
   const uid = searchParams.get('uid'); 
+  const v = searchParams.get('v') || 'v1';
 
   const rawHost = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
   const host = rawHost.split(':')[0].toLowerCase(); 
   const isLocal = host === 'localhost';
 
   const NOBOGENT_LOGO_URL = new URL('/logo.png', request.url).toString();
-  const FALLBACK_FAVICON = new URL('/favicon.ico', request.url).toString();
-
   const SYSTEM_HOSTS = ['nobogent.com', 'www.nobogent.com', 'app.nobogent.com', 'adrolls.in', 'www.adrolls.in', 'app.adrolls.in', 'localhost'];
 
   try {
+    // Check in-memory splash cache first
+    if (iconType === 'splash') {
+      const targetW = Math.max(320, Math.min(3000, parseInt(searchParams.get('w') || '1170')));
+      const targetH = Math.max(480, Math.min(3000, parseInt(searchParams.get('h') || '2532')));
+      const cacheKey = `splash_${host}_${v}_${uid || 'anon'}_${targetW}x${targetH}`;
+
+      if (splashMemoryCache.has(cacheKey)) {
+        const cached = splashMemoryCache.get(cacheKey)!;
+        return new NextResponse(new Uint8Array(cached), {
+          headers: {
+            'Content-Type': 'image/png',
+            'Content-Length': String(cached.length),
+            'Cache-Control': isLocal ? 'no-store' : 'public, max-age=31536000, immutable',
+          },
+        });
+      }
+    }
+
     const supabase = await createClient();
-    let logoUrl = null;
+    let logoUrl: string | null = null;
 
     if (SYSTEM_HOSTS.includes(host)) {
         logoUrl = NOBOGENT_LOGO_URL;
@@ -33,35 +85,26 @@ export async function GET(request: NextRequest) {
     }
 
     let buffer: Buffer;
-    const isAdrollsLogo = logoUrl === NOBOGENT_LOGO_URL || logoUrl.includes('/logo.png');
+    const isAdrollsLogo = !logoUrl || logoUrl === NOBOGENT_LOGO_URL || logoUrl.includes('/logo.png');
 
     if (isAdrollsLogo) {
-      const filePath = path.join(process.cwd(), 'public', 'logo.png');
-      buffer = fs.readFileSync(filePath);
+      buffer = await getFallbackLogoBuffer(request.url);
     } else {
-      // Added a User-Agent header so external image hosts don't block the request
-      const imageResponse = await fetch(logoUrl, {
+      const imageResponse = await fetch(logoUrl!, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
       });
       
       if (!imageResponse.ok) {
-        throw new Error('Failed to fetch external logo');
+        buffer = await getFallbackLogoBuffer(request.url);
+      } else {
+        const inputBuffer = await imageResponse.arrayBuffer();
+        buffer = Buffer.from(inputBuffer);
       }
-      
-      const inputBuffer = await imageResponse.arrayBuffer();
-      buffer = Buffer.from(inputBuffer);
     }
 
-    const roundedCornersMask = Buffer.from(
-        `<svg><rect x="0" y="0" width="512" height="512" rx="80" ry="80" /></svg>`
-    );
-
     let pipeline = sharp(buffer);
-    
-    // Enforce 96px padding to guarantee that both default and custom logos stay 
-    // inside the 40% safe area required for Android maskable splash/launcher icons
     const padding = 96;
     const size = 512 - (padding * 2);
     
@@ -94,9 +137,13 @@ export async function GET(request: NextRequest) {
         .png()
         .toBuffer();
 
+        const cacheKey = `splash_${host}_${v}_${uid || 'anon'}_${targetW}x${targetH}`;
+        splashMemoryCache.set(cacheKey, splashBuffer);
+
         return new NextResponse(new Uint8Array(splashBuffer), {
             headers: {
                 'Content-Type': 'image/png',
+                'Content-Length': String(splashBuffer.length),
                 'Cache-Control': isLocal ? 'no-store' : 'public, max-age=31536000, immutable',
             },
         });
@@ -105,8 +152,6 @@ export async function GET(request: NextRequest) {
         pipeline = pipeline
             .resize(size, size, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
             .extend({ top: padding, bottom: padding, left: padding, right: padding, background: { r: 255, g: 255, b: 255, alpha: 0 } })
-            // Flattening the standard PWA icon onto a white background is crucial. 
-            // Transparent PNGs break Android's "maskable" splash screen requirements.
             .flatten({ background: { r: 255, g: 255, b: 255 } });
     }
 
@@ -115,16 +160,15 @@ export async function GET(request: NextRequest) {
     return new NextResponse(new Uint8Array(processedBuffer), {
       headers: {
         'Content-Type': 'image/png',
-        // Never cache on localhost so you can see your live changes
+        'Content-Length': String(processedBuffer.length),
         'Cache-Control': isLocal ? 'no-store' : 'public, max-age=31536000, immutable',
       },
     });
 
-  } catch (err) {
-    console.error('[ORG ICON] Error:', err);
+  } catch (err: any) {
+    console.error('[ORG ICON] Main pipeline error, falling back:', err?.message);
     try {
-      const filePath = path.join(process.cwd(), 'public', 'logo.png');
-      const fallbackBuffer = fs.readFileSync(filePath);
+      const fallbackBuffer = await getFallbackLogoBuffer(request.url);
       let pipeline = sharp(fallbackBuffer);
       
       const padding = 96;
@@ -156,6 +200,7 @@ export async function GET(request: NextRequest) {
           return new NextResponse(new Uint8Array(splashBuffer), {
               headers: {
                   'Content-Type': 'image/png',
+                  'Content-Length': String(splashBuffer.length),
                   'Cache-Control': isLocal ? 'no-store' : 'public, max-age=31536000, immutable',
               },
           });
@@ -175,11 +220,13 @@ export async function GET(request: NextRequest) {
       return new NextResponse(new Uint8Array(processedBuffer), {
         headers: {
           'Content-Type': 'image/png',
+          'Content-Length': String(processedBuffer.length),
           'Cache-Control': isLocal ? 'no-store' : 'public, max-age=31536000, immutable',
         },
       });
-    } catch (fsErr) {
-      return NextResponse.json({ error: 'Failed to load default logo' }, { status: 500 });
+    } catch (fsErr: any) {
+      console.error('[ORG ICON] Ultimate fallback failed:', fsErr?.message);
+      return new NextResponse('Error generating icon', { status: 500 });
     }
   }
 }

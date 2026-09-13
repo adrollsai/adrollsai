@@ -56,6 +56,25 @@ export async function generateMetadata(): Promise<Metadata> {
      ? `/api/org-icon?type=favicon&v=${logoVersion}${uidParam}` 
      : "/favicon.ico?v=3";
 
+  const splashUrl = profileData?.logo_url 
+     ? `/api/org-icon?type=splash&v=${logoVersion}${uidParam}` 
+     : `/api/org-icon?type=splash${uidParam ? `?${uidParam.slice(1)}` : ''}`;
+
+  const startupImages = IOS_STARTUP_DEVICES.flatMap(dev => [
+    {
+      url: `https://${host}${splashUrl}${splashUrl.includes('?') ? '&' : '?'}w=${dev.w}&h=${dev.h}`,
+      media: `screen and (device-width: ${dev.ptW}px) and (device-height: ${dev.ptH}px) and (-webkit-device-pixel-ratio: ${dev.dpr})`,
+    },
+    {
+      url: `https://${host}${splashUrl}${splashUrl.includes('?') ? '&' : '?'}w=${dev.w}&h=${dev.h}`,
+      media: `screen and (device-width: ${dev.ptW}px) and (device-height: ${dev.ptH}px) and (-webkit-device-pixel-ratio: ${dev.dpr}) and (prefers-color-scheme: dark)`,
+    },
+    {
+      url: `https://${host}${splashUrl}${splashUrl.includes('?') ? '&' : '?'}w=${dev.w}&h=${dev.h}`,
+      media: `screen and (device-width: ${dev.ptW}px) and (device-height: ${dev.ptH}px) and (-webkit-device-pixel-ratio: ${dev.dpr}) and (prefers-color-scheme: light)`,
+    },
+  ]);
+
   return {
     metadataBase: new URL(`https://${host}`),
     title: {
@@ -65,16 +84,16 @@ export async function generateMetadata(): Promise<Metadata> {
     description: profileData?.business_name 
       ? `Welcome to ${title}. Manage your real estate leads and marketing automation effortlessly.` 
       : "Nobogent AI is the ultimate marketing automation platform for SMBs. Scale your Meta Ads, automate lead management, and grow your business with our agentic AI infrastructure.",
-    // Manifest is injected manually into <head> below to allow dynamic params
     icons: {
       icon: faviconUrl,
       shortcut: faviconUrl,
       apple: iconUrl,
     },
     appleWebApp: {
-        capable: true,
-        statusBarStyle: "default",
-        title: title,
+      capable: true,
+      statusBarStyle: "default",
+      title: title,
+      startupImage: startupImages,
     },
     openGraph: {
       title: title,
@@ -91,31 +110,39 @@ export async function generateMetadata(): Promise<Metadata> {
 import { CapacitorBridge } from "@/components/CapacitorBridge";
 import { CallTrackingListener } from "@/components/CallTrackingListener";
 
-const IOS_STARTUP_IMAGES = [
-  // iPhone 16 Pro Max, 15 Pro Max, 14 Pro Max (430x932 pt, @3x)
-  { w: 1290, h: 2796, media: "screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
-  // iPhone 16 Pro, 15 Pro, 14 Pro (393x852 pt, @3x)
-  { w: 1179, h: 2556, media: "screen and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
-  // iPhone 16 Plus, 15 Plus, 14 Plus, 13 Pro Max, 12 Pro Max (428x926 pt, @3x)
-  { w: 1284, h: 2778, media: "screen and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
-  // iPhone 16, 15, 14, 13, 13 Pro, 12, 12 Pro (390x844 pt, @3x)
-  { w: 1170, h: 2532, media: "screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+const IOS_STARTUP_DEVICES = [
+  // iPhone 16 Pro Max (440x956 pt, @3x)
+  { w: 1320, h: 2868, ptW: 440, ptH: 956, dpr: 3 },
+  // iPhone 16 Pro (402x874 pt, @3x)
+  { w: 1206, h: 2622, ptW: 402, ptH: 874, dpr: 3 },
+  // iPhone 16 Plus, 15 Pro Max, 15 Plus, 14 Pro Max (430x932 pt, @3x)
+  { w: 1290, h: 2796, ptW: 430, ptH: 932, dpr: 3 },
+  // iPhone 16, 15 Pro, 15, 14 Pro (393x852 pt, @3x)
+  { w: 1179, h: 2556, ptW: 393, ptH: 852, dpr: 3 },
+  // iPhone 14 Plus, 13 Pro Max, 12 Pro Max (428x926 pt, @3x)
+  { w: 1284, h: 2778, ptW: 428, ptH: 926, dpr: 3 },
+  // iPhone 14, 13, 13 Pro, 12, 12 Pro (390x844 pt, @3x)
+  { w: 1170, h: 2532, ptW: 390, ptH: 844, dpr: 3 },
   // iPhone 13 mini, 12 mini, 11 Pro, XS, X (375x812 pt, @3x)
-  { w: 1125, h: 2436, media: "screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  { w: 1125, h: 2436, ptW: 375, ptH: 812, dpr: 3 },
   // iPhone 11 Pro Max, XS Max (414x896 pt, @3x)
-  { w: 1242, h: 2688, media: "screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  { w: 1242, h: 2688, ptW: 414, ptH: 896, dpr: 3 },
   // iPhone 11, XR (414x896 pt, @2x)
-  { w: 828, h: 1792, media: "screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+  { w: 828, h: 1792, ptW: 414, ptH: 896, dpr: 2 },
   // iPhone 8 Plus, 7 Plus, 6s Plus (414x736 pt, @3x)
-  { w: 1242, h: 2208, media: "screen and (device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  { w: 1242, h: 2208, ptW: 414, ptH: 736, dpr: 3 },
   // iPhone SE (2nd/3rd gen), 8, 7, 6s (375x667 pt, @2x)
-  { w: 750, h: 1334, media: "screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+  { w: 750, h: 1334, ptW: 375, ptH: 667, dpr: 2 },
+  // 13" iPad Pro M4 (1032x1376 pt, @2x)
+  { w: 2064, h: 2752, ptW: 1032, ptH: 1376, dpr: 2 },
   // 12.9" iPad Pro (1024x1366 pt, @2x)
-  { w: 2048, h: 2732, media: "screen and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+  { w: 2048, h: 2732, ptW: 1024, ptH: 1366, dpr: 2 },
+  // 11" iPad Pro M4 (834x1210 pt, @2x)
+  { w: 1668, h: 2420, ptW: 834, ptH: 1210, dpr: 2 },
   // 11" iPad Pro, iPad Air (834x1194 pt, @2x)
-  { w: 1668, h: 2388, media: "screen and (device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+  { w: 1668, h: 2388, ptW: 834, ptH: 1194, dpr: 2 },
   // 10.9" iPad, 10.2" iPad (810x1080 pt, @2x)
-  { w: 1620, h: 2160, media: "screen and (device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+  { w: 1620, h: 2160, ptW: 810, ptH: 1080, dpr: 2 },
 ];
 
 export const viewport: Viewport = {
@@ -176,9 +203,9 @@ export default async function RootLayout({
      manifestUrl = `/api/manifest?uid=${user.id}`;
   }
 
-  const getSplashUrl = (w: number, h: number) => {
+  const getAbsoluteSplashUrl = (w: number, h: number) => {
     const sep = splashUrl.includes('?') ? '&' : '?';
-    return `${splashUrl}${sep}w=${w}&h=${h}`;
+    return `https://${host}${splashUrl}${sep}w=${w}&h=${h}`;
   };
 
   return (
@@ -201,16 +228,30 @@ export default async function RootLayout({
             `,
           }}
         />
-        {/* Apple Touch Startup Images for major iOS device resolutions */}
-        <link rel="apple-touch-startup-image" href={getSplashUrl(1170, 2532)} />
-        {IOS_STARTUP_IMAGES.map((img, idx) => (
+        {/* Universal Fallback Startup Image (Absolute URL) */}
+        <link rel="apple-touch-startup-image" href={getAbsoluteSplashUrl(1179, 2556)} />
+
+        {/* Apple Touch Startup Images for all iPhone / iPad device resolutions (Light & Dark) */}
+        {IOS_STARTUP_DEVICES.flatMap((dev, idx) => [
           <link
-            key={idx}
+            key={`base-${idx}`}
             rel="apple-touch-startup-image"
-            href={getSplashUrl(img.w, img.h)}
-            media={img.media}
+            href={getAbsoluteSplashUrl(dev.w, dev.h)}
+            media={`screen and (device-width: ${dev.ptW}px) and (device-height: ${dev.ptH}px) and (-webkit-device-pixel-ratio: ${dev.dpr})`}
+          />,
+          <link
+            key={`dark-${idx}`}
+            rel="apple-touch-startup-image"
+            href={getAbsoluteSplashUrl(dev.w, dev.h)}
+            media={`screen and (device-width: ${dev.ptW}px) and (device-height: ${dev.ptH}px) and (-webkit-device-pixel-ratio: ${dev.dpr}) and (prefers-color-scheme: dark)`}
+          />,
+          <link
+            key={`light-${idx}`}
+            rel="apple-touch-startup-image"
+            href={getAbsoluteSplashUrl(dev.w, dev.h)}
+            media={`screen and (device-width: ${dev.ptW}px) and (device-height: ${dev.ptH}px) and (-webkit-device-pixel-ratio: ${dev.dpr}) and (prefers-color-scheme: light)`}
           />
-        ))}
+        ])}
         <script
           dangerouslySetInnerHTML={{
             __html: `

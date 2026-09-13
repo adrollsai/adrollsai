@@ -826,12 +826,13 @@ export default function AssetsPage() {
                 }
             }
 
-            const response = await fetch('/api/post-universal', {
+            const postUrl = `/api/post-universal${impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : ''}`
+            const response = await fetch(postUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     imageUrl: selectedAsset.url,
-                    caption: caption || 'Automated Post via AdRolls AI 🚀',
+                    caption: caption || 'Automated Post via Nobogent AI 🚀',
                     type: selectedAsset.type,
                     platforms: targets
                 })
@@ -848,8 +849,11 @@ export default function AssetsPage() {
             }
 
             if (response.ok) {
-                const msg = data.message || 'Your video/image is publishing asynchronously in the background. You will receive a notification once published across all platforms.'
-                toast.success('🚀 Social Broadcast Queued!', { description: msg })
+                const msg = data.message || 'Your video/image was successfully published across your connected platforms.'
+                toast.success('🚀 Social Broadcast Published!', { description: msg })
+                if (data.failed && data.failed.length > 0) {
+                    toast.warning('Notice', { description: `Some platforms were skipped or failed: ${data.failed.join(', ')}` })
+                }
                 setSelectedAsset(null)
                 fetchAssets(true) // Update status locally
             } else {
@@ -858,7 +862,7 @@ export default function AssetsPage() {
 
         } catch (error: any) {
             console.error(error)
-            alert(error.message || 'Failed.')
+            toast.error('Broadcast Error', { description: error.message || 'Failed to broadcast post.' })
         } finally {
             setIsPosting(false)
         }

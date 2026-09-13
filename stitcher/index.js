@@ -40,13 +40,28 @@ webpush.setVapidDetails(
 async function sendPushNotification(userId, title, body, url = '/dashboard/crm', type = 'general') {
     console.log(`[PUSH] Dispatching push notification for User: ${userId}`);
     try {
+        // Store in in-app notifications table
+        try {
+            await supabaseAdmin.from('notifications').insert({
+                user_id: userId,
+                title,
+                message: body,
+                type,
+                action_link: url,
+                is_read: false,
+                created_at: new Date().toISOString()
+            });
+        } catch (dbErr) {
+            console.error('[PUSH DB Insert Error]:', dbErr.message);
+        }
+
         const { data: subscriptions } = await supabaseAdmin
             .from('push_subscriptions')
             .select('*')
             .or(`user_id.eq.${userId},catalog_owner_id.eq.${userId}`);
 
         if (!subscriptions || subscriptions.length === 0) {
-            console.log(`[PUSH] FAILED: 0 subscriptions found.`);
+            console.log(`[PUSH] In-app notification recorded. (0 web push subscriptions found)`);
             return;
         }
 
