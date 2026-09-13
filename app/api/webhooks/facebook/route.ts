@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { triggerWelcomeDrip, sendInstantFormCatalogMessage } from '@/utils/whatsapp/drips'
 import { bookAppointment, triggerOutboundCall } from '@/utils/voice-helper'
 import { deductCreditsByCost, calculateLLMCost } from '@/utils/credits'
+import { createCreativeSessionToken } from '@/utils/creative-token'
 import { updateLeadScoreInDB, parseCustomFields } from '@/utils/lead-scoring'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
@@ -334,6 +335,26 @@ export async function POST(request: Request) {
                           : isButton 
                           ? (message.button?.text || message.button?.payload) 
                           : null;
+                        const listReplyTitle = isInteractive ? message.interactive?.list_reply?.title : null;
+
+                        // Support WhatsApp Flows (nfm_reply)
+                        const isNfmReply = isInteractive && message.interactive?.type === 'nfm_reply';
+                        let nfmSelectedCreatives: string[] = [];
+                        let nfmFlowText = '';
+                        if (isNfmReply && message.interactive?.nfm_reply?.response_json) {
+                            try {
+                                const parsedNfm = JSON.parse(message.interactive.nfm_reply.response_json);
+                                if (parsedNfm.selected_creatives) {
+                                    nfmSelectedCreatives = Array.isArray(parsedNfm.selected_creatives)
+                                        ? parsedNfm.selected_creatives
+                                        : [parsedNfm.selected_creatives];
+                                    nfmFlowText = `I have selected and submitted ${nfmSelectedCreatives.length} creative(s) from my library using the WhatsApp Flow: ${nfmSelectedCreatives.join(', ')}. Please attach them to my campaign draft.`;
+                                    console.log(`🎨 [NFM Flow Reply] Extracted ${nfmSelectedCreatives.length} creative(s):`, nfmSelectedCreatives);
+                                }
+                            } catch (nfmErr) {
+                                console.error('❌ [NFM JSON Parse Error]:', nfmErr);
+                            }
+                        }
                         
                         // Handle media messages (image, video, document, audio, sticker)
                         const mediaTypes = ['image', 'video', 'document', 'audio', 'sticker'];
@@ -355,7 +376,7 @@ export async function POST(request: Request) {
                             }
                         }
 
-                        let messageText = buttonReplyTitle || message.text?.body || mediaCaption || (isMediaMessage ? `[${message.type}]` : '');
+                        let messageText = buttonReplyTitle || listReplyTitle || nfmFlowText || message.text?.body || mediaCaption || (isMediaMessage ? `[${message.type}]` : '');
 
                         
                         console.log(`💬 Received message from ${fromPhone}: "${messageText}"${isMediaMessage ? ` [media: ${message.type}]` : ''}`);
@@ -370,7 +391,7 @@ export async function POST(request: Request) {
                         // Look up matched profile by personal notification number
                         const { data: profiles } = await supabaseAdmin
                             .from('profiles')
-                            .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, custom_domain');
+                            .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, selected_page_id, currency, custom_domain');
                             
                         const matchedProfile = profiles?.find((p: any) => {
                             const rawPersonal = p.whatsapp_personal_number || '';
@@ -397,6 +418,37 @@ export async function POST(request: Request) {
                         
                         if (matchedProfile) {
                             console.log(`🤖 MATCHED PROFILE: ${matchedProfile.business_name} (User: ${matchedProfile.id})`);
+                            
+                            // If user selected creatives via WhatsApp Flow, automatically attach them to active campaign draft
+                            if (nfmSelectedCreatives && nfmSelectedCreatives.length > 0) {
+                                try {
+                                    const { data: latestDraft } = await supabaseAdmin
+                                        .from('campaign_jobs')
+                                        .select('id, payload')
+                                        .eq('user_id', matchedProfile.id)
+                                        .eq('status', 'draft')
+                                        .order('created_at', { ascending: false })
+                                        .limit(1)
+                                        .maybeSingle();
+
+                                    if (latestDraft) {
+                                        const p = latestDraft.payload || {};
+                                        const cUrls: string[] = Array.isArray(p.creativeUrls || p.creative_urls)
+                                            ? [...(p.creativeUrls || p.creative_urls)]
+                                            : [];
+                                        nfmSelectedCreatives.forEach((u: string) => {
+                                            if (!cUrls.includes(u)) cUrls.push(u);
+                                        });
+                                        await supabaseAdmin.from('campaign_jobs').update({
+                                            payload: { ...p, creative_urls: cUrls, creativeUrls: cUrls },
+                                            updated_at: new Date().toISOString()
+                                        }).eq('id', latestDraft.id);
+                                        console.log(`✅ [NFM Flow Auto-Attach] Attached ${nfmSelectedCreatives.length} creative(s) to draft campaign ${latestDraft.id}`);
+                                    }
+                                } catch (nfmAttachErr) {
+                                    console.error('❌ [NFM Flow Auto-Attach Error]:', nfmAttachErr);
+                                }
+                            }
                             
                             // Database helper functions for agentic bot tools (declared as const to avoid block-scope syntax issues)
                             const dbSearchLeads = async (userId: string, query: string) => {
@@ -855,21 +907,30 @@ CAPABILITIES & MCP TOOLS:
 You have tools to both QUERY and OPERATE the workspace:
 1. Inventory Management: Add new properties/products using 'add_inventory_item', or attach photos/images to existing or newly created products using 'attach_image_to_inventory'.
 2. Ad & Lead Quality Diagnostics: Use 'analyze_lead_quality' to inspect why leads might be disqualified, check call transcripts/notes, and diagnose ad performance with live data.
-3. Automation Flows & Campaigns: Use 'generate_campaign_flow' and 'create_campaign_draft' to build qualification workflows, calling scripts, or ad drafts.
+3. Automation Flows & Campaigns:
+   - Use 'generate_campaign_flow' to build qualification workflows, calling scripts, and lead routing.
+   - Use 'create_campaign_draft' to build Meta ad drafts.
+   - Use 'attach_creative_to_campaign' to attach image/video creatives (sent directly on WhatsApp or from URL) to a campaign draft.
+   - Use 'generate_ai_creative' to generate fresh high-converting AI marketing creatives (images) using Nobogent's AI engine.
+   - Use 'list_user_creatives' to inspect and pick from previously created graphics/videos in the user's asset library.
+   - Use 'send_creative_picker' to send an in-app visual picker link allowing the user to browse high-res previews, filter by category/aspect ratio, and multi-select creatives directly inside WhatsApp's built-in browser.
+   - Use 'launch_meta_campaign' to publish and launch the campaign directly into Meta Ads Manager once the user confirms with "Confirm" or "Launch".
 4. CRM Operations: Search leads, inspect transcripts, fetch WhatsApp history, and update stages with 'update_lead_stage'.
 ${(inboundMediaType === 'image' && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:'))
-    ? `\nCURRENT ATTACHED PHOTO:\nThe user has attached a photo/image directly with this WhatsApp message!\nPermanent Public Image URL: "${inboundMediaUrl}"\nIf the user asks to add this photo to a new listing, pass this URL to 'add_inventory_item'. If they ask to add it to an existing product (or newly created product), call 'attach_image_to_inventory' with this URL!\n`
+    ? `\nCURRENT ATTACHED PHOTO:\nThe user has attached a photo/image directly with this WhatsApp message!\nPermanent Public Image URL: "${inboundMediaUrl}"\n- If they ask to use this photo as an ad creative (e.g. "ye creative use krlo", "use this creative", "attach to campaign"), call 'attach_creative_to_campaign' with this URL!\n- If they ask to add it to a product listing, call 'attach_image_to_inventory' with this URL!\n- If creating a new listing, pass it to 'add_inventory_item'.\n`
     : ''}
 CRITICAL CONVERSATIONAL RULES:
+- ALWAYS SOLICIT CREATIVES: When drafting or discussing a campaign, ALWAYS proactively ask the user about their creative:
+  * Example: "Do you have an ad creative (photo or video) you'd like to use? You can send it directly here in WhatsApp, choose from your library, or I can generate a new AI image creative for you."
+- NEVER claim that you cannot upload creatives to Meta campaigns, or that the user has to do it manually from the dashboard. You have 'attach_creative_to_campaign' and 'launch_meta_campaign'!
+- NEVER claim that you cannot generate images or videos. You have 'generate_ai_creative' which connects directly to Nobogent's AI creative engine!
+- When the user confirms with "Confirm", "Launch", or "Go ahead", call 'launch_meta_campaign' immediately to push it to Meta Ads Manager!
 - STRICT ANTI-HALLUCINATION & SLOT FILLING:
   * Never invent or guess critical parameters (e.g. price, property address, campaign budget, target city, or customer phone numbers).
   * If the user asks to add inventory, launch a campaign, or build a flow, check whether all required information is provided.
   * If any required parameter is missing, DO NOT call the tool with made-up data. Instead, politely and clearly ask the user for the missing details.
-  * For example, if the user says "Add 3BHK flat at Green Valley", ask for the price, address, and if they'd like to share photos or a description before adding it.
-
 - CONFIRMATION FOR HIGH-IMPACT ACTIONS:
-  * Before launching paid campaigns or executing high-stakes actions, present a clear, structured summary of what will be done and ask for their confirmation (e.g. "Reply 'Confirm' to launch").
-
+  * Before launching paid campaigns, present a clear summary of what will be done (budget, targeting, creative attached, flow) and ask for their confirmation (e.g. "Reply 'Confirm' to launch").
 - WHATSAPP FORMATTING CONSTRAINTS:
   * WhatsApp does NOT support markdown tables, HTML, or code-blocks. NEVER output tables, columns, or markdown table syntax (| --- |).
   * Always format lists, metrics, or chat history logs as a clean, vertical, chronological stream with bold headers (*Title*) and clean bullets (•).
@@ -1177,17 +1238,21 @@ CRITICAL CONVERSATIONAL RULES:
                                         }
                                       }),
                                       create_campaign_draft: tool({
-                                        description: "Creates a draft Meta ad campaign for an inventory item. ONLY call this when daily budget, target location, and campaign name are provided. If missing, ask the user first.",
+                                        description: "Creates a draft Meta ad campaign. ALWAYS proactively ask the user about their ad creative (or accept creative_url if provided). ONLY call this when daily budget, target location, and campaign name are provided.",
                                         inputSchema: z.object({
                                           campaign_name: z.string().describe("Name of the campaign"),
                                           daily_budget_inr: z.number().describe("Daily budget in INR (e.g. 1500)"),
                                           target_city: z.string().describe("City or locality to target"),
                                           property_id: z.string().optional().describe("UUID of property from inventory"),
-                                          objective: z.string().optional().describe("Campaign objective, e.g. 'OUTCOME_LEADS' or 'MESSAGES'")
+                                          objective: z.string().optional().describe("Campaign objective, e.g. 'OUTCOME_LEADS' or 'MESSAGES'"),
+                                          creative_url: z.string().optional().describe("Optional direct image or video URL for the ad creative")
                                         }),
-                                        execute: async (args: { campaign_name: string; daily_budget_inr: number; target_city: string; property_id?: string; objective?: string }) => {
+                                        execute: async (args: { campaign_name: string; daily_budget_inr: number; target_city: string; property_id?: string; objective?: string; creative_url?: string }) => {
                                           console.log(`🤖 [TOOL: create_campaign_draft] Creating draft campaign: "${args.campaign_name}"`);
                                           try {
+                                            const initialCreative = args.creative_url || (inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
+                                            const creativeList = initialCreative ? [initialCreative] : [];
+
                                             const { data: job, error } = await supabaseAdmin
                                               .from('campaign_jobs')
                                               .insert({
@@ -1199,7 +1264,9 @@ CRITICAL CONVERSATIONAL RULES:
                                                   daily_budget: args.daily_budget_inr,
                                                   target_locations: [args.target_city],
                                                   property_id: args.property_id || null,
-                                                  objective: args.objective || 'OUTCOME_LEADS'
+                                                  objective: args.objective || 'OUTCOME_LEADS',
+                                                  creative_urls: creativeList,
+                                                  creativeUrls: creativeList
                                                 }
                                               })
                                               .select('id, status')
@@ -1215,12 +1282,407 @@ CRITICAL CONVERSATIONAL RULES:
                                               draft_id: job.id,
                                               campaign_name: args.campaign_name,
                                               daily_budget: args.daily_budget_inr,
+                                              has_creative: creativeList.length > 0,
+                                              creative_url: initialCreative || null,
                                               status: 'draft',
-                                              message: "Campaign draft created in your Nobogent workspace. Ask the user if they'd like to launch it or adjust any settings."
+                                              message: creativeList.length > 0
+                                                ? `Campaign draft created with attached creative! Present summary and ask user: reply 'Confirm' to launch to Meta Ads Manager.`
+                                                : `Campaign draft created in workspace. Proactively ask user for their ad creative: they can send a photo/video directly on WhatsApp, pick from their library, or ask the AI to generate a creative.`
                                             };
                                           } catch (err: any) {
                                             return { success: false, error: err.message };
                                           }
+                                        }
+                                      }),
+                                      attach_creative_to_campaign: tool({
+                                        description: "Attaches an image or video creative to a draft Meta ad campaign. Call this whenever the user provides a photo/video (or sends an image URL) and asks to use it as an ad creative, or says 'use this creative', 'attach this to the campaign'.",
+                                        inputSchema: z.object({
+                                          job_id: z.string().optional().describe("UUID of the campaign job from campaign_jobs. Defaults to the user's most recent draft campaign if omitted."),
+                                          creative_url: z.string().optional().describe("Direct image or video URL to use. Defaults to the currently attached photo from WhatsApp if omitted."),
+                                          headline: z.string().optional().describe("Optional headline for the ad creative"),
+                                          primary_text: z.string().optional().describe("Optional primary copy text for the ad")
+                                        }),
+                                        execute: async (args: { job_id?: string; creative_url?: string; headline?: string; primary_text?: string }) => {
+                                          const targetUrl = args.creative_url || (inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
+                                          if (!targetUrl) {
+                                            return { success: false, error: "No image/video creative provided or attached to message." };
+                                          }
+
+                                          let targetJobId = args.job_id;
+                                          if (!targetJobId) {
+                                            const { data: latestJob } = await supabaseAdmin
+                                              .from('campaign_jobs')
+                                              .select('id, payload')
+                                              .eq('user_id', matchedProfile.id)
+                                              .order('created_at', { ascending: false })
+                                              .limit(1)
+                                              .single();
+                                            if (latestJob) {
+                                              targetJobId = latestJob.id;
+                                            }
+                                          }
+
+                                          if (!targetJobId) {
+                                            return { success: false, error: "No campaign draft found in your account. Please create a campaign draft first." };
+                                          }
+
+                                          const { data: currentJob } = await supabaseAdmin
+                                            .from('campaign_jobs')
+                                            .select('id, payload')
+                                            .eq('id', targetJobId)
+                                            .single();
+
+                                          const existingPayload = currentJob?.payload || {};
+                                          const existingCreatives: string[] = Array.isArray(existingPayload.creativeUrls || existingPayload.creative_urls)
+                                            ? [...(existingPayload.creativeUrls || existingPayload.creative_urls)]
+                                            : [];
+
+                                          if (!existingCreatives.includes(targetUrl)) {
+                                            existingCreatives.push(targetUrl);
+                                          }
+
+                                          const updatedPayload = {
+                                            ...existingPayload,
+                                            creative_urls: existingCreatives,
+                                            creativeUrls: existingCreatives,
+                                            adCopy: {
+                                              headline: args.headline || existingPayload.adCopy?.headline || "AI Sales & Marketing Platform",
+                                              primary_text: args.primary_text || existingPayload.adCopy?.primary_text || "Automate your lead generation with Nobogent AI.",
+                                              description: existingPayload.adCopy?.description || "Book a free demo"
+                                            }
+                                          };
+
+                                          const { error: updateErr } = await supabaseAdmin
+                                            .from('campaign_jobs')
+                                            .update({
+                                              payload: updatedPayload,
+                                              updated_at: new Date().toISOString()
+                                            })
+                                            .eq('id', targetJobId);
+
+                                          if (updateErr) {
+                                            return { success: false, error: updateErr.message };
+                                          }
+
+                                          // Also register in assets table
+                                          try {
+                                            await supabaseAdmin.from('assets').insert({
+                                              user_id: matchedProfile.id,
+                                              url: targetUrl,
+                                              type: targetUrl.includes('.mp4') ? 'video' : 'image',
+                                              status: 'Draft',
+                                              caption: args.headline || 'Campaign Creative'
+                                            });
+                                          } catch (e) {}
+
+                                          return {
+                                            success: true,
+                                            job_id: targetJobId,
+                                            attached_creative_url: targetUrl,
+                                            message: `Creative successfully attached to campaign "${existingPayload.campaign_name || targetJobId}". The campaign now has its creative and is ready to launch!`
+                                          };
+                                        }
+                                      }),
+                                      generate_ai_creative: tool({
+                                        description: "Generates a high-converting AI image creative for ads or marketing using Nobogent's AI creative engine. Call this when the user asks to generate, create, or design a new image creative or visual for an ad.",
+                                        inputSchema: z.object({
+                                          prompt: z.string().describe("Detailed description of the visual scene, subject, headline text overlay, and style"),
+                                          aspect_ratio: z.enum(["1:1", "4:5", "9:16", "16:9"]).optional().describe("Aspect ratio, default 1:1 or 4:5 for Meta Feed"),
+                                          campaign_job_id: z.string().optional().describe("Optional campaign draft ID to automatically attach this generated creative to")
+                                        }),
+                                        execute: async (args: { prompt: string; aspect_ratio?: "1:1" | "4:5" | "9:16" | "16:9"; campaign_job_id?: string }) => {
+                                          try {
+                                            console.log(`🎨 [TOOL: generate_ai_creative] Generating AI creative: "${args.prompt}"`);
+                                            const { createKieImageTask, queryKieTask } = await import('@/utils/external-apis');
+                                            const ratio = args.aspect_ratio || "1:1";
+                                            const taskId = await createKieImageTask(args.prompt, "gpt-image-2-5-flare-text-to-image", ratio);
+
+                                            if (!taskId) {
+                                              return { success: false, error: "Failed to queue image generation task." };
+                                            }
+
+                                            // Poll up to 10 seconds for immediate resolution
+                                            let finalImageUrl: string | null = null;
+                                            for (let attempt = 0; attempt < 5; attempt++) {
+                                              await new Promise(r => setTimeout(r, 2000));
+                                              const statusRes = await queryKieTask(taskId);
+                                              if (statusRes.state === 'success' && statusRes.resultUrl) {
+                                                finalImageUrl = statusRes.resultUrl;
+                                                break;
+                                              }
+                                              if (statusRes.state === 'fail') break;
+                                            }
+
+                                            const returnUrl = finalImageUrl || `https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/${matchedProfile.id}/${Date.now()}.jpg`;
+
+                                            // Save to assets table
+                                            await supabaseAdmin.from('assets').insert({
+                                              user_id: matchedProfile.id,
+                                              url: returnUrl,
+                                              type: 'image',
+                                              status: finalImageUrl ? 'Draft' : 'Processing',
+                                              caption: args.prompt.substring(0, 100),
+                                              kie_task_id: taskId
+                                            });
+
+                                            // If campaign draft exists, attach it
+                                            let targetJobId = args.campaign_job_id;
+                                            if (!targetJobId) {
+                                              const { data: latestDraft } = await supabaseAdmin
+                                                .from('campaign_jobs')
+                                                .select('id')
+                                                .eq('user_id', matchedProfile.id)
+                                                .eq('status', 'draft')
+                                                .order('created_at', { ascending: false })
+                                                .limit(1)
+                                                .single();
+                                              if (latestDraft) targetJobId = latestDraft.id;
+                                            }
+
+                                            if (targetJobId && returnUrl) {
+                                              const { data: currentJob } = await supabaseAdmin
+                                                .from('campaign_jobs')
+                                                .select('payload')
+                                                .eq('id', targetJobId)
+                                                .single();
+                                              if (currentJob) {
+                                                const p = currentJob.payload || {};
+                                                const cUrls = Array.isArray(p.creativeUrls) ? [...p.creativeUrls] : [];
+                                                if (!cUrls.includes(returnUrl)) cUrls.push(returnUrl);
+                                                await supabaseAdmin.from('campaign_jobs').update({
+                                                  payload: { ...p, creative_urls: cUrls, creativeUrls: cUrls }
+                                                }).eq('id', targetJobId);
+                                              }
+                                            }
+
+                                            return {
+                                              success: true,
+                                              image_url: returnUrl,
+                                              task_id: taskId,
+                                              message: finalImageUrl
+                                                ? `AI Creative generated successfully and added to your asset library! URL: ${finalImageUrl}`
+                                                : `AI Creative task queued (${taskId}). It is processing in the background and will be saved in your asset library shortly.`
+                                            };
+                                          } catch (e: any) {
+                                            console.error("❌ [TOOL: generate_ai_creative] Error:", e);
+                                            return { success: false, error: e.message };
+                                          }
+                                        }
+                                      }),
+                                      send_creative_picker: tool({
+                                        description: "Sends an interactive WhatsApp message with a secure link and CTA button that opens the mobile-first Creative Picker webview directly inside WhatsApp. The webview lets the user view full image/video previews, filter by category (Images, Videos, AI Generated) and aspect ratio (1:1, 9:16), upload new files from their phone, and multi-select items. Call this whenever the user asks to see, choose, filter, or select creatives for a campaign.",
+                                        inputSchema: z.object({
+                                          campaign_job_id: z.string().optional().describe("Optional campaign draft ID to attach the selected creatives to.")
+                                        }),
+                                        execute: async (args: { campaign_job_id?: string }) => {
+                                          try {
+                                            console.log(`🎨 [TOOL: send_creative_picker] Triggered for user ${matchedProfile.id}`);
+
+                                            let targetJobId = args.campaign_job_id;
+                                            if (!targetJobId) {
+                                              const { data: latestDraft } = await supabaseAdmin
+                                                .from('campaign_jobs')
+                                                .select('id, payload')
+                                                .eq('user_id', matchedProfile.id)
+                                                .eq('status', 'draft')
+                                                .order('created_at', { ascending: false })
+                                                .limit(1)
+                                                .maybeSingle();
+                                              if (latestDraft) targetJobId = latestDraft.id;
+                                            }
+
+                                            // Generate secure session token (valid for 48 hours)
+                                            const token = createCreativeSessionToken({
+                                              userId: matchedProfile.id,
+                                              campaignId: targetJobId,
+                                              phone: cleanFrom
+                                            });
+
+                                            // Base URL for webview (use production app URL or current domain)
+                                            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
+                                            const pickerUrl = `${baseUrl.replace(/\/$/, '')}/select-creatives?token=${token}`;
+
+                                            const targetPhoneId = isMessageToOfficialBot
+                                              ? (process.env.DEV_WHATSAPP_PHONE_ID || wabaPhoneId || matchedProfile.whatsapp_phone_number_id)
+                                              : (wabaPhoneId || matchedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID);
+                                            const targetToken = isMessageToOfficialBot
+                                              ? (process.env.DEV_WHATSAPP_ACCESS_TOKEN || matchedProfile.whatsapp_access_token || matchedProfile.facebook_token)
+                                              : (matchedProfile.whatsapp_access_token || matchedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN);
+
+                                            // Send interactive CTA URL message to WhatsApp
+                                            const msgPayload = {
+                                              messaging_product: 'whatsapp',
+                                              recipient_type: 'individual',
+                                              to: cleanFrom,
+                                              type: 'interactive',
+                                              interactive: {
+                                                type: 'cta_url',
+                                                header: {
+                                                  type: 'text',
+                                                  text: '🎨 Select Campaign Creatives'
+                                                },
+                                                body: {
+                                                  text: `Tap the button below to view full visual previews of your creatives, filter by Images, Videos & AI, or upload new files from your phone gallery.\n\n🔗 *Direct Link:*\n${pickerUrl}`
+                                                },
+                                                footer: {
+                                                  text: 'Nobogent AI'
+                                                },
+                                                action: {
+                                                  name: 'cta_url',
+                                                  parameters: {
+                                                    display_text: 'Select Creatives 🎨',
+                                                    url: pickerUrl
+                                                  }
+                                                }
+                                              }
+                                            };
+
+                                            const sendRes = await fetch(`https://graph.facebook.com/v20.0/${targetPhoneId}/messages`, {
+                                              method: 'POST',
+                                              headers: {
+                                                'Authorization': `Bearer ${targetToken}`,
+                                                'Content-Type': 'application/json'
+                                              },
+                                              body: JSON.stringify(msgPayload)
+                                            });
+
+                                            const sendData = await sendRes.json();
+                                            if (!sendRes.ok) {
+                                              console.warn('[send_creative_picker] CTA URL failed, sending text fallback:', sendData);
+                                              // Fallback to standard formatted text message with link
+                                              await fetch(`https://graph.facebook.com/v20.0/${targetPhoneId}/messages`, {
+                                                method: 'POST',
+                                                headers: {
+                                                  'Authorization': `Bearer ${targetToken}`,
+                                                  'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify({
+                                                  messaging_product: 'whatsapp',
+                                                  recipient_type: 'individual',
+                                                  to: cleanFrom,
+                                                  type: 'text',
+                                                  text: {
+                                                    body: `🎨 *Select Your Campaign Creatives*\n\nTap the link below to open your creative gallery directly in WhatsApp. You can preview high-res images, filter by video/image/AI, upload new photos, and multi-select:\n\n👉 ${pickerUrl}\n\nOnce selected, tap 'Attach to Campaign' and I'll update your campaign automatically!`
+                                                  }
+                                                })
+                                              });
+                                            }
+
+                                            return {
+                                              success: true,
+                                              picker_url: pickerUrl,
+                                              message: "Sent interactive Creative Picker link to the user's WhatsApp. They can tap to open the visual gallery, filter, preview, and multi-select."
+                                            };
+                                          } catch (e: any) {
+                                            console.error('❌ [send_creative_picker] Error:', e);
+                                            return { success: false, error: e.message };
+                                          }
+                                        }
+                                      }),
+                                      launch_meta_campaign: tool({
+                                        description: "Publishes and launches a draft Meta ad campaign directly into Meta Ads Manager. Call this when the user confirms with 'Confirm', 'Launch', 'Go ahead', or asks to activate the campaign.",
+                                        inputSchema: z.object({
+                                          job_id: z.string().optional().describe("UUID of the campaign job from campaign_jobs. Defaults to the latest draft campaign if omitted.")
+                                        }),
+                                        execute: async (args: { job_id?: string }) => {
+                                          let targetJobId = args.job_id;
+                                          if (!targetJobId) {
+                                            const { data: latestDraft } = await supabaseAdmin
+                                              .from('campaign_jobs')
+                                              .select('id, payload')
+                                              .eq('user_id', matchedProfile.id)
+                                              .eq('status', 'draft')
+                                              .order('created_at', { ascending: false })
+                                              .limit(1)
+                                              .single();
+                                            if (latestDraft) targetJobId = latestDraft.id;
+                                          }
+
+                                          if (!targetJobId) {
+                                            return { success: false, error: "No campaign draft found to launch. Please create a campaign draft first." };
+                                          }
+
+                                          const { data: job } = await supabaseAdmin
+                                            .from('campaign_jobs')
+                                            .select('*')
+                                            .eq('id', targetJobId)
+                                            .single();
+
+                                          if (!job) {
+                                            return { success: false, error: "Campaign draft not found." };
+                                          }
+
+                                          const payload = job.payload || {};
+                                          const creativeList = payload.creativeUrls || payload.creative_urls || [];
+                                          if (creativeList.length === 0) {
+                                            return {
+                                              success: false,
+                                              error: "Campaign requires at least one creative (photo or video). Please send a photo here or ask me to generate an AI creative first."
+                                            };
+                                          }
+
+                                          // Verify Meta credentials
+                                          const fbToken = matchedProfile.facebook_token;
+                                          const adAccId = matchedProfile.ad_account_id;
+                                          const pageId = (matchedProfile as any).selected_page_id;
+
+                                          if (!fbToken || !adAccId) {
+                                            return {
+                                              success: false,
+                                              error: "Meta Ad Account or Facebook Token is missing from your profile. Please check your Facebook connection in settings."
+                                            };
+                                          }
+
+                                          const fullJobPayload = {
+                                            ...payload,
+                                            facebookToken: fbToken,
+                                            adAccountId: adAccId,
+                                            pageId: pageId || undefined,
+                                            dailyBudget: payload.daily_budget || 1500,
+                                            metaLocationsStr: Array.isArray(payload.target_locations) ? payload.target_locations.join(', ') : (payload.target_locations || 'Delhi NCR'),
+                                            creativeUrls: creativeList,
+                                            campaign_name: payload.campaign_name || 'Nobogent Campaign',
+                                            campaignType: 'custom',
+                                            adCopy: payload.adCopy || {
+                                              headline: 'AI Sales Team for Real Estate',
+                                              primary_text: 'Stop wasting ad spend on cold leads. Automate your sales with Nobogent.',
+                                              description: 'Book a free demo'
+                                            },
+                                            whatsappNumber: matchedProfile.contact_number || '',
+                                            businessName: matchedProfile.business_name || 'Nobogent',
+                                            contactNumber: matchedProfile.contact_number || '',
+                                            currency: (matchedProfile as any).currency || 'INR',
+                                            linkUrl: 'https://app.nobogent.com',
+                                            privacyPolicyUrl: 'https://nobogent.com/privacy'
+                                          };
+
+                                          await supabaseAdmin
+                                            .from('campaign_jobs')
+                                            .update({
+                                              status: 'pending',
+                                              payload: fullJobPayload,
+                                              updated_at: new Date().toISOString()
+                                            })
+                                            .eq('id', targetJobId);
+
+                                          // Trigger async execution
+                                          try {
+                                            const { runCampaignJob } = await import('@/utils/campaign-processor');
+                                            runCampaignJob(targetJobId, fullJobPayload).catch(err => {
+                                              console.error("❌ Background campaign launch error:", err);
+                                            });
+                                          } catch (procErr: any) {
+                                            console.error("❌ Failed to start runCampaignJob:", procErr);
+                                          }
+
+                                          return {
+                                            success: true,
+                                            job_id: targetJobId,
+                                            campaign_name: fullJobPayload.campaign_name,
+                                            daily_budget: fullJobPayload.dailyBudget,
+                                            creative_count: creativeList.length,
+                                            message: `🚀 Campaign "${fullJobPayload.campaign_name}" has been launched! It is now being created in your Meta Ads Manager with your creative and targeting. You will see it active on your Meta dashboard shortly.`
+                                          };
                                         }
                                       }),
                                       update_lead_stage: tool({
@@ -1267,6 +1729,63 @@ CRITICAL CONVERSATIONAL RULES:
                                             return { success: false, error: err.message };
                                           }
                                         }
+                                      }),
+                                      list_inventory_items: tool({
+                                        description: "Lists properties or products in the user's catalog. Call this when the user asks what products/properties they have or wants to attach a campaign to an inventory item.",
+                                        inputSchema: z.object({
+                                          limit: z.number().optional().describe("Number of items to return, default 5")
+                                        }),
+                                        execute: async (args: { limit?: number }) => {
+                                          const lim = args.limit || 5;
+                                          const { data: props, error } = await supabaseAdmin
+                                            .from('properties')
+                                            .select('id, title, price, address, status, image_url')
+                                            .eq('user_id', matchedProfile.id)
+                                            .order('created_at', { ascending: false })
+                                            .limit(lim);
+
+                                          if (error || !props || props.length === 0) {
+                                            return { products: [], message: "No inventory items found." };
+                                          }
+
+                                          return {
+                                            total: props.length,
+                                            products: props.map((p: any) => ({
+                                              id: p.id,
+                                              title: p.title,
+                                              price: p.price,
+                                              address: p.address,
+                                              status: p.status,
+                                              image_url: p.image_url || 'No image attached'
+                                            }))
+                                          };
+                                        }
+                                      }),
+                                      trigger_ai_call: tool({
+                                        description: "Triggers an instant or scheduled AI voice call to a lead using Nobogent's voice AI calling engine. Call this when the user asks to call a lead, dial a prospect, or test AI calling.",
+                                        inputSchema: z.object({
+                                          lead_id: z.string().describe("UUID of the lead to call"),
+                                          force_now: z.boolean().optional().describe("Force dial immediately even if outside normal calling hours, default true")
+                                        }),
+                                        execute: async (args: { lead_id: string; force_now?: boolean }) => {
+                                          try {
+                                            console.log(`📞 [TOOL: trigger_ai_call] Calling lead: ${args.lead_id} for user: ${matchedProfile.id}`);
+                                            const res = await triggerOutboundCall(supabaseAdmin, args.lead_id, matchedProfile.id, false);
+                                            if (!res.success) {
+                                              return { success: false, error: res.error || "Failed to initiate call." };
+                                            }
+                                            return {
+                                              success: true,
+                                              call_sid: res.callSid,
+                                              scheduled: res.scheduled,
+                                              message: res.scheduled
+                                                ? `Call has been scheduled for ${res.scheduledTime ? new Date(res.scheduledTime).toLocaleTimeString() : 'the next calling window'}.`
+                                                : `AI Call has been initiated! The prospect's phone is ringing now.`
+                                            };
+                                          } catch (e: any) {
+                                            return { success: false, error: e.message };
+                                          }
+                                        }
                                       })
                                     };
 
@@ -1296,9 +1815,9 @@ CRITICAL CONVERSATIONAL RULES:
                                         let ownerUserQueryPrompt = `User query: "${messageText}"`;
                                         if (inboundMediaType === 'image' && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:')) {
                                             if (!messageText || messageText.trim() === '[image]' || messageText.trim() === '') {
-                                                ownerUserQueryPrompt = `The user sent a photo/image attachment without text (Permanent Public Image URL: "${inboundMediaUrl}"). Please attach this image to their most recently created product using the 'attach_image_to_inventory' tool, and confirm the attachment.`;
+                                                ownerUserQueryPrompt = `The user sent a photo/image attachment without text (Permanent Public Image URL: "${inboundMediaUrl}"). If they recently discussed or drafted a campaign/ad, attach this image using 'attach_creative_to_campaign'. If they recently discussed a product/listing, attach it using 'attach_image_to_inventory'.`;
                                             } else {
-                                                ownerUserQueryPrompt = `User query: "${messageText}". [Attached Image URL: "${inboundMediaUrl}". If they ask to attach this photo, use 'attach_image_to_inventory' with this URL]`;
+                                                ownerUserQueryPrompt = `User query: "${messageText}". [Attached Image URL: "${inboundMediaUrl}". If they ask to use this as an ad creative or for a campaign (e.g. "ye creative use krlo"), call 'attach_creative_to_campaign'. If for a product/inventory, use 'attach_image_to_inventory']`;
                                             }
                                         }
 
