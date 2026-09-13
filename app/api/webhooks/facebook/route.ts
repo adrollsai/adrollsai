@@ -912,6 +912,7 @@ You have tools to both QUERY and OPERATE the workspace:
    - Use 'generate_campaign_flow' to build qualification workflows, calling scripts, and lead routing. It automatically registers and saves to Flow Builder and Qualification Questions!
    - Use 'publish_campaign_flow' to explicitly activate and persist a qualification flow to Flow Builder and Qualification Questions database.
    - Use 'create_campaign_draft' to build Meta ad drafts.
+   - Use 'update_campaign_draft' to update budget (e.g. to ₹600 or any amount), target location/city, or campaign name on an existing draft whenever the user requests changes before launching.
    - Use 'attach_creative_to_campaign' to attach image/video creatives (sent directly on WhatsApp or from URL) to a campaign draft.
    - Use 'generate_ai_creative' to generate fresh high-converting AI marketing creatives (images) using Nobogent's AI engine.
    - Use 'list_user_creatives' to inspect and pick from previously created graphics/videos in the user's asset library.
@@ -1502,6 +1503,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                   target_locations: [args.target_city],
                                                   property_id: args.property_id || null,
                                                   objective: args.objective || 'OUTCOME_LEADS',
+                                                  campaignType: 'instant_form',
                                                   creative_urls: creativeList,
                                                   creativeUrls: creativeList
                                                 }
@@ -1528,6 +1530,78 @@ CRITICAL CONVERSATIONAL RULES:
                                             };
                                           } catch (err: any) {
                                             return { success: false, error: err.message };
+                                          }
+                                        }
+                                      }),
+                                      update_campaign_draft: tool({
+                                        description: "Updates an existing draft campaign's parameters such as daily budget, target location/city, campaign name, or objective. Call this whenever the user asks to change or update their budget (e.g. 'budget 600 kar do', 'change budget to 600'), change the city/location, or rename the campaign draft BEFORE launching.",
+                                        inputSchema: z.object({
+                                          job_id: z.string().optional().describe("UUID of the campaign job from campaign_jobs. Defaults to the user's latest draft campaign if omitted."),
+                                          daily_budget_inr: z.number().optional().describe("New daily budget in INR (e.g. 600 or 1500)"),
+                                          target_city: z.string().optional().describe("New target city or locality (e.g. 'Pune' or 'Delhi NCR')"),
+                                          campaign_name: z.string().optional().describe("New name for the campaign"),
+                                          objective: z.string().optional().describe("Campaign objective, e.g. 'OUTCOME_LEADS' or 'MESSAGES'")
+                                        }),
+                                        execute: async (args: { job_id?: string; daily_budget_inr?: number; target_city?: string; campaign_name?: string; objective?: string }) => {
+                                          try {
+                                            let targetJobId = args.job_id;
+                                            if (!targetJobId) {
+                                              const { data: latestDraft } = await supabaseAdmin
+                                                .from('campaign_jobs')
+                                                .select('id, payload')
+                                                .eq('user_id', matchedProfile.id)
+                                                .eq('status', 'draft')
+                                                .order('created_at', { ascending: false })
+                                                .limit(1)
+                                                .maybeSingle();
+                                              if (latestDraft) targetJobId = latestDraft.id;
+                                            }
+
+                                            if (!targetJobId) {
+                                              return { success: false, error: "No campaign draft found to update. Please create a campaign draft first." };
+                                            }
+
+                                            const { data: currentJob } = await supabaseAdmin
+                                              .from('campaign_jobs')
+                                              .select('id, payload')
+                                              .eq('id', targetJobId)
+                                              .single();
+
+                                            if (!currentJob) {
+                                              return { success: false, error: "Campaign draft not found." };
+                                            }
+
+                                            const existingPayload = currentJob.payload || {};
+                                            const updatedPayload = {
+                                              ...existingPayload,
+                                              ...(args.daily_budget_inr ? { daily_budget: args.daily_budget_inr, dailyBudget: args.daily_budget_inr } : {}),
+                                              ...(args.target_city ? { target_locations: [args.target_city] } : {}),
+                                              ...(args.campaign_name ? { campaign_name: args.campaign_name } : {}),
+                                              ...(args.objective ? { objective: args.objective } : {})
+                                            };
+
+                                            const { error: updateErr } = await supabaseAdmin
+                                              .from('campaign_jobs')
+                                              .update({
+                                                payload: updatedPayload,
+                                                updated_at: new Date().toISOString()
+                                              })
+                                              .eq('id', targetJobId);
+
+                                            if (updateErr) {
+                                              return { success: false, error: updateErr.message };
+                                            }
+
+                                            return {
+                                              success: true,
+                                              job_id: targetJobId,
+                                              campaign_name: updatedPayload.campaign_name,
+                                              daily_budget: updatedPayload.daily_budget,
+                                              target_locations: updatedPayload.target_locations,
+                                              message: `Campaign draft updated successfully! Budget is now ₹${updatedPayload.daily_budget || '1500'}/day, Location: ${Array.isArray(updatedPayload.target_locations) ? updatedPayload.target_locations.join(', ') : updatedPayload.target_locations}.`
+                                            };
+                                          } catch (e: any) {
+                                            return { success: false, error: e.message };
                                           }
                                         }
                                       }),
@@ -1822,9 +1896,10 @@ CRITICAL CONVERSATIONAL RULES:
                                       launch_meta_campaign: tool({
                                         description: "Publishes and launches a draft Meta ad campaign directly into Meta Ads Manager. Call this when the user confirms with 'Confirm', 'Launch', 'Go ahead', or asks to activate the campaign.",
                                         inputSchema: z.object({
-                                          job_id: z.string().optional().describe("UUID of the campaign job from campaign_jobs. Defaults to the latest draft campaign if omitted.")
+                                          job_id: z.string().optional().describe("UUID of the campaign job from campaign_jobs. Defaults to the latest draft campaign if omitted."),
+                                          daily_budget_inr: z.number().optional().describe("Optional daily budget override in INR (e.g. 600). If specified, launches with this budget.")
                                         }),
-                                        execute: async (args: { job_id?: string }) => {
+                                        execute: async (args: { job_id?: string; daily_budget_inr?: number }) => {
                                           let targetJobId = args.job_id;
                                           if (!targetJobId) {
                                             const { data: latestDraft } = await supabaseAdmin
@@ -1873,16 +1948,20 @@ CRITICAL CONVERSATIONAL RULES:
                                             };
                                           }
 
+                                          const targetBudget = args.daily_budget_inr || payload.daily_budget || payload.dailyBudget || 1500;
                                           const fullJobPayload = {
                                             ...payload,
                                             facebookToken: fbToken,
                                             adAccountId: adAccId,
                                             pageId: pageId || undefined,
-                                            dailyBudget: payload.daily_budget || 1500,
+                                            selected_page_token: (matchedProfile as any).selected_page_token || undefined,
+                                            dailyBudget: targetBudget,
+                                            daily_budget: targetBudget,
                                             metaLocationsStr: Array.isArray(payload.target_locations) ? payload.target_locations.join(', ') : (payload.target_locations || 'Delhi NCR'),
+                                            target_locations: payload.target_locations || ['Delhi NCR'],
                                             creativeUrls: creativeList,
                                             campaign_name: payload.campaign_name || 'Nobogent Campaign',
-                                            campaignType: 'custom',
+                                            campaignType: payload.campaignType || 'instant_form',
                                             adCopy: payload.adCopy || {
                                               headline: 'AI Sales Team for Real Estate',
                                               primary_text: 'Stop wasting ad spend on cold leads. Automate your sales with Nobogent.',

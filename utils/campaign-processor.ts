@@ -469,83 +469,117 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             });
         }
 
-        // --- Step 4: Create Lead Form ---
-        let leadFormId = null;
-        if (campaignType === 'instant_form') {
-            logToFile("--- CREATING LEAD FORM ---");
+        // --- Step 4: Create or Resolve Lead Form ---
+        let leadFormId = payload.leadFormId || payload.lead_form_id || payload.formId || null;
+        const requiresLeadForm = !isWebsiteCampaign && campaignType !== 'whatsapp_chat';
+        if (requiresLeadForm && !leadFormId) {
+            logToFile("--- RESOLVING / CREATING LEAD FORM ---");
 
-            let metaCustomQuestions: any[] = [];
-            if (customQuestionsStr && customQuestionsStr !== "[]") {
+            // Obtain Page Access Token (Meta strictly requires Page Token for leadgen_forms)
+            let pageAccessToken = payload.selected_page_token || payload.pageToken;
+            if (!pageAccessToken && (job?.user_id || payload.userId)) {
                 try {
-                    const parsedQuestions = JSON.parse(customQuestionsStr);
-                    metaCustomQuestions = parsedQuestions.map((q: any) => {
-                        const label = q.label.trim();
-                        const lowerLabel = label.toLowerCase();
-                        
-                        if (q.type !== 'MULTIPLE_CHOICE') {
-                            if (lowerLabel.includes('company') || lowerLabel.includes('business name')) return { type: 'COMPANY_NAME', key: 'company_name' };
-                            if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) return { type: 'JOB_TITLE', key: 'job_title' };
-                            if (lowerLabel.includes('city')) return { type: 'CITY', key: 'city' };
-                            if (lowerLabel.includes('state')) return { type: 'STATE', key: 'state' };
-                        }
+                    const { data: prof } = await supabaseAdmin
+                        .from('profiles')
+                        .select('selected_page_token')
+                        .eq('id', job?.user_id || payload.userId)
+                        .single();
+                    if (prof?.selected_page_token) pageAccessToken = prof.selected_page_token;
+                } catch (e) {}
+            }
+            const tokenForLeadForm = pageAccessToken || facebookToken;
 
-                        const metaQ: any = { type: 'CUSTOM', label: label.substring(0, 200) };
-                        if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-                            const validOptions = q.options
-                                .filter((o: string) => o.trim() !== '')
-                                .map((opt: string) => ({ value: opt.trim(), key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50) }));
-                            if (validOptions.length > 0) metaQ.options = validOptions;
-                        }
-                        return metaQ;
-                    });
-
-                    const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
-                    metaCustomQuestions = metaCustomQuestions.filter((q: any) => {
-                        if (q.type === 'CUSTOM') return true;
-                        if (seenTypes.has(q.type)) return false;
-                        seenTypes.add(q.type);
-                        return true;
-                    });
-                } catch (e) {
-                    logToFile("Failed to parse custom questions", e);
+            // 1. Try to find an existing active lead form on this page first
+            try {
+                const existingFormsRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms?access_token=${tokenForLeadForm}&limit=10`);
+                const existingFormsData = await existingFormsRes.json();
+                if (existingFormsData?.data && Array.isArray(existingFormsData.data) && existingFormsData.data.length > 0) {
+                    const activeForm = existingFormsData.data.find((f: any) => f.status === 'ACTIVE') || existingFormsData.data[0];
+                    if (activeForm?.id) {
+                        leadFormId = activeForm.id;
+                        logToFile(`Found and reused existing active lead form: ${leadFormId} (${activeForm.name})`);
+                    }
                 }
+            } catch (formFindErr: any) {
+                logToFile("Could not list existing lead forms:", formFindErr.message);
             }
 
-            const finalFollowUpUrl = linkUrl || "https://adrolls.in";
-            const questionLabels = metaCustomQuestions.map((q: any) => q.label || q.type).filter(Boolean).map((label: string) => label.replace(/[?:]/g, '').trim()).join(', ');
-            const formName = `Form - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+            // 2. If no existing form found, create a new instant lead form
+            if (!leadFormId) {
+                logToFile("Creating new instant lead form on Meta Page...");
+                let metaCustomQuestions: any[] = [];
+                if (customQuestionsStr && customQuestionsStr !== "[]") {
+                    try {
+                        const parsedQuestions = JSON.parse(customQuestionsStr);
+                        metaCustomQuestions = parsedQuestions.map((q: any) => {
+                            const label = q.label.trim();
+                            const lowerLabel = label.toLowerCase();
+                            
+                            if (q.type !== 'MULTIPLE_CHOICE') {
+                                if (lowerLabel.includes('company') || lowerLabel.includes('business name')) return { type: 'COMPANY_NAME', key: 'company_name' };
+                                if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) return { type: 'JOB_TITLE', key: 'job_title' };
+                                if (lowerLabel.includes('city')) return { type: 'CITY', key: 'city' };
+                                if (lowerLabel.includes('state')) return { type: 'STATE', key: 'state' };
+                            }
 
-            const leadFormPayload: any = {
-                name: formName,
-                follow_up_action_url: finalFollowUpUrl,
-                question_page_custom_headline: `Get Pricing & Details`,
-                question_page_custom_text: "Confirm details to view pricing.",
-                privacy_policy: {
-                    url: (privacyPolicyUrl && !privacyPolicyUrl.includes('localhost')) ? privacyPolicyUrl : "https://adrolls.in/privacy",
-                    link_text: "Privacy Policy"
-                },
-                questions: [
-                    { type: "FULL_NAME", key: "full_name" },
-                    { type: "EMAIL", key: "email" },
-                    { type: "PHONE", key: "phone_number" },
-                    ...metaCustomQuestions
-                ],
-                access_token: facebookToken
-            };
+                            const metaQ: any = { type: 'CUSTOM', label: label.substring(0, 200) };
+                            if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
+                                const validOptions = q.options
+                                    .filter((o: string) => o.trim() !== '')
+                                    .map((opt: string) => ({ value: opt.trim(), key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50) }));
+                                if (validOptions.length > 0) metaQ.options = validOptions;
+                            }
+                            return metaQ;
+                        });
 
-            const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json; charset=utf-8' },
-                body: JSON.stringify(leadFormPayload)
-            });
-            const formCreateData = await formCreateRes.json();
+                        const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
+                        metaCustomQuestions = metaCustomQuestions.filter((q: any) => {
+                            if (q.type === 'CUSTOM') return true;
+                            if (seenTypes.has(q.type)) return false;
+                            seenTypes.add(q.type);
+                            return true;
+                        });
+                    } catch (e) {
+                        logToFile("Failed to parse custom questions", e);
+                    }
+                }
 
-            if (!formCreateRes.ok) {
-                logToFile("Lead Form Creation Failed:", formCreateData);
-                throw new Error(`Meta Lead Form Error: ${formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error"}`);
+                const finalFollowUpUrl = linkUrl || "https://adrolls.in";
+                const questionLabels = metaCustomQuestions.map((q: any) => q.label || q.type).filter(Boolean).map((label: string) => label.replace(/[?:]/g, '').trim()).join(', ');
+                const formName = `Form - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+
+                const leadFormPayload: any = {
+                    name: formName,
+                    follow_up_action_url: finalFollowUpUrl,
+                    question_page_custom_headline: `Get Pricing & Details`,
+                    question_page_custom_text: "Confirm details to view pricing.",
+                    privacy_policy: {
+                        url: (privacyPolicyUrl && !privacyPolicyUrl.includes('localhost')) ? privacyPolicyUrl : "https://adrolls.in/privacy",
+                        link_text: "Privacy Policy"
+                    },
+                    questions: [
+                        { type: "FULL_NAME", key: "full_name" },
+                        { type: "EMAIL", key: "email" },
+                        { type: "PHONE", key: "phone_number" },
+                        ...metaCustomQuestions
+                    ],
+                    access_token: tokenForLeadForm
+                };
+
+                const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                    body: JSON.stringify(leadFormPayload)
+                });
+                const formCreateData = await formCreateRes.json();
+
+                if (!formCreateRes.ok) {
+                    logToFile("Lead Form Creation Failed:", formCreateData);
+                    throw new Error(`Meta Lead Form Error: ${formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error"}`);
+                }
+                leadFormId = formCreateData.id;
+                logToFile(`Lead Form Created: ${leadFormId}`);
             }
-            leadFormId = formCreateData.id;
-            logToFile(`Lead Form Created: ${leadFormId}`);
         }
 
         // --- Step 5: Create Campaign ---
@@ -569,7 +603,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             }
         }
 
-        const campaignName = `${businessName} - ${customAudienceIds?.length > 0 ? 'Retargeting' : campaignSubject} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
+        const campaignName = payload.campaign_name || payload.campaignName || `${businessName} - ${customAudienceIds?.length > 0 ? 'Retargeting' : campaignSubject} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
 
         const campaignPayload = {
             name: campaignName,
@@ -596,9 +630,12 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
         // --- Step 6: Parse Targeting ---
         let targetingConfig: any = { geo_locations: { countries: ['IN'], location_types: ['home'] } };
+        let parsedLocations = false;
         if (metaLocationsStr) {
             try {
-                const locationsArray = JSON.parse(metaLocationsStr);
+                const locationsArray = typeof metaLocationsStr === 'string' && (metaLocationsStr.startsWith('[') || metaLocationsStr.startsWith('{'))
+                    ? JSON.parse(metaLocationsStr)
+                    : null;
                 if (Array.isArray(locationsArray) && locationsArray.length > 0) {
                     targetingConfig = { 
                         geo_locations: { 
@@ -626,9 +663,46 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     if (targetingConfig.geo_locations.cities.length === 0) delete targetingConfig.geo_locations.cities;
                     if (targetingConfig.geo_locations.regions.length === 0) delete targetingConfig.geo_locations.regions;
                     if (targetingConfig.geo_locations.zips.length === 0) delete targetingConfig.geo_locations.zips;
+                    parsedLocations = true;
                 }
             } catch (e) {
-                logToFile("Failed to parse locations", e);
+                logToFile("Failed to parse locations JSON", e);
+            }
+        }
+
+        // If not structured JSON, support plain text locations e.g. "Pune", "Delhi NCR", or array of city names
+        if (!parsedLocations) {
+            const rawLocs = Array.isArray(payload.target_locations)
+                ? payload.target_locations
+                : (typeof metaLocationsStr === 'string' ? metaLocationsStr.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+
+            if (rawLocs.length > 0) {
+                const citiesFound: any[] = [];
+                for (const locName of rawLocs) {
+                    try {
+                        const cleanQuery = locName.replace(/ncr/i, '').trim() || locName.trim();
+                        const searchRes = await fetch(`${FB_MARKETING_URL}/search?type=adgeolocation&q=${encodeURIComponent(cleanQuery)}&location_types=["city"]&access_token=${facebookToken}`);
+                        const searchData = await searchRes.json();
+                        if (searchData.data && searchData.data.length > 0) {
+                            const match = searchData.data.find((c: any) => c.country_code === 'IN') || searchData.data[0];
+                            if (match?.key) {
+                                citiesFound.push({ key: match.key, radius: 25, distance_unit: 'kilometer' });
+                            }
+                        }
+                    } catch (geoErr) {
+                        logToFile(`Geo search error for ${locName}:`, geoErr);
+                    }
+                }
+
+                if (citiesFound.length > 0) {
+                    targetingConfig = {
+                        geo_locations: {
+                            cities: citiesFound,
+                            location_types: ['home']
+                        }
+                    };
+                    logToFile("Successfully resolved city targeting from text:", citiesFound);
+                }
             }
         }
 
@@ -807,7 +881,9 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 if (!retryRes.ok) {
                     logToFile(`Ad ${i + 1} Retry with status PAUSED also Failed:`, retryData);
                     lastAdError = retryData.error || adData.error;
-                    if (adData.error?.error_subcode === 1359188 || adData.error?.code === 100) lastDraftError = true;
+                    if (retryData.error?.error_subcode === 1359188 || adData.error?.error_subcode === 1359188) {
+                        lastDraftError = true;
+                    }
                 } else {
                     logToFile(`Ad ${i + 1} Created successfully as PAUSED/Draft.`);
                     successfulAds++;
@@ -821,45 +897,47 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         // --- Step 9: Update job status ---
         let finalMessage = '';
         if (successfulAds === 0) {
-            if (lastDraftError) {
-                finalMessage = "Campaign DRAFTED! ⚠️ Payment Method Missing: Saved in Ads Manager.";
-            } else {
-                // Auto-cleanup: Pause orphan campaign on Meta so an empty campaign doesn't remain ACTIVE
-                if (campaignId) {
-                    try {
-                        await fetch(`${FB_MARKETING_URL}/${campaignId}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ status: 'PAUSED', access_token: facebookToken })
-                        });
-                        logToFile(`Paused orphan campaign ${campaignId} on Meta due to ad creation failure.`);
-                    } catch (cleanupErr) { /* ignore cleanup error */ }
-                }
-
-                let errMsg = "Ad creation failed on Meta. Please check your Meta Ad Account settings.";
-                if (lastAdError) {
-                    const subcode = lastAdError.error_subcode;
-                    const userMsg = lastAdError.error_user_msg;
-                    const userTitle = lastAdError.error_user_title;
-                    const rawMsg = lastAdError.message;
-                    
-                    if (subcode === 2859002 || userTitle?.toLowerCase().includes('certification') || userMsg?.toLowerCase().includes('nondiscrimination') || rawMsg?.toLowerCase().includes('nondiscrimination')) {
-                        errMsg = `Meta Non-Discrimination Certification Required: ${userMsg || 'You must certify compliance with Meta\'s non-discrimination policy before running ads. Visit facebook.com/certification/nondiscrimination to certify.'}`;
-                    } else if (userMsg) {
-                        errMsg = `Meta Ad Error (${userTitle || 'Policy'}): ${userMsg}`;
-                    } else if (rawMsg) {
-                        errMsg = `Meta Ad Error: ${rawMsg}`;
-                    }
-                } else if (lastCreativeError) {
-                    const cMsg = lastCreativeError.error_user_msg || lastCreativeError.message || JSON.stringify(lastCreativeError);
-                    errMsg = `Meta Ad Creative Error: ${cMsg}`;
-                } else if (firstUploadError?.message) {
-                    errMsg = `Creative Upload Error: ${firstUploadError.message}`;
-                }
-                throw new Error(errMsg);
+            // Auto-cleanup: Pause orphan campaign on Meta so an empty campaign doesn't remain ACTIVE
+            if (campaignId) {
+                try {
+                    await fetch(`${FB_MARKETING_URL}/${campaignId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'PAUSED', access_token: facebookToken })
+                    });
+                    logToFile(`Paused orphan campaign ${campaignId} on Meta due to 0 ads created.`);
+                } catch (cleanupErr) { /* ignore cleanup error */ }
             }
+
+            let errMsg = "Ad creation failed on Meta. Please check your Meta Ad Account settings.";
+            if (lastAdError) {
+                const subcode = lastAdError.error_subcode;
+                const userMsg = lastAdError.error_user_msg;
+                const userTitle = lastAdError.error_user_title;
+                const rawMsg = lastAdError.message;
+                
+                if (subcode === 1359188) {
+                    errMsg = `Meta Payment Method Missing: Please add a valid payment method in Meta Ads Manager Billing before launching ads.`;
+                } else if (subcode === 2859002 || userTitle?.toLowerCase().includes('certification') || userMsg?.toLowerCase().includes('nondiscrimination') || rawMsg?.toLowerCase().includes('nondiscrimination')) {
+                    errMsg = `Meta Non-Discrimination Certification Required: ${userMsg || 'You must certify compliance with Meta\'s non-discrimination policy before running ads. Visit facebook.com/certification/nondiscrimination to certify.'}`;
+                } else if (userMsg) {
+                    errMsg = `Meta Ad Error (${userTitle || 'Policy'}): ${userMsg}`;
+                } else if (rawMsg) {
+                    errMsg = `Meta Ad Error: ${rawMsg}`;
+                }
+            } else if (lastCreativeError) {
+                const cMsg = lastCreativeError.error_user_msg || lastCreativeError.message || JSON.stringify(lastCreativeError);
+                errMsg = `Meta Ad Creative Error: ${cMsg}`;
+            } else if (firstUploadError?.message) {
+                errMsg = `Creative Upload Error: ${firstUploadError.message}`;
+            }
+            throw new Error(errMsg);
         } else {
-            finalMessage = `Campaign Launched Successfully with ${successfulAds} AI Optimized Ads!`;
+            if (lastDraftError) {
+                finalMessage = `Campaign DRAFTED! ⚠️ Saved in Ads Manager with ${successfulAds} ads (Payment method required to activate).`;
+            } else {
+                finalMessage = `Campaign Launched Successfully with ${successfulAds} AI Optimized Ads!`;
+            }
         }
 
         try {
