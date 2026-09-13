@@ -538,6 +538,36 @@ export async function POST(request: Request) {
                                                 }
                                             }
 
+                                            // If the owner sent an image, download from Meta and upload to Cloudflare R2 for a permanent public URL
+                                            if (inboundMediaType === 'image' && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') && ownerToken) {
+                                                try {
+                                                    console.log(`📸 Uploading owner image to Cloudflare R2 Storage...`);
+                                                    const imgFetchRes = await fetch(inboundMediaUrl, {
+                                                        headers: { 'Authorization': `Bearer ${ownerToken}` }
+                                                    });
+                                                    if (imgFetchRes.ok) {
+                                                        const imgBuffer = await imgFetchRes.arrayBuffer();
+                                                        const r2Key = `inventory/${matchedProfile.id}/${Date.now()}_img.jpg`;
+                                                        const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+                                                        const { r2, R2_BUCKET, R2_PUBLIC_URL } = await import('@/utils/r2');
+
+                                                        await r2.send(new PutObjectCommand({
+                                                            Bucket: R2_BUCKET,
+                                                            Key: r2Key,
+                                                            Body: Buffer.from(imgBuffer),
+                                                            ContentType: 'image/jpeg'
+                                                        }));
+
+                                                        const publicBase = (R2_PUBLIC_URL || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev').replace(/\/$/, '');
+                                                        const r2Url = `${publicBase}/${r2Key}`;
+                                                        inboundMediaUrl = r2Url;
+                                                        console.log(`✅ [Owner Image Uploaded to Cloudflare R2]: ${r2Url}`);
+                                                    }
+                                                } catch (imgErr) {
+                                                    console.error("❌ Failed to process owner image to R2:", imgErr);
+                                                }
+                                            }
+
                                             // If the owner sent a voice note, transcribe it via Gemini
                                             if (inboundMediaType === 'audio' && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') && ownerToken) {
                                                 try {
@@ -823,11 +853,13 @@ ${chatHistoryText || "No previous messages."}
 
 CAPABILITIES & MCP TOOLS:
 You have tools to both QUERY and OPERATE the workspace:
-1. Inventory Management: Add new properties/products using 'add_inventory_item'.
+1. Inventory Management: Add new properties/products using 'add_inventory_item', or attach photos/images to existing or newly created products using 'attach_image_to_inventory'.
 2. Ad & Lead Quality Diagnostics: Use 'analyze_lead_quality' to inspect why leads might be disqualified, check call transcripts/notes, and diagnose ad performance with live data.
 3. Automation Flows & Campaigns: Use 'generate_campaign_flow' and 'create_campaign_draft' to build qualification workflows, calling scripts, or ad drafts.
 4. CRM Operations: Search leads, inspect transcripts, fetch WhatsApp history, and update stages with 'update_lead_stage'.
-
+${(inboundMediaType === 'image' && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:'))
+    ? `\nCURRENT ATTACHED PHOTO:\nThe user has attached a photo/image directly with this WhatsApp message!\nPermanent Public Image URL: "${inboundMediaUrl}"\nIf the user asks to add this photo to a new listing, pass this URL to 'add_inventory_item'. If they ask to add it to an existing product (or newly created product), call 'attach_image_to_inventory' with this URL!\n`
+    : ''}
 CRITICAL CONVERSATIONAL RULES:
 - STRICT ANTI-HALLUCINATION & SLOT FILLING:
   * Never invent or guess critical parameters (e.g. price, property address, campaign budget, target city, or customer phone numbers).
@@ -896,6 +928,77 @@ CRITICAL CONVERSATIONAL RULES:
                                           return result;
                                         }
                                       }),
+                                      attach_image_to_inventory: tool({
+                                        description: "Attaches a photo/image to an existing product or property in the user's catalog. Call this when the user sends a photo or asks to attach an image to an existing or newly created product.",
+                                        inputSchema: z.object({
+                                          property_id: z.string().optional().describe("UUID of the property, or leave empty if updating the most recently created product"),
+                                          property_title: z.string().optional().describe("Title or search term of the property if UUID is unknown"),
+                                          image_url: z.string().optional().describe("Direct image URL to attach. Defaults to the currently attached photo if omitted")
+                                        }),
+                                        execute: async (args: { property_id?: string; property_title?: string; image_url?: string }) => {
+                                          const targetImageUrl = args.image_url || (inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
+                                          if (!targetImageUrl) {
+                                            return { success: false, error: "No image attachment or URL available to attach." };
+                                          }
+
+                                          let targetPropertyId = args.property_id;
+
+                                          if (!targetPropertyId) {
+                                            let query = supabaseAdmin
+                                              .from('properties')
+                                              .select('id, title, images')
+                                              .eq('user_id', matchedProfile.id);
+
+                                            if (args.property_title) {
+                                              query = query.ilike('title', `%${args.property_title}%`);
+                                            } else {
+                                              query = query.order('created_at', { ascending: false });
+                                            }
+
+                                            const { data: matchedProps } = await query.limit(1);
+                                            if (matchedProps && matchedProps.length > 0) {
+                                              targetPropertyId = matchedProps[0].id;
+                                            }
+                                          }
+
+                                          if (!targetPropertyId) {
+                                            return { success: false, error: "No product found in catalog to attach the photo to." };
+                                          }
+
+                                          const { data: currProp } = await supabaseAdmin
+                                            .from('properties')
+                                            .select('id, title, image_url, images')
+                                            .eq('id', targetPropertyId)
+                                            .single();
+
+                                          const existingImages: string[] = Array.isArray(currProp?.images) ? [...currProp.images] : [];
+                                          if (!existingImages.includes(targetImageUrl)) {
+                                            existingImages.push(targetImageUrl);
+                                          }
+
+                                          const { data: updatedProp, error: updateErr } = await supabaseAdmin
+                                            .from('properties')
+                                            .update({
+                                              image_url: targetImageUrl,
+                                              images: existingImages
+                                            })
+                                            .eq('id', targetPropertyId)
+                                            .select('id, title, image_url')
+                                            .single();
+
+                                          if (updateErr) {
+                                            return { success: false, error: updateErr.message };
+                                          }
+
+                                          return {
+                                            success: true,
+                                            property_id: updatedProp.id,
+                                            property_title: updatedProp.title,
+                                            image_url: updatedProp.image_url,
+                                            message: `Successfully attached photo to "${updatedProp.title}". It is now active on your public landing page and catalog!`
+                                          };
+                                        }
+                                      }),
                                       add_inventory_item: tool({
                                         description: "Adds a new property or product listing to the user's inventory catalog. ONLY call this when title, price, address, and property_type are provided. If any required detail is missing, ask the user first before calling this tool.",
                                         inputSchema: z.object({
@@ -909,7 +1012,7 @@ CRITICAL CONVERSATIONAL RULES:
                                         execute: async (args: { title: string; price: string; address: string; property_type: string; description?: string; image_urls?: string[] }) => {
                                           console.log(`🤖 [TOOL: add_inventory_item] Adding property: "${args.title}" for user: ${matchedProfile.id}`);
                                           try {
-                                            const images = args.image_urls || (inboundMediaUrl && inboundMediaType === 'image' ? [inboundMediaUrl] : []);
+                                            const images = args.image_urls || (inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? [inboundMediaUrl] : []);
                                             const { data: newProp, error: propErr } = await supabaseAdmin
                                               .from('properties')
                                               .insert({
@@ -1155,6 +1258,15 @@ CRITICAL CONVERSATIONAL RULES:
                                         const hasDeepSeekKey = !!process.env.DEEPSEEK_API_KEY;
                                         let successfulModelName = 'gemini-3.5-flash';
 
+                                        let ownerUserQueryPrompt = `User query: "${messageText}"`;
+                                        if (inboundMediaType === 'image' && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:')) {
+                                            if (!messageText || messageText.trim() === '[image]' || messageText.trim() === '') {
+                                                ownerUserQueryPrompt = `The user sent a photo/image attachment without text (Permanent Public Image URL: "${inboundMediaUrl}"). Please attach this image to their most recently created product using the 'attach_image_to_inventory' tool, and confirm the attachment.`;
+                                            } else {
+                                                ownerUserQueryPrompt = `User query: "${messageText}". [Attached Image URL: "${inboundMediaUrl}". If they ask to attach this photo, use 'attach_image_to_inventory' with this URL]`;
+                                            }
+                                        }
+
                                         if (hasDeepSeekKey && selectedModel !== 'gemini') {
                                             try {
                                                 console.log("🤖 Routing WhatsApp bot query to DEEPSEEK model");
@@ -1167,7 +1279,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                 const { text, usage } = await generateText({
                                                     model: modelProvider,
                                                     system: botPrompt,
-                                                    prompt: `User query: "${messageText}"`,
+                                                    prompt: ownerUserQueryPrompt,
                                                     tools: tools,
                                                     stopWhen: stepCountIs(5)
                                                 });
@@ -1184,7 +1296,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                 const { text, usage } = await generateText({
                                                     model: modelProvider,
                                                     system: botPrompt,
-                                                    prompt: `User query: "${messageText}"`,
+                                                    prompt: ownerUserQueryPrompt,
                                                     tools: tools,
                                                     stopWhen: stepCountIs(5)
                                                 });
@@ -1202,7 +1314,7 @@ CRITICAL CONVERSATIONAL RULES:
                                             const { text, usage } = await generateText({
                                                 model: modelProvider,
                                                 system: botPrompt,
-                                                prompt: `User query: "${messageText}"`,
+                                                prompt: ownerUserQueryPrompt,
                                                 tools: tools,
                                                 stopWhen: stepCountIs(5)
                                             });
