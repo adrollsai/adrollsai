@@ -99,10 +99,11 @@ export async function POST(request: Request) {
     }
 
     // --- Resolve profile data ---
-    const { data: targetProfile } = await supabaseAdmin.from('profiles')
-        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url')
+    const { data: targetProfileData } = await supabaseAdmin.from('profiles')
+        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement')
         .eq('id', targetUserId)
         .single();
+    const targetProfile: any = targetProfileData;
 
     if (targetProfile) {
         data.facebookToken = data.facebookToken || targetProfile.facebook_token;
@@ -156,10 +157,11 @@ export async function POST(request: Request) {
         method: 'POST'
     }).catch(() => {});
 
-    if (inventoryIds.length === 0 && assetIds.length === 0) {
+    const hasCreatives = (data.creativeUrls && data.creativeUrls.length > 0) || inventoryIds.length > 0 || assetIds.length > 0;
+    if (!hasCreatives) {
         await refundLimit(user.id, 'campaign_launches');
         return NextResponse.json(
-            { error: 'No creatives selected. Please select at least one product or asset.' },
+            { error: 'No creatives selected. Please select or upload at least one creative.' },
             { status: 400 }
         );
     }
@@ -223,10 +225,27 @@ export async function POST(request: Request) {
             } catch (e) {}
         }
 
+        const businessName = data.business_name || targetProfile?.business_name || 'Our Business';
+        const contactNumber = data.contact_number || targetProfile?.contact_number || '';
+        const businessInfo = targetProfile?.business_info || targetProfile?.bio || '';
+        const missionStatement = targetProfile?.mission_statement || '';
+
+        const contextDetails = [
+            `Business Name: ${businessName}`,
+            contactNumber ? `Contact: ${contactNumber}` : '',
+            businessInfo ? `Business Info: ${businessInfo}` : '',
+            missionStatement ? `Mission Statement: ${missionStatement}` : '',
+            propertyContext ? propertyContext : ''
+        ].filter(Boolean).join('\n');
+
+        const customInstructionNotice = data.customInstructions 
+            ? `Custom Copywriting Prompt / Instructions (MUST FOLLOW STRICTLY):\n"${data.customInstructions}"`
+            : `Note: No custom prompt was provided. Craft high-converting ad copy highlighting the business strengths, services, or offer.`;
+
         const llmPrompt = `You are an elite direct-response ad copywriter. Write a high-converting ad copy for:
-Business Name: ${data.business_name || 'Our Company'}
-Contact: ${data.contact_number || ''}
-${propertyContext}
+${contextDetails}
+
+${customInstructionNotice}
 
 You must write exactly three fields:
 1. headline (maximum 40 characters) - a catchy, strong hook. Do NOT use markdown.
@@ -261,6 +280,10 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
                         adCopy.description = 'View pricing & details. Contact us today.';
                     }
                 } catch (e) {}
+            } else if (businessName) {
+                adCopy.headline = `Connect with ${businessName}`.substring(0, 40);
+                adCopy.primary_text = `Discover exclusive services and consultations with ${businessName}. Contact us today!`;
+                adCopy.description = 'Contact us today.';
             }
         }
     }
@@ -295,8 +318,10 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         adCopies,
         creativeProductIds: data.creativeProductIds || [],
         whatsappNumber: data.whatsappNumber || "",
-        businessName: data.business_name || "Our Business",
-        contactNumber: data.contact_number || "",
+        businessName: data.business_name || targetProfile?.business_name || "Our Business",
+        contactNumber: data.contact_number || targetProfile?.contact_number || "",
+        businessInfo: targetProfile?.business_info || targetProfile?.bio || "",
+        missionStatement: targetProfile?.mission_statement || "",
         currency,
         logoUrl: targetProfile?.logo_url || null,
         customInstructions: data.customInstructions || null

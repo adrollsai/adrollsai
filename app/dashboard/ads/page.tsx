@@ -1753,9 +1753,15 @@ export default function AdsPage() {
     })
   }
 
-  // Generate ad copy deterministically from the selected product
+  // Generate ad copy deterministically from the selected product or business info
   const generateAdCopy = (product: Property | null, businessName?: string, phone?: string) => {
-    if (!product) return { primary_text: '', headline: '', description: '' };
+    if (!product) {
+      return {
+        headline: (businessName ? `Connect with ${businessName}` : 'Special Offer & Consultation').substring(0, 40),
+        primary_text: `Connect with ${businessName || 'our team'} today for exclusive details, premium services, and direct consultations.${phone ? `\n\n📞 ${phone}` : ''}${businessName ? `\n🏢 ${businessName}` : ''}`,
+        description: 'Contact us today'
+      };
+    }
     let primaryText = (product.description || 'Exclusive deal. Contact us for details.').substring(0, 400);
     if (phone) primaryText += `\n\n📞 ${phone}`;
     if (businessName) primaryText += `\n🏢 ${businessName}`;
@@ -1771,14 +1777,14 @@ export default function AdsPage() {
     if (!adForm.pageId || !selectedAdAccountId) { alert("Missing Profile data."); return }
     
     const activeProducts = selectedProducts.length > 0 ? selectedProducts : (selectedProduct ? [selectedProduct] : []);
-    if (activeProducts.length === 0) { alert("Please select at least one product from your inventory."); return; }
+    // Product selection from inventory is now optional
     if (selectedCreatives.length === 0) { alert("Select at least one creative."); return; }
     
     // If multiple products selected, verify mapping
     if (activeProducts.length > 1) {
         const hasUnmapped = selectedCreatives.some(c => !c.mappedProductId);
         if (hasUnmapped) {
-            alert("Please map all selected creatives to a specific product.");
+            alert("Please map all selected creatives to a specific product, or select a single product / clear product selection.");
             return;
         }
     }
@@ -1888,9 +1894,11 @@ export default function AdsPage() {
               creativeUrls.push(creativeUrl);
           }
           
-          // Resolve mapped product for this creative
-          const mappedProduct = activeProducts.find(ap => ap.id === c.mappedProductId) || activeProducts[0];
-          creativeProductIds.push(mappedProduct.id);
+          // Resolve mapped product for this creative (optional)
+          const mappedProduct = activeProducts.find(ap => ap.id === c.mappedProductId) || (activeProducts.length > 0 ? activeProducts[0] : null);
+          if (mappedProduct) {
+              creativeProductIds.push(mappedProduct.id);
+          }
           
           const copy = generateAdCopy(mappedProduct, targetProfile?.business_name, targetProfile?.contact_number);
           adCopies.push(copy);
@@ -1914,7 +1922,7 @@ export default function AdsPage() {
       formPayload.append('ageMin', adForm.ageMin.toString());
       formPayload.append('ageMax', adForm.ageMax.toString());
       
-      formPayload.append('adCopy', JSON.stringify(adCopies[0] || generateAdCopy(activeProducts[0], targetProfile?.business_name, targetProfile?.contact_number)));
+      formPayload.append('adCopy', JSON.stringify(adCopies[0] || generateAdCopy(activeProducts[0] || null, targetProfile?.business_name, targetProfile?.contact_number)));
       formPayload.append('adCopies', JSON.stringify(adCopies));
 
       if (pixelId) {
@@ -5288,15 +5296,33 @@ export default function AdsPage() {
                 </div>
               )}
 
-              {/* MANDATORY: Select Products from Inventory (Multi-Product Select support) */}
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-5 rounded-[2rem] border border-amber-200/60">
-                <label className="text-xs font-bold text-amber-800 uppercase tracking-widest flex items-center gap-2 mb-3"><Zap size={16} className="text-amber-600" /> Select Products for Campaign *</label>
-                <p className="text-[11px] text-amber-700 font-medium mb-3">Choose one or more products this campaign is for. Creatives will be mapped to their corresponding product context.</p>
+              {/* OPTIONAL: Select Products from Inventory */}
+              <div className="bg-gradient-to-r from-amber-50/70 to-orange-50/70 p-5 rounded-[2rem] border border-amber-200/60">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-amber-900 uppercase tracking-widest flex items-center gap-2">
+                    <Zap size={16} className="text-amber-600" /> Select Products from Inventory (Optional)
+                  </label>
+                  {selectedProducts.length > 0 && (
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setSelectedProducts([]);
+                        setSelectedProduct(null);
+                      }}
+                      className="text-[10px] font-bold text-amber-700 hover:text-amber-950 underline transition-colors"
+                    >
+                      Clear Selection (Promote Brand)
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-amber-700 font-medium mb-3">
+                  Select one or more products if this campaign promotes specific inventory items. If you are promoting your general brand or service, you can skip this.
+                </p>
                 
                 <div className="max-h-48 overflow-y-auto space-y-2 pr-2 scrollbar-thin">
                   {properties.length === 0 ? (
-                    <div className="p-4 text-center text-xs font-semibold text-amber-700 bg-white/70 rounded-xl border border-amber-200/50">
-                      No inventory products found for this account. Please add a product in Inventory.
+                    <div className="p-4 text-center text-xs font-semibold text-amber-800 bg-white/80 rounded-xl border border-amber-200/50">
+                      No inventory products found. You can still launch campaigns using your custom creatives & business profile!
                     </div>
                   ) : (
                     properties.map(p => {
@@ -5366,13 +5392,21 @@ export default function AdsPage() {
                 </div>
                 <input type="file" ref={fileInputRef} onChange={handleLocalFiles} accept="image/*,video/*" className="hidden" multiple />
                 <button onClick={() => fileInputRef.current?.click()} className="w-full mb-4 py-3.5 border-2 border-dashed border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50 rounded-2xl text-sm font-bold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-2 transition-all"><Upload size={18} /> Upload Custom Files</button>
-                <div className="mb-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">AI Copywriting Instructions (Optional)</label>
+                <div className="mb-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                        <Sparkles size={12} className="text-indigo-600" /> Custom Copywriting Prompt (Optional)
+                      </label>
+                      <span className="text-[9px] text-slate-500 font-bold bg-slate-200/60 px-2 py-0.5 rounded-full">AI Powered</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-2 font-medium leading-relaxed">
+                      Enter any specific angles, slogans, or instructions. If left blank, AI will automatically generate ad copy based on your business info and the creative being promoted.
+                    </p>
                     <textarea 
                         value={adForm.customInstructions || ''}
                         onChange={(e) => setAdForm(prev => ({...prev, customInstructions: e.target.value}))}
-                        placeholder="E.g. Focus on key property highlights, call to action, professional tone..."
-                        rows={2}
+                        placeholder="E.g. Highlight our agency's 10+ years experience in luxury properties, mention zero brokerage offer, and add a strong call-to-action to message us on WhatsApp..."
+                        rows={3}
                         className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none font-medium text-slate-700"
                     />
                 </div>
@@ -5417,7 +5451,7 @@ export default function AdsPage() {
                                   }}
                                   className="w-full max-w-[220px] bg-slate-50 border border-slate-200 text-slate-700 py-1.5 px-2 rounded-xl text-[10px] font-bold outline-none cursor-pointer hover:bg-slate-100 transition-all"
                                 >
-                                  <option value="">-- Map to Product --</option>
+                                  <option value="">-- Map to Product (Optional) --</option>
                                   {properties.map(p => (
                                     <option key={p.id} value={p.id}>{p.title}</option>
                                   ))}

@@ -15,7 +15,19 @@ export type UploadedCreative = {
     videoId?: string;
 };
 
-export async function generateAICampaignCopy(product: any, businessName: string, contactNumber: string, customInstructions?: string): Promise<{ primary_text: string; headline: string; description: string }> {
+export async function generateAICampaignCopy(
+    product: any, 
+    businessName: string, 
+    contactNumber: string, 
+    customInstructions?: string,
+    creativeContext?: {
+        creativeUrl?: string;
+        creativeType?: string;
+        index?: number;
+        businessInfo?: string;
+        missionStatement?: string;
+    }
+): Promise<{ primary_text: string; headline: string; description: string }> {
     const forbidProjectName = customInstructions ? /do not mention|don't mention|no project name|omit project name|without project name|no name/i.test(customInstructions) : false;
     const projectTitle = (product?.title || '').trim();
 
@@ -24,27 +36,47 @@ export async function generateAICampaignCopy(product: any, businessName: string,
     try {
         const { callGemini } = await import('./external-apis');
         
-        const prompt = `
-You are an expert real estate copywriter specialized in creating high-converting Facebook and Meta lead generation ads.
+        let detailsSection = "";
+        let taskRules = "";
 
-Product Details:
+        if (product) {
+            detailsSection = `Product Details:
 ${forbidProjectName ? `- Title: (SECRET/DO NOT MENTION)` : `- Title: ${projectTitle || 'Exclusive Property'}`}
 - Description: ${product.description || ''}
 - Price: ${product.price || 'Contact for Price'}
 - Location: ${product.location || ''}
 - Features: Bed: ${product.beds || 'N/A'}, Bath: ${product.baths || 'N/A'}, Area: ${product.area || 'N/A'}
 - Business Name: ${businessName || 'Our Agency'}
-- Contact Number: ${contactNumber || ''}
+- Contact Number: ${contactNumber || ''}`;
 
-${customInstructions ? `Custom Copywriting Instructions (MUST FOLLOW STRICTLY):\n"${customInstructions}"\n` : ''}
-${forbidProjectName ? `CRITICAL RULE: DO NOT MENTION THE PROJECT/PROPERTY NAME OR TITLE ("${projectTitle}") ANYWHERE IN THE HEADLINE, PRIMARY TEXT, OR DESCRIPTION.\n` : ''}
+            taskRules = `1. Primary Text: Write an engaging description (1-2 paragraphs). Highlight key selling points (e.g. location, park-facing, luxury finishes, pricing). Use professional real estate tone, bullet points for features, and include a clear call-to-action (e.g., "Tap 'Learn More' to view images and pricing details!"). Keep it under 800 characters. Append the contact number 📞 ${contactNumber} and business name 🏢 ${businessName} at the bottom.
+2. Headline: Create a click-worthy, brief headline (under 40 characters) showcasing value (e.g., ${forbidProjectName ? '"Premium Residential Plots"' : '"Luxury 10 Marla House in Sector 7"'}). ${forbidProjectName ? 'DO NOT USE THE PROJECT NAME IN THE HEADLINE.' : ''}
+3. Description: Write a brief subtext under the headline (under 30 characters) like "View details & pricing".`;
+        } else {
+            detailsSection = `Business & Creative Promotion Details:
+- Business Name: ${businessName || 'Our Business'}
+- Contact Number: ${contactNumber || ''}
+${creativeContext?.businessInfo ? `- Business Info / Overview: ${creativeContext.businessInfo}` : ''}
+${creativeContext?.missionStatement ? `- Mission / Value Proposition: ${creativeContext.missionStatement}` : ''}
+${creativeContext?.creativeType ? `- Creative Asset Type: ${creativeContext.creativeType}` : ''}`;
+
+            taskRules = `1. Primary Text: Write a compelling, high-converting direct-response ad copy (1-2 paragraphs) presenting the business offerings, brand value, and services. Emphasize trust, customer benefits, and why they should contact or connect now. Include a clear call-to-action. Keep it under 800 characters. Append the contact number 📞 ${contactNumber} and business name 🏢 ${businessName} at the bottom.
+2. Headline: Create a powerful, click-worthy hook/headline (under 40 characters) highlighting the main benefit, consultation, or special offer.
+3. Description: Write a brief subtext under the headline (under 30 characters) like "Contact us today" or "Learn more now".`;
+        }
+
+        const prompt = `
+You are an expert copywriter specialized in creating high-converting Facebook and Meta lead generation ads.
+
+${detailsSection}
+
+${customInstructions ? `Custom Copywriting Instructions / Prompt (MUST FOLLOW STRICTLY):\n"${customInstructions}"\n` : `Note: No custom prompt was provided. Craft the copy based on the business details, value proposition, and the creative being promoted.\n`}
+${product && forbidProjectName ? `CRITICAL RULE: DO NOT MENTION THE PROJECT/PROPERTY NAME OR TITLE ("${projectTitle}") ANYWHERE IN THE HEADLINE, PRIMARY TEXT, OR DESCRIPTION.\n` : ''}
 
 Task:
-Generate a compelling, attractive, and highly engaging real estate ad copy and headline for this property.
+Generate an attractive, highly engaging ad copy and headline.
 Follow these rules:
-1. Primary Text: Write an engaging description (1-2 paragraphs). Highlight key selling points (e.g. location, park-facing, luxury finishes, pricing). Use professional real estate tone, bullet points for features, and include a clear call-to-action (e.g., "Tap 'Learn More' to view images and pricing details!"). Keep it under 800 characters. Append the contact number 📞 ${contactNumber} and business name 🏢 ${businessName} at the bottom.
-2. Headline: Create a click-worthy, brief headline (under 40 characters) showcasing value (e.g., ${forbidProjectName ? '"Premium Residential Plots"' : '"Luxury 10 Marla House in Sector 7"'}). ${forbidProjectName ? 'DO NOT USE THE PROJECT NAME IN THE HEADLINE.' : ''}
-3. Description: Write a brief subtext under the headline (under 30 characters) like "View details & pricing".
+${taskRules}
 
 Return the response in JSON format matching this schema:
 {
@@ -71,12 +103,22 @@ Return the response in JSON format matching this schema:
     
     // Fallback static copy if AI fails or returns invalid copy
     if (!resultCopy) {
-        let primaryText = forbidProjectName || !projectTitle ? `${product.description || 'Exclusive Property Details'}` : `${projectTitle}\n\n${product.description || ''}`;
+        let primaryText = "";
+        let headlineText = "";
+
+        if (product) {
+            primaryText = forbidProjectName || !projectTitle ? `${product.description || 'Exclusive Property Details'}` : `${projectTitle}\n\n${product.description || ''}`;
+            headlineText = forbidProjectName || !projectTitle ? (product.location ? `Property in ${product.location}` : 'View Details & Pricing') : projectTitle;
+        } else {
+            primaryText = creativeContext?.businessInfo 
+                ? `${creativeContext.businessInfo}\n\nConnect with us today to learn more and explore our exclusive services!`
+                : `Connect with ${businessName || 'us'} today for exclusive offers, premium services, and direct consultations.`;
+            headlineText = businessName ? `Connect with ${businessName}` : 'Exclusive Offer & Details';
+        }
+
         primaryText = primaryText.substring(0, 600);
         if (contactNumber) primaryText += `\n\n📞 ${contactNumber}`;
         if (businessName) primaryText += `\n🏢 ${businessName}`;
-
-        const headlineText = forbidProjectName || !projectTitle ? (product.location ? `Property in ${product.location}` : 'View Details & Pricing') : projectTitle;
 
         resultCopy = {
             headline: headlineText.substring(0, 40),
@@ -452,13 +494,18 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         for (let i = 0; i < uploadedCreatives.length; i++) {
             // Find corresponding productId for this creative
             const prodId = creativeProductIds && creativeProductIds[i] ? creativeProductIds[i] : (inventoryIds && inventoryIds[0]);
-            const product = propertiesMap.get(prodId);
+            const product = propertiesMap.get(prodId) || null;
             
-            let aiCopy = null;
-            if (product) {
-                logToFile(`[Processor] Generating AI copy for Creative ${i+1} using Product: ${product.title}`);
-                aiCopy = await generateAICampaignCopy(product, businessName, contactNumber, customInstructions);
-            }
+            const creativeContext = {
+                creativeUrl: (creativeUrls && creativeUrls[i]) || undefined,
+                creativeType: uploadedCreatives[i]?.type || 'image',
+                index: i + 1,
+                businessInfo: payload.businessInfo || payload.business_info,
+                missionStatement: payload.missionStatement || payload.mission_statement
+            };
+
+            logToFile(`[Processor] Generating AI copy for Creative ${i+1}${product ? ` using Product: ${product.title}` : ' using Business Info & Creative context'}`);
+            const aiCopy = await generateAICampaignCopy(product, businessName, contactNumber, customInstructions, creativeContext);
             
             const specificCopy = adCopies && adCopies[i] ? adCopies[i] : null;
             
