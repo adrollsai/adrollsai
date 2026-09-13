@@ -47,3 +47,30 @@ export function getFfmpegPath(): string {
     cachedFfmpegPath = 'ffmpeg';
     return 'ffmpeg';
 }
+
+let cachedFfprobePath: string | null = null;
+
+/**
+ * Returns a validated and executable FFprobe binary path.
+ */
+export function getFfprobePath(): string {
+    if (cachedFfprobePath && (cachedFfprobePath === 'ffprobe' || fs.existsSync(cachedFfprobePath))) {
+        return cachedFfprobePath;
+    }
+
+    const ffmpegPath = getFfmpegPath();
+    if (ffmpegPath && ffmpegPath !== 'ffmpeg') {
+        const ffprobePath = ffmpegPath.replace(/ffmpeg(\.exe)?$/i, (_, ext) => `ffprobe${ext || ''}`);
+        if (fs.existsSync(ffprobePath)) {
+            if (os.platform() !== 'win32') {
+                try { fs.chmodSync(ffprobePath, '755'); } catch (_) {}
+            }
+            cachedFfprobePath = ffprobePath;
+            return ffprobePath;
+        }
+    }
+
+    cachedFfprobePath = 'ffprobe';
+    return 'ffprobe';
+}
+

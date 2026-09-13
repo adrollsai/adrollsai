@@ -279,6 +279,17 @@ Amenities/Features: ${property.amenities || "N/A"}
 
         const descriptionsText = imageDescriptions.map((desc, i) => `- Image ${i + 1} Visual Description: "${desc}"`).join('\n');
 
+        const creatorCharacterSection = presenterType === 'none'
+            ? `Video Style & Format:
+Pure dynamic commercial B-rolls and product/property feature showcase with background voiceover. STRICTLY NO on-screen presenter, NO talking heads. Visuals must showcase the authentic physical spaces, rooms, architectural highlights, and lifestyle moments naturally.`
+            : `Creator Character (the person who will appear in the video):
+"${characterDescription}"
+All concept visuals and descriptions must be written for THIS specific creator character. Use their correct gender naturally in all visual descriptions and hooks.`;
+
+        const presenterGuidelineRule = presenterType === 'none'
+            ? `3. Pure Commercial Visuals (No Presenter): All visual concepts must focus entirely on cinematic, dynamic commercial B-rolls and product/property feature showcases (living spaces, balconies, amenities, exterior facades, fine details) using the reference images with a compelling voiceover. DO NOT include talking heads or on-screen presenters. Any people shown must be captured candidly as ambient residents or customers enjoying the space naturally.`
+            : `3. The creator character described above will speak directly to the camera and showcase/talk about the product/service. Wherever the creator character is shown, it MUST be a medium closeup shot (e.g., 'medium closeup of the presenter speaking from chest up') to preserve their face and prevent face mutation. Do NOT zoom in too tight or show only the face. Keep a chest-up distance to allow natural body language and hand gestures. Medium or wide shots of the character showing the presenter from far away are strictly prohibited. If you want to show something large (like a building facade, a room interior, or a landscape), it MUST be a B-roll scene transition WITHOUT the presenter, and the shot MUST be specified as a super far away wide scenic shot so that the mutated face is not noticed or visible. Their voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging. Their body language must be highly natural and dynamic — real hand gestures, subtle head tilts, natural eye contact, relaxed movements. They should feel like a real person, not stiff or robotic.`;
+
         const conceptPrompt = `You are a world-class Ad Creative Director specializing in hyper-engaging, high-converting Meta and TikTok video ads.
 Your task is to analyze the provided business details, product details, user guidelines, and the reference image visual descriptions, then create 5 unique, ultra-hooky, ${durationText}.
 
@@ -292,9 +303,7 @@ Product/Service Info:
 - Context: ${productInfo}
 - Custom Instructions: ${userInstructions || 'None'}
 
-Creator Character (the person who will appear in the video):
-"${characterDescription}"
-All concept visuals and descriptions must be written for THIS specific creator character. Use their correct gender naturally in all visual descriptions and hooks.
+${creatorCharacterSection}
 
 Analyzed Reference Images available (with exact physical visual descriptions):
 ${descriptionsText || 'No reference image descriptions available.'}
@@ -312,7 +321,7 @@ INSTRUCTIONS:
    - ABSOLUTELY NO Alex Hormozi frameworks, direct-response hype, or superficial filler phrases. Every concept must feel authentic, intelligent, and emotionally resonant.
 ${hookLanguageRule}
 2. The ad concepts should be designed for a strict ${duration}-second video clip in 9:16 dimension ${numClips > 1 ? `consisting of exactly ${numClips} sequential 15-second scenes/clips` : '(a single 15-second scene)'}.
-3. The creator character described above will speak directly to the camera and showcase/talk about the product/service. Wherever the creator character is shown, it MUST be a medium closeup shot (e.g., 'medium closeup of the presenter speaking from chest up') to preserve their face and prevent face mutation. Do NOT zoom in too tight or show only the face. Keep a chest-up distance to allow natural body language and hand gestures. Medium or wide shots of the character showing the presenter from far away are strictly prohibited. If you want to show something large (like a building facade, a room interior, or a landscape), it MUST be a B-roll scene transition WITHOUT the presenter, and the shot MUST be specified as a super far away wide scenic shot so that the mutated face is not noticed or visible. Their voice must sound warm, natural, smooth, pleasing to listen to, and emotionally engaging. Their body language must be highly natural and dynamic — real hand gestures, subtle head tilts, natural eye contact, relaxed movements. They should feel like a real person, not stiff or robotic.
+${presenterGuidelineRule}
 4. Make the scenes highly dynamic: constantly moving, featuring dynamic shot changes, handheld camera motion, fluid panning, and different angles (close-ups, medium shots) narrating dialogues along the way in a highly expressive way. Avoid static single shots.
 5. NO PHONE NUMBERS: NEVER include any raw phone number or digit blocks in the spoken dialogue or visual captions. If the product info or call-to-action implies a phone number, use the exact phrase "get in touch" (or language equivalent like "contact us today") instead. Under no circumstances should the dialogue contain digits or spoken phone numbers.
 6. NEVER instruct to display any text overlay, subtitles, captions, watermarks, or logos on screen in any visual instruction, as the video AI generates garbled text and distorted logos. Keep the visual space completely clean of text.

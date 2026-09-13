@@ -129,15 +129,41 @@ export async function POST(request: Request) {
     }
     creditDeductedSuccess = true;
 
-    // Fetch user profile for business context + industry
+    // Fetch user profile for business context
     const { data: profile } = await supabase
       .from('profiles')
-      .select('business_name, business_info, mission_statement, custom_prompt, industry, brand_color, contact_number')
+      .select('business_name, business_info, mission_statement, custom_prompt, brand_color, contact_number')
       .eq('id', targetUserId)
       .single() as any;
 
     const businessName = profile?.business_name || '';
     const profileCustomPrompt = profile?.custom_prompt || '';
+
+    // Extract clean business info and check for saved industry in JSON
+    let cleanBusinessInfo = '';
+    let cachedIndustry: string | null = null;
+    let bInfoObj: any = null;
+
+    if (profile?.business_info) {
+      if (typeof profile.business_info === 'object') {
+        bInfoObj = profile.business_info;
+        cleanBusinessInfo = profile.business_info._raw_text || profile.business_info.bio || profile.business_info.description || '';
+        cachedIndustry = profile.business_info.industry || null;
+      } else if (typeof profile.business_info === 'string') {
+        const trimmed = profile.business_info.trim();
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+          try {
+            bInfoObj = JSON.parse(trimmed);
+            cleanBusinessInfo = bInfoObj._raw_text || bInfoObj.bio || bInfoObj.description || trimmed;
+            cachedIndustry = bInfoObj.industry || null;
+          } catch {
+            cleanBusinessInfo = trimmed;
+          }
+        } else {
+          cleanBusinessInfo = trimmed;
+        }
+      }
+    }
 
     // Determine the target creative category
     let targetCategory = creativeCategory || null;
@@ -167,20 +193,26 @@ export async function POST(request: Request) {
     }
 
     // --- INDUSTRY DETECTION & CACHING ---
-    let industry = profile?.industry || null;
+    let industry = cachedIndustry || null;
     if (!industry) {
         logToFile("Industry not set for user. Auto-detecting...");
         industry = await detectIndustry(
             profile?.business_name || '',
-            profile?.business_info || '',
+            cleanBusinessInfo || profile?.business_info || '',
             profile?.mission_statement || ''
         );
-        // Persist to DB so we don't re-detect on every request
-        await supabaseAdmin
-            .from('profiles')
-            .update({ industry })
-            .eq('id', targetUserId);
-        logToFile(`Industry auto-detected and saved: ${industry}`);
+        // Persist to business_info JSON so we don't re-detect on every request
+        try {
+          const updatedBInfo = bInfoObj || {};
+          updatedBInfo.industry = industry;
+          await supabaseAdmin
+              .from('profiles')
+              .update({ business_info: JSON.stringify(updatedBInfo) })
+              .eq('id', targetUserId);
+          logToFile(`Industry auto-detected and saved to business_info: ${industry}`);
+        } catch (saveErr: any) {
+          logToFile(`Could not persist industry to business_info: ${saveErr.message}`);
+        }
     }
 
     // --- BUILD MASTER VISUAL PRODUCTION RULES ---
@@ -322,16 +354,16 @@ Write a structured, single-paragraph VISUAL DESIGN BLUEPRINT describing this com
         // Dynamically compute unique visual archetype & human persona for maximum generation variety
         const requestSeed = `${Date.now()}_${Math.random()}_${propertyTitle || ''}_${userInstructions || ''}`;
         const activeArchetype = getRandomVisualArchetype(propertyTitle, propertyDescription, requestSeed);
-        let activePersona = getRandomHumanPersona(propertyTitle, propertyDescription, userInstructions, requestSeed);
+        let activePersona = getRandomHumanPersona(propertyTitle, propertyDescription, userInstructions, requestSeed, industry);
         
         // Check for explicit user exclusion of people
         const userExcludedHumans = userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i);
         if (userExcludedHumans) {
           activePersona = {
             id: 'no_humans',
-            name: 'Pure Architectural & Interior Focus (No Humans)',
+            name: 'Pure Commercial Product & Graphic Focus (No Humans)',
             hasHumans: false,
-            promptDirective: 'HUMAN PERSONA (STRICT DIRECTIVE): Do NOT include any humans or people in this creative image. Focus 100% of the visual spotlight on the gorgeous property architecture, luxury interior design, crisp lighting, and graphic typography overlays.'
+            promptDirective: 'HUMAN PERSONA (STRICT DIRECTIVE): Do NOT include any humans or people in this creative image. Focus 100% of the visual spotlight on the hero subject, clean lighting, and high-impact graphic typography overlays.'
           };
         }
 
@@ -352,15 +384,15 @@ Synthesize the extracted reference blueprint above into a 5-star luxury social m
 - VISUAL COMPOSITION: ${activeArchetype.composition}.
 - TYPOGRAPHY & OVERLAYS: ${activeArchetype.typography}.`;
 
-        const designComposerPrompt = `You are an elite Master Advertising Designer and Creative Director with 20+ years of direct-response advertising experience crafting multi-million-dollar high-converting Meta, Instagram, and social ad campaigns.
+        const designComposerPrompt = `You are an elite Master Advertising Designer and Creative Director with 20+ years of direct-response advertising experience crafting multi-million-dollar high-converting Meta, Instagram, and social ad campaigns across all industries.
 Your mission is to write a highly detailed, conversion-optimized image generation prompt that will be sent to an AI image model to produce an ultra-photorealistic, high-converting commercial ad poster.
 
 Here is the information provided by the user:
-- Campaign Type: ${effectiveIsBrandOnly ? 'Brand & Service Campaign (No Specific Product Selected)' : 'Product / Property Campaign'}
-- Product/Property Title: ${effectiveIsBrandOnly ? 'N/A (Brand / Service Ad)' : (propertyTitle || 'N/A')}
-- Product/Property Description: ${effectiveIsBrandOnly ? 'N/A' : (propertyDescription || 'N/A')}
+- Campaign Type: ${effectiveIsBrandOnly ? 'Brand & Service Campaign (No Specific Product Selected)' : 'Product / Offering Campaign'}
+- Product/Service Title: ${effectiveIsBrandOnly ? 'N/A (Brand / Service Ad)' : (propertyTitle || 'N/A')}
+- Product/Service Description: ${effectiveIsBrandOnly ? 'N/A' : (propertyDescription || 'N/A')}
 - Business Name: ${businessName || 'N/A'}
-- Brand/Business Info: ${profile?.business_info || profile?.mission_statement || 'N/A'}
+- Brand/Business Info: ${cleanBusinessInfo || profile?.mission_statement || 'N/A'}
 - Target Industry: ${industry || 'N/A'}
 - Contact Number / Call to Action: ${finalContactNumber || 'N/A'}
 - Custom User Instructions: ${userInstructions || 'None'}
@@ -370,11 +402,11 @@ ${styleGuidanceSection}
 Your goal is to synthesize this information and output an extremely detailed, descriptive visual prompt for the image generation model.
 Follow these 20-year direct-response advertising master rules to maximize click-throughs and conversion:
 1. SCROLL-STOPPING COMMERCIAL PHOTOGRAPHY: The creative must look like authentic live-action commercial photography captured by a top advertising photographer. Never make it look like a 3D render, cartoon, architectural blueprint, or CGI illustration. Bright, airy, commercial natural morning or golden-hour lighting with crisp shadows and believable textures.
-${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific product is selected. Focus the visual canvas on high-impact brand aesthetic, aspirational lifestyle imagery, luxury graphic typography, and scene setting representing ${businessName || 'the brand'} in the ${industry || 'commercial'} sector according to the custom user instructions.` : `2. 60-70% HERO PRODUCT/PROPERTY FOCUS: The real product or property must occupy 60-70% of the canvas as the undisputed hero. ${excludeHousePhoto ? 'CRITICAL EXCLUSION: The user explicitly specified NOT to show a kothi/house/building photo. Do NOT describe or include any house, villa, kothi, or building exterior.' : 'Keep the generated property/building visuals faithful to the real structures in the input photos.'}`}
+${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific product is selected. Focus the visual canvas on high-impact commercial branding, aspirational imagery, luxury graphic typography, and scene setting representing ${businessName || 'the brand'} in the ${industry || 'commercial'} sector according to the custom user instructions.` : `2. 60-70% HERO FOCUS: The real product or subject must occupy 60-70% of the canvas as the undisputed hero. ${excludeHousePhoto ? 'CRITICAL EXCLUSION: Do NOT describe or include any exterior architectural house, villa, or building photos.' : 'Keep the generated visuals faithful to the real subject in the input.'}`}
 3. DIRECT-RESPONSE VISUAL HIERARCHY & BENEFIT HOOK: Include clear, high-converting direct-response text overlay instructions:
-   - Primary Benefit Headline: A bold, emotionally compelling hook calling out ${effectiveIsBrandOnly ? 'the core service benefit or campaign hook from the instructions' : 'the dream lifestyle or solving the primary buyer friction'}.
-   - ${effectiveIsBrandOnly ? `Brand Identification: Highlight "${businessName || 'the business'}" with prestigious typography.` : `Location Badge: You MUST prominently highlight the property's city or location name (e.g. "Mohali", "Zirakpur", "Chandigarh") in high-contrast typography so local buyers immediately recognize it.`}
-   - Key Value Pills: Clean, semi-transparent frosted badges highlighting key specs or pricing (e.g. "3 & 4 BHK Luxury Floors", "Ready for Possession").
+   - Primary Benefit Headline: A bold, emotionally compelling hook calling out ${effectiveIsBrandOnly ? 'the core service benefit or campaign hook from the instructions' : 'the core product value proposition or solving the primary customer friction'}.
+   - ${effectiveIsBrandOnly ? `Brand Identification: Highlight "${businessName || 'the business'}" with prestigious typography.` : (industry === 'real_estate' ? `Location Badge: If a prime location is mentioned, highlight the city/area in high-contrast typography.` : `Category/Value Badge: A crisp, high-contrast badge highlighting key capability or category.`)}
+   - Key Value Pills: Clean, semi-transparent frosted badges highlighting 1-2 key specs, killer features, or pricing (e.g. for SaaS: "AI Voice Calling", "All-In-One CRM", "10x ROI"; for Real Estate: "Luxury 3 BHK", "Ready to Move"; for Products: "Premium Quality", "Zero Extra Cost").
 4. LUXURY HAUTE-COUTURE TYPOGRAPHY: Render main headlines in high-contrast serif (Bodoni/Cormorant) or sleek architectural geometric sans-serif with wide tracking. Subtle champagne gold foil or crisp ivory-white lettering. Absolutely FORBID cheap flat yellow gradients or crude generic fonts.
 5. PROMINENT CONTACT FOOTER & LOGO: Place the business logo cleanly as a prestige seal in an upper corner. Place the contact number "${finalContactNumber || ''}" cleanly and prominently in a high-contrast footer strip at the bottom margin.
 6. AUTHENTIC HUMAN PERSONA: ${activePersona.promptDirective} Regional ethnicity must match the business location. Real skin pores and candid expressions of joy, strictly no plastic AI faces.
@@ -491,14 +523,14 @@ Make the edits clean, professional, and blend seamlessly with the original conte
       const fallbackPrompt = [
           `Create a highly detailed, premium, and professional ad creative design.`,
           effectiveIsBrandOnly ? `Subject: Brand Campaign for ${businessName || 'Business'}` : (propertyTitle ? `Subject: ${propertyTitle}` : ''),
-          effectiveIsBrandOnly ? `Business Info & Context: ${profile?.business_info || profile?.mission_statement || propertyDescription || ''}` : (propertyDescription ? `Details/Description: ${propertyDescription}` : ''),
+          effectiveIsBrandOnly ? `Business Info & Context: ${cleanBusinessInfo || profile?.mission_statement || propertyDescription || ''}` : (propertyDescription ? `Details/Description: ${propertyDescription}` : ''),
           (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
           (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly. Integrate the brand logo seamlessly with the design and background. Do NOT place it inside a raw, unblended black or white box/circle; blend its background shape smoothly into the background sky/theme.` : '',
           (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly in a banner or footer at the bottom of the poster (e.g. "Call: ${finalContactNumber}").` : '',
-          effectiveIsBrandOnly ? `Create a brand-focused commercial visual emphasizing ${businessName || 'the business'}, industry prestige, and the user's custom instructions.` : (excludeHousePhoto ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any house, kothi, villa, or building exterior image. Focus on abstract luxury backgrounds, minimalist typography, location map graphics, or lifestyle close-ups.` : `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`),
+          effectiveIsBrandOnly ? `Create a brand-focused commercial visual emphasizing ${businessName || 'the business'}, industry prestige, and the user's custom instructions.` : (excludeHousePhoto ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any unwanted building or house exterior image. Focus on clean product showcases, minimalist typography, or lifestyle close-ups.` : `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`),
           `Ensure the overall composition is highly professional, balanced, featuring cinematic warm lighting, detailed textures, and a luxury editorial aesthetic.`,
-          (!userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i)) ? `Include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (e.g. a happy family, an elegant couple, or a professional individual, depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy. Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) looking completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. The ethnicity of the humans must match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).` : '',
-          !excludeBusinessInfo ? (effectiveIsBrandOnly ? `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline based on the brand and custom instructions, and display the brand logo and contact details clearly.` : `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline (based on ${propertyTitle || 'the product'}), a sub-headline highlighting key details, BHK specifications, and prominently including and highlighting the property's city or location name (based on ${propertyDescription || 'the product description'}, but only if explicitly mentioned; do NOT hallucinate or invent a location if it is not in the text, in which case omit it or keep it generic like "In a Prime Location"), and display the brand logo and contact details clearly.`) : '',
+          (!userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i)) ? `Include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (e.g. a happy customer, team professional, or entrepreneur, depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy. Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) looking completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. The ethnicity of the humans must match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).` : '',
+          !excludeBusinessInfo ? (effectiveIsBrandOnly ? `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline based on the brand and custom instructions, and display the brand logo and contact details clearly.` : `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline (based on ${propertyTitle || 'the product'}), a sub-headline highlighting key specs or features (based on ${propertyDescription || 'the product description'}), and display the brand logo and contact details clearly.`) : '',
           excludeBusinessInfo ? `Do NOT add any text overlays, slogans, contact numbers, writing, or labels on the image. Keep it purely as a clean, raw photograph.` : '',
           excludeLogo ? `Do NOT include any brand logo or watermark on the image.` : '',
           userInstructions ? `Custom Instructions: ${userInstructions}` : ''

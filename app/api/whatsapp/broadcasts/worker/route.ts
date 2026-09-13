@@ -61,7 +61,7 @@ export async function POST(req: Request) {
 
         // Fetch pending recipients (up to 400 per run to stay well within timeout)
         const BATCH_LIMIT = 400
-        const { data: pendingRecipients, error: rErr } = await supabaseAdmin
+        const { data: rawRecipients, error: rErr } = await supabaseAdmin
             .from('whatsapp_broadcast_recipients')
             .select('*')
             .eq('broadcast_id', broadcastId)
@@ -72,7 +72,9 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: rErr.message }, { status: 500 })
         }
 
-        if (!pendingRecipients || pendingRecipients.length === 0) {
+        const pendingRecipients: any[] = rawRecipients || []
+
+        if (pendingRecipients.length === 0) {
             // Check if any recipients are still pending in total
             const { count: totalRemainingPending } = await supabaseAdmin
                 .from('whatsapp_broadcast_recipients')

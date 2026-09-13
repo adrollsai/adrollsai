@@ -242,9 +242,20 @@ export async function GET(request: Request) {
       .in('user_id', ownerIds)
       .order('created_at', { ascending: false })
 
-    return NextResponse.json({ success: true, properties: properties || [] })
+    return NextResponse.json({ success: true, properties: properties || [] }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    })
   } catch (error: any) {
     console.error("[Inventory GET API Error]:", error)
-    return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 })
+    return NextResponse.json({ error: error.message || 'Server error' }, { 
+      status: 500,
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate'
+      }
+    })
   }
 }

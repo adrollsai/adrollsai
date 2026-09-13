@@ -661,7 +661,27 @@ export default function CreationPage() {
     const results: any[] = [];
     const isBrandOnly = !creativeFlow.product;
     const effectiveTitle = creativeFlow.product?.title || profile?.business_name || "Brand Creative";
-    const effectiveDescription = creativeFlow.product?.description || profile?.business_info || profile?.mission_statement || "";
+
+    let cleanProfileInfo = '';
+    const rawBusinessInfo = profile?.business_info as any;
+    if (rawBusinessInfo) {
+      if (typeof rawBusinessInfo === 'object') {
+        cleanProfileInfo = rawBusinessInfo._raw_text || rawBusinessInfo.bio || rawBusinessInfo.description || '';
+      } else if (typeof rawBusinessInfo === 'string') {
+        const trimmed = rawBusinessInfo.trim();
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            cleanProfileInfo = parsed._raw_text || parsed.bio || parsed.description || trimmed;
+          } catch {
+            cleanProfileInfo = trimmed;
+          }
+        } else {
+          cleanProfileInfo = trimmed;
+        }
+      }
+    }
+    const effectiveDescription = creativeFlow.product?.description || cleanProfileInfo || profile?.mission_statement || "";
 
     for (const angle of selected) {
         try {
@@ -3433,8 +3453,8 @@ function CreativeFlowModal({
                     onChange={(e) => setCreativeFlow((prev: any) => ({ ...prev, instructions: e.target.value }))}
                     placeholder={
                       creativeFlow.product 
-                        ? "e.g. Focus on the spacious balcony, sunset lighting, or premium marble flooring..." 
-                        : "e.g. Create multiple creative angles highlighting our 15+ years experience in luxury real estate, client testimonials, and trusted advisory services in Mohali..."
+                        ? "e.g. Focus on key benefits, customer satisfaction, high ROI, or signature feature highlights..." 
+                        : "e.g. Create high-converting creative angles highlighting our key capabilities, client results, automation speed, and trusted industry expertise..."
                     }
                     className={`w-full bg-slate-50 border p-4 rounded-2xl text-sm font-medium outline-none h-28 transition-all ${
                       !creativeFlow.product && !creativeFlow.instructions.trim() ? 'border-amber-300 focus:border-blue-500' : 'border-slate-200 focus:border-blue-500'

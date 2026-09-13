@@ -205,9 +205,20 @@ export async function GET(request: Request) {
             await Promise.allSettled(syncPromises);
         }
 
-        return NextResponse.json(assetData);
+        return NextResponse.json(assetData, {
+            headers: {
+                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        });
     } catch (err: any) {
         console.error("GET Assets error:", err);
-        return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
+        return NextResponse.json({ error: err.message || 'Internal Server Error' }, { 
+            status: 500,
+            headers: {
+                'Cache-Control': 'no-store, no-cache, must-revalidate'
+            }
+        });
     }
 }

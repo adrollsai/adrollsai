@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { renderMediaOnLambda } from '@remotion/lambda';
 import { speculateFunctionName } from '@remotion/lambda-client';
-import { extendVeoTask, createVeoTask, callGemini, createKieTask } from '@/utils/external-apis';
+import { extendVeoTask, createVeoTask, callGemini, createKieTask, createGrokVideoTask } from '@/utils/external-apis';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { sendPushNotification } from '@/utils/notification-helper';
@@ -206,71 +206,87 @@ export async function POST(request: Request) {
                     }
                 }
 
-                const retryPayload: any = {
-                    model: "bytedance/seedance-2-mini",
-                    callBackUrl: callbackUrl,
-                    input: {
+                const isGrokModel = videoTask.video_model === 'grok' || videoTask.audio_url === 'native';
+
+                if (isGrokModel) {
+                    console.log(`[Video Callback Retry] Retrying Grok Imagine 1.5 task for scene ${videoTask.current_index + 1}...`);
+                    const { taskId: retryTaskId, error: retryError } = await createGrokVideoTask({
                         prompt: currentPrompt,
-                        aspect_ratio: "9:16",
-                        duration: 15,
-                        generate_audio: true,
+                        imageUrls: refImages.slice(0, 7),
+                        aspectRatio: "9:16",
                         resolution: "480p",
-                        nsfw_checker: true,
-                        web_search: false
+                        duration: 15,
+                        callBackUrl: callbackUrl
+                    });
+                    nextTaskId = retryTaskId;
+                    error = retryError;
+                } else {
+                    const retryPayload: any = {
+                        model: "bytedance/seedance-2-mini",
+                        callBackUrl: callbackUrl,
+                        input: {
+                            prompt: currentPrompt,
+                            aspect_ratio: "9:16",
+                            duration: 15,
+                            generate_audio: true,
+                            resolution: "480p",
+                            nsfw_checker: true,
+                            web_search: false
+                        }
+                    };
+
+                    if (refImages.length > 0) {
+                        retryPayload.input.reference_image_urls = refImages.slice(0, 9);
                     }
-                };
 
-                if (refImages.length > 0) {
-                    retryPayload.input.reference_image_urls = refImages.slice(0, 9);
-                }
+                    if (avatarUrl && isCharacterVideo) {
+                        let referenceVideoUrls = [avatarUrl];
+                        retryPayload.input.reference_video_urls = referenceVideoUrls;
+                        console.log(`[Video Callback Retry] Passing character video reference: ${avatarUrl}`);
 
-                if (avatarUrl && isCharacterVideo) {
-                    let referenceVideoUrls = [avatarUrl];
-                    retryPayload.input.reference_video_urls = referenceVideoUrls;
-                    console.log(`[Video Callback Retry] Passing character video reference: ${avatarUrl}`);
-
-                    let referenceAudioUrl = "";
-                    try {
-                        const selectRes = await supabaseAdmin
-                            .from('profiles')
-                            .select('character_audio_url, avatar_audio_url')
-                            .eq('id', videoTask.user_id)
-                            .single();
-                        
-                        let userProfile: any = selectRes.data;
-                        if (selectRes.error) {
-                            console.warn(`[Video Callback Retry] Failed to select with avatar_audio_url, retrying without it:`, selectRes.error.message);
-                            const fallbackRes = await supabaseAdmin
+                        let referenceAudioUrl = "";
+                        try {
+                            const selectRes = await supabaseAdmin
                                 .from('profiles')
-                                .select('character_audio_url')
+                                .select('character_audio_url, avatar_audio_url')
                                 .eq('id', videoTask.user_id)
                                 .single();
-                            userProfile = fallbackRes.data;
-                        }
+                            
+                            let userProfile: any = selectRes.data;
+                            if (selectRes.error) {
+                                console.warn(`[Video Callback Retry] Failed to select with avatar_audio_url, retrying without it:`, selectRes.error.message);
+                                const fallbackRes = await supabaseAdmin
+                                    .from('profiles')
+                                    .select('character_audio_url')
+                                    .eq('id', videoTask.user_id)
+                                    .single();
+                                userProfile = fallbackRes.data;
+                            }
 
-                        if (isCharacterVideo && userProfile?.character_audio_url) {
-                            referenceAudioUrl = userProfile.character_audio_url;
-                            console.log(`[Video Callback Retry] Found video character voice sample in user profile: ${referenceAudioUrl}`);
-                        } else if (!isCharacterVideo && userProfile?.avatar_audio_url) {
-                            referenceAudioUrl = userProfile.avatar_audio_url;
-                            console.log(`[Video Callback Retry] Found avatar character voice sample in user profile: ${referenceAudioUrl}`);
+                            if (isCharacterVideo && userProfile?.character_audio_url) {
+                                referenceAudioUrl = userProfile.character_audio_url;
+                                console.log(`[Video Callback Retry] Found video character voice sample in user profile: ${referenceAudioUrl}`);
+                            } else if (!isCharacterVideo && userProfile?.avatar_audio_url) {
+                                referenceAudioUrl = userProfile.avatar_audio_url;
+                                console.log(`[Video Callback Retry] Found avatar character voice sample in user profile: ${referenceAudioUrl}`);
+                            }
+                        } catch (dbErr) {
+                            console.error(`[Video Callback Retry] Failed to query user voice sample from profile:`, dbErr);
                         }
-                    } catch (dbErr) {
-                        console.error(`[Video Callback Retry] Failed to query user voice sample from profile:`, dbErr);
+                        
+                        if (referenceAudioUrl) {
+                            retryPayload.input.reference_audio_urls = [referenceAudioUrl];
+                            console.log(`[Video Callback Retry] Passing character audio reference: ${referenceAudioUrl}`);
+                        } else if (isCharacterVideo) {
+                            console.error(`[Video Callback Retry] ERROR: No valid reference audio available for retry. Voice cloning cannot proceed.`);
+                            throw new Error("Cannot retry video task without a valid voice sample in profile settings.");
+                        }
                     }
-                    
-                    if (referenceAudioUrl) {
-                        retryPayload.input.reference_audio_urls = [referenceAudioUrl];
-                        console.log(`[Video Callback Retry] Passing character audio reference: ${referenceAudioUrl}`);
-                    } else if (isCharacterVideo) {
-                        console.error(`[Video Callback Retry] ERROR: No valid reference audio available for retry. Voice cloning cannot proceed.`);
-                        throw new Error("Cannot retry video task without a valid voice sample in profile settings.");
-                    }
+
+                    const { taskId: retryTaskId, error: retryError } = await createKieTask(retryPayload);
+                    nextTaskId = retryTaskId;
+                    error = retryError;
                 }
-
-                const { taskId: retryTaskId, error: retryError } = await createKieTask(retryPayload);
-                nextTaskId = retryTaskId;
-                error = retryError;
 
                 if (nextTaskId) {
                     await supabaseAdmin.from('video_tasks').update({

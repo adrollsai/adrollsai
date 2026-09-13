@@ -4,7 +4,7 @@ import os from 'os';
 import { exec } from 'child_process';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
-import { getFfmpegPath } from '@/utils/ffmpeg-helper';
+import { getFfmpegPath, getFfprobePath } from '@/utils/ffmpeg-helper';
 import { generateAndUploadVideoThumbnail } from '@/utils/video-thumbnail-helper';
 import { sendPushNotification } from '@/utils/notification-helper';
 
@@ -132,8 +132,31 @@ async function downloadSceneClipResiliently(s: StitchSibling, tempPath: string):
 }
 
 /**
+ * Probes the exact duration of an MP4 clip using FFprobe.
+ */
+async function probeClipDuration(clipPath: string, ffprobeExec: string): Promise<number> {
+    try {
+        const probeResult = await new Promise<string>((resolve, reject) => {
+            exec(
+                `"${ffprobeExec}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${clipPath}"`,
+                (err, stdout) => {
+                    if (err) reject(err);
+                    else resolve(stdout.trim());
+                }
+            );
+        });
+        const dur = parseFloat(probeResult);
+        if (!isNaN(dur) && dur > 1) {
+            return dur;
+        }
+    } catch (_) {}
+    return 15.0; // fallback standard 15s clip
+}
+
+/**
  * Performs fast direct FFmpeg stitching locally or inside the serverless execution environment.
- * Replaces clip audio with the voiceover stream (-map 0:v:0 -map 1:a:0) and uploads to R2.
+ * Applies smooth cinematic xfade transitions between multi-clip scenes,
+ * replaces clip audio with the voiceover stream (-map [v] -map N:a:0) and uploads to R2.
  */
 export async function stitchClipsLocally(
     siblings: StitchSibling[],
@@ -156,7 +179,7 @@ export async function stitchClipsLocally(
             localClipPaths.push(clipPath);
         }
 
-        // 2. Concat list
+        // 2. Concat list (for fallback or single clip)
         const concatTxtContent = localClipPaths.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n');
         const concatTxtPath = path.join(tempStitchDir, 'concat.txt');
         fs.writeFileSync(concatTxtPath, concatTxtContent);
@@ -178,24 +201,84 @@ export async function stitchClipsLocally(
         }
 
         const ffmpegExec = getFfmpegPath();
+        const ffprobeExec = getFfprobePath();
         const outputPath = path.join(tempStitchDir, 'final_stitched.mp4');
 
-        // Mux voiceover audio replacing native video noise (-map 0:v:0 -map 1:a:0)
-        const ffmpegCmd = localAudioPath
-            ? `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
-            : `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+        // Check if multi-clip transition is possible
+        let stitchCompleted = false;
 
-        console.log(`[Local Stitch] Executing FFmpeg command: ${ffmpegCmd}`);
-        await new Promise<void>((resolve, reject) => {
-            exec(ffmpegCmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
-                if (execErr) {
-                    console.error(`[Local Stitch] FFmpeg error:`, stderr || execErr);
-                    reject(execErr);
-                } else {
-                    resolve();
+        if (localClipPaths.length > 1) {
+            try {
+                console.log(`[Local Stitch] Attempting cinematic xfade crossfade transitions across ${localClipPaths.length} clips...`);
+                const durations: number[] = [];
+                for (const p of localClipPaths) {
+                    const d = await probeClipDuration(p, ffprobeExec);
+                    durations.push(d);
                 }
+                console.log(`[Local Stitch] Probed clip durations for transitions:`, durations);
+
+                const transitionDuration = 0.4;
+                const filterParts: string[] = [];
+                let currentStream = '[0:v]';
+                let currentOffset = 0;
+
+                for (let i = 1; i < localClipPaths.length; i++) {
+                    if (i === 1) {
+                        currentOffset = Math.max(0.5, durations[0] - transitionDuration);
+                    } else {
+                        currentOffset = Math.max(0.5, currentOffset + durations[i - 1] - transitionDuration);
+                    }
+                    const nextStream = i === localClipPaths.length - 1 ? '[v]' : `[v${i}]`;
+                    filterParts.push(`${currentStream}[${i}:v]xfade=transition=fade:duration=${transitionDuration}:offset=${currentOffset.toFixed(2)}${nextStream}`);
+                    currentStream = nextStream;
+                }
+
+                const filterComplex = filterParts.join(';');
+                const inputsStr = localClipPaths.map(p => `-i "${p}"`).join(' ');
+
+                const xfadeCmd = localAudioPath
+                    ? `"${ffmpegExec}" -nostdin -y ${inputsStr} -i "${localAudioPath}" -filter_complex "${filterComplex}" -map "[v]" -map ${localClipPaths.length}:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
+                    : `"${ffmpegExec}" -nostdin -y ${inputsStr} -filter_complex "${filterComplex}" -map "[v]" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
+
+                console.log(`[Local Stitch] Executing FFmpeg xfade transition command: ${xfadeCmd}`);
+                await new Promise<void>((resolve, reject) => {
+                    exec(xfadeCmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
+                        if (execErr) {
+                            console.warn(`[Local Stitch] xfade transition failed:`, stderr || execErr);
+                            reject(execErr);
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+
+                if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1000) {
+                    stitchCompleted = true;
+                    console.log(`[Local Stitch] xfade transitions successfully rendered to final MP4! 🎬`);
+                }
+            } catch (xfadeErr: any) {
+                console.warn(`[Local Stitch] xfade transition execution encountered an issue. Falling back to direct stream concat:`, xfadeErr?.message || xfadeErr);
+            }
+        }
+
+        // Fallback or single-clip execution: fast concat demuxer
+        if (!stitchCompleted) {
+            const ffmpegCmd = localAudioPath
+                ? `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
+                : `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+
+            console.log(`[Local Stitch] Executing direct stream concat FFmpeg command: ${ffmpegCmd}`);
+            await new Promise<void>((resolve, reject) => {
+                exec(ffmpegCmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {
+                    if (execErr) {
+                        console.error(`[Local Stitch] FFmpeg fallback error:`, stderr || execErr);
+                        reject(execErr);
+                    } else {
+                        resolve();
+                    }
+                });
             });
-        });
+        }
 
         // 4. Upload stitched file to R2
         const stitchedBuffer = fs.readFileSync(outputPath);

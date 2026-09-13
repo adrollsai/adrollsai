@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Filter, Download, Facebook, Instagram, Linkedin, Sparkles, X, Loader2, Globe, Film, Package, CheckCircle2, Image as ImageIcon, RefreshCw, Maximize2, Check, Trash2, Upload, Copy, AlertCircle, Save, FileText } from 'lucide-react'
 import JSZip from 'jszip'
 import { analyzeMediaAction } from './actions'
@@ -11,7 +11,6 @@ import { uploadToR2 } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { toast } from 'sonner'
 import { useUpload } from '@/utils/UploadContext'
-import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
 import { getVideoPosterUrl } from '@/utils/get-video-poster'
 import { getPropertyTags } from '@/utils/property-tags'
@@ -40,59 +39,28 @@ const filters = ['All', 'image', 'video', 'Campaign Ready']
 export default function AssetsPage() {
     const supabase = createClient()
     const router = useRouter()
+    const searchParams = useSearchParams()
+    const impersonateId = searchParams?.get('impersonate') || null
     const { uploadAssets, subscribeToCompletion, hasActiveTasks, tasks, removeTask } = useUpload()
 
-    // --- STATE ---
-    const [assets, setAssets] = useState<Asset[]>(() => {
-        if (typeof window !== 'undefined') {
-            // Try any assets_cache_ key
-            try {
-                for (const key of Object.keys(localStorage)) {
-                    if (key.startsWith('assets_cache_')) {
-                        const val = localStorage.getItem(key)
-                        if (val) {
-                            const parsed = JSON.parse(val)
-                            if (Array.isArray(parsed) && parsed.length > 0) return parsed
-                        }
-                    }
-                }
-            } catch (e) {}
-        }
-        return []
-    })
-    const [properties, setProperties] = useState<Property[]>(() => {
-        if (typeof window !== 'undefined') {
-            try {
-                for (const key of Object.keys(localStorage)) {
-                    if (key.startsWith('properties_cache_')) {
-                        const val = localStorage.getItem(key)
-                        if (val) {
-                            const parsed = JSON.parse(val)
-                            if (Array.isArray(parsed) && parsed.length > 0) return parsed
-                        }
-                    }
-                }
-            } catch (e) {}
-        }
-        return []
-    })
-    const [loading, setLoading] = useState(() => {
-        if (typeof window !== 'undefined') {
-            try {
-                for (const key of Object.keys(localStorage)) {
-                    if (key.startsWith('assets_cache_')) {
-                        const val = localStorage.getItem(key)
-                        if (val) {
-                            const parsed = JSON.parse(val)
-                            if (Array.isArray(parsed) && parsed.length > 0) return false
-                        }
-                    }
-                }
-            } catch (e) {}
-        }
-        return true
-    })
+    // --- STATE (Fresh, Non-Cached to prevent cross-account stale data) ---
+    const [assets, setAssets] = useState<Asset[]>([])
+    const [properties, setProperties] = useState<Property[]>([])
+    const [loading, setLoading] = useState(true)
     const [isRefreshing, setIsRefreshing] = useState(false)
+
+    // Purge legacy stale client cache once so old accounts do not linger
+    useEffect(() => {
+        try {
+            if (typeof window !== 'undefined') {
+                for (const key of Object.keys(localStorage)) {
+                    if (key.startsWith('assets_cache_') || key.startsWith('properties_cache_') || key.startsWith('assets_')) {
+                        localStorage.removeItem(key)
+                    }
+                }
+            }
+        } catch (e) {}
+    }, [])
 
     useEffect(() => {
         const unsubscribe = subscribeToCompletion(() => {
@@ -280,9 +248,14 @@ export default function AssetsPage() {
     } | null>(null);
     const [isUploading, setIsUploading] = useState(false);
 
-    // 1. SAFE FETCH WITH LOCAL CACHING
+    // 1. FRESH FETCH (No stale client caching)
     const fetchAssets = async (force = false, isBackground = false) => {
         try {
+            if (!isBackground && assets.length === 0) {
+                setLoading(true)
+            }
+            if (force && !isBackground) setIsRefreshing(true)
+
             // 1. Get current user
             const { data: { user }, error: userError } = await supabase.auth.getUser()
             if (userError || !user) return
@@ -291,9 +264,6 @@ export default function AssetsPage() {
             // Fetch profile to check role and parent_id
             const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
             if (profile) setUserRole(profile.role)
-
-            const urlParams = new URLSearchParams(window.location.search)
-            const impersonateId = urlParams.get('impersonate')
 
             let targetUserId = user.id
             if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
@@ -315,91 +285,80 @@ export default function AssetsPage() {
                 }
             }
 
-            // Caching Keys
-            const assetsKey = `assets_cache_${targetUserId}`;
-            const propsKey = `properties_cache_${targetUserId}`;
+            // 2. Fetch assets and inventory in PARALLEL for speed and optimization
+            const assetUrl = `/api/assets${impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : ''}`
+            const invUrl = `/api/inventory${impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : ''}`
 
-            const cachedAssets = force ? [] : getLocalCache<Asset>(assetsKey);
-            const cachedProps = force ? [] : getLocalCache<Property>(propsKey);
+            const [assetRes, invRes] = await Promise.all([
+                fetch(assetUrl, { cache: 'no-store' }),
+                fetch(invUrl, { cache: 'no-store' }).catch(e => {
+                    console.error("Failed to fetch inventory via API:", e)
+                    return null
+                })
+            ])
 
-            if (cachedAssets.length > 0 && assets.length === 0) {
-                setAssets(cachedAssets);
-                setProperties(cachedProps);
-                setLoading(false);
-            } else if (assets.length === 0 && !force) {
-                setLoading(true);
-            }
-
-            if (force && !isBackground) setIsRefreshing(true);
-
-            const maxAssetTime = getMaxCreatedAt(cachedAssets as any[]);
-            const maxPropTime = getMaxCreatedAt(cachedProps as any[]);
-
-            // 2. Fetch assets for the organization securely via server API
-            const assetUrl = `/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `${impersonateId ? '&' : '?'}since=${encodeURIComponent(maxAssetTime)}` : ''}`;
-            const response = await fetch(assetUrl)
-            
-            const contentType = response.headers.get('content-type') || ''
-            let assetData: any
-            if (contentType.includes('application/json')) {
-                assetData = await response.json()
+            let assetData: any = null
+            if (assetRes.ok) {
+                const contentType = assetRes.headers.get('content-type') || ''
+                if (contentType.includes('application/json')) {
+                    assetData = await assetRes.json()
+                } else {
+                    const htmlText = await assetRes.text()
+                    console.error("[Assets Page] Received non-JSON response from /api/assets:", htmlText.substring(0, 1000))
+                    throw new Error(`Server returned HTML/text instead of JSON. Status: ${assetRes.status}`)
+                }
             } else {
-                const htmlText = await response.text()
-                console.error("[Assets Page] Received non-JSON response from /api/assets:", htmlText.substring(0, 1000))
-                throw new Error(`Server returned HTML/text instead of JSON. Status: ${response.status}`)
+                const errJson = await assetRes.json().catch(() => null)
+                throw new Error(errJson?.error || `Assets request failed with status ${assetRes.status}`)
             }
-            
+
             if (assetData?.error) throw new Error(assetData.error)
 
-            let propData: Property[] = [];
-            try {
-                const invRes = await fetch(`/api/inventory${impersonateId ? `?impersonate=${impersonateId}` : ''}`);
-                const invJson = await invRes.json();
-                if (invJson.success && Array.isArray(invJson.properties)) {
-                    propData = invJson.properties;
-                }
-            } catch (e) {
-                console.error("Failed to fetch inventory via API, falling back:", e);
+            let propData: Property[] = []
+            if (invRes && invRes.ok) {
+                try {
+                    const invJson = await invRes.json()
+                    if (invJson.success && Array.isArray(invJson.properties)) {
+                        propData = invJson.properties
+                    }
+                } catch (e) {}
+            } else {
+                // Fallback direct query if inventory API had an issue
                 const { data } = await supabase
                     .from('properties')
                     .select('id, title, tags, configurations')
                     .eq('user_id', targetUserId)
-                    .order('created_at', { ascending: false });
-                if (data) propData = data as any;
+                    .order('created_at', { ascending: false })
+                if (data) propData = data as any
             }
 
-            let mergedAssets = force ? assetData : mergeCacheData<any>(cachedAssets.filter(c => c.status !== 'Failed'), assetData || []);
-            let mergedProps = propData || [];
-
-            if (mergedAssets && Array.isArray(mergedAssets)) {
+            if (assetData && Array.isArray(assetData)) {
                 // Filter out distributed assets to keep the library clean
-                const cleanAssets = (mergedAssets as Asset[]).filter((asset: Asset) => asset.status !== 'Distributed')
-                
+                const cleanAssets = (assetData as Asset[]).filter((asset: Asset) => asset.status !== 'Distributed')
+
                 // Sort active 'Processing' or 'Rendering' tasks to the very top, preserving created_at order for the rest
                 const sortedAssets = [...cleanAssets].sort((a, b) => {
-                    const aActive = ['Processing', 'Rendering'].includes(a.status) || (a.url && a.url.includes('/processing'));
-                    const bActive = ['Processing', 'Rendering'].includes(b.status) || (b.url && b.url.includes('/processing'));
-                    
-                    if (aActive && !bActive) return -1;
-                    if (!aActive && bActive) return 1;
-                    
+                    const aActive = ['Processing', 'Rendering'].includes(a.status) || (a.url && a.url.includes('/processing'))
+                    const bActive = ['Processing', 'Rendering'].includes(b.status) || (b.url && b.url.includes('/processing'))
+
+                    if (aActive && !bActive) return -1
+                    if (!aActive && bActive) return 1
+
                     // Sort by created_at descending if they have the same active status
-                    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-                    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-                    return bTime - aTime;
-                });
-                
+                    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
+                    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
+                    return bTime - aTime
+                })
+
                 setAssets(sortedAssets)
-                setLocalCache(assetsKey, sortedAssets)
+            } else {
+                setAssets([])
             }
 
-            if (mergedProps) {
-                setProperties(mergedProps)
-                setLocalCache(propsKey, mergedProps)
-            }
+            setProperties(propData)
 
             // Cleanup stuck assets in background
-            fetch('/api/assets/cleanup', { method: 'POST' }).catch(e => console.error("Cleanup trigger failed", e));
+            fetch('/api/assets/cleanup', { method: 'POST' }).catch(e => console.error("Cleanup trigger failed", e))
 
         } catch (error) {
             console.error("Fetch Error:", error)
@@ -409,10 +368,13 @@ export default function AssetsPage() {
         }
     }
 
-    // Trigger fetch on mount
+    // Trigger fresh fetch on mount and whenever the impersonated account changes
     useEffect(() => {
+        setAssets([])
+        setProperties([])
+        setLoading(true)
         fetchAssets()
-    }, [supabase])
+    }, [supabase, impersonateId])
 
     // Background polling for assets that are still in "Processing" or "Rendering" state
     useEffect(() => {
@@ -568,15 +530,7 @@ export default function AssetsPage() {
                 if (error) throw error;
             }
             toast.success('Asset deleted successfully');
-            setAssets(prev => {
-                const updated = prev.filter(a => a.id !== id);
-                const urlParams = new URLSearchParams(window.location.search);
-                const impersonateId = urlParams.get('impersonate');
-                const targetId = impersonateId || userRole || 'user';
-                const assetsKey = `assets_${targetId}`;
-                setLocalCache(assetsKey, updated);
-                return updated;
-            });
+            setAssets(prev => prev.filter(a => a.id !== id));
         } catch (e: any) {
             toast.error('Delete failed: ' + e.message);
         }

@@ -493,8 +493,9 @@ export async function POST(request: Request) {
             targetProfile = selectWithAvatars.data;
         }
 
-        const videoModel = body.videoModel || 'grok';
         const presenterType = body.presenterType || (useCharacterVideo ? 'video' : 'none');
+        // Non-avatar videos strictly use Grok Imagine 1.5 (Seedance is completely prohibited to avoid high costs)
+        const videoModel = presenterType === 'none' ? 'grok' : (body.videoModel || 'grok');
 
         if (videoModel !== 'grok') {
             if (presenterType === 'video' && (!targetProfile || !targetProfile.character_url)) {
@@ -794,13 +795,13 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                         ? `\nUSER CUSTOM INSTRUCTIONS & MANDATORY CREATIVE DIRECTION (HIGHEST PRIORITY):\n"${customInstructions}"\n[CRITICAL DIRECTIVE: You MUST strictly prioritize and weave the above user instructions into the visual cuts, product demonstration, and pacing!]\n`
                         : '';
 
-                    const showcaseScenePromptGen = `You are an elite commercial ad director specializing in fast-paced, high-converting commercial video ads.
-Write an ultra-realistic 9:16 commercial video prompt for Scene ${i + 1} of ${requiredClips} for Grok Imagine 1.5.
+                    const showcaseScenePromptGen = `You are an elite commercial cinematographer and director specializing in photorealistic, live-action commercial video ads.
+Write an authentic, highly natural, photorealistic 9:16 commercial video prompt for Scene ${i + 1} of ${requiredClips} for Grok Imagine 1.5.
 ${customInstructionsBlock}
-PRODUCT / BRAND CONTEXT:
+PRODUCT / PROPERTY CONTEXT:
 - Business/Product Title: "${productTitle}"
 - Product Description & Context: "${productContext.slice(0, 400)}"
-- Reference Images:
+- Reference Images (Visual Anchor):
 ${descriptionsText}
 
 SCRIPT SCENE ${i + 1} DIRECTIVES:
@@ -808,15 +809,30 @@ SCRIPT SCENE ${i + 1} DIRECTIVES:
 
 TARGET DEMOGRAPHIC & CASTING (CRITICAL):
 - Target Market / Demographic: ${targetEthnicity}
-- Casting & People: Any people, buyers, residents, families, customers, or lifestyle models appearing in the video must strictly be of authentic ${targetEthnicity} ethnicity, with modern styling and attire matching the regional market context.
+- Candid Lifestyle People: Any residents, buyers, or customers appearing in the scene must strictly be authentic ${targetEthnicity} demographic, with modern contemporary regional styling. They must appear in candid, unposed, natural real-world moments (such as walking past a sunlit window, sitting comfortably on a sofa, or stepping out onto the terrace). Strictly NO stiff poses, NO artificial doll-like grins, NO frozen mannequin stares, and NO uncanny valley expressions.
 
-MASTER AD PROMPTING RULES:
-1. HYPER-DYNAMIC RAPID CUTS DIRECTIVE: The prompt MUST strictly begin with: "The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where..."
-2. STRICT 2-SECOND MAXIMUM PER SHOT: No single shot, camera angle, or scene may stay on screen for longer than 2 seconds. The 15-second clip must progress through 6 to 8 rapid cinematic micro-shots (0-2s rapid hero reveal -> 2-4s dynamic whip-pan transition -> 4-6s macro feature closeup -> 6-8s ${targetEthnicity} lifestyle moment -> 8-10s wide architectural perspective -> 10-12s motion transition -> 12-15s grand climax).
-3. FAST KINETIC TRANSITIONS: Dynamic camera motion (whip pans, speed ramps, smooth push-in zooms, and rack focus) connecting each rapid cut seamlessly.
-4. STRICT NO VOICEOVER / NO SPOKEN DIALOGUE RULE: The video must contain STRICTLY ZERO voiceover, NO spoken speech, NO spoken dialogue, NO actors speaking, and NO talking heads. Pure visual commercial sequence.
-5. CINEMATOGRAPHY: 35mm anamorphic camera, dynamic commercial studio lighting, 9:16 portrait aspect ratio, macro focus transitions, upbeat background instrumental music track.
-6. NO ON-SCREEN TEXT: Absolutely NO text, NO titles, NO on-screen captions, NO text overlays.
+MASTER PHOTOREALISM & COMMERCIAL AD RULES:
+1. PURE LIVE-ACTION CINEMATOGRAPHY (ZERO CGI SHEEN):
+   - Shot on 35mm cinema camera with natural depth of field, authentic daylight flooding through real glass windows, soft organic room shadows, and true architectural color balance.
+   - STRICTLY NO CGI, NO 3D video game render sheen, NO plastic artificial gloss, NO oversaturated neon lighting, and NO cartoonish smoothness. The scene must look like real, filmed documentary commercial footage.
+2. STRICT REFERENCE IMAGE FIDELITY & RELEVANCE:
+   - Ground all visual architecture, room layout, materials, furniture style, and color palettes strictly in the tangible physical details visible in the reference images.
+   - Do not invent surreal, futuristic, or fantasy architecture. Highlight the real-world spaces, textures (matte wood, genuine stone/marble, textured fabric), and genuine features of the property/product.
+3. KINETIC COMMERCIAL PACING (RAPID YET GROUNDED):
+   - The prompt MUST strictly begin with: "The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 to 3 seconds where..."
+   - Progress through 4 to 5 distinct, coherent commercial camera moves showcasing the real space:
+     (a) 0-3s: Crisp wide hero establishing reveal of the space with a smooth push-in
+     (b) 3-6s: Quick cut to an authentic lifestyle moment of an authentic resident enjoying the living area
+     (c) 6-9s: Fast cut to a realistic macro detail showcasing premium architectural finishes/fixtures from the reference photos
+     (d) 9-12s: Dynamic handheld walkthrough moving through the sunlit space
+     (e) 12-15s: Wide cinematic perspective of the feature area with warm ambient light.
+   - Fluid camera motion: smooth dolly push-ins, dynamic whip-pans, and rack focus connecting shots without surreal morphing or rubbery warping.
+4. STRICT NO VOICEOVER / NO SPOKEN DIALOGUE IN VIDEO ENGINE:
+   - The video must contain STRICTLY ZERO voiceover, NO spoken speech, NO spoken dialogue, NO actors speaking, and NO talking heads. Pure visual commercial sequence.
+5. NO ON-SCREEN TEXT OR WATERMARKS:
+   - Absolutely NO text, NO titles, NO subtitles, NO captions, NO banners, and NO watermarks anywhere in the video.
+6. ANTI-AI NEGATIVE DIRECTIVES:
+   - Strictly avoid: CGI render look, 3D video game aesthetic, plastic artificial skin, oversaturated colors, distorted geometry, melted furniture, warping artifacts, or uncanny valley expressions.
 
 Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
 
@@ -839,15 +855,15 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                             synthesized = res.text.trim();
                         } catch (genErr) {
                             console.warn(`[Grok Pipeline] Non-Avatar prompt generation fallback for scene ${i + 1}:`, genErr);
-                            synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where an opening hero shot showcases "${productTitle}", cutting instantly every 2 seconds to ${sceneVisuals || 'the featured product in action'} with authentic ${targetEthnicity} people interacting, ending on a sleek macro texture close-up. Cinematic 35mm anamorphic camera, dynamic lighting, 9:16 portrait aspect ratio, upbeat background instrumental music track. Strictly NO voiceover, NO spoken dialogue, NO speech, and NO talking to camera. Absolutely NO text, NO titles, or text overlays of any kind.`;
+                            synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 to 3 seconds where an authentic wide hero reveal showcases "${productTitle}" in natural daylight, cutting quickly to candid lifestyle moments of authentic ${targetEthnicity} residents enjoying the space, transitioning to a crisp macro focus on premium architectural finishes from the reference photos, and concluding with a warm wide-angle perspective. Shot on 35mm cinema lens, realistic natural window light, authentic live-action documentary realism, 9:16 portrait aspect ratio. Strictly NO CGI or 3D render sheen, NO plastic artificial surfaces, NO voiceover, NO spoken dialogue, NO speech, and NO talking heads. Absolutely NO text, NO titles, or text overlays of any kind.`;
                         }
                     }
 
                     if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
-                        synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 1.5 to 2 seconds where... ${synthesized}`;
+                        synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 to 3 seconds where... ${synthesized}`;
                     }
                     if (!synthesized.toLowerCase().includes('no voiceover') && !synthesized.toLowerCase().includes('zero voiceover')) {
-                        synthesized += ` People show emotion but strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera.`;
+                        synthesized += ` Strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera.`;
                     }
                     if (!synthesized.toLowerCase().includes(targetEthnicity.toLowerCase())) {
                         synthesized += ` Any featured people or residents are authentic ${targetEthnicity}.`;
