@@ -1060,51 +1060,86 @@ CRITICAL CONVERSATIONAL RULES:
                                             const days = args.timeframe_days || 7;
                                             const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-                                            const { data: recentLeads } = await supabaseAdmin
+                                            const { data: recentLeads, error: leadsErr } = await supabaseAdmin
                                               .from('leads')
-                                              .select('id, name, phone, pipeline_stage, notes, qualification_score, created_at, campaign_id')
+                                              .select('id, name, phone, pipeline_stage, notes, summary, budget, timeline, voice_call_status, voice_call_summary, created_at, campaign_id')
                                               .eq('user_id', matchedProfile.id)
                                               .gte('created_at', cutoff)
                                               .order('created_at', { ascending: false })
                                               .limit(100);
 
-                                            const { data: callLogs } = await supabaseAdmin
+                                            if (leadsErr) {
+                                              console.error("❌ [TOOL: analyze_lead_quality] Leads fetch error:", leadsErr);
+                                            }
+
+                                            const { data: callLogs, error: callsErr } = await supabaseAdmin
                                               .from('call_logs')
-                                              .select('id, lead_id, status, call_summary, duration')
+                                              .select('id, lead_id, status, notes, duration, created_at')
                                               .eq('user_id', matchedProfile.id)
                                               .gte('created_at', cutoff)
                                               .limit(50);
 
+                                            if (callsErr) {
+                                              console.error("❌ [TOOL: analyze_lead_quality] Calls fetch error:", callsErr);
+                                            }
+
                                             const totalLeads = recentLeads?.length || 0;
                                             const stages: Record<string, number> = {};
+                                            let jobSeekersCount = 0;
+                                            let webinarOrMeetingCount = 0;
                                             let lowBudgetCount = 0;
                                             let locationMismatchCount = 0;
-                                            let notInterestedCount = 0;
+                                            let dnpCount = 0;
                                             let qualifiedCount = 0;
 
                                             recentLeads?.forEach((l: any) => {
-                                              stages[l.pipeline_stage] = (stages[l.pipeline_stage] || 0) + 1;
-                                              const notesLower = (l.notes || '').toLowerCase();
-                                              if (notesLower.includes('budget') || notesLower.includes('low') || notesLower.includes('expensive')) lowBudgetCount++;
-                                              if (notesLower.includes('location') || notesLower.includes('far') || notesLower.includes('area')) locationMismatchCount++;
-                                              if (notesLower.includes('not interested') || notesLower.includes('by mistake') || notesLower.includes('accidental')) notInterestedCount++;
-                                              if (['qualified', 'won', 'interested', 'site visit'].some(s => (l.pipeline_stage || '').toLowerCase().includes(s))) {
+                                              stages[l.pipeline_stage || 'Unknown'] = (stages[l.pipeline_stage || 'Unknown'] || 0) + 1;
+                                              const combinedNotes = `${l.notes || ''} ${l.summary || ''} ${l.voice_call_summary || ''}`.toLowerCase();
+
+                                              if (combinedNotes.includes('job') || combinedNotes.includes('resume') || combinedNotes.includes('cv') || combinedNotes.includes('interview')) {
+                                                jobSeekersCount++;
+                                              }
+                                              if (combinedNotes.includes('webinar') || combinedNotes.includes('meeting') || combinedNotes.includes('demo') || combinedNotes.includes('register')) {
+                                                webinarOrMeetingCount++;
+                                              }
+                                              if (combinedNotes.includes('budget') || combinedNotes.includes('low') || combinedNotes.includes('expensive')) {
+                                                lowBudgetCount++;
+                                              }
+                                              if (combinedNotes.includes('location') || combinedNotes.includes('far') || combinedNotes.includes('area')) {
+                                                locationMismatchCount++;
+                                              }
+                                              if (combinedNotes.includes('not picked') || combinedNotes.includes('dnp') || combinedNotes.includes('switched off') || combinedNotes.includes('not answer')) {
+                                                dnpCount++;
+                                              }
+                                              if (['meeting planned', 'meeting done', 'qualified', 'won', 'site visit'].some(s => (l.pipeline_stage || '').toLowerCase().includes(s)) || combinedNotes.includes('registered for webinar') || combinedNotes.includes('joined the webinar')) {
                                                 qualifiedCount++;
                                               }
                                             });
 
+                                            const sampleCallNotes = (recentLeads || [])
+                                              .filter((l: any) => l.notes || l.summary)
+                                              .slice(0, 10)
+                                              .map((l: any) => ({
+                                                lead_name: l.name,
+                                                stage: l.pipeline_stage,
+                                                note_snippet: (l.notes || l.summary || '').replace(/\s+/g, ' ').trim().substring(0, 150)
+                                              }));
+
                                             return {
                                               timeframe_days: days,
-                                              total_leads: totalLeads,
-                                              qualified_leads: qualifiedCount,
+                                              total_leads_in_crm: totalLeads,
+                                              qualified_or_high_intent_leads: qualifiedCount,
                                               qualification_rate_percent: totalLeads > 0 ? Math.round((qualifiedCount / totalLeads) * 100) : 0,
                                               stage_breakdown: stages,
-                                              disqualification_reasons: {
-                                                budget_mismatches: lowBudgetCount,
-                                                location_mismatches: locationMismatchCount,
-                                                accidental_or_uninterested_clicks: notInterestedCount
+                                              call_and_rejection_reasons: {
+                                                job_seekers_or_interview_inquiries: jobSeekersCount,
+                                                webinar_or_demo_attendees: webinarOrMeetingCount,
+                                                unreachable_or_dnp: dnpCount,
+                                                budget_or_cost_mismatches: lowBudgetCount,
+                                                location_mismatches: locationMismatchCount
                                               },
-                                              total_calls_completed: callLogs?.length || 0,
+                                              total_calls_logged: callLogs?.length || 0,
+                                              sample_live_call_notes: sampleCallNotes,
                                               ad_campaigns_summary: campaignsContext || "No active Meta campaign data available."
                                             };
                                           } catch (err: any) {
