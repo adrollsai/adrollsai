@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     scope: '/',
     display: 'standalone',
     background_color: '#FFFFFF', // Changed to white to match your splash background
-    theme_color: '#2563EB',
+    theme_color: '#FFFFFF',
     icons: [
       { 
         src: `/api/org-icon?type=icon&v=${NOBOGENT_LOGO_VERSION}`, 
@@ -116,7 +116,7 @@ export async function GET(request: Request) {
         scope: '/',
         display: 'standalone',
         background_color: '#FFFFFF',
-        theme_color: '#2563EB',
+        theme_color: '#FFFFFF',
         icons: [
           { 
             src: `/api/org-icon?type=icon&v=${logoVersion}`, 

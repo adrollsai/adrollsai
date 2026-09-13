@@ -72,14 +72,34 @@ export async function GET(request: NextRequest) {
         });
     } 
     else if (iconType === 'splash') {
-        pipeline = pipeline
-            .resize(size, size, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-            .extend({ top: padding, bottom: padding, left: padding, right: padding, background: { r: 255, g: 255, b: 255, alpha: 0 } })
-            .extend({
-                top: 1010, bottom: 1010, left: 329, right: 329,
-                background: { r: 255, g: 255, b: 255, alpha: 1 } 
-            })
-            .flatten({ background: { r: 255, g: 255, b: 255 } }); 
+        const targetW = Math.max(320, Math.min(3000, parseInt(searchParams.get('w') || '1170')));
+        const targetH = Math.max(480, Math.min(3000, parseInt(searchParams.get('h') || '2532')));
+        const logoSize = Math.round(Math.min(targetW, targetH) * 0.28);
+
+        const logoBuffer = await pipeline
+            .resize(logoSize, logoSize, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+            .png()
+            .toBuffer();
+
+        const splashBuffer = await sharp({
+            create: {
+                width: targetW,
+                height: targetH,
+                channels: 4,
+                background: { r: 255, g: 255, b: 255, alpha: 1 }
+            }
+        })
+        .composite([{ input: logoBuffer, gravity: 'center' }])
+        .flatten({ background: { r: 255, g: 255, b: 255 } })
+        .png()
+        .toBuffer();
+
+        return new NextResponse(new Uint8Array(splashBuffer), {
+            headers: {
+                'Content-Type': 'image/png',
+                'Cache-Control': isLocal ? 'no-store' : 'public, max-age=31536000, immutable',
+            },
+        });
     }
     else {
         pipeline = pipeline
@@ -111,14 +131,34 @@ export async function GET(request: NextRequest) {
       const size = 512 - (padding * 2);
       
       if (iconType === 'splash') {
-          pipeline = pipeline
-              .resize(size, size, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-              .extend({ top: padding, bottom: padding, left: padding, right: padding, background: { r: 255, g: 255, b: 255, alpha: 0 } })
-              .extend({
-                  top: 1010, bottom: 1010, left: 329, right: 329,
-                  background: { r: 255, g: 255, b: 255, alpha: 1 } 
-              })
-              .flatten({ background: { r: 255, g: 255, b: 255 } });
+          const targetW = Math.max(320, Math.min(3000, parseInt(searchParams.get('w') || '1170')));
+          const targetH = Math.max(480, Math.min(3000, parseInt(searchParams.get('h') || '2532')));
+          const logoSize = Math.round(Math.min(targetW, targetH) * 0.28);
+
+          const logoBuffer = await pipeline
+              .resize(logoSize, logoSize, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+              .png()
+              .toBuffer();
+
+          const splashBuffer = await sharp({
+              create: {
+                  width: targetW,
+                  height: targetH,
+                  channels: 4,
+                  background: { r: 255, g: 255, b: 255, alpha: 1 }
+              }
+          })
+          .composite([{ input: logoBuffer, gravity: 'center' }])
+          .flatten({ background: { r: 255, g: 255, b: 255 } })
+          .png()
+          .toBuffer();
+
+          return new NextResponse(new Uint8Array(splashBuffer), {
+              headers: {
+                  'Content-Type': 'image/png',
+                  'Cache-Control': isLocal ? 'no-store' : 'public, max-age=31536000, immutable',
+              },
+          });
       } else if (iconType === 'favicon') {
           pipeline = pipeline.resize(32, 32, { 
               fit: 'contain', 

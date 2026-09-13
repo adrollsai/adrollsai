@@ -4,7 +4,9 @@
 
 @layer base {
   html, body {
-    @apply antialiased;
+    @apply antialiased bg-white text-slate-900;
+    background-color: #ffffff !important;
+    color-scheme: light;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     text-rendering: optimizeLegibility;

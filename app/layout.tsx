@@ -91,8 +91,38 @@ export async function generateMetadata(): Promise<Metadata> {
 import { CapacitorBridge } from "@/components/CapacitorBridge";
 import { CallTrackingListener } from "@/components/CallTrackingListener";
 
+const IOS_STARTUP_IMAGES = [
+  // iPhone 16 Pro Max, 15 Pro Max, 14 Pro Max (430x932 pt, @3x)
+  { w: 1290, h: 2796, media: "screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  // iPhone 16 Pro, 15 Pro, 14 Pro (393x852 pt, @3x)
+  { w: 1179, h: 2556, media: "screen and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  // iPhone 16 Plus, 15 Plus, 14 Plus, 13 Pro Max, 12 Pro Max (428x926 pt, @3x)
+  { w: 1284, h: 2778, media: "screen and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  // iPhone 16, 15, 14, 13, 13 Pro, 12, 12 Pro (390x844 pt, @3x)
+  { w: 1170, h: 2532, media: "screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  // iPhone 13 mini, 12 mini, 11 Pro, XS, X (375x812 pt, @3x)
+  { w: 1125, h: 2436, media: "screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  // iPhone 11 Pro Max, XS Max (414x896 pt, @3x)
+  { w: 1242, h: 2688, media: "screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  // iPhone 11, XR (414x896 pt, @2x)
+  { w: 828, h: 1792, media: "screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+  // iPhone 8 Plus, 7 Plus, 6s Plus (414x736 pt, @3x)
+  { w: 1242, h: 2208, media: "screen and (device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" },
+  // iPhone SE (2nd/3rd gen), 8, 7, 6s (375x667 pt, @2x)
+  { w: 750, h: 1334, media: "screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+  // 12.9" iPad Pro (1024x1366 pt, @2x)
+  { w: 2048, h: 2732, media: "screen and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+  // 11" iPad Pro, iPad Air (834x1194 pt, @2x)
+  { w: 1668, h: 2388, media: "screen and (device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+  // 10.9" iPad, 10.2" iPad (810x1080 pt, @2x)
+  { w: 1620, h: 2160, media: "screen and (device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" },
+];
+
 export const viewport: Viewport = {
-  themeColor: "#FFFFFF",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FFFFFF" },
+    { media: "(prefers-color-scheme: dark)", color: "#FFFFFF" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -146,22 +176,41 @@ export default async function RootLayout({
      manifestUrl = `/api/manifest?uid=${user.id}`;
   }
 
+  const getSplashUrl = (w: number, h: number) => {
+    const sep = splashUrl.includes('?') ? '&' : '?';
+    return `${splashUrl}${sep}w=${w}&h=${h}`;
+  };
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="bg-white" style={{ backgroundColor: '#FFFFFF', colorScheme: 'light' }} suppressHydrationWarning>
       <head>
         <link rel="manifest" href={manifestUrl} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Nobogent" />
+        <meta name="theme-color" content="#FFFFFF" />
+        <meta name="color-scheme" content="light" />
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              html, body {
+                background-color: #FFFFFF !important;
+                color-scheme: light !important;
+              }
+            `,
+          }}
+        />
         {/* Apple Touch Startup Images for major iOS device resolutions */}
-        <link rel="apple-touch-startup-image" href={splashUrl} />
-        <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" />
-        <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)" />
-        <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)" />
-        <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" />
-        <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" />
-        <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)" />
-        <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)" />
-        <link rel="apple-touch-startup-image" href={splashUrl} media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" />
+        <link rel="apple-touch-startup-image" href={getSplashUrl(1170, 2532)} />
+        {IOS_STARTUP_IMAGES.map((img, idx) => (
+          <link
+            key={idx}
+            rel="apple-touch-startup-image"
+            href={getSplashUrl(img.w, img.h)}
+            media={img.media}
+          />
+        ))}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -190,7 +239,7 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body className={inter.className} suppressHydrationWarning>
+      <body className={`${inter.className} bg-white text-slate-900`} style={{ backgroundColor: '#FFFFFF' }} suppressHydrationWarning>
         <CapacitorBridge />
         <CallTrackingListener />
         {children}
