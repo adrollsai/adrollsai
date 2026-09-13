@@ -1498,8 +1498,11 @@ CRITICAL CONVERSATIONAL RULES:
                                               phone: cleanFrom
                                             });
 
-                                            // Base URL for webview (use production app URL or current domain)
-                                            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
+                                            // Base URL for webview (strictly enforce public app.nobogent.com for mobile devices)
+                                            let baseUrl = 'https://app.nobogent.com';
+                                            if (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('local.') && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')) {
+                                              baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+                                            }
                                             const pickerUrl = `${baseUrl.replace(/\/$/, '')}/select-creatives?token=${token}`;
 
                                             const targetPhoneId = isMessageToOfficialBot
