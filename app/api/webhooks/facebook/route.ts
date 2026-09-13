@@ -911,8 +911,9 @@ You have tools to both QUERY and OPERATE the workspace:
 3. Automation Flows & Campaigns:
    - Use 'generate_campaign_flow' to build qualification workflows, calling scripts, and lead routing. It automatically registers and saves to Flow Builder and Qualification Questions!
    - Use 'publish_campaign_flow' to explicitly activate and persist a qualification flow to Flow Builder and Qualification Questions database.
-   - Use 'create_campaign_draft' to build Meta ad drafts.
-   - Use 'update_campaign_draft' to update budget (e.g. to ₹600 or any amount), target location/city, or campaign name on an existing draft whenever the user requests changes before launching.
+   - Use 'create_campaign_draft' to build Meta ad drafts (defaults to Click-to-WhatsApp ads).
+   - Use 'update_campaign_draft' to update budget (e.g. to ₹600 or any amount), campaign type (Click-to-WhatsApp vs Lead Form), target location/city, lead form ID, or campaign name on an existing draft.
+   - Use 'list_facebook_lead_forms' to fetch existing active lead forms on their Facebook page whenever the user chooses or asks about lead form campaigns.
    - Use 'attach_creative_to_campaign' to attach image/video creatives (sent directly on WhatsApp or from URL) to a campaign draft.
    - Use 'generate_ai_creative' to generate fresh high-converting AI marketing creatives (images) using Nobogent's AI engine.
    - Use 'list_user_creatives' to inspect and pick from previously created graphics/videos in the user's asset library.
@@ -923,6 +924,18 @@ ${(inboundMediaType === 'image' && inboundMediaUrl && !inboundMediaUrl.startsWit
     ? `\nCURRENT ATTACHED PHOTO:\nThe user has attached a photo/image directly with this WhatsApp message!\nPermanent Public Image URL: "${inboundMediaUrl}"\n- If they ask to use this photo as an ad creative (e.g. "ye creative use krlo", "use this creative", "attach to campaign"), call 'attach_creative_to_campaign' with this URL!\n- If they ask to add it to a product listing, call 'attach_image_to_inventory' with this URL!\n- If creating a new listing, pass it to 'add_inventory_item'.\n`
     : ''}
 CRITICAL CONVERSATIONAL RULES:
+- CAMPAIGN FORMAT SELECTION (CLICK-TO-WHATSAPP BY DEFAULT):
+  * When discussing or setting up a campaign, ALWAYS explain the two formats to the user and clarify what they want:
+    1. *🟢 Click-to-WhatsApp Ads (Recommended & Default)*: Leads click the ad and instantly land in your WhatsApp chat, where Nobogent AI immediately engages, qualifies, and books site visits.
+    2. *📋 Instant Lead Form Ads*: Leads fill out a contact form directly inside Facebook/Instagram.
+  * Unless the user specifically asks for a lead form, ALWAYS DEFAULT to Click-to-WhatsApp ('whatsapp_chat').
+- LEAD FORM INQUIRY (IF USER CHOOSES INSTANT FORM):
+  * If the user chooses Instant Form (or says "lead form chalana hai"):
+    1. Call 'list_facebook_lead_forms' to see what active forms already exist on their Facebook page.
+    2. Then ask the user:
+       - Whether they want to reuse one of their existing forms (list the active form names found), OR
+       - Create a new form — and ask what specific questions they want to include (e.g. Name, Phone, Email + BHK preference, Budget, Location).
+    3. Update the draft with their choice ('lead_form_id' or 'custom_questions') using 'update_campaign_draft'.
 - ALWAYS SOLICIT CREATIVES: When drafting or discussing a campaign, ALWAYS proactively ask the user about their creative:
   * Example: "Do you have an ad creative (photo or video) you'd like to use? You can send it directly here in WhatsApp, choose from your library, or I can generate a new AI image creative for you."
 - NEVER claim that you cannot upload creatives to Meta campaigns, or that the user has to do it manually from the dashboard. You have 'attach_creative_to_campaign' and 'launch_meta_campaign'!
@@ -1475,21 +1488,78 @@ CRITICAL CONVERSATIONAL RULES:
                                           }
                                         }
                                       }),
+                                      list_facebook_lead_forms: tool({
+                                        description: "Lists existing Meta Instant Lead Forms from the user's connected Facebook Page. Call this whenever the user chooses an instant lead form campaign or asks what lead forms already exist.",
+                                        inputSchema: z.object({}),
+                                        execute: async () => {
+                                          try {
+                                            const pageId = (matchedProfile as any).selected_page_id;
+                                            const pageToken = (matchedProfile as any).selected_page_token || matchedProfile.facebook_token;
+                                            if (!pageId || !pageToken) {
+                                              return { success: false, error: "Facebook Page is not connected in settings." };
+                                            }
+
+                                            const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/leadgen_forms?fields=id,name,status,questions{id,label,key,type}&limit=10&access_token=${pageToken}`);
+                                            const data = await res.json();
+                                            if (!res.ok || data.error) {
+                                              return { success: false, error: data.error?.message || "Failed to fetch lead forms from Facebook." };
+                                            }
+
+                                            const forms = (data.data || []).map((f: any) => ({
+                                              id: f.id,
+                                              name: f.name,
+                                              status: f.status,
+                                              questions: (f.questions || []).map((q: any) => q.label || q.key || q.type)
+                                            }));
+
+                                            return {
+                                              success: true,
+                                              forms,
+                                              count: forms.length,
+                                              message: forms.length > 0
+                                                ? `Found ${forms.length} active lead form(s) on your Facebook Page. Ask the user if they'd like to use one of these or create a new custom form.`
+                                                : "No existing lead forms found on your Facebook Page. Ask the user what questions they want to include in their new lead form."
+                                            };
+                                          } catch (e: any) {
+                                            return { success: false, error: e.message };
+                                          }
+                                        }
+                                      }),
                                       create_campaign_draft: tool({
-                                        description: "Creates a draft Meta ad campaign. ALWAYS proactively ask the user about their ad creative (or accept creative_url if provided). ONLY call this when daily budget, target location, and campaign name are provided.",
+                                        description: "Creates a draft Meta ad campaign. Ask user whether they want Click-to-WhatsApp (DEFAULT & RECOMMENDED) or Instant Lead Form. ONLY call this when daily budget, target location, and campaign name are provided.",
                                         inputSchema: z.object({
                                           campaign_name: z.string().describe("Name of the campaign"),
-                                          daily_budget_inr: z.number().describe("Daily budget in INR (e.g. 1500)"),
+                                          daily_budget_inr: z.number().describe("Daily budget in INR (e.g. 1500 or 600)"),
                                           target_city: z.string().describe("City or locality to target"),
+                                          campaign_type: z.enum(['whatsapp_chat', 'instant_form']).default('whatsapp_chat').describe("Type of campaign: 'whatsapp_chat' for Click-to-WhatsApp (DEFAULT & RECOMMENDED), or 'instant_form' for on-Facebook Lead Form."),
+                                          lead_form_id: z.string().optional().describe("ID of existing Meta lead form to use if campaign_type is 'instant_form'"),
+                                          custom_questions: z.array(z.string()).optional().describe("List of custom questions to ask in the form if creating a new lead form (e.g. ['2BHK or 3BHK?', 'Budget range?'])"),
                                           property_id: z.string().optional().describe("UUID of property from inventory"),
-                                          objective: z.string().optional().describe("Campaign objective, e.g. 'OUTCOME_LEADS' or 'MESSAGES'"),
+                                          objective: z.string().optional().describe("Campaign objective, e.g. 'OUTCOME_ENGAGEMENT' for WhatsApp or 'OUTCOME_LEADS' for instant form"),
                                           creative_url: z.string().optional().describe("Optional direct image or video URL for the ad creative")
                                         }),
-                                        execute: async (args: { campaign_name: string; daily_budget_inr: number; target_city: string; property_id?: string; objective?: string; creative_url?: string }) => {
-                                          console.log(`🤖 [TOOL: create_campaign_draft] Creating draft campaign: "${args.campaign_name}"`);
+                                        execute: async (args: {
+                                          campaign_name: string;
+                                          daily_budget_inr: number;
+                                          target_city: string;
+                                          campaign_type?: 'whatsapp_chat' | 'instant_form';
+                                          lead_form_id?: string;
+                                          custom_questions?: string[];
+                                          property_id?: string;
+                                          objective?: string;
+                                          creative_url?: string;
+                                        }) => {
+                                          const selectedType = args.campaign_type || 'whatsapp_chat';
+                                          const selectedObjective = args.objective || (selectedType === 'whatsapp_chat' ? 'OUTCOME_ENGAGEMENT' : 'OUTCOME_LEADS');
+                                          console.log(`🤖 [TOOL: create_campaign_draft] Creating draft campaign: "${args.campaign_name}" (${selectedType})`);
                                           try {
                                             const initialCreative = args.creative_url || (isVisualMedia && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
                                             const creativeList = initialCreative ? [initialCreative] : [];
+
+                                            let customQuestionsStr: string | null = null;
+                                            if (args.custom_questions && args.custom_questions.length > 0) {
+                                              customQuestionsStr = JSON.stringify(args.custom_questions.map(q => ({ type: 'CUSTOM', label: q })));
+                                            }
 
                                             const { data: job, error } = await supabaseAdmin
                                               .from('campaign_jobs')
@@ -1500,10 +1570,13 @@ CRITICAL CONVERSATIONAL RULES:
                                                 payload: {
                                                   campaign_name: args.campaign_name,
                                                   daily_budget: args.daily_budget_inr,
+                                                  dailyBudget: args.daily_budget_inr,
                                                   target_locations: [args.target_city],
                                                   property_id: args.property_id || null,
-                                                  objective: args.objective || 'OUTCOME_LEADS',
-                                                  campaignType: 'instant_form',
+                                                  objective: selectedObjective,
+                                                  campaignType: selectedType,
+                                                  leadFormId: args.lead_form_id || null,
+                                                  customQuestionsStr: customQuestionsStr,
                                                   creative_urls: creativeList,
                                                   creativeUrls: creativeList
                                                 }
@@ -1521,12 +1594,12 @@ CRITICAL CONVERSATIONAL RULES:
                                               draft_id: job.id,
                                               campaign_name: args.campaign_name,
                                               daily_budget: args.daily_budget_inr,
+                                              campaign_type: selectedType,
+                                              lead_form_id: args.lead_form_id || null,
                                               has_creative: creativeList.length > 0,
                                               creative_url: initialCreative || null,
                                               status: 'draft',
-                                              message: creativeList.length > 0
-                                                ? `Campaign draft created with attached creative! Present summary and ask user: reply 'Confirm' to launch to Meta Ads Manager.`
-                                                : `Campaign draft created in workspace. Proactively ask user for their ad creative: they can send a photo/video directly on WhatsApp, pick from their library, or ask the AI to generate a creative.`
+                                              message: `Campaign draft created as ${selectedType === 'whatsapp_chat' ? 'Click-to-WhatsApp (Messages)' : 'Instant Lead Form'}! ${creativeList.length > 0 ? "Creative is attached. Present summary and ask user to reply 'Confirm' to launch." : "Proactively ask user for their ad creative."}`
                                             };
                                           } catch (err: any) {
                                             return { success: false, error: err.message };
@@ -1534,15 +1607,27 @@ CRITICAL CONVERSATIONAL RULES:
                                         }
                                       }),
                                       update_campaign_draft: tool({
-                                        description: "Updates an existing draft campaign's parameters such as daily budget, target location/city, campaign name, or objective. Call this whenever the user asks to change or update their budget (e.g. 'budget 600 kar do', 'change budget to 600'), change the city/location, or rename the campaign draft BEFORE launching.",
+                                        description: "Updates an existing draft campaign's parameters such as daily budget, target location/city, campaign type ('whatsapp_chat' vs 'instant_form'), lead form ID, custom questions, campaign name, or objective. Call this whenever the user asks to change or update their budget (e.g. 'budget 600 kar do'), switch between WhatsApp and Lead Form, choose an existing form, add questions, or change the city BEFORE launching.",
                                         inputSchema: z.object({
                                           job_id: z.string().optional().describe("UUID of the campaign job from campaign_jobs. Defaults to the user's latest draft campaign if omitted."),
                                           daily_budget_inr: z.number().optional().describe("New daily budget in INR (e.g. 600 or 1500)"),
                                           target_city: z.string().optional().describe("New target city or locality (e.g. 'Pune' or 'Delhi NCR')"),
+                                          campaign_type: z.enum(['whatsapp_chat', 'instant_form']).optional().describe("Switch type: 'whatsapp_chat' (Click-to-WhatsApp) or 'instant_form' (Instant Lead Form)"),
+                                          lead_form_id: z.string().optional().describe("ID of existing Meta lead form to use if campaign_type is 'instant_form'"),
+                                          custom_questions: z.array(z.string()).optional().describe("Custom questions to ask in the lead form (e.g. ['Preferred unit size?', 'Budget range?'])"),
                                           campaign_name: z.string().optional().describe("New name for the campaign"),
-                                          objective: z.string().optional().describe("Campaign objective, e.g. 'OUTCOME_LEADS' or 'MESSAGES'")
+                                          objective: z.string().optional().describe("Campaign objective, e.g. 'OUTCOME_LEADS' or 'OUTCOME_ENGAGEMENT'")
                                         }),
-                                        execute: async (args: { job_id?: string; daily_budget_inr?: number; target_city?: string; campaign_name?: string; objective?: string }) => {
+                                        execute: async (args: {
+                                          job_id?: string;
+                                          daily_budget_inr?: number;
+                                          target_city?: string;
+                                          campaign_type?: 'whatsapp_chat' | 'instant_form';
+                                          lead_form_id?: string;
+                                          custom_questions?: string[];
+                                          campaign_name?: string;
+                                          objective?: string;
+                                        }) => {
                                           try {
                                             let targetJobId = args.job_id;
                                             if (!targetJobId) {
@@ -1572,12 +1657,23 @@ CRITICAL CONVERSATIONAL RULES:
                                             }
 
                                             const existingPayload = currentJob.payload || {};
+                                            const newType = args.campaign_type || existingPayload.campaignType || 'whatsapp_chat';
+                                            const newObjective = args.objective || (args.campaign_type ? (args.campaign_type === 'whatsapp_chat' ? 'OUTCOME_ENGAGEMENT' : 'OUTCOME_LEADS') : existingPayload.objective);
+
+                                            let newCustomQuestionsStr = existingPayload.customQuestionsStr;
+                                            if (args.custom_questions && args.custom_questions.length > 0) {
+                                              newCustomQuestionsStr = JSON.stringify(args.custom_questions.map(q => ({ type: 'CUSTOM', label: q })));
+                                            }
+
                                             const updatedPayload = {
                                               ...existingPayload,
                                               ...(args.daily_budget_inr ? { daily_budget: args.daily_budget_inr, dailyBudget: args.daily_budget_inr } : {}),
                                               ...(args.target_city ? { target_locations: [args.target_city] } : {}),
                                               ...(args.campaign_name ? { campaign_name: args.campaign_name } : {}),
-                                              ...(args.objective ? { objective: args.objective } : {})
+                                              campaignType: newType,
+                                              objective: newObjective,
+                                              ...(args.lead_form_id !== undefined ? { leadFormId: args.lead_form_id } : {}),
+                                              ...(newCustomQuestionsStr !== undefined ? { customQuestionsStr: newCustomQuestionsStr } : {})
                                             };
 
                                             const { error: updateErr } = await supabaseAdmin
@@ -1596,9 +1692,11 @@ CRITICAL CONVERSATIONAL RULES:
                                               success: true,
                                               job_id: targetJobId,
                                               campaign_name: updatedPayload.campaign_name,
+                                              campaign_type: updatedPayload.campaignType,
                                               daily_budget: updatedPayload.daily_budget,
+                                              lead_form_id: updatedPayload.leadFormId || null,
                                               target_locations: updatedPayload.target_locations,
-                                              message: `Campaign draft updated successfully! Budget is now ₹${updatedPayload.daily_budget || '1500'}/day, Location: ${Array.isArray(updatedPayload.target_locations) ? updatedPayload.target_locations.join(', ') : updatedPayload.target_locations}.`
+                                              message: `Campaign draft updated successfully! Type: ${updatedPayload.campaignType === 'whatsapp_chat' ? 'Click-to-WhatsApp' : 'Instant Lead Form'}, Budget: ₹${updatedPayload.daily_budget || '1500'}/day, Location: ${Array.isArray(updatedPayload.target_locations) ? updatedPayload.target_locations.join(', ') : updatedPayload.target_locations}.`
                                             };
                                           } catch (e: any) {
                                             return { success: false, error: e.message };
@@ -1949,6 +2047,7 @@ CRITICAL CONVERSATIONAL RULES:
                                           }
 
                                           const targetBudget = args.daily_budget_inr || payload.daily_budget || payload.dailyBudget || 1500;
+                                          const selectedType = payload.campaignType || 'whatsapp_chat';
                                           const fullJobPayload = {
                                             ...payload,
                                             facebookToken: fbToken,
@@ -1961,7 +2060,10 @@ CRITICAL CONVERSATIONAL RULES:
                                             target_locations: payload.target_locations || ['Delhi NCR'],
                                             creativeUrls: creativeList,
                                             campaign_name: payload.campaign_name || 'Nobogent Campaign',
-                                            campaignType: payload.campaignType || 'instant_form',
+                                            campaignType: selectedType,
+                                            objective: selectedType === 'whatsapp_chat' ? 'OUTCOME_ENGAGEMENT' : (payload.objective || 'OUTCOME_LEADS'),
+                                            leadFormId: payload.leadFormId || null,
+                                            customQuestionsStr: payload.customQuestionsStr || null,
                                             adCopy: payload.adCopy || {
                                               headline: 'AI Sales Team for Real Estate',
                                               primary_text: 'Stop wasting ad spend on cold leads. Automate your sales with Nobogent.',
