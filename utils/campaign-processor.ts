@@ -647,9 +647,11 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                         } 
                     };
                     locationsArray.forEach((locData: any) => {
-                        const loc = locData.location;
+                        const loc = locData.location || locData;
                         if (loc && loc.key) {
-                            if (loc.type === 'city') targetingConfig.geo_locations.cities.push({ key: loc.key, radius: locData.radius || 20, distance_unit: 'kilometer' });
+                            const rad = locData.radius || loc.radius || 25;
+                            const finalRadius = Math.max(17, Math.min(80, rad));
+                            if (loc.type === 'city') targetingConfig.geo_locations.cities.push({ key: loc.key, radius: finalRadius, distance_unit: 'kilometer' });
                             else if (loc.type === 'region') targetingConfig.geo_locations.regions.push({ key: loc.key });
                             else if (loc.type === 'country') targetingConfig.geo_locations.countries.push(loc.country_code || loc.key);
                             else if (loc.type === 'zip') targetingConfig.geo_locations.zips.push({ key: loc.key });
@@ -691,14 +693,34 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 const citiesFound: any[] = [];
                 for (const locName of rawLocs) {
                     try {
-                        const cleanQuery = locName.replace(/\bncr\b/i, '').trim() || locName.trim();
-                        const searchRes = await fetch(`${FB_MARKETING_URL}/search?type=adgeolocation&q=${encodeURIComponent(cleanQuery)}&location_types=["city"]&access_token=${facebookToken}`);
-                        const searchData = await searchRes.json();
-                        if (searchData.data && searchData.data.length > 0) {
-                            const match = searchData.data.find((c: any) => c.country_code === 'IN') || searchData.data[0];
-                            if (match?.key && !citiesFound.some((c: any) => c.key === match.key)) {
-                                citiesFound.push({ key: match.key, radius: 25, distance_unit: 'kilometer' });
-                            }
+                        // Extract radius if specified in string e.g. "Chandigarh (17 km)" -> 17
+                        const radiusMatch = locName.match(/\((\d+)\s*(?:km|kms|kilometer)?\)/i);
+                        const parsedRadius = radiusMatch ? parseInt(radiusMatch[1], 10) : 25;
+                        const radiusVal = Math.max(17, Math.min(80, parsedRadius));
+
+                        // Strip radius and extra words for pure city lookup on Meta
+                        let cleanQuery = locName.replace(/\(.*?\)/g, '').replace(/\bncr\b/i, '').trim() || locName.trim();
+                        
+                        // Handle common Indian aliases
+                        if (cleanQuery.toLowerCase() === 'gurgaon') cleanQuery = 'Gurugram';
+                        else if (cleanQuery.toLowerCase() === 'bombay') cleanQuery = 'Mumbai';
+                        else if (cleanQuery.toLowerCase() === 'calcutta') cleanQuery = 'Kolkata';
+                        else if (cleanQuery.toLowerCase() === 'bangalore') cleanQuery = 'Bengaluru';
+
+                        let searchRes = await fetch(`${FB_MARKETING_URL}/search?type=adgeolocation&q=${encodeURIComponent(cleanQuery)}&location_types=["city"]&access_token=${facebookToken}`);
+                        let searchData = await searchRes.json();
+                        let match = searchData.data?.find((c: any) => c.country_code === 'IN') || searchData.data?.[0];
+
+                        // If no match and query has formal prefix/suffix, strip and retry e.g. "Sri Muktsar Sahib" -> "Muktsar"
+                        if (!match && /^(?:sri|shri)\s+/i.test(cleanQuery)) {
+                            const retryQuery = cleanQuery.replace(/^(?:sri|shri)\s+/i, '').replace(/\s+(?:sahib|district|city)$/i, '').trim();
+                            const retryRes = await fetch(`${FB_MARKETING_URL}/search?type=adgeolocation&q=${encodeURIComponent(retryQuery)}&location_types=["city"]&access_token=${facebookToken}`);
+                            const retryData = await retryRes.json();
+                            match = retryData.data?.find((c: any) => c.country_code === 'IN') || retryData.data?.[0];
+                        }
+
+                        if (match?.key && !citiesFound.some((c: any) => c.key === match.key)) {
+                            citiesFound.push({ key: match.key, radius: radiusVal, distance_unit: 'kilometer' });
                         }
                     } catch (geoErr) {
                         logToFile(`Geo search error for ${locName}:`, geoErr);
@@ -712,7 +734,11 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                             location_types: ['home']
                         }
                     };
+                    delete targetingConfig.geo_locations.countries;
                     logToFile("Successfully resolved city targeting from text:", citiesFound);
+                } else {
+                    logToFile(`ERROR: Failed to resolve any Meta city for: ${rawLocs.join(', ')}`);
+                    throw new Error(`Could not resolve Meta targeting for specified locations: ${rawLocs.join(', ')}. Please use the location picker to select exact cities.`);
                 }
             }
         }

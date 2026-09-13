@@ -2168,7 +2168,7 @@ CRITICAL CONVERSATIONAL RULES:
                                             selected_page_token: (matchedProfile as any).selected_page_token || undefined,
                                             dailyBudget: targetBudget,
                                             daily_budget: targetBudget,
-                                            metaLocationsStr: Array.isArray(payload.target_locations) ? payload.target_locations.join(', ') : (payload.target_locations || 'Delhi NCR'),
+                                            metaLocationsStr: payload.metaLocationsStr || (Array.isArray(payload.target_locations) ? payload.target_locations.join(', ') : (payload.target_locations || 'Delhi NCR')),
                                             target_locations: payload.target_locations || ['Delhi NCR'],
                                             creativeUrls: creativeList,
                                             campaign_name: payload.campaign_name || 'Nobogent Campaign',
