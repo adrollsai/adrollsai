@@ -5877,7 +5877,6 @@ export default function AdsPage() {
                 disabled={
                     isSubmitting || 
                     checkingSanity ||
-                    !selectedProduct ||
                     adForm.metaLocations.length === 0 || 
                     selectedCreatives.length === 0 || 
                     !accountStatus ||
