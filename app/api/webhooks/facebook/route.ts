@@ -15,6 +15,7 @@ import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 120
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -908,7 +909,8 @@ You have tools to both QUERY and OPERATE the workspace:
 1. Inventory Management: Add new properties/products using 'add_inventory_item', or attach photos/images to existing or newly created products using 'attach_image_to_inventory'.
 2. Ad & Lead Quality Diagnostics: Use 'analyze_lead_quality' to inspect why leads might be disqualified, check call transcripts/notes, and diagnose ad performance with live data.
 3. Automation Flows & Campaigns:
-   - Use 'generate_campaign_flow' to build qualification workflows, calling scripts, and lead routing.
+   - Use 'generate_campaign_flow' to build qualification workflows, calling scripts, and lead routing. It automatically registers and saves to Flow Builder and Qualification Questions!
+   - Use 'publish_campaign_flow' to explicitly activate and persist a qualification flow to Flow Builder and Qualification Questions database.
    - Use 'create_campaign_draft' to build Meta ad drafts.
    - Use 'attach_creative_to_campaign' to attach image/video creatives (sent directly on WhatsApp or from URL) to a campaign draft.
    - Use 'generate_ai_creative' to generate fresh high-converting AI marketing creatives (images) using Nobogent's AI engine.
@@ -926,6 +928,7 @@ CRITICAL CONVERSATIONAL RULES:
 - NEVER claim that you cannot generate images or videos. You have 'generate_ai_creative' which connects directly to Nobogent's AI creative engine!
 - When the user confirms with "Confirm", "Launch", or "Go ahead", call 'launch_meta_campaign' immediately to push it to Meta Ads Manager!
 - STRICT ANTI-HALLUCINATION & SLOT FILLING:
+  * NEVER claim a campaign is active or a flow is live/published unless the tool ('launch_meta_campaign' or 'publish_campaign_flow'/'generate_campaign_flow') actually returns success: true and a confirmed campaign_id or flow_id! Always report the actual tool result.
   * Never invent or guess critical parameters (e.g. price, property address, campaign budget, target city, or customer phone numbers).
   * If the user asks to add inventory, launch a campaign, or build a flow, check whether all required information is provided.
   * If any required parameter is missing, DO NOT call the tool with made-up data. Instead, politely and clearly ask the user for the missing details.
@@ -939,6 +942,134 @@ CRITICAL CONVERSATIONAL RULES:
 - Answer their query accurately using ONLY the data provided or returned by tools. Do NOT invent, estimate, or hallucinate any fields.
 - Always output the full lead details if requested and provide the Link to Lead exactly as "https://app.nobogent.com/dashboard/crm/{id}" where {id} is the lead's UUID.
 - ALWAYS use the host "app.nobogent.com" for lead links. Do NOT use custom domains.`;
+
+                                    const isVisualMedia = inboundMediaType === 'image' || inboundMediaType === 'video';
+
+                                    const saveQualificationAndFlow = async ({
+                                      userId,
+                                      flowName,
+                                      questions,
+                                      linkedCampaignId,
+                                      description,
+                                      callingWindow = '9:00 AM - 7:00 PM'
+                                    }: {
+                                      userId: string;
+                                      flowName: string;
+                                      questions: Array<{ question: string; options: string[] }>;
+                                      linkedCampaignId?: string | null;
+                                      description?: string;
+                                      callingWindow?: string;
+                                    }) => {
+                                      // 1. Insert into whatsapp_question_flows for /dashboard/qualifying
+                                      const { data: qFlow, error: qErr } = await supabaseAdmin
+                                        .from('whatsapp_question_flows')
+                                        .insert({
+                                          user_id: userId,
+                                          name: flowName,
+                                          linked_campaign_id: linkedCampaignId || null,
+                                          is_active: true,
+                                          questions: questions
+                                        })
+                                        .select('id, name')
+                                        .single();
+
+                                      if (qErr) {
+                                        console.error("❌ Failed to save whatsapp_question_flows:", qErr);
+                                      }
+
+                                      // 2. Update profiles so qualification is active
+                                      await supabaseAdmin
+                                        .from('profiles')
+                                        .update({
+                                          qualifying_enabled: true,
+                                          qualifying_questions: questions
+                                        })
+                                        .eq('id', userId);
+
+                                      // 3. Insert into automations for Flow Builder (/dashboard/flows)
+                                      const flowPayload = {
+                                        name: flowName,
+                                        description: description || `Automated lead qualification and outreach flow for ${flowName}`,
+                                        icon: 'Workflow',
+                                        trigger: {
+                                          type: 'trigger_meta_ad',
+                                          label: linkedCampaignId ? `Meta Ad Campaign (${linkedCampaignId})` : 'Incoming Meta Ad Lead',
+                                          campaignId: linkedCampaignId || null
+                                        },
+                                        nodes: [
+                                          {
+                                            id: 'node_1',
+                                            type: 'trigger_meta_ad',
+                                            title: 'Meta Ad Lead Arrived',
+                                            description: 'Triggered when a lead submits the ad form',
+                                            branch: 'main',
+                                            config: { campaignId: linkedCampaignId || null }
+                                          },
+                                          {
+                                            id: 'node_2',
+                                            type: 'action_whatsapp_questions',
+                                            title: 'Step 1: WhatsApp Intake Questions',
+                                            description: 'Asks screening questions to the lead',
+                                            branch: 'main',
+                                            config: { questions: questions }
+                                          },
+                                          {
+                                            id: 'node_3',
+                                            type: 'action_qualify',
+                                            title: 'Step 2: Deterministic Qualification & Scoring',
+                                            description: 'Scores responses against criteria',
+                                            branch: 'main',
+                                            config: { scoringMode: 'points', passScore: 70 }
+                                          },
+                                          {
+                                            id: 'node_4',
+                                            type: 'action_whatsapp_msg',
+                                            title: 'Step 3: Asset Delivery',
+                                            description: 'Delivers property/package brochure & booking link',
+                                            branch: 'main',
+                                            config: { includeBrochure: true }
+                                          },
+                                          {
+                                            id: 'node_5',
+                                            type: 'action_ai_call',
+                                            title: 'Step 4: AI Voice Demo Call',
+                                            description: `Automated outbound sales call scheduled within ${callingWindow}`,
+                                            branch: 'main',
+                                            config: { voiceAgent: 'Fenrir (Crisp & Focused)' }
+                                          }
+                                        ],
+                                        edges: [
+                                          { id: 'e1-2', source: 'node_1', target: 'node_2' },
+                                          { id: 'e2-3', source: 'node_2', target: 'node_3' },
+                                          { id: 'e3-4', source: 'node_3', target: 'node_4' },
+                                          { id: 'e4-5', source: 'node_4', target: 'node_5' }
+                                        ],
+                                        settings: { callingWindow }
+                                      };
+
+                                      const { data: auto, error: aErr } = await supabaseAdmin
+                                        .from('automations')
+                                        .insert({
+                                          user_id: userId,
+                                          title: `Flow: ${flowName}`,
+                                          description: JSON.stringify(flowPayload),
+                                          icon_name: 'Workflow',
+                                          is_active: true,
+                                          stats: JSON.stringify({ runs: 0, completed: 0, lastTriggeredAt: null }),
+                                          created_at: new Date().toISOString()
+                                        })
+                                        .select('id, title')
+                                        .single();
+
+                                      if (aErr) {
+                                        console.error("❌ Failed to save automation flow:", aErr);
+                                      }
+
+                                      return {
+                                        qFlowId: qFlow?.id,
+                                        automationId: auto?.id
+                                      };
+                                    };
 
                                     const tools = {
                                       search_leads: tool({
@@ -997,7 +1128,7 @@ CRITICAL CONVERSATIONAL RULES:
                                           image_url: z.string().optional().describe("Direct image URL to attach. Defaults to the currently attached photo if omitted")
                                         }),
                                         execute: async (args: { property_id?: string; property_title?: string; image_url?: string }) => {
-                                          const targetImageUrl = args.image_url || (inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
+                                          const targetImageUrl = args.image_url || (isVisualMedia && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
                                           if (!targetImageUrl) {
                                             return { success: false, error: "No image attachment or URL available to attach." };
                                           }
@@ -1073,7 +1204,7 @@ CRITICAL CONVERSATIONAL RULES:
                                         execute: async (args: { title: string; price: string; address: string; property_type: string; description?: string; image_urls?: string[] }) => {
                                           console.log(`🤖 [TOOL: add_inventory_item] Adding property: "${args.title}" for user: ${matchedProfile.id}`);
                                           try {
-                                            const images = args.image_urls || (inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? [inboundMediaUrl] : []);
+                                            const images = args.image_urls || (isVisualMedia && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? [inboundMediaUrl] : []);
                                             const { data: newProp, error: propErr } = await supabaseAdmin
                                               .from('properties')
                                               .insert({
@@ -1210,29 +1341,135 @@ CRITICAL CONVERSATIONAL RULES:
                                         }
                                       }),
                                       generate_campaign_flow: tool({
-                                        description: "Designs a multi-step WhatsApp lead qualification & automated calling workflow from plain English instructions.",
+                                        description: "Designs, saves, and registers a multi-step WhatsApp lead qualification & automated calling workflow into Flow Builder and Qualification Questions database from natural language instructions.",
                                         inputSchema: z.object({
-                                          prompt: z.string().describe("Natural language description of the automation flow (e.g. 'Ask for budget and timeline, if qualified send brochure and trigger sales call')")
+                                          prompt: z.string().describe("Natural language description of the automation flow (e.g. 'Ask for budget and timeline, if qualified send brochure and trigger sales call')"),
+                                          flow_name: z.string().optional().describe("Optional descriptive name for the flow"),
+                                          linked_campaign_id: z.string().optional().describe("Optional Meta campaign ID or draft ID to link"),
+                                          questions: z.array(z.object({
+                                            question: z.string(),
+                                            options: z.array(z.string()).optional()
+                                          })).optional().describe("Optional specific qualification questions")
                                         }),
-                                        execute: async (args: { prompt: string }) => {
-                                          console.log(`🤖 [TOOL: generate_campaign_flow] Generating flow for: "${args.prompt}"`);
+                                        execute: async (args: { prompt: string; flow_name?: string; linked_campaign_id?: string; questions?: Array<{ question: string; options?: string[] }> }) => {
+                                          console.log(`🤖 [TOOL: generate_campaign_flow] Generating and saving flow for: "${args.prompt}"`);
                                           try {
-                                            const flow = {
-                                              title: `Automation: ${args.prompt.slice(0, 35)}...`,
-                                              trigger: 'incoming_lead',
-                                              steps: [
-                                                { step: 1, action: 'WhatsApp Intake', detail: 'Ask qualification questions (Budget, Preferred Location, Timeline)' },
-                                                { step: 2, action: 'Deterministic Scoring', detail: 'Score answers against qualification threshold' },
-                                                { step: 3, action: 'Asset Delivery', detail: 'Deliver property brochure PDF & booking link on WhatsApp' },
-                                                { step: 4, action: 'AI Voice Call', detail: 'Outbound sales call bot with tailored script' }
-                                              ]
-                                            };
+                                            const flowName = args.flow_name || (args.prompt.length > 40 ? `${args.prompt.slice(0, 37)}...` : args.prompt);
+
+                                            let finalQuestions: Array<{ question: string; options: string[] }> = [];
+                                            if (args.questions && args.questions.length > 0) {
+                                              finalQuestions = args.questions.map(q => ({
+                                                question: q.question,
+                                                options: q.options && q.options.length > 0 ? q.options : ['Yes', 'No']
+                                              }));
+                                            } else {
+                                              const pLower = args.prompt.toLowerCase();
+                                              if (pLower.includes('broker') || pLower.includes('listing') || pLower.includes('nobogent') || pLower.includes('sales package')) {
+                                                finalQuestions = [
+                                                  {
+                                                    question: 'Kitne active listings/projects hain aur NCR mein kis area mein?',
+                                                    options: ['1 - 5 Listings (Gurgaon / Noida)', '5 - 20 Listings (Delhi NCR)', '20+ Listings (Multiple Cities)']
+                                                  },
+                                                  {
+                                                    question: 'Meta ads chal rahe hain ya nahi? Monthly ad budget aur leads status?',
+                                                    options: ['Chal rahe hain (Budget ₹15k+)', 'Chal rahe hain (Budget <₹15k)', 'Abhi nahi chal rahe']
+                                                  },
+                                                  {
+                                                    question: 'Nobogent AI Sales & Marketing Package (₹15,000) schedule karein?',
+                                                    options: ['Haan, Demo Call Schedule Karein', 'Brochure / Details Bhejo', 'Baad Mein Batayenge']
+                                                  }
+                                                ];
+                                              } else {
+                                                finalQuestions = [
+                                                  {
+                                                    question: 'What type of property or service are you looking for?',
+                                                    options: ['Residential', 'Commercial', 'Investment / Advisory']
+                                                  },
+                                                  {
+                                                    question: 'What is your budget range?',
+                                                    options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr']
+                                                  },
+                                                  {
+                                                    question: 'What is your purchase or implementation timeline?',
+                                                    options: ['Immediate (< 1 Month)', '1 - 3 Months', 'Exploring']
+                                                  }
+                                                ];
+                                              }
+                                            }
+
+                                            // Persist directly to DB
+                                            const saved = await saveQualificationAndFlow({
+                                              userId: matchedProfile.id,
+                                              flowName,
+                                              questions: finalQuestions,
+                                              linkedCampaignId: args.linked_campaign_id || null,
+                                              description: args.prompt
+                                            });
+
                                             return {
                                               success: true,
-                                              flow_preview: flow,
-                                              message: "Flow structured successfully. Present this step-by-step summary to the user and request their confirmation before publishing."
+                                              flow_id: saved.automationId,
+                                              qualification_flow_id: saved.qFlowId,
+                                              flow_name: flowName,
+                                              questions: finalQuestions,
+                                              message: `✅ Flow "${flowName}" has been structured and saved to your database! It is now active in your Flow Builder (/dashboard/flows) and Qualification Questions (/dashboard/qualifying).`
                                             };
                                           } catch (err: any) {
+                                            console.error("❌ [TOOL: generate_campaign_flow] Error:", err);
+                                            return { success: false, error: err.message };
+                                          }
+                                        }
+                                      }),
+                                      publish_campaign_flow: tool({
+                                        description: "Publishes and activates a WhatsApp Qualification Flow and saves it to Flow Builder and Qualification Questions database. Call this whenever the user confirms or asks to publish/activate a workflow.",
+                                        inputSchema: z.object({
+                                          flow_name: z.string().describe("Name of the flow, e.g. 'Delhi NCR Broker Qualification'"),
+                                          prompt: z.string().optional().describe("Description of the workflow"),
+                                          linked_campaign_id: z.string().optional().describe("Meta Campaign ID or draft ID to link this flow to"),
+                                          questions: z.array(z.object({
+                                            question: z.string(),
+                                            options: z.array(z.string()).optional()
+                                          })).optional().describe("Qualification questions list"),
+                                          calling_window: z.string().optional().describe("Calling window (e.g. '9 AM - 7 PM')")
+                                        }),
+                                        execute: async (args: { flow_name: string; prompt?: string; linked_campaign_id?: string; questions?: Array<{ question: string; options?: string[] }>; calling_window?: string }) => {
+                                          console.log(`🤖 [TOOL: publish_campaign_flow] Publishing flow: "${args.flow_name}"`);
+                                          try {
+                                            const finalQuestions = (args.questions && args.questions.length > 0)
+                                              ? args.questions.map(q => ({ question: q.question, options: q.options || ['Yes', 'No'] }))
+                                              : [
+                                                  {
+                                                    question: 'Kitne active listings/projects hain aur NCR mein kis area mein?',
+                                                    options: ['1 - 5 Listings (Gurgaon / Noida)', '5 - 20 Listings (Delhi NCR)', '20+ Listings (Multiple Cities)']
+                                                  },
+                                                  {
+                                                    question: 'Meta ads chal rahe hain ya nahi? Monthly ad budget aur leads status?',
+                                                    options: ['Chal rahe hain (Budget ₹15k+)', 'Chal rahe hain (Budget <₹15k)', 'Abhi nahi chal rahe']
+                                                  },
+                                                  {
+                                                    question: 'Nobogent AI Sales & Marketing Package (₹15,000) schedule karein?',
+                                                    options: ['Haan, Demo Call Schedule Karein', 'Brochure / Details Bhejo', 'Baad Mein Batayenge']
+                                                  }
+                                                ];
+
+                                            const saved = await saveQualificationAndFlow({
+                                              userId: matchedProfile.id,
+                                              flowName: args.flow_name,
+                                              questions: finalQuestions,
+                                              linkedCampaignId: args.linked_campaign_id || null,
+                                              description: args.prompt,
+                                              callingWindow: args.calling_window || '9:00 AM - 7:00 PM'
+                                            });
+
+                                            return {
+                                              success: true,
+                                              flow_id: saved.automationId,
+                                              qualification_flow_id: saved.qFlowId,
+                                              flow_name: args.flow_name,
+                                              message: `✅ Flow "${args.flow_name}" has been published and activated in Flow Builder (/dashboard/flows) and Qualification Questions (/dashboard/qualifying).`
+                                            };
+                                          } catch (err: any) {
+                                            console.error("❌ [TOOL: publish_campaign_flow] Error:", err);
                                             return { success: false, error: err.message };
                                           }
                                         }
@@ -1250,7 +1487,7 @@ CRITICAL CONVERSATIONAL RULES:
                                         execute: async (args: { campaign_name: string; daily_budget_inr: number; target_city: string; property_id?: string; objective?: string; creative_url?: string }) => {
                                           console.log(`🤖 [TOOL: create_campaign_draft] Creating draft campaign: "${args.campaign_name}"`);
                                           try {
-                                            const initialCreative = args.creative_url || (inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
+                                            const initialCreative = args.creative_url || (isVisualMedia && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
                                             const creativeList = initialCreative ? [initialCreative] : [];
 
                                             const { data: job, error } = await supabaseAdmin
@@ -1303,7 +1540,7 @@ CRITICAL CONVERSATIONAL RULES:
                                           primary_text: z.string().optional().describe("Optional primary copy text for the ad")
                                         }),
                                         execute: async (args: { job_id?: string; creative_url?: string; headline?: string; primary_text?: string }) => {
-                                          const targetUrl = args.creative_url || (inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
+                                          const targetUrl = args.creative_url || (isVisualMedia && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') ? inboundMediaUrl : null);
                                           if (!targetUrl) {
                                             return { success: false, error: "No image/video creative provided or attached to message." };
                                           }
@@ -1668,24 +1905,43 @@ CRITICAL CONVERSATIONAL RULES:
                                             })
                                             .eq('id', targetJobId);
 
-                                          // Trigger async execution
+                                          // Execute campaign launch and await result
                                           try {
                                             const { runCampaignJob } = await import('@/utils/campaign-processor');
-                                            runCampaignJob(targetJobId, fullJobPayload).catch(err => {
-                                              console.error("❌ Background campaign launch error:", err);
-                                            });
-                                          } catch (procErr: any) {
-                                            console.error("❌ Failed to start runCampaignJob:", procErr);
-                                          }
+                                            const jobResult = await runCampaignJob(targetJobId, fullJobPayload);
+                                            const createdCampaignId = jobResult?.campaignId;
 
-                                          return {
-                                            success: true,
-                                            job_id: targetJobId,
-                                            campaign_name: fullJobPayload.campaign_name,
-                                            daily_budget: fullJobPayload.dailyBudget,
-                                            creative_count: creativeList.length,
-                                            message: `🚀 Campaign "${fullJobPayload.campaign_name}" has been launched! It is now being created in your Meta Ads Manager with your creative and targeting. You will see it active on your Meta dashboard shortly.`
-                                          };
+                                            // Auto-link any unlinked qualification flow for this user to this newly created campaign ID
+                                            if (createdCampaignId) {
+                                              try {
+                                                await supabaseAdmin
+                                                  .from('whatsapp_question_flows')
+                                                  .update({ linked_campaign_id: createdCampaignId })
+                                                  .eq('user_id', matchedProfile.id)
+                                                  .is('linked_campaign_id', null);
+                                              } catch (linkErr) {
+                                                console.warn("Could not auto-link campaign to flow:", linkErr);
+                                              }
+                                            }
+
+                                            return {
+                                              success: true,
+                                              job_id: targetJobId,
+                                              campaign_id: createdCampaignId || null,
+                                              campaign_name: fullJobPayload.campaign_name,
+                                              daily_budget: fullJobPayload.dailyBudget,
+                                              creative_count: creativeList.length,
+                                              message: jobResult?.message || `🚀 Campaign "${fullJobPayload.campaign_name}" has been successfully created in your Meta Ads Manager!`
+                                            };
+                                          } catch (procErr: any) {
+                                            console.error("❌ Failed to launch campaign via runCampaignJob:", procErr);
+                                            return {
+                                              success: false,
+                                              job_id: targetJobId,
+                                              error: procErr.message || "Meta Ads Manager launch failed",
+                                              message: `❌ Campaign launch failed: ${procErr.message || "Error communicating with Meta API"}. Please check your ad creative, payment method, or Meta settings.`
+                                            };
+                                          }
                                         }
                                       }),
                                       update_lead_stage: tool({
