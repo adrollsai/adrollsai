@@ -39,26 +39,74 @@ RULES:
 - Include the Business Name and Contact info.
 - Output ONLY a JSON object: {"primary_text": "...", "headline": "..."}`;
 
-        const { text } = await generateText({
-            model: google('gemini-3.5-flash'),
-            messages: [
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: prompt },
-                        mimeType.startsWith('image') ? {
-                            type: 'image',
-                            image: buffer,
-                            mimeType: mimeType
-                        } : { 
-                            type: 'file', 
-                            data: buffer, 
-                            mimeType: mimeType 
-                        } as any
-                    ]
+        let text = "";
+        const isVideo = mimeType.startsWith('video');
+        const deepSeekKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.replace(/^["']|["']$/g, '').trim() : '';
+
+        // For static images, use DeepSeek Flash Vision (deepseek-flash)
+        if (!isVideo && deepSeekKey) {
+            try {
+                console.log(`[Analyze Upload] Analyzing uploaded image with DeepSeek Flash Vision (deepseek-flash)...`);
+                const mediaDataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+                const dsRes = await fetch("https://api.deepseek.com/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${deepSeekKey}`
+                    },
+                    body: JSON.stringify({
+                        model: "deepseek-flash",
+                        messages: [
+                            {
+                                role: "user",
+                                content: [
+                                    { type: "text", text: prompt },
+                                    { type: "image_url", image_url: { url: mediaDataUrl } }
+                                ]
+                            }
+                        ],
+                        stream: false
+                    })
+                });
+
+                if (dsRes.ok) {
+                    const dsData = await dsRes.json();
+                    text = dsData.choices?.[0]?.message?.content || "";
+                    console.log(`[Analyze Upload] Successfully analyzed image with DeepSeek Flash Vision`);
+                } else {
+                    const errBody = await dsRes.text();
+                    console.warn(`[Analyze Upload] DeepSeek Flash Vision HTTP ${dsRes.status}: ${errBody}, falling back to Gemini`);
                 }
-            ]
-        });
+            } catch (dsErr: any) {
+                console.warn(`[Analyze Upload] DeepSeek Flash Vision error, falling back to Gemini:`, dsErr.message);
+            }
+        }
+
+        // If video or if DeepSeek failed/unavailable, fall back to Gemini
+        if (!text) {
+            console.log(`[Analyze Upload] Analyzing media with Gemini (${isVideo ? 'video' : 'fallback'})...`);
+            const geminiResult = await generateText({
+                model: google('gemini-3.5-flash'),
+                messages: [
+                    {
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: prompt },
+                            mimeType.startsWith('image') ? {
+                                type: 'image',
+                                image: buffer,
+                                mimeType: mimeType
+                            } : { 
+                                type: 'file', 
+                                data: buffer, 
+                                mimeType: mimeType 
+                            } as any
+                        ]
+                    }
+                ]
+            });
+            text = geminiResult.text;
+        }
 
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const variation = JSON.parse(jsonMatch ? jsonMatch[0] : text);

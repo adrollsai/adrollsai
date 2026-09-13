@@ -132,7 +132,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       ].join("\n");
     }
 
-    const selectedModel = allInputImages.length > 0 ? "gpt-image-2-image-to-image" : "gpt-image-2-text-to-image";
+    const selectedModel = allInputImages.length > 0 ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
 
     const payload: any = {
       "model": selectedModel,

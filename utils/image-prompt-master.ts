@@ -5,34 +5,38 @@ import { google } from '@ai-sdk/google';
 // MASTER PROMPT — Photorealistic Commercial Photography Baseline
 // ============================================================================
 
-export const MASTER_PROMPT = `You are an elite Master Advertising Designer and Creative Director with 20+ years of experience in direct-response advertising and high-converting commercial visual production. Your mission is to produce ad creatives that instantly stop the scroll, captivate high-intent buyers, and convert viewers into leads and sales.
+export const MASTER_PROMPT = `You are an elite Master Advertising Designer and Creative Director with 20+ years of direct-response advertising experience at world-class ad agencies. Your creatives drive multi-million-dollar high-converting campaigns on Meta, Instagram, and LinkedIn.
 
-Your creatives are NOT generic digital art, 3D CGI renders, or artificial concept art. They are visually indistinguishable from authentic, high-end commercial photographs captured in the real world by world-class advertising photographers, paired with agency-grade visual hierarchy.
+Your designs are NOT amateur Canva templates, tacky 3D digital art, floating glass cards, or artificial CGI illustrations. Every image you describe must look like a high-converting, agency-grade commercial advertisement: an authentic, razor-sharp photograph captured by a commercial advertising photographer, paired with a sophisticated, uncluttered direct-response graphic layout.
 
-Core Direct-Response Ad Architecture:
-1. Visual Hierarchy & Conversion Architecture:
-   - Primary Hero (60-70% of canvas): Ultra-sharp, authentic, photorealistic commercial photography of the product, property, or service.
-   - Benefit Hook & Headline: Bold, compelling value proposition that addresses the buyer's primary desire or pain point.
-   - Feature & Social Proof Badges: Minimalist, elegant badge pills highlighting key specs, location, or unique selling points.
-   - Direct Call-to-Action & Contact Strip: Clean, uncluttered contact bar (phone/website) at the bottom margin with generous breathing room.
-   - Brand Seal: Subtle, elegant logo mark positioned cleanly in an upper corner as a prestigious stamp of quality.
+CRITICAL DIRECT-RESPONSE DESIGN PRINCIPLES (AGENCY-LEVEL CONVERSION):
+1. SINGLE DOMINANT HERO FOCAL POINT (60-70% of canvas):
+   - One ultra-clear, pristine hero visual: photorealistic commercial photography of the product, service in action, or aspirational human subject.
+   - Grounded in authentic real-world environments with true-to-life architectural lighting, natural textures, and 35mm optical depth of field.
+   - FORBIDDEN AMATEUR TROPES (STRICT ZERO-TOLERANCE):
+     * NEVER generate floating 3D glass cubes, floating isometric graphs, floating green bars, or glowing neon 3D blocks.
+     * NEVER generate fake floating holographic stock chart lines or tacky 3D icons floating in mid-air.
+     * NEVER generate cheap circular gold ribbon award stickers, medal seals, or starburst badges ("FREE TRIAL", "BEST DEAL").
+     * NEVER generate repetitive stacked checklists (e.g. repeating "CONFIRMED" 9 times down a card).
+     * NEVER generate neon glowing gamer buttons or harsh cyan/lime plastic glow outlines.
 
-2. Lighting, Optics & Commercial Aesthetic:
-   - Bright, airy, and clean commercial light theme by default. High-exposure morning sunlight, crisp natural architectural shadows, warm interior glow, and authentic environmental reflections.
-   - 35mm commercial advertising camera optics with natural depth of field and authentic texture retention.
-   - Natural, rich color science without artificial neon oversaturation or plastic CGI sheen.
-   - Lived-in, believable real-world environments with authentic materials (glass, Italian marble, warm teakwood, brushed brass, lush foliage).
+2. SOPHISTICATED TYPOGRAPHY HIERARCHY (MINIMALIST & HIGH-CONVERTING):
+   - Hierarchy: Exactly ONE dominant, punchy benefit hook headline + ONE clear, elegant subline.
+   - Typography: Clean, high-impact modern grotesque sans-serif (e.g., Neue Haas Grotesk, Inter, Helvetica) or refined editorial serif (Cormorant, Bodoni).
+   - High-contrast, razor-sharp legibility: crisp white or dark obsidian lettering with intentional negative space and breathing room.
+   - Absolutely FORBID amateur yellow gradients, curved WordArt, or bevel/emboss drop-shadow effects.
 
-3. Authentic Human Subjects (When Included):
-   - Prominent close-up or medium portraits (chest-up or head-and-shoulders) of charismatic, successful, and aspirational humans showing authentic, candid smiles of joy and relief.
-   - True-to-life skin detailing: visible skin pores, natural micro-creases, authentic warmth, and candid facial micro-expressions. Strictly NO airbrushed, plastic, shiny, or synthetic AI faces.
-   - Eyes must be clear, lifelike, and expressive with natural catchlights.
-   - Ethnicity must authentically match the target geographic region (e.g. South Asian/Indian ethnicity for Indian business contexts, diverse regional casting accordingly).
+3. PRISTINE ANTI-SMUDGE BRAND LOGO INTEGRATION:
+   - When a business logo is provided or requested, position it as a crisp, razor-sharp vector mark in the top-left or top-right corner.
+   - STRICT ANTI-SMUDGE DIRECTIVE: The brand logo mark and brand name lettering must be rendered with razor-sharp edges and pristine geometric fidelity. Strictly DO NOT smudge, melt, blur, distort, warp, or airbrush the logo icon or font lettering. It must look like an official, high-resolution vector brand mark placed cleanly over the creative.
 
-4. Anti-Hallucination & Clean Finish:
-   - The final output must look like a multi-million-dollar live-action ad campaign creative.
-   - Strictly NO plastic skin, NO distorted limbs, NO floating objects, NO Minecraft/CGI blocks, NO warped lettering, and NO cluttered amateur clipart.
-   - If there is any trade-off between artificial stylization and real-world photographic authenticity, ALWAYS prioritize photographic authenticity.`;
+4. CLEAN, HIGH-CONVERTING FOOTER STRIP:
+   - Bottom margin: A sleek, flat, minimalist footer strip or high-contrast contact banner featuring the phone number or website with generous padding.
+   - Clean, modern phone icon and crisp legible digits. No cluttered fine print or tacky badges.
+
+5. PHOTOGRAPHIC REALISM & AUTHENTIC HUMANS (WHEN INCLUDED):
+   - Commercial studio or natural sunlight with rich dynamic range, soft directional shadows, and authentic reflections.
+   - Human subjects must look like genuine, charismatic professionals or happy customers with natural skin texture, visible micro-pores, and authentic candid smiles. Strictly NO plastic, airbrushed, or synthetic AI faces.`;
 
 // ============================================================================
 // ORGANIC / SMARTPHONE OVERRIDE
@@ -58,15 +62,10 @@ Direct-Response Real Estate Visual Rules:
 1. Authentic Real-World Architecture: The property MUST be depicted as a real, tangible physical property captured by an architectural photographer. Show the actual building facade with warm sunlight, landscaped gardens, paved driveways, elegant balconies, or grand floor-to-ceiling glass interiors. Strictly NEVER generate floating 3D dirt cubes, isometric game blocks, or synthetic CGI wireframes floating in space. Every scene must be grounded in a realistic real-world environment.
 2. High-Converting Visual Composition:
    - 60-70% Hero: Magnificent, sun-drenched exterior facade or luxury living room overlooking lush green surroundings with 35mm lens depth.
-   - Location Prominence: Clean, elegant location badge highlighting the prime city/hub (e.g. "Prime Mohali", "Zirakpur High Street", "Sector 127") in crisp, high-contrast typography.
-   - Value & Specs Overlay: Clean, semi-transparent frosted-glass feature pills highlighting key configurations (e.g. "3 & 4 BHK Luxury Floors", "Ready for Possession", "0% Brokerage").
+   - Clean Typography: Bold, elegant headline calling out the premier lifestyle or location, paired with a clean subline.
+   - Strictly avoid cluttered floating badges, tacky gold medals, or cartoonish graphics.
 3. Atmosphere & Natural Lighting: Bright morning or golden-hour sunlight with crisp architectural shadows, clear skies, and warm ambient indoor lighting visible through grand windows.
-4. Luxury Direct-Response Typography:
-   - Headline: Haute-couture serif font with refined stroke contrast (such as Cormorant/Bodoni) or bold modern geometric sans-serif with wide letter-spacing.
-   - Subtle champagne gold foil or crisp ivory-white lettering with natural drop shadow for high readability on mobile feeds.
-   - Strictly avoid tacky flat yellow gradients or crude generic fonts.
-5. Human Elements: Feature charismatic, well-dressed residents or families (authentic regional ethnicity) enjoying the space—relaxing on a sunlit balcony, sharing a joyful coffee moment, or walking through manicured grounds.
-6. Clean Footer CTA & Branding: Business logo positioned as a pristine quality seal in an upper corner. Contact number and website integrated into a sleek, minimalist bar at the bottom margin with high legibility.`,
+4. Clean Footer CTA & Branding: Business logo positioned as a pristine, razor-sharp mark in an upper corner (no smudged lettering). Contact number and website integrated into a sleek, minimalist bar at the bottom margin with high legibility.`,
 
   food: `Vertical module — Food & Restaurant:
 The objective is realistic editorial food photography. Preserve the dish, plating, and ingredients faithfully while emphasizing freshness, texture, and appetite appeal. Use natural window light or warm ambient restaurant lighting. Avoid exaggerated steam, unrealistic glossiness, or artificial perfection. Show real tableware, textured surfaces, and environmental context (wooden table, marble counter, restaurant interior). The result should resemble a photograph from a premium restaurant campaign or food magazine like Bon Appétit.`,
@@ -83,8 +82,12 @@ The objective is premium commercial product photography. Preserve the exact desi
   automotive: `Vertical module — Automotive:
 The objective is premium automotive commercial photography. Preserve the exact vehicle model, paint color, body lines, and proportions. Show realistic reflections, paint depth, and environmental lighting. The result should resemble a manufacturer's official press photograph or a premium automotive magazine cover.`,
 
-  saas: `Vertical module — Technology & SaaS:
-The objective is modern tech product photography and lifestyle imagery. Show devices, screens, and workspaces in clean, contemporary environments. Humans interacting with technology should look natural and focused. The result should resemble tech editorial from publications like Wired or Apple marketing campaigns.`,
+  saas: `Vertical module — Technology, AI & SaaS:
+The objective is seasoned, agency-grade tech advertising (inspired by Stripe, Apple, Linear, and Ramp).
+Show high-converting, authoritative visual storytelling:
+- High-impact human interactions: A smiling modern business owner or growth executive in a sunlit contemporary workspace, experiencing genuine relief and success.
+- Crisp hardware/software integration: Sleek modern laptop or smartphone displaying a clean, minimal interface, or a striking split-screen contrasting manual operational chaos with automated clarity.
+- Strictly FORBID cheap floating 3D neon cubes, floating isometric charts, fake floating hologram graphs, or repetitive checklist badges. Keep typography bold, minimal, and authoritative.`,
 
   services: `Vertical module — Professional Services:
 The objective is authentic professional services photography showing real people in real work environments. Capture genuine interactions, professional settings, and warm interpersonal moments. The result should resemble corporate photography from a premium branding agency.`,
@@ -129,7 +132,7 @@ export function buildReferenceCreativePreamble(
     imageMap.push(`  - Image ${i + 1}: PROPERTY/PRODUCT photo (content asset only — use as hero visual)`);
   }
   if (hasLogo) {
-    imageMap.push(`  - Image ${numPropertyImages + 1}: BUSINESS LOGO (branding asset only — place in corner)`);
+    imageMap.push(`  - Image ${numPropertyImages + 1}: BUSINESS LOGO (branding asset only — place cleanly in corner as razor-sharp vector mark)`);
   }
 
   return `=== CRITICAL DESIGN INSTRUCTION (HIGHEST PRIORITY) ===
@@ -147,8 +150,9 @@ STRICT EXCLUSION & UNIVERSAL REPRODUCTION RULES FOR REFERENCE STYLE:
 - The reference image is ONLY a style, color, and layout guide.
 - Do NOT copy, reproduce, or imitate specific physical subjects, buildings, or products from the reference creative image.
 - The hero visual MUST come strictly from the user's uploaded product/brand photos (Image 1..N) or product/service details.
-- FAITHFULLY REPRODUCE SIGNATURE LAYOUT & CONTAINER GEOMETRY: Place the user's hero visual inside the exact signature container frame, silhouette, shape mask, or grid layout described in the design blueprint.
-- LUXURY TYPOGRAPHY SYSTEM: Main headline text MUST be rendered in ultra-high-end haute-couture typography (such as an elegant serif font with refined stroke contrast or a sleek high-fashion geometric font). Never use cheap yellow gradients or crude Arial fonts. Use subtle champagne gold foil, warm ivory-white, or metallic bronze lettering with authentic directional lighting highlights. Sub-headers and badges MUST feature wide, generous letter-spacing (wide tracking) for an expensive, agency-level aesthetic.
+- FAITHFULLY REPRODUCE SIGNATURE LAYOUT & CONTAINER GEOMETRY: Place the user's hero visual inside the clean signature layout described in the design blueprint.
+- AGENCY DIRECT-RESPONSE TYPOGRAPHY: Render text in modern, bold, clean typography with high contrast and generous whitespace. Strictly avoid cheesy 3D bevels, tacky gold ribbon stickers, or amateur floating glass boxes.
+- PRISTINE LOGO REPRODUCTION: If a logo image is provided, display it with 100% razor-sharp fidelity in an upper corner. Strictly NEVER smudge, warp, melt, blur, or distort the logo icon or font lettering.
 
 The final generated ad MUST closely match the reference's:
 - Layout structure and spatial composition
@@ -178,7 +182,7 @@ export function buildImageDisambiguationPreamble(
     imageMap.push(`  - Image ${i + 1}: HERO PRODUCT/BRAND photo (content asset only — use as the primary visual hero for the product, property, or service)`);
   }
   if (hasLogo) {
-    imageMap.push(`  - Image ${numPropertyImages + 1}: BUSINESS LOGO (branding asset only — place cleanly in a corner, blend its background smoothly, do NOT make it a hero/subject)`);
+    imageMap.push(`  - Image ${numPropertyImages + 1}: BUSINESS LOGO (branding asset only — place cleanly in corner as a sharp vector mark, do NOT make it a hero/subject)`);
   }
 
   return `=== CRITICAL IMAGE SOURCE ROLES (HIGHEST PRIORITY) ===
@@ -187,7 +191,7 @@ ${imageMap.join('\n')}
 
 MANDATORY RULES:
 1. The product/brand photos (Image 1 to Image ${numPropertyImages}) are content assets. Keep the generated hero visual extremely close, faithful, and visually consistent with these actual photos. Do NOT invent unrelated products or alter the core subject.
-2. The logo (Image ${numPropertyImages + 1}) is branding only. Place it elegantly as a stamp of quality. Do NOT stretch, warp, or place it at the center of the scene.
+2. The logo (Image ${numPropertyImages + 1}) is branding only. Place it as a crisp, razor-sharp mark in an upper corner. Strictly DO NOT stretch, warp, smudge, melt, or blur the logo text or icon.
 === END IMAGE ROLES ===
 
 `;
@@ -205,17 +209,18 @@ export const CONTENT_INTEGRITY_RULES = `Content Integrity & Branding Rules (MAND
    - If a piece of information (e.g. price, offer, phone number, website) is NOT provided in the input, do NOT include it in the creative. Leave it out entirely rather than guessing.
    - Do NOT add generic marketing claims like "#1 in the city", "Best quality", "Award-winning" unless these exact claims are provided in the input.
 
-2. ANTI-CLUTTER RULE:
+2. ANTI-CLUTTER & ANTI-AMATEUR GIMMICKS RULE:
    - Keep the creative clean, breathable, and visually premium. Less is more.
-   - Only include the MOST ESSENTIAL information from the product input — typically: product/service name, one key benefit or price point, and brand identity.
-   - Do NOT overload the image with excessive text overlays, multiple bullet points, long descriptions, or too many data points.
+   - Only include the MOST ESSENTIAL information: exactly one bold benefit hook headline, one supporting subline, brand logo, and contact info.
+   - STRICT BAN: Absolutely NO floating 3D glass cubes, fake floating graphs/charts, repetitive checklist pills, circular gold ribbon seals, or neon glowing gamer buttons.
    - Text overlays should be minimal, high-impact, and easily readable at a glance.
    - Prefer visual storytelling over text-heavy layouts.
 
-3. BUSINESS LOGO (MANDATORY BY DEFAULT):
-   - The business logo MUST be integrated into the creative visually as a clean, professional branding stamp.
-   - Place the logo as a subtle but visible seal/watermark in a corner (top-left, top-right, or bottom-right).
-   - If a logo image is provided in the input images, use its visual graphic/icon.
+3. BUSINESS LOGO (MANDATORY BY DEFAULT — STRICT ANTI-SMUDGE):
+   - The business logo MUST be integrated into the creative visually as a clean, razor-sharp brand mark.
+   - Place the logo in an upper corner (top-left or top-right) with clean negative space.
+   - If a logo image is provided in the input images, reproduce its exact shape, icon, and lettering cleanly.
+   - STRICT ANTI-SMUDGE DIRECTIVE: Under no circumstances should the logo mark or typography be smudged, melted, warped, or distorted. Render it with crisp, clean vector-sharp edges.
    - CRITICAL: Do NOT write, print, or draw any literal text phrases, labels, or placeholders in the image such as "logo", "business logo", "put logo here", "logo here", or blank placeholder circles. The final image must be completely clean of layout instructions or design annotations.
    - EXCEPTION: Only omit the logo if the user EXPLICITLY requests "no logo" or "remove the logo" in their instructions.
 
@@ -374,26 +379,34 @@ export function getRandomVisualArchetype(
 ): VisualArchetype {
   const archetypes: VisualArchetype[] = [
     {
+      id: 'high_authority_direct_response',
+      name: 'High-Authority Direct Response',
+      lighting: 'Crisp commercial daylight with high dynamic range, soft directional architectural shadows, and clean reflections',
+      composition: 'Bold authoritative layout inspired by Stripe and Apple: clean negative space, single striking focal subject, and razor-sharp typographic hierarchy',
+      typography: 'Dominant ultra-clean bold grotesque sans-serif headline with generous tracking and high contrast',
+      promptInstructions: 'DESIGN ARCHETYPE: High-Authority Direct Response. Create a sleek, authoritative ad composition with clean negative space, bold modern typography, a single dominant hero visual, and a pristine minimalist footer. Strictly avoid floating 3D cubes, fake chart graphs, or sticker ribbons.'
+    },
+    {
       id: 'editorial_archdigest',
       name: 'High-End Commercial Editorial',
       lighting: 'Golden Hour warm sunlight casting soft linear shadows with premium ambient rim-light',
       composition: 'Dramatic asymmetrical low-angle perspective with off-center hero framing and high-end luxury editorial spacing',
-      typography: 'Elegant serif headline paired with refined minimalist geometric sub-headers',
-      promptInstructions: 'DESIGN ARCHETYPE: High-End Commercial Editorial. Create a dramatic, asymmetrical visual composition with low-angle perspective, refined luxury spacing, elegant serif headers, and warm golden hour sunlight.'
+      typography: 'Refined editorial serif headline paired with crisp minimalist sub-headers',
+      promptInstructions: 'DESIGN ARCHETYPE: High-End Commercial Editorial. Create a dramatic visual composition with refined spacing, elegant typography, and authentic warm sunlight. Keep layout uncluttered and breathable.'
     },
     {
-      id: 'bold_billboard',
-      name: 'Bold High-Converting Social Billboard',
-      lighting: 'Crisp bright high-exposure morning sunlight with vibrant commercial contrast',
-      composition: 'High-impact promotional layout featuring bold benefit badges, sharp geometric color blocks, and high visual contrast',
-      typography: 'Ultra-bold geometric sans-serif lettering with prominent size hierarchy and badge overlays',
-      promptInstructions: 'DESIGN ARCHETYPE: Bold High-Converting Social Billboard. Create a high-energy, vibrant promotional ad layout with prominent benefit badges, bold geometric typography, and crisp commercial lighting.'
+      id: 'bold_social_conversion',
+      name: 'Bold High-Converting Social Ad',
+      lighting: 'Bright, high-exposure commercial morning light with vibrant, natural contrast',
+      composition: 'High-impact conversion layout featuring a strong visual hook, clean flat color contrast, and uncluttered breathing room',
+      typography: 'Punchy, ultra-bold modern sans-serif headline commanding immediate scroll-stopping attention',
+      promptInstructions: 'DESIGN ARCHETYPE: Bold High-Converting Social Ad. Create an energetic, scroll-stopping direct-response ad with bold headline typography, authentic commercial photography, and a clean contact strip. No tacky badges or 3D clipart.'
     },
     {
       id: 'scandinavian_minimalist',
       name: 'Minimalist Modern Luxury',
       lighting: 'Soft diffused natural daylight with airy white-balanced highlights',
-      composition: 'Ultra-clean minimalist layout with generous negative space, understated framing, and soft translucent backdrop cards',
+      composition: 'Ultra-clean minimalist layout with generous negative space, understated framing, and flat modern graphic elegance',
       typography: 'Minimalist lightweight geometric sans-serif typography with generous kerning and letter spacing',
       promptInstructions: 'DESIGN ARCHETYPE: Minimalist Modern Luxury. Create an ultra-clean, serene layout with generous negative space, soft ambient daylight, and minimal geometric typography.'
     },
@@ -402,16 +415,8 @@ export function getRandomVisualArchetype(
       name: 'Cinematic Lifestyle Story',
       lighting: 'Warm ambient filmic sunlight with natural lens flare and soft atmospheric glow',
       composition: 'Candid lifestyle hero shot with soft shallow depth-of-field background, warm organic textures, and cinematic 35mm photography feel',
-      typography: 'Subtle, modern luxury serif header integrated cleanly into the natural scene composition',
+      typography: 'Subtle, modern luxury header integrated cleanly into the natural scene composition',
       promptInstructions: 'DESIGN ARCHETYPE: Cinematic Lifestyle Story. Create a warm, candid 35mm film-style photography scene with shallow depth of field, organic textures, and natural lifestyle framing.'
-    },
-    {
-      id: 'glassmorphism_infographic',
-      name: 'Premium Glassmorphism & Infographic Card',
-      lighting: 'Bright studio lighting with subtle translucent reflections and 3D depth highlights',
-      composition: 'Modern tech-forward layout featuring floating frosted glass specs cards (highlighting key features, performance metrics, and value proposition) with 3D shadow depth',
-      typography: 'Clean modern sans-serif typography on translucent glass backdrop pills',
-      promptInstructions: 'DESIGN ARCHETYPE: Premium Glassmorphism & Infographic Card. Create a modern layout featuring floating frosted glass cards for product/service highlights and key metrics, with rich 3D depth and clean modern typography.'
     }
   ];
 
@@ -444,7 +449,7 @@ export function getRandomHumanPersona(
         id: 'tech_founder',
         name: 'Modern Tech Founder / Business Owner',
         hasHumans: true,
-        promptDirective: 'HUMAN PERSONA: Include a candid close-up portrait shot (chest up) of a confident, smiling modern tech founder or business leader (late 20s or 30s) in smart-casual attire (e.g. stylish crewneck or linen overshirt), looking with genuine joy and relief while glancing at a modern smartphone or laptop showing growth metrics in a sunlit architectural glass workspace. Authentic skin textures with natural pores, avoid airbrushed look.'
+        promptDirective: 'HUMAN PERSONA: Include a candid close-up portrait shot (chest up) of a confident, smiling modern tech founder or business leader (late 20s or 30s) in smart-casual attire (e.g. stylish crewneck or linen overshirt), looking with genuine joy and relief while glancing at a modern smartphone or laptop in a sunlit architectural glass workspace. Authentic skin textures with natural pores, avoid airbrushed look.'
       },
       {
         id: 'growth_marketer',
@@ -460,9 +465,9 @@ export function getRandomHumanPersona(
       },
       {
         id: 'no_humans_tech',
-        name: 'Pure UI & Platform Spotlight (No Humans)',
+        name: 'Pure Platform Spotlight (No Humans)',
         hasHumans: false,
-        promptDirective: 'HUMAN PERSONA (STRICT DIRECTIVE): Do NOT include any humans or people in this creative image. Focus 100% of the visual spotlight on the sleek digital interface, glowing frosted glass metrics cards, dynamic feature highlights, crisp commercial lighting, and high-impact typography.'
+        promptDirective: 'HUMAN PERSONA (STRICT DIRECTIVE): Do NOT include any humans or people in this creative image. Focus 100% of the visual spotlight on sleek modern technology, clean high-converting copywriting hierarchy, crisp commercial lighting, and agency-grade typography. Strictly avoid floating 3D cubes, fake chart holograms, or glowing neon buttons.'
       }
     ];
     let seed = 0;

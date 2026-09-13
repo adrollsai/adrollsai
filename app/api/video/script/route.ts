@@ -3,7 +3,7 @@ import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
-import { resolveImageDescriptions } from '@/utils/image-analysis';
+import { resolveImageDescriptions, analyzeImageWithDeepSeek } from '@/utils/image-analysis';
 import { callDeepSeekWithUsage } from '@/utils/external-apis';
 
 const supabaseAdmin = createAdminClient(
@@ -107,38 +107,16 @@ export async function POST(request: Request) {
         // Self-heal: If character_url is present but character_description is null, analyze it on-the-fly!
         if (presenterType === 'video' && profile?.character_url && !profile.character_description) {
             try {
-                console.log(`[Self-Healing Script] Character URL is present but description is null. Performing vision analysis for: ${profile.character_url}`);
-                const imageRes = await fetch(profile.character_url);
-                if (imageRes.ok) {
-                    const buffer = Buffer.from(await imageRes.arrayBuffer());
-                    const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
-                    
-                    const { GoogleGenerativeAI } = require('@google/generative-ai');
-                    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY!);
-                    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
-                    
-                    const visionPrompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.";
-                    
-                    const result = await model.generateContent([
-                        visionPrompt,
-                        {
-                            inlineData: {
-                                data: buffer.toString('base64'),
-                                mimeType
-                            }
-                        }
-                    ]);
-                    
-                    const desc = result.response.text()?.trim();
-                    if (desc) {
-                        console.log(`[Self-Healing Script] Vision analysis success: "${desc}"`);
-                        await supabaseAdmin
-                            .from('profiles')
-                            .update({ character_description: desc })
-                            .eq('id', targetUserId);
-                        
-                        profile.character_description = desc;
-                    }
+                console.log(`[Self-Healing Script] Character URL is present but description is null. Performing DeepSeek Flash Vision analysis for: ${profile.character_url}`);
+                const visionPrompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.";
+                const desc = await analyzeImageWithDeepSeek(profile.character_url, visionPrompt);
+                if (desc) {
+                    console.log(`[Self-Healing Script] Vision analysis success: "${desc}"`);
+                    await supabaseAdmin
+                        .from('profiles')
+                        .update({ character_description: desc })
+                        .eq('id', targetUserId);
+                    profile.character_description = desc;
                 }
             } catch (visionErr) {
                 console.error("[Self-Healing Script] Vision analysis failed:", visionErr);
@@ -148,38 +126,16 @@ export async function POST(request: Request) {
         // Self-heal for Avatar: If avatar_url is present but avatar_description is null, analyze it on-the-fly!
         if (presenterType === 'avatar' && profile?.avatar_url && !profile.avatar_description) {
             try {
-                console.log(`[Self-Healing Script] Avatar URL is present but description is null. Performing vision analysis for: ${profile.avatar_url}`);
-                const imageRes = await fetch(profile.avatar_url);
-                if (imageRes.ok) {
-                    const buffer = Buffer.from(await imageRes.arrayBuffer());
-                    const mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
-                    
-                    const { GoogleGenerativeAI } = require('@google/generative-ai');
-                    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY!);
-                    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
-                    
-                    const visionPrompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.";
-                    
-                    const result = await model.generateContent([
-                        visionPrompt,
-                        {
-                            inlineData: {
-                                data: buffer.toString('base64'),
-                                mimeType
-                            }
-                        }
-                    ]);
-                    
-                    const desc = result.response.text()?.trim();
-                    if (desc) {
-                        console.log(`[Self-Healing Script] Avatar vision analysis success: "${desc}"`);
-                        await supabaseAdmin
-                            .from('profiles')
-                            .update({ avatar_description: desc })
-                            .eq('id', targetUserId);
-                        
-                        profile.avatar_description = desc;
-                    }
+                console.log(`[Self-Healing Script] Avatar URL is present but description is null. Performing DeepSeek Flash Vision analysis for: ${profile.avatar_url}`);
+                const visionPrompt = "You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.";
+                const desc = await analyzeImageWithDeepSeek(profile.avatar_url, visionPrompt);
+                if (desc) {
+                    console.log(`[Self-Healing Script] Avatar vision analysis success: "${desc}"`);
+                    await supabaseAdmin
+                        .from('profiles')
+                        .update({ avatar_description: desc })
+                        .eq('id', targetUserId);
+                    profile.avatar_description = desc;
                 }
             } catch (visionErr) {
                 console.error("[Self-Healing Script] Avatar vision analysis failed:", visionErr);

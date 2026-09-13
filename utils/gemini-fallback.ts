@@ -52,6 +52,75 @@ export async function generateContentWithFallback(
         }
     }
 
+    // For image-based multimodal tasks, use DeepSeek Flash Vision (deepseek-flash)
+    if (Array.isArray(contents) && deepSeekKey) {
+        try {
+            const hasVideo = contents.some((c: any) => {
+                const mime = c?.inlineData?.mimeType || c?.fileData?.mimeType || '';
+                return mime.startsWith('video/') || !!c?.fileData;
+            });
+
+            const hasImage = contents.some((c: any) => {
+                const mime = c?.inlineData?.mimeType || '';
+                return mime.startsWith('image/');
+            });
+
+            // DeepSeek Vision supports images only (JPEG, PNG, GIF, WebP). Videos must use Gemini.
+            if (!hasVideo && hasImage) {
+                console.log(`[Vision AI Router] Routing image analysis to DeepSeek Flash Vision (deepseek-flash)`);
+                const contentParts: any[] = [];
+                for (const item of contents) {
+                    if (typeof item === 'string') {
+                        contentParts.push({ type: 'text', text: item });
+                    } else if (item?.inlineData?.data && item?.inlineData?.mimeType) {
+                        contentParts.push({
+                            type: 'image_url',
+                            image_url: {
+                                url: `data:${item.inlineData.mimeType};base64,${item.inlineData.data}`
+                            }
+                        });
+                    }
+                }
+
+                if (contentParts.length > 0) {
+                    const dsRes = await fetch("https://api.deepseek.com/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${deepSeekKey}`
+                        },
+                        body: JSON.stringify({
+                            model: "deepseek-flash",
+                            messages: [{ role: "user", content: contentParts }],
+                            stream: false
+                        })
+                    });
+
+                    if (dsRes.ok) {
+                        const dsData = await dsRes.json();
+                        const text = dsData.choices?.[0]?.message?.content || "";
+                        const usage = dsData.usage || {};
+                        console.log(`[Vision AI Router] Successfully analyzed image with DeepSeek Flash Vision`);
+                        return {
+                            response: {
+                                text: () => text,
+                                usageMetadata: {
+                                    promptTokenCount: usage.prompt_tokens || 0,
+                                    candidatesTokenCount: usage.completion_tokens || 0,
+                                    totalTokenCount: usage.total_tokens || 0
+                                }
+                            }
+                        } as any;
+                    } else {
+                        console.warn(`[Vision AI Router] DeepSeek Vision HTTP ${dsRes.status}, falling back to Gemini`);
+                    }
+                }
+            }
+        } catch (dsVisionErr: any) {
+            console.warn(`[Vision AI Router] DeepSeek Vision error, using Gemini fallback: ${dsVisionErr?.message}`);
+        }
+    }
+
     let currentModelName = primaryModel;
     let delay = initialDelay;
     

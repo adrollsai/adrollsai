@@ -228,7 +228,7 @@ AVOID
                 const imageInputUrls = [];
                 if (productImageUrl) imageInputUrls.push(productImageUrl);
                 if (logoUrl) imageInputUrls.push(logoUrl);
-                const selectedImageModel = imageInputUrls.length > 0 ? "gpt-image-2-image-to-image" : "gpt-image-2-text-to-image";
+                const selectedImageModel = imageInputUrls.length > 0 ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
                 
                 const taskId = await createKieImageTask(prompt, selectedImageModel, "4:5", imageInputUrls);
                 if (taskId) {

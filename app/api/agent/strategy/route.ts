@@ -123,7 +123,7 @@ export async function POST(req: Request) {
          For each angle, provide:
          - title: Punchy, high-impact angle name (e.g., "The Agency Replacement Engine", "24/7 AI Voice Dispatcher", "The Chaos-to-Growth Pipeline", "Instant High-Converting ROI Banner")
          - brief: Clear summary of the marketing hook, the core customer desire or pain point addressed, and the lighting/color mood.
-         - visual_concept: An ultra-detailed, photorealistic description of the visual layout, hero element, focal subject, background setting, badge pills, and typography placement for an AI image generation model.
+         - visual_concept: An ultra-detailed description of a seasoned, agency-grade direct-response ad layout: a single dominant commercial hero visual (authentic photography with 35mm optical depth), bold typography hierarchy (1 dominant hook headline + 1 clear subhead), clean negative space, and a sleek flat footer. STRICTLY FORBID floating 3D glass cubes, fake stock chart lines, repetitive checklist cards, circular gold ribbon stickers, or neon gaming glow buttons.
 
       FORMAT: Return ONLY a JSON array of objects with keys: title, brief, visual_concept. No markdown, no conversational text.
     `;

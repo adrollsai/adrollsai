@@ -385,7 +385,7 @@ Synthesize the extracted reference blueprint above into a 5-star luxury social m
 - TYPOGRAPHY & OVERLAYS: ${activeArchetype.typography}.`;
 
         const designComposerPrompt = `You are an elite Master Advertising Designer and Creative Director with 20+ years of direct-response advertising experience crafting multi-million-dollar high-converting Meta, Instagram, and social ad campaigns across all industries.
-Your mission is to write a highly detailed, conversion-optimized image generation prompt that will be sent to an AI image model to produce an ultra-photorealistic, high-converting commercial ad poster.
+Your mission is to write a highly detailed, conversion-optimized image generation prompt that will be sent to the image model to produce an ultra-photorealistic, high-converting commercial ad poster.
 
 Here is the information provided by the user:
 - Campaign Type: ${effectiveIsBrandOnly ? 'Brand & Service Campaign (No Specific Product Selected)' : 'Product / Offering Campaign'}
@@ -402,13 +402,19 @@ ${styleGuidanceSection}
 Your goal is to synthesize this information and output an extremely detailed, descriptive visual prompt for the image generation model.
 Follow these 20-year direct-response advertising master rules to maximize click-throughs and conversion:
 1. SCROLL-STOPPING COMMERCIAL PHOTOGRAPHY: The creative must look like authentic live-action commercial photography captured by a top advertising photographer. Never make it look like a 3D render, cartoon, architectural blueprint, or CGI illustration. Bright, airy, commercial natural morning or golden-hour lighting with crisp shadows and believable textures.
-${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific product is selected. Focus the visual canvas on high-impact commercial branding, aspirational imagery, luxury graphic typography, and scene setting representing ${businessName || 'the brand'} in the ${industry || 'commercial'} sector according to the custom user instructions.` : `2. 60-70% HERO FOCUS: The real product or subject must occupy 60-70% of the canvas as the undisputed hero. ${excludeHousePhoto ? 'CRITICAL EXCLUSION: Do NOT describe or include any exterior architectural house, villa, or building photos.' : 'Keep the generated visuals faithful to the real subject in the input.'}`}
-3. DIRECT-RESPONSE VISUAL HIERARCHY & BENEFIT HOOK: Include clear, high-converting direct-response text overlay instructions:
-   - Primary Benefit Headline: A bold, emotionally compelling hook calling out ${effectiveIsBrandOnly ? 'the core service benefit or campaign hook from the instructions' : 'the core product value proposition or solving the primary customer friction'}.
-   - ${effectiveIsBrandOnly ? `Brand Identification: Highlight "${businessName || 'the business'}" with prestigious typography.` : (industry === 'real_estate' ? `Location Badge: If a prime location is mentioned, highlight the city/area in high-contrast typography.` : `Category/Value Badge: A crisp, high-contrast badge highlighting key capability or category.`)}
-   - Key Value Pills: Clean, semi-transparent frosted badges highlighting 1-2 key specs, killer features, or pricing (e.g. for SaaS: "AI Voice Calling", "All-In-One CRM", "10x ROI"; for Real Estate: "Luxury 3 BHK", "Ready to Move"; for Products: "Premium Quality", "Zero Extra Cost").
-4. LUXURY HAUTE-COUTURE TYPOGRAPHY: Render main headlines in high-contrast serif (Bodoni/Cormorant) or sleek architectural geometric sans-serif with wide tracking. Subtle champagne gold foil or crisp ivory-white lettering. Absolutely FORBID cheap flat yellow gradients or crude generic fonts.
-5. PROMINENT CONTACT FOOTER & LOGO: Place the business logo cleanly as a prestige seal in an upper corner. Place the contact number "${finalContactNumber || ''}" cleanly and prominently in a high-contrast footer strip at the bottom margin.
+${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific product is selected. Focus the visual canvas on high-impact commercial branding, aspirational imagery, and clean graphic typography representing ${businessName || 'the brand'} in the ${industry || 'commercial'} sector according to the custom user instructions.` : `2. 60-70% HERO FOCUS: The real product or subject must occupy 60-70% of the canvas as the undisputed hero. ${excludeHousePhoto ? 'CRITICAL EXCLUSION: Do NOT describe or include any exterior architectural house, villa, or building photos.' : 'Keep the generated visuals faithful to the real subject in the input.'}`}
+3. STRICT PROHIBITION ON AMATEUR AI GIMMICKS (ZERO TOLERANCE):
+   - ABSOLUTELY NEVER generate floating 3D glass cubes, floating green bars, floating isometric blocks, or 3D glowing shapes.
+   - ABSOLUTELY NEVER generate fake floating holographic stock charts, line graphs, or floating checklist pills.
+   - ABSOLUTELY NEVER generate cheap circular gold ribbon stickers, medal seals, starburst badges, or tacky "FREE TRIAL" ribbons.
+   - ABSOLUTELY NEVER generate neon gaming button glows, cyan plastic highlights, or repetitive stacked pills.
+4. SOPHISTICATED DIRECT-RESPONSE TYPOGRAPHY HIERARCHY:
+   - Exactly ONE bold, compelling benefit hook headline that addresses the buyer's primary desire or solves their core friction.
+   - Exactly ONE crisp, supporting subline with generous whitespace.
+   - Modern, authoritative grotesque sans-serif (Neue Haas Grotesk, Inter) or elegant editorial serif. Crisp white or dark obsidian letters. Absolutely NO flat yellow gradients or bevel drop-shadows.
+5. PRISTINE ANTI-SMUDGE BRAND LOGO & CLEAN FOOTER:
+   - If brand logo is included, position it cleanly in an upper corner as a razor-sharp, crisp vector mark. STRICT DIRECTIVE: Do NOT smudge, melt, blur, distort, or warp the logo icon or lettering.
+   - Place the contact number "${finalContactNumber || ''}" cleanly and prominently in a sleek, minimalist footer strip at the bottom margin with generous padding.
 6. AUTHENTIC HUMAN PERSONA: ${activePersona.promptDirective} Regional ethnicity must match the business location. Real skin pores and candid expressions of joy, strictly no plastic AI faces.
 7. OUTPUT FORMAT: Output ONLY a single cohesive, highly detailed, descriptive paragraph containing the exact scene description, layouts, styling, text overlays, and details for the image model. Do NOT include any intro, conversational text, or markdown code blocks.`;
 
@@ -496,24 +502,24 @@ Make the edits clean, professional, and blend seamlessly with the original conte
       const promptParts = [
           referencePreamble,
           `Create a clean, ultra-premium, agency-level ad creative design using the Graphic Design Blueprint below.`,
-          `CRITICAL QUALITY DIRECTIVES (NO CHEAP CANVA OR VECTOR GRAPHICS):`,
-          `- PROHIBITION ON OVAL MASKS & CHEAP GRAPHICS: Render the property visual as full-bleed commercial photography or a clean rectangular architectural frame. ABSOLUTELY NEVER enclose the image inside an oval mask, circular cut-out, or heavy white border frame.`,
-          `- NO 3D GOLD EMBOSSED FONTS OR DOTTED ICON LINES: Typography must be modern, flat, clean, and crisp (minimalist geometric sans-serif or elegant high-contrast serif). Avoid fake 3D gold bevel gradients or lines of circular clip-art icons connected by dotted lines across the header.`,
-          `- SEAMLESS NATURAL INTEGRATION: Human subjects and property visuals must be seamlessly integrated into natural photorealistic scene lighting, never floating over graphic shapes.`,
+          `CRITICAL QUALITY DIRECTIVES (SEASONED DIRECT-RESPONSE STANDARDS):`,
+          `- PROHIBITION ON CHEAP GRAPHICS & 3D CLIPS: Strictly NEVER enclose images inside oval masks or add floating 3D glass cubes, fake stock market lines, or circular gold ribbon stickers.`,
+          `- CLEAN TYPOGRAPHY: Typography must be modern, flat, clean, and crisp (minimalist geometric sans-serif or elegant high-contrast serif). Avoid fake 3D gold bevel gradients, neon gaming buttons, or lines of circular clip-art icons.`,
+          `- SEAMLESS NATURAL INTEGRATION: Human subjects and product visuals must be seamlessly integrated into natural photorealistic scene lighting, never floating over graphic shapes.`,
           effectiveIsBrandOnly
             ? `CRITICAL RULE FOR HERO SUBJECT: No specific product is selected. Focus on high-impact visual commercial imagery representing ${businessName || 'the business'} matching the user's custom instructions.`
-            : `CRITICAL RULE FOR HERO SUBJECT: The building, product, or property MUST come 100% strictly from the provided input property photos (or property description). Do NOT invent or copy any building/structure. Place the user's property inside the design layout specified below.`,
+            : `CRITICAL RULE FOR HERO SUBJECT: The building, product, or property MUST come 100% strictly from the provided input photos (or description). Do NOT invent or copy any unrelated subject. Place the user's subject inside the design layout specified below.`,
           excludeHousePhoto 
             ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any house, kothi, villa, or building exterior image. Focus on abstract luxury backgrounds, minimalist typography, location map graphics, or lifestyle close-ups.` 
-            : (effectiveIsBrandOnly ? '' : `Use the user's actual property photos as the central visual hero asset of the canvas.`),
+            : (effectiveIsBrandOnly ? '' : `Use the user's actual product photos as the central visual hero asset of the canvas.`),
           propertyTitle ? `Subject: ${propertyTitle}` : '',
           propertyDescription ? `Details/Description: ${propertyDescription}` : '',
           (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
-          (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly. Integrate the brand logo seamlessly with the design and background. Do NOT place it inside a raw, unblended black or white box/circle; blend its background shape smoothly into the background sky/theme.` : '',
-          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Display the contact number "${finalContactNumber}" cleanly and prominently according to the layout blueprint.` : '',
+          (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly in an upper corner as a razor-sharp vector mark. STRICT ANTI-SMUDGE DIRECTIVE: Do NOT smudge, melt, blur, distort, or warp the logo icon or font lettering.` : '',
+          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Display the contact number "${finalContactNumber}" cleanly and prominently in a sleek, uncluttered footer bar.` : '',
           `Do NOT add any messy or gibberish text overlays on the image unless explicitly requested. Keep the image clean, professional, and visually focused.`,
-          `IMPORTANT NEGATIVE CONSTRAINT: Do NOT copy any text, barcodes, QR codes, website URLs, or license/RERA numbers (such as RERA registration numbers) directly from the reference image. If the reference creative contains a QR code, license number, or specific website address, omit them entirely from the final generated image.`,
-          (!userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i)) ? `Include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (e.g. a happy family, an elegant couple, or a professional individual, depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy. Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) looking completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. The ethnicity of the humans must match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).` : '',
+          `IMPORTANT NEGATIVE CONSTRAINT: Do NOT copy any text, barcodes, QR codes, website URLs, or license/RERA numbers directly from the reference image. If the reference creative contains a QR code, license number, or specific website address, omit them entirely from the final generated image.`,
+          (!userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i)) ? `Include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (e.g. a happy customer, team professional, or entrepreneur, depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy. Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) looking completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. The ethnicity of the humans must match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).` : '',
           styleDescription ? `=== EXTRACTED GRAPHIC DESIGN BLUEPRINT (APPLY THIS STYLE FRAMEWORK TO THE USER'S PRODUCT) ===\n${styleDescription}` : '',
           userInstructions ? `Custom Instructions: ${userInstructions}` : ''
       ].filter(Boolean);
@@ -521,16 +527,16 @@ Make the edits clean, professional, and blend seamlessly with the original conte
     } else {
       const disambiguationPreamble = buildImageDisambiguationPreamble(validPropImages.length, validLogo.length > 0);
       const fallbackPrompt = [
-          `Create a highly detailed, premium, and professional ad creative design.`,
+          `Create a highly detailed, premium, and professional ad creative design adhering to seasoned direct-response advertising standards.`,
           effectiveIsBrandOnly ? `Subject: Brand Campaign for ${businessName || 'Business'}` : (propertyTitle ? `Subject: ${propertyTitle}` : ''),
           effectiveIsBrandOnly ? `Business Info & Context: ${cleanBusinessInfo || profile?.mission_statement || propertyDescription || ''}` : (propertyDescription ? `Details/Description: ${propertyDescription}` : ''),
           (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
-          (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly. Integrate the brand logo seamlessly with the design and background. Do NOT place it inside a raw, unblended black or white box/circle; blend its background shape smoothly into the background sky/theme.` : '',
-          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly in a banner or footer at the bottom of the poster (e.g. "Call: ${finalContactNumber}").` : '',
+          (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly in an upper corner as a razor-sharp vector mark. STRICT ANTI-SMUDGE DIRECTIVE: Do NOT smudge, melt, blur, distort, or warp the logo icon or font lettering.` : '',
+          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly in a sleek, minimalist footer bar at the bottom of the poster (e.g. "Call: ${finalContactNumber}").` : '',
           effectiveIsBrandOnly ? `Create a brand-focused commercial visual emphasizing ${businessName || 'the business'}, industry prestige, and the user's custom instructions.` : (excludeHousePhoto ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any unwanted building or house exterior image. Focus on clean product showcases, minimalist typography, or lifestyle close-ups.` : `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`),
-          `Ensure the overall composition is highly professional, balanced, featuring cinematic warm lighting, detailed textures, and a luxury editorial aesthetic.`,
+          `Ensure the overall composition is highly professional, balanced, featuring cinematic commercial lighting, authentic textures, and a luxury editorial aesthetic. Strictly avoid floating 3D glass cubes, fake stock chart lines, or circular gold ribbon stickers.`,
           (!userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i)) ? `Include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (e.g. a happy customer, team professional, or entrepreneur, depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy. Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) looking completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. The ethnicity of the humans must match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).` : '',
-          !excludeBusinessInfo ? (effectiveIsBrandOnly ? `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline based on the brand and custom instructions, and display the brand logo and contact details clearly.` : `If text is not excluded, make the creative highly informative: include a bold, clean benefit-driven headline (based on ${propertyTitle || 'the product'}), a sub-headline highlighting key specs or features (based on ${propertyDescription || 'the product description'}), and display the brand logo and contact details clearly.`) : '',
+          !excludeBusinessInfo ? (effectiveIsBrandOnly ? `If text is not excluded, make the creative highly impactful: exactly one bold, clean benefit-driven headline based on the brand and custom instructions, one supporting subline, brand logo in an upper corner, and contact details cleanly at the bottom.` : `If text is not excluded, make the creative highly impactful: exactly one bold, clean benefit-driven headline (based on ${propertyTitle || 'the product'}), a concise sub-headline highlighting key specs or features (based on ${propertyDescription || 'the product description'}), brand logo in an upper corner, and contact details cleanly at the bottom.`) : '',
           excludeBusinessInfo ? `Do NOT add any text overlays, slogans, contact numbers, writing, or labels on the image. Keep it purely as a clean, raw photograph.` : '',
           excludeLogo ? `Do NOT include any brand logo or watermark on the image.` : '',
           userInstructions ? `Custom Instructions: ${userInstructions}` : ''
@@ -538,29 +544,35 @@ Make the edits clean, professional, and blend seamlessly with the original conte
       finalImagePrompt = designerPrompt ? `${disambiguationPreamble}${designerPrompt}` : `${disambiguationPreamble}${fallbackPrompt}`;
     }
 
-    let kieModel = isDirect ? 'nano-banana-2' : 'gpt-image-2-text-to-image';
+    let kieModel = isDirect ? 'nano-banana-2' : 'gpt-image-2-5-flare-text-to-image';
     let imageField = 'image_input'; // Default for text-to-image and nano
 
-    // Revert: If we have ANY valid images (including logo), use Image-to-Image
+    // If we have ANY valid images (including logo), use Image-to-Image
     if (!isDirect && allInputImages.length > 0) {
-        kieModel = 'gpt-image-2-image-to-image';
+        kieModel = 'gpt-image-2-5-flare-image-to-image';
         imageField = 'input_urls';
     }
     
     // Explicitly check for requested model names
-    if (model === 'image-2.0' || model === 'gpt/gpt-image-2-text-to-image') {
-        kieModel = allInputImages.length > 0 ? 'gpt-image-2-image-to-image' : 'gpt-image-2-text-to-image';
+    if (model === 'image-2.0' || model === 'gpt/gpt-image-2-text-to-image' || model === 'gpt/gpt-image-2-5-flare-text-to-image') {
+        kieModel = allInputImages.length > 0 ? 'gpt-image-2-5-flare-image-to-image' : 'gpt-image-2-5-flare-text-to-image';
         if (allInputImages.length > 0) imageField = 'input_urls';
     } else if (model === 'nano' || model === 'nano-banana-2') {
         kieModel = 'nano-banana-2';
         imageField = 'image_input';
     }
 
+    // Normalize aspect ratio: gpt-image-2-5-flare accepts 1:1, 3:4, 9:16, 16:9, auto (4:5 maps to 3:4 portrait)
+    let effectiveAspectRatio = aspectRatio || "3:4";
+    if (kieModel.startsWith('gpt-image-2-5-flare') && effectiveAspectRatio === "4:5") {
+        effectiveAspectRatio = "3:4";
+    }
+
     let payload: any = {
       "model": kieModel,
       "input": {
         "prompt": finalImagePrompt,
-        "aspect_ratio": aspectRatio,
+        "aspect_ratio": effectiveAspectRatio,
         "resolution": "1K"
       }
     };
@@ -571,7 +583,7 @@ Make the edits clean, professional, and blend seamlessly with the original conte
     }
     
     // Only text-to-image supports output_format usually
-    if (kieModel === 'gpt-image-2-text-to-image') {
+    if (kieModel === 'gpt-image-2-5-flare-text-to-image') {
         payload.input.output_format = "png";
     }
 
@@ -590,7 +602,7 @@ Make the edits clean, professional, and blend seamlessly with the original conte
         
         // FAILOVER: Fall back to text-to-image if image fetch failed on primary model
         const failoverPayload = {
-            model: "gpt-image-2-text-to-image",
+            model: "gpt-image-2-5-flare-text-to-image",
             input: {
                 prompt: finalImagePrompt,
                 aspect_ratio: aspectRatio,

@@ -27,13 +27,40 @@ async function handleRequest(req: Request) {
         let callUuid = ''
 
         try {
-            const formData = await req.formData()
-            fromNumber = (formData.get('From') as string) || (formData.get('from') as string) || ''
-            toNumber = (formData.get('To') as string) || (formData.get('to') as string) || ''
-            callUuid = (formData.get('CallUUID') as string) || (formData.get('call_uuid') as string) || ''
+            const contentType = req.headers.get('content-type') || ''
+            if (contentType.includes('application/json')) {
+                const json = await req.json().catch(() => ({}))
+                fromNumber = json.From || json.from || ''
+                toNumber = json.To || json.to || ''
+                callUuid = json.CallUUID || json.call_uuid || json.callUuid || ''
+            } else if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+                const formData = await req.formData().catch(() => null)
+                if (formData) {
+                    fromNumber = (formData.get('From') as string) || (formData.get('from') as string) || ''
+                    toNumber = (formData.get('To') as string) || (formData.get('to') as string) || ''
+                    callUuid = (formData.get('CallUUID') as string) || (formData.get('call_uuid') as string) || (formData.get('callUuid') as string) || ''
+                }
+            } else {
+                const rawText = await req.text().catch(() => '')
+                try {
+                    const json = JSON.parse(rawText)
+                    fromNumber = json.From || json.from || ''
+                    toNumber = json.To || json.to || ''
+                    callUuid = json.CallUUID || json.call_uuid || json.callUuid || ''
+                } catch {
+                    const params = new URLSearchParams(rawText)
+                    fromNumber = params.get('From') || params.get('from') || ''
+                    toNumber = params.get('To') || params.get('to') || ''
+                    callUuid = params.get('CallUUID') || params.get('call_uuid') || params.get('callUuid') || ''
+                }
+            }
         } catch {
             // URL searchParams fallback
         }
+
+        if (!callUuid) callUuid = searchParams.get('CallUUID') || searchParams.get('call_uuid') || searchParams.get('callUuid') || ''
+        if (!fromNumber) fromNumber = searchParams.get('From') || searchParams.get('from') || ''
+        if (!toNumber) toNumber = searchParams.get('To') || searchParams.get('to') || ''
 
         console.log(`[VOBIZ XML] Answer callback received. leadId: ${leadId}, profileId: ${profileId}, campaignId: ${campaignId}, CallUUID: ${callUuid}`)
 
@@ -124,7 +151,33 @@ async function handleRequest(req: Request) {
 
         const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'
         const statusCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}`
-        const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&profileId=${effectiveProfileId}${effectiveCampaignId ? `&campaignId=${effectiveCampaignId}` : ''}&telephony=vobiz${isInbound ? '&inbound=true' : ''}`
+        const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&profileId=${effectiveProfileId}${effectiveCampaignId ? `&campaignId=${effectiveCampaignId}` : ''}&telephony=vobiz${isInbound ? '&inbound=true' : ''}${callUuid ? `&callUuid=${callUuid}` : ''}`
+
+        // Trigger non-blocking call recording on active call via Vobiz REST API
+        if (callUuid) {
+            const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+            const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+            const recordCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}&event=recording`
+
+            console.log(`[VOBIZ XML] Triggering background REST recording for active call ${callUuid} (lead ${leadId})...`)
+            fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`, {
+                method: 'POST',
+                headers: {
+                    'X-Auth-ID': authId,
+                    'X-Auth-Token': authToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    file_format: 'mp3',
+                    time_limit: 1800,
+                    callback_url: recordCallbackUrl,
+                    callback_method: 'POST'
+                })
+            }).then(async r => {
+                const d = await r.json().catch(() => ({}))
+                console.log(`[VOBIZ XML] Vobiz REST Record API response for ${callUuid}: status=${r.status}`, d)
+            }).catch(e => console.warn(`[VOBIZ XML] Vobiz REST Record trigger warning for ${callUuid}:`, e.message))
+        }
 
         const escapedWsUrl = wsStreamUrl.replace(/&/g, '&amp;')
 

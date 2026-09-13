@@ -249,7 +249,7 @@ export default function CreationPage() {
   // Configuration State
   const [selectedRatio, setSelectedRatio] = useState('4:5')
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
-  const [selectedModel, setSelectedModel] = useState<'google/nano-banana-2' | 'gpt/gpt-image-2-text-to-image'>('gpt/gpt-image-2-text-to-image')
+  const [selectedModel, setSelectedModel] = useState<'google/nano-banana-2' | 'gpt/gpt-image-2-5-flare-text-to-image'>('gpt/gpt-image-2-5-flare-text-to-image')
   const [creativeCategory, setCreativeCategory] = useState('')
   
   // Custom Reference State

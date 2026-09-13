@@ -41,7 +41,7 @@ export async function analyzeMediaAction(url?: string, file?: File) {
             throw new Error('No media provided');
         }
 
-        console.log(`[Action] Analyzing ${fileName} with Gemini 3 Flash...`);
+        console.log(`[Action] Analyzing ${fileName} (type: ${mimeType})...`);
 
         // Fetch business context
         const { data: profile } = await supabase.from('profiles').select('business_name, contact_number').eq('id', user.id).single();

@@ -626,14 +626,96 @@ export async function callDeepSeekWithUsage(prompt: string): Promise<{ text: str
     };
 }
 
+export async function callDeepSeekVisionWithUsage(prompt: string, imageUrls: string[]): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
+    const rawApiKey = process.env.DEEPSEEK_API_KEY || '';
+    const apiKey = rawApiKey.replace(/^["']|["']$/g, '').trim();
+    if (!apiKey) {
+        throw new Error("DEEPSEEK_API_KEY environment variable is not set");
+    }
+
+    const contentParts: any[] = [{ type: "text", text: prompt }];
+
+    for (const url of imageUrls) {
+        if (!url || typeof url !== 'string') continue;
+        if (url.startsWith('data:')) {
+            contentParts.push({
+                type: "image_url",
+                image_url: { url }
+            });
+        } else {
+            contentParts.push({
+                type: "image_url",
+                image_url: { url }
+            });
+        }
+    }
+
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model: "deepseek-flash",
+            messages: [
+                { role: "user", content: contentParts }
+            ],
+            stream: false
+        })
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`DeepSeek Vision API error: ${response.statusText} - ${errText}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || "";
+    const usage = data.usage || {};
+    const promptTokens = usage.prompt_tokens || 0;
+    const completionTokens = usage.completion_tokens || 0;
+
+    return {
+        text,
+        promptTokens,
+        completionTokens,
+        modelName: "deepseek-flash"
+    };
+}
+
 export async function callGeminiWithUsage(prompt: string, imageUrls?: string[]): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
-    // 1. Multimodal queries (images/videos) MUST go to Gemini
+    const deepSeekKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.replace(/^["']|["']$/g, '').trim() : '';
+
+    // 1. Multimodal queries (images/videos)
     if (imageUrls && imageUrls.length > 0) {
+        const hasVideo = imageUrls.some(url => {
+            if (!url || typeof url !== 'string') return false;
+            const lower = url.toLowerCase();
+            return lower.startsWith('data:video/') || lower.match(/\.(mp4|mov|avi|wmv|webm)(\?.*)?$/) || lower.includes('/video');
+        });
+
+        // Videos must still go to Gemini (DeepSeek Vision only supports static images JPEG, PNG, GIF, WebP)
+        if (hasVideo) {
+            console.log(`[LLM ROUTER] Video detected in multimodal query, routing to Gemini`);
+            return callGeminiWithUsageOriginal(prompt, imageUrls);
+        }
+
+        // Static images: route to DeepSeek Flash Vision if DEEPSEEK_API_KEY is configured
+        if (deepSeekKey) {
+            try {
+                console.log(`[LLM ROUTER] Routing image analysis to DeepSeek Flash Vision (deepseek-flash)`);
+                return await callDeepSeekVisionWithUsage(prompt, imageUrls);
+            } catch (err: any) {
+                console.warn(`[LLM ROUTER] DeepSeek Flash Vision failed, falling back to Gemini. Error: ${err.message}`);
+                return callGeminiWithUsageOriginal(prompt, imageUrls);
+            }
+        }
+
         return callGeminiWithUsageOriginal(prompt, imageUrls);
     }
 
     // 2. Text-only queries: route to DeepSeek v4-flash if DEEPSEEK_API_KEY is configured
-    const deepSeekKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.replace(/^["']|["']$/g, '').trim() : '';
     if (deepSeekKey) {
         try {
             console.log(`[LLM ROUTER] Routing text query to DeepSeek v4-flash`);
@@ -976,15 +1058,20 @@ export async function fetchFacebookPixels(accessToken: string, adAccountId: stri
  */
 export async function createKieImageTask(
     prompt: string, 
-    model: string = "gpt-image-2-text-to-image", 
+    model: string = "gpt-image-2-5-flare-text-to-image", 
     aspectRatio: string = "1:1",
     inputUrls?: string[]
 ): Promise<string> {
     if (!KIE_API_KEY) throw new Error("KIE_API_KEY is not configured.");
 
+    let effectiveRatio = aspectRatio;
+    if (model.startsWith("gpt-image-2-5-flare") && effectiveRatio === "4:5") {
+        effectiveRatio = "3:4";
+    }
+
     const inputPayload: any = {
         prompt: prompt,
-        aspect_ratio: aspectRatio,
+        aspect_ratio: effectiveRatio,
         resolution: "1K"
     };
 

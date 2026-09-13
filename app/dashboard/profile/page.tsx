@@ -2914,12 +2914,18 @@ export default function ProfilePage() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-500 ml-2 block mb-2 uppercase tracking-wider">
-                    <span className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-slate-500 ml-2 uppercase tracking-wider flex items-center gap-1.5">
                       <MessageCircle size={14} className="text-[#25D366]" />
-                      WhatsApp Number (for AI Bot)
-                    </span>
-                  </label>
+                      Personal WhatsApp Number (for Nobogent AI MCP Assistant)
+                    </label>
+                    {formData.whatsappPersonalNumber && (
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        MCP Ready
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="tel"
                     value={formData.whatsappPersonalNumber}
@@ -2928,7 +2934,9 @@ export default function ProfilePage() {
                     className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                     placeholder="e.g. +91 82888 35235"
                   />
-                  <p className="text-[10px] text-slate-400 font-medium mt-1.5 ml-2">Messages from this number to your WABA will get AI-powered responses with your account data.</p>
+                  <p className="text-[11px] text-slate-500 font-medium mt-1.5 ml-2 leading-relaxed">
+                    Operate Nobogent via natural English text or voice notes from this WhatsApp number. Send instructions to add inventory, diagnose lead quality, launch campaigns, or manage CRM leads automatically.
+                  </p>
                 </div>
 
                 <div>

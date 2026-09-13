@@ -54,12 +54,12 @@ export async function createCollageImages(imageUrls: string[], userId: string = 
 
         let generatedCollageUrl: string | null = null;
 
-        // 1. Try GPT 2.0 (gpt-image-2-image-to-image) via Kie.ai first
+        // 1. Try GPT Image 2.5 Flare (gpt-image-2-5-flare-image-to-image) via Kie.ai first
         try {
             const collagePrompt = `Reference images locked. Create an ultra-clean, high-converting 9:16 grid collage featuring these ${chunk.length} product images arranged neatly in a modern commercial 6-image grid layout. Professional studio lighting, seamless alignment, clean borders, 9:16 vertical orientation, no text overlays, commercial ad asset.`;
             
             const payload = {
-                model: "gpt-image-2-image-to-image",
+                model: "gpt-image-2-5-flare-image-to-image",
                 input: {
                     prompt: collagePrompt,
                     aspect_ratio: "9:16",

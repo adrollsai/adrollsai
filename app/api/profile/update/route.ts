@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { analyzeImageWithDeepSeek } from '@/utils/image-analysis'
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import { HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { exec } from 'child_process'
@@ -290,35 +291,13 @@ export async function POST(request: Request) {
 
 
         if (!existingProfile || existingProfile.avatar_url !== updates.avatar_url) {
-          console.log(`[Profile Update API] Avatar URL changed from "${existingProfile?.avatar_url || ''}" to "${updates.avatar_url}". Starting Gemini Vision analysis...`)
+          console.log(`[Profile Update API] Avatar URL changed from "${existingProfile?.avatar_url || ''}" to "${updates.avatar_url}". Starting DeepSeek Flash Vision analysis...`)
           if (updates.avatar_url) {
-            const mediaRes = await fetch(updates.avatar_url)
-            if (mediaRes.ok) {
-              const buffer = Buffer.from(await mediaRes.arrayBuffer())
-              const detectedMimeType = mediaRes.headers.get('content-type') || 'image/jpeg'
-
-              const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!)
-              const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" })
-
-              const prompt = `You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.`
-
-              const result = await model.generateContent([
-                prompt,
-                {
-                  inlineData: {
-                    data: buffer.toString('base64'),
-                    mimeType: detectedMimeType
-                  }
-                }
-              ])
-
-              const desc = result.response.text()?.trim()
-              if (desc) {
-                console.log(`[Profile Update API] Avatar analyzed successfully: ${desc}`)
-                allowedUpdates.avatar_description = desc
-              }
-            } else {
-              console.error(`[Profile Update API] Failed to fetch avatar media from ${updates.avatar_url}`)
+            const prompt = `You are a casting director. Analyze this profile character photo and describe their exact gender (e.g. 'male' or 'female'), ethnicity/appearance, age range, hair style/color, expression, clothing style, and background environment in a short single paragraph of under 40 words. Focus strictly on their physical appearance (e.g., 'A professional young Indian man with short black hair, clean-shaven, wearing a suit and smiling warmly'). Do not add any conversational intro or metadata.`
+            const desc = await analyzeImageWithDeepSeek(updates.avatar_url, prompt)
+            if (desc) {
+              console.log(`[Profile Update API] Avatar analyzed successfully: ${desc}`)
+              allowedUpdates.avatar_description = desc
             }
           } else {
             // If avatar_url was set to null/empty, clear the description too

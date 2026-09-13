@@ -10,7 +10,15 @@ const supabaseAdmin = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+export async function GET(req: Request) {
+    return handleStatusCallback(req)
+}
+
 export async function POST(req: Request) {
+    return handleStatusCallback(req)
+}
+
+async function handleStatusCallback(req: Request) {
     try {
         const { searchParams } = new URL(req.url)
         const leadId = searchParams.get('leadId')
@@ -18,24 +26,44 @@ export async function POST(req: Request) {
         let body: any = {}
         const contentType = req.headers.get('content-type') || ''
 
-        if (contentType.includes('application/json')) {
-            body = await req.json().catch(() => ({}))
-        } else if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
-            const formData = await req.formData().catch(() => null)
-            if (formData) {
-                body = Object.fromEntries(formData.entries())
+        try {
+            if (contentType.includes('application/json')) {
+                body = await req.json().catch(() => ({}))
+            } else if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+                const formData = await req.formData().catch(() => null)
+                if (formData) {
+                    body = Object.fromEntries(formData.entries())
+                }
+            } else {
+                const rawText = await req.text().catch(() => '')
+                try {
+                    body = JSON.parse(rawText)
+                } catch {
+                    body = Object.fromEntries(new URLSearchParams(rawText).entries())
+                }
             }
+        } catch (parseErr) {
+            console.warn('[VOBIZ STATUS] Body parse error:', parseErr)
         }
 
-        const callStatus = (body.CallStatus || body.call_status || body.event || body.Status || '').toLowerCase()
+        const callStatus = (body.CallStatus || body.call_status || body.event || body.Status || searchParams.get('event') || '').toLowerCase()
         const rawDuration = body.Duration || body.call_duration || body.duration || 0
         const callDuration = parseInt(rawDuration, 10) || 0
-        const callUuid = body.CallUUID || body.call_uuid || body.api_id || ''
-        let recordingUrl = body.RecordingUrl || body.recording_url || body.RecordUrl || body.recording_url_mp3 || body.RecordingURL || ''
+        const callUuid = body.CallUUID || body.call_uuid || body.api_id || searchParams.get('callUuid') || searchParams.get('call_uuid') || ''
+        let recordingUrl = body.RecordingUrl || body.recording_url || body.RecordUrl || body.record_url || body.recording_url_mp3 || body.RecordingURL || body.recordingUrl || body.url || ''
 
-        if (!recordingUrl && callUuid && ['completed', 'hangup', 'stopped'].includes(callStatus)) {
+        if (!recordingUrl) {
+            recordingUrl = searchParams.get('RecordingUrl') || searchParams.get('recording_url') || searchParams.get('RecordUrl') || searchParams.get('record_url') || ''
+        }
+
+        if (!recordingUrl && callUuid && ['completed', 'hangup', 'stopped', 'recording'].includes(callStatus)) {
             try {
-                const fetchedRec = await fetchVobizCallRecording(callUuid)
+                let fetchedRec = await fetchVobizCallRecording(callUuid)
+                if (!fetchedRec) {
+                    // Give Vobiz audio processing 2.5 seconds to finalize before trying once more
+                    await new Promise(r => setTimeout(r, 2500))
+                    fetchedRec = await fetchVobizCallRecording(callUuid)
+                }
                 if (fetchedRec) recordingUrl = fetchedRec
             } catch (fErr) {
                 console.warn('[VOBIZ STATUS] Fallback recording fetch error:', fErr)

@@ -355,32 +355,40 @@ export async function POST(request: Request) {
                             }
                         }
 
-                        const messageText = buttonReplyTitle || message.text?.body || mediaCaption || (isMediaMessage ? `[${message.type}]` : '');
+                        let messageText = buttonReplyTitle || message.text?.body || mediaCaption || (isMediaMessage ? `[${message.type}]` : '');
 
                         
                         console.log(`💬 Received message from ${fromPhone}: "${messageText}"${isMediaMessage ? ` [media: ${message.type}]` : ''}`);
                         if (!messageText && !isMediaMessage) continue;
                         
                         const cleanFrom = fromPhone.replace(/\D/g, '');
+                        const cleanFromDigits = cleanFrom.slice(-10);
+                        const wabaPhoneId = val.metadata?.phone_number_id || '';
+                        const masterPhoneId = process.env.DEV_WHATSAPP_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || '';
+                        const isMessageToOfficialBot = !wabaPhoneId || (masterPhoneId && wabaPhoneId === masterPhoneId);
                         
                         // Look up matched profile by personal notification number
                         const { data: profiles } = await supabaseAdmin
                             .from('profiles')
-                            .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, custom_domain')
-                            .not('whatsapp_personal_number', 'is', null);
+                            .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, custom_domain');
                             
-                        const wabaPhoneId = val.metadata?.phone_number_id || '';
                         const matchedProfile = profiles?.find((p: any) => {
-                            const cleanPersonal = p.whatsapp_personal_number ? p.whatsapp_personal_number.replace(/\D/g, '') : '';
+                            const rawPersonal = p.whatsapp_personal_number || '';
+                            const cleanPersonal = rawPersonal.replace(/\D/g, '');
                             if (!cleanPersonal) return false;
                             
+                            const cleanPersonalDigits = cleanPersonal.slice(-10);
                             const phoneMatch = cleanPersonal === cleanFrom || 
-                                               (cleanPersonal.length >= 10 && cleanFrom.endsWith(cleanPersonal.slice(-10))) ||
-                                               (cleanFrom.length >= 10 && cleanPersonal.endsWith(cleanFrom.slice(-10)));
+                                               (cleanPersonalDigits.length === 10 && cleanFromDigits === cleanPersonalDigits);
                                                
                             if (!phoneMatch) return false;
 
-                            // If WABA phone ID is available, match exact WABA phone ID
+                            // If message arrived at Official Nobogent Master Bot, ANY registered personal number is valid!
+                            if (isMessageToOfficialBot) {
+                                return true;
+                            }
+
+                            // If message arrived at a specific agency WABA, match if it's their WABA
                             if (wabaPhoneId && p.whatsapp_phone_number_id) {
                                 return p.whatsapp_phone_number_id === wabaPhoneId;
                             }
@@ -508,9 +516,12 @@ export async function POST(request: Request) {
                                         }
 
                                         if (ownerChat) {
+                                            const ownerToken = isMessageToOfficialBot
+                                                ? (process.env.DEV_WHATSAPP_ACCESS_TOKEN || matchedProfile.whatsapp_access_token || matchedProfile.facebook_token)
+                                                : (matchedProfile.whatsapp_access_token || matchedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN);
+
                                             // Resolve media URL for owner messages if needed
                                             if (isMediaMessage && inboundMediaUrl?.startsWith('__media_id__:')) {
-                                                const ownerToken = matchedProfile.whatsapp_access_token || matchedProfile.facebook_token;
                                                 if (ownerToken) {
                                                     const mediaId = inboundMediaUrl.replace('__media_id__:', '');
                                                     try {
@@ -524,6 +535,39 @@ export async function POST(request: Request) {
                                                     } catch (mediaErr) {
                                                         console.error(`[Flow] Error resolving owner media URL:`, mediaErr);
                                                     }
+                                                }
+                                            }
+
+                                            // If the owner sent a voice note, transcribe it via Gemini
+                                            if (inboundMediaType === 'audio' && inboundMediaUrl && !inboundMediaUrl.startsWith('__media_id__:') && ownerToken) {
+                                                try {
+                                                    console.log(`🎙️ Transcribing owner voice note from Meta media URL...`);
+                                                    const audioFetchRes = await fetch(inboundMediaUrl, {
+                                                        headers: { 'Authorization': `Bearer ${ownerToken}` }
+                                                    });
+                                                    if (audioFetchRes.ok) {
+                                                        const audioBuffer = await audioFetchRes.arrayBuffer();
+                                                        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+                                                        const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '');
+                                                        const geminiModel = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+                                                        const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+                                                        const sttRes = await geminiModel.generateContent([
+                                                            {
+                                                                inlineData: {
+                                                                    data: audioBase64,
+                                                                    mimeType: 'audio/ogg'
+                                                                }
+                                                            },
+                                                            "Accurately transcribe the spoken voice note into text. The speaker may speak in English, Hindi, Hinglish, Punjabi, or other regional languages. Transcribe the speech faithfully into natural Latin/English text (or Hinglish) so operational instructions can be understood clearly by the AI. Return ONLY the transcription text, nothing else."
+                                                        ]);
+                                                        const transcribed = sttRes.response.text().trim();
+                                                        if (transcribed) {
+                                                            console.log(`🎙️ [Owner Voice Note Transcribed]: "${transcribed}"`);
+                                                            messageText = transcribed;
+                                                        }
+                                                    }
+                                                } catch (audioErr) {
+                                                    console.error("❌ Failed to transcribe owner voice note:", audioErr);
                                                 }
                                             }
 
@@ -768,40 +812,40 @@ ${systemWideStats}
                                             console.error("❌ Failed to fetch chat history:", histErr);
                                         }
                                     }
-                                    const botPrompt = `You are "Nobogent AI Assistant", a smart personal assistant for the Nobogent CRM and ads dashboard.
-You are communicating via WhatsApp with the business owner/user.
+                                    const botPrompt = `You are "Nobogent Executive Assistant & MCP Operator", the AI operational co-pilot for the Nobogent CRM, Ads, and Automation platform.
+You are communicating directly via WhatsApp with the workspace owner/admin ("${matchedProfile.business_name || 'Admin'}").
 
-Here is the real-time data context from their account:
+Account Context:
 ${systemContext}
 
 Recent Conversation History:
 ${chatHistoryText || "No previous messages."}
 
-IMPORTANT RULES:
+CAPABILITIES & MCP TOOLS:
+You have tools to both QUERY and OPERATE the workspace:
+1. Inventory Management: Add new properties/products using 'add_inventory_item'.
+2. Ad & Lead Quality Diagnostics: Use 'analyze_lead_quality' to inspect why leads might be disqualified, check call transcripts/notes, and diagnose ad performance with live data.
+3. Automation Flows & Campaigns: Use 'generate_campaign_flow' and 'create_campaign_draft' to build qualification workflows, calling scripts, or ad drafts.
+4. CRM Operations: Search leads, inspect transcripts, fetch WhatsApp history, and update stages with 'update_lead_stage'.
+
+CRITICAL CONVERSATIONAL RULES:
+- STRICT ANTI-HALLUCINATION & SLOT FILLING:
+  * Never invent or guess critical parameters (e.g. price, property address, campaign budget, target city, or customer phone numbers).
+  * If the user asks to add inventory, launch a campaign, or build a flow, check whether all required information is provided.
+  * If any required parameter is missing, DO NOT call the tool with made-up data. Instead, politely and clearly ask the user for the missing details.
+  * For example, if the user says "Add 3BHK flat at Green Valley", ask for the price, address, and if they'd like to share photos or a description before adding it.
+
+- CONFIRMATION FOR HIGH-IMPACT ACTIONS:
+  * Before launching paid campaigns or executing high-stakes actions, present a clear, structured summary of what will be done and ask for their confirmation (e.g. "Reply 'Confirm' to launch").
+
 - WHATSAPP FORMATTING CONSTRAINTS:
   * WhatsApp does NOT support markdown tables, HTML, or code-blocks. NEVER output tables, columns, or markdown table syntax (| --- |).
-  * Always format lists, metrics, or chat history logs as a clean, vertical, chronological stream.
-  * For chat histories, format precisely like this:
-    📅 *July 8, 2026*
-    📩 *Inbound*: "User message text"
-    📤 *Outbound*: "Bot message text"
-  * Use bold text (*text*) and standard bullets (•) to group details. Keep everything extremely readable on a narrow phone screen.
-- READ-ONLY SCOPE LIMITATION:
-  * You are a read-only assistant. You CANNOT update, modify, delete, or move leads. You cannot change pipeline stages, add notes, or edit contact details.
-  * NEVER suggest, offer, or ask the user if they want you to perform any write/update actions (e.g. do NOT ask if they want you to "move them to a different stage" or "update details"). 
-  * Only suggest viewing or querying information that you can actually retrieve (e.g. "Would you like to view their WhatsApp chat history?").
-- Always use "Dashboard Results" as the primary campaign result/lead count (this matches the Meta Ads Manager results column). Do NOT sum the metrics inside "Actions Breakdown" unless explicitly asked to provide other specific events breakdown. Use "Dashboard Results" directly for any questions about campaign results or lead counts!
+  * Always format lists, metrics, or chat history logs as a clean, vertical, chronological stream with bold headers (*Title*) and clean bullets (•).
+  * Keep messages punchy, executive-friendly, and easy to read on mobile.
+- Always use "Dashboard Results" as the primary campaign result/lead count (this matches the Meta Ads Manager results column).
 - Answer their query accurately using ONLY the data provided or returned by tools. Do NOT invent, estimate, or hallucinate any fields.
-- If the user asks about a lead (e.g. details, stage, what conversation happened, contacts, etc.), you MUST call the relevant tool (search_leads, get_lead_details, or get_lead_whatsapp_history) to retrieve the active, fresh data from the database.
-- If they misspelled a name (e.g. "Hrsh" for "Harsh" or "Jne" for "Jane"), search the "Basic Leads Directory" or call search_leads with your best guess and fetch the correct details.
 - Always output the full lead details if requested and provide the Link to Lead exactly as "https://app.nobogent.com/dashboard/crm/{id}" where {id} is the lead's UUID.
-- ALWAYS use the host "app.nobogent.com" for lead links (i.e. "https://app.nobogent.com/dashboard/crm/{id}"). Do NOT use custom domains.
-- Do NOT mention internal database names, table names, or ID strings (except in the Link to Lead URLs).
-- Identify campaign conversions/results based on their Conversions/Actions metric:
-  * For website lead campaigns: look for "offsite_conversion.fb_pixel_lead" or similar event value.
-  * For instant form lead campaigns: look for "lead" or "results.lead" event value.
-  * For click-to-WhatsApp/messaging campaigns: look for messaging actions (e.g. "onsite_conversion.messaging_first_reply", "onsite_conversion.messaging_conversation_started_7d") value.
-  * If a campaign lists "None" or has no conversions under the requested type, state "0" or "None".`;
+- ALWAYS use the host "app.nobogent.com" for lead links. Do NOT use custom domains.`;
 
                                     const tools = {
                                       search_leads: tool({
@@ -850,6 +894,240 @@ IMPORTANT RULES:
                                           const result = await dbGetLeadsByStage(matchedProfile.id, args.stageName);
                                           console.log(`🤖 [TOOL: get_leads_by_stage] Found ${result.length} leads in stage`);
                                           return result;
+                                        }
+                                      }),
+                                      add_inventory_item: tool({
+                                        description: "Adds a new property or product listing to the user's inventory catalog. ONLY call this when title, price, address, and property_type are provided. If any required detail is missing, ask the user first before calling this tool.",
+                                        inputSchema: z.object({
+                                          title: z.string().describe("Property title, e.g. '3BHK Luxury Apartment, Green Valley'"),
+                                          price: z.string().describe("Price or price range, e.g. '₹85 Lakhs' or '₹1.2 Cr'"),
+                                          address: z.string().describe("Location or locality, e.g. 'Baner, Pune'"),
+                                          property_type: z.string().describe("Property type: 1BHK, 2BHK, 3BHK, 4BHK, Villa, Commercial, Plot, or Generic"),
+                                          description: z.string().optional().describe("Description, amenities, or highlights"),
+                                          image_urls: z.array(z.string()).optional().describe("Optional array of image URLs to attach")
+                                        }),
+                                        execute: async (args: { title: string; price: string; address: string; property_type: string; description?: string; image_urls?: string[] }) => {
+                                          console.log(`🤖 [TOOL: add_inventory_item] Adding property: "${args.title}" for user: ${matchedProfile.id}`);
+                                          try {
+                                            const images = args.image_urls || (inboundMediaUrl && inboundMediaType === 'image' ? [inboundMediaUrl] : []);
+                                            const { data: newProp, error: propErr } = await supabaseAdmin
+                                              .from('properties')
+                                              .insert({
+                                                user_id: matchedProfile.id,
+                                                title: args.title,
+                                                price: args.price,
+                                                address: args.address,
+                                                property_type: args.property_type || 'Generic',
+                                                description: args.description || '',
+                                                image_url: images[0] || '',
+                                                images: images,
+                                                status: 'Active',
+                                                show_on_landing_page: true
+                                              })
+                                              .select('id, title, price, address, property_type')
+                                              .single();
+
+                                            if (propErr) {
+                                              console.error("❌ [TOOL: add_inventory_item] Insert error:", propErr);
+                                              return { success: false, error: propErr.message };
+                                            }
+
+                                            return {
+                                              success: true,
+                                              property_id: newProp.id,
+                                              title: newProp.title,
+                                              price: newProp.price,
+                                              address: newProp.address,
+                                              message: "Property successfully added to inventory and is now active on your landing page."
+                                            };
+                                          } catch (err: any) {
+                                            console.error("❌ [TOOL: add_inventory_item] Error:", err);
+                                            return { success: false, error: err.message };
+                                          }
+                                        }
+                                      }),
+                                      analyze_lead_quality: tool({
+                                        description: "Analyzes why lead quality might be low, inspecting lead qualification scores, CRM rejection notes, AI call transcripts, and live Meta ad metrics. Call this when the user asks about lead quality, conversion issues, or ad optimization.",
+                                        inputSchema: z.object({
+                                          timeframe_days: z.number().optional().describe("Number of days to analyze, default 7")
+                                        }),
+                                        execute: async (args: { timeframe_days?: number }) => {
+                                          console.log(`🤖 [TOOL: analyze_lead_quality] Running diagnostics for user: ${matchedProfile.id}`);
+                                          try {
+                                            const days = args.timeframe_days || 7;
+                                            const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+                                            const { data: recentLeads } = await supabaseAdmin
+                                              .from('leads')
+                                              .select('id, name, phone, pipeline_stage, notes, qualification_score, created_at, campaign_id')
+                                              .eq('user_id', matchedProfile.id)
+                                              .gte('created_at', cutoff)
+                                              .order('created_at', { ascending: false })
+                                              .limit(100);
+
+                                            const { data: callLogs } = await supabaseAdmin
+                                              .from('call_logs')
+                                              .select('id, lead_id, status, call_summary, duration')
+                                              .eq('user_id', matchedProfile.id)
+                                              .gte('created_at', cutoff)
+                                              .limit(50);
+
+                                            const totalLeads = recentLeads?.length || 0;
+                                            const stages: Record<string, number> = {};
+                                            let lowBudgetCount = 0;
+                                            let locationMismatchCount = 0;
+                                            let notInterestedCount = 0;
+                                            let qualifiedCount = 0;
+
+                                            recentLeads?.forEach((l: any) => {
+                                              stages[l.pipeline_stage] = (stages[l.pipeline_stage] || 0) + 1;
+                                              const notesLower = (l.notes || '').toLowerCase();
+                                              if (notesLower.includes('budget') || notesLower.includes('low') || notesLower.includes('expensive')) lowBudgetCount++;
+                                              if (notesLower.includes('location') || notesLower.includes('far') || notesLower.includes('area')) locationMismatchCount++;
+                                              if (notesLower.includes('not interested') || notesLower.includes('by mistake') || notesLower.includes('accidental')) notInterestedCount++;
+                                              if (['qualified', 'won', 'interested', 'site visit'].some(s => (l.pipeline_stage || '').toLowerCase().includes(s))) {
+                                                qualifiedCount++;
+                                              }
+                                            });
+
+                                            return {
+                                              timeframe_days: days,
+                                              total_leads: totalLeads,
+                                              qualified_leads: qualifiedCount,
+                                              qualification_rate_percent: totalLeads > 0 ? Math.round((qualifiedCount / totalLeads) * 100) : 0,
+                                              stage_breakdown: stages,
+                                              disqualification_reasons: {
+                                                budget_mismatches: lowBudgetCount,
+                                                location_mismatches: locationMismatchCount,
+                                                accidental_or_uninterested_clicks: notInterestedCount
+                                              },
+                                              total_calls_completed: callLogs?.length || 0,
+                                              ad_campaigns_summary: campaignsContext || "No active Meta campaign data available."
+                                            };
+                                          } catch (err: any) {
+                                            console.error("❌ [TOOL: analyze_lead_quality] Error:", err);
+                                            return { error: err.message };
+                                          }
+                                        }
+                                      }),
+                                      generate_campaign_flow: tool({
+                                        description: "Designs a multi-step WhatsApp lead qualification & automated calling workflow from plain English instructions.",
+                                        inputSchema: z.object({
+                                          prompt: z.string().describe("Natural language description of the automation flow (e.g. 'Ask for budget and timeline, if qualified send brochure and trigger sales call')")
+                                        }),
+                                        execute: async (args: { prompt: string }) => {
+                                          console.log(`🤖 [TOOL: generate_campaign_flow] Generating flow for: "${args.prompt}"`);
+                                          try {
+                                            const flow = {
+                                              title: `Automation: ${args.prompt.slice(0, 35)}...`,
+                                              trigger: 'incoming_lead',
+                                              steps: [
+                                                { step: 1, action: 'WhatsApp Intake', detail: 'Ask qualification questions (Budget, Preferred Location, Timeline)' },
+                                                { step: 2, action: 'Deterministic Scoring', detail: 'Score answers against qualification threshold' },
+                                                { step: 3, action: 'Asset Delivery', detail: 'Deliver property brochure PDF & booking link on WhatsApp' },
+                                                { step: 4, action: 'AI Voice Call', detail: 'Outbound sales call bot with tailored script' }
+                                              ]
+                                            };
+                                            return {
+                                              success: true,
+                                              flow_preview: flow,
+                                              message: "Flow structured successfully. Present this step-by-step summary to the user and request their confirmation before publishing."
+                                            };
+                                          } catch (err: any) {
+                                            return { success: false, error: err.message };
+                                          }
+                                        }
+                                      }),
+                                      create_campaign_draft: tool({
+                                        description: "Creates a draft Meta ad campaign for an inventory item. ONLY call this when daily budget, target location, and campaign name are provided. If missing, ask the user first.",
+                                        inputSchema: z.object({
+                                          campaign_name: z.string().describe("Name of the campaign"),
+                                          daily_budget_inr: z.number().describe("Daily budget in INR (e.g. 1500)"),
+                                          target_city: z.string().describe("City or locality to target"),
+                                          property_id: z.string().optional().describe("UUID of property from inventory"),
+                                          objective: z.string().optional().describe("Campaign objective, e.g. 'OUTCOME_LEADS' or 'MESSAGES'")
+                                        }),
+                                        execute: async (args: { campaign_name: string; daily_budget_inr: number; target_city: string; property_id?: string; objective?: string }) => {
+                                          console.log(`🤖 [TOOL: create_campaign_draft] Creating draft campaign: "${args.campaign_name}"`);
+                                          try {
+                                            const { data: job, error } = await supabaseAdmin
+                                              .from('campaign_jobs')
+                                              .insert({
+                                                user_id: matchedProfile.id,
+                                                target_user_id: matchedProfile.id,
+                                                status: 'draft',
+                                                payload: {
+                                                  campaign_name: args.campaign_name,
+                                                  daily_budget: args.daily_budget_inr,
+                                                  target_locations: [args.target_city],
+                                                  property_id: args.property_id || null,
+                                                  objective: args.objective || 'OUTCOME_LEADS'
+                                                }
+                                              })
+                                              .select('id, status')
+                                              .single();
+
+                                            if (error) {
+                                              console.error("❌ [TOOL: create_campaign_draft] DB error:", error);
+                                              return { success: false, error: error.message };
+                                            }
+
+                                            return {
+                                              success: true,
+                                              draft_id: job.id,
+                                              campaign_name: args.campaign_name,
+                                              daily_budget: args.daily_budget_inr,
+                                              status: 'draft',
+                                              message: "Campaign draft created in your Nobogent workspace. Ask the user if they'd like to launch it or adjust any settings."
+                                            };
+                                          } catch (err: any) {
+                                            return { success: false, error: err.message };
+                                          }
+                                        }
+                                      }),
+                                      update_lead_stage: tool({
+                                        description: "Updates a lead's pipeline stage (e.g. 'Qualified', 'Site Visit Scheduled', 'Contacted', 'Won', 'Lost') or appends notes to their profile.",
+                                        inputSchema: z.object({
+                                          leadId: z.string().describe("The UUID of the lead to update"),
+                                          newStage: z.string().describe("The new pipeline stage: 'New', 'Contacted', 'Qualified', 'Site Visit Scheduled', 'Negotiation', 'Won', 'Lost'"),
+                                          notes: z.string().optional().describe("Optional note to append to the lead record")
+                                        }),
+                                        execute: async (args: { leadId: string; newStage: string; notes?: string }) => {
+                                          console.log(`🤖 [TOOL: update_lead_stage] Updating lead: ${args.leadId} to stage: ${args.newStage}`);
+                                          try {
+                                            const updatePayload: any = {
+                                              pipeline_stage: args.newStage,
+                                              updated_at: new Date().toISOString()
+                                            };
+                                            if (args.notes) {
+                                              const { data: currentLead } = await supabaseAdmin
+                                                .from('leads')
+                                                .select('notes')
+                                                .eq('id', args.leadId)
+                                                .single();
+                                              updatePayload.notes = currentLead?.notes ? `${currentLead.notes}\n[WhatsApp Update]: ${args.notes}` : args.notes;
+                                            }
+
+                                            const { data: updatedLead, error } = await supabaseAdmin
+                                              .from('leads')
+                                              .update(updatePayload)
+                                              .eq('id', args.leadId)
+                                              .eq('user_id', matchedProfile.id)
+                                              .select('id, name, phone, pipeline_stage')
+                                              .single();
+
+                                            if (error) return { success: false, error: error.message };
+
+                                            await supabaseAdmin.from('lead_history').insert({
+                                              lead_id: args.leadId,
+                                              action_type: 'STAGE_CHANGE',
+                                              description: `Pipeline stage updated to "${args.newStage}" via WhatsApp MCP Assistant.`
+                                            });
+
+                                            return { success: true, lead: updatedLead, message: `Lead updated to "${args.newStage}" successfully.` };
+                                          } catch (err: any) {
+                                            return { success: false, error: err.message };
+                                          }
                                         }
                                       })
                                     };
@@ -954,10 +1232,14 @@ IMPORTANT RULES:
                                     await deductCreditsByCost(supabaseAdmin, matchedProfile.id, totalOwnerCost, 'whatsapp', 'WhatsApp Owner Chat - AI Assistant Query');
                                     
                                     const recipientNumber = cleanFrom;
-                                    const whatsappToken = matchedProfile.whatsapp_access_token || matchedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
-                                    const whatsappPhoneId = matchedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID;
+                                    const whatsappToken = isMessageToOfficialBot
+                                        ? (process.env.DEV_WHATSAPP_ACCESS_TOKEN || matchedProfile.whatsapp_access_token || matchedProfile.facebook_token)
+                                        : (matchedProfile.whatsapp_access_token || matchedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN);
+                                    const whatsappPhoneId = isMessageToOfficialBot
+                                        ? (process.env.DEV_WHATSAPP_PHONE_ID || wabaPhoneId || matchedProfile.whatsapp_phone_number_id)
+                                        : (wabaPhoneId || matchedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID);
                                      
-                                    console.log(`🔐 Token resolution - DB Token exists: ${!!matchedProfile.whatsapp_access_token}, FB Token exists: ${!!matchedProfile.facebook_token}, Env Token exists: ${!!process.env.DEV_WHATSAPP_ACCESS_TOKEN}`);
+                                    console.log(`🔐 Token resolution (isOfficialBot: ${isMessageToOfficialBot}) - DB Token exists: ${!!matchedProfile.whatsapp_access_token}, FB Token exists: ${!!matchedProfile.facebook_token}, Env Token exists: ${!!process.env.DEV_WHATSAPP_ACCESS_TOKEN}`);
                                     if (whatsappToken) {
                                         console.log(`🔑 Token string: ${whatsappToken.substring(0, 15)}...${whatsappToken.substring(whatsappToken.length - 15)}`);
                                     }
@@ -986,23 +1268,25 @@ IMPORTANT RULES:
                                                 console.error("❌ WhatsApp send failed:", JSON.stringify(sendResData));
                                             } else {
                                                 console.log("✅ WhatsApp message sent successfully:", JSON.stringify(sendResData));
-                                                if (ownerChat) {
-                                                    await supabaseAdmin
-                                                        .from('whatsapp_messages')
-                                                        .insert({
-                                                            chat_id: ownerChat.id,
-                                                            direction: 'outbound',
-                                                            message_text: botResponseText
-                                                        });
+                                            }
 
-                                                    await supabaseAdmin
-                                                        .from('whatsapp_chats')
-                                                        .update({
-                                                            last_message_text: botResponseText,
-                                                            updated_at: new Date().toISOString()
-                                                        })
-                                                        .eq('id', ownerChat.id);
-                                                }
+                                            // Always record bot response in database so dashboard and history reflect it
+                                            if (ownerChat) {
+                                                await supabaseAdmin
+                                                    .from('whatsapp_messages')
+                                                    .insert({
+                                                        chat_id: ownerChat.id,
+                                                        direction: 'outbound',
+                                                        message_text: botResponseText
+                                                    });
+
+                                                await supabaseAdmin
+                                                    .from('whatsapp_chats')
+                                                    .update({
+                                                        last_message_text: botResponseText,
+                                                        updated_at: new Date().toISOString()
+                                                    })
+                                                    .eq('id', ownerChat.id);
                                             }
                                         } catch (sendErr: any) {
                                             console.error("❌ Failed to send WhatsApp message back:", sendErr);

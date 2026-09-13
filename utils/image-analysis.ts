@@ -12,11 +12,82 @@ export function hashImageUrl(url: string): string {
 }
 
 /**
- * Analyze a single image using Gemini Vision and return a crisp 25-40 word physical visual description.
+ * Analyze a single image using DeepSeek Flash Vision (model: "deepseek-flash")
+ * and return a crisp 25-40 word physical visual description.
+ * Falls back to Gemini if DeepSeek fails or API key is not configured.
  */
-export async function analyzeImageWithGemini(imageUrl: string): Promise<string> {
+export async function analyzeImageWithDeepSeek(imageUrl: string, customPrompt?: string): Promise<string> {
+    const rawApiKey = process.env.DEEPSEEK_API_KEY || '';
+    const apiKey = rawApiKey.replace(/^["']|["']$/g, '').trim();
+
+    const defaultPrompt = "Analyze this product / commercial / real estate image for an AI video generation prompt. Describe the exact setting, core product/property subject, materials, architectural style or design features, color palette, and lighting in 1 to 2 crisp sentences (strictly under 35 words). Focus purely on concrete physical appearance (e.g. 'A spacious modern living room with floor-to-ceiling windows, warm wooden flooring, a grey sectional sofa, and soft afternoon ambient light'). Do not include metadata, introductory filler, or generic commentary.";
+    const visionPrompt = customPrompt || defaultPrompt;
+
+    if (apiKey) {
+        try {
+            console.log(`[Image Analysis] Analyzing image with DeepSeek Flash Vision (deepseek-flash): ${imageUrl.slice(0, 80)}...`);
+
+            let imageSourceUrl = imageUrl;
+            if (!imageUrl.startsWith('data:')) {
+                try {
+                    const res = await fetch(imageUrl);
+                    if (res.ok) {
+                        const buffer = Buffer.from(await res.arrayBuffer());
+                        const mimeType = res.headers.get('content-type') || 'image/jpeg';
+                        imageSourceUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+                    }
+                } catch (fetchErr: any) {
+                    console.warn(`[Image Analysis] Failed to pre-fetch image buffer, using raw URL: ${fetchErr?.message}`);
+                }
+            }
+
+            const response = await fetch("https://api.deepseek.com/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: "deepseek-flash",
+                    messages: [
+                        {
+                            role: "user",
+                            content: [
+                                { type: "text", text: visionPrompt },
+                                { type: "image_url", image_url: { url: imageSourceUrl } }
+                            ]
+                        }
+                    ],
+                    stream: false
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const text = data.choices?.[0]?.message?.content?.trim();
+                if (text) {
+                    console.log(`[Image Analysis] DeepSeek Flash Vision success: "${text}"`);
+                    return text;
+                }
+            } else {
+                const errText = await response.text();
+                console.warn(`[Image Analysis] DeepSeek Flash Vision returned ${response.status}: ${errText}`);
+            }
+        } catch (err: any) {
+            console.warn(`[Image Analysis] DeepSeek Flash Vision error, falling back to Gemini:`, err.message);
+        }
+    }
+
+    // Fallback to Gemini
+    return analyzeImageWithGeminiRaw(imageUrl, visionPrompt);
+}
+
+/**
+ * Fallback implementation using Gemini Vision
+ */
+export async function analyzeImageWithGeminiRaw(imageUrl: string, customPrompt?: string): Promise<string> {
     try {
-        console.log(`[Image Analysis] Downloading and analyzing image: ${imageUrl.slice(0, 80)}...`);
+        console.log(`[Image Analysis] Downloading and analyzing image with Gemini fallback: ${imageUrl.slice(0, 80)}...`);
         const res = await fetch(imageUrl);
         if (!res.ok) {
             console.warn(`[Image Analysis] Failed to fetch image (${res.status} ${res.statusText}): ${imageUrl}`);
@@ -27,7 +98,7 @@ export async function analyzeImageWithGemini(imageUrl: string): Promise<string> 
         const mimeType = res.headers.get('content-type') || 'image/jpeg';
 
         const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
-        const visionPrompt = "Analyze this product / commercial / real estate image for an AI video generation prompt. Describe the exact setting, core product/property subject, materials, architectural style or design features, color palette, and lighting in 1 to 2 crisp sentences (strictly under 35 words). Focus purely on concrete physical appearance (e.g. 'A spacious modern living room with floor-to-ceiling windows, warm wooden flooring, a grey sectional sofa, and soft afternoon ambient light'). Do not include metadata, introductory filler, or generic commentary.";
+        const visionPrompt = customPrompt || "Analyze this product / commercial / real estate image for an AI video generation prompt. Describe the exact setting, core product/property subject, materials, architectural style or design features, color palette, and lighting in 1 to 2 crisp sentences (strictly under 35 words). Focus purely on concrete physical appearance (e.g. 'A spacious modern living room with floor-to-ceiling windows, warm wooden flooring, a grey sectional sofa, and soft afternoon ambient light'). Do not include metadata, introductory filler, or generic commentary.";
 
         const result = await model.generateContent([
             visionPrompt,
@@ -41,14 +112,21 @@ export async function analyzeImageWithGemini(imageUrl: string): Promise<string> 
 
         const text = result.response.text()?.trim();
         if (text) {
-            console.log(`[Image Analysis] Analysis successful: "${text}"`);
+            console.log(`[Image Analysis] Gemini fallback analysis successful: "${text}"`);
             return text;
         }
     } catch (err: any) {
-        console.error(`[Image Analysis] Vision analysis failed for ${imageUrl}:`, err.message);
+        console.error(`[Image Analysis] Gemini fallback vision analysis failed for ${imageUrl}:`, err.message);
     }
 
     return "Commercial product showcase featuring clean physical details, vibrant colors, and modern aesthetic.";
+}
+
+/**
+ * Analyze a single image: Primary DeepSeek Flash Vision, with graceful Gemini fallback.
+ */
+export async function analyzeImageWithGemini(imageUrl: string, customPrompt?: string): Promise<string> {
+    return analyzeImageWithDeepSeek(imageUrl, customPrompt);
 }
 
 /**
@@ -127,7 +205,7 @@ export async function resolveImageDescriptions(
     // 3. Find URLs that are missing descriptions and analyze them in parallel
     const urlsToAnalyze = cleanUrls.filter(url => !descriptionsMap.has(url));
     if (urlsToAnalyze.length > 0) {
-        console.log(`[Image Analysis] Analyzing ${urlsToAnalyze.length} new image(s) with Gemini Vision...`);
+        console.log(`[Image Analysis] Analyzing ${urlsToAnalyze.length} new image(s) with DeepSeek Flash Vision...`);
         const newlyAnalyzed = await Promise.all(
             urlsToAnalyze.map(async (url) => {
                 const desc = await analyzeImageWithGemini(url);

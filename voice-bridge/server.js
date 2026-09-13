@@ -554,10 +554,11 @@ wss.on('connection', (wsConnection, req) => {
     const queryProfileId = urlObj?.searchParams?.get('profileId') || urlObj?.searchParams?.get('amp;profileId');
     const queryCampaignId = urlObj?.searchParams?.get('campaignId') || urlObj?.searchParams?.get('amp;campaignId');
     const queryTelephony = urlObj?.searchParams?.get('telephony') || urlObj?.searchParams?.get('amp;telephony');
+    const queryCallUuid = urlObj?.searchParams?.get('callUuid') || urlObj?.searchParams?.get('amp;callUuid') || urlObj?.searchParams?.get('call_uuid');
 
     let isVobiz = queryTelephony === 'vobiz';
     let vobizStreamId = null;
-    let vobizCallId = null;
+    let vobizCallId = queryCallUuid || null;
     let vobizContentType = 'audio/x-l16';
 
     console.log(`[BRIDGE] New WebSocket connection request. Telephony: ${isVobiz ? 'Vobiz' : 'Twilio/Standard'}, URL: ${req.url}`);
@@ -664,7 +665,7 @@ wss.on('connection', (wsConnection, req) => {
                 if (data.streamId || data.callId || queryTelephony === 'vobiz' || (!data.start && data.streamId)) {
                     isVobiz = true;
                     vobizStreamId = data.streamId || data.start?.streamId;
-                    vobizCallId = data.callId || data.callUuid || data.start?.callSid;
+                    vobizCallId = data.callId || data.callUuid || data.start?.callSid || queryCallUuid;
                     vobizContentType = data.mediaFormat?.contentType || 'audio/x-l16';
                     twilioStreamSid = vobizStreamId;
                     leadId = data.customParameters?.leadId || data.start?.customParameters?.leadId || queryLeadId;

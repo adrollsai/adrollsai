@@ -205,22 +205,69 @@ Output ONLY a JSON object:
 
         const mediaDataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
 
-        const { text } = await generateText({
-            model: google('gemini-3.5-flash'),
-            messages: [
-                {
-                    role: 'user',
-                    content: prompt,
-                    experimental_attachments: [
-                        {
-                            name: `media.${type === 'video' ? 'mp4' : 'png'}`,
-                            contentType: mimeType,
-                            url: mediaDataUrl
-                        }
-                    ]
-                } as any
-            ]
-        });
+        let text = "";
+        const isVideo = type === 'video' || mimeType.startsWith('video');
+        const deepSeekKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.replace(/^["']|["']$/g, '').trim() : '';
+
+        // For static images, use DeepSeek Flash Vision (deepseek-flash)
+        if (!isVideo && deepSeekKey) {
+            try {
+                console.log(`[Generate Caption] Analyzing image with DeepSeek Flash Vision (deepseek-flash)...`);
+                const dsRes = await fetch("https://api.deepseek.com/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${deepSeekKey}`
+                    },
+                    body: JSON.stringify({
+                        model: "deepseek-flash",
+                        messages: [
+                            {
+                                role: "user",
+                                content: [
+                                    { type: "text", text: prompt },
+                                    { type: "image_url", image_url: { url: mediaDataUrl } }
+                                ]
+                            }
+                        ],
+                        stream: false
+                    })
+                });
+
+                if (dsRes.ok) {
+                    const dsData = await dsRes.json();
+                    text = dsData.choices?.[0]?.message?.content || "";
+                    console.log(`[Generate Caption] Successfully generated caption using DeepSeek Flash Vision`);
+                } else {
+                    const errBody = await dsRes.text();
+                    console.warn(`[Generate Caption] DeepSeek Flash Vision HTTP ${dsRes.status}: ${errBody}, falling back to Gemini`);
+                }
+            } catch (dsErr: any) {
+                console.warn(`[Generate Caption] DeepSeek Flash Vision error, falling back to Gemini:`, dsErr.message);
+            }
+        }
+
+        // If video or if DeepSeek failed/unavailable, fall back to Gemini
+        if (!text) {
+            console.log(`[Generate Caption] Generating caption using Gemini (${isVideo ? 'video' : 'fallback'})...`);
+            const geminiResult = await generateText({
+                model: google('gemini-3.5-flash'),
+                messages: [
+                    {
+                        role: 'user',
+                        content: prompt,
+                        experimental_attachments: [
+                            {
+                                name: `media.${isVideo ? 'mp4' : 'png'}`,
+                                contentType: mimeType,
+                                url: mediaDataUrl
+                            }
+                        ]
+                    } as any
+                ]
+            });
+            text = geminiResult.text;
+        }
 
         const captions = extractJsonFromText<{ headline: string; primary_text: string; social_post_description: string }>(text, {
             headline: '',
