@@ -1996,6 +1996,113 @@ CRITICAL CONVERSATIONAL RULES:
                                           }
                                         }
                                       }),
+                                      send_location_picker: tool({
+                                        description: "Sends an interactive WhatsApp message with a secure link that opens the live Meta Location and Radius Picker webview. The user can search any city or region directly against Meta's Marketing API directory, select cities, set radius (17-80 km), and save directly to their campaign draft. Call this whenever the user wants to change, select, verify, or fine-tune target locations or radiuses for their campaign, or asks how to target specific cities.",
+                                        inputSchema: z.object({
+                                          campaign_job_id: z.string().optional().describe("Optional campaign draft ID to attach locations to.")
+                                        }),
+                                        execute: async (args: { campaign_job_id?: string }) => {
+                                          try {
+                                            console.log(`📍 [TOOL: send_location_picker] Triggered for user ${matchedProfile.id}`);
+
+                                            let targetJobId = args.campaign_job_id;
+                                            if (!targetJobId) {
+                                              const { data: latestDraft } = await supabaseAdmin
+                                                .from('campaign_jobs')
+                                                .select('id, payload')
+                                                .eq('user_id', matchedProfile.id)
+                                                .eq('status', 'draft')
+                                                .order('created_at', { ascending: false })
+                                                .limit(1)
+                                                .maybeSingle();
+                                              if (latestDraft) targetJobId = latestDraft.id;
+                                            }
+
+                                            const token = createCreativeSessionToken({
+                                              userId: matchedProfile.id,
+                                              campaignId: targetJobId,
+                                              phone: cleanFrom
+                                            });
+
+                                            let baseUrl = 'https://app.nobogent.com';
+                                            if (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('local.') && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')) {
+                                              baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+                                            }
+                                            const pickerUrl = `${baseUrl.replace(/\/$/, '')}/select-creatives?token=${token}&tab=locations`;
+
+                                            const targetPhoneId = isMessageToOfficialBot
+                                              ? (process.env.DEV_WHATSAPP_PHONE_ID || wabaPhoneId || matchedProfile.whatsapp_phone_number_id)
+                                              : (wabaPhoneId || matchedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID);
+                                            const targetToken = isMessageToOfficialBot
+                                              ? (process.env.DEV_WHATSAPP_ACCESS_TOKEN || matchedProfile.whatsapp_access_token || matchedProfile.facebook_token)
+                                              : (matchedProfile.whatsapp_access_token || matchedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN);
+
+                                            const msgPayload = {
+                                              messaging_product: 'whatsapp',
+                                              recipient_type: 'individual',
+                                              to: cleanFrom,
+                                              type: 'interactive',
+                                              interactive: {
+                                                type: 'cta_url',
+                                                header: {
+                                                  type: 'text',
+                                                  text: '📍 Target Locations & Radius'
+                                                },
+                                                body: {
+                                                  text: `Search and select exact cities directly from Meta's live directory (Muktsar, Mohali, Panchkula, etc.) and set radiuses (17-80 km):\n\n🔗 *Direct Link:*\n${pickerUrl}`
+                                                },
+                                                footer: {
+                                                  text: 'Nobogent AI'
+                                                },
+                                                action: {
+                                                  name: 'cta_url',
+                                                  parameters: {
+                                                    display_text: 'Select Locations 📍',
+                                                    url: pickerUrl
+                                                  }
+                                                }
+                                              }
+                                            };
+
+                                            const sendRes = await fetch(`https://graph.facebook.com/v20.0/${targetPhoneId}/messages`, {
+                                              method: 'POST',
+                                              headers: {
+                                                'Authorization': `Bearer ${targetToken}`,
+                                                'Content-Type': 'application/json'
+                                              },
+                                              body: JSON.stringify(msgPayload)
+                                            });
+
+                                            if (!sendRes.ok) {
+                                              await fetch(`https://graph.facebook.com/v20.0/${targetPhoneId}/messages`, {
+                                                method: 'POST',
+                                                headers: {
+                                                  'Authorization': `Bearer ${targetToken}`,
+                                                  'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify({
+                                                  messaging_product: 'whatsapp',
+                                                  recipient_type: 'individual',
+                                                  to: cleanFrom,
+                                                  type: 'text',
+                                                  text: {
+                                                    body: `📍 *Select Target Locations & Radius*\n\nTap the link below to search live Meta cities and adjust radius:\n👉 ${pickerUrl}\n\nOnce saved, your campaign draft will be updated automatically!`
+                                                  }
+                                                })
+                                              });
+                                            }
+
+                                            return {
+                                              success: true,
+                                              location_picker_url: pickerUrl,
+                                              message: "Sent interactive Location & Radius Picker link to the user's WhatsApp. They can tap to search live Meta cities, adjust radius, and save."
+                                            };
+                                          } catch (e: any) {
+                                            console.error('❌ [send_location_picker] Error:', e);
+                                            return { success: false, error: e.message };
+                                          }
+                                        }
+                                      }),
                                       launch_meta_campaign: tool({
                                         description: "Publishes and launches a draft Meta ad campaign directly into Meta Ads Manager. Call this when the user confirms with 'Confirm', 'Launch', 'Go ahead', or asks to activate the campaign.",
                                         inputSchema: z.object({

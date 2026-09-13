@@ -140,6 +140,42 @@ export async function GET(request: Request) {
         status: campaign.status
       } : null,
       selectedUrls: currentlySelectedUrls,
+      savedLocations: (() => {
+        let list: any[] = [];
+        if (campaign?.payload?.metaLocationsStr) {
+          try {
+            const raw = campaign.payload.metaLocationsStr;
+            const parsed = typeof raw === 'string' && (raw.startsWith('[') || raw.startsWith('{')) ? JSON.parse(raw) : null;
+            if (Array.isArray(parsed)) {
+              list = parsed.map((item: any) => {
+                const loc = item.location || item;
+                return {
+                  key: loc.key,
+                  name: loc.name || 'Target Location',
+                  type: loc.type || 'city',
+                  region: loc.region || '',
+                  country_code: loc.country_code || 'IN',
+                  radius: item.radius || loc.radius || 25
+                };
+              });
+            }
+          } catch (e) {}
+        }
+        if (list.length === 0 && campaign?.payload?.target_locations) {
+          const rawLocs = Array.isArray(campaign.payload.target_locations)
+            ? campaign.payload.target_locations
+            : [campaign.payload.target_locations];
+          list = rawLocs.map((name: string) => ({
+            key: `custom_${name.replace(/\W+/g, '_')}`,
+            name,
+            type: 'city',
+            region: '',
+            country_code: 'IN',
+            radius: 25
+          }));
+        }
+        return list;
+      })(),
       creatives: formattedCreatives
     });
   } catch (error: any) {
@@ -151,14 +187,14 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { token, selectedUrls } = body;
+    const { token, selectedUrls, selectedLocations } = body;
 
     if (!token) {
       return NextResponse.json({ error: 'Session token is required.' }, { status: 400 });
     }
 
-    if (!Array.isArray(selectedUrls)) {
-      return NextResponse.json({ error: 'selectedUrls must be an array of image/video URLs.' }, { status: 400 });
+    if (selectedUrls === undefined && selectedLocations === undefined) {
+      return NextResponse.json({ error: 'Either selectedUrls or selectedLocations must be provided.' }, { status: 400 });
     }
 
     const payload = verifyCreativeSessionToken(token);
@@ -194,7 +230,7 @@ export async function POST(request: Request) {
     }
 
     if (!targetJobId) {
-      return NextResponse.json({ error: 'No active campaign draft found to attach creatives to.' }, { status: 404 });
+      return NextResponse.json({ error: 'No active campaign draft found to update.' }, { status: 404 });
     }
 
     const { data: existingJob } = await supabaseAdmin
@@ -208,11 +244,38 @@ export async function POST(request: Request) {
     }
 
     const jobPayload = existingJob.payload || {};
-    const updatedPayload = {
-      ...jobPayload,
-      creative_urls: selectedUrls,
-      creativeUrls: selectedUrls
-    };
+    const updatedPayload: any = { ...jobPayload };
+
+    let updatedCreatives = false;
+    let updatedLocations = false;
+
+    if (Array.isArray(selectedUrls)) {
+      updatedPayload.creative_urls = selectedUrls;
+      updatedPayload.creativeUrls = selectedUrls;
+      updatedCreatives = true;
+    }
+
+    if (Array.isArray(selectedLocations)) {
+      const structuredList = selectedLocations.map((loc: any) => ({
+        location: {
+          key: loc.key,
+          name: loc.name,
+          type: loc.type || 'city',
+          region: loc.region || '',
+          country_code: loc.country_code || 'IN'
+        },
+        radius: loc.radius || 25
+      }));
+
+      const readableNames = selectedLocations.map((loc: any) => {
+        const radiusStr = loc.type === 'city' && loc.radius ? ` (${loc.radius} km)` : '';
+        return `${loc.name}${radiusStr}`;
+      });
+
+      updatedPayload.metaLocationsStr = JSON.stringify(structuredList);
+      updatedPayload.target_locations = readableNames;
+      updatedLocations = true;
+    }
 
     const { error: updateErr } = await supabaseAdmin
       .from('campaign_jobs')
@@ -226,7 +289,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: updateErr.message }, { status: 500 });
     }
 
-    console.log(`✅ [picker-session POST] Attached ${selectedUrls.length} creatives to campaign ${targetJobId}`);
+    console.log(`✅ [picker-session POST] Updated draft ${targetJobId} (creatives: ${updatedCreatives}, locations: ${updatedLocations})`);
 
     // Dispatch WhatsApp confirmation message to user's WhatsApp
     const recipientPhone = (phone || profile.whatsapp_personal_number || '').replace(/\D/g, '');
@@ -235,19 +298,38 @@ export async function POST(request: Request) {
 
     if (recipientPhone && waToken && waPhoneId) {
       try {
-        const campaignName = jobPayload.campaign_name || 'Meta Ad Campaign';
-        const budget = jobPayload.daily_budget || jobPayload.dailyBudget || 1500;
-        const targetCity = Array.isArray(jobPayload.target_locations) 
-          ? jobPayload.target_locations.join(', ') 
-          : (jobPayload.target_locations || 'Delhi NCR');
+        const campaignName = updatedPayload.campaign_name || 'Meta Ad Campaign';
+        const budget = updatedPayload.daily_budget || updatedPayload.dailyBudget || 1500;
+        const targetCity = Array.isArray(updatedPayload.target_locations) 
+          ? updatedPayload.target_locations.join(', ') 
+          : (updatedPayload.target_locations || 'Delhi NCR');
+        const creativeCount = Array.isArray(updatedPayload.creativeUrls) ? updatedPayload.creativeUrls.length : 0;
 
-        const messageText = `✅ *${selectedUrls.length} Creative(s) Successfully Attached!*\n\n` +
-          `Your campaign draft has been updated with your visual selection:\n` +
-          `• *Campaign:* ${campaignName}\n` +
-          `• *Daily Budget:* ₹${Number(budget).toLocaleString('en-IN')}\n` +
-          `• *Targeting:* ${targetCity}\n` +
-          `• *Creatives:* ${selectedUrls.length} attached\n\n` +
-          `🚀 Everything is configured and ready. Reply *"Launch"* or *"Confirm"* whenever you'd like to publish live to Meta Ads Manager!`;
+        let messageText = '';
+        if (updatedLocations && !updatedCreatives) {
+          messageText = `📍 *Target Locations Successfully Updated!*\n\n` +
+            `Your campaign targeting has been updated directly from Meta's directory:\n` +
+            `• *Campaign:* ${campaignName}\n` +
+            `• *Targeting:* ${targetCity}\n` +
+            `• *Daily Budget:* ₹${Number(budget).toLocaleString('en-IN')}\n` +
+            `• *Creatives:* ${creativeCount} attached\n\n` +
+            `🚀 Everything is set! Reply *"Launch"* or *"Confirm"* whenever you're ready to publish live.`;
+        } else if (updatedCreatives && !updatedLocations) {
+          messageText = `✅ *${selectedUrls.length} Creative(s) Successfully Attached!*\n\n` +
+            `Your campaign draft has been updated with your visual selection:\n` +
+            `• *Campaign:* ${campaignName}\n` +
+            `• *Daily Budget:* ₹${Number(budget).toLocaleString('en-IN')}\n` +
+            `• *Targeting:* ${targetCity}\n` +
+            `• *Creatives:* ${selectedUrls.length} attached\n\n` +
+            `🚀 Everything is configured and ready. Reply *"Launch"* or *"Confirm"* whenever you'd like to publish live to Meta Ads Manager!`;
+        } else {
+          messageText = `🎯 *Campaign Draft Updated!*\n\n` +
+            `• *Campaign:* ${campaignName}\n` +
+            `• *Targeting:* ${targetCity}\n` +
+            `• *Creatives:* ${creativeCount} attached\n` +
+            `• *Daily Budget:* ₹${Number(budget).toLocaleString('en-IN')}\n\n` +
+            `🚀 Reply *"Launch"* to publish your ads live to Meta!`;
+        }
 
         await fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
           method: 'POST',
@@ -263,17 +345,17 @@ export async function POST(request: Request) {
             text: { body: messageText }
           })
         });
-        console.log(`📲 Dispatched WhatsApp confirmation message to ${recipientPhone}`);
+        console.log(`📲 WhatsApp confirmation sent to ${recipientPhone}`);
       } catch (waErr) {
-        console.error('Failed to dispatch WhatsApp confirmation message:', waErr);
+        console.warn('Could not send WhatsApp confirmation:', waErr);
       }
     }
 
     return NextResponse.json({
       success: true,
-      message: `Successfully attached ${selectedUrls.length} creatives to your campaign draft.`,
-      campaign_id: targetJobId,
-      selected_count: selectedUrls.length
+      message: 'Draft successfully updated',
+      updatedCreatives,
+      updatedLocations
     });
   } catch (error: any) {
     console.error('❌ [picker-session POST] Error:', error);
