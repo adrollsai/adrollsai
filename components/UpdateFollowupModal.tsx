@@ -59,7 +59,7 @@ export function formatFriendlyDateWithDay(dateStr?: string | null): string | nul
 interface UpdateFollowupModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess?: () => void
+  onSuccess?: (updatedData?: any) => void
   lead: any
   properties?: any[]
   teamMembers?: any[]
@@ -250,7 +250,25 @@ export default function UpdateFollowupModal({
         throw new Error(data.error || 'Failed to save followup')
       }
 
-      if (onSuccess) onSuccess()
+      const updatedPayload = {
+        id: lead.id,
+        status: isDnp ? (lead.status || lead.pipeline_stage || 'Contacted') : effectiveStage,
+        pipeline_stage: isDnp ? (lead.pipeline_stage || lead.status || 'Contacted') : effectiveStage,
+        next_followup: hasNextAction ? new Date(nextActionDate).toISOString() : null,
+        notes: (lead.notes || '') + (remarks ? `\n[Followup (${followupType})]: ${remarks}` : ''),
+        custom_fields: {
+          ...(typeof lead.custom_fields === 'object' ? lead.custom_fields : {}),
+          last_followup_at: new Date().toISOString(),
+          last_followup_type: followupType,
+          last_call_dnp: isDnp,
+          next_action_date: hasNextAction ? new Date(nextActionDate).toISOString() : null,
+          next_action_type: hasNextAction ? nextActionType : null,
+          next_action_remark: nextRemarks || null,
+          last_remark: remarks || null
+        }
+      }
+
+      if (onSuccess) onSuccess(updatedPayload)
       onClose()
     } catch (err: any) {
       setError(err.message || 'An error occurred while saving.')

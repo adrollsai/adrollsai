@@ -13,6 +13,7 @@ import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { normalizeQualifyingQuestion, parseCustomFields } from '@/utils/lead-scoring'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
+import { openPhoneDialer } from '@/utils/dialer'
 
 const STAGES = [
   'New Lead',
@@ -1487,7 +1488,7 @@ END:VCARD`
                                     onClick={async () => {
                                         const displayPhone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || '';
                                         if (displayPhone) {
-                                            window.open(`tel:${formatCallPhone(displayPhone)}`, '_self');
+                                            openPhoneDialer(displayPhone);
                                             try {
                                                 await fetch('/api/crm/followup', {
                                                     method: 'POST',

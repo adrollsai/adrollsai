@@ -20,13 +20,18 @@ export async function POST(request: Request) {
       .eq('id', user.id)
       .single()
 
-    const result = await ensureMetaPageSubscribed(supabase, {
-      id: user.id,
-      selected_page_id: pageId,
-      selected_page_token: pageToken || profile?.selected_page_token,
-      facebook_token: profile?.facebook_token,
-      email: profile?.email || user.email
-    })
+    const result = await ensureMetaPageSubscribed(
+      supabase,
+      {
+        id: user.id,
+        selected_page_id: profile?.selected_page_id,
+        selected_page_token: profile?.selected_page_token,
+        facebook_token: profile?.facebook_token,
+        email: profile?.email || user.email
+      },
+      pageId,
+      pageToken
+    )
 
     if (result.success) {
       console.log(`✅ Page ${pageId} successfully subscribed to app webhooks.`)

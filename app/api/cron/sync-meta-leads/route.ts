@@ -4,7 +4,7 @@ import { sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { triggerWelcomeDrip, sendInstantFormCatalogMessage } from '@/utils/whatsapp/drips'
 import { triggerOutboundCall } from '@/utils/voice-helper'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
-import { ensureMetaPageSubscribed } from '@/utils/meta-subscription'
+import { ensureMetaPageSubscribed, ensureWabaSubscribed } from '@/utils/meta-subscription'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -83,7 +83,7 @@ async function handleSync(request: Request) {
     // 1. Fetch all active profiles with connected Meta Pages
     const { data: profiles, error: profileErr } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, business_name, selected_page_id, selected_page_token, facebook_token, ad_account_id, enable_distribution, auto_call_new_leads, agency_id, parent_id')
+      .select('id, email, business_name, selected_page_id, selected_page_token, facebook_token, ad_account_id, enable_distribution, auto_call_new_leads, agency_id, parent_id, business_info, whatsapp_waba_id, whatsapp_access_token')
       .not('selected_page_id', 'is', null)
       .not('selected_page_token', 'is', null);
 
@@ -98,16 +98,32 @@ async function handleSync(request: Request) {
     for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
       const batch = profiles.slice(i, i + BATCH_SIZE);
       await Promise.allSettled(batch.map(async (profile) => {
-        // Strictly sync ONLY the page explicitly connected to this profile
+        // Sync ALL pages explicitly connected to this profile (primary selected_page_id + secondary selected_pages in business_info)
         const pagesMap = new Map<string, string>();
         if (profile.selected_page_id && (profile.selected_page_token || profile.facebook_token)) {
-          pagesMap.set(profile.selected_page_id, profile.selected_page_token || profile.facebook_token);
+          pagesMap.set(String(profile.selected_page_id), profile.selected_page_token || profile.facebook_token);
         }
+
+        try {
+          const bInfo = typeof profile.business_info === 'string' ? JSON.parse(profile.business_info) : (profile.business_info || {});
+          if (Array.isArray(bInfo.selected_pages)) {
+            for (const sp of bInfo.selected_pages) {
+              if (sp.id && (sp.access_token || profile.facebook_token)) {
+                pagesMap.set(String(sp.id), sp.access_token || profile.facebook_token);
+              }
+            }
+          }
+        } catch (e) {}
 
         if (pagesMap.size === 0) return;
 
         // Auto-heal page webhook subscription on Meta with token refresh
         await ensureMetaPageSubscribed(supabaseAdmin, profile).catch(() => {});
+
+        // Auto-heal WABA webhook subscription on Meta
+        if (profile.whatsapp_waba_id) {
+          await ensureWabaSubscribed(profile.whatsapp_waba_id, profile.whatsapp_access_token).catch(() => {});
+        }
 
         try {
           // 1. Fetch Leadgen Forms across ALL user pages with full pagination
@@ -165,9 +181,9 @@ async function handleSync(request: Request) {
             }
           }
 
-          // 4. Also collect any active ads directly from Ad Account if available (STRICTLY scoped to profile.selected_page_id)
+          // 4. Also collect any active ads directly from Ad Account if available (STRICTLY scoped to profile's connected pages)
           const activeAdForms = new Set<string>();
-          if (profile.ad_account_id && profile.facebook_token && profile.selected_page_id) {
+          if (profile.ad_account_id && profile.facebook_token && pagesMap.size > 0) {
             try {
               const adRes = await fetch(`https://graph.facebook.com/v20.0/${profile.ad_account_id}/ads?fields=id,name,status,effective_status,campaign_id,campaign{id,name},creative{object_story_spec,effective_object_story_id}&effective_status=['ACTIVE']&limit=50&access_token=${profile.facebook_token}`, {
                 signal: AbortSignal.timeout(6000)
@@ -177,13 +193,13 @@ async function handleSync(request: Request) {
                 if (adData.data) {
                   // Direct fetch for leads from active ads
                   for (const ad of adData.data) {
-                    // STRICT ISOLATION GUARD: Verify ad belongs to profile's connected Page
+                    // STRICT ISOLATION GUARD: Verify ad belongs to one of the profile's connected Pages
                     const spec = ad.creative?.object_story_spec;
                     const adPageId = spec?.page_id || 
                       (ad.creative?.effective_object_story_id ? ad.creative.effective_object_story_id.split('_')[0] : null);
 
-                    if (adPageId && adPageId !== profile.selected_page_id) {
-                      console.log(`[Meta Leads Sync Security] Skipping ad ${ad.id} (${ad.name}): Ad page (${adPageId}) does not match profile page (${profile.selected_page_id})`);
+                    if (adPageId && !pagesMap.has(String(adPageId))) {
+                      console.log(`[Meta Leads Sync Security] Skipping ad ${ad.id} (${ad.name}): Ad page (${adPageId}) does not match any profile connected page`);
                       continue;
                     }
 

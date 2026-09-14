@@ -253,7 +253,8 @@ export function getUserLimits(profile: any) {
         'rchopra489@gmail.com',
         'infobluesquareinfra@gmail.com',
         'khushiramrealtor@gmail.com',
-        'meta-reviewer@nobogent.com'
+        'meta-reviewer@nobogent.com',
+        'pawan@pipixel.io'
     ];
     const isWhitelisted = whitelistedEmails.includes(userEmail);
 

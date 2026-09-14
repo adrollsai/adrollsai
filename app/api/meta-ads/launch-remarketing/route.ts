@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { callGemini } from '@/utils/external-apis';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
+import { ensureWabaSubscribed } from '@/utils/meta-subscription';
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
@@ -101,7 +102,7 @@ export async function POST(request: Request) {
 
     // Fetch TARGET profile for credentials and business info
     const { data: targetProfile } = await supabaseAdmin.from('profiles')
-        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url')
+        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, whatsapp_waba_id, whatsapp_access_token')
         .eq('id', targetUserId)
         .single();
 
@@ -170,6 +171,11 @@ export async function POST(request: Request) {
     fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=leadgen&access_token=${facebookToken}`, {
         method: 'POST'
     }).catch(() => {});
+
+    // Guarantee WABA is subscribed to Meta webhooks for real-time WhatsApp chat/lead ingestion
+    if (targetProfile?.whatsapp_waba_id) {
+        ensureWabaSubscribed(targetProfile.whatsapp_waba_id, targetProfile.whatsapp_access_token).catch(() => {});
+    }
 
     // --- Step 00. Check Meta Custom Audience Terms of Service ---
     logToFile("--- Checking Meta Custom Audience Terms of Service ---");

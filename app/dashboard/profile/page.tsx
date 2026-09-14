@@ -46,6 +46,7 @@ import {
   Clock,
   Bell,
   Workflow,
+  Check,
   X
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -468,6 +469,7 @@ export default function ProfilePage() {
   const [pixels, setPixels] = useState<Pixel[]>([])
 
   const [selectedPageId, setSelectedPageId] = useState<string>('')
+  const [selectedPageIds, setSelectedPageIds] = useState<string[]>([])
   const [selectedAdAccountId, setSelectedAdAccountId] = useState<string>('')
   const [selectedPixelId, setSelectedPixelId] = useState<string>('')
 
@@ -696,12 +698,35 @@ export default function ProfilePage() {
   }
 
   // --- SELECTION HANDLERS ---
-  const handlePageSelect = async (pageId: string) => {
+  const handlePageToggle = async (pageId: string) => {
     const effectiveUserId = targetUserId || userId;
     const page = fbPages.find(p => p.id === pageId)
     if (!page || !effectiveUserId) return
 
-    setSelectedPageId(pageId)
+    const isCurrentlySelected = selectedPageIds.includes(pageId);
+    let nextSelectedIds: string[];
+    let nextPrimaryId: string;
+
+    if (isCurrentlySelected) {
+      // Deselect page
+      nextSelectedIds = selectedPageIds.filter(id => id !== pageId);
+      nextPrimaryId = nextSelectedIds.length > 0 ? (selectedPageId === pageId ? nextSelectedIds[0] : selectedPageId) : '';
+    } else {
+      // Select page
+      nextSelectedIds = [...selectedPageIds, pageId];
+      nextPrimaryId = selectedPageId || pageId;
+    }
+
+    setSelectedPageIds(nextSelectedIds);
+    setSelectedPageId(nextPrimaryId);
+
+    // Build selected_pages array with metadata and access tokens
+    const selectedPagesArray = nextSelectedIds.map(id => {
+      const p = fbPages.find(x => x.id === id);
+      return p ? { id: p.id, name: p.name, access_token: p.access_token } : { id };
+    });
+
+    const primaryPage = fbPages.find(p => p.id === nextPrimaryId);
 
     // 1. Save to DB
     const res = await fetch('/api/profile/update', {
@@ -710,40 +735,49 @@ export default function ProfilePage() {
       body: JSON.stringify({
         targetUserId: effectiveUserId,
         updates: {
-          selected_page_id: page.id,
-          selected_page_name: page.name,
-          selected_page_token: page.access_token
+          selected_pages: selectedPagesArray,
+          selected_page_id: primaryPage?.id || null,
+          selected_page_name: primaryPage?.name || null,
+          selected_page_token: primaryPage?.access_token || null
         }
       })
-    })
-    const resData = await res.json()
+    });
+    const resData = await res.json();
     if (resData.error) {
-      toast.error(`Failed to save page selection: ${resData.error}`)
-      return
+      toast.error(`Failed to save page selection: ${resData.error}`);
+      return;
     }
 
-    // 2. TRIGGER WEBHOOK SUBSCRIPTION (Fixes "No app associated" error)
-    try {
-      const subRes = await fetch('/api/facebook/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageId: page.id, pageToken: page.access_token })
-      })
-      const subData = await subRes.json()
-      if (!subRes.ok) {
-        throw new Error(subData.error || 'Failed to subscribe page webhooks')
+    // 2. TRIGGER WEBHOOK SUBSCRIPTION for newly selected page
+    if (!isCurrentlySelected) {
+      try {
+        const subRes = await fetch('/api/facebook/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pageId: page.id, pageToken: page.access_token })
+        });
+        const subData = await subRes.json();
+        if (!subRes.ok) {
+          throw new Error(subData.error || 'Failed to subscribe page webhooks');
+        }
+        toast.success(`Connected to ${page.name}!`, {
+          description: "Real-time leads are now enabled for this page."
+        });
+      } catch (e: any) {
+        console.error("Auto-subscription failed:", e);
+        toast.error("Connected with warnings", {
+          description: e.message || "CRM saving works, but real-time notifications might need a manual refresh."
+        });
       }
-      toast.success(`Connected to ${page.name}!`, {
-        description: "Real-time leads are now enabled for this page."
-      })
-    } catch (e: any) {
-      console.error("Auto-subscription failed:", e)
-      toast.error("Connected with warnings", {
-        description: e.message || "CRM saving works, but real-time notifications might need a manual refresh."
-      })
+    } else {
+      toast.info(`Disconnected ${page.name} from lead sync.`);
     }
 
-    updateLocalCache({ selected_page_id: page.id, selected_page_name: page.name, selected_page_token: page.access_token })
+    updateLocalCache({
+      selected_page_id: primaryPage?.id || null,
+      selected_page_name: primaryPage?.name || null,
+      selected_page_token: primaryPage?.access_token || null
+    });
   }
 
   const handleAdAccountSelect = async (adAccountId: string) => {
@@ -911,17 +945,32 @@ export default function ProfilePage() {
         if (profileData.facebook_token && isValidFacebookToken(profileData.facebook_token)) {
           setIsFacebookConnected(true)
           setFacebookToken(profileData.facebook_token);
+          let initialPageIds: string[] = [];
           if (profileData.selected_page_id) {
-            setSelectedPageId(profileData.selected_page_id)
+            setSelectedPageId(profileData.selected_page_id);
+            initialPageIds.push(profileData.selected_page_id);
             if (profileData.selected_page_name) {
               setFbPages([{
                 id: profileData.selected_page_id,
                 name: profileData.selected_page_name,
                 access_token: profileData.selected_page_token || profileData.facebook_token,
                 category: 'General'
-              }])
+              }]);
             }
           }
+          try {
+            const bInfo = typeof profileData.business_info === 'string'
+              ? JSON.parse(profileData.business_info)
+              : (profileData.business_info || {});
+            if (Array.isArray(bInfo.selected_pages)) {
+              bInfo.selected_pages.forEach((sp: any) => {
+                if (sp.id && !initialPageIds.includes(sp.id)) {
+                  initialPageIds.push(sp.id);
+                }
+              });
+            }
+          } catch (e) {}
+          setSelectedPageIds(initialPageIds);
           parallelFetches.push(fetchPages())
 
           if (profileData.ad_account_id) {
@@ -3282,24 +3331,51 @@ export default function ProfilePage() {
                     <div className="space-y-4 pt-4 border-t border-slate-100 mt-2">
                       <div className="bg-slate-50/80 rounded-3xl p-4 border border-slate-100">
                         <div className="flex justify-between items-center mb-3 px-1">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Linked Page</label>
-                          <button onClick={fetchPages} className="text-[10px] text-blue-600 hover:text-blue-800 font-bold uppercase tracking-wider transition-colors">Refresh List</button>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Linked Pages (Lead Sources)</label>
+                            <span className="text-[10px] text-slate-500 font-medium">Select all pages you want to capture leads from</span>
+                          </div>
+                          <button onClick={fetchPages} className="text-[10px] text-blue-600 hover:text-blue-800 font-bold uppercase tracking-wider transition-colors shrink-0">Refresh List</button>
                         </div>
                         {isLoadingPages ? (
                           <div className="flex items-center gap-2 text-xs text-slate-500 py-3 px-2 font-medium">
                             <Loader2 size={16} className="animate-spin text-blue-500" /> Syncing pages...
                           </div>
                         ) : fbPages.length > 0 ? (
-                          <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                            {fbPages.map(page => (
-                              <button key={page.id} onClick={() => handlePageSelect(page.id)} className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all ${selectedPageId === page.id ? 'bg-white shadow-sm border border-blue-200 ring-2 ring-blue-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}>
-                                <div className="flex flex-col truncate pr-3">
-                                  <span className={`text-sm font-bold truncate ${selectedPageId === page.id ? 'text-blue-900' : 'text-slate-600'}`}>{page.name}</span>
-                                  <span className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {page.id}</span>
+                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
+                            {fbPages.map(page => {
+                              const isSelected = selectedPageIds.includes(page.id) || selectedPageId === page.id;
+                              const isPrimary = selectedPageId === page.id;
+                              return (
+                                <div
+                                  key={page.id}
+                                  onClick={() => handlePageToggle(page.id)}
+                                  className={`w-full flex items-center justify-between p-3.5 rounded-2xl cursor-pointer text-left transition-all ${isSelected ? 'bg-white shadow-sm border border-blue-200 ring-2 ring-blue-500/20' : 'hover:bg-slate-200/50 bg-slate-100/50'}`}
+                                >
+                                  <div className="flex items-center gap-3 truncate pr-3">
+                                    <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'}`}>
+                                      {isSelected && <Check size={13} className="stroke-[3]" />}
+                                    </div>
+                                    <div className="flex flex-col truncate">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`text-sm font-bold truncate ${isSelected ? 'text-blue-900' : 'text-slate-600'}`}>{page.name}</span>
+                                        {isPrimary && (
+                                          <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider rounded-full bg-blue-100 text-blue-700 border border-blue-200 shrink-0">Primary</span>
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {page.id}</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {isSelected ? (
+                                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200/60">Active Sync</span>
+                                    ) : (
+                                      <span className="text-[10px] font-medium text-slate-400 hover:text-slate-600">Connect</span>
+                                    )}
+                                  </div>
                                 </div>
-                                {selectedPageId === page.id && <CheckCircle size={18} className="text-blue-600 shrink-0" />}
-                              </button>
-                            ))}
+                              );
+                            })}
                           </div>
                         ) : (
                           <div className="py-3 px-2">

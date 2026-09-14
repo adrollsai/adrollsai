@@ -90,7 +90,8 @@ export async function GET(req: Request) {
                         'khushiramrealtor@gmail.com',
                         'rajivkumaraggarwal81@gmail.com',
                         'gnrhomes97@gmail.com',
-                        'alpinenesthomes01@gmail.com'
+                        'alpinenesthomes01@gmail.com',
+                        'pawan@pipixel.io'
                     ];
                     
                     for (const p of activeNumbers) {

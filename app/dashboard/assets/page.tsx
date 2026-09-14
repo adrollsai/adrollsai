@@ -338,8 +338,8 @@ export default function AssetsPage() {
 
                 // Sort active 'Processing' or 'Rendering' tasks to the very top, preserving created_at order for the rest
                 const sortedAssets = [...cleanAssets].sort((a, b) => {
-                    const aActive = ['Processing', 'Rendering'].includes(a.status) || (a.url && a.url.includes('/processing'))
-                    const bActive = ['Processing', 'Rendering'].includes(b.status) || (b.url && b.url.includes('/processing'))
+                    const aActive = (['Processing', 'Rendering'].includes(a.status) || (a.url && a.url.includes('/processing'))) && a.status !== 'Failed'
+                    const bActive = (['Processing', 'Rendering'].includes(b.status) || (b.url && b.url.includes('/processing'))) && b.status !== 'Failed'
 
                     if (aActive && !bActive) return -1
                     if (!aActive && bActive) return 1
@@ -378,7 +378,7 @@ export default function AssetsPage() {
 
     // Background polling for assets that are still in "Processing" or "Rendering" state
     useEffect(() => {
-        const hasActiveTasks = assets.some(asset => ['Processing', 'Rendering'].includes(asset.status) || (asset.url && asset.url.includes('/processing')))
+        const hasActiveTasks = assets.some(asset => (['Processing', 'Rendering'].includes(asset.status) || (asset.url && asset.url.includes('/processing'))) && asset.status !== 'Failed')
         if (!hasActiveTasks) return
 
         const interval = setInterval(async () => {
@@ -1334,7 +1334,7 @@ export default function AssetsPage() {
 
                         {/* Rendering actual assets */}
                         {filteredAssets.slice(0, displayLimit).map((asset) => {
-                            const isPending = ['Processing', 'Rendering'].includes(asset.status) || (asset.url && asset.url.includes('/processing'));
+                            const isPending = (['Processing', 'Rendering'].includes(asset.status) || (asset.url && asset.url.includes('/processing'))) && asset.status !== 'Failed';
                             return (
                             <div
                                 key={asset.id}
@@ -1369,7 +1369,7 @@ export default function AssetsPage() {
                                             <p className="text-[9px] text-slate-400 font-medium mt-1">
                                                 {asset.status === 'Rendering' ? 'Compiling subtitles & outro' : asset.url?.includes('/processing') ? 'Stitching scenes & audio' : 'Check back in a bit'}
                                             </p>
-                                            {asset.status !== 'Rendering' && !asset.url?.includes('/processing') && (
+                                            {asset.status !== 'Rendering' && (
                                                 <button 
                                                     onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }}
                                                     className="mt-3 text-[9px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest"

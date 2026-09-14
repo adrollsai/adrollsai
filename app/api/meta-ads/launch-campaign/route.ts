@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { logToFile, clearLogFile } from '@/utils/logger';
+import { ensureWabaSubscribed } from '@/utils/meta-subscription';
 
 export const maxDuration = 300;
 
@@ -100,7 +101,7 @@ export async function POST(request: Request) {
 
     // --- Resolve profile data ---
     const { data: targetProfileData } = await supabaseAdmin.from('profiles')
-        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement')
+        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement, whatsapp_waba_id, whatsapp_access_token')
         .eq('id', targetUserId)
         .single();
     const targetProfile: any = targetProfileData;
@@ -156,6 +157,11 @@ export async function POST(request: Request) {
     fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=leadgen&access_token=${facebookToken}`, {
         method: 'POST'
     }).catch(() => {});
+
+    // Guarantee WABA is subscribed to Meta webhooks for real-time WhatsApp chat/lead ingestion
+    if (targetProfile?.whatsapp_waba_id) {
+        ensureWabaSubscribed(targetProfile.whatsapp_waba_id, targetProfile.whatsapp_access_token).catch(() => {});
+    }
 
     const hasCreatives = (data.creativeUrls && data.creativeUrls.length > 0) || inventoryIds.length > 0 || assetIds.length > 0;
     if (!hasCreatives) {

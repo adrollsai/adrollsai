@@ -334,14 +334,34 @@ export async function POST(request: Request) {
       if (updates.timezone !== undefined) {
         bInfo.timezone = requestedTimezone;
       }
+      if (updates.selected_pages !== undefined) {
+        bInfo.selected_pages = updates.selected_pages;
+      }
       allowedUpdates.business_info = JSON.stringify(bInfo);
     } catch (bErr) {
       console.warn("[Profile Update API] Failed to serialize extra metadata into business_info:", bErr);
     }
 
+    // Set primary selected_page if selected_pages array was provided
+    if (Array.isArray(updates.selected_pages)) {
+      if (updates.selected_pages.length > 0) {
+        const primary = updates.selected_pages[0];
+        if (!allowedUpdates.selected_page_id) {
+          allowedUpdates.selected_page_id = primary.id;
+          allowedUpdates.selected_page_name = primary.name;
+          allowedUpdates.selected_page_token = primary.access_token;
+        }
+      } else if (updates.selected_pages.length === 0 && allowedUpdates.selected_page_id === undefined) {
+        allowedUpdates.selected_page_id = null;
+        allowedUpdates.selected_page_name = null;
+        allowedUpdates.selected_page_token = null;
+      }
+    }
+
     // CRITICAL: Delete virtual columns that don't exist in the profiles DB schema cache
     delete allowedUpdates.timezone
     delete allowedUpdates.notification_email
+    delete allowedUpdates.selected_pages
 
     // Page Collision Protection: Ensure no unrelated account keeps this selected_page_id
     if (allowedUpdates.selected_page_id) {

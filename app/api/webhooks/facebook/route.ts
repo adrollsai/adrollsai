@@ -86,10 +86,48 @@ async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
     return selectedAgent;
 }
 
+async function sendTypingIndicator(waPhoneId: string, waToken: string, messageId: string) {
+    if (!waPhoneId || !waToken || !messageId) return;
+    try {
+        fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${waToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                status: 'read',
+                message_id: messageId,
+                typing_indicator: {
+                    type: 'text'
+                }
+            })
+        }).catch(err => {
+            console.warn('[sendTypingIndicator] Non-blocking notice:', err?.message);
+        });
+    } catch (e) {
+        // Non-blocking
+    }
+}
+
 async function extractLeadNameWithAI(rawText: string): Promise<{ hasName: boolean; name: string | null; isQuestionOrRefusal: boolean }> {
     const raw = (rawText || '').trim();
     if (!raw || raw.length < 2) {
         return { hasName: false, name: null, isQuestionOrRefusal: false };
+    }
+
+    // 1. Zero-latency heuristic fast path for clean names (e.g. "Rahul", "Adinath Pawar", "Dr. Mehta", "my name is Rahul Sharma")
+    const lower = raw.toLowerCase();
+    const refusalOrQuestionWords = /\b(what|price|cost|budget|rate|rates|brochure|detail|details|location|where|kahan|kitna|batao|send|bhejo|call|expert|appointment|visit|why|no|nahi|na|later|stop|bye|hi|hello|hey|yes|haan|ok|okay|broker|developer|agent|inventory|flat|villa|plot|commercial|residential)\b/i;
+
+    if (!raw.includes('?') && !refusalOrQuestionWords.test(lower)) {
+        const stripped = raw.replace(/^(my name is|i am|this is|name\s*:|mera naam|call me)\s*/i, '').trim();
+        const words = stripped.split(/\s+/).filter(Boolean);
+        if (words.length >= 1 && words.length <= 4 && /^[a-zA-Z\s.]{2,40}$/.test(stripped)) {
+            const titleCased = words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+            return { hasName: true, name: titleCased, isQuestionOrRefusal: false };
+        }
     }
 
     const dsKey = process.env.DEEPSEEK_API_KEY || 'sk-20cf24c78eeb44669f22cd92b2d0382f';
@@ -108,10 +146,27 @@ Return ONLY a valid JSON object without markdown formatting:
 
     try {
         let content = '';
-        if (dsKey) {
+
+        // Priority 1: Fast Gemini Flash if configured (typically <400ms)
+        if (process.env.GEMINI_API_KEY) {
             try {
+                const geminiPromise = callGeminiWithUsage(prompt);
+                const timeoutPromise = new Promise<{ text: string }>((_, reject) => setTimeout(() => reject(new Error('Gemini timeout')), 2200));
+                const res = await Promise.race([geminiPromise, timeoutPromise]);
+                content = res.text || '';
+            } catch (gErr: any) {
+                console.warn('[extractLeadNameWithAI] Gemini fast path timeout/error:', gErr?.message);
+            }
+        }
+
+        // Priority 2: DeepSeek with strict 2.5s timeout
+        if (!content && dsKey) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2500);
                 const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
                     method: 'POST',
+                    signal: controller.signal,
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${dsKey}`
@@ -122,18 +177,14 @@ Return ONLY a valid JSON object without markdown formatting:
                         temperature: 0.1
                     })
                 });
+                clearTimeout(timeoutId);
                 if (res.ok) {
                     const data = await res.json();
                     content = data.choices?.[0]?.message?.content || '';
                 }
-            } catch (dsErr) {
-                console.warn('[extractLeadNameWithAI] DeepSeek fetch failed, falling back to Gemini:', dsErr);
+            } catch (dsErr: any) {
+                console.warn('[extractLeadNameWithAI] DeepSeek fetch timeout/failed:', dsErr?.message);
             }
-        }
-
-        if (!content && process.env.GEMINI_API_KEY) {
-            const { text } = await callGeminiWithUsage(prompt);
-            content = text;
         }
 
         if (content) {
@@ -389,10 +440,12 @@ export async function POST(request: Request) {
                         const masterPhoneId = process.env.DEV_WHATSAPP_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || '';
                         const isMessageToOfficialBot = !wabaPhoneId || (masterPhoneId && wabaPhoneId === masterPhoneId);
                         
-                        // Look up matched profile by personal notification number
-                        const { data: profiles } = await supabaseAdmin
+                        // Look up matched profile by personal notification number (filtered by phone digits to avoid slow full-table scan)
+                        const { data: profiles } = cleanFromDigits ? await supabaseAdmin
                             .from('profiles')
-                            .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, selected_page_id, currency, custom_domain');
+                            .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, selected_page_id, currency, custom_domain')
+                            .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%,whatsapp_phone_number.ilike.%${cleanFromDigits}%`)
+                            : { data: [] };
                             
                         const matchedProfile = profiles?.find((p: any) => {
                             const rawPersonal = p.whatsapp_personal_number || '';
@@ -2633,6 +2686,12 @@ CRITICAL CONVERSATIONAL RULES:
                                         return;
                                     }
 
+                                    // 🟢 Send native WhatsApp typing indicator & read receipt immediately
+                                    // Shows "typing..." animation on prospect's WhatsApp screen and marks message as read
+                                    if (msgId && ownerWaPhoneId && ownerWaToken) {
+                                        sendTypingIndicator(ownerWaPhoneId, ownerWaToken, msgId);
+                                    }
+
                                     // Resolve billing user and inventory owner (charge clients talking to official support)
                                     let billingUserId = ownerUserId;
                                     let inventoryOwnerId = ownerUserId;
@@ -3238,7 +3297,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                 for (let i = 1; i < buttons.length; i++) {
                                                     const extraBtn = buttons[i];
                                                     // Small delay to ensure order in WhatsApp UI
-                                                    await new Promise(resolve => setTimeout(resolve, 800));
+                                                    await new Promise(resolve => setTimeout(resolve, 150));
                                                     
                                                     const extraBodyText = `Click below to access ${extraBtn.text}:`;
                                                     
@@ -3285,7 +3344,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                 
                                                 // Send "Connect with Expert" quick reply button as a subsequent message
                                                 if (chat?.recipient_name) {
-                                                    await new Promise(resolve => setTimeout(resolve, 800));
+                                                    await new Promise(resolve => setTimeout(resolve, 150));
                                                     const expertBodyText = "Would you like to speak directly with our expert on call?";
                                                     const expertRes = await fetch(metaUrl, {
                                                         method: 'POST',
@@ -3433,15 +3492,17 @@ CRITICAL CONVERSATIONAL RULES:
                                                 body: JSON.stringify(payload)
                                             });
                                             if (res.ok) {
-                                                await supabaseAdmin.from('whatsapp_messages').insert({
-                                                    chat_id: chat.id,
-                                                    direction: 'outbound',
-                                                    message_text: `${promptText} [Buttons: ${threeButtonsList.map(b => b.reply.title).join(' | ')}]`
-                                                });
-                                                await supabaseAdmin.from('whatsapp_chats').update({
-                                                    last_message_text: promptText,
-                                                    updated_at: new Date().toISOString()
-                                                }).eq('id', chat.id);
+                                                Promise.all([
+                                                    supabaseAdmin.from('whatsapp_messages').insert({
+                                                        chat_id: chat.id,
+                                                        direction: 'outbound',
+                                                        message_text: `${promptText} [Buttons: ${threeButtonsList.map(b => b.reply.title).join(' | ')}]`
+                                                    }),
+                                                    supabaseAdmin.from('whatsapp_chats').update({
+                                                        last_message_text: promptText,
+                                                        updated_at: new Date().toISOString()
+                                                    }).eq('id', chat.id)
+                                                ]).catch(dbErr => console.error('[WhatsApp Bot] Non-blocking DB log error:', dbErr));
                                             } else {
                                                 console.error('[WhatsApp Bot] Failed to send 3-button menu:', await res.json());
                                             }
@@ -3454,6 +3515,9 @@ CRITICAL CONVERSATIONAL RULES:
                                     const answerCustomerQueryWithAI = async (queryText: string, skipActionButtons = false) => {
                                         try {
                                             console.log(`🤖 [Customer AI] Answering query from ${cleanFrom} for ${ownerBusinessName}: "${queryText}"`);
+                                            if (msgId && ownerWaPhoneId && ownerWaToken) {
+                                                sendTypingIndicator(ownerWaPhoneId, ownerWaToken, msgId);
+                                            }
                                             
                                             // Fetch real-time available properties for owner
                                             const { data: properties } = await supabaseAdmin
@@ -3530,7 +3594,7 @@ RULES:
                                             await sendTextMessage(aiReply);
                                             
                                             if (!skipActionButtons) {
-                                                await new Promise(r => setTimeout(r, 600));
+                                                await new Promise(r => setTimeout(r, 150));
                                                 
                                                 // Send 3 action buttons for easy next steps
                                                 await sendThreeButtons("What would you like to do next?");
@@ -3572,15 +3636,17 @@ RULES:
                                                 body: JSON.stringify(payload)
                                             });
                                             if (res.ok) {
-                                                await supabaseAdmin.from('whatsapp_messages').insert({
-                                                    chat_id: chat.id,
-                                                    direction: 'outbound',
-                                                    message_text: `${questionText} [Options: ${buttons.map(b => b.title).join(', ')}]`
-                                                });
-                                                await supabaseAdmin.from('whatsapp_chats').update({
-                                                    last_message_text: questionText,
-                                                    updated_at: new Date().toISOString()
-                                                }).eq('id', chat.id);
+                                                Promise.all([
+                                                    supabaseAdmin.from('whatsapp_messages').insert({
+                                                        chat_id: chat.id,
+                                                        direction: 'outbound',
+                                                        message_text: `${questionText} [Options: ${buttons.map(b => b.title).join(', ')}]`
+                                                    }),
+                                                    supabaseAdmin.from('whatsapp_chats').update({
+                                                        last_message_text: questionText,
+                                                        updated_at: new Date().toISOString()
+                                                    }).eq('id', chat.id)
+                                                ]).catch(dbErr => console.error('[WhatsApp Bot] Non-blocking DB log error:', dbErr));
                                             } else {
                                                 console.error('[WhatsApp Bot] Failed to send MCQ buttons:', await res.json());
                                             }
@@ -3608,15 +3674,17 @@ RULES:
                                                 })
                                             });
                                             if (res.ok) {
-                                                await supabaseAdmin.from('whatsapp_messages').insert({
-                                                    chat_id: chat.id,
-                                                    direction: 'outbound',
-                                                    message_text: text
-                                                });
-                                                await supabaseAdmin.from('whatsapp_chats').update({
-                                                    last_message_text: text,
-                                                    updated_at: new Date().toISOString()
-                                                }).eq('id', chat.id);
+                                                Promise.all([
+                                                    supabaseAdmin.from('whatsapp_messages').insert({
+                                                        chat_id: chat.id,
+                                                        direction: 'outbound',
+                                                        message_text: text
+                                                    }),
+                                                    supabaseAdmin.from('whatsapp_chats').update({
+                                                        last_message_text: text,
+                                                        updated_at: new Date().toISOString()
+                                                    }).eq('id', chat.id)
+                                                ]).catch(dbErr => console.error('[WhatsApp Bot] Non-blocking DB log error:', dbErr));
                                             }
                                         } catch (err) {
                                             console.error('[WhatsApp Bot] Error sending text message:', err);
@@ -3655,15 +3723,17 @@ RULES:
                                                 body: JSON.stringify(payload)
                                             });
                                             if (res.ok) {
-                                                await supabaseAdmin.from('whatsapp_messages').insert({
-                                                    chat_id: chat.id,
-                                                    direction: 'outbound',
-                                                    message_text: `${bodyText} [Button: ${buttonText} -> ${url}]`
-                                                });
-                                                await supabaseAdmin.from('whatsapp_chats').update({
-                                                    last_message_text: bodyText,
-                                                    updated_at: new Date().toISOString()
-                                                }).eq('id', chat.id);
+                                                Promise.all([
+                                                    supabaseAdmin.from('whatsapp_messages').insert({
+                                                        chat_id: chat.id,
+                                                        direction: 'outbound',
+                                                        message_text: `${bodyText} [Button: ${buttonText} -> ${url}]`
+                                                    }),
+                                                    supabaseAdmin.from('whatsapp_chats').update({
+                                                        last_message_text: bodyText,
+                                                        updated_at: new Date().toISOString()
+                                                    }).eq('id', chat.id)
+                                                ]).catch(dbErr => console.error('[WhatsApp Bot] Non-blocking DB log error:', dbErr));
                                             } else {
                                                 console.warn('[WhatsApp Bot] CTA URL button response not ok, sending direct text link:', await res.json());
                                                 await sendTextMessage(`${bodyText}\n\n👉 ${url}`);
@@ -3893,15 +3963,15 @@ RULES:
                                         if (!isInstantFormLead && !currentCustomFields?.qualification_completed) {
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
-                                                await new Promise(r => setTimeout(r, 1000));
+                                                await new Promise(r => setTimeout(r, 150));
                                                 await sendTextMessage("To help us share the best matching options for you, please answer:");
-                                                await new Promise(r => setTimeout(r, 500));
+                                                await new Promise(r => setTimeout(r, 100));
                                                 await askQuestionMCQ(pendingQIndex);
                                                 return;
                                             }
                                         }
 
-                                        await new Promise(r => setTimeout(r, 800));
+                                        await new Promise(r => setTimeout(r, 150));
                                         await sendThreeButtons("What would you like to do next?");
                                         return;
                                     }
@@ -3936,15 +4006,15 @@ RULES:
                                         if (!isInstantFormLead && !currentCustomFields?.qualification_completed) {
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
-                                                await new Promise(r => setTimeout(r, 1000));
+                                                await new Promise(r => setTimeout(r, 150));
                                                 await sendTextMessage("While our specialist connects with you, please share:");
-                                                await new Promise(r => setTimeout(r, 500));
+                                                await new Promise(r => setTimeout(r, 100));
                                                 await askQuestionMCQ(pendingQIndex);
                                                 return;
                                             }
                                         }
 
-                                        await new Promise(r => setTimeout(r, 600));
+                                        await new Promise(r => setTimeout(r, 150));
                                         await sendThreeButtons("What would you like to do?");
                                         return;
                                     }
@@ -3965,15 +4035,15 @@ RULES:
                                         if (!isInstantFormLead && !currentCustomFields?.qualification_completed) {
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
-                                                await new Promise(r => setTimeout(r, 1000));
+                                                await new Promise(r => setTimeout(r, 150));
                                                 await sendTextMessage("To prepare the best options for your visit, please answer:");
-                                                await new Promise(r => setTimeout(r, 500));
+                                                await new Promise(r => setTimeout(r, 100));
                                                 await askQuestionMCQ(pendingQIndex);
                                                 return;
                                             }
                                         }
 
-                                        await new Promise(r => setTimeout(r, 800));
+                                        await new Promise(r => setTimeout(r, 150));
                                         await sendThreeButtons("What would you like to do next?");
                                         return;
                                     }
@@ -4015,7 +4085,7 @@ RULES:
                                                         catalogueLink
                                                     );
                                                 }
-                                                await new Promise(r => setTimeout(r, 800));
+                                                await new Promise(r => setTimeout(r, 150));
                                                 await sendThreeButtons("What would you like to do next?");
                                                 return;
                                             } else {
@@ -4030,7 +4100,7 @@ RULES:
                                                     qualification_completed: true
                                                 });
 
-                                                await new Promise(r => setTimeout(r, 1000));
+                                                await new Promise(r => setTimeout(r, 150));
                                                 if (isNobogentAccount) {
                                                     await sendCtaUrlMessage(
                                                         "🚀 Nobogent AI Platform Overview",
@@ -4046,7 +4116,7 @@ RULES:
                                                         catalogueLink
                                                     );
                                                 }
-                                                await new Promise(r => setTimeout(r, 800));
+                                                await new Promise(r => setTimeout(r, 150));
                                                 await sendThreeButtons("What would you like to do next?");
                                                 return;
                                             }
@@ -4092,7 +4162,7 @@ RULES:
                                                                 catalogueLink
                                                             );
                                                         }
-                                                        await new Promise(r => setTimeout(r, 800));
+                                                        await new Promise(r => setTimeout(r, 150));
                                                         await sendThreeButtons("What would you like to do next?");
                                                         return;
                                                     }
@@ -4132,7 +4202,7 @@ RULES:
                                                 }
                                                 const welcomeMsg = `Hello! 👋 Welcome to *${ownerBusinessName || 'our team'}*. Please answer 2 quick questions so we can assist you with the right options & details: 🎁🏢`;
                                                 await sendTextMessage(welcomeMsg);
-                                                await new Promise(r => setTimeout(r, 600));
+                                                await new Promise(r => setTimeout(r, 150));
                                                 await askQuestionMCQ(0);
                                                 return;
                                             }
@@ -4145,9 +4215,9 @@ RULES:
                                                 // Answer query using AI without the 3 distracting buttons
                                                 await answerCustomerQueryWithAI(messageText, true);
                                                 if (activeQIndex !== -1 && activeQIndex < parsedQuestionsList.length) {
-                                                    await new Promise(r => setTimeout(r, 1000));
+                                                    await new Promise(r => setTimeout(r, 150));
                                                     await sendTextMessage("To help us share the best options for you, please answer:");
-                                                    await new Promise(r => setTimeout(r, 500));
+                                                    await new Promise(r => setTimeout(r, 100));
                                                     await askQuestionMCQ(activeQIndex);
                                                 }
                                                 return;
@@ -4186,7 +4256,7 @@ RULES:
                                                             catalogueLink
                                                         );
                                                     }
-                                                    await new Promise(r => setTimeout(r, 800));
+                                                    await new Promise(r => setTimeout(r, 150));
                                                     await sendThreeButtons("What would you like to do next?");
                                                     return;
                                                 }
@@ -4251,7 +4321,7 @@ RULES:
                                             // If starting question 1, send encouraging lead magnet intro
                                             if (unansweredQ.index === 0 && Object.keys(currentCustomFields).filter(k => k !== 'lead_score' && k !== 'lead_tier').length === 0) {
                                                 await sendTextMessage("Hi! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢");
-                                                await new Promise(r => setTimeout(r, 600));
+                                                await new Promise(r => setTimeout(r, 150));
                                             }
                                             await askQuestionMCQ(unansweredQ.index);
                                             return;
@@ -4306,29 +4376,51 @@ RULES:
 
           try {
 
-          // Find the User based on the Page ID using Admin Client
+          // Find the User based on the Page ID (primary selected_page_id or secondary selected_pages in business_info)
           const { data: profiles, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('id, email, business_name, selected_page_id, selected_page_token, facebook_token, pixel_id, enable_distribution, auto_call_new_leads, role, agency_id, parent_id')
-            .eq('selected_page_id', page_id);
+            .select('id, email, business_name, selected_page_id, selected_page_name, selected_page_token, facebook_token, pixel_id, enable_distribution, auto_call_new_leads, role, agency_id, parent_id, business_info')
+            .or(`selected_page_id.eq.${page_id},business_info.ilike.*${page_id}*`);
 
           if (profileErr || !profiles || profiles.length === 0) {
             console.error(`❌ No profile found for Page ID: ${page_id}. Error:`, profileErr);
             continue;
           }
 
-          const profile = profiles.find((p: any) => p.selected_page_token && ['admin', 'agency'].includes(p.role)) ||
-                          profiles.find((p: any) => p.selected_page_token && p.role === 'super_admin') ||
-                          profiles.find((p: any) => p.selected_page_token) ||
-                          profiles[0];
+          let matchedProfile: any = null;
+          let matchedPageToken: string | null = null;
 
-          if (!profile.selected_page_token) {
-            console.error(`❌ Profile found but NO Page Token for Page ID: ${page_id}`)
+          for (const p of profiles) {
+            // Check primary page
+            if (String(p.selected_page_id) === String(page_id)) {
+              matchedProfile = p;
+              matchedPageToken = p.selected_page_token || p.facebook_token;
+              break;
+            }
+            // Check secondary pages in business_info.selected_pages
+            try {
+              const bInfo = typeof p.business_info === 'string' ? JSON.parse(p.business_info) : (p.business_info || {});
+              if (Array.isArray(bInfo.selected_pages)) {
+                const sp = bInfo.selected_pages.find((x: any) => String(x.id) === String(page_id));
+                if (sp) {
+                  matchedProfile = p;
+                  matchedPageToken = sp.access_token || p.facebook_token;
+                  break;
+                }
+              }
+            } catch (e) {}
+          }
+
+          if (!matchedProfile) {
+            console.error(`❌ Security guard triggered: No matching profile found for Page ID: ${page_id}. Skipping.`);
             continue;
           }
 
-          if (String(page_id) !== String((profile as any).selected_page_id)) {
-            console.error(`❌ Security guard triggered: Webhook page ${page_id} does not match profile page ${(profile as any).selected_page_id}. Skipping.`);
+          const profile = matchedProfile;
+          const effectivePageToken = matchedPageToken || profile.selected_page_token || profile.facebook_token;
+
+          if (!effectivePageToken) {
+            console.error(`❌ Profile found (${profile.id}) but NO Page Token for Page ID: ${page_id}`);
             continue;
           }
 
@@ -4346,7 +4438,7 @@ RULES:
               form_id: 'dummy_form_id'
             };
           } else {
-            const fbUrl = `https://graph.facebook.com/v19.0/${leadgen_id}?fields=id,created_time,field_data,form_id,ad_id,ad_name,campaign_id,campaign_name&access_token=${profile.selected_page_token}`
+            const fbUrl = `https://graph.facebook.com/v19.0/${leadgen_id}?fields=id,created_time,field_data,form_id,ad_id,ad_name,campaign_id,campaign_name&access_token=${effectivePageToken}`
             const fbResponse = await fetch(fbUrl)
             fbLead = await fbResponse.json()
           }
@@ -4451,7 +4543,7 @@ RULES:
           let formName = 'Facebook Lead Form'
           if (fbLead.form_id) {
             try {
-              const formRes = await fetch(`https://graph.facebook.com/v19.0/${fbLead.form_id}?fields=name&access_token=${profile.selected_page_token}`)
+              const formRes = await fetch(`https://graph.facebook.com/v19.0/${fbLead.form_id}?fields=name&access_token=${effectivePageToken}`)
               const formData = await formRes.json()
               if (formData.name) formName = formData.name
             } catch (e) {
@@ -4468,7 +4560,7 @@ RULES:
           const effectiveAdId = ad_id || fbLead.ad_id || null;
           if (effectiveAdId) {
             try {
-                const metaToken = profile.facebook_token || profile.selected_page_token || process.env.META_SYSTEM_USER_TOKEN || '';
+                const metaToken = effectivePageToken || profile.facebook_token || profile.selected_page_token || process.env.META_SYSTEM_USER_TOKEN || '';
                 const adRes = await fetch(`https://graph.facebook.com/v20.0/${effectiveAdId}?fields=id,name,adset{id,name},campaign{id,name},creative{id,name,image_url,thumbnail_url,object_story_spec,asset_feed_spec}&access_token=${metaToken}`)
                 const adDetails = await adRes.json()
                 if (adDetails && !adDetails.error) {

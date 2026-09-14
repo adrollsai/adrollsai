@@ -24,8 +24,10 @@ export function sanitizePhoneNumber(raw: any): string | null {
   let clean = String(raw).trim()
   // Strip prefixes like "p:", "p:+", "tel:", "tel:+"
   clean = clean.replace(/^(p:|tel:)/i, '').trim()
-  const hasPlus = clean.startsWith('+')
-  const digits = clean.replace(/\D/g, '')
+  // If multiple numbers are in the raw string, take the first segment
+  const firstPart = clean.split(/[,;\/|\n]|\bor\b/i)[0]?.trim() || clean
+  const hasPlus = firstPart.startsWith('+')
+  const digits = firstPart.replace(/\D/g, '')
   if (!digits || digits.length < 5) return null
 
   let formatted = hasPlus ? `+${digits}` : digits
@@ -198,11 +200,48 @@ export default function CsvImportModal({
 
         const rawName = nameIdx !== -1 ? (r[nameIdx] || '').trim() : ''
         const rawPhone = phoneIdx !== -1 ? (r[phoneIdx] || '').trim() : ''
-        const email = emailIdx !== -1 ? (r[emailIdx] || '').trim() : null
+        const rawEmail = emailIdx !== -1 ? (r[emailIdx] || '').trim() : null
 
-        if (!rawName && !rawPhone && !email) continue
+        if (!rawName && !rawPhone && !rawEmail) continue
 
-        const formattedPhone = rawPhone ? sanitizePhoneNumber(rawPhone) : null
+        let formattedPhone: string | null = null
+        let otherPhones: string[] = []
+
+        if (rawPhone) {
+          const parts = rawPhone.split(/[,;\/|\n]|\bor\b/i).map(s => s.trim()).filter(Boolean)
+          const validPhones: string[] = []
+          for (const p of parts) {
+            const sp = sanitizePhoneNumber(p)
+            if (sp && !validPhones.includes(sp)) validPhones.push(sp)
+          }
+          if (validPhones.length > 0) {
+            // Prioritize UAE mobile (+9715...) or Indian mobile (+91...)
+            const mobile = validPhones.find(v => v.startsWith('+9715') || (v.startsWith('+91') && v.length === 13))
+            formattedPhone = mobile || validPhones[0]
+            otherPhones = validPhones.filter(v => v !== formattedPhone)
+          } else {
+            formattedPhone = sanitizePhoneNumber(rawPhone)
+          }
+        }
+
+        let cleanEmail: string | null = null
+        let otherEmails: string[] = []
+        if (rawEmail) {
+          const parts = rawEmail.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean)
+          const validEmails: string[] = []
+          for (let p of parts) {
+            p = p.replace(/^(te-mail|e-mail:|mailto:)/i, '').trim()
+            p = p.replace(/(www\.[a-z0-9.-]+\.[a-z]{2,})$/i, '').trim()
+            if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p) && !validEmails.includes(p.toLowerCase())) {
+              validEmails.push(p.toLowerCase())
+            }
+          }
+          if (validEmails.length > 0) {
+            cleanEmail = validEmails[0]
+            otherEmails = validEmails.slice(1)
+          }
+        }
+
         const city = cityIdx !== -1 ? (r[cityIdx] || '').trim() : null
         const budget = budgetIdx !== -1 ? (r[budgetIdx] || '').trim() : null
         const notes = notesIdx !== -1 ? (r[notesIdx] || '').trim() : null
@@ -213,6 +252,8 @@ export default function CsvImportModal({
           csv_audience: finalAudienceName
         }
         if (city) customFieldsObj.city = city
+        if (otherPhones.length > 0) customFieldsObj.other_phones = otherPhones
+        if (otherEmails.length > 0) customFieldsObj.other_emails = otherEmails
 
         customFieldMappings.forEach(cf => {
           const val = (r[cf.index] || '').trim()
@@ -225,7 +266,7 @@ export default function CsvImportModal({
           user_id: effectiveUserId,
           name: rawName || 'Lead',
           phone: formattedPhone || (rawPhone ? rawPhone : null),
-          email: email || null,
+          email: cleanEmail || rawEmail || null,
           source: 'CSV Import',
           budget: budget || null,
           status: rawStage || 'New',

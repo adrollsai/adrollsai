@@ -165,20 +165,30 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
 
   async function registerServiceWorker() {
     try {
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/',
-        updateViaCache: 'none',
-      })
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+      let registration = await navigator.serviceWorker.getRegistration()
+      if (!registration) {
+        registration = await navigator.serviceWorker.register('/sw.js', {
+          scope: '/',
+          updateViaCache: 'none',
+        })
+      }
       
-      await navigator.serviceWorker.ready
-      
-      const sub = await registration.pushManager.getSubscription()
-      if (sub) {
-        setSubscription(sub)
-        syncSubscriptionWithBackend(sub)
+      const readyReg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<ServiceWorkerRegistration | null>((resolve) => setTimeout(() => resolve(registration || null), 3000))
+      ]) || registration
+
+      const pm = readyReg?.pushManager || registration?.pushManager
+      if (pm) {
+        const sub = await pm.getSubscription()
+        if (sub) {
+          setSubscription(sub)
+          syncSubscriptionWithBackend(sub)
+        }
       }
     } catch (error) {
-      console.error('Service Worker registration failed:', error)
+      console.error('Service Worker registration check failed:', error)
     }
   }
 
@@ -207,16 +217,34 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
         return
       }
 
+      if (isIOS && !isStandalone) {
+        toast.info("Install App to Enable Alerts", {
+          description: "Tap Share icon and select 'Add to Home Screen' to enable push notifications on iOS."
+        })
+        setLoading(false)
+        return
+      }
+
       // Web / PWA Flow
-      if (window.Notification && Notification.permission !== 'granted') {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted') {
         const permission = await window.Notification.requestPermission()
         setPermissionState(permission)
         
         if (permission !== 'granted') {
-          toast.error("Permission Denied")
+          toast.error("Permission Denied", {
+            description: "Please allow notifications in your browser or device settings."
+          })
           setLoading(false)
           return
         }
+      }
+
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        toast.error("Not Supported", {
+          description: "Push notifications are not supported on this browser or platform."
+        })
+        setLoading(false)
+        return
       }
 
       let registration = await navigator.serviceWorker.getRegistration()
@@ -227,7 +255,35 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
         })
       }
       
-      await navigator.serviceWorker.ready
+      const readyReg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<ServiceWorkerRegistration | null>((resolve) => setTimeout(() => resolve(registration || null), 4000))
+      ]) || registration
+
+      if (!readyReg) {
+        throw new Error('Service Worker registration not found. Please reload and try again.')
+      }
+
+      if (!readyReg.active) {
+        const worker = readyReg.installing || readyReg.waiting
+        if (worker) {
+          await new Promise<void>((resolve) => {
+            const onState = () => {
+              if (worker.state === 'activated' || worker.state === 'redundant') {
+                worker.removeEventListener('statechange', onState)
+                resolve()
+              }
+            }
+            worker.addEventListener('statechange', onState)
+            setTimeout(resolve, 3000)
+          })
+        }
+      }
+
+      const pm = readyReg.pushManager || registration.pushManager
+      if (!pm) {
+        throw new Error('Push manager is not available on this browser.')
+      }
 
       let vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
       if (!vapidKey) {
@@ -237,9 +293,9 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
       }
       vapidKey = vapidKey.replace(/^['"]|['"]$/g, '').trim();
 
-      let sub = await registration.pushManager.getSubscription()
+      let sub = await pm.getSubscription()
       if (!sub) {
-        sub = await registration.pushManager.subscribe({
+        sub = await pm.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidKey)
         })

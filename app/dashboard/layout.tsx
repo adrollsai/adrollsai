@@ -93,7 +93,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         'rajivkumaraggarwal81@gmail.com',
         'gnrhomes97@gmail.com',
         'alpinenesthomes01@gmail.com',
-        'meta-reviewer@nobogent.com'
+        'meta-reviewer@nobogent.com',
+        'pawan@pipixel.io'
       ]
       const userEmail = userProfile?.email?.toLowerCase() || ''
       const isWhitelisted = whitelistedEmails.includes(userEmail) || (parentEmail && whitelistedEmails.includes(parentEmail))

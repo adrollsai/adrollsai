@@ -23,6 +23,7 @@ import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle, extractStagesFromProfile } from '@/utils/pipeline-stages'
 import { getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
+import { openPhoneDialer } from '@/utils/dialer'
 
 
 
@@ -1375,12 +1376,22 @@ export default function CRMPage() {
   const checkPushSubscription = async () => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       try {
-        const registration = await navigator.serviceWorker.register('/sw.js', {
-          scope: '/',
-          updateViaCache: 'none',
-        });
-        const subscription = await registration.pushManager.getSubscription();
-        if (subscription) setIsPushEnabled(true);
+        let registration = await navigator.serviceWorker.getRegistration();
+        if (!registration) {
+          registration = await navigator.serviceWorker.register('/sw.js', {
+            scope: '/',
+            updateViaCache: 'none',
+          });
+        }
+        const readyReg = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise<ServiceWorkerRegistration | null>((resolve) => setTimeout(() => resolve(registration || null), 3000))
+        ]) || registration;
+        const pm = readyReg?.pushManager || registration?.pushManager;
+        if (pm) {
+          const subscription = await pm.getSubscription();
+          if (subscription) setIsPushEnabled(true);
+        }
       } catch (error) {
         console.error('Failed to check push subscription:', error);
       }
@@ -1389,31 +1400,46 @@ export default function CRMPage() {
 
   const enablePushNotifications = async () => {
     try {
+      if (!('Notification' in window)) return alert('Notifications not supported in this browser.');
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') return alert('Permission denied.');
       
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/',
-        updateViaCache: 'none',
-      });
+      let registration = await navigator.serviceWorker.getRegistration();
+      if (!registration) {
+        registration = await navigator.serviceWorker.register('/sw.js', {
+          scope: '/',
+          updateViaCache: 'none',
+        });
+      }
+
+      const readyReg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<ServiceWorkerRegistration | null>((resolve) => setTimeout(() => resolve(registration || null), 4000))
+      ]) || registration;
+
+      if (!readyReg) {
+        return alert('Service Worker could not be registered.');
+      }
 
       // Ensure service worker is active before trying to subscribe
-      if (!registration.active) {
-        await new Promise<void>((resolve) => {
-          const worker = registration.installing || registration.waiting;
-          if (worker) {
+      if (!readyReg.active) {
+        const worker = readyReg.installing || readyReg.waiting;
+        if (worker) {
+          await new Promise<void>((resolve) => {
             const stateChangeHandler = () => {
-              if (worker.state === 'activated') {
+              if (worker.state === 'activated' || worker.state === 'redundant') {
                 worker.removeEventListener('statechange', stateChangeHandler);
                 resolve();
               }
             };
             worker.addEventListener('statechange', stateChangeHandler);
-          } else {
-            resolve();
-          }
-        });
+            setTimeout(resolve, 3000);
+          });
+        }
       }
+
+      const pm = readyReg.pushManager || registration?.pushManager;
+      if (!pm) return alert('Push messaging not supported.');
 
       let vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
       if (!vapidPublicKey) {
@@ -1421,17 +1447,23 @@ export default function CRMPage() {
       }
       vapidPublicKey = vapidPublicKey.replace(/^['"]|['"]$/g, '').trim();
       
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
-      });
+      let subscription = await pm.getSubscription();
+      if (!subscription) {
+        subscription = await pm.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+        });
+      }
       const res = await fetch('/api/web-push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ subscription: JSON.parse(JSON.stringify(subscription)) })
       });
       if (res.ok) { setIsPushEnabled(true); alert('Alerts Enabled!'); }
-    } catch (e) { console.error(e); }
+    } catch (e: any) { 
+      console.error(e); 
+      alert('Failed to enable alerts: ' + (e?.message || 'Unknown error'));
+    }
   }
 
   const handleLeadClick = (lead: any) => {
@@ -3382,8 +3414,7 @@ END:VCARD\n`
                                                                 type="button"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    const telUri = `tel:${formatCallPhone(displayPhone)}`;
-                                                                    window.open(telUri, '_self');
+                                                                    openPhoneDialer(displayPhone);
                                                                     setUpdateFollowupLead(lead);
                                                                 }} 
                                                                 className="p-2 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all border border-emerald-500/20"
@@ -3566,10 +3597,11 @@ END:VCARD\n`
                                         >
                                             <MessageCircle size={14} />
                                         </button>
-                                         <a 
-                                             href={`tel:${formatCallPhone(displayPhone)}`} 
+                                         <button 
+                                             type="button"
                                              onClick={e => { 
                                                  e.stopPropagation();
+                                                 openPhoneDialer(displayPhone);
                                                  const nowIso = new Date().toISOString();
                                                  let cf = lead.custom_fields || {};
                                                  if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (err) {} }
@@ -3586,11 +3618,11 @@ END:VCARD\n`
 
                                                  setUpdateFollowupLead(lead);
                                              }} 
-                                             className="p-2.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl transition-colors shadow-xs flex items-center justify-center"
+                                             className="p-2.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl transition-colors shadow-xs flex items-center justify-center cursor-pointer"
                                              title="Call Lead & Log Outcome"
                                          >
                                              <Phone size={18} />
-                                         </a>
+                                         </button>
                                         {userRole !== 'agent' && (
                                             <button 
                                                 onClick={(e) => handleDeleteLead(lead.id, e)} 
@@ -4147,7 +4179,21 @@ END:VCARD\n`
          isOpen={!!updateFollowupLead}
          lead={updateFollowupLead}
          onClose={() => setUpdateFollowupLead(null)}
-         onSuccess={() => fetchLeads(true, true)}
+         onSuccess={(updatedFields) => {
+           if (updatedFields && updateFollowupLead) {
+             setLeads(prev => prev.map(l => l.id === updateFollowupLead.id ? { 
+               ...l, 
+               ...updatedFields, 
+               custom_fields: { 
+                 ...(typeof l.custom_fields === 'object' ? l.custom_fields : {}), 
+                 ...(updatedFields.custom_fields || {}) 
+               } 
+             } : l))
+           } else {
+             fetchLeads(false, false)
+           }
+           setUpdateFollowupLead(null)
+         }}
          properties={properties}
          teamMembers={team}
        />

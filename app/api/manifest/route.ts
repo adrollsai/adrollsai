@@ -21,7 +21,9 @@ export async function GET(request: Request) {
     'adrolls.in', 
     'www.adrolls.in', 
     'app.adrolls.in',
-    'localhost'
+    'localhost',
+    'local.nobogent.com',
+    '127.0.0.1'
   ];
 
   // Updated version string to bust your browser's stubborn cache

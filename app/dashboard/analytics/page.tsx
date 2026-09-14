@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
+import { openPhoneDialer } from '@/utils/dialer'
 import { 
   BarChart2, 
   Users, 
@@ -496,8 +497,9 @@ export default function AnalyticsPage() {
             return false
           }
 
+          const hasMultipleMembers = rawTeam.length > 1
           const teamData = rawTeam.map(member => {
-            const memberLeads = allLeads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
+            const memberLeads = allLeads.filter(l => hasMultipleMembers ? (l.assigned_to === member.id) : (l.assigned_to === member.id || l.user_id === member.id || !l.assigned_to))
             const wonLeads = memberLeads.filter(l => ['Won', 'Closed', 'Appointment done', 'Deal/Token'].includes(l.pipeline_stage) || ['Won', 'Closed', 'Appointment done', 'Deal/Token'].includes(l.status)).length
             const qualifiedLeads = memberLeads.filter(l => ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won', 'Negotiation', 'Visit Done'].includes(l.pipeline_stage) || ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won', 'Negotiation', 'Visit Done'].includes(l.status)).length
             const lostLeads = memberLeads.filter(l => ['Lost', 'Unqualified', 'Lost/NI', 'Different Requirement'].includes(l.pipeline_stage) || ['Lost', 'Unqualified', 'Lost/NI', 'Different Requirement'].includes(l.status)).length
@@ -572,17 +574,44 @@ export default function AnalyticsPage() {
     fetchAnalytics()
   }, [duration, selectedAgentId, customDate, startDate, endDate])
 
+  // Helper to determine whether workspace has multiple team members/agents
+  const hasTeamMembers = useMemo(() => {
+    return Boolean(team && team.filter(m => m.role === 'agent' || (profile && m.id !== profile.id)).length > 0)
+  }, [team, profile])
+
+  // Helper to accurately check if a lead belongs to a sales rep
+  const isLeadAssignedToRep = useCallback((l: any, repId: string) => {
+    if (repId === 'unassigned') {
+      return !l.assigned_to
+    }
+    if (!hasTeamMembers) {
+      return l.assigned_to === repId || l.user_id === repId || !l.assigned_to
+    }
+    return l.assigned_to === repId
+  }, [hasTeamMembers])
+
   // All sales reps resolved from team profiles AND assigned lead records
   const allSalesReps = useMemo(() => {
     if (team && team.length > 0) {
       const repIdsFromLeads = Array.from(new Set(leads.map(l => l.assigned_to).filter(Boolean)))
+      const effectiveOwnerId = profile?.parent_id || profile?.agency_id || profile?.id
+      const hasAgents = team.some(m => m.role === 'agent' || m.id !== effectiveOwnerId)
+
       return [
-        ...team.map(member => ({
-          id: member.id,
-          name: member.business_name || member.full_name || member.email || 'Sales Rep',
-          email: member.email,
-          role: member.role || 'agent'
-        })),
+        ...team
+          .filter(member => {
+            // In a team workspace, the company/admin account is only listed if it actively has assigned leads
+            if (hasAgents && member.id === effectiveOwnerId) {
+              return leads.some(l => l.assigned_to === member.id)
+            }
+            return true
+          })
+          .map(member => ({
+            id: member.id,
+            name: member.business_name || member.full_name || member.email || 'Sales Rep',
+            email: member.email,
+            role: member.role || 'agent'
+          })),
         ...repIdsFromLeads
           .filter(id => !team.some(t => t.id === id))
           .map(id => ({ id, name: id === profile?.id ? (profile?.business_name || profile?.full_name || 'You') : `Agent (${id.slice(0, 6)})`, email: '', role: 'agent' }))
@@ -1031,7 +1060,7 @@ export default function AnalyticsPage() {
     ]
 
     let rows = allSalesReps.map(rep => {
-      const repLeadsRaw = leads.filter(l => rep.id === 'unassigned' ? (!l.assigned_to && !l.user_id) : (l.assigned_to === rep.id || l.user_id === rep.id))
+      const repLeadsRaw = leads.filter(l => isLeadAssignedToRep(l, rep.id))
 
       // Deduplicate by ID and phone number
       const seenIds = new Set()
@@ -1160,7 +1189,7 @@ export default function AnalyticsPage() {
     }
 
     return { rows, actionTypes }
-  }, [leads, allSalesReps, isAdminLike, profile?.id, selectedAgentId, searchQuery])
+  }, [leads, allSalesReps, isAdminLike, profile?.id, selectedAgentId, searchQuery, isLeadAssignedToRep])
 
   // --- LEADERBOARD COMPUTATIONS (WorkVeu Screenshot 3) ---
   const followupBoardRows = useMemo(() => {
@@ -1176,17 +1205,10 @@ export default function AnalyticsPage() {
       return false
     }
 
-    const reps = (team && team.length > 0)
-      ? team.map(member => ({
-          id: member.id,
-          name: member.business_name || member.full_name || member.email || 'Sales Rep',
-          email: member.email,
-          role: member.role || 'agent'
-        }))
-      : allSalesReps
+    const reps = allSalesReps
 
     return reps.map(rep => {
-      const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
+      const repLeads = leads.filter(l => isLeadAssignedToRep(l, rep.id))
       const repLeadIds = new Set(repLeads.map(l => l.id))
 
       // Count call attempts from history for this rep's leads
@@ -1212,7 +1234,7 @@ export default function AnalyticsPage() {
 
       const dnp = repLeads.filter(l => {
         let cf: any = l.custom_fields;
-        if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
+        if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
         const notesLower = (l.notes || '').toLowerCase()
         const stageLower = (l.pipeline_stage || l.status || '').toLowerCase()
         return cf?.last_call_dnp === true || (cf?.dnp_count > 0) || (l.dnp_count > 0) || notesLower.includes('dnp') || stageLower.includes('dnp')
@@ -1234,21 +1256,14 @@ export default function AnalyticsPage() {
         conversionRate
       }
     }).sort((a, b) => b.totalFollowups - a.totalFollowups)
-  }, [team, allSalesReps, leads, history])
+  }, [allSalesReps, leads, history, isLeadAssignedToRep])
 
   const statusBoardRows = useMemo(() => {
     // Always compute from leads for consistency with date filters
-    const reps = (team && team.length > 0)
-      ? team.map(member => ({
-          id: member.id,
-          name: member.business_name || member.full_name || member.email || 'Sales Rep',
-          email: member.email,
-          role: member.role || 'agent'
-        }))
-      : allSalesReps
+    const reps = allSalesReps
 
     return reps.map(rep => {
-      const repLeads = leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id)
+      const repLeads = leads.filter(l => isLeadAssignedToRep(l, rep.id))
 
       const matchStatus = (l: any, ...targets: string[]) => {
         const st = (l.status || l.pipeline_stage || '').toLowerCase()
@@ -1273,7 +1288,7 @@ export default function AnalyticsPage() {
         dealToken
       }
     }).sort((a, b) => b.dealToken - a.dealToken || b.negotiation - a.negotiation)
-  }, [team, allSalesReps, leads])
+  }, [allSalesReps, leads, isLeadAssignedToRep])
 
   const sourceBoardRows = useMemo(() => {
     const map: Record<string, any[]> = {}
@@ -1352,80 +1367,6 @@ export default function AnalyticsPage() {
       { key: 'Dealer', label: 'Dealer', badge: 'bg-zinc-100 text-zinc-700 hover:bg-zinc-600 hover:text-white' }
     ]
 
-    const matchStage = (l: any, stageKey: string) => {
-      const st = (l.pipeline_stage || l.status || 'New Lead').trim().toLowerCase()
-      const target = stageKey.toLowerCase()
-
-      if (target === 'new lead') return st === 'new lead' || st === 'new'
-      if (target === 'requirement taken') return st === 'requirement taken' || st === 'contacted'
-      if (target === 'visit planned') return st === 'visit planned' || st === 'appointment booked'
-      if (target === 'visit done') return st === 'visit done' || st === 'appointment done'
-      if (target === 'revisit done') return st === 'revisit done'
-      if (target === 'meeting planned') return st === 'meeting planned'
-      if (target === 'meeting done') return st === 'meeting done'
-      if (target === 'negotiation') return st === 'negotiation'
-      if (target === 'deal/token') return st === 'deal/token' || st === 'won' || st === 'closed'
-      if (target === 'never picked') return st === 'never picked' || st === 'dnp' || (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)
-      if (target === 'lost/ni') return st === 'lost/ni' || st === 'lost' || st === 'not interested' || st === 'unqualified'
-      if (target === 'plan postponed') return st === 'plan postponed'
-      if (target === 'already purchased') return st === 'already purchased'
-      if (target === 'dealer') return st === 'dealer'
-      return st === target
-    }
-
-    let rows = allSalesReps.map(rep => {
-      const repLeads = leads.filter(l => rep.id === 'unassigned' ? (!l.assigned_to && !l.user_id) : (l.assigned_to === rep.id || l.user_id === rep.id))
-
-      const filteredRepLeads = repLeads.filter(l => {
-        if (!startCutoff && !endCutoff) return true
-        let cf = l.custom_fields
-        if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
-        return isDateInRange(cf?.last_followup_at) || isDateInRange(cf?.last_action_date) || isDateInRange(l.last_call_at) || isDateInRange(l.created_at)
-      })
-
-      const stageLeads: Record<string, any[]> = {}
-      const stageCounts: Record<string, number> = {}
-
-      REPORT_STAGES.forEach(s => {
-        const matching = filteredRepLeads.filter(l => matchStage(l, s.key))
-        stageLeads[s.key] = matching
-        stageCounts[s.key] = matching.length
-      })
-
-      return {
-        rep,
-        stageLeads,
-        stageCounts,
-        total: filteredRepLeads.length,
-        repLeads: filteredRepLeads
-      }
-    }).sort((a, b) => b.total - a.total)
-
-    if (!isAdminLike && profile?.id) {
-      rows = rows.filter(r => r.rep.id === profile.id)
-    } else if (selectedAgentId && selectedAgentId !== 'all') {
-      rows = rows.filter(r => r.rep.id === selectedAgentId)
-    }
-
-    const stageTotals: Record<string, number> = {}
-    const stageTotalLeads: Record<string, any[]> = {}
-    REPORT_STAGES.forEach(s => {
-      stageTotals[s.key] = rows.reduce((sum, r) => sum + (r.stageCounts[s.key] || 0), 0)
-      stageTotalLeads[s.key] = rows.flatMap(r => r.stageLeads[s.key] || [])
-    })
-
-    const grandTotal = rows.reduce((sum, r) => sum + r.total, 0)
-    const grandTotalLeads = rows.flatMap(r => r.repLeads || [])
-
-    // --- Agent Action Attempt Totals from lead_history ---
-    const ACTION_TYPES = [
-      { key: 'calls', label: 'Call Attempts', icon: '📞', color: 'blue' },
-      { key: 'site_visits', label: 'Site Visit Attempts', icon: '🏠', color: 'purple' },
-      { key: 'whatsapp', label: 'WhatsApp Followups', icon: '💬', color: 'green' },
-      { key: 'meetings', label: 'Meeting Attempts', icon: '🤝', color: 'teal' },
-      { key: 'dnp', label: 'DNP (Did Not Pick)', icon: '📵', color: 'rose' },
-    ]
-
     const parseActionDate = (text?: string, fallbackCreatedAt?: string) => {
       if (text) {
         // 1. Bracket notes format: [Followup (Call) - 31/8/2026, 12:10:24 pm] or [Call Not Picked - DNP (31/8/2026...)]
@@ -1457,6 +1398,284 @@ export default function AnalyticsPage() {
       }
       return null
     }
+
+    const isDateFilterActive = Boolean(startCutoff || endCutoff)
+
+    // Index history in range by lead_id for accurate stage matching
+    const historyByLeadInDateRange = new Map<string, any[]>()
+    if (isDateFilterActive) {
+      history.forEach(h => {
+        if (!h.lead_id) return
+        const effectiveDate = parseActionDate(h.description, h.created_at)
+        if (isDateInRange(effectiveDate)) {
+          let list = historyByLeadInDateRange.get(h.lead_id)
+          if (!list) {
+            list = []
+            historyByLeadInDateRange.set(h.lead_id, list)
+          }
+          list.push(h)
+        }
+      })
+    }
+
+    // Index notes chunks in range by lead_id
+    const leadNotesInRange = new Map<string, string[]>()
+    if (isDateFilterActive) {
+      leads.forEach(l => {
+        const notes = l.notes || ''
+        if (notes.includes('[📝') || notes.includes('[⚠️')) {
+          const chunks = notes.split(/(?=\[(?:📝|⚠️))/)
+          const matchingChunks: string[] = []
+          chunks.forEach((chunk: string) => {
+            const effectiveDate = parseActionDate(chunk)
+            if (effectiveDate && isDateInRange(effectiveDate)) {
+              matchingChunks.push(chunk)
+            }
+          })
+          if (matchingChunks.length > 0) {
+            leadNotesInRange.set(l.id, matchingChunks)
+          }
+        }
+      })
+    }
+
+    const matchStage = (l: any, stageKey: string) => {
+      // If no date filter is active (All Time), use static pipeline stage
+      if (!isDateFilterActive) {
+        const st = (l.pipeline_stage || l.status || 'New Lead').trim().toLowerCase()
+        const target = stageKey.toLowerCase()
+
+        if (target === 'new lead') return st === 'new lead' || st === 'new'
+        if (target === 'requirement taken') return st === 'requirement taken' || st === 'contacted'
+        if (target === 'visit planned') return st === 'visit planned' || st === 'appointment booked'
+        if (target === 'visit done') return st === 'visit done' || st === 'appointment done'
+        if (target === 'revisit done') return st === 'revisit done'
+        if (target === 'meeting planned') return st === 'meeting planned'
+        if (target === 'meeting done') return st === 'meeting done'
+        if (target === 'negotiation') return st === 'negotiation'
+        if (target === 'deal/token') return st === 'deal/token' || st === 'won' || st === 'closed'
+        if (target === 'never picked') return st === 'never picked' || st === 'dnp' || (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)
+        if (target === 'lost/ni') return st === 'lost/ni' || st === 'lost' || st === 'not interested' || st === 'unqualified'
+        if (target === 'plan postponed') return st === 'plan postponed'
+        if (target === 'already purchased') return st === 'already purchased'
+        if (target === 'dealer') return st === 'dealer'
+        return st === target
+      }
+
+      // When date filter IS active (e.g. Today, Yesterday, Custom Range):
+      // Only match if an action/stage transition corresponding to stageKey occurred in range!
+      const target = stageKey.toLowerCase()
+      const leadEntries = historyByLeadInDateRange.get(l.id) || []
+      const notesChunks = leadNotesInRange.get(l.id) || []
+      let cf = l.custom_fields
+      if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+
+      if (target === 'new lead') {
+        const isCreatedInRange = isDateInRange(l.created_at)
+        const st = (l.pipeline_stage || l.status || 'New Lead').trim().toLowerCase()
+        return isCreatedInRange && (st === 'new lead' || st === 'new' || !l.pipeline_stage)
+      }
+
+      if (target === 'visit done') {
+        const hasVisitedInRange = isDateInRange(cf?.visited_at) || isDateInRange(cf?.visit_date)
+        const hasVisitHistory = leadEntries.some(h => {
+          const desc = (h.description || '').toLowerCase()
+          const type = (h.action_type || '').toUpperCase()
+          return (type === 'SITE_VISIT' || desc.includes('stage: visit done') || desc.includes('stage: appointment done') || desc.includes('visit done')) && !desc.includes('planned')
+        })
+        const hasVisitNotes = notesChunks.some(c => {
+          const lc = c.toLowerCase()
+          return (lc.includes('site visit') || lc.includes('visit done')) && !lc.includes('planned')
+        })
+        return Boolean(hasVisitedInRange || hasVisitHistory || hasVisitNotes)
+      }
+
+      if (target === 'visit planned') {
+        const hasVisitPlannedHistory = leadEntries.some(h => {
+          const desc = (h.description || '').toLowerCase()
+          return desc.includes('visit planned') || desc.includes('appointment booked') || desc.includes('next action: visit')
+        })
+        const hasNextActionVisit = cf?.next_action_type === 'Visit' && isDateInRange(cf?.last_followup_at)
+        const hasVisitPlannedNotes = notesChunks.some(c => {
+          const lc = c.toLowerCase()
+          return lc.includes('visit planned') || lc.includes('next action: visit')
+        })
+        return Boolean(hasVisitPlannedHistory || hasNextActionVisit || hasVisitPlannedNotes)
+      }
+
+      if (target === 'revisit done') {
+        const hasRevisitInRange = isDateInRange(cf?.revisit_at)
+        const hasRevisitHistory = leadEntries.some(h => (h.description || '').toLowerCase().includes('revisit done'))
+        const hasRevisitNotes = notesChunks.some(c => c.toLowerCase().includes('revisit done'))
+        return Boolean(hasRevisitInRange || hasRevisitHistory || hasRevisitNotes)
+      }
+
+      if (target === 'meeting planned') {
+        const hasMeetingPlannedHistory = leadEntries.some(h => {
+          const desc = (h.description || '').toLowerCase()
+          return desc.includes('meeting planned') || desc.includes('next action: closing meeting') || desc.includes('next action: home meeting') || desc.includes('next action: meeting')
+        })
+        const hasNextActionMeeting = ['meeting', 'closing meeting', 'home meeting'].includes((cf?.next_action_type || '').toLowerCase()) && isDateInRange(cf?.last_followup_at)
+        const hasMeetingPlannedNotes = notesChunks.some(c => {
+          const lc = c.toLowerCase()
+          return lc.includes('meeting planned') || lc.includes('next action: meeting')
+        })
+        return Boolean(hasMeetingPlannedHistory || hasNextActionMeeting || hasMeetingPlannedNotes)
+      }
+
+      if (target === 'meeting done') {
+        const hasMeetingHistory = leadEntries.some(h => {
+          const desc = (h.description || '').toLowerCase()
+          return h.action_type === 'MEETING' || desc.includes('meeting done') || desc.includes('stage: meeting done')
+        })
+        const hasMeetingNotes = notesChunks.some(c => c.toLowerCase().includes('meeting done'))
+        return Boolean(hasMeetingHistory || hasMeetingNotes)
+      }
+
+      if (target === 'negotiation') {
+        const hasNegHistory = leadEntries.some(h => (h.description || '').toLowerCase().includes('negotiation'))
+        const hasNegNotes = notesChunks.some(c => c.toLowerCase().includes('negotiation'))
+        return Boolean(hasNegHistory || hasNegNotes)
+      }
+
+      if (target === 'deal/token') {
+        const hasWonInRange = isDateInRange(cf?.won_at)
+        const hasDealHistory = leadEntries.some(h => {
+          const desc = (h.description || '').toLowerCase()
+          return desc.includes('deal/token') || desc.includes('stage: closed') || desc.includes('stage: won') || desc.includes('stage: deal/token')
+        })
+        const hasDealNotes = notesChunks.some(c => {
+          const lc = c.toLowerCase()
+          return lc.includes('deal/token') || lc.includes('stage: won') || lc.includes('stage: closed')
+        })
+        return Boolean(hasWonInRange || hasDealHistory || hasDealNotes)
+      }
+
+      if (target === 'never picked') {
+        const hasDnpInRange = (cf?.last_call_dnp === true && isDateInRange(cf?.last_followup_at))
+        const hasDnpHistory = leadEntries.some(h => {
+          const desc = (h.description || '').toLowerCase()
+          const type = (h.action_type || '').toUpperCase()
+          return type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')
+        })
+        const hasDnpNotes = notesChunks.some(c => {
+          const lc = c.toLowerCase()
+          return lc.includes('call not picked') || lc.includes('dnp')
+        })
+        return Boolean(hasDnpInRange || hasDnpHistory || hasDnpNotes)
+      }
+
+      if (target === 'requirement taken') {
+        const hasReqHistory = leadEntries.some(h => {
+          const desc = (h.description || '').toLowerCase()
+          return desc.includes('requirement taken') || desc.includes('stage: requirement taken') || desc.includes('stage: contacted')
+        })
+        const hasReqNotes = notesChunks.some(c => {
+          const lc = c.toLowerCase()
+          return lc.includes('requirement taken') || lc.includes('stage: requirement taken') || lc.includes('stage: contacted')
+        })
+        return Boolean(hasReqHistory || hasReqNotes)
+      }
+
+      if (target === 'lost/ni') {
+        const hasLostHistory = leadEntries.some(h => {
+          const desc = (h.description || '').toLowerCase()
+          return desc.includes('stage: lost') || desc.includes('stage: not interested') || desc.includes('stage: unqualified') || desc.includes('not interested')
+        })
+        const hasLostNotes = notesChunks.some(c => {
+          const lc = c.toLowerCase()
+          return lc.includes('stage: lost') || lc.includes('not interested')
+        })
+        return Boolean(hasLostHistory || hasLostNotes)
+      }
+
+      if (target === 'plan postponed') {
+        return Boolean(
+          leadEntries.some(h => (h.description || '').toLowerCase().includes('plan postponed')) ||
+          notesChunks.some(c => c.toLowerCase().includes('plan postponed'))
+        )
+      }
+
+      if (target === 'already purchased') {
+        return Boolean(
+          leadEntries.some(h => (h.description || '').toLowerCase().includes('already purchased')) ||
+          notesChunks.some(c => c.toLowerCase().includes('already purchased'))
+        )
+      }
+
+      if (target === 'dealer') {
+        return Boolean(
+          leadEntries.some(h => (h.description || '').toLowerCase().includes('dealer')) ||
+          notesChunks.some(c => c.toLowerCase().includes('dealer'))
+        )
+      }
+
+      return false
+    }
+
+    const repsToReport = [
+      ...allSalesReps,
+      { id: 'unassigned', name: 'Unassigned Leads', email: '', role: 'system' }
+    ]
+
+    let rows = repsToReport.map(rep => {
+      const repLeads = leads.filter(l => isLeadAssignedToRep(l, rep.id))
+
+      const filteredRepLeads = repLeads.filter(l => {
+        if (!startCutoff && !endCutoff) return true
+        let cf = l.custom_fields
+        if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+        return isDateInRange(cf?.last_followup_at) || 
+               isDateInRange(cf?.last_action_date) || 
+               isDateInRange(l.last_call_at) || 
+               isDateInRange(l.created_at) ||
+               historyByLeadInDateRange.has(l.id) ||
+               leadNotesInRange.has(l.id)
+      })
+
+      const stageLeads: Record<string, any[]> = {}
+      const stageCounts: Record<string, number> = {}
+
+      REPORT_STAGES.forEach(s => {
+        const matching = filteredRepLeads.filter(l => matchStage(l, s.key))
+        stageLeads[s.key] = matching
+        stageCounts[s.key] = matching.length
+      })
+
+      return {
+        rep,
+        stageLeads,
+        stageCounts,
+        total: filteredRepLeads.length,
+        repLeads: filteredRepLeads
+      }
+    }).filter(r => r.rep.id !== 'unassigned' || r.total > 0)
+      .sort((a, b) => b.total - a.total)
+
+    if (!isAdminLike && profile?.id) {
+      rows = rows.filter(r => r.rep.id === profile.id)
+    } else if (selectedAgentId && selectedAgentId !== 'all') {
+      rows = rows.filter(r => r.rep.id === selectedAgentId)
+    }
+
+    const stageTotals: Record<string, number> = {}
+    const stageTotalLeads: Record<string, any[]> = {}
+    REPORT_STAGES.forEach(s => {
+      stageTotals[s.key] = rows.reduce((sum, r) => sum + (r.stageCounts[s.key] || 0), 0)
+      stageTotalLeads[s.key] = rows.flatMap(r => r.stageLeads[s.key] || [])
+    })
+
+    const grandTotal = rows.reduce((sum, r) => sum + r.total, 0)
+    const grandTotalLeads = rows.flatMap(r => r.repLeads || [])
+
+    // --- Agent Action Attempt Totals from lead_history ---
+    const ACTION_TYPES = [
+      { key: 'calls', label: 'Call Attempts', icon: '📞', color: 'blue' },
+      { key: 'site_visits', label: 'Site Visit Attempts', icon: '🏠', color: 'purple' },
+      { key: 'whatsapp', label: 'WhatsApp Followups', icon: '💬', color: 'green' },
+      { key: 'meetings', label: 'Meeting Attempts', icon: '🤝', color: 'teal' },
+      { key: 'dnp', label: 'DNP (Did Not Pick)', icon: '📵', color: 'rose' },
+    ]
 
     const classifyAction = (h: any) => {
       const type = (h.action_type || '').toUpperCase()
@@ -1627,7 +1846,7 @@ export default function AnalyticsPage() {
       actionTotalLeads,
       grandTotalAttempts
     }
-  }, [leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId, history])
+  }, [leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId, history, isLeadAssignedToRep])
 
   // Open interactive drilldown drawer for leads
   const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[], defaultSort?: string) => {
@@ -1730,7 +1949,7 @@ export default function AnalyticsPage() {
                 <option value="unassigned">⚠️ Unassigned Leads ({leads.filter(l => !l.assigned_to).length})</option>
                 {allSalesReps.map(rep => (
                   <option key={rep.id} value={rep.id}>
-                    👤 {rep.name} ({leads.filter(l => l.assigned_to === rep.id || l.user_id === rep.id).length} leads)
+                    👤 {rep.name} ({leads.filter(l => isLeadAssignedToRep(l, rep.id)).length} leads)
                   </option>
                 ))}
               </select>
@@ -3699,9 +3918,9 @@ export default function AnalyticsPage() {
                 // 3. Assigned Agent Filter
                 if (drilldownAgentFilter !== 'ALL') {
                   if (drilldownAgentFilter === 'UNASSIGNED') {
-                    if (l.assigned_to || l.user_id) return false
+                    if (l.assigned_to) return false
                   } else {
-                    if (l.assigned_to !== drilldownAgentFilter && l.user_id !== drilldownAgentFilter) return false
+                    if (!isLeadAssignedToRep(l, drilldownAgentFilter)) return false
                   }
                 }
 
@@ -4177,13 +4396,17 @@ export default function AnalyticsPage() {
                                         <MessageSquare size={13} />
                                       </a>
 
-                                      <a
-                                        href={`tel:${lead.phone}`}
-                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openPhoneDialer(lead.phone);
+                                        }}
+                                        className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors cursor-pointer"
                                         title="Call"
                                       >
                                         <Phone size={13} />
-                                      </a>
+                                      </button>
                                     </div>
                                   </td>
                                 </tr>
@@ -4309,13 +4532,17 @@ export default function AnalyticsPage() {
                                   <MessageSquare size={14} />
                                 </a>
 
-                                <a
-                                  href={`tel:${lead.phone}`}
-                                  className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-xs flex items-center justify-center"
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openPhoneDialer(lead.phone);
+                                  }}
+                                  className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-xs flex items-center justify-center cursor-pointer"
                                   title="Direct Call"
                                 >
                                   <Phone size={18} />
-                                </a>
+                                </button>
                               </div>
                             </div>
 
@@ -4452,16 +4679,34 @@ export default function AnalyticsPage() {
         isOpen={!!followupLead}
         lead={followupLead}
         onClose={() => setFollowupLead(null)}
-        onSuccess={() => {
+        onSuccess={(updatedFields) => {
           if (followupLead) {
             const updatedId = followupLead.id
-            setDrilldownModal(prev => ({
-              ...prev,
-              leads: prev.leads.filter((l: any) => l.id !== updatedId)
-            }))
+            if (updatedFields) {
+              setLeads(prev => prev.map((l: any) => l.id === updatedId ? { 
+                ...l, 
+                ...updatedFields, 
+                custom_fields: { 
+                  ...(typeof l.custom_fields === 'object' ? l.custom_fields : {}), 
+                  ...(updatedFields.custom_fields || {}) 
+                } 
+              } : l))
+              setDrilldownModal(prev => ({
+                ...prev,
+                leads: prev.leads.map((l: any) => l.id === updatedId ? { 
+                  ...l, 
+                  ...updatedFields, 
+                  custom_fields: { 
+                    ...(typeof l.custom_fields === 'object' ? l.custom_fields : {}), 
+                    ...(updatedFields.custom_fields || {}) 
+                  } 
+                } : l)
+              }))
+            } else {
+              fetchAnalytics(false)
+            }
           }
           setFollowupLead(null)
-          fetchAnalytics(true)
         }}
       />
 
