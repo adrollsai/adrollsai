@@ -3763,7 +3763,8 @@ RULES:
                                         }
                                     }
 
-                                    // Fallback: If no campaign-specific flow matched, check if there is any active flow for this user
+                                    // Fallback: If no campaign-specific flow matched, check if there is a TRUE default flow (one without a linked campaign)
+                                    // IMPORTANT: Only pick flows that are NOT tied to a specific campaign, to avoid showing wrong questions for unrelated leads
                                     if (!isInstantFormLead && !matchedFlowQuestions) {
                                         try {
                                             const { data: defaultFlow } = await supabaseAdmin
@@ -3771,6 +3772,7 @@ RULES:
                                                 .select('questions, name')
                                                 .eq('user_id', ownerUserId)
                                                 .eq('is_active', true)
+                                                .is('linked_campaign_id', null)
                                                 .order('created_at', { ascending: false })
                                                 .limit(1)
                                                 .maybeSingle();
