@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2, Globe, Languages, Mic, AlertCircle, Eye } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
@@ -126,6 +126,62 @@ const renderVisualsWithBadges = (visualsText: string) => {
 export default function CreationPage() {
   const router = useRouter()
   const supabase = createClient()
+
+  // Helper to ensure authenticated requests with Bearer token & automatic refresh
+  const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        return {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      }
+      const { data: refreshData } = await supabase.auth.refreshSession()
+      if (refreshData?.session?.access_token) {
+        return {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${refreshData.session.access_token}`
+        }
+      }
+    } catch (err) {
+      console.warn('[Creation] Session retrieval error:', err)
+    }
+    return { 'Content-Type': 'application/json' }
+  }, [supabase])
+
+  const authFetch = useCallback(async (url: string, options: RequestInit = {}): Promise<Response> => {
+    const headers = await getAuthHeaders()
+    let response = await fetch(url, {
+      ...options,
+      headers: {
+        ...headers,
+        ...(options.headers || {})
+      }
+    })
+
+    // If 401 Unauthorized, automatically attempt session refresh and retry once
+    if (response.status === 401) {
+      console.warn('[Creation] Received 401 Unauthorized, attempting session refresh and auto-retry...')
+      try {
+        const { data: refreshData } = await supabase.auth.refreshSession()
+        if (refreshData?.session?.access_token) {
+          response = await fetch(url, {
+            ...options,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${refreshData.session.access_token}`,
+              ...(options.headers || {})
+            }
+          })
+        }
+      } catch (refreshErr) {
+        console.error('[Creation] Auto-retry session refresh failed:', refreshErr)
+      }
+    }
+
+    return response
+  }, [getAuthHeaders, supabase])
   
   // Data State
   const [properties, setProperties] = useState<Property[]>(() => {
@@ -805,9 +861,8 @@ export default function CreationPage() {
     try {
         const urlParams = new URLSearchParams(window.location.search)
         const impersonateId = urlParams.get('impersonate')
-        const scriptResponse = await fetch(`/api/video/script${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        const scriptResponse = await authFetch(`/api/video/script${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 propertyId: selectedPropId || null,
                 concept,
@@ -855,9 +910,8 @@ export default function CreationPage() {
         setCurrentStep('AI Creative Director is generating physical scenes prompts for review...')
         let prompts = []
         try {
-            const promptResponse = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+            const promptResponse = await authFetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     propertyId: selectedPropId || null,
                     script: {
@@ -937,9 +991,8 @@ export default function CreationPage() {
     try {
         const urlParams = new URLSearchParams(window.location.search)
         const impersonateId = urlParams.get('impersonate')
-        const scriptResponse = await fetch(`/api/video/script${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        const scriptResponse = await authFetch(`/api/video/script${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 propertyId: selectedPropId || null,
                 concept,
@@ -984,9 +1037,8 @@ export default function CreationPage() {
         setCurrentStep('AI Creative Director is generating physical scenes prompts for review...')
         let prompts = []
         try {
-            const promptResponse = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+            const promptResponse = await authFetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     propertyId: selectedPropId || null,
                     script: {
@@ -1063,9 +1115,8 @@ export default function CreationPage() {
     try {
         const urlParams = new URLSearchParams(window.location.search)
         const impersonateId = urlParams.get('impersonate')
-        const response = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        const response = await authFetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 propertyId: selectedPropId || null,
                 script,
@@ -1116,9 +1167,8 @@ export default function CreationPage() {
     setCurrentStep('Generating voiceover using Gemini 3.1 Flash TTS...');
 
     try {
-        const res = await fetch('/api/video/grok/tts', {
+        const res = await authFetch('/api/video/grok/tts', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 dialogueText,
                 speakerName: grokVoice,
@@ -1160,9 +1210,8 @@ export default function CreationPage() {
         const urlParams = new URLSearchParams(window.location.search);
         const impersonateId = urlParams.get('impersonate');
 
-        const response = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        const response = await authFetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 propertyId: selectedPropId || null,
                 script,
@@ -1221,9 +1270,8 @@ export default function CreationPage() {
     try {
         const urlParams = new URLSearchParams(window.location.search)
         const impersonateId = urlParams.get('impersonate')
-        const response = await fetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        const response = await authFetch(`/api/video/generate${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 propertyId: selectedPropId || null,
                 script,
@@ -1301,9 +1349,8 @@ export default function CreationPage() {
 
             const urlParams = new URLSearchParams(window.location.search)
             const impersonateId = urlParams.get('impersonate')
-            const conceptsResponse = await fetch(`/api/video/concepts${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+            const conceptsResponse = await authFetch(`/api/video/concepts${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     propertyId: selectedPropId || null,
                     userInstructions: userText,
@@ -2026,7 +2073,9 @@ export default function CreationPage() {
                       <X className="text-red-500" size={16} /> Script Generation Failed
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed font-normal">
-                      The AI Creative Director couldn't complete the script generation due to high API demand. Don't worry, your custom instructions and concept details are fully saved. You can retry safely.
+                      {msg.text?.toLowerCase().includes('unauthorized')
+                        ? "Your session briefly expired. Clicking Retry below will automatically refresh your credentials and generate your script."
+                        : "The AI Creative Director couldn't complete the script generation due to high API demand. Don't worry, your custom instructions and concept details are fully saved. You can retry safely."}
                     </p>
                     <button
                       onClick={() => handleSelectConcept(msg.failedConcept, msg.refImages || [], msg.imageDescriptions, msg.id)}

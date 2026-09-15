@@ -2599,12 +2599,13 @@ CRITICAL CONVERSATIONAL RULES:
                                     let ownerBusinessInfo = '';
                                     let ownerContactNumber = '';
                                     let ownerEnableDistribution = false;
+                                    let ownerHasVoiceNumber = false;
 
                                     // PRIMARY: Resolve from webhook phone_number_id (most reliable)
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution, voice_vobiz_number, voice_twilio_number, voice_twilio_sid')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -2629,6 +2630,8 @@ CRITICAL CONVERSATIONAL RULES:
                                             ownerBusinessInfo = selectedProfile.business_info || '';
                                             ownerContactNumber = selectedProfile.contact_number || selectedProfile.whatsapp_phone_number || '';
                                             ownerEnableDistribution = !!selectedProfile.enable_distribution;
+                                            const sBi = typeof selectedProfile.business_info === 'string' ? JSON.parse(selectedProfile.business_info || '{}') : (selectedProfile.business_info || {});
+                                            ownerHasVoiceNumber = !!(selectedProfile.voice_vobiz_number || sBi.claimed_vobiz_number || sBi.voice_vobiz_number || (selectedProfile.voice_twilio_number && selectedProfile.voice_twilio_sid));
                                             console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
                                         }
                                     }
@@ -2661,7 +2664,7 @@ CRITICAL CONVERSATIONAL RULES:
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role, business_name, address, business_info, contact_number, whatsapp_phone_number, enable_distribution')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role, business_name, address, business_info, contact_number, whatsapp_phone_number, enable_distribution, voice_vobiz_number, voice_twilio_number, voice_twilio_sid')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
@@ -2680,6 +2683,8 @@ CRITICAL CONVERSATIONAL RULES:
                                                 ownerBusinessInfo = ownerProfile.business_info || ownerBusinessInfo || '';
                                                 ownerContactNumber = ownerProfile.contact_number || ownerProfile.whatsapp_phone_number || ownerContactNumber || '';
                                                 ownerEnableDistribution = !!ownerProfile.enable_distribution;
+                                                const oBi = typeof ownerProfile.business_info === 'string' ? JSON.parse(ownerProfile.business_info || '{}') : (ownerProfile.business_info || {});
+                                                ownerHasVoiceNumber = !!(ownerProfile.voice_vobiz_number || oBi.claimed_vobiz_number || oBi.voice_vobiz_number || (ownerProfile.voice_twilio_number && ownerProfile.voice_twilio_sid));
                                             }
                                             console.log(`[Flow] Owner resolved from lead match: ${selectedLead.name} -> user ${ownerUserId}`);
                                         }
@@ -2913,9 +2918,14 @@ CRITICAL CONVERSATIONAL RULES:
                                                     source_url: adSourceUrl
                                                 }
                                             };
-                                            // Schedule automated AI voice call for 15 minutes in case prospect drops off on WhatsApp
-                                            newLeadPayload.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-                                            newLeadPayload.voice_call_status = 'pending_qualification';
+                                            // Schedule automated AI voice call ONLY if user has auto_call_new_leads enabled and has a connected voice number
+                                            if (ownerAutoCallNewLeads && ownerHasVoiceNumber) {
+                                                newLeadPayload.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                                                newLeadPayload.voice_call_status = 'pending_qualification';
+                                            } else {
+                                                newLeadPayload.voice_call_scheduled_at = null;
+                                                newLeadPayload.voice_call_status = 'not_called';
+                                            }
                                             newLeadPayload.voice_campaign_id = isUuid(campaignId) ? campaignId : null;
                                         }
 
@@ -2980,8 +2990,13 @@ CRITICAL CONVERSATIONAL RULES:
                                         }
 
                                         if (isFromAd && !existingCf?.qualification_completed && (!latestLead.voice_call_status || latestLead.voice_call_status === 'pending_qualification' || latestLead.voice_call_status === 'not_called')) {
-                                            updatePayload.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-                                            updatePayload.voice_call_status = 'pending_qualification';
+                                            if (ownerAutoCallNewLeads && ownerHasVoiceNumber) {
+                                                updatePayload.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                                                updatePayload.voice_call_status = 'pending_qualification';
+                                            } else {
+                                                updatePayload.voice_call_scheduled_at = null;
+                                                updatePayload.voice_call_status = 'not_called';
+                                            }
                                             const vCamp = campaignId || latestLead.campaign_id;
                                             updatePayload.voice_campaign_id = isUuid(vCamp) ? vCamp : null;
                                         }
@@ -3242,7 +3257,9 @@ CRITICAL CONVERSATIONAL RULES:
                                           console.log(`[Flow] Lead ${cleanFrom} clicked Connect with Expert! Sending alert to admin.`);
                                           
                                           // 1. Reply to lead on WhatsApp
-                                          const leadReplyText = `Thank you! Our ${ownerBusinessName || 'team'} has been notified and our property expert will reach out to you directly shortly. You can also pick a convenient time slot using the link above! 🙏`;
+                                          const leadReplyText = isInternalNobogentAccount
+                                              ? `Thank you! Our team at ${ownerBusinessName || 'Nobogent'} has been notified and our solutions specialist will reach out to you directly shortly. You can also pick a convenient time slot using the link above! 🙏`
+                                              : `Thank you! Our team at ${ownerBusinessName || 'our office'} has been notified and our specialist will reach out to you directly shortly. You can also pick a convenient time slot using the link above! 🙏`;
                                           try {
                                               const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
                                               await fetch(metaUrl, {
@@ -3658,7 +3675,9 @@ RULES:
                                             }
 
                                             if (!aiReply || aiReply.trim().length === 0) {
-                                                aiReply = `Thank you for reaching out to *${ownerBusinessName}*! We offer premium residential & commercial properties in prime locations. Please check our catalog below or speak directly with our property specialist.`;
+                                                aiReply = isNobogentAccount
+                                                    ? `Thank you for reaching out to *${ownerBusinessName || 'Nobogent'}*! We are the AI Sales & Marketing platform built specifically for Real Estate. Feel free to explore our platform overview or connect directly with our team.`
+                                                    : `Thank you for reaching out to *${ownerBusinessName}*! We offer premium residential & commercial properties in prime locations. Please check our catalog below or speak directly with our specialist.`;
                                             }
 
                                             // Send AI answer as clear message
@@ -3837,7 +3856,7 @@ RULES:
                                                     type: 'cta_url',
                                                     header: { type: 'text', text: headerText.slice(0, 60) },
                                                     body: { text: bodyText },
-                                                    footer: { text: (ownerBusinessName || 'Property Advisory').slice(0, 60) },
+                                                    footer: { text: (ownerBusinessName || (isNobogentAccount ? 'Nobogent AI' : 'Advisory')).slice(0, 60) },
                                                     action: {
                                                         name: 'cta_url',
                                                         parameters: {
@@ -3929,8 +3948,13 @@ RULES:
                                                 leadUpdates.voice_call_scheduled_at = null;
                                                 leadUpdates.voice_call_status = 'qualified_via_whatsapp';
                                             } else if ((latestLead as any).voice_call_status === 'pending_qualification') {
-                                                // Mid-flow answer: give the user another 15 minutes of grace before initiating voice call
-                                                leadUpdates.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                                                if (ownerAutoCallNewLeads && ownerHasVoiceNumber) {
+                                                    // Mid-flow answer: give the user another 15 minutes of grace before initiating voice call
+                                                    leadUpdates.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                                                } else {
+                                                    leadUpdates.voice_call_scheduled_at = null;
+                                                    leadUpdates.voice_call_status = 'not_called';
+                                                }
                                             }
 
                                             await supabaseAdmin
@@ -4054,11 +4078,19 @@ RULES:
                                     }
 
                                     if (!isInstantFormLead && parsedQuestionsList.length === 0) {
-                                        parsedQuestionsList.push(
-                                            { index: 0, key: 'property_type', question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
-                                            { index: 1, key: 'budget', question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
-                                            { index: 2, key: 'timeline', question: 'What is your timeline to purchase?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
-                                        );
+                                        if (isNobogentAccount) {
+                                            parsedQuestionsList.push(
+                                                { index: 0, key: 'business_role', question: 'Are you a real estate broker or developer?', options: ['Broker', 'Developer', 'Channel Partner'] },
+                                                { index: 1, key: 'monthly_leads', question: 'Approximately how many leads do you receive per month?', options: ['Under 50', '50–200', '200+'] },
+                                                { index: 2, key: 'readiness', question: 'When would you be ready to implement Nobogent AI to scale your sales?', options: ['Immediate', 'This week', 'Next week'] }
+                                            );
+                                        } else {
+                                            parsedQuestionsList.push(
+                                                { index: 0, key: 'property_type', question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
+                                                { index: 1, key: 'budget', question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
+                                                { index: 2, key: 'timeline', question: 'What is your timeline to purchase?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
+                                            );
+                                        }
                                     }
 
                                     const deliverPostQualificationLink = async (cleanedName?: string) => {
@@ -4199,7 +4231,7 @@ RULES:
                                         await syncFieldsAndScore({ connect_expert_clicked: true, requested_callback: true });
                                         
                                         // Confirm to lead
-                                        const specialistLabel = isNobogentAccount ? 'solutions specialist' : 'property specialist';
+                                        const specialistLabel = isNobogentAccount ? 'solutions specialist' : 'specialist';
                                         await sendTextMessage(`Thank you! Our ${specialistLabel} from ${ownerBusinessName || 'our team'} will reach out to you directly shortly. 🙏`);
                                         
                                         // Alert admin/agent via high-priority multi-channel notification
@@ -4306,6 +4338,30 @@ RULES:
                                             }
                                         }
 
+                                        // If qualification was already completed, but name was not previously captured, check if incoming text is the lead's name
+                                        if (!buttonReplyId && currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && messageText && messageText.trim().length > 0 && messageText.trim().split(/\s+/).length <= 4) {
+                                            const nameAnalysis = await extractLeadNameWithAI(messageText);
+                                            if (nameAnalysis.hasName && nameAnalysis.name) {
+                                                const cleanedName = nameAnalysis.name;
+                                                console.log(`[WhatsApp Bot] Post-qualification name detected for lead ${cleanFrom}: "${cleanedName}". Updating CRM.`);
+                                                if (latestLead?.id) {
+                                                    await supabaseAdmin.from('leads').update({ name: cleanedName }).eq('id', latestLead.id);
+                                                }
+                                                await supabaseAdmin.from('whatsapp_chats').update({ recipient_name: cleanedName }).eq('id', chat.id);
+                                                await syncFieldsAndScore({
+                                                    lead_name_captured: true,
+                                                    full_name: cleanedName
+                                                });
+                                                const nameAck = isNobogentAccount
+                                                    ? `Thank you, ${cleanedName}! 🎉 Great to connect with you. Please let us know if you would like a live walkthrough or demo of Nobogent.`
+                                                    : `Thank you, ${cleanedName}! 🎉 Great to connect with you. Please let us know if you have any questions or would like to schedule a visit.`;
+                                                await sendTextMessage(nameAck);
+                                                await new Promise(r => setTimeout(r, 150));
+                                                await sendThreeButtons("What would you like to do next?");
+                                                return;
+                                            }
+                                        }
+
                                         // Dynamic MCQ button clicks (q_opt_{qIndex}_{optIndex})
                                         if (buttonReplyId?.startsWith('q_opt_')) {
                                             const parts = buttonReplyId.split('_');
@@ -4362,13 +4418,17 @@ RULES:
                                             if (activeQIndex === 0 && !hasAnyAnswer && !matchedOptionValue) {
                                                 console.log(`[WhatsApp Bot] Initial message for lead ${cleanFrom}: "${messageText}". Starting qualification flow with Q#0.`);
                                                 if (latestLead?.id && !currentCustomFields?.qualification_completed) {
-                                                    await supabaseAdmin.from('leads').update({
-                                                        voice_call_scheduled_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-                                                        voice_call_status: 'pending_qualification',
-                                                        voice_campaign_id: isUuid(leadCampaignId || latestLead.campaign_id) ? (leadCampaignId || latestLead.campaign_id) : null
-                                                    }).eq('id', latestLead.id);
+                                                    if (ownerAutoCallNewLeads && ownerHasVoiceNumber) {
+                                                        await supabaseAdmin.from('leads').update({
+                                                            voice_call_scheduled_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+                                                            voice_call_status: 'pending_qualification',
+                                                            voice_campaign_id: isUuid(leadCampaignId || latestLead.campaign_id) ? (leadCampaignId || latestLead.campaign_id) : null
+                                                        }).eq('id', latestLead.id);
+                                                    }
                                                 }
-                                                const welcomeMsg = `Hello! 👋 Welcome to *${ownerBusinessName || 'our team'}*. Please answer 2 quick questions so we can assist you with the right options & details: 🎁🏢`;
+                                                const welcomeMsg = isNobogentAccount
+                                                    ? `Hello! 👋 Welcome to *${ownerBusinessName || 'Nobogent'}*. Please answer 2 quick questions so we can share the right AI automation solutions for your business: 🚀✨`
+                                                    : `Hello! 👋 Welcome to *${ownerBusinessName || 'our team'}*. Please answer 2 quick questions so we can assist you with the right options & details: 🎁🏢`;
                                                 await sendTextMessage(welcomeMsg);
                                                 await new Promise(r => setTimeout(r, 150));
                                                 await askQuestionMCQ(0);
@@ -4405,7 +4465,10 @@ RULES:
                                             } else {
                                                 if (!currentCustomFields?.lead_name_captured) {
                                                     await syncFieldsAndScore({ awaiting_lead_name: true });
-                                                    await sendTextMessage("Great! 🎉 To receive your tailored brochure & details matched to your preferences, may I know your good name please?");
+                                                    const namePrompt = isNobogentAccount
+                                                        ? "Great! 🎉 To share your personalized Nobogent platform walkthrough & access details, may I know your good name please?"
+                                                        : "Great! 🎉 To receive your tailored brochure & details matched to your preferences, may I know your good name please?";
+                                                    await sendTextMessage(namePrompt);
                                                     return;
                                                 } else {
                                                     await syncFieldsAndScore({ qualification_completed: true });
@@ -4458,7 +4521,10 @@ RULES:
 
                                             if (!currentCustomFields?.lead_name_captured) {
                                                 await syncFieldsAndScore({ awaiting_lead_name: true });
-                                                await sendTextMessage("Great! 🎉 To instantly send you our tailored inventory list & brochure matched to your preferences, may I know your good name please?");
+                                                const namePrompt = isNobogentAccount
+                                                    ? "Great! 🎉 To share your personalized Nobogent platform walkthrough & access details, may I know your good name please?"
+                                                    : "Great! 🎉 To instantly send you our tailored inventory list & brochure matched to your preferences, may I know your good name please?";
+                                                await sendTextMessage(namePrompt);
                                                 return;
                                             } else {
                                                 await sendThreeButtons("What would you like to do?");
@@ -4472,17 +4538,23 @@ RULES:
                                         if (unansweredQ) {
                                             // If starting question 1, send encouraging lead magnet intro
                                             if (unansweredQ.index === 0 && Object.keys(currentCustomFields).filter(k => k !== 'lead_score' && k !== 'lead_tier').length === 0) {
-                                                await sendTextMessage("Hi! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢");
+                                                const introMsg = isNobogentAccount
+                                                    ? "Hi! 👋 Please answer a few quick questions so we can share the right Nobogent AI automation solutions & live demo for your business: 🚀✨"
+                                                    : "Hi! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢";
+                                                await sendTextMessage(introMsg);
                                                 await new Promise(r => setTimeout(r, 150));
                                             }
                                             await askQuestionMCQ(unansweredQ.index);
                                             return;
                                         }
 
-                                        // If all questions are answered but name not yet asked (NON-instant form leads only)
-                                        if (!isInstantFormLead && !currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
+                                        // If all questions are answered but name not yet asked (NON-instant form leads only, and only if qualification is not completed yet)
+                                        if (!isInstantFormLead && !currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
                                             await syncFieldsAndScore({ awaiting_lead_name: true });
-                                            await sendTextMessage("Great! 🎉 To receive your tailored inventory list & brochure matched to your preferences, may I know your good name please?");
+                                            const namePrompt = isNobogentAccount
+                                                ? "Great! 🎉 To share your personalized Nobogent platform walkthrough & access details, may I know your good name please?"
+                                                : "Great! 🎉 To receive your tailored inventory list & brochure matched to your preferences, may I know your good name please?";
+                                            await sendTextMessage(namePrompt);
                                             return;
                                         }
 
@@ -5195,8 +5267,10 @@ RULES:
               });
           }
 
-          // Trigger automated Voice Dialing if enabled
-          if (savedLead && phone && profile.auto_call_new_leads) {
+          // Trigger automated Voice Dialing ONLY if auto_call_new_leads is enabled AND user has a connected voice number
+          const biProfile = typeof profile?.business_info === 'string' ? JSON.parse(profile.business_info || '{}') : (profile?.business_info || {});
+          const hasConnectedVoice = !!(profile?.voice_vobiz_number || biProfile?.claimed_vobiz_number || biProfile?.voice_vobiz_number || (profile?.voice_twilio_number && profile?.voice_twilio_sid));
+          if (savedLead && phone && profile.auto_call_new_leads && hasConnectedVoice) {
               triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true).catch(err => {
                   console.error('[AUTO CALL] Auto voice call trigger failed:', err);
               });

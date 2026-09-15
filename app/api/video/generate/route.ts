@@ -317,8 +317,23 @@ export async function POST(request: Request) {
     let totalCreditsRequired = 0;
     let targetUserId = '';
     try {
+        let user: any = null;
+        const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.replace('Bearer ', '').trim();
+            if (token) {
+                const { data: userData, error: tokenErr } = await supabaseAdmin.auth.getUser(token);
+                if (!tokenErr && userData?.user) {
+                    user = userData.user;
+                }
+            }
+        }
+
         const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+            const { data: userData } = await supabase.auth.getUser();
+            user = userData?.user || null;
+        }
 
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

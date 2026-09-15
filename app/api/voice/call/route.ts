@@ -74,11 +74,14 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Failed to fetch user profile.' }, { status: 500 })
         }
 
-        const telephonyProvider = profile.voice_telephony_provider || profile.telephony_provider || 'twilio'
-        const isMasterDefaultUser = profile.email === 'rchopra489@gmail.com' || profile.email === 'infobluesquareinfra@gmail.com'
-        let voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
-        if (voiceNumber === '+911171366938' || voiceNumber?.startsWith('+91')) {
-            voiceNumber = process.env.MASTER_TWILIO_NUMBER || '+16592137728'
+        const bi = typeof profile.business_info === 'string' ? JSON.parse(profile.business_info) : (profile.business_info || {})
+        const hasVobiz = !!(profile.voice_vobiz_number || bi.claimed_vobiz_number || bi.voice_vobiz_number)
+        const hasTwilio = !!(profile.voice_twilio_number && profile.voice_twilio_sid)
+
+        if (!hasVobiz && !hasTwilio) {
+            return NextResponse.json({
+                error: 'Voice calling is not active. No Vobiz or telephony number is connected to this account. Please connect a phone number in Voice settings.'
+            }, { status: 400 })
         }
 
         const isAuto = !!isAutoTrigger

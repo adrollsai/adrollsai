@@ -13,8 +13,23 @@ const supabaseAdmin = createAdminClient(
 
 export async function POST(request: Request) {
     try {
+        let user: any = null;
+        const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.replace('Bearer ', '').trim();
+            if (token) {
+                const { data: userData, error: tokenErr } = await supabaseAdmin.auth.getUser(token);
+                if (!tokenErr && userData?.user) {
+                    user = userData.user;
+                }
+            }
+        }
+
         const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+            const { data: userData } = await supabase.auth.getUser();
+            user = userData?.user || null;
+        }
 
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -26,7 +41,7 @@ export async function POST(request: Request) {
         // 1. Fetch Context
         let property: any = null;
         if (propertyId) {
-            const { data } = await supabase
+            const { data } = await supabaseAdmin
                 .from('properties')
                 .select('*')
                 .eq('id', propertyId)
@@ -37,7 +52,7 @@ export async function POST(request: Request) {
         const url = new URL(request.url)
         const impersonateId = url.searchParams.get('impersonate')
 
-        const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+        const { data: currentProfile } = await supabaseAdmin.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
         let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
           ? (currentProfile.agency_id || currentProfile.parent_id) 
           : user.id
@@ -46,7 +61,7 @@ export async function POST(request: Request) {
             if (['super_admin', 'agency', 'admin'].includes(currentProfile?.role || '')) {
                 if (currentProfile?.role !== 'super_admin') {
                     const isParent = (currentProfile?.agency_id === impersonateId || currentProfile?.parent_id === impersonateId);
-                    const { data: subAccount } = await supabase
+                    const { data: subAccount } = await supabaseAdmin
                       .from('profiles')
                       .select('id')
                       .eq('id', impersonateId)
@@ -67,7 +82,7 @@ export async function POST(request: Request) {
         }
 
         let targetProfile: any = null;
-        const selectWithAvatars = await supabase
+        const selectWithAvatars = await supabaseAdmin
             .from('profiles')
             .select('business_name, mission_statement, business_info, custom_prompt, character_url, character_description, avatar_url, avatar_description')
             .eq('id', targetUserId)
@@ -75,7 +90,7 @@ export async function POST(request: Request) {
 
         if (selectWithAvatars.error) {
             console.warn("[Script API] Failed to select with avatar columns, retrying without them:", selectWithAvatars.error.message);
-            const selectWithoutAvatars = await supabase
+            const selectWithoutAvatars = await supabaseAdmin
                 .from('profiles')
                 .select('business_name, mission_statement, business_info, custom_prompt, character_url, character_description')
                 .eq('id', targetUserId)

@@ -1,16 +1,37 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createGeminiTTS, queryKieTask } from '@/utils/external-apis';
+
+const supabaseAdmin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(request: Request) {
     try {
         const url = new URL(request.url);
         const impersonateId = url.searchParams.get('impersonate');
 
-        const supabase = await createClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        let user: any = null;
+        const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.replace('Bearer ', '').trim();
+            if (token) {
+                const { data: userData, error: tokenErr } = await supabaseAdmin.auth.getUser(token);
+                if (!tokenErr && userData?.user) {
+                    user = userData.user;
+                }
+            }
+        }
 
-        if ((authError || !user) && !impersonateId) {
+        if (!user) {
+            const supabase = await createClient();
+            const { data: userData } = await supabase.auth.getUser();
+            user = userData?.user || null;
+        }
+
+        if (!user && !impersonateId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 

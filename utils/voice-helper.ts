@@ -319,20 +319,18 @@ export async function triggerOutboundCall(
                     scheduledTime: vobizRes.scheduledTime
                 }
             }
-            console.warn(`[VOICE HELPER] Vobiz call attempt failed (${vobizRes.error}). Falling back to Twilio...`)
+            console.warn(`[VOICE HELPER] Vobiz call attempt failed (${vobizRes.error}).`)
+            return { success: false, error: vobizRes.error || 'Vobiz call failed.' }
         }
 
-        const twilioSid = profile.voice_twilio_sid || process.env.MASTER_TWILIO_SID || process.env.DEV_TWILIO_SID
-        const twilioToken = profile.voice_twilio_token || process.env.MASTER_TWILIO_TOKEN || process.env.DEV_TWILIO_TOKEN
-        
-        const isMasterDefaultUser = profile.email === 'rchopra489@gmail.com' || profile.email === 'infobluesquareinfra@gmail.com'
-        let voiceNumber = profile.voice_twilio_number || process.env.MASTER_TWILIO_NUMBER || (isMasterDefaultUser ? process.env.MASTER_TWILIO_NUMBER : null)
-        if (voiceNumber === '+911171366938' || voiceNumber?.startsWith('+91')) {
-            voiceNumber = process.env.MASTER_TWILIO_NUMBER || '+16592137728'
-        }
+        // Secondary / Explicit Twilio Routing: ONLY if user explicitly configured their own Twilio credentials
+        const twilioSid = profile.voice_twilio_sid
+        const twilioToken = profile.voice_twilio_token
+        const voiceNumber = profile.voice_twilio_number
 
         if (!twilioSid || !twilioToken || !voiceNumber) {
-            return { success: false, error: 'Voice calling credentials or phone number are not configured. Please provision a phone number in Voice settings.' }
+            console.warn(`[VOICE HELPER] Call aborted for lead ${lead.id}: User ${profile.email} has not connected a Vobiz number or Twilio credentials.`)
+            return { success: false, error: 'Voice calling is inactive. No Vobiz number or telephony provider is connected to this account.' }
         }
 
         // 3. Format phone number to E.164
