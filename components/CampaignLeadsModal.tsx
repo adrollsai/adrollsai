@@ -10,6 +10,7 @@ import {
 import { createClient } from '@/utils/supabase/client'
 import LeadHistoryModal from '@/components/LeadHistoryModal'
 import { toast } from 'sonner'
+import { openPhoneDialer } from '@/utils/dialer'
 
 interface CampaignLeadsModalProps {
   isOpen: boolean
@@ -392,7 +393,15 @@ export default function CampaignLeadsModal({
                 <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-1">
                   <span className="font-mono text-slate-400">ID: {campaign.id}</span>
                   <span>•</span>
-                  <span className="font-semibold text-slate-700">{totalCount} Total Leads Captured</span>
+                  <span className="font-semibold text-slate-700">{totalCount} CRM Leads</span>
+                  {campaign.metrics?.results !== undefined && campaign.metrics.results > 0 && campaign.metrics.results !== totalCount && (
+                    <>
+                      <span>•</span>
+                      <span className="text-slate-400 font-medium text-[11px]" title="Ad conversions/conversation starts tracked by Meta Ads Manager">
+                        Meta Ad Results: {campaign.metrics.results}
+                      </span>
+                    </>
+                  )}
                   {campaign.metrics?.cpl ? (
                     <>
                       <span>•</span>
@@ -578,13 +587,17 @@ export default function CampaignLeadsModal({
 
                           <div className="flex items-center gap-3 text-xs text-slate-500 mt-1.5 flex-wrap">
                             {lead.phone && (
-                              <a
-                                href={`tel:${lead.phone}`}
-                                className="flex items-center gap-1 hover:text-blue-600 font-medium transition-colors"
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  openPhoneDialer(lead.phone)
+                                }}
+                                className="flex items-center gap-1 hover:text-blue-600 font-medium transition-colors cursor-pointer"
                               >
                                 <Phone size={12} className="text-slate-400" />
                                 <span>{lead.phone}</span>
-                              </a>
+                              </button>
                             )}
                             {lead.email && (
                               <a
@@ -672,13 +685,14 @@ export default function CampaignLeadsModal({
 
                         {/* Quick Call Link */}
                         {lead.phone && (
-                          <a
-                            href={`tel:${lead.phone}`}
+                          <button
+                            type="button"
+                            onClick={() => openPhoneDialer(lead.phone)}
                             className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl transition-colors"
                             title="Call Lead"
                           >
                             <PhoneCall size={14} />
-                          </a>
+                          </button>
                         )}
 
                         {/* View in CRM link */}

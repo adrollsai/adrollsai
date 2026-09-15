@@ -21,7 +21,9 @@ import {
   ChevronDown,
   Megaphone,
   CheckCircle,
-  HelpCircle
+  HelpCircle,
+  MessageSquare,
+  AlignLeft
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -30,6 +32,7 @@ import { toast } from 'sonner'
 interface QualifyingQuestionItem {
   question: string
   options: string[]
+  type?: 'choice' | 'text'
 }
 
 interface FlowCompletionConfig {
@@ -183,12 +186,14 @@ export default function QualifyingPage() {
                   url: q.url || ''
                 }
               } else if (q && typeof q === 'object' && q.question) {
+                const isText = q.type === 'text' || (!q.options || q.options.length === 0)
                 filteredQuestions.push({
                   question: q.question,
-                  options: Array.isArray(q.options) ? q.options : []
+                  options: Array.isArray(q.options) ? q.options : [],
+                  type: q.type || (isText ? 'text' : 'choice')
                 })
               } else if (typeof q === 'string') {
-                filteredQuestions.push({ question: q, options: [] })
+                filteredQuestions.push({ question: q, options: [], type: 'text' })
               }
             })
 
@@ -439,10 +444,26 @@ export default function QualifyingPage() {
     toast.success("Flow removed.")
   }
 
-  const handleAddQuestion = () => {
+  const handleToggleQuestionType = (qIdx: number, newType: 'choice' | 'text') => {
+    const updated = [...flows]
+    const targetQ = updated[activeFlowIndex].questions[qIdx]
+    targetQ.type = newType
+    if (newType === 'text') {
+      targetQ.options = []
+    } else if (!targetQ.options || targetQ.options.length === 0) {
+      targetQ.options = ['Option 1', 'Option 2']
+    }
+    setFlows(updated)
+  }
+
+  const handleAddQuestion = (type: 'choice' | 'text' = 'choice') => {
     if (!newQuestionText.trim()) return
     const updated = [...flows]
-    updated[activeFlowIndex].questions.push({ question: newQuestionText.trim(), options: [] })
+    updated[activeFlowIndex].questions.push({
+      question: newQuestionText.trim(),
+      options: type === 'choice' ? ['Option 1', 'Option 2'] : [],
+      type
+    })
     setFlows(updated)
     setNewQuestionText('')
   }
@@ -861,57 +882,99 @@ export default function QualifyingPage() {
                       </button>
                     </div>
 
-                    {/* Options Chips */}
-                    <div className="pl-8 space-y-2">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                        <Tag size={10} /> Multiple-Choice Choices:
-                      </label>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {q.options.map((opt, optIdx) => (
-                          <span 
-                            key={optIdx} 
-                            className="inline-flex items-center gap-1.5 bg-white text-blue-700 border border-blue-200 text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xs"
-                          >
-                            {opt}
-                            {userRole !== 'agent' && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveOption(qIdx, optIdx)}
-                                className="hover:text-red-500 rounded-full p-0.5 transition-colors"
-                              >
-                                <X size={12} />
-                              </button>
-                            )}
-                          </span>
-                        ))}
+                    {/* Question Format Toggle */}
+                    <div className="pl-8 flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Response Format:</span>
+                      <div className="inline-flex p-0.5 bg-slate-200/60 rounded-xl text-xs">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleQuestionType(qIdx, 'choice')}
+                          disabled={userRole === 'agent'}
+                          className={`px-3 py-1 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                            q.type !== 'text' ? 'bg-white text-blue-700 shadow-xs font-black' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Tag size={11} />
+                          <span>Multiple Choice (Buttons / List)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleQuestionType(qIdx, 'text')}
+                          disabled={userRole === 'agent'}
+                          className={`px-3 py-1 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                            q.type === 'text' ? 'bg-white text-purple-700 shadow-xs font-black' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <AlignLeft size={11} />
+                          <span>Short Answer / Text Response</span>
+                        </button>
                       </div>
-
-                      {/* Add Option Input */}
-                      {userRole !== 'agent' && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <input
-                            type="text"
-                            value={newOptionInputs[qIdx] || ''}
-                            onChange={(e) => setNewOptionInputs({ ...newOptionInputs, [qIdx]: e.target.value })}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault()
-                                handleAddOption(qIdx)
-                              }
-                            }}
-                            placeholder="Add choice (e.g. 2 BHK, ₹1 Cr - ₹1.5 Cr)"
-                            className="bg-white text-xs py-2 px-3 rounded-xl border border-slate-200 focus:border-blue-400 outline-none w-56"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleAddOption(qIdx)}
-                            className="text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-xl transition-all active:scale-95 flex items-center gap-1"
-                          >
-                            <Plus size={12} /> Add Choice
-                          </button>
-                        </div>
-                      )}
                     </div>
+
+                    {q.type === 'text' ? (
+                      /* Short Answer / Free Text Response Info */
+                      <div className="pl-8 pt-1">
+                        <div className="flex items-center gap-2.5 p-3.5 bg-purple-50/70 rounded-2xl border border-purple-200/80 text-purple-900 text-xs">
+                          <MessageSquare size={16} className="text-purple-600 shrink-0" />
+                          <div>
+                            <span className="font-bold">Short Answer / Free Text:</span>
+                            <span className="text-purple-700 ml-1">The prospect will receive this question as a message on WhatsApp and type their response freely (e.g. location, city, specific requirement). Answers are saved directly to their lead profile.</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Options Chips */
+                      <div className="pl-8 space-y-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                          <Tag size={10} /> Multiple-Choice Choices:
+                        </label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {q.options.map((opt, optIdx) => (
+                            <span 
+                              key={optIdx} 
+                              className="inline-flex items-center gap-1.5 bg-white text-blue-700 border border-blue-200 text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xs"
+                            >
+                              {opt}
+                              {userRole !== 'agent' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveOption(qIdx, optIdx)}
+                                  className="hover:text-red-500 rounded-full p-0.5 transition-colors"
+                                >
+                                  <X size={12} />
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Add Option Input */}
+                        {userRole !== 'agent' && (
+                          <div className="flex items-center gap-2 pt-1">
+                            <input
+                              type="text"
+                              value={newOptionInputs[qIdx] || ''}
+                              onChange={(e) => setNewOptionInputs({ ...newOptionInputs, [qIdx]: e.target.value })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  handleAddOption(qIdx)
+                                }
+                              }}
+                              placeholder="Add choice (e.g. 2 BHK, ₹1 Cr - ₹1.5 Cr)"
+                              className="bg-white text-xs py-2 px-3 rounded-xl border border-slate-200 focus:border-blue-400 outline-none w-56"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleAddOption(qIdx)}
+                              className="text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-xl transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus size={12} /> Add Choice
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -919,7 +982,7 @@ export default function QualifyingPage() {
 
             {/* Add New Question Row */}
             {userRole !== 'agent' && (
-              <div className="flex gap-2 pt-2 border-t border-slate-100">
+              <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-100">
                 <input
                   type="text"
                   value={newQuestionText}
@@ -927,19 +990,30 @@ export default function QualifyingPage() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault()
-                      handleAddQuestion()
+                      handleAddQuestion('choice')
                     }
                   }}
                   placeholder="Type new question text..."
-                  className="w-full bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-4 rounded-2xl text-slate-800 text-xs font-semibold outline-none border border-slate-200 focus:border-blue-400 transition-all shadow-xs"
+                  className="flex-1 bg-slate-50 hover:bg-slate-100/50 focus:bg-white py-3.5 px-4 rounded-2xl text-slate-800 text-xs font-semibold outline-none border border-slate-200 focus:border-blue-400 transition-all shadow-xs"
                 />
-                <button
-                  type="button"
-                  onClick={handleAddQuestion}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-6 py-3.5 rounded-2xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 shrink-0"
-                >
-                  <Plus size={14} /> Add Question
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuestion('choice')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-3.5 rounded-2xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                    title="Add question with multiple-choice buttons/options"
+                  >
+                    <Plus size={14} /> Add MCQ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuestion('text')}
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-4 py-3.5 rounded-2xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                    title="Add open-ended question where user types free-text response"
+                  >
+                    <AlignLeft size={14} /> Add Short Answer
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -177,7 +177,7 @@ function getLeadNextActionTime(lead: any): number {
 export default function AnalyticsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const impersonateId = searchParams.get('impersonate')
 
   // --- STATE ---
@@ -257,6 +257,85 @@ export default function AnalyticsPage() {
   const [drilldownDateFilterMode, setDrilldownDateFilterMode] = useState<'single' | 'range'>('single')
   const [drilldownCampaign, setDrilldownCampaign] = useState<string>('')
   const [drilldownForm, setDrilldownForm] = useState<string>('')
+  const [campaignsList, setCampaignsList] = useState<{ id: string; name: string; meta_campaign_id?: string | null }[]>([])
+
+  // Map of campaign ID / meta_campaign_id -> Official Campaign Name
+  const campaignLookupMap = useMemo(() => {
+    const map = new Map<string, string>()
+    campaignsList.forEach(c => {
+      if (c.id && c.name) map.set(String(c.id), c.name)
+      if (c.meta_campaign_id && c.name) map.set(String(c.meta_campaign_id), c.name)
+    })
+    return map
+  }, [campaignsList])
+
+  // Clean resolver for actual Campaign Name across all sources & variations
+  const resolveLeadCampaign = useCallback((l: any): string => {
+    if (!l) return 'Direct Campaign'
+
+    // 1. Mapped from campaigns table by campaign_id
+    if (l.campaign_id && campaignLookupMap.has(String(l.campaign_id))) {
+      return campaignLookupMap.get(String(l.campaign_id))!
+    }
+
+    // 2. custom_fields / meta_ad_origin
+    const cf = l.custom_fields || {}
+    if (cf?.meta_ad_origin?.campaign_name && typeof cf.meta_ad_origin.campaign_name === 'string') {
+      return cf.meta_ad_origin.campaign_name.trim()
+    }
+    if (l.campaign_name && typeof l.campaign_name === 'string' && l.campaign_name.trim() && l.campaign_name !== 'null') {
+      return l.campaign_name.trim()
+    }
+    if (cf?.campaign_name && typeof cf.campaign_name === 'string' && cf.campaign_name.trim()) {
+      return cf.campaign_name.trim()
+    }
+    if (cf?.campaign && typeof cf.campaign === 'string' && cf.campaign.trim()) {
+      return cf.campaign.trim()
+    }
+
+    // 3. Extracted from ad_name: "Campaign Name / Ad Name"
+    if (l.ad_name && typeof l.ad_name === 'string') {
+      const trimmed = l.ad_name.trim()
+      if (trimmed.includes(' / ')) {
+        return trimmed.split(' / ')[0].trim()
+      }
+      if (trimmed && trimmed !== 'null' && trimmed !== 'undefined') {
+        return trimmed
+      }
+    }
+
+    if (l.property?.title) return l.property.title
+    if (l.property?.name) return l.property.name
+
+    return 'Direct Campaign'
+  }, [campaignLookupMap])
+
+  // Clean resolver for Lead Form or Source (including WhatsApp Qualification Flow names)
+  const resolveLeadFormOrSource = useCallback((l: any): string => {
+    if (!l) return 'Direct / Organic'
+    const cf = l.custom_fields || {}
+
+    // 1. WhatsApp Qualification Flow name
+    const qFlow = cf?.qualification_flow_name || (typeof l.form_name === 'string' && l.form_name.startsWith('WhatsApp Flow:') ? l.form_name : null)
+    if (qFlow) {
+      return String(qFlow).startsWith('WhatsApp Flow:') ? String(qFlow) : `WhatsApp Flow: ${qFlow}`
+    }
+
+    // 2. Clean Form Name (skip AI Ad Variation strings)
+    if (l.form_name && typeof l.form_name === 'string') {
+      const trimmed = l.form_name.trim()
+      if (!/^AI Ad Variation/i.test(trimmed) && trimmed !== 'null' && trimmed !== 'undefined') {
+        return trimmed
+      }
+    }
+
+    // 3. Clean Source
+    if (l.source && typeof l.source === 'string' && l.source.trim() && l.source !== 'null') {
+      return l.source.trim()
+    }
+
+    return 'Direct / Organic'
+  }, [])
 
   // Dynamic extraction of unique campaigns and forms from drilldown modal leads (fallback to all leads)
   const modalCampaigns = useMemo(() => {
@@ -264,26 +343,26 @@ export default function AnalyticsPage() {
     const sourceList = drilldownModal.leads && drilldownModal.leads.length > 0 ? drilldownModal.leads : leads
     const list: string[] = []
     sourceList.forEach((l: any) => {
-      const camp = l.campaign_name || l.ad_name || l.custom_fields?.campaign_name
+      const camp = resolveLeadCampaign(l)
       if (camp && typeof camp === 'string' && camp.trim() && camp !== 'null' && camp !== 'undefined') {
         list.push(camp.trim())
       }
     })
     return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b))
-  }, [drilldownModal.isOpen, drilldownModal.leads, leads])
+  }, [drilldownModal.isOpen, drilldownModal.leads, leads, resolveLeadCampaign])
 
   const modalForms = useMemo(() => {
     if (!drilldownModal.isOpen) return []
     const sourceList = drilldownModal.leads && drilldownModal.leads.length > 0 ? drilldownModal.leads : leads
     const list: string[] = []
     sourceList.forEach((l: any) => {
-      const fName = l.form_name || l.source
+      const fName = resolveLeadFormOrSource(l)
       if (fName && typeof fName === 'string' && fName.trim() && fName !== 'null' && fName !== 'undefined') {
         list.push(fName.trim())
       }
     })
     return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b))
-  }, [drilldownModal.isOpen, drilldownModal.leads, leads])
+  }, [drilldownModal.isOpen, drilldownModal.leads, leads, resolveLeadFormOrSource])
 
   // Count active drilldown filters (excluding default values)
   const activeDrilldownFilterCount = useMemo(() => {
@@ -402,14 +481,19 @@ export default function AnalyticsPage() {
         return { ...lead, custom_fields: cf || {} }
       })
 
-      // Step 1: First 1000 leads + count in parallel
+      // Step 1: First 1000 leads + count + campaigns in parallel
       const firstPageQ = filterFn(supabase.from('leads').select(leadFields))
         .order('created_at', { ascending: false })
         .order('id', { ascending: true })
         .range(0, 999)
       const countQ = filterFn(supabase.from('leads').select('*', { count: 'exact', head: true }))
+      const campaignsQ = supabase.from('campaigns').select('id, name, meta_campaign_id').in('user_id', workspaceTeamIds)
 
-      const [firstPageRes, countRes] = await Promise.all([firstPageQ, countQ])
+      const [firstPageRes, countRes, campaignsRes] = await Promise.all([firstPageQ, countQ, campaignsQ])
+
+      if (campaignsRes?.data) {
+        setCampaignsList(campaignsRes.data)
+      }
 
       const totalCount = countRes.count || (firstPageRes.data?.length || 0)
       setTotalServerCount(totalCount)
@@ -1323,7 +1407,7 @@ export default function AnalyticsPage() {
   const campaignBoardRows = useMemo(() => {
     const map: Record<string, any[]> = {}
     leads.forEach(l => {
-      const camp = l.campaign_name || l.ad_name || l.property?.title || l.property?.name || 'Direct Campaign'
+      const camp = resolveLeadCampaign(l)
       if (!map[camp]) map[camp] = []
       map[camp].push(l)
     })
@@ -4072,15 +4156,15 @@ export default function AnalyticsPage() {
                 // 8. Campaign Filter
                 if (drilldownCampaign) {
                   const campTarget = drilldownCampaign.toLowerCase().trim()
-                  const campName = (l.campaign_name || l.ad_name || cf?.campaign_name || '').toLowerCase()
-                  if (!campName.includes(campTarget)) return false
+                  const campName = resolveLeadCampaign(l).toLowerCase().trim()
+                  if (campName !== campTarget && !campName.includes(campTarget)) return false
                 }
 
                 // 9. Lead Form / Source Filter
                 if (drilldownForm) {
                   const formTarget = drilldownForm.toLowerCase().trim()
-                  const formName = (l.form_name || l.source || '').toLowerCase()
-                  if (!formName.includes(formTarget)) return false
+                  const formName = resolveLeadFormOrSource(l).toLowerCase().trim()
+                  if (formName !== formTarget && !formName.includes(formTarget)) return false
                 }
 
                 return true

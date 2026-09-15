@@ -152,7 +152,16 @@ export async function POST(request: Request) {
       combinedStatusStr.includes('different requirement') ||
       combinedStatusStr.includes('closed')
 
-    if (isLostOrClosed) {
+    const hasExplicitNextAction = Boolean(nextActionDate && typeof nextActionDate === 'string' && nextActionDate.trim() !== '')
+
+    if (hasExplicitNextAction) {
+      updatePayload.next_followup = nextActionDate
+      if (nextActionType === 'Site Visit' || nextActionType === 'Meeting' || nextActionType === 'Appointment') {
+        updatePayload.booked_time = nextActionDate
+      } else {
+        updatePayload.booked_time = null
+      }
+    } else if (isLostOrClosed) {
       updatePayload.next_followup = null
       updatePayload.booked_time = null
     }
@@ -188,7 +197,7 @@ export async function POST(request: Request) {
 
     customFields.followup_count = (customFields.followup_count || 0) + 1
 
-    if (nextActionDate && !isLostOrClosed) {
+    if (hasExplicitNextAction) {
       customFields.next_action_date = nextActionDate
       updatePayload.next_followup = nextActionDate
       if (nextActionType) customFields.next_action_type = nextActionType

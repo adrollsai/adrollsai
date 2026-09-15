@@ -41,6 +41,7 @@ import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
 import { type VobizAvailableNumber } from '@/utils/vobiz-catalog'
 import CreateAudienceGroupModal from '@/components/CreateAudienceGroupModal'
+import { openPhoneDialer } from '@/utils/dialer'
 
 interface VoiceAgentSettingsProps {
   userId: string
@@ -48,7 +49,7 @@ interface VoiceAgentSettingsProps {
 }
 
 export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSettingsProps) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
@@ -2757,14 +2758,15 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                                       <span>WhatsApp</span>
                                     </a>
 
-                                    <a
-                                      href={`tel:${lead.phone}`}
+                                    <button
+                                      type="button"
+                                      onClick={() => openPhoneDialer(lead.phone)}
                                       className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-extrabold transition-all shadow-2xs active:scale-95 cursor-pointer"
                                       title="Call Lead Phone"
                                     >
                                       <Phone size={13} />
                                       <span>Call</span>
-                                    </a>
+                                    </button>
                                   </>
                                 )}
 

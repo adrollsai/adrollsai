@@ -20,6 +20,7 @@ import GroupLeadDistributionModal from '@/components/GroupLeadDistributionModal'
 import DownloadLeadsModal from '@/components/DownloadLeadsModal'
 import CsvImportModal from '@/components/CsvImportModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
+import LeadAdPreviewModal from '@/components/LeadAdPreviewModal'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle, extractStagesFromProfile } from '@/utils/pipeline-stages'
 import { getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
@@ -266,7 +267,7 @@ function formatIsoDatesInText(text: string): string {
 }
 
 export default function CRMPage() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
   const searchParams = useSearchParams()
   const impersonateId = searchParams.get('impersonate')
@@ -304,6 +305,7 @@ export default function CRMPage() {
   }, [])
   const [assignedCampaigns, setAssignedCampaigns] = useState<string[]>([])
   const [activeMediaModal, setActiveMediaModal] = useState<any>(null)
+  const [adPreviewLead, setAdPreviewLead] = useState<any | null>(null)
 
   // --- FILTER STATE ---
   const [sortOrder, setSortOrder] = useState<'last_attempted' | 'received_newest' | 'received_oldest' | 'crm_newest' | 'score_highest' | 'newest' | 'oldest'>('received_newest')
@@ -981,8 +983,35 @@ export default function CRMPage() {
 
           fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
             .then(res => res.json())
-            .then(data => { if (data?.campaigns) setCampaigns(data.campaigns) })
+            .then(data => { 
+              if (data?.campaigns && Array.isArray(data.campaigns)) {
+                setCampaigns(prev => {
+                  const map = new Map()
+                  data.campaigns.forEach((c: any) => { if (c?.id) map.set(String(c.id), c) })
+                  prev.forEach((c: any) => { if (c?.id && !map.has(String(c.id))) map.set(String(c.id), c) })
+                  return Array.from(map.values())
+                })
+              }
+            })
             .catch(() => {})
+
+          supabase.from('campaigns').select('id, name, meta_campaign_id')
+            .then(({ data: dbCamps }) => {
+              if (dbCamps && Array.isArray(dbCamps) && dbCamps.length > 0) {
+                setCampaigns(prev => {
+                  const map = new Map()
+                  prev.forEach((c: any) => { if (c?.id) map.set(String(c.id), c) })
+                  dbCamps.forEach((c: any) => {
+                    const idKey = String(c.id)
+                    const metaKey = c.meta_campaign_id ? String(c.meta_campaign_id) : null
+                    if (!map.has(idKey) && (!metaKey || !map.has(metaKey))) {
+                      map.set(idKey, c)
+                    }
+                  })
+                  return Array.from(map.values())
+                })
+              }
+            })
 
           fetch(`/api/facebook/forms${impersonateId ? `?impersonate=${impersonateId}` : ''}`, { headers: authHeader })
             .then(res => res.json())
@@ -1786,10 +1815,7 @@ END:VCARD\n`
   }
 
   const getLeadCampaignName = useCallback((lead: any) => {
-    if (lead.campaign_id) {
-      const camp = campaigns.find(c => c.id === lead.campaign_id);
-      if (camp?.name) return camp.name;
-    }
+    if (!lead) return '';
     let cf = lead.custom_fields;
     if (cf && typeof cf === 'string') {
       try {
@@ -1797,14 +1823,40 @@ END:VCARD\n`
       } catch (e) {}
     }
     const origin = cf?.meta_ad_origin;
+
+    // 1. Dynamic check against live campaigns via campaign_id or origin.campaign_id
+    const targetCampId = lead.campaign_id || origin?.campaign_id;
+    if (targetCampId) {
+      const camp = campaigns.find(c => String(c.id) === String(targetCampId) || String(c.meta_campaign_id) === String(targetCampId));
+      if (camp?.name) return camp.name;
+    }
+
+    // 2. Check if lead.ad_name contains " / " with a campaign name prefix that matches a renamed campaign
+    if (lead.ad_name && lead.ad_name.includes(' / ')) {
+      const candidateCampPrefix = lead.ad_name.split(' / ')[0].trim().toLowerCase();
+      const matchedCamp = campaigns.find(c => c.name && c.name.trim().toLowerCase() === candidateCampPrefix);
+      if (matchedCamp?.name) return matchedCamp.name;
+    }
+
+    // 3. Check origin campaign metadata
+    if (origin?.campaign_name) return origin.campaign_name;
+    if (lead.campaign_name) return lead.campaign_name;
+
+    // 4. Clean ad_name: if it has " / Variation", extract campaign prefix
+    if (lead.ad_name) {
+      if (lead.ad_name.includes(' / ')) {
+        return lead.ad_name.split(' / ')[0].trim();
+      }
+      return lead.ad_name;
+    }
+
     if (origin) {
-      const originName = origin.ad_name || origin.headline || origin.campaign_name || origin.product_name;
+      const originName = origin.ad_name || origin.headline || origin.product_name;
       if (originName) return originName;
     }
-    if (lead.ad_name) return lead.ad_name;
-    if (lead.campaign_name) return lead.campaign_name;
-    if (cf?.ad_name) return cf.ad_name;
+
     if (cf?.campaign_name) return cf.campaign_name;
+    if (cf?.ad_name) return cf.ad_name;
     if (cf?.source_detail) return cf.source_detail;
     if (cf?.referral_ad_title) return cf.referral_ad_title;
     if (lead.form_name) return lead.form_name;
@@ -1814,6 +1866,23 @@ END:VCARD\n`
     }
     return '';
   }, [campaigns])
+
+  const getLeadAdVariationName = useCallback((lead: any) => {
+    if (!lead) return '';
+    let cf = lead.custom_fields;
+    if (cf && typeof cf === 'string') {
+      try {
+        while (typeof cf === 'string') cf = JSON.parse(cf);
+      } catch (e) {}
+    }
+    const origin = cf?.meta_ad_origin;
+    if (origin?.ad_name) return origin.ad_name;
+    if (lead.ad_name && lead.ad_name.includes(' / ')) {
+      const parts = lead.ad_name.split(' / ');
+      return parts[parts.length - 1].trim();
+    }
+    return '';
+  }, [])
 
   // --- ACTIVE CAMPAIGNS & ACTIVE LEAD FORMS TRACKING ---
   const activeCampaignSet = useMemo(() => {
@@ -3373,10 +3442,23 @@ END:VCARD\n`
                                                     <span className="text-xs text-slate-400 font-medium">No DNP</span>
                                                 )}
                                             </td>
-                                            <td className="p-4">
+                                            <td className="p-4" onClick={e => e.stopPropagation()}>
                                                 <div className="flex flex-col max-w-[160px]">
                                                     <span className="text-xs font-bold text-slate-700 truncate">{lead.source || 'Direct'}</span>
-                                                    <span className="text-[10px] font-semibold text-slate-400 truncate">{getLeadCampaignName(lead) || lead.ad_name || '--'}</span>
+                                                    {(() => {
+                                                        const campName = getLeadCampaignName(lead) || lead.ad_name;
+                                                        if (!campName) return <span className="text-[10px] font-semibold text-slate-400">--</span>;
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setAdPreviewLead(lead)}
+                                                                className="text-[10px] font-semibold text-slate-500 hover:text-indigo-600 hover:underline truncate text-left cursor-pointer transition-colors"
+                                                                title={`${campName} (Tap to view ad creative)`}
+                                                            >
+                                                                {campName}
+                                                            </button>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </td>
                                             <td className="p-4 whitespace-nowrap">
@@ -3636,15 +3718,25 @@ END:VCARD\n`
                                 )}
                             </div>
 
-                            {/* Campaign Badge - Truncated, No Vertical Break */}
+                            {/* Campaign Badge - Interactive, Tap to View Ad */}
                             {(() => {
                                 const campName = getLeadCampaignName(lead) || lead.ad_name || lead.campaign_name;
                                 if (!campName) return null;
                                 return (
-                                    <div className="mb-2">
-                                        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md truncate max-w-full inline-block" title={campName}>
-                                            📢 {campName}
-                                        </span>
+                                    <div className="mb-2 flex items-center">
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setAdPreviewLead(lead);
+                                            }}
+                                            className="text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 border border-slate-200 px-2 py-0.5 rounded-md truncate max-w-full inline-flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-2xs group"
+                                            title={`Campaign: ${campName} (Tap to view Ad creative & copy)`}
+                                        >
+                                            <span className="shrink-0 text-slate-500 group-hover:text-indigo-600">📢</span>
+                                            <span className="truncate">{campName}</span>
+                                            <Eye size={10} className="text-slate-400 group-hover:text-indigo-600 shrink-0 ml-0.5 transition-colors" />
+                                        </button>
                                     </div>
                                 );
                             })()}
@@ -3741,11 +3833,25 @@ END:VCARD\n`
                             <div className="flex flex-col gap-0.5 justify-center min-w-0">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lead Source</span>
                                 <span className="text-xs font-extrabold text-slate-800 truncate block" title={lead.source || '--'}>{lead.source || '--'}</span>
-                                {(lead.ad_name || getLeadCampaignName(lead)) && (
-                                    <span className="text-[10px] font-semibold text-slate-500 truncate block mt-0.5 bg-slate-100/80 px-1.5 py-0.5 rounded border border-slate-200/50" title={lead.ad_name || getLeadCampaignName(lead)}>
-                                        {lead.ad_name || getLeadCampaignName(lead)}
-                                    </span>
-                                )}
+                                {(() => {
+                                    const dynamicCamp = getLeadCampaignName(lead);
+                                    const adVariation = getLeadAdVariationName(lead);
+                                    const displayLabel = dynamicCamp ? (adVariation ? `${dynamicCamp} • ${adVariation}` : dynamicCamp) : (lead.ad_name || lead.form_name);
+                                    if (!displayLabel) return null;
+                                    return (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setAdPreviewLead(lead);
+                                            }}
+                                            className="text-[10px] font-semibold text-slate-600 hover:text-indigo-700 bg-slate-100/90 hover:bg-indigo-50/90 px-1.5 py-0.5 rounded border border-slate-200/70 hover:border-indigo-200/80 truncate block mt-0.5 text-left transition-all active:scale-95 cursor-pointer shadow-2xs group"
+                                            title={`${displayLabel} (Tap to view Ad creative & copy)`}
+                                        >
+                                            <span className="truncate block">🎯 {displayLabel}</span>
+                                        </button>
+                                    );
+                                })()}
                             </div>
                         </div>
 
@@ -4164,6 +4270,18 @@ END:VCARD\n`
            </div>
          </div>
        )}
+
+        {/* LEAD AD PREVIEW MODAL */}
+        <LeadAdPreviewModal 
+          isOpen={!!adPreviewLead} 
+          lead={adPreviewLead} 
+          campaignName={getLeadCampaignName(adPreviewLead)}
+          onClose={() => setAdPreviewLead(null)} 
+          onUpdateLead={(updatedLead) => {
+            setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l))
+            setAdPreviewLead(updatedLead)
+          }}
+        />
 
        {/* CALL FEEDBACK MODAL */}
        <CallFeedbackModal 

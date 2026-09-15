@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import PushManager from '@/components/PushManager'
+import { openPhoneDialer } from '@/utils/dialer'
 
 // --- TYPES ---
 type Profile = {
@@ -435,7 +436,7 @@ export default function SharedCataloguePage() {
       f.__trackAdrollsEvent('Contact', { content_name: 'Call Catalog' })
     }
     
-    window.open(`tel:${profile.contact_number}`, '_self')
+    openPhoneDialer(profile.contact_number)
   }
 
   // --- 8. MODAL NAVIGATION ---

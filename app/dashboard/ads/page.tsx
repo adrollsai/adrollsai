@@ -770,7 +770,7 @@ export default function AdsPage() {
               console.error("Failed to load properties from API", e);
               return { properties: [] };
           }),
-          supabase.from('leads').select('campaign_id').in('user_id', effectiveUserIds),
+          supabase.from('leads').select('campaign_id, ad_name, form_name').in('user_id', effectiveUserIds),
           pageQuery.order('created_at', { ascending: false }),
           formQuery.order('created_at', { ascending: false }),
           fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `${impersonateId ? '&' : '?'}since=${encodeURIComponent(maxAssetTime)}` : ''}`).then(r => r.json()).catch(e => {
@@ -803,8 +803,16 @@ export default function AdsPage() {
       
       const leads = leadsRes.data || [];
       const leadCounts: Record<string, number> = {};
-      leads.forEach(l => {
-          if (l.campaign_id) leadCounts[l.campaign_id] = (leadCounts[l.campaign_id] || 0) + 1;
+      newCampaigns.forEach((camp: Campaign) => {
+          const matchedLeads = leads.filter((l: any) => {
+              if (l.campaign_id && l.campaign_id === camp.id) return true;
+              if (camp.name && (
+                  (l.ad_name && l.ad_name.toLowerCase().includes(camp.name.toLowerCase())) ||
+                  (l.form_name && l.form_name.toLowerCase().includes(camp.name.toLowerCase()))
+              )) return true;
+              return false;
+          });
+          leadCounts[camp.id] = matchedLeads.length;
       });
       setCampaignLeadCounts(leadCounts);
 
@@ -2615,6 +2623,7 @@ export default function AdsPage() {
                       <tbody className="divide-y divide-slate-100 text-xs">
                         {paginatedCampaigns.map((campaign) => {
                           const resultsCount = campaign.metrics?.results ?? (campaignLeadCounts[campaign.id] || 0);
+                          const crmLeadsCount = campaignLeadCounts[campaign.id] || 0;
                           const spend = campaign.metrics?.spend || 0;
                           const cpl = campaign.metrics?.cpl || (resultsCount > 0 && spend > 0 ? (spend / resultsCount) : null);
                           const impressions = campaign.metrics?.impressions || 0;
@@ -2755,9 +2764,9 @@ export default function AdsPage() {
                                   >
                                     <Users size={13} />
                                     <span>Leads</span>
-                                    {resultsCount > 0 && (
+                                    {crmLeadsCount > 0 && (
                                       <span className="ml-0.5 bg-blue-200/80 text-blue-900 group-hover:bg-white group-hover:text-blue-700 text-[10px] px-1.5 py-0.2 rounded-full font-black">
-                                        {resultsCount}
+                                        {crmLeadsCount}
                                       </span>
                                     )}
                                   </button>
@@ -2911,6 +2920,7 @@ export default function AdsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6">
                   {paginatedCampaigns.map(campaign => {
                     const resultsCount = campaign.metrics?.results ?? (campaignLeadCounts[campaign.id] || 0);
+                    const crmLeadsCount = campaignLeadCounts[campaign.id] || 0;
                     const spend = campaign.metrics?.spend || 0;
                     const cpl = campaign.metrics?.cpl || (resultsCount > 0 && spend > 0 ? (spend / resultsCount) : null);
 
@@ -2997,7 +3007,7 @@ export default function AdsPage() {
                               className="flex items-center justify-center gap-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-600 hover:text-white py-2 px-2.5 rounded-xl transition-all border border-blue-200/80 shadow-xs"
                             >
                               <Users size={13} />
-                              <span>Leads {resultsCount > 0 ? `(${resultsCount})` : ''}</span>
+                              <span>Leads {crmLeadsCount > 0 ? `(${crmLeadsCount})` : ''}</span>
                             </button>
                             <button 
                               onClick={() => handleOptimize(campaign)} 

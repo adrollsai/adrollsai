@@ -2880,7 +2880,7 @@ CRITICAL CONVERSATIONAL RULES:
 
                                     let { data: latestLead } = await supabaseAdmin
                                         .from('leads')
-                                        .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, voice_call_status, voice_call_scheduled_at')
+                                        .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
                                         .eq('user_id', ownerUserId)
                                         .ilike('phone', `%${cleanFrom.slice(-10)}%`)
                                         .order('created_at', { ascending: false, nullsFirst: false })
@@ -2932,7 +2932,7 @@ CRITICAL CONVERSATIONAL RULES:
                                         const { data: createdLead, error: createLeadErr } = await supabaseAdmin
                                             .from('leads')
                                             .insert(newLeadPayload)
-                                            .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, voice_call_status, voice_call_scheduled_at')
+                                            .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
                                             .single();
 
                                         if (createdLead) {
@@ -3930,9 +3930,16 @@ RULES:
                                         }
                                     }
 
+                                    let matchedFlowName: string | null = null;
+                                    let matchedFlowId: string | null = null;
+
                                     // Helper: Sync Custom Fields and Recalculate Lead Score
                                     const syncFieldsAndScore = async (fieldsToMerge: Record<string, any>) => {
                                         currentCustomFields = { ...currentCustomFields, ...fieldsToMerge };
+                                        if (matchedFlowName && !currentCustomFields.qualification_flow_name) {
+                                            currentCustomFields.qualification_flow_name = matchedFlowName;
+                                            currentCustomFields.qualification_flow_id = matchedFlowId;
+                                        }
                                         await supabaseAdmin
                                             .from('whatsapp_chats')
                                             .update({ flow_answers: currentCustomFields, updated_at: new Date().toISOString() })
@@ -3940,6 +3947,10 @@ RULES:
                                         
                                         if (latestLead?.id) {
                                             const leadUpdates: Record<string, any> = { custom_fields: currentCustomFields };
+                                            const leadForm = (latestLead as any)?.form_name;
+                                            if (matchedFlowName && (!leadForm || leadForm === 'WhatsApp Ad' || leadForm === 'WhatsApp Inbound' || leadForm.startsWith('AI Ad Variation'))) {
+                                                leadUpdates.form_name = `WhatsApp Flow: ${matchedFlowName}`;
+                                            }
                                             if (currentCustomFields?.budget) leadUpdates.budget = currentCustomFields.budget;
                                             if (currentCustomFields?.timeline) leadUpdates.timeline = currentCustomFields.timeline;
 
@@ -3969,12 +3980,14 @@ RULES:
                                     // 1. Dynamic Qualification MCQ Handlers & Parsers
                                     const leadCampaignId = campaignId || latestLead?.campaign_id || adId;
                                     let matchedFlowQuestions: any[] | null = null;
+                                    matchedFlowName = null;
+                                    matchedFlowId = null;
 
                                     if (!isInstantFormLead && leadCampaignId) {
                                         try {
                                             const { data: matchedFlow } = await supabaseAdmin
                                                 .from('whatsapp_question_flows')
-                                                .select('questions, name, is_active')
+                                                .select('id, questions, name, is_active')
                                                 .eq('user_id', ownerUserId)
                                                 .eq('linked_campaign_id', leadCampaignId)
                                                 .maybeSingle();
@@ -3982,6 +3995,8 @@ RULES:
                                             if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
                                                 console.log(`[WhatsApp Bot] Using campaign-specific flow "${matchedFlow.name}" for campaign ${leadCampaignId}`);
                                                 matchedFlowQuestions = matchedFlow.questions;
+                                                matchedFlowName = matchedFlow.name;
+                                                matchedFlowId = matchedFlow.id;
                                                 ownerQualifyingQuestions = matchedFlow.questions;
                                                 ownerQualifyingEnabled = true;
                                             }
@@ -3996,7 +4011,7 @@ RULES:
                                         try {
                                             const { data: defaultFlow } = await supabaseAdmin
                                                 .from('whatsapp_question_flows')
-                                                .select('questions, name')
+                                                .select('id, questions, name')
                                                 .eq('user_id', ownerUserId)
                                                 .eq('is_active', true)
                                                 .is('linked_campaign_id', null)
@@ -4006,11 +4021,50 @@ RULES:
 
                                             if (defaultFlow && Array.isArray(defaultFlow.questions) && defaultFlow.questions.length > 0) {
                                                 console.log(`[WhatsApp Bot] Using active default flow "${defaultFlow.name}" for user ${ownerUserId}`);
+                                                matchedFlowQuestions = defaultFlow.questions;
+                                                matchedFlowName = defaultFlow.name;
+                                                matchedFlowId = defaultFlow.id;
                                                 ownerQualifyingQuestions = defaultFlow.questions;
                                                 ownerQualifyingEnabled = true;
                                             }
                                         } catch (dfErr) {
                                             console.warn('[WhatsApp Bot] Failed to fetch default question flow:', dfErr);
+                                        }
+                                    }
+
+                                    // Persist matched qualification flow name to lead and chat records
+                                    if (matchedFlowName) {
+                                        const updatedFlowCf = {
+                                            ...currentCustomFields,
+                                            qualification_flow_name: matchedFlowName,
+                                            qualification_flow_id: matchedFlowId
+                                        };
+                                        currentCustomFields = updatedFlowCf;
+
+                                        if (latestLead?.id) {
+                                            const leadFlowUpdates: Record<string, any> = { custom_fields: updatedFlowCf };
+                                            const currentLeadForm = (latestLead as any)?.form_name;
+                                            if (!currentLeadForm || currentLeadForm === 'WhatsApp Ad' || currentLeadForm === 'WhatsApp Inbound' || currentLeadForm.startsWith('AI Ad Variation')) {
+                                                leadFlowUpdates.form_name = `WhatsApp Flow: ${matchedFlowName}`;
+                                            }
+                                            Promise.resolve(
+                                                supabaseAdmin
+                                                    .from('leads')
+                                                    .update(leadFlowUpdates)
+                                                    .eq('id', latestLead.id)
+                                            ).catch(err => console.error('[WhatsApp Bot] Error associating qualification flow with lead:', err));
+                                        }
+
+                                        if (chat?.id) {
+                                            Promise.resolve(
+                                                supabaseAdmin
+                                                    .from('whatsapp_chats')
+                                                    .update({
+                                                        current_flow_id: matchedFlowId,
+                                                        flow_answers: updatedFlowCf
+                                                    })
+                                                    .eq('id', chat.id)
+                                            ).catch(err => console.error('[WhatsApp Bot] Error updating chat with qualification flow:', err));
                                         }
                                     }
 
@@ -4025,7 +4079,7 @@ RULES:
                                         message?: string;
                                     } | null = null;
 
-                                    const parsedQuestionsList: { index: number; key: string; question: string; options: string[] }[] = [];
+                                    const parsedQuestionsList: { index: number; key: string; question: string; type?: 'choice' | 'text'; options: string[] }[] = [];
                                     if (!isInstantFormLead && Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
                                         let questionIdxCounter = 0;
                                         ownerQualifyingQuestions.forEach((rawItem: any) => {
@@ -4057,11 +4111,13 @@ RULES:
                                                     else if (qLower.includes('property') || qLower.includes('project') || qLower.includes('type') || qLower.includes('looking for')) key = 'property_type';
                                                     else key = `custom_q_${questionIdxCounter}`;
                                                 }
+                                                const isTextType = item.type === 'text' || (!Array.isArray(item.options) || item.options.length === 0);
                                                 parsedQuestionsList.push({
                                                     index: questionIdxCounter++,
                                                     key,
                                                     question: qText,
-                                                    options: Array.isArray(item.options) ? item.options : []
+                                                    type: isTextType ? 'text' : 'choice',
+                                                    options: isTextType ? [] : (Array.isArray(item.options) ? item.options : [])
                                                 });
                                             } else if (typeof item === 'string') {
                                                 const match = item.match(/\(([^)]+)\)/);
@@ -4072,7 +4128,8 @@ RULES:
                                                 if (qLower.includes('budget') || qLower.includes('price')) key = 'budget';
                                                 else if (qLower.includes('timeline') || qLower.includes('when') || qLower.includes('month')) key = 'timeline';
                                                 else if (qLower.includes('property') || qLower.includes('project') || qLower.includes('type') || qLower.includes('looking for')) key = 'property_type';
-                                                parsedQuestionsList.push({ index: questionIdxCounter++, key, question: qText || item, options });
+                                                const isTextType = options.length === 0;
+                                                parsedQuestionsList.push({ index: questionIdxCounter++, key, question: qText || item, type: isTextType ? 'text' : 'choice', options });
                                             }
                                         });
                                     }
@@ -4150,7 +4207,7 @@ RULES:
                                     const askQuestionMCQ = async (qIndex: number) => {
                                         const qObj = parsedQuestionsList[qIndex];
                                         if (!qObj) return;
-                                        if (Array.isArray(qObj.options) && qObj.options.length > 0) {
+                                        if (qObj.type !== 'text' && Array.isArray(qObj.options) && qObj.options.length > 0) {
                                             if (qObj.options.length <= 3) {
                                                 const rawOptions = qObj.options.slice(0, 3);
                                                 const buttons = rawOptions.map((opt, optIdx) => ({
@@ -4169,7 +4226,7 @@ RULES:
                                                 await sendMCQList(qObj.question, items);
                                             }
                                         } else {
-                                            // Open-ended question without options -> Send as clean text without dummy Option 1/2/3 buttons!
+                                            // Short answer / text response question without options -> Send as clean text without dummy Option 1/2/3 buttons!
                                             await sendTextMessage(qObj.question);
                                         }
                                     };
@@ -4395,7 +4452,17 @@ RULES:
                                         }
 
                                         // Dynamic Free-Text & Number reply handler for active qualification questions (NON-instant form leads only)
-                                        const activeQIndex = !isInstantFormLead ? parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]) : -1;
+                                        // If an unfinished flow has been inactive for >24 hours, consider the old qualification session expired
+                                        // so that subsequent replies (e.g. to a new offer template message 2-3 days later) are answered cleanly by AI
+                                        // rather than being trapped in the stale question from 3 days ago.
+                                        const lastChatTime = chat?.updated_at ? new Date(chat.updated_at).getTime() : 0;
+                                        const isStaleSession = lastChatTime > 0 && ((Date.now() - lastChatTime) > 24 * 60 * 60 * 1000);
+
+                                        let activeQIndex = !isInstantFormLead ? parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]) : -1;
+                                        if (isStaleSession && !currentCustomFields?.qualification_completed && currentCustomFields?.qualification_started) {
+                                            console.log(`[WhatsApp Bot] Stale qualification session detected for lead ${cleanFrom}. Bypassing old pending question #${activeQIndex}.`);
+                                            activeQIndex = -1;
+                                        }
                                         if (!isInstantFormLead && activeQIndex !== -1 && messageText && messageText.trim().length > 0 && !buttonReplyId) {
                                             const activeQ = parsedQuestionsList[activeQIndex];
                                             const hasAnyAnswer = parsedQuestionsList.some(q => currentCustomFields[q.key]);
@@ -4415,7 +4482,7 @@ RULES:
 
                                             // CASE 1: Initial message from new prospect or Ad Click (e.g. "Hello! Can I get more info on this?", "Hi", etc.)
                                             // If they have not answered any question yet and didn't directly type an MCQ option
-                                            if (activeQIndex === 0 && !hasAnyAnswer && !matchedOptionValue) {
+                                            if (activeQIndex === 0 && !hasAnyAnswer && !matchedOptionValue && !currentCustomFields?.qualification_started) {
                                                 console.log(`[WhatsApp Bot] Initial message for lead ${cleanFrom}: "${messageText}". Starting qualification flow with Q#0.`);
                                                 if (latestLead?.id && !currentCustomFields?.qualification_completed) {
                                                     if (ownerAutoCallNewLeads && ownerHasVoiceNumber) {
@@ -4426,6 +4493,7 @@ RULES:
                                                         }).eq('id', latestLead.id);
                                                     }
                                                 }
+                                                await syncFieldsAndScore({ qualification_started: true });
                                                 const welcomeMsg = isNobogentAccount
                                                     ? `Hello! 👋 Welcome to *${ownerBusinessName || 'Nobogent'}*. Please answer 2 quick questions so we can share the right AI automation solutions for your business: 🚀✨`
                                                     : `Hello! 👋 Welcome to *${ownerBusinessName || 'our team'}*. Please answer 2 quick questions so we can assist you with the right options & details: 🎁🏢`;
@@ -4533,8 +4601,8 @@ RULES:
                                         }
 
                                         // 6. Default Fallback for New or In-Progress Leads (NON-instant form leads only):
-                                        // Check if any configured question is unanswered
-                                        const unansweredQ = !isInstantFormLead ? parsedQuestionsList.find(q => !currentCustomFields[q.key]) : null;
+                                        // Check if any configured question is unanswered (only if session is active and not stale)
+                                        const unansweredQ = (!isInstantFormLead && !isStaleSession) ? parsedQuestionsList.find(q => !currentCustomFields[q.key]) : null;
                                         if (unansweredQ) {
                                             // If starting question 1, send encouraging lead magnet intro
                                             if (unansweredQ.index === 0 && Object.keys(currentCustomFields).filter(k => k !== 'lead_score' && k !== 'lead_tier').length === 0) {

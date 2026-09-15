@@ -83,7 +83,7 @@ export default function LeadProfilePage() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const impersonateId = searchParams.get('impersonate')
-    const supabase = createClient()
+    const supabase = useMemo(() => createClient(), [])
 
     const [lead, setLead] = useState<any>(null)
     const [nextLeadId, setNextLeadId] = useState<string | null>(null)
@@ -222,6 +222,7 @@ export default function LeadProfilePage() {
     const [tempCallbackTime, setTempCallbackTime] = useState('')
     const [templateVarMappings, setTemplateVarMappings] = useState<Record<string, { field: string; customVal: string }>>({})
     const [userBusinessName, setUserBusinessName] = useState('Nobogent')
+    const [campaignName, setCampaignName] = useState('')
 
     const getDetectedTemplateVars = (bodyText: string): number[] => {
         const matches = bodyText.match(/\{\{(\d+)\}\}/g) || []
@@ -588,6 +589,22 @@ export default function LeadProfilePage() {
                 }
                 data.custom_fields = parsedCustomFields
                 setLead(data)
+
+                // Dynamically resolve updated Campaign Name
+                const targetCampId = data.campaign_id || parsedCustomFields?.meta_ad_origin?.campaign_id
+                if (targetCampId) {
+                    supabase.from('campaigns').select('name').or(`id.eq.${targetCampId},meta_campaign_id.eq.${targetCampId}`).maybeSingle()
+                        .then(({ data: cData }) => {
+                            if (cData?.name) setCampaignName(cData.name)
+                        })
+                    fetch(`/api/meta-ads/campaigns${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+                        .then(res => res.json())
+                        .then(resData => {
+                            const found = resData?.campaigns?.find((c: any) => String(c.id) === String(targetCampId) || String(c.meta_campaign_id) === String(targetCampId))
+                            if (found?.name) setCampaignName(found.name)
+                        })
+                        .catch(() => {})
+                }
 
                 // Fetch full WhatsApp conversation for this lead via API (handles impersonation & RLS correctly)
                 const cleanPhone = (data.phone || '').replace(/\D/g, '').slice(-10)
@@ -1732,7 +1749,7 @@ END:VCARD`
                                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
                                                         {displayOrigin.ad_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Name</span><span className="font-extrabold text-indigo-950 truncate block">{displayOrigin.ad_name}</span></div>}
                                                         {displayOrigin.adset_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Set</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.adset_name}</span></div>}
-                                                        {displayOrigin.campaign_name && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.campaign_name}</span></div>}
+                                                        {(campaignName || displayOrigin.campaign_name) && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Campaign</span><span className="font-extrabold text-slate-800 truncate block">{campaignName || displayOrigin.campaign_name}</span></div>}
                                                         {displayOrigin.headline && <div><span className="text-slate-400 font-bold block text-[8px] uppercase">Ad Headline</span><span className="font-extrabold text-slate-800 truncate block">{displayOrigin.headline}</span></div>}
                                                     </div>
 
