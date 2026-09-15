@@ -27,11 +27,11 @@ export async function generateAICampaignCopy(
         businessInfo?: string;
         missionStatement?: string;
     }
-): Promise<{ primary_text: string; headline: string; description: string }> {
+): Promise<{ primary_text: string; headline: string; description: string; campaign_name?: string; adset_name?: string; ad_name?: string }> {
     const forbidProjectName = customInstructions ? /do not mention|don't mention|no project name|omit project name|without project name|no name/i.test(customInstructions) : false;
     const projectTitle = (product?.title || '').trim();
 
-    let resultCopy: { primary_text: string; headline: string; description: string } | null = null;
+    let resultCopy: { primary_text: string; headline: string; description: string; campaign_name?: string; adset_name?: string; ad_name?: string } | null = null;
 
     try {
         const { callGemini } = await import('./external-apis');
@@ -60,9 +60,12 @@ ${creativeContext?.businessInfo ? `- Business Info / Overview: ${creativeContext
 ${creativeContext?.missionStatement ? `- Mission / Value Proposition: ${creativeContext.missionStatement}` : ''}
 ${creativeContext?.creativeType ? `- Creative Asset Type: ${creativeContext.creativeType}` : ''}`;
 
-            taskRules = `1. Primary Text: Write a compelling, high-converting direct-response ad copy (1-2 paragraphs) presenting the business offerings, brand value, and services. Emphasize trust, customer benefits, and why they should contact or connect now. Include a clear call-to-action. Keep it under 800 characters. Append the contact number 📞 ${contactNumber} and business name 🏢 ${businessName} at the bottom.
-2. Headline: Create a powerful, click-worthy hook/headline (under 40 characters) highlighting the main benefit, consultation, or special offer.
-3. Description: Write a brief subtext under the headline (under 30 characters) like "Contact us today" or "Learn more now".`;
+            taskRules = `1. Campaign Name: Generate a distinct, professional Meta campaign name (under 60 characters) summarizing what is run in this campaign (e.g. "[Topic/Project/Offer] - [Audience Angle] - [Month Year]").
+2. AdSet Name: Generate a clear audience/targeting name (under 50 characters) describing the intended audience or angle.
+3. Ad Name: Generate a specific ad creative name (under 40 characters) reflecting the hook or creative angle.
+4. Primary Text: Write a compelling, high-converting direct-response ad copy (1-2 paragraphs) presenting the business offerings, brand value, and services. Emphasize trust, customer benefits, and why they should contact or connect now. Include a clear call-to-action. Keep it under 800 characters. Append the contact number 📞 ${contactNumber} and business name 🏢 ${businessName} at the bottom.
+5. Headline: Create a powerful, click-worthy hook/headline (under 40 characters) highlighting the main benefit, consultation, or special offer.
+6. Description: Write a brief subtext under the headline (under 30 characters) like "Contact us today" or "Learn more now".`;
         }
 
         const prompt = `
@@ -74,12 +77,15 @@ ${customInstructions ? `Custom Copywriting Instructions / Prompt (MUST FOLLOW ST
 ${product && forbidProjectName ? `CRITICAL RULE: DO NOT MENTION THE PROJECT/PROPERTY NAME OR TITLE ("${projectTitle}") ANYWHERE IN THE HEADLINE, PRIMARY TEXT, OR DESCRIPTION.\n` : ''}
 
 Task:
-Generate an attractive, highly engaging ad copy and headline.
+Generate an attractive, highly engaging ad copy, headline, and professional Meta campaign/ad naming.
 Follow these rules:
 ${taskRules}
 
 Return the response in JSON format matching this schema:
 {
+  "campaign_name": "...",
+  "adset_name": "...",
+  "ad_name": "...",
   "primary_text": "...",
   "headline": "...",
   "description": "..."
@@ -94,7 +100,10 @@ Return the response in JSON format matching this schema:
             resultCopy = {
                 primary_text: copy.primary_text,
                 headline: copy.headline.substring(0, 40),
-                description: (copy.description || 'View details & pricing').substring(0, 30)
+                description: (copy.description || 'View details & pricing').substring(0, 30),
+                campaign_name: copy.campaign_name ? copy.campaign_name.substring(0, 70) : undefined,
+                adset_name: copy.adset_name ? copy.adset_name.substring(0, 60) : undefined,
+                ad_name: copy.ad_name ? copy.ad_name.substring(0, 50) : undefined
             };
         }
     } catch (err: any) {
@@ -512,7 +521,10 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             copyVariations.push({
                 primary_text: aiCopy?.primary_text || specificCopy?.primary_text || adCopy?.primary_text || "View pricing & details now.",
                 headline: aiCopy?.headline || specificCopy?.headline || "View Details",
-                description: aiCopy?.description || specificCopy?.description || "Contact us today."
+                description: aiCopy?.description || specificCopy?.description || "Contact us today.",
+                campaign_name: aiCopy?.campaign_name || specificCopy?.campaign_name,
+                adset_name: aiCopy?.adset_name || specificCopy?.adset_name,
+                ad_name: aiCopy?.ad_name || specificCopy?.ad_name
             });
         }
 
@@ -631,7 +643,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
         // --- Step 5: Create Campaign ---
         logToFile("--- CREATING CAMPAIGN ---");
-        let campaignSubject = "AI Smart Campaign";
+        let campaignSubject = "";
         if (inventoryIds && inventoryIds.length > 0) {
             const { data: props } = await supabaseAdmin
                 .from('properties')
@@ -650,7 +662,22 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             }
         }
 
-        const campaignName = payload.campaign_name || payload.campaignName || `${businessName} - ${customAudienceIds?.length > 0 ? 'Retargeting' : campaignSubject} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
+        if (!campaignSubject) {
+            if (customInstructions && customInstructions.trim().length > 0) {
+                campaignSubject = customInstructions.replace(/[^\w\s-]/g, '').trim().split(/\s+/).slice(0, 5).join(' ');
+            } else if (copyVariations[0]?.headline) {
+                campaignSubject = copyVariations[0].headline.replace(/[^\w\s-]/g, '').trim().split(/\s+/).slice(0, 5).join(' ');
+            } else {
+                campaignSubject = "Lead Generation";
+            }
+        }
+
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const randSuffix = Date.now().toString().slice(-4);
+        const defaultAiCampaignName = copyVariations[0]?.campaign_name 
+            ? `${copyVariations[0].campaign_name} - ${randSuffix}`
+            : `${campaignSubject} - ${businessName} - ${dateStr} - ${randSuffix}`;
+        const campaignName = payload.campaign_name || payload.campaignName || defaultAiCampaignName;
 
         const campaignPayload = {
             name: campaignName,
@@ -804,8 +831,15 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         logToFile("--- CREATING AD SET ---");
         const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
+        const defaultAiAdsetName = copyVariations[0]?.adset_name || (
+            customAudienceIds?.length > 0 
+                ? `Retargeting AdSet - Custom Audiences` 
+                : `${campaignSubject} - Targeted Audience`
+        );
+        const adSetName = payload.adset_name || payload.adsetName || defaultAiAdsetName;
+
         const adSetPayload: any = {
-            name: customAudienceIds?.length > 0 ? `Retargeting AdSet - Custom Audiences` : `Smart AdSet - AI Audiences`,
+            name: adSetName,
             campaign_id: campaignId,
             billing_event: 'IMPRESSIONS',
             targeting: {
@@ -886,8 +920,12 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 ctaValue.link = linkUrl;
             }
 
+            const defaultAdName = copy.ad_name 
+                ? copy.ad_name 
+                : (copy.headline ? `${copy.headline.slice(0, 35)} (Ad ${i + 1})` : `Ad Variation ${i + 1}`);
+
             const creativePayload: any = {
-                name: `Creative ${i + 1} - ${Date.now()}`,
+                name: `${defaultAdName} - Creative`,
                 object_story_spec: { page_id: pageId },
                 access_token: facebookToken,
             };
@@ -934,7 +972,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             } catch (e) { /* ignore */ }
 
             const adPayload = {
-                name: `AI Ad Variation ${i + 1}`,
+                name: defaultAdName,
                 adset_id: adSetId,
                 creative: { creative_id: creativeData.id },
                 status: 'ACTIVE',

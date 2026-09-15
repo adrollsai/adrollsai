@@ -364,10 +364,18 @@ export async function POST(request: Request) {
             4. NO HASHTAGS (#): Do not use any hashtags in the copy.
             5. MODERATE LENGTH: Keep the primary text moderate (max 400 characters).
             6. KEYWORDS: At the very end of each primary_text, add 5-6 relevant keywords in brackets.
-            7. OUTPUT FORMAT: Return ONLY a valid JSON object.
+            7. AI NAMING: Generate a unique suggested_campaign_name (e.g. "[Topic] - [Angle] - Month Year"), suggested_adset_name (target audience angle), and suggested_ad_name (hook or creative angle).
+            8. OUTPUT FORMAT: Return ONLY a valid JSON object.
             
             JSON Structure:
-            {"primary_text": "...", "headline": "...", "description": "..."}
+            {
+              "suggested_campaign_name": "...",
+              "suggested_adset_name": "...",
+              "suggested_ad_name": "...",
+              "primary_text": "...",
+              "headline": "...",
+              "description": "..."
+            }
             `;
 
             const aiRaw = await callGemini(llmPrompt, imageUrls);

@@ -44,6 +44,10 @@ const supabaseAdmin = createClient(
 const processedMessageIds = new Set<string>();
 const activeProcessingLeadIds = new Set<string>();
 
+function isUuid(val: any): boolean {
+    return typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
 function isRealPublicImageUrl(url: string | null | undefined): boolean {
     if (!url) return false;
     const lower = url.toLowerCase();
@@ -378,12 +382,12 @@ export async function POST(request: Request) {
                         const isInteractive = message.type === 'interactive';
                         const isButton = message.type === 'button';
                         const buttonReplyId = isInteractive 
-                          ? message.interactive?.button_reply?.id 
+                          ? (message.interactive?.button_reply?.id || message.interactive?.list_reply?.id) 
                           : isButton 
                           ? (message.button?.payload || message.button?.text) 
                           : null;
                         const buttonReplyTitle = isInteractive 
-                          ? message.interactive?.button_reply?.title 
+                          ? (message.interactive?.button_reply?.title || message.interactive?.list_reply?.title) 
                           : isButton 
                           ? (message.button?.text || message.button?.payload) 
                           : null;
@@ -2716,25 +2720,38 @@ CRITICAL CONVERSATIONAL RULES:
 
                                     // 2. Find or create CRM lead record with Meta Ad Referral tracking & Group Distribution
                                     const inboundReferral = message.referral || (message.context as any)?.referral || null;
-                                    const adId = inboundReferral?.source_id || inboundReferral?.ad_id || '';
-                                    const adHeadline = inboundReferral?.headline || '';
-                                    const adBody = inboundReferral?.body || '';
-                                    const adSourceUrl = inboundReferral?.source_url || '';
 
-                                    let campaignName = '';
-                                    let campaignId = '';
-                                    let adNameStr = adHeadline || 'WhatsApp Ad';
-                                    let adCampaignString = adNameStr;
+                                    // Check if existing chat has cached Meta referral info (for subsequent messages from this prospect)
+                                    let cachedReferralOrigin: any = null;
+                                    try {
+                                        const { data: existingChatForOrigin } = await supabaseAdmin
+                                            .from('whatsapp_chats')
+                                            .select('id, flow_answers')
+                                            .eq('user_id', ownerUserId)
+                                            .eq('recipient_phone', cleanFrom)
+                                            .maybeSingle();
+                                        cachedReferralOrigin = existingChatForOrigin?.flow_answers?.meta_ad_origin || null;
+                                    } catch (e) {}
 
-                                    if (adId) {
+                                    let adId = inboundReferral?.source_id || inboundReferral?.ad_id || cachedReferralOrigin?.ad_id || '';
+                                    let adHeadline = inboundReferral?.headline || cachedReferralOrigin?.headline || '';
+                                    let adBody = inboundReferral?.body || cachedReferralOrigin?.body || '';
+                                    let adSourceUrl = inboundReferral?.source_url || cachedReferralOrigin?.source_url || '';
+
+                                    let campaignName = cachedReferralOrigin?.campaign_name || '';
+                                    let campaignId = cachedReferralOrigin?.campaign_id || '';
+                                    let adNameStr = cachedReferralOrigin?.ad_name || adHeadline || 'WhatsApp Ad';
+                                    let adCampaignString = campaignName ? `${campaignName} / ${adNameStr}` : adNameStr;
+
+                                    if (adId && (!campaignId || !campaignName)) {
                                         try {
-                                            const metaToken = ownerFacebookToken || process.env.META_ACCESS_TOKEN || ownerWaToken;
+                                            const metaToken = ownerFacebookToken || process.env.META_ACCESS_TOKEN || process.env.FACEBOOK_ACCESS_TOKEN || ownerWaToken;
                                             if (metaToken) {
                                                 const adRes = await fetch(`https://graph.facebook.com/v20.0/${adId}?fields=id,name,adset{id,name},campaign{id,name}&access_token=${metaToken}`);
                                                 if (adRes.ok) {
                                                     const adDetails = await adRes.json();
-                                                    campaignId = adDetails.campaign?.id || '';
-                                                    campaignName = adDetails.campaign?.name || '';
+                                                    campaignId = adDetails.campaign?.id || campaignId;
+                                                    campaignName = adDetails.campaign?.name || campaignName;
                                                     adNameStr = adDetails.name || adHeadline || 'WhatsApp Ad';
                                                     adCampaignString = campaignName ? `${campaignName} / ${adNameStr}` : adNameStr;
                                                     console.log(`[WhatsApp Webhook] Resolved ad ${adId}: Campaign ${campaignName} (${campaignId}), Ad ${adNameStr}`);
@@ -2868,21 +2885,23 @@ CRITICAL CONVERSATIONAL RULES:
                                     const formattedPhone = cleanFrom.startsWith('+') ? cleanFrom : `+${cleanFrom}`;
                                     const defaultLeadName = (waProfileName && waProfileName.trim()) ? waProfileName.trim() : formattedPhone;
 
+                                    const isFromAd = !!(inboundReferral || campaignId || (adId && String(adId).length > 3));
+
                                     if (!latestLead) {
                                         const newLeadPayload: any = {
                                             user_id: ownerUserId,
                                             name: defaultLeadName,
                                             phone: formattedPhone,
-                                            source: inboundReferral ? 'Facebook Ads (WhatsApp)' : 'WhatsApp Inbound',
+                                            source: isFromAd ? 'Facebook Ads (WhatsApp)' : 'WhatsApp Inbound',
                                             pipeline_stage: 'New',
                                             status: 'New',
-                                            ad_name: adCampaignString || null,
+                                            ad_name: adCampaignString || (isFromAd ? 'WhatsApp Ad' : null),
                                             campaign_id: campaignId || null,
                                             assigned_to: assignedAgentId || null,
                                             created_at: new Date().toISOString()
                                         };
 
-                                        if (inboundReferral) {
+                                        if (isFromAd) {
                                             newLeadPayload.custom_fields = {
                                                 meta_ad_origin: {
                                                     ad_id: adId,
@@ -2897,7 +2916,7 @@ CRITICAL CONVERSATIONAL RULES:
                                             // Schedule automated AI voice call for 15 minutes in case prospect drops off on WhatsApp
                                             newLeadPayload.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
                                             newLeadPayload.voice_call_status = 'pending_qualification';
-                                            newLeadPayload.voice_campaign_id = campaignId || null;
+                                            newLeadPayload.voice_campaign_id = isUuid(campaignId) ? campaignId : null;
                                         }
 
                                         const { data: createdLead, error: createLeadErr } = await supabaseAdmin
@@ -2908,13 +2927,13 @@ CRITICAL CONVERSATIONAL RULES:
 
                                         if (createdLead) {
                                             latestLead = createdLead;
-                                            console.log(`[Flow] Created new CRM lead for incoming WhatsApp contact: ${defaultLeadName} (${formattedPhone}), Assigned: ${assignedAgentId || 'Owner'}`);
+                                            console.log(`[Flow] Created new CRM lead for incoming WhatsApp contact: ${defaultLeadName} (${formattedPhone}), Source: ${newLeadPayload.source}, Campaign: ${campaignName || campaignId || 'N/A'}, Assigned: ${assignedAgentId || 'Owner'}`);
                                             
                                             if (assignedAgentId && assignedAgentId !== ownerUserId) {
                                                 sendAdminMultiChannelNotification({
                                                     ownerUserId: assignedAgentId,
                                                     title: "🎯 WhatsApp Lead Assigned to You!",
-                                                    body: `Lead: ${defaultLeadName}\nPhone: ${formattedPhone}\nSource: ${adCampaignString || 'WhatsApp Inbound'}`,
+                                                    body: `Lead: ${defaultLeadName}\nPhone: ${formattedPhone}\nSource: ${adCampaignString || newLeadPayload.source}`,
                                                     url: `/dashboard/crm/${createdLead.id}`,
                                                     type: 'new_lead'
                                                 }).catch(err => console.error('[Notification] Error notifying assigned agent:', err));
@@ -2931,18 +2950,40 @@ CRITICAL CONVERSATIONAL RULES:
                                             updatePayload.assigned_to = assignedAgentId;
                                             latestLead.assigned_to = assignedAgentId;
                                         }
-                                        if (adCampaignString && (!latestLead.ad_name || latestLead.ad_name === 'WhatsApp Inbound')) {
-                                            updatePayload.ad_name = adCampaignString;
-                                        }
-                                        if (campaignId && !latestLead.campaign_id) {
-                                            updatePayload.campaign_id = campaignId;
-                                            latestLead.campaign_id = campaignId;
+                                        if (isFromAd) {
+                                            if (!latestLead.source || latestLead.source === 'WhatsApp Inbound') {
+                                                updatePayload.source = 'Facebook Ads (WhatsApp)';
+                                                latestLead.source = 'Facebook Ads (WhatsApp)';
+                                            }
+                                            if (adCampaignString && (!latestLead.ad_name || latestLead.ad_name === 'WhatsApp Inbound' || latestLead.ad_name === 'WhatsApp Ad')) {
+                                                updatePayload.ad_name = adCampaignString;
+                                                latestLead.ad_name = adCampaignString;
+                                            }
+                                            if (campaignId && !latestLead.campaign_id) {
+                                                updatePayload.campaign_id = campaignId;
+                                                latestLead.campaign_id = campaignId;
+                                            }
+                                            if (!existingCf?.meta_ad_origin && (adId || campaignId || campaignName)) {
+                                                updatePayload.custom_fields = {
+                                                    ...(existingCf || {}),
+                                                    meta_ad_origin: {
+                                                        ad_id: adId,
+                                                        ad_name: adNameStr,
+                                                        campaign_id: campaignId,
+                                                        campaign_name: campaignName,
+                                                        headline: adHeadline,
+                                                        body: adBody,
+                                                        source_url: adSourceUrl
+                                                    }
+                                                };
+                                            }
                                         }
 
-                                        if (inboundReferral && !existingCf?.qualification_completed && (!latestLead.voice_call_status || latestLead.voice_call_status === 'pending_qualification' || latestLead.voice_call_status === 'not_called')) {
+                                        if (isFromAd && !existingCf?.qualification_completed && (!latestLead.voice_call_status || latestLead.voice_call_status === 'pending_qualification' || latestLead.voice_call_status === 'not_called')) {
                                             updatePayload.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
                                             updatePayload.voice_call_status = 'pending_qualification';
-                                            updatePayload.voice_campaign_id = campaignId || latestLead.campaign_id;
+                                            const vCamp = campaignId || latestLead.campaign_id;
+                                            updatePayload.voice_campaign_id = isUuid(vCamp) ? vCamp : null;
                                         }
 
                                         if (Object.keys(updatePayload).length > 0) {
@@ -2968,6 +3009,19 @@ CRITICAL CONVERSATIONAL RULES:
                                         .maybeSingle();
                                     let chat = rawChat as any;
 
+                                    const initialFlowAnswers: any = {};
+                                    if (isFromAd) {
+                                        initialFlowAnswers.meta_ad_origin = {
+                                            ad_id: adId,
+                                            ad_name: adNameStr,
+                                            campaign_id: campaignId,
+                                            campaign_name: campaignName,
+                                            headline: adHeadline,
+                                            body: adBody,
+                                            source_url: adSourceUrl
+                                        };
+                                    }
+
                                     if (!chat) {
                                         const { data: newChat } = await supabaseAdmin
                                             .from('whatsapp_chats')
@@ -2980,7 +3034,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                 unread_count: 1,
                                                 current_flow_id: null,
                                                 current_question_index: 0,
-                                                flow_answers: {},
+                                                flow_answers: initialFlowAnswers,
                                                 flow_completed: false
                                             })
                                             .select('id, recipient_name, current_flow_id, current_question_index, flow_answers, flow_completed, lead_id, qualifying_flow_active')
@@ -3001,6 +3055,21 @@ CRITICAL CONVERSATIONAL RULES:
                                                 updates.recipient_name = latestLead.name;
                                                 chat.recipient_name = latestLead.name;
                                             }
+                                        }
+                                        if (isFromAd && (!chat.flow_answers?.meta_ad_origin || inboundReferral)) {
+                                            updates.flow_answers = {
+                                                ...(chat.flow_answers || {}),
+                                                meta_ad_origin: {
+                                                    ad_id: adId,
+                                                    ad_name: adNameStr,
+                                                    campaign_id: campaignId,
+                                                    campaign_name: campaignName,
+                                                    headline: adHeadline,
+                                                    body: adBody,
+                                                    source_url: adSourceUrl
+                                                }
+                                            };
+                                            chat.flow_answers = updates.flow_answers;
                                         }
                                         await supabaseAdmin
                                             .from('whatsapp_chats')
@@ -3076,7 +3145,9 @@ CRITICAL CONVERSATIONAL RULES:
                                               buttonReplyId,
                                               buttonReplyTitle,
                                               messageText,
-                                              contextMessageId: message.context?.id || null
+                                              contextMessageId: message.context?.id || null,
+                                              isFromAd: isFromAd || Boolean(latestLead?.campaign_id || latestLead?.ad_name),
+                                              campaignId: campaignId || latestLead?.campaign_id || null
                                           });
 
                                           if (flowResult.handled) {
@@ -3655,6 +3726,68 @@ RULES:
                                         }
                                     };
 
+                                    // Helper: Send Interactive MCQ Question List (for 4 to 10 options, opens WhatsApp in-app bottom sheet drawer)
+                                    const sendMCQList = async (questionText: string, items: { id: string; title: string; description?: string }[]) => {
+                                        try {
+                                            const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
+                                            const payload = {
+                                                messaging_product: 'whatsapp',
+                                                recipient_type: 'individual',
+                                                to: cleanFrom,
+                                                type: 'interactive',
+                                                interactive: {
+                                                    type: 'list',
+                                                    header: { type: 'text', text: (ownerBusinessName || 'Quick Selection').slice(0, 60) },
+                                                    body: { text: questionText },
+                                                    footer: { text: 'Tap button below to select an option 📋'.slice(0, 60) },
+                                                    action: {
+                                                        button: 'Choose Option 📋',
+                                                        sections: [
+                                                            {
+                                                                title: 'Available Options',
+                                                                rows: items.slice(0, 10).map((item, idx) => ({
+                                                                    id: item.id,
+                                                                    title: item.title.slice(0, 24),
+                                                                    description: (item.description || `Option ${idx + 1}`).slice(0, 72)
+                                                                }))
+                                                            }
+                                                        ]
+                                                    }
+                                                }
+                                            };
+                                            const res = await fetch(metaUrl, {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${ownerWaToken}`,
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify(payload)
+                                            });
+                                            if (res.ok) {
+                                                Promise.all([
+                                                    supabaseAdmin.from('whatsapp_messages').insert({
+                                                        chat_id: chat.id,
+                                                        direction: 'outbound',
+                                                        message_text: `${questionText} [List Options: ${items.map(b => b.title).join(' | ')}]`
+                                                    }),
+                                                    supabaseAdmin.from('whatsapp_chats').update({
+                                                        last_message_text: questionText,
+                                                        updated_at: new Date().toISOString()
+                                                    }).eq('id', chat.id)
+                                                ]).catch(dbErr => console.error('[WhatsApp Bot] Non-blocking DB log error:', dbErr));
+                                            } else {
+                                                const errData = await res.json();
+                                                console.warn('[WhatsApp Bot] Failed to send MCQ list, falling back to text options:', errData);
+                                                const numberedOptions = items.map((it, idx) => `${idx + 1}️⃣ ${it.title}`).join('\n');
+                                                await sendTextMessage(`${questionText}\n\n${numberedOptions}\n\n👉 Reply with the option number or name.`);
+                                            }
+                                        } catch (err) {
+                                            console.error('[WhatsApp Bot] Error sending MCQ list:', err);
+                                            const numberedOptions = items.map((it, idx) => `${idx + 1}️⃣ ${it.title}`).join('\n');
+                                            await sendTextMessage(`${questionText}\n\n${numberedOptions}\n\n👉 Reply with the option number or name.`);
+                                        }
+                                    };
+
                                     // Helper: Send Free-form Text Message
                                     const sendTextMessage = async (text: string) => {
                                         try {
@@ -3860,10 +3993,18 @@ RULES:
                                     if (!isInstantFormLead && Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
                                         ownerQualifyingEnabled = true;
                                     }
+                                    let flowCompletionConfig: {
+                                        action?: 'custom_link' | 'custom_message' | 'catalog';
+                                        title?: string;
+                                        url?: string;
+                                        button_text?: string;
+                                        message?: string;
+                                    } | null = null;
 
                                     const parsedQuestionsList: { index: number; key: string; question: string; options: string[] }[] = [];
                                     if (!isInstantFormLead && Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
-                                        ownerQualifyingQuestions.forEach((rawItem: any, idx: number) => {
+                                        let questionIdxCounter = 0;
+                                        ownerQualifyingQuestions.forEach((rawItem: any) => {
                                             let item = rawItem;
                                             if (typeof item === 'string' && item.trim().startsWith('{')) {
                                                 try {
@@ -3873,17 +4014,27 @@ RULES:
                                             }
 
                                             if (typeof item === 'object' && item !== null) {
-                                                const qText = item.question || item.text || `Question ${idx + 1}`;
+                                                if (item._type === 'flow_completion') {
+                                                    flowCompletionConfig = {
+                                                        action: item.action || 'catalog',
+                                                        title: item.title || '',
+                                                        url: item.url || '',
+                                                        button_text: item.button_text || '',
+                                                        message: item.message || ''
+                                                    };
+                                                    return;
+                                                }
+                                                const qText = item.question || item.text || `Question ${questionIdxCounter + 1}`;
                                                 const qLower = qText.toLowerCase();
                                                 let key = item.key;
                                                 if (!key) {
                                                     if (qLower.includes('budget') || qLower.includes('price')) key = 'budget';
                                                     else if (qLower.includes('timeline') || qLower.includes('when') || qLower.includes('month')) key = 'timeline';
                                                     else if (qLower.includes('property') || qLower.includes('project') || qLower.includes('type') || qLower.includes('looking for')) key = 'property_type';
-                                                    else key = `custom_q_${idx}`;
+                                                    else key = `custom_q_${questionIdxCounter}`;
                                                 }
                                                 parsedQuestionsList.push({
-                                                    index: idx,
+                                                    index: questionIdxCounter++,
                                                     key,
                                                     question: qText,
                                                     options: Array.isArray(item.options) ? item.options : []
@@ -3893,11 +4044,11 @@ RULES:
                                                 const qText = item.replace(/\s*\([^)]+\)/, '').trim();
                                                 const options = match ? match[1].split(',').map((s: string) => s.trim()).filter(Boolean) : [];
                                                 const qLower = (qText || item).toLowerCase();
-                                                let key = `custom_q_${idx}`;
+                                                let key = `custom_q_${questionIdxCounter}`;
                                                 if (qLower.includes('budget') || qLower.includes('price')) key = 'budget';
                                                 else if (qLower.includes('timeline') || qLower.includes('when') || qLower.includes('month')) key = 'timeline';
                                                 else if (qLower.includes('property') || qLower.includes('project') || qLower.includes('type') || qLower.includes('looking for')) key = 'property_type';
-                                                parsedQuestionsList.push({ index: idx, key, question: qText || item, options });
+                                                parsedQuestionsList.push({ index: questionIdxCounter++, key, question: qText || item, options });
                                             }
                                         });
                                     }
@@ -3910,16 +4061,81 @@ RULES:
                                         );
                                     }
 
+                                    const deliverPostQualificationLink = async (cleanedName?: string) => {
+                                        const actionType = flowCompletionConfig?.action || 'catalog';
+
+                                        // 1. Custom Text Message (e.g. Next steps, callback notice, personalized confirmation)
+                                        if (actionType === 'custom_message' && flowCompletionConfig?.message) {
+                                            let bodyText = flowCompletionConfig.message;
+                                            if (cleanedName) {
+                                                bodyText = bodyText.replace(/\{name\}/gi, cleanedName);
+                                            }
+                                            await sendTextMessage(bodyText);
+                                            return;
+                                        }
+
+                                        // 2. Custom Link / Action CTA Button (e.g. Webinar, Calendly, Payment, Website, Brochure PDF)
+                                        if (actionType === 'custom_link' && flowCompletionConfig?.url) {
+                                            const title = flowCompletionConfig.title?.trim() || `🔗 ${ownerBusinessName || 'Direct Access'}`;
+                                            const defaultBody = cleanedName 
+                                                ? `Thank you, ${cleanedName}! 🎉 Based on your responses, here is your link to proceed:`
+                                                : `Thank you! 🎉 Here is your direct access link:`;
+                                            let bodyText = (flowCompletionConfig.message && flowCompletionConfig.message.trim().length > 0)
+                                                ? flowCompletionConfig.message
+                                                : defaultBody;
+                                            if (cleanedName) {
+                                                bodyText = bodyText.replace(/\{name\}/gi, cleanedName);
+                                            }
+                                            const buttonText = (flowCompletionConfig.button_text && flowCompletionConfig.button_text.trim().length > 0)
+                                                ? flowCompletionConfig.button_text.slice(0, 20)
+                                                : "Proceed Now 🚀";
+                                            const linkUrl = flowCompletionConfig.url.trim();
+
+                                            await sendCtaUrlMessage(title, bodyText, buttonText, linkUrl);
+                                            return;
+                                        }
+
+                                        // 3. Catalog fallback
+                                        if (isNobogentAccount) {
+                                            await sendCtaUrlMessage(
+                                                cleanedName ? `🎁 Platform Information for ${cleanedName}` : "🚀 Nobogent AI Platform Overview",
+                                                cleanedName ? `Thank you, ${cleanedName}! 🎉 Here is your customized overview of Nobogent AI sales automation and capabilities:` : "Here is your customized overview of Nobogent AI sales automation and capabilities:",
+                                                "Explore Nobogent 🚀",
+                                                catalogueLink
+                                            );
+                                        } else {
+                                            await sendCtaUrlMessage(
+                                                cleanedName ? `🎁 Tailored Catalog for ${cleanedName}` : "🏢 Your Curated Details",
+                                                cleanedName ? `Thank you, ${cleanedName}! 🎉 Based on your requirements, here is your customized properties & inventory list with pricing and floor plans:` : "Here is your customized properties & inventory list with pricing and floor plans:",
+                                                "View Properties 🏢",
+                                                catalogueLink
+                                            );
+                                        }
+                                        await new Promise(r => setTimeout(r, 150));
+                                        await sendThreeButtons("What would you like to do next?");
+                                    };
+
                                     const askQuestionMCQ = async (qIndex: number) => {
                                         const qObj = parsedQuestionsList[qIndex];
                                         if (!qObj) return;
                                         if (Array.isArray(qObj.options) && qObj.options.length > 0) {
-                                            const rawOptions = qObj.options.slice(0, 3);
-                                            const buttons = rawOptions.map((opt, optIdx) => ({
-                                                id: `q_opt_${qIndex}_${optIdx}`,
-                                                title: String(opt).slice(0, 20)
-                                            }));
-                                            await sendMCQButtons(qObj.question, buttons);
+                                            if (qObj.options.length <= 3) {
+                                                const rawOptions = qObj.options.slice(0, 3);
+                                                const buttons = rawOptions.map((opt, optIdx) => ({
+                                                    id: `q_opt_${qIndex}_${optIdx}`,
+                                                    title: String(opt).slice(0, 20)
+                                                }));
+                                                await sendMCQButtons(qObj.question, buttons);
+                                            } else {
+                                                // 4 to 10 options: WhatsApp native in-app bottom sheet drawer (List message)
+                                                const rawOptions = qObj.options.slice(0, 10);
+                                                const items = rawOptions.map((opt, optIdx) => ({
+                                                    id: `q_opt_${qIndex}_${optIdx}`,
+                                                    title: String(opt).slice(0, 24),
+                                                    description: String(opt).length > 24 ? String(opt).slice(0, 72) : `Option ${optIdx + 1}`
+                                                }));
+                                                await sendMCQList(qObj.question, items);
+                                            }
                                         } else {
                                             // Open-ended question without options -> Send as clean text without dummy Option 1/2/3 buttons!
                                             await sendTextMessage(qObj.question);
@@ -4069,28 +4285,12 @@ RULES:
                                                     full_name: cleanedName
                                                 });
 
-                                                // Send tailored lead magnet catalog link
-                                                if (isNobogentAccount) {
-                                                    await sendCtaUrlMessage(
-                                                        `🎁 Platform Information for ${cleanedName}`,
-                                                        `Thank you, ${cleanedName}! 🎉 Here is your customized overview of Nobogent AI sales automation and capabilities:`,
-                                                        "Explore Nobogent 🚀",
-                                                        catalogueLink
-                                                    );
-                                                } else {
-                                                    await sendCtaUrlMessage(
-                                                        `🎁 Tailored Catalog for ${cleanedName}`,
-                                                        `Thank you, ${cleanedName}! 🎉 Based on your requirements, here is your customized properties & inventory list with pricing and floor plans:`,
-                                                        "View Properties 🏢",
-                                                        catalogueLink
-                                                    );
-                                                }
-                                                await new Promise(r => setTimeout(r, 150));
-                                                await sendThreeButtons("What would you like to do next?");
+                                                // Execute post-qualification flow completion action
+                                                await deliverPostQualificationLink(cleanedName);
                                                 return;
                                             } else {
                                                 // Prospect did not give their name (e.g. asked a question like "what is the price?" or refused)
-                                                console.log(`[WhatsApp Bot] Lead ${cleanFrom} did not provide a name (question/refusal). Answering inquiry and delivering catalog.`);
+                                                console.log(`[WhatsApp Bot] Lead ${cleanFrom} did not provide a name (question/refusal). Answering inquiry and delivering completion action.`);
                                                 
                                                 // Answer their question/inquiry via AI without 3 generic action buttons
                                                 await answerCustomerQueryWithAI(messageText, true);
@@ -4101,23 +4301,7 @@ RULES:
                                                 });
 
                                                 await new Promise(r => setTimeout(r, 150));
-                                                if (isNobogentAccount) {
-                                                    await sendCtaUrlMessage(
-                                                        "🚀 Nobogent AI Platform Overview",
-                                                        "Here is your customized overview of Nobogent AI sales automation and capabilities:",
-                                                        "Explore Nobogent 🚀",
-                                                        catalogueLink
-                                                    );
-                                                } else {
-                                                    await sendCtaUrlMessage(
-                                                        "🏢 Your Curated Details",
-                                                        "Here is your customized properties & inventory list with pricing and floor plans:",
-                                                        "View Properties 🏢",
-                                                        catalogueLink
-                                                    );
-                                                }
-                                                await new Promise(r => setTimeout(r, 150));
-                                                await sendThreeButtons("What would you like to do next?");
+                                                await deliverPostQualificationLink();
                                                 return;
                                             }
                                         }
@@ -4140,30 +4324,14 @@ RULES:
                                                     await askQuestionMCQ(nextIdx);
                                                     return;
                                                 } else {
-                                                    // All qualification questions answered -> Ask for lead name to complete tailored catalog
+                                                    // All qualification questions answered -> Ask for lead name to complete tailored details
                                                     if (!currentCustomFields?.lead_name_captured) {
                                                         await syncFieldsAndScore({ awaiting_lead_name: true });
-                                                        await sendTextMessage("Great! 🎉 To instantly receive your tailored overview & details matched to your preferences, may I know your good name please?");
+                                                        await sendTextMessage("Great! 🎉 To instantly receive your tailored details matched to your preferences, may I know your good name please?");
                                                         return;
                                                     } else {
                                                         await syncFieldsAndScore({ qualification_completed: true });
-                                                        if (isNobogentAccount) {
-                                                            await sendCtaUrlMessage(
-                                                                "🚀 Nobogent AI Sales Platform",
-                                                                "Thank you! 🎉 Here is your customized overview of Nobogent AI features and solutions:",
-                                                                "Explore Nobogent 🚀",
-                                                                catalogueLink
-                                                            );
-                                                        } else {
-                                                            await sendCtaUrlMessage(
-                                                                "🏢 Your Curated Properties",
-                                                                "Thank you! 🎉 Here is your customized property catalog based on your requirements:",
-                                                                "View Properties 🏢",
-                                                                catalogueLink
-                                                            );
-                                                        }
-                                                        await new Promise(r => setTimeout(r, 150));
-                                                        await sendThreeButtons("What would you like to do next?");
+                                                        await deliverPostQualificationLink(currentCustomFields?.full_name);
                                                         return;
                                                     }
                                                 }
@@ -4176,10 +4344,10 @@ RULES:
                                             const activeQ = parsedQuestionsList[activeQIndex];
                                             const hasAnyAnswer = parsedQuestionsList.some(q => currentCustomFields[q.key]);
 
-                                            // Check if user's text matches one of the options of the active question (e.g. "1", "2", "3", or exact option text)
+                                            // Check if user's text matches one of the options of the active question (e.g. "1", "2", "3", "4", "5", or exact option text)
                                             let matchedOptionValue: string | null = null;
                                             if (Array.isArray(activeQ.options) && activeQ.options.length > 0) {
-                                                const numMatch = messageText.trim().match(/^(?:option\s*)?([1-3])$/i);
+                                                const numMatch = messageText.trim().match(/^(?:option\s*)?([1-9]|10)$/i);
                                                 if (numMatch) {
                                                     const idx = parseInt(numMatch[1], 10) - 1;
                                                     if (activeQ.options[idx]) matchedOptionValue = activeQ.options[idx];
@@ -4197,7 +4365,7 @@ RULES:
                                                     await supabaseAdmin.from('leads').update({
                                                         voice_call_scheduled_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
                                                         voice_call_status: 'pending_qualification',
-                                                        voice_campaign_id: leadCampaignId || latestLead.campaign_id
+                                                        voice_campaign_id: isUuid(leadCampaignId || latestLead.campaign_id) ? (leadCampaignId || latestLead.campaign_id) : null
                                                     }).eq('id', latestLead.id);
                                                 }
                                                 const welcomeMsg = `Hello! 👋 Welcome to *${ownerBusinessName || 'our team'}*. Please answer 2 quick questions so we can assist you with the right options & details: 🎁🏢`;
@@ -4241,23 +4409,7 @@ RULES:
                                                     return;
                                                 } else {
                                                     await syncFieldsAndScore({ qualification_completed: true });
-                                                    if (isNobogentAccount) {
-                                                        await sendCtaUrlMessage(
-                                                            "🚀 Nobogent AI Sales Platform",
-                                                            "Thank you! 🎉 Here is your customized overview of Nobogent AI features and solutions:",
-                                                            "Explore Nobogent 🚀",
-                                                            catalogueLink
-                                                        );
-                                                    } else {
-                                                        await sendCtaUrlMessage(
-                                                            "🏢 Your Curated Details",
-                                                            "Thank you! 🎉 Here is your customized catalog & details based on your requirements:",
-                                                            "View Details 🏢",
-                                                            catalogueLink
-                                                        );
-                                                    }
-                                                    await new Promise(r => setTimeout(r, 150));
-                                                    await sendThreeButtons("What would you like to do next?");
+                                                    await deliverPostQualificationLink(currentCustomFields?.full_name);
                                                     return;
                                                 }
                                             }

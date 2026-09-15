@@ -87,6 +87,8 @@ export async function POST(request: Request) {
         data.adCopiesJson = formData.get('adCopies')?.toString();
         data.whatsappNumber = formData.get('whatsappNumber')?.toString();
         data.customInstructions = formData.get('customInstructions')?.toString();
+        data.campaign_name = formData.get('campaign_name')?.toString() || formData.get('campaignName')?.toString();
+        data.adset_name = formData.get('adset_name')?.toString() || formData.get('adsetName')?.toString();
 
         const ageMinVal = formData.get('ageMin');
         if (ageMinVal) data.ageMin = parseInt(ageMinVal.toString());
@@ -330,7 +332,9 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         missionStatement: targetProfile?.mission_statement || "",
         currency,
         logoUrl: targetProfile?.logo_url || null,
-        customInstructions: data.customInstructions || null
+        customInstructions: data.customInstructions || null,
+        campaign_name: data.campaign_name || null,
+        adset_name: data.adset_name || null
     };
 
     let jobId = null;

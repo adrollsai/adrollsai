@@ -52,31 +52,123 @@ import {
   ArrowRight,
   PlayCircle,
   Activity,
-  UserCheck
+  UserCheck,
+  Users,
+  MessageCircle
 } from 'lucide-react'
 
 // ============================================================================
 // 1. CUSTOM NODE DEFINITIONS (Modular ManyChat / Make / Zapier Canvas Style)
 // ============================================================================
 
-// --- A. WHATSAPP TEMPLATE MESSAGE NODE (Starting Step / Broadcast Trigger) ---
+// --- A. OMNI-CHANNEL TRIGGER NODE (Starting Step for Any Automation) ---
 export function TriggerNode({ data, id }: { data: any; id: string }) {
-  const buttons = data.buttons || [
-    { id: 'interested', title: 'Interested 🌟' },
-    { id: 'not_interested', title: 'Not Interested' }
-  ]
+  const triggerType = data.triggerType || (data.templateName ? 'whatsapp_broadcast' : 'meta_ad')
+  const buttons = data.buttons || []
+
+  // Visual styling and labels based on triggerType
+  const getTriggerMeta = (t: string) => {
+    switch (t) {
+      case 'whatsapp_inbound':
+        return {
+          title: data.title || 'WhatsApp Inbound / Keyword',
+          subtitle: 'Starting Step • Customer Inbound',
+          badge: 'WhatsApp 💬',
+          icon: MessageSquare,
+          gradient: 'from-emerald-600 via-teal-600 to-emerald-700',
+          borderColor: 'border-emerald-500',
+          desc: data.keywords ? `Fires on keywords: ${data.keywords}` : 'Fires on any incoming customer WhatsApp message'
+        }
+      case 'ig_comment':
+      case 'fb_comment':
+        return {
+          title: data.title || 'Ad / Post Comment',
+          subtitle: 'Starting Step • Comment Event',
+          badge: 'Comments 💬',
+          icon: MessageCircle,
+          gradient: 'from-pink-600 via-rose-600 to-purple-700',
+          borderColor: 'border-pink-500',
+          desc: data.keyword ? `Fires on comment keyword: "${data.keyword}"` : 'Fires when prospect comments on your Facebook or Instagram Ad'
+        }
+      case 'ig_dm':
+      case 'fb_dm':
+        return {
+          title: data.title || 'Instagram / Messenger DM',
+          subtitle: 'Starting Step • Direct Message',
+          badge: 'Direct Message 📸',
+          icon: Send,
+          gradient: 'from-purple-600 via-indigo-600 to-blue-700',
+          borderColor: 'border-purple-500',
+          desc: 'Fires when prospect sends a direct message to your account'
+        }
+      case 'crm_lead':
+        return {
+          title: data.title || 'New CRM Lead / Pipeline',
+          subtitle: 'Starting Step • Lead Created',
+          badge: 'CRM Lead 👥',
+          icon: Users,
+          gradient: 'from-blue-600 via-sky-600 to-indigo-700',
+          borderColor: 'border-blue-500',
+          desc: 'Fires when a new lead enters the CRM or stage is updated'
+        }
+      case 'ai_call':
+        return {
+          title: data.title || 'Instant AI Voice Call',
+          subtitle: 'Starting Step • Voice Outbound',
+          badge: 'Gemini Voice 🎙️',
+          icon: PhoneCall,
+          gradient: 'from-rose-600 via-pink-600 to-red-700',
+          borderColor: 'border-rose-500',
+          desc: 'Fires automated Gemini Live voice call to the lead'
+        }
+      case 'custom_webhook':
+        return {
+          title: data.title || 'Custom Webhook / Form',
+          subtitle: 'Starting Step • HTTP Webhook',
+          badge: 'Webhook ⚡',
+          icon: Globe,
+          gradient: 'from-slate-700 via-indigo-800 to-slate-900',
+          borderColor: 'border-indigo-500',
+          desc: 'Fires on external form submission or incoming webhook POST'
+        }
+      case 'whatsapp_broadcast':
+        return {
+          title: data.title || 'WhatsApp Broadcast Template',
+          subtitle: 'Starting Step • Outbound Broadcast',
+          badge: 'Broadcast 📢',
+          icon: Zap,
+          gradient: 'from-indigo-600 via-indigo-700 to-violet-700',
+          borderColor: 'border-indigo-500',
+          desc: 'Broadcast template with quick-reply buttons'
+        }
+      case 'meta_ad':
+      default:
+        return {
+          title: data.title || 'Meta Ad Lead / Click-to-WhatsApp',
+          subtitle: 'Starting Step • Meta Ad Inbound',
+          badge: 'Meta Ads 🎯',
+          icon: Zap,
+          gradient: 'from-indigo-600 via-violet-600 to-purple-700',
+          borderColor: 'border-indigo-500',
+          desc: data.campaignName ? `Fires on Ad clicks from: ${data.campaignName}` : 'Fires instantly when a lead clicks your Meta WhatsApp Ad & initiates chat'
+        }
+    }
+  }
+
+  const meta = getTriggerMeta(triggerType)
+  const IconComp = meta.icon
 
   return (
-    <div className="w-[330px] bg-white rounded-2xl border-2 border-indigo-500 shadow-xl shadow-indigo-500/15 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className={`w-[330px] bg-white rounded-2xl border-2 ${meta.borderColor} shadow-xl shadow-indigo-500/10 overflow-hidden font-sans transition-all hover:shadow-2xl`}>
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 px-4 py-3 flex items-center justify-between text-white">
+      <div className={`bg-gradient-to-r ${meta.gradient} px-4 py-3 flex items-center justify-between text-white`}>
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-            <Zap size={15} className="text-amber-300 fill-amber-300" />
+            <IconComp size={15} className="text-white" />
           </div>
           <div>
-            <span className="text-xs font-black tracking-wide uppercase block">WhatsApp Template</span>
-            <span className="text-[10px] text-indigo-200 block font-medium">Starting Step / Broadcast</span>
+            <span className="text-xs font-black tracking-wide uppercase block">{meta.title}</span>
+            <span className="text-[10px] text-white/80 block font-medium">{meta.subtitle}</span>
           </div>
         </div>
         <span className="text-[10px] font-black bg-amber-400 text-indigo-950 px-2.5 py-0.5 rounded-full shadow-xs">
@@ -86,52 +178,81 @@ export function TriggerNode({ data, id }: { data: any; id: string }) {
 
       {/* Body */}
       <div className="p-4 space-y-3">
-        {/* Template metadata chip */}
-        <div className="bg-indigo-50/80 border border-indigo-200/80 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px]">
-          <span className="text-indigo-600 font-bold uppercase tracking-wider text-[10px]">Template:</span>
-          <span className="text-slate-900 font-black font-mono truncate max-w-[180px]">{data.templateName || 'client_project_announcement'}</span>
-        </div>
-
-        {/* Message bubble preview */}
-        <div className="bg-[#E7F8EE] border border-emerald-200/80 rounded-xl p-3 text-xs text-slate-800 leading-relaxed relative">
-          <p className="whitespace-pre-line text-slate-700">
-            {data.message || 'Hi {{1}}! We just launched luxury 3 & 4 BHK residences with private terrace suites. Special inaugural pricing available for early bookings! Are you interested to explore?'}
-          </p>
-          <div className="text-[9px] text-emerald-700 font-bold text-right mt-1.5 flex items-center justify-end gap-1">
-            <span>Template Broadcast</span>
-            <span>✓✓</span>
-          </div>
-        </div>
-
-        {/* Quick Reply Buttons with Dedicated Output Port on each button */}
-        <div className="space-y-2 pt-1">
+        {/* Trigger Badge & Description */}
+        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Quick Reply Buttons (Ports)
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Trigger Source:</span>
+            <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black">
+              {meta.badge}
             </span>
-            <span className="text-[10px] text-indigo-600 font-semibold">Connect outputs ➔</span>
           </div>
-          {buttons.map((btn: any, idx: number) => (
-            <div
-              key={btn.id || idx}
-              className="relative bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 rounded-xl px-3 py-2 flex items-center justify-between transition-all group"
-            >
-              <div className="flex items-center gap-2 min-w-0 pr-4">
-                <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
-                <span className="text-xs font-bold text-slate-800 truncate">{btn.title}</span>
-              </div>
-
-              {/* Dedicated Connection Port for this specific button */}
-              <Handle
-                type="source"
-                position={Position.Right}
-                id={`btn_${btn.id || idx}`}
-                className="!w-3.5 !h-3.5 !bg-indigo-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-7px] cursor-crosshair"
-                title={`Drag connection from ${btn.title}`}
-              />
-            </div>
-          ))}
+          <p className="text-slate-700 font-medium text-[11px] leading-relaxed">
+            {data.description || meta.desc}
+          </p>
         </div>
+
+        {/* If broadcast template, show template & buttons */}
+        {triggerType === 'whatsapp_broadcast' && (
+          <>
+            <div className="bg-indigo-50/80 border border-indigo-200/80 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px]">
+              <span className="text-indigo-600 font-bold uppercase tracking-wider text-[10px]">Template:</span>
+              <span className="text-slate-900 font-black font-mono truncate max-w-[180px]">{data.templateName || 'client_project_announcement'}</span>
+            </div>
+
+            {data.message && (
+              <div className="bg-[#E7F8EE] border border-emerald-200/80 rounded-xl p-2.5 text-[11px] text-slate-700 line-clamp-3">
+                {data.message}
+              </div>
+            )}
+
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Button Ports
+                </span>
+                <span className="text-[10px] text-indigo-600 font-semibold">Connect outputs ➔</span>
+              </div>
+              {buttons.map((btn: any, idx: number) => (
+                <div
+                  key={btn.id || idx}
+                  className="relative bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 rounded-xl px-3 py-2 flex items-center justify-between transition-all group"
+                >
+                  <div className="flex items-center gap-2 min-w-0 pr-4">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                    <span className="text-xs font-bold text-slate-800 truncate">{btn.title}</span>
+                  </div>
+
+                  <Handle
+                    type="source"
+                    position={Position.Right}
+                    id={`btn_${btn.id || idx}`}
+                    className="!w-3.5 !h-3.5 !bg-indigo-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-7px] cursor-crosshair"
+                    title={`Drag connection from ${btn.title}`}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Standard Output Handle for Single-Event Triggers */}
+        {triggerType !== 'whatsapp_broadcast' && (
+          <div className="relative pt-2 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Lead Arrived
+            </span>
+            <span className="text-[10px] font-bold text-slate-500 pr-2">Connect Step ➔</span>
+
+            <Handle
+              type="source"
+              position={Position.Right}
+              id="output"
+              className="!w-4 !h-4 !bg-indigo-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-8px] cursor-crosshair"
+              title="Connect to next step"
+            />
+          </div>
+        )}
       </div>
     </div>
   )
@@ -876,28 +997,22 @@ export function ManyChatCanvas({
   onTestRun
 }: ManyChatCanvasProps) {
   // CLEAN DECOUPLED PIPELINE:
-  // Every action is its OWN node connected sequentially or via branches!
-  // Node 1: WhatsApp Broadcast Template (Trigger)
-  //   --> [Interested Button] -->
-  // Node 2: WhatsApp Message (Free Flow Reply)
+  // Node 1: Trigger (Meta Ad / Click-to-WhatsApp Lead Arrived)
+  //   --> Node 2: WhatsApp Message (Instant Welcome & Options)
   //   --> Node 3: Update CRM Stage ("Interested")
   //   --> Node 4: Notify Admin (Push + WhatsApp alert)
-  //   --> Node 5: Custom API Request (POST to external CRM/Webhook)
+  //   --> Node 5: Custom API Request (Sync to external CRM/Webhook)
   const defaultNodes: Node[] = useMemo(
     () => [
       {
-        id: 'node_template',
+        id: 'node_trigger',
         type: 'triggerNode',
         position: { x: 50, y: 150 },
         data: {
-          title: 'WhatsApp Broadcast Template',
-          templateName: 'client_project_announcement',
-          message:
-            'Hi {{1}}! We just launched luxury 3 & 4 BHK residences with private terrace suites. Special inaugural pricing available for early bookings! Are you interested to explore?',
-          buttons: [
-            { id: 'interested', title: 'Interested 🌟' },
-            { id: 'not_interested', title: 'Not Interested' }
-          ]
+          title: 'Meta Ad Lead / Click-to-WhatsApp',
+          triggerType: 'meta_ad',
+          campaignFilter: 'all',
+          description: 'Fires instantly when a prospect clicks your Meta WhatsApp Ad and initiates chat'
         }
       },
       {
@@ -905,11 +1020,12 @@ export function ManyChatCanvas({
         type: 'whatsappMessageNode',
         position: { x: 440, y: 120 },
         data: {
-          title: 'WhatsApp Reply Message',
+          title: 'Instant WhatsApp Welcome & Options',
           message:
-            'Awesome! 🌟 Here is our live property inventory, floor plans, and pricing sheet for {{business_name}}:\n\n👉 {{inventory_url}}',
+            'Hi {{lead_name}}! 🌟 Thank you for reaching out to {{business_name}}.\n\nHere is our verified project catalog, floor plans, and pricing sheet:\n\n👉 {{inventory_url}}',
           buttons: [
-            { id: 'btn_view_inv', title: 'View Inventory 🏢', url: '{{inventory_url}}' }
+            { id: 'btn_view_inv', title: 'View Catalog 🏢', url: '{{inventory_url}}' },
+            { id: 'btn_expert', title: 'Talk to Expert 📞' }
           ]
         }
       },
@@ -921,7 +1037,7 @@ export function ManyChatCanvas({
           title: 'Move Lead CRM Stage',
           stage: 'Interested',
           assignAgent: 'Harman Bajwa',
-          note: 'Prospect confirmed interest via WhatsApp flow'
+          note: 'Prospect confirmed interest via WhatsApp automation flow'
         }
       },
       {
@@ -932,7 +1048,7 @@ export function ManyChatCanvas({
           title: 'Notify Admin & Assigned Agent',
           channels: ['whatsapp', 'push', 'bell'],
           recipient: 'all_admins',
-          message: '🔥 HOT LEAD: {{lead_name}} ({{lead_phone}}) replied Interested to luxury launch campaign!',
+          message: '🔥 HOT LEAD: {{lead_name}} ({{lead_phone}}) engaged with WhatsApp Ad automation!',
           priority: 'high'
         }
       },
@@ -948,7 +1064,7 @@ export function ManyChatCanvas({
             { key: 'Content-Type', value: 'application/json' },
             { key: 'Authorization', value: 'Bearer {{crm_api_token}}' }
           ],
-          body: '{\n  "phone": "{{lead_phone}}",\n  "name": "{{lead_name}}",\n  "stage": "Interested",\n  "source": "WhatsApp Flow"\n}',
+          body: '{\n  "phone": "{{lead_phone}}",\n  "name": "{{lead_name}}",\n  "stage": "Interested",\n  "source": "Meta Ad WhatsApp Flow"\n}',
           responseVariable: 'external_lead_id',
           responsePath: 'data.id'
         }
@@ -960,13 +1076,13 @@ export function ManyChatCanvas({
   const defaultEdges: Edge[] = useMemo(
     () => [
       {
-        id: 'edge_template_to_reply',
-        source: 'node_template',
-        sourceHandle: 'btn_interested',
+        id: 'edge_trigger_to_reply',
+        source: 'node_trigger',
+        sourceHandle: 'output',
         target: 'node_reply',
         targetHandle: 'input',
         animated: true,
-        style: { stroke: '#10B981', strokeWidth: 3 }
+        style: { stroke: '#6366F1', strokeWidth: 3 }
       },
       {
         id: 'edge_reply_to_crm',
@@ -1004,6 +1120,7 @@ export function ManyChatCanvas({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
+  const [isTriggerMenuOpen, setIsTriggerMenuOpen] = useState(false)
 
   // Live test runner state for custom API node
   const [apiTestLoading, setApiTestLoading] = useState(false)
@@ -1064,7 +1181,8 @@ export function ManyChatCanvas({
       | 'inventoryDeliveryNode'
       | 'conditionNode'
       | 'delayNode'
-      | 'aiAgentNode'
+      | 'aiAgentNode',
+    customTriggerType?: string
   ) => {
     const newId = 'node_' + Date.now()
     const xPos = 400 + Math.random() * 200
@@ -1078,11 +1196,28 @@ export function ManyChatCanvas({
     }
 
     if (type === 'triggerNode') {
+      const tType = customTriggerType || 'meta_ad'
       newNode.data = {
-        title: 'WhatsApp Broadcast Template',
-        templateName: 'new_campaign_template',
-        message: 'Enter your template message content here...',
-        buttons: [{ id: 'interested', title: 'Interested 🌟' }, { id: 'not_interested', title: 'Not Interested' }]
+        title: tType === 'meta_ad' ? 'Meta Ad Lead / Click-to-WhatsApp'
+          : tType === 'whatsapp_inbound' ? 'WhatsApp Inbound Message'
+          : tType === 'ig_comment' ? 'Comment on Ad / Post'
+          : tType === 'ig_dm' ? 'Instagram / Messenger DM'
+          : tType === 'crm_lead' ? 'New CRM Lead Arrived'
+          : tType === 'ai_call' ? 'Instant AI Voice Call Trigger'
+          : tType === 'custom_webhook' ? 'Custom Webhook / Form Inbound'
+          : 'WhatsApp Broadcast Template',
+        triggerType: tType,
+        campaignFilter: 'all',
+        description: tType === 'meta_ad' ? 'Fires instantly when a lead clicks your Meta WhatsApp Ad and initiates chat'
+          : tType === 'whatsapp_inbound' ? 'Fires when customer sends any WhatsApp message or keyword'
+          : tType === 'ig_comment' ? 'Fires when prospect leaves a comment on your Facebook/Instagram Ad'
+          : tType === 'ig_dm' ? 'Fires when prospect DMs your Instagram or Messenger'
+          : tType === 'crm_lead' ? 'Fires when new lead is created in CRM pipeline'
+          : tType === 'ai_call' ? 'Fires outbound Gemini Live AI voice call'
+          : tType === 'custom_webhook' ? 'Fires on incoming webhook or external form submission'
+          : 'Outbound broadcast template campaign with quick replies',
+        templateName: tType === 'whatsapp_broadcast' ? 'client_project_announcement' : undefined,
+        buttons: tType === 'whatsapp_broadcast' ? [{ id: 'interested', title: 'Interested 🌟' }, { id: 'not_interested', title: 'Not Interested' }] : undefined
       }
     } else if (type === 'whatsappMessageNode') {
       newNode.data = {
@@ -1301,13 +1436,130 @@ export function ManyChatCanvas({
         <div className="flex items-center gap-2">
           {/* Node Palette Buttons */}
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 flex-wrap relative">
-            <button
-              onClick={() => handleAddNode('triggerNode')}
-              className="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 font-bold text-xs rounded-lg shadow-2xs border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
-              title="Add WhatsApp Broadcast Template Starting Step"
-            >
-              <Zap size={12} className="text-amber-500 fill-amber-500" /> + Trigger
-            </button>
+            {/* + Trigger Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsTriggerMenuOpen(!isTriggerMenuOpen)}
+                className="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 font-bold text-xs rounded-lg shadow-2xs border border-indigo-200 flex items-center gap-1 cursor-pointer transition-colors"
+                title="Select Trigger Source"
+              >
+                <Zap size={12} className="text-amber-500 fill-amber-500" /> + Trigger
+                <ChevronDown size={11} className="text-indigo-400" />
+              </button>
+
+              {isTriggerMenuOpen && (
+                <div className="absolute top-full left-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-1.5 space-y-1 text-xs">
+                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Select Trigger Type
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleAddNode('triggerNode', 'meta_ad')
+                      setIsTriggerMenuOpen(false)
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-indigo-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
+                  >
+                    <span>🎯</span>
+                    <div>
+                      <div className="text-xs text-indigo-950 font-bold">Meta Ad / Click-to-WhatsApp</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Fires when lead clicks ad</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleAddNode('triggerNode', 'whatsapp_inbound')
+                      setIsTriggerMenuOpen(false)
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-emerald-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
+                  >
+                    <span>💬</span>
+                    <div>
+                      <div className="text-xs text-emerald-950 font-bold">WhatsApp Inbound / Keyword</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Fires on incoming text or keyword</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleAddNode('triggerNode', 'ig_comment')
+                      setIsTriggerMenuOpen(false)
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-pink-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
+                  >
+                    <span>💬</span>
+                    <div>
+                      <div className="text-xs text-pink-950 font-bold">Comment on Ad / Post</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Auto-reply to FB/IG comments</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleAddNode('triggerNode', 'ig_dm')
+                      setIsTriggerMenuOpen(false)
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-purple-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
+                  >
+                    <span>📸</span>
+                    <div>
+                      <div className="text-xs text-purple-950 font-bold">Instagram / Messenger DM</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Fires on direct message</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleAddNode('triggerNode', 'crm_lead')
+                      setIsTriggerMenuOpen(false)
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-blue-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
+                  >
+                    <span>👥</span>
+                    <div>
+                      <div className="text-xs text-blue-950 font-bold">New CRM Lead / Pipeline</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Fires when lead enters CRM</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleAddNode('triggerNode', 'ai_call')
+                      setIsTriggerMenuOpen(false)
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-rose-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
+                  >
+                    <span>🎙️</span>
+                    <div>
+                      <div className="text-xs text-rose-950 font-bold">Instant AI Voice Call</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Fires Gemini Live voice call</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleAddNode('triggerNode', 'custom_webhook')
+                      setIsTriggerMenuOpen(false)
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-slate-100 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
+                  >
+                    <span>⚡</span>
+                    <div>
+                      <div className="text-xs text-slate-950 font-bold">Custom Webhook / Form</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Fires on external HTTP webhook</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleAddNode('triggerNode', 'whatsapp_broadcast')
+                      setIsTriggerMenuOpen(false)
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-amber-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
+                  >
+                    <span>📢</span>
+                    <div>
+                      <div className="text-xs text-amber-950 font-bold">WhatsApp Broadcast Template</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Outbound broadcast with buttons</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={() => handleAddNode('whatsappMessageNode')}
               className="px-2.5 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg shadow-2xs border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
@@ -1529,12 +1781,60 @@ export function ManyChatCanvas({
             {/* Drawer Body */}
             <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
               
-              {/* === 1. IF WHATSAPP TEMPLATE NODE === */}
+              {/* === 1. IF TRIGGER NODE === */}
               {selectedNode.type === 'triggerNode' && (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Step Label / Title
+                      Trigger Event Source
+                    </label>
+                    <select
+                      value={selectedNode.data.triggerType || 'meta_ad'}
+                      onChange={e => {
+                        const val = e.target.value
+                        handleUpdateNodeData('triggerType', val)
+                        if (val === 'meta_ad') {
+                          handleUpdateNodeData('title', 'Meta Ad Lead / Click-to-WhatsApp')
+                          handleUpdateNodeData('description', 'Fires instantly when a lead clicks your Meta WhatsApp Ad & initiates chat')
+                        } else if (val === 'whatsapp_inbound') {
+                          handleUpdateNodeData('title', 'WhatsApp Inbound / Keyword')
+                          handleUpdateNodeData('description', 'Fires when customer sends an inbound WhatsApp message or keyword')
+                        } else if (val === 'ig_comment') {
+                          handleUpdateNodeData('title', 'Comment on Ad / Post')
+                          handleUpdateNodeData('description', 'Fires when prospect comments on your Facebook/Instagram Ad')
+                        } else if (val === 'ig_dm') {
+                          handleUpdateNodeData('title', 'Instagram / Messenger DM')
+                          handleUpdateNodeData('description', 'Fires when customer sends a direct message')
+                        } else if (val === 'crm_lead') {
+                          handleUpdateNodeData('title', 'New CRM Lead / Pipeline')
+                          handleUpdateNodeData('description', 'Fires when new lead enters CRM or stage changes')
+                        } else if (val === 'ai_call') {
+                          handleUpdateNodeData('title', 'Instant AI Voice Call')
+                          handleUpdateNodeData('description', 'Fires Gemini Live voice outbound call to prospect')
+                        } else if (val === 'custom_webhook') {
+                          handleUpdateNodeData('title', 'Custom Webhook / Form')
+                          handleUpdateNodeData('description', 'Fires on external form submission or API webhook')
+                        } else if (val === 'whatsapp_broadcast') {
+                          handleUpdateNodeData('title', 'WhatsApp Broadcast Template')
+                          handleUpdateNodeData('description', 'Outbound broadcast template with quick reply buttons')
+                        }
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none cursor-pointer"
+                    >
+                      <option value="meta_ad">🎯 Meta Ad Lead / Click-to-WhatsApp (Ad Click)</option>
+                      <option value="whatsapp_inbound">💬 WhatsApp Inbound / Keyword (User Text)</option>
+                      <option value="ig_comment">💬 Comment on Ad or Post (FB / IG Comments)</option>
+                      <option value="ig_dm">📸 Instagram / Messenger DM (Direct Message)</option>
+                      <option value="crm_lead">👥 New CRM Lead / Pipeline Stage Change</option>
+                      <option value="ai_call">🎙️ Instant AI Voice Call Trigger</option>
+                      <option value="custom_webhook">⚡ Custom Webhook / Inbound Form</option>
+                      <option value="whatsapp_broadcast">📢 WhatsApp Broadcast Template (Quick Replies)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Step Label / Card Title
                     </label>
                     <input
                       type="text"
@@ -1544,84 +1844,121 @@ export function ManyChatCanvas({
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      WhatsApp Template Name
-                    </label>
-                    <input
-                      type="text"
-                      value={selectedNode.data.templateName || ''}
-                      onChange={e => handleUpdateNodeData('templateName', e.target.value)}
-                      placeholder="e.g. client_project_announcement"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-700 focus:bg-white focus:border-indigo-500 outline-none"
-                    />
-                    <span className="text-[10px] text-slate-400 mt-1 block">
-                      Must match the approved Meta template identifier sent in your campaign broadcast.
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Template Message Preview
-                    </label>
-                    <textarea
-                      rows={4}
-                      value={selectedNode.data.message || ''}
-                      onChange={e => handleUpdateNodeData('message', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:border-indigo-500 outline-none leading-relaxed"
-                    />
-                  </div>
-
-                  {/* Template Quick Reply Buttons */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-[11px] font-bold text-slate-700">
-                        Template Quick Reply Buttons
+                  {/* Context-specific trigger fields */}
+                  {(selectedNode.data.triggerType === 'whatsapp_inbound' || selectedNode.data.triggerType === 'ig_comment') && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        Keywords Filter (Optional)
                       </label>
-                      <span className="text-[10px] text-indigo-600 font-semibold">Each button creates an output port</span>
+                      <input
+                        type="text"
+                        value={selectedNode.data.keywords || selectedNode.data.keyword || ''}
+                        onChange={e => handleUpdateNodeData('keywords', e.target.value)}
+                        placeholder="e.g. INFO, WEBINAR, SITE VISIT, PRICE (Leave blank for ANY message)"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Comma-separated keywords. If left blank, this flow triggers on any incoming message.
+                      </span>
                     </div>
+                  )}
 
-                    <div className="space-y-2">
-                      {(selectedNode.data.buttons || []).map((btn: any, idx: number) => (
-                        <div key={idx} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0 ml-1" />
-                          <input
-                            type="text"
-                            value={btn.title}
-                            onChange={e => {
-                              const updated = [...(selectedNode.data.buttons || [])]
-                              updated[idx] = { ...updated[idx], title: e.target.value }
-                              handleUpdateNodeData('buttons', updated)
-                            }}
-                            className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900"
-                          />
-                          <button
-                            onClick={() => {
-                              const updated = (selectedNode.data.buttons || []).filter((_: any, i: number) => i !== idx)
-                              handleUpdateNodeData('buttons', updated)
-                            }}
-                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
-                            title="Remove button"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                  {selectedNode.data.triggerType === 'meta_ad' && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        Campaign Filter
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.data.campaignName || ''}
+                        onChange={e => handleUpdateNodeData('campaignName', e.target.value)}
+                        placeholder="All Campaigns (or enter specific Campaign ID / Name)"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Leave blank to trigger for all active WhatsApp Click-to-Chat campaigns.
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedNode.data.triggerType === 'whatsapp_broadcast' && (
+                    <>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          WhatsApp Template Name
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.data.templateName || ''}
+                          onChange={e => handleUpdateNodeData('templateName', e.target.value)}
+                          placeholder="e.g. client_project_announcement"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-700 focus:bg-white focus:border-indigo-500 outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Template Message Preview
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={selectedNode.data.message || ''}
+                          onChange={e => handleUpdateNodeData('message', e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:border-indigo-500 outline-none leading-relaxed"
+                        />
+                      </div>
+
+                      {/* Template Quick Reply Buttons */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-[11px] font-bold text-slate-700">
+                            Template Quick Reply Buttons
+                          </label>
+                          <span className="text-[10px] text-indigo-600 font-semibold">Each button creates an output port</span>
                         </div>
-                      ))}
-                    </div>
 
-                    <button
-                      onClick={() => {
-                        const updated = [
-                          ...(selectedNode.data.buttons || []),
-                          { id: 'btn_' + Date.now(), title: 'Quick Reply' }
-                        ]
-                        handleUpdateNodeData('buttons', updated)
-                      }}
-                      className="mt-2 w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl border border-indigo-200 text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <Plus size={13} /> Add Quick Reply Button
-                    </button>
-                  </div>
+                        <div className="space-y-2">
+                          {(selectedNode.data.buttons || []).map((btn: any, idx: number) => (
+                            <div key={idx} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0 ml-1" />
+                              <input
+                                type="text"
+                                value={btn.title}
+                                onChange={e => {
+                                  const updated = [...(selectedNode.data.buttons || [])]
+                                  updated[idx] = { ...updated[idx], title: e.target.value }
+                                  handleUpdateNodeData('buttons', updated)
+                                }}
+                                className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900"
+                              />
+                              <button
+                                onClick={() => {
+                                  const updated = (selectedNode.data.buttons || []).filter((_: any, i: number) => i !== idx)
+                                  handleUpdateNodeData('buttons', updated)
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-600 rounded-md"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            const updated = [
+                              ...(selectedNode.data.buttons || []),
+                              { id: 'btn_' + Date.now(), title: 'Quick Reply' }
+                            ]
+                            handleUpdateNodeData('buttons', updated)
+                          }}
+                          className="mt-2 w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl border border-indigo-200 text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Plus size={13} /> Add Quick Reply Button
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

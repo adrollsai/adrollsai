@@ -32,12 +32,21 @@ interface QualifyingQuestionItem {
   options: string[]
 }
 
+interface FlowCompletionConfig {
+  action: 'custom_link' | 'custom_message' | 'catalog'
+  title?: string
+  message?: string
+  button_text?: string
+  url?: string
+}
+
 interface QuestionFlow {
   id?: string
   name: string
   linked_campaign_id?: string | null
   is_active?: boolean
   questions: QualifyingQuestionItem[]
+  completion?: FlowCompletionConfig
 }
 
 interface CampaignOption {
@@ -153,13 +162,45 @@ export default function QualifyingPage() {
           .order('created_at', { ascending: true })
 
         if (!flowsErr && dbFlows && dbFlows.length > 0) {
-          const formattedFlows: QuestionFlow[] = dbFlows.map((df: any) => ({
-            id: df.id,
-            name: df.name,
-            linked_campaign_id: df.linked_campaign_id,
-            is_active: df.is_active,
-            questions: Array.isArray(df.questions) ? df.questions : REAL_ESTATE_DEFAULT_QUESTIONS
-          }))
+          const formattedFlows: QuestionFlow[] = dbFlows.map((df: any) => {
+            const rawQuestions = Array.isArray(df.questions) ? df.questions : REAL_ESTATE_DEFAULT_QUESTIONS
+            let completion: FlowCompletionConfig = {
+              action: 'catalog',
+              title: '',
+              message: '',
+              button_text: '',
+              url: ''
+            }
+            const filteredQuestions: QualifyingQuestionItem[] = []
+
+            rawQuestions.forEach((q: any) => {
+              if (q && typeof q === 'object' && q._type === 'flow_completion') {
+                completion = {
+                  action: q.action || 'catalog',
+                  title: q.title || '',
+                  message: q.message || '',
+                  button_text: q.button_text || '',
+                  url: q.url || ''
+                }
+              } else if (q && typeof q === 'object' && q.question) {
+                filteredQuestions.push({
+                  question: q.question,
+                  options: Array.isArray(q.options) ? q.options : []
+                })
+              } else if (typeof q === 'string') {
+                filteredQuestions.push({ question: q, options: [] })
+              }
+            })
+
+            return {
+              id: df.id,
+              name: df.name,
+              linked_campaign_id: df.linked_campaign_id,
+              is_active: df.is_active,
+              questions: filteredQuestions.length > 0 ? filteredQuestions : REAL_ESTATE_DEFAULT_QUESTIONS,
+              completion
+            }
+          })
           setFlows(formattedFlows)
         } else {
           // Initialize default Real Estate Flow if none exists
@@ -167,7 +208,8 @@ export default function QualifyingPage() {
             name: 'General Real Estate Flow',
             linked_campaign_id: null,
             is_active: true,
-            questions: REAL_ESTATE_DEFAULT_QUESTIONS
+            questions: REAL_ESTATE_DEFAULT_QUESTIONS,
+            completion: { action: 'catalog' }
           }
           setFlows([defaultFlow])
         }
@@ -312,6 +354,14 @@ export default function QualifyingPage() {
 
       // 2. Save flows to whatsapp_question_flows table
       for (const flow of flows) {
+        const questionsPayload = [...flow.questions]
+        if (flow.completion) {
+          questionsPayload.push({
+            _type: 'flow_completion',
+            ...flow.completion
+          } as any)
+        }
+
         if (flow.id) {
           await supabase
             .from('whatsapp_question_flows')
@@ -319,7 +369,7 @@ export default function QualifyingPage() {
               name: flow.name,
               linked_campaign_id: flow.linked_campaign_id || null,
               is_active: flow.is_active || false,
-              questions: flow.questions
+              questions: questionsPayload
             })
             .eq('id', flow.id)
             .eq('user_id', userId)
@@ -331,7 +381,7 @@ export default function QualifyingPage() {
               name: flow.name,
               linked_campaign_id: flow.linked_campaign_id || null,
               is_active: flow.is_active || false,
-              questions: flow.questions
+              questions: questionsPayload
             })
             .select('id')
             .single()
@@ -600,7 +650,7 @@ export default function QualifyingPage() {
                       disabled={userRole === 'agent'}
                       className="w-full bg-slate-50 hover:bg-slate-100/80 text-left text-xs font-semibold text-slate-800 py-2.5 px-3 rounded-xl border border-slate-200 flex items-center justify-between transition-all"
                     >
-                      <span className="truncate pr-2 flex items-center gap-1.5">
+                      <span className="whitespace-normal break-words leading-snug pr-2 flex items-center gap-1.5">
                         {isCurrentFlowDefault ? (
                           <span className="text-blue-700 font-bold">🌟 None (Default Fallback Flow)</span>
                         ) : (
@@ -611,7 +661,7 @@ export default function QualifyingPage() {
                     </button>
 
                     {isCampaignDropdownOpen && (
-                      <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 space-y-1.5 animate-in fade-in max-h-72 flex flex-col">
+                      <div className="absolute z-50 left-0 right-0 sm:min-w-[440px] mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 space-y-1.5 animate-in fade-in max-h-80 flex flex-col">
                         {/* Search Input */}
                         <div className="relative">
                           <Search size={13} className="absolute left-2.5 top-2.5 text-slate-400" />
@@ -653,8 +703,8 @@ export default function QualifyingPage() {
                                 }`}
                               >
                                 <div className="min-w-0 pr-2">
-                                  <p className="font-bold truncate">{c.name}</p>
-                                  <p className="text-[10px] text-slate-400 font-mono truncate">ID: {c.id} {c.status ? `• ${c.status}` : ''}</p>
+                                  <p className="font-bold text-xs whitespace-normal break-words leading-snug">{c.name}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {c.id} {c.status ? `• ${c.status}` : ''}</p>
                                 </div>
                                 {isSelected && <Check size={14} className="text-blue-600 shrink-0" />}
                               </div>
@@ -890,6 +940,239 @@ export default function QualifyingPage() {
                 >
                   <Plus size={14} /> Add Question
                 </button>
+              </div>
+            )}
+          </div>
+
+          {/* Post-Qualification Action Card */}
+          <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800">Post-Qualification Action (Lead Next Step)</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Configure what happens automatically on WhatsApp when a lead finishes answering all questions.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Type Selector */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Option 1: External Link / Action Button */}
+              <div
+                onClick={() => {
+                  if (userRole === 'agent') return;
+                  const updated = [...flows];
+                  updated[activeFlowIndex].completion = {
+                    ...(updated[activeFlowIndex].completion || {}),
+                    action: 'custom_link',
+                    title: updated[activeFlowIndex].completion?.title || 'Exclusive Access',
+                    button_text: updated[activeFlowIndex].completion?.button_text || 'Register Now 🚀',
+                    message: updated[activeFlowIndex].completion?.message || 'Thank you {name}! 🎉 Based on your answers, here is your link to proceed:',
+                    url: updated[activeFlowIndex].completion?.url || ''
+                  };
+                  setFlows(updated);
+                }}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+                  (currentFlow.completion?.action === 'custom_link')
+                    ? 'bg-blue-50/80 border-blue-500 text-blue-900 shadow-sm ring-1 ring-blue-500/30'
+                    : 'bg-slate-50/60 hover:bg-slate-100/60 border-slate-200 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    🔗 External Link / CTA
+                  </span>
+                  {currentFlow.completion?.action === 'custom_link' && <CheckCircle size={14} className="text-blue-600" />}
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Send a clickable button (e.g. Webinar, Calendly booking, Payment, Website, or PDF brochure).
+                </p>
+              </div>
+
+              {/* Option 2: Custom Message Only */}
+              <div
+                onClick={() => {
+                  if (userRole === 'agent') return;
+                  const updated = [...flows];
+                  updated[activeFlowIndex].completion = {
+                    ...(updated[activeFlowIndex].completion || {}),
+                    action: 'custom_message',
+                    message: updated[activeFlowIndex].completion?.message || 'Thank you {name}! 🎉 We have received your answers. Our senior advisor will call you within 15 minutes.'
+                  };
+                  setFlows(updated);
+                }}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+                  currentFlow.completion?.action === 'custom_message'
+                    ? 'bg-blue-50/80 border-blue-500 text-blue-900 shadow-sm ring-1 ring-blue-500/30'
+                    : 'bg-slate-50/60 hover:bg-slate-100/60 border-slate-200 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    💬 Custom Message Only
+                  </span>
+                  {currentFlow.completion?.action === 'custom_message' && <CheckCircle size={14} className="text-blue-600" />}
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Send a personalized closing message or callback notice without any external link.
+                </p>
+              </div>
+
+              {/* Option 3: Digital Catalog */}
+              <div
+                onClick={() => {
+                  if (userRole === 'agent') return;
+                  const updated = [...flows];
+                  updated[activeFlowIndex].completion = {
+                    action: 'catalog'
+                  };
+                  setFlows(updated);
+                }}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+                  (!currentFlow.completion?.action || currentFlow.completion?.action === 'catalog')
+                    ? 'bg-blue-50/80 border-blue-500 text-blue-900 shadow-sm ring-1 ring-blue-500/30'
+                    : 'bg-slate-50/60 hover:bg-slate-100/60 border-slate-200 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    🏢 Digital Catalog
+                  </span>
+                  {(!currentFlow.completion?.action || currentFlow.completion?.action === 'catalog') && <CheckCircle size={14} className="text-blue-600" />}
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Deliver the standard properties & inventory catalog with interactive action buttons.
+                </p>
+              </div>
+            </div>
+
+            {/* Config Fields depending on selected action */}
+            {currentFlow.completion?.action === 'custom_link' && (
+              <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200 space-y-4 animate-in fade-in">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                      Header / Card Title
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 🎯 Live Webinar Access"
+                      value={currentFlow.completion?.title || ''}
+                      onChange={(e) => {
+                        const updated = [...flows];
+                        updated[activeFlowIndex].completion = {
+                          ...(updated[activeFlowIndex].completion || { action: 'custom_link' }),
+                          title: e.target.value
+                        };
+                        setFlows(updated);
+                      }}
+                      disabled={userRole === 'agent'}
+                      className="w-full bg-white text-xs font-semibold text-slate-800 py-2.5 px-3 rounded-xl border border-slate-200 focus:border-blue-400 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                      Button Label (Max 20 chars)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={20}
+                      placeholder="e.g. Register Now 🚀"
+                      value={currentFlow.completion?.button_text || ''}
+                      onChange={(e) => {
+                        const updated = [...flows];
+                        updated[activeFlowIndex].completion = {
+                          ...(updated[activeFlowIndex].completion || { action: 'custom_link' }),
+                          button_text: e.target.value
+                        };
+                        setFlows(updated);
+                      }}
+                      disabled={userRole === 'agent'}
+                      className="w-full bg-white text-xs font-semibold text-slate-800 py-2.5 px-3 rounded-xl border border-slate-200 focus:border-blue-400 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                    Destination URL (Webinar link, Calendly, Website, etc.) *
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://zoom.us/webinar/register/... or https://calendly.com/..."
+                    value={currentFlow.completion?.url || ''}
+                    onChange={(e) => {
+                      const updated = [...flows];
+                      updated[activeFlowIndex].completion = {
+                        ...(updated[activeFlowIndex].completion || { action: 'custom_link' }),
+                        url: e.target.value
+                      };
+                      setFlows(updated);
+                    }}
+                    disabled={userRole === 'agent'}
+                    className="w-full bg-white text-xs font-mono text-blue-700 py-2.5 px-3 rounded-xl border border-slate-200 focus:border-blue-400 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Message Text Body
+                    </label>
+                    <span className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded-full">
+                      Tip: Use {'{name}'} to insert lead's name
+                    </span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    placeholder="Thank you {name}! 🎉 Based on your answers, here is your direct link to proceed:"
+                    value={currentFlow.completion?.message || ''}
+                    onChange={(e) => {
+                      const updated = [...flows];
+                      updated[activeFlowIndex].completion = {
+                        ...(updated[activeFlowIndex].completion || { action: 'custom_link' }),
+                        message: e.target.value
+                      };
+                      setFlows(updated);
+                    }}
+                    disabled={userRole === 'agent'}
+                    className="w-full bg-white text-xs text-slate-800 p-3 rounded-xl border border-slate-200 focus:border-blue-400 outline-none resize-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {currentFlow.completion?.action === 'custom_message' && (
+              <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200 space-y-2 animate-in fade-in">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Closing Message Text *
+                  </label>
+                  <span className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded-full">
+                    Tip: Use {'{name}'} to insert lead's name
+                  </span>
+                </div>
+                <textarea
+                  rows={3}
+                  placeholder="Thank you {name}! 🎉 We have received your answers. Our senior advisor will call you within 15 minutes."
+                  value={currentFlow.completion?.message || ''}
+                  onChange={(e) => {
+                    const updated = [...flows];
+                    updated[activeFlowIndex].completion = {
+                      ...(updated[activeFlowIndex].completion || { action: 'custom_message' }),
+                      message: e.target.value
+                    };
+                    setFlows(updated);
+                  }}
+                  disabled={userRole === 'agent'}
+                  className="w-full bg-white text-xs text-slate-800 p-3 rounded-xl border border-slate-200 focus:border-blue-400 outline-none resize-none"
+                />
               </div>
             )}
           </div>

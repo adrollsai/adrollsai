@@ -23,6 +23,8 @@ export interface FlowRunnerParams {
   buttonReplyTitle?: string | null
   messageText?: string
   contextMessageId?: string | null
+  isFromAd?: boolean
+  campaignId?: string | null
 }
 
 export interface FlowRunnerResult {
@@ -47,8 +49,8 @@ function interpolateVariables(text: string, vars: Record<string, string>): strin
 
 /**
  * Checks whether an incoming message satisfies a flow trigger.
- * CRITICAL RULE: A button-click trigger MUST ONLY match when the message is a genuine
- * button or interactive reply, NOT when the user types plain text.
+ * Supports Omni-Channel triggers: Meta Ads / Click-to-WhatsApp, Inbound Keywords,
+ * Comments, DMs, CRM Stage triggers, and Broadcast Quick Replies.
  */
 function isTriggerMatched(
   trigger: any,
@@ -57,80 +59,114 @@ function isTriggerMatched(
     buttonReplyId?: string | null
     buttonReplyTitle?: string | null
     messageText?: string
+    isFromAd?: boolean
+    campaignId?: string | null
   }
 ): boolean {
   if (!trigger) return false
   const triggerType = (trigger.type || '').toLowerCase()
   const config = trigger.data || trigger.config || {}
+  const specificTriggerType = (config.triggerType || config.type || '').toLowerCase()
 
   const buttonText = (params.buttonReplyTitle || params.buttonReplyId || '').trim().toLowerCase()
   const rawText = (params.messageText || '').trim().toLowerCase()
 
-  // 1. Template Quick Reply Button Trigger / Starting Step Trigger (ManyChat)
+  // 1. Meta Ad / Click-to-WhatsApp Trigger
   if (
-    triggerType === 'triggernode' ||
-    triggerType === 'trigger_whatsapp_template_button' ||
-    triggerType === 'trigger_whatsapp_quick_reply' ||
-    config.trigger_on === 'button_click' ||
-    trigger.templateName ||
-    config.templateName
+    triggerType === 'trigger_meta_ad' ||
+    triggerType === 'meta_ad' ||
+    triggerType === 'trigger_whatsapp_ctwa' ||
+    (triggerType === 'triggernode' && (specificTriggerType === 'meta_ad' || specificTriggerType === 'click_to_whatsapp'))
   ) {
-    // MUST be a genuine button click
-    if (!params.isButtonClick) {
-      return false
+    if (config.campaignId && params.campaignId) {
+      return String(config.campaignId) === String(params.campaignId)
+    }
+    if (params.isFromAd) return true
+    return !params.isButtonClick || rawText.length > 0
+  }
+
+  // 2. WhatsApp Inbound / Keyword Trigger
+  if (
+    triggerType === 'trigger_whatsapp_inbound' ||
+    triggerType === 'whatsapp_inbound' ||
+    (triggerType === 'triggernode' && specificTriggerType === 'whatsapp_inbound')
+  ) {
+    const rawKeywords = config.keywords || config.keyword
+    let keywordsList: string[] = []
+    if (Array.isArray(rawKeywords)) {
+      keywordsList = rawKeywords
+    } else if (typeof rawKeywords === 'string' && rawKeywords.trim()) {
+      keywordsList = rawKeywords.split(',').map(s => s.trim()).filter(Boolean)
     }
 
-    const targetButton = (config.button_text || config.button_title || config.button_id || 'interested').trim().toLowerCase()
+    if (keywordsList.length > 0) {
+      return keywordsList.some(k => rawText.includes(k.toLowerCase()))
+    }
+    return true
+  }
 
-    // Match button title or button id
+  // 3. Instagram / Facebook Comment Trigger
+  if (
+    triggerType === 'trigger_ig_comment' ||
+    triggerType === 'trigger_fb_comment' ||
+    (triggerType === 'triggernode' && (specificTriggerType === 'ig_comment' || specificTriggerType === 'fb_comment'))
+  ) {
+    return true
+  }
+
+  // 4. Instagram / Messenger DM Trigger
+  if (
+    triggerType === 'trigger_ig_dm' ||
+    triggerType === 'trigger_fb_messenger' ||
+    (triggerType === 'triggernode' && (specificTriggerType === 'ig_dm' || specificTriggerType === 'fb_dm'))
+  ) {
+    return true
+  }
+
+  // 5. CRM Lead Arrival Trigger
+  if (
+    triggerType === 'trigger_crm_lead' ||
+    triggerType === 'crm_lead' ||
+    (triggerType === 'triggernode' && specificTriggerType === 'crm_lead')
+  ) {
+    return true
+  }
+
+  // 6. Template Quick Reply Button / Broadcast Trigger
+  if (
+    triggerType === 'trigger_whatsapp_template_button' ||
+    triggerType === 'trigger_whatsapp_quick_reply' ||
+    (triggerType === 'triggernode' && (specificTriggerType === 'whatsapp_broadcast' || config.templateName || trigger.templateName)) ||
+    config.trigger_on === 'button_click'
+  ) {
+    if (!params.isButtonClick) return false
+
+    const targetButton = (config.button_text || config.button_title || config.button_id || 'interested').trim().toLowerCase()
     if (buttonText === targetButton || buttonText.includes(targetButton) || targetButton.includes(buttonText)) {
       return true
     }
-
-    // Also check if trigger has a list of matching buttons
     if (Array.isArray(config.buttons)) {
       return config.buttons.some((b: any) => {
         const t = (typeof b === 'string' ? b : (b.title || b.id || '')).trim().toLowerCase()
         return buttonText.includes(t) || t.includes(buttonText)
       })
     }
-
-    // Default template broadcast click: if prospect clicked 'Interested'
-    if (buttonText.includes('interest')) {
-      return true
-    }
-
+    if (buttonText.includes('interest')) return true
     return false
   }
 
-  // 2. Keyword Trigger (Plain text match)
-  if (triggerType === 'trigger_whatsapp_keyword' || config.trigger_on === 'keyword') {
-    // Don't trigger keyword flows on button clicks if specifically configured for keywords
-    const keywords: string[] = Array.isArray(config.keywords) 
-      ? config.keywords 
-      : (config.keyword ? [config.keyword] : [])
-
-    if (keywords.length === 0) return false
-
-    return keywords.some(k => {
-      const cleanK = k.trim().toLowerCase()
-      return cleanK && rawText.includes(cleanK)
-    })
-  }
-
-  // 3. General Inbound WhatsApp Trigger
-  if (triggerType === 'trigger_whatsapp_inbound') {
-    // If configured to require button click
-    if (config.button_text) {
-      if (!params.isButtonClick) return false
-      const target = config.button_text.trim().toLowerCase()
-      return buttonText.includes(target) || target.includes(buttonText)
+  // Fallback for generic triggerNode: matches if buttons match or on inbound
+  if (triggerType === 'triggernode') {
+    if (Array.isArray(config.buttons) && config.buttons.length > 0) {
+      if (params.isButtonClick) {
+        return config.buttons.some((b: any) => {
+          const t = (typeof b === 'string' ? b : (b.title || b.id || '')).trim().toLowerCase()
+          return buttonText.includes(t) || t.includes(buttonText)
+        })
+      }
+      return false
     }
-
-    // If configured with keywords
-    if (Array.isArray(config.keywords) && config.keywords.length > 0) {
-      return config.keywords.some((k: string) => rawText.includes(k.trim().toLowerCase()))
-    }
+    return true
   }
 
   return false
@@ -215,7 +251,9 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
         isButtonClick,
         buttonReplyId,
         buttonReplyTitle,
-        messageText
+        messageText,
+        isFromAd: params.isFromAd,
+        campaignId: params.campaignId
       })
 
       if (matches) {
@@ -275,6 +313,13 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
     })
 
     if (!startingEdge) {
+      // Find edge leaving the trigger node
+      const triggerNode = allNodes.find((n: any) => n.type === 'triggerNode' || n.type?.startsWith('trigger_'))
+      if (triggerNode) {
+        startingEdge = edges.find((e: any) => e.source === triggerNode.id)
+      }
+    }
+    if (!startingEdge) {
       startingEdge = edges[0]
     }
 
@@ -288,8 +333,22 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
         if (targetNode) {
           nodesToExecute.push(targetNode)
         }
-        const nextEdge = edges.find((e: any) => e.source === currentTargetId)
-        currentTargetId = nextEdge ? nextEdge.target : null
+        // Support branching: check if this node connects to multiple next nodes
+        const nextEdges = edges.filter((e: any) => e.source === currentTargetId)
+        if (nextEdges.length > 1) {
+          for (const edge of nextEdges) {
+            if (!visited.has(edge.target)) {
+              const bNode = allNodes.find((n: any) => n.id === edge.target)
+              if (bNode) {
+                visited.add(edge.target)
+                nodesToExecute.push(bNode)
+              }
+            }
+          }
+          currentTargetId = null
+        } else {
+          currentTargetId = nextEdges[0] ? nextEdges[0].target : null
+        }
       }
     }
   }
@@ -660,37 +719,120 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
         actionsExecuted.push('notify_admin')
       }
 
-      // 3. ACTION: Update CRM Stage
-      if (nodeType === 'action_crm_stage') {
+      // 3. ACTION: Update CRM Stage (crmStageNode or action_crm_stage)
+      if (nodeType === 'crmStageNode' || nodeType === 'action_crm_stage') {
         const targetStage = cfg.stage || cfg.pipeline_stage || 'Interested'
         if (latestLead?.id) {
+          const leadUpdates: Record<string, any> = { pipeline_stage: targetStage }
+          if (cfg.assignAgent) {
+            leadUpdates.assigned_to_name = cfg.assignAgent
+          }
+          if (cfg.note) {
+            const existingCf = latestLead.custom_fields || {}
+            leadUpdates.custom_fields = {
+              ...existingCf,
+              flow_note: cfg.note
+            }
+          }
           await supabaseAdmin
             .from('leads')
-            .update({ pipeline_stage: targetStage })
+            .update(leadUpdates)
             .eq('id', latestLead.id)
 
           actionsExecuted.push(`update_stage:${targetStage}`)
         }
       }
 
-      // 4. ACTION: Add CRM Tag
-      if (nodeType === 'action_add_tag') {
-        const tagToAdd = cfg.tag || 'Interested Lead'
-        if (latestLead?.id) {
-          const currentTags = Array.isArray(latestLead.tags) ? latestLead.tags : []
-          if (!currentTags.includes(tagToAdd)) {
-            const updatedTags = [...currentTags, tagToAdd]
-            await supabaseAdmin
-              .from('leads')
-              .update({ tags: updatedTags })
-              .eq('id', latestLead.id)
+      // 4. ACTION: Notify Admin / Multi-Channel Alert (notifyNode or action_notify_team)
+      if (nodeType === 'notifyNode' || nodeType === 'action_notify_team' || nodeType === 'action_notify_admin') {
+        const rawTitle = cfg.title || '🔥 Lead Engaged with Automation Flow!'
+        const rawBody = cfg.message || cfg.body || 'Prospect {{lead_name}} ({{lead_phone}}) engaged with automation for {{business_name}}!'
+        const title = interpolateVariables(rawTitle, variableMap)
+        const body = interpolateVariables(rawBody, variableMap)
+        const targetLeadId = latestLead?.id
+        const targetUrl = targetLeadId ? `/dashboard/crm?leadId=${targetLeadId}` : '/dashboard/crm'
 
-            actionsExecuted.push(`add_tag:${tagToAdd}`)
+        await sendAdminMultiChannelNotification({
+          ownerUserId,
+          title,
+          body,
+          url: targetUrl,
+          type: 'lead_interest',
+          leadPhone,
+          leadName,
+          leadId: targetLeadId
+        })
+
+        actionsExecuted.push('notify_team')
+      }
+
+      // 5. ACTION: Custom API / Webhook Integration (customApiNode or action_webhook)
+      if (nodeType === 'customApiNode' || nodeType === 'action_webhook') {
+        const targetUrl = cfg.url
+        const method = (cfg.method || 'POST').toUpperCase()
+        if (targetUrl) {
+          try {
+            const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+            if (Array.isArray(cfg.headers)) {
+              cfg.headers.forEach((h: any) => {
+                if (h.key && h.value) {
+                  reqHeaders[h.key] = interpolateVariables(h.value, variableMap)
+                }
+              })
+            }
+            const reqBody = cfg.body 
+              ? interpolateVariables(cfg.body, variableMap) 
+              : JSON.stringify({
+                  lead_id: latestLead?.id,
+                  name: leadName,
+                  phone: leadPhone,
+                  business_name: ownerBusinessName,
+                  source: 'whatsapp_automation',
+                  timestamp: new Date().toISOString()
+                })
+
+            await fetch(targetUrl, {
+              method,
+              headers: reqHeaders,
+              body: method !== 'GET' ? reqBody : undefined
+            })
+            actionsExecuted.push(`webhook:${method}:${targetUrl.slice(0, 30)}`)
+          } catch (apiErr) {
+            console.error('[FlowRunner] Error dispatching custom API webhook:', apiErr)
           }
         }
       }
 
-      // 5. ACTION: Update Custom Field
+      // 6. ACTION: AI Voice Call (aiCallNode or action_ai_call)
+      if (nodeType === 'aiCallNode' || nodeType === 'action_ai_call') {
+        if (latestLead?.id) {
+          try {
+            const { triggerOutboundCall } = await import('@/utils/voice-helper')
+            await triggerOutboundCall(supabaseAdmin, latestLead.id, ownerUserId, true)
+            actionsExecuted.push('trigger_ai_call')
+          } catch (callErr) {
+            console.error('[FlowRunner] Error triggering AI voice call:', callErr)
+          }
+        }
+      }
+
+      // 7. ACTION: Add / Manage CRM Tags (tagNode or action_add_tag)
+      if (nodeType === 'tagNode' || nodeType === 'action_add_tag') {
+        const rawTags = cfg.tags || (cfg.tag ? [cfg.tag] : ['Interested'])
+        const tagsToAdd = Array.isArray(rawTags) ? rawTags : [String(rawTags)]
+        if (latestLead?.id && tagsToAdd.length > 0) {
+          const currentTags = Array.isArray(latestLead.tags) ? latestLead.tags : []
+          const merged = Array.from(new Set([...currentTags, ...tagsToAdd]))
+          await supabaseAdmin
+            .from('leads')
+            .update({ tags: merged })
+            .eq('id', latestLead.id)
+
+          actionsExecuted.push(`add_tags:${tagsToAdd.join(',')}`)
+        }
+      }
+
+      // 8. ACTION: Update Custom Field
       if (nodeType === 'action_update_field') {
         const fieldName = cfg.field || cfg.key || 'interested_clicked'
         const fieldValue = cfg.value !== undefined ? cfg.value : true
@@ -712,7 +854,7 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
       }
 
       // Optional delay between nodes if configured
-      if (nodeType === 'action_delay') {
+      if (nodeType === 'action_delay' || nodeType === 'delayNode') {
         const delaySeconds = Math.min(cfg.seconds || (cfg.minutes ? cfg.minutes * 60 : 1), 10)
         await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000))
         actionsExecuted.push(`delay:${delaySeconds}s`)

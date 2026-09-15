@@ -1812,12 +1812,90 @@ export default function FlowsPage() {
   const handleCreateBlankFlow = () => {
     const blank: AutomationFlow = {
       name: 'New Custom Automation Flow',
-      description: 'Custom multi-step automation workflow',
-      isActive: false,
+      description: 'Custom multi-step automation workflow across Meta Ads, WhatsApp, CRM, and Voice',
+      isActive: true,
       trigger: {
         type: 'meta_ad',
         label: 'Meta Ad Campaign Lead'
       },
+      xyNodes: [
+        {
+          id: 'node_trigger',
+          type: 'triggerNode',
+          position: { x: 50, y: 150 },
+          data: {
+            title: 'Meta Ad Lead / Click-to-WhatsApp',
+            triggerType: 'meta_ad',
+            campaignFilter: 'all',
+            description: 'Fires instantly when a prospect clicks your Meta WhatsApp Ad and initiates chat'
+          }
+        },
+        {
+          id: 'node_reply',
+          type: 'whatsappMessageNode',
+          position: { x: 440, y: 120 },
+          data: {
+            title: 'Instant WhatsApp Welcome & Options',
+            message:
+              'Hi {{lead_name}}! 🌟 Thank you for reaching out to {{business_name}}.\n\nHere is our verified project catalog, floor plans, and pricing sheet:\n\n👉 {{inventory_url}}',
+            buttons: [
+              { id: 'btn_view_inv', title: 'View Catalog 🏢', url: '{{inventory_url}}' },
+              { id: 'btn_expert', title: 'Talk to Expert 📞' }
+            ]
+          }
+        },
+        {
+          id: 'node_crm_stage',
+          type: 'crmStageNode',
+          position: { x: 840, y: 60 },
+          data: {
+            title: 'Move Lead CRM Stage',
+            stage: 'Interested',
+            assignAgent: 'Harman Bajwa',
+            note: 'Prospect confirmed interest via WhatsApp automation flow'
+          }
+        },
+        {
+          id: 'node_notify',
+          type: 'notifyNode',
+          position: { x: 840, y: 260 },
+          data: {
+            title: 'Instant Admin Notification',
+            channel: 'whatsapp_push',
+            recipient: '+919914488337',
+            template: '🚨 New High-Intent Lead: {{lead_name}} ({{lead_phone}}) from {{campaign_name}}!'
+          }
+        }
+      ],
+      xyEdges: [
+        {
+          id: 'e_trigger_reply',
+          source: 'node_trigger',
+          sourceHandle: 'output',
+          target: 'node_reply',
+          targetHandle: 'input',
+          animated: true,
+          style: { stroke: '#4f46e5', strokeWidth: 2.5 }
+        },
+        {
+          id: 'e_reply_crm',
+          source: 'node_reply',
+          sourceHandle: 'btn_btn_view_inv',
+          target: 'node_crm_stage',
+          targetHandle: 'input',
+          animated: true,
+          style: { stroke: '#10b981', strokeWidth: 2 }
+        },
+        {
+          id: 'e_reply_notify',
+          source: 'node_reply',
+          sourceHandle: 'btn_btn_expert',
+          target: 'node_notify',
+          targetHandle: 'input',
+          animated: true,
+          style: { stroke: '#f59e0b', strokeWidth: 2 }
+        }
+      ],
       nodes: [
         {
           id: `step_${Date.now()}`,

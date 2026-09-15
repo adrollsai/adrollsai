@@ -412,6 +412,7 @@ export default function AdsPage() {
     linkUrl: 'https://adrolls.in', 
     optimizeForConversions: false,
     customInstructions: '',
+    campaignName: '',
   })
 
   // Mandatory Product Selection for Campaign Launch
@@ -1905,6 +1906,9 @@ export default function AdsPage() {
       }
 
       const formPayload = new FormData();
+      if (adForm.campaignName && adForm.campaignName.trim()) {
+          formPayload.append('campaign_name', adForm.campaignName.trim());
+      }
       if (adForm.customInstructions) {
           formPayload.append('customInstructions', adForm.customInstructions);
       }
@@ -5392,6 +5396,24 @@ export default function AdsPage() {
                 </div>
                 <input type="file" ref={fileInputRef} onChange={handleLocalFiles} accept="image/*,video/*" className="hidden" multiple />
                 <button onClick={() => fileInputRef.current?.click()} className="w-full mb-4 py-3.5 border-2 border-dashed border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50 rounded-2xl text-sm font-bold text-slate-500 hover:text-blue-600 flex items-center justify-center gap-2 transition-all"><Upload size={18} /> Upload Custom Files</button>
+                <div className="mb-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                        <Sparkles size={12} className="text-blue-600" /> Campaign Name (Optional)
+                      </label>
+                      <span className="text-[9px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">AI Auto-Generated if empty</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-2 font-medium leading-relaxed">
+                      Give your campaign a custom name, or leave blank and AI will automatically generate a unique, descriptive campaign name based on your offer and angle.
+                    </p>
+                    <input 
+                        type="text"
+                        value={adForm.campaignName || ''}
+                        onChange={(e) => setAdForm(prev => ({...prev, campaignName: e.target.value}))}
+                        placeholder="E.g. [Webinar] Real Estate AI Masterclass or leave blank..."
+                        className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-medium text-slate-700"
+                    />
+                </div>
                 <div className="mb-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
