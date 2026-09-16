@@ -47,7 +47,7 @@ export async function POST(request: Request) {
             }
         }
         
-        let { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, custom_domain, logo_url, agency_id, parent_id').eq('id', targetUserId).single();
+        let { data: profile } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, custom_domain, logo_url, agency_id, parent_id, whatsapp_phone_number, contact_number').eq('id', targetUserId).single();
         
         let token = profile?.facebook_token;
         if (!token) {
@@ -314,7 +314,7 @@ export async function POST(request: Request) {
 
             const isWhatsApp = adSet.destination_type === 'WHATSAPP';
             const ctaType = isWhatsApp ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
-            let waPhone = adSet.promoted_object?.whatsapp_phone_number || profile.whatsapp_phone_number || profile.contact_number || '';
+            let waPhone = adSet.promoted_object?.whatsapp_phone_number || (profile as any)?.whatsapp_phone_number || (profile as any)?.contact_number || '';
             let cleanWaPhone = waPhone.replace(/[^0-9]/g, '');
             if (cleanWaPhone && cleanWaPhone.length === 10) cleanWaPhone = '91' + cleanWaPhone;
             const waLink = cleanWaPhone ? `https://api.whatsapp.com/send?phone=${cleanWaPhone}` : `https://api.whatsapp.com/send`;
