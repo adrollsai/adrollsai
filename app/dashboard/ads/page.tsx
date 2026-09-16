@@ -178,6 +178,8 @@ export default function AdsPage() {
     generating: false
   })
   const [statsDatePreset, setStatsDatePreset] = useState<string>('maximum')
+  const [actionExecuting, setActionExecuting] = useState<string | null>(null)
+  const [executedActions, setExecutedActions] = useState<Record<string, boolean>>({})
   const [statsSince, setStatsSince] = useState<string>('')
   const [statsUntil, setStatsUntil] = useState<string>('')
   const [statsTab, setStatsTab] = useState<'overview' | 'daily' | 'creatives'>('overview')
@@ -1047,6 +1049,34 @@ export default function AdsPage() {
       } catch (e: any) {
           toast.error(`Analysis failed: ${e.message}`)
           setAnalysisModal(prev => ({ ...prev, generating: false }))
+      }
+  }
+
+  const handleExecuteAction = async (rec: any) => {
+      if (!rec.target_ad_id) return
+      const actionKey = rec.id || rec.target_ad_id
+      setActionExecuting(actionKey)
+      try {
+          const urlParamsString = new URLSearchParams(window.location.search)
+          const impersonateId = urlParamsString.get('impersonate')
+
+          if (rec.action_type === 'PAUSE_AD') {
+              const res = await fetch(`/api/meta-ads/update-status${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ campaignId: rec.target_ad_id, newStatus: 'PAUSED' })
+              })
+              const data = await res.json()
+              if (data.error) throw new Error(data.error)
+
+              toast.success(`Ad "${rec.target_ad_name || 'variation'}" paused successfully!`)
+              setExecutedActions(prev => ({ ...prev, [actionKey]: true }))
+              fetchAdsData(false)
+          }
+      } catch (e: any) {
+          toast.error(`Action failed: ${e.message}`)
+      } finally {
+          setActionExecuting(null)
       }
   }
 
@@ -5211,56 +5241,222 @@ export default function AdsPage() {
                               ) : analysisModal.selectedAnalysis ? (
                                   <div className="space-y-6">
                                       {/* Analysis Metric Summary Card */}
-                                      <div className="bg-slate-50 border border-slate-200/60 p-5 rounded-[2rem] grid grid-cols-2 md:grid-cols-4 gap-4">
+                                      <div className="bg-slate-50 border border-slate-200/60 p-5 rounded-[2rem] grid grid-cols-2 md:grid-cols-5 gap-4">
                                           <div className="text-center md:text-left">
-                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Campaign Spend</span>
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Spend</span>
                                               <p className="text-lg font-black text-slate-800 mt-1">{currency === 'INR' ? '₹' : '$'}{(analysisModal.selectedAnalysis.metrics?.spend || 0).toFixed(2)}</p>
                                           </div>
                                           <div className="text-center md:text-left border-l border-slate-200/60 pl-2">
-                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">CTR (Click-Through)</span>
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">CTR (Overall)</span>
                                               <p className="text-lg font-black text-slate-800 mt-1">{(analysisModal.selectedAnalysis.metrics?.ctr || 0).toFixed(2)}%</p>
                                           </div>
                                           <div className="text-center md:text-left border-l border-slate-200/60 pl-2">
-                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Leads (Meta / CRM)</span>
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Avg CPC</span>
+                                              <p className="text-lg font-black text-slate-800 mt-1">{currency === 'INR' ? '₹' : '$'}{(analysisModal.selectedAnalysis.metrics?.cpc || 0).toFixed(2)}</p>
+                                          </div>
+                                          <div className="text-center md:text-left border-l border-slate-200/60 pl-2">
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                                                  {analysisModal.selectedAnalysis.metrics?.isWhatsApp ? 'WhatsApp Starts' : 'Leads'}
+                                              </span>
                                               <p className="text-lg font-black text-slate-800 mt-1">
-                                                  {analysisModal.selectedAnalysis.metrics?.leads || 0} / {analysisModal.selectedAnalysis.metrics?.crmLeads || 0}
+                                                  {analysisModal.selectedAnalysis.metrics?.leads || 0}
+                                                  {analysisModal.selectedAnalysis.metrics?.crmLeads ? (
+                                                      <span className="text-xs font-semibold text-slate-400 ml-1">({analysisModal.selectedAnalysis.metrics.crmLeads} in CRM)</span>
+                                                  ) : null}
                                               </p>
                                           </div>
                                           <div className="text-center md:text-left border-l border-slate-200/60 pl-2">
-                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Cost Per Lead (CPL)</span>
+                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Cost / Result</span>
                                               <p className="text-lg font-black text-slate-800 mt-1">{currency === 'INR' ? '₹' : '$'}{(analysisModal.selectedAnalysis.metrics?.cpl || 0).toFixed(2)}</p>
                                           </div>
                                       </div>
 
-                                      {/* Detailed Analysis Text */}
+                                      {/* Executive Verdict & Overall Health */}
                                       <div className="space-y-2">
-                                          <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest ml-1">Performance Evaluation</h4>
-                                          <div className="bg-white border border-slate-200/60 p-6 rounded-[2rem] text-sm text-slate-700 leading-relaxed font-medium">
+                                          <div className="flex items-center justify-between ml-1">
+                                              <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest">Performance Verdict</h4>
+                                              {analysisModal.selectedAnalysis.metrics?.overallHealth && (
+                                                  <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${
+                                                      analysisModal.selectedAnalysis.metrics.overallHealth === 'healthy'
+                                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                          : analysisModal.selectedAnalysis.metrics.overallHealth === 'critical'
+                                                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                  }`}>
+                                                      {analysisModal.selectedAnalysis.metrics.overallHealth === 'healthy' ? '🟢 Healthy Performance' : analysisModal.selectedAnalysis.metrics.overallHealth === 'critical' ? '🔴 Critical Budget Drain' : '🟡 Action Recommended'}
+                                                  </span>
+                                              )}
+                                          </div>
+                                          <div className="bg-white border border-slate-200/60 p-5 rounded-[2rem] text-sm text-slate-700 leading-relaxed font-medium shadow-sm">
                                               {analysisModal.selectedAnalysis.analysis_text}
                                           </div>
                                       </div>
 
-                                      {/* Practical Actions */}
-                                      <div className="space-y-3">
-                                          <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest ml-1">AI Actionable Steps & Recommendations</h4>
+                                      {/* Creative Breakdown Cards */}
+                                      {Array.isArray(analysisModal.selectedAnalysis.metrics?.creativeBreakdown) && analysisModal.selectedAnalysis.metrics.creativeBreakdown.length > 0 && (
                                           <div className="space-y-3">
-                                              {Array.isArray(analysisModal.selectedAnalysis.recommendations) && analysisModal.selectedAnalysis.recommendations.length > 0 ? (
-                                                  analysisModal.selectedAnalysis.recommendations.map((rec: any, idx: number) => (
-                                                      <div key={idx} className={`p-5 rounded-[1.75rem] border flex items-start gap-4 transition-colors ${rec.priority === 'high' ? 'bg-rose-50/50 border-rose-100 text-rose-950' : rec.priority === 'medium' ? 'bg-amber-50/50 border-amber-100 text-amber-950' : 'bg-slate-50 border-slate-200 text-slate-800'}`}>
-                                                          <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${rec.priority === 'high' ? 'bg-rose-100 text-rose-600' : rec.priority === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-slate-200 text-slate-500'}`}>
-                                                              <CheckCircle size={16} />
-                                                          </div>
-                                                          <div>
-                                                              <div className="flex items-center gap-2">
-                                                                  <h5 className="font-bold text-sm leading-snug">{rec.title}</h5>
-                                                                  <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${rec.priority === 'high' ? 'bg-rose-100 text-rose-700' : rec.priority === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
-                                                                      {rec.priority} Priority
+                                              <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest ml-1">Creative-by-Creative Analysis</h4>
+                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                  {analysisModal.selectedAnalysis.metrics.creativeBreakdown.map((cr: any, cIdx: number) => {
+                                                      const isWinner = cr.badge === 'winner';
+                                                      const isDrain = cr.badge === 'drain';
+                                                      const isTesting = cr.badge === 'testing';
+                                                      return (
+                                                          <div key={cIdx} className={`p-4 rounded-2xl border transition-all ${
+                                                              isWinner 
+                                                                  ? 'bg-emerald-50/40 border-emerald-200 shadow-sm shadow-emerald-500/5' 
+                                                                  : isDrain 
+                                                                  ? 'bg-rose-50/40 border-rose-200' 
+                                                                  : isTesting
+                                                                  ? 'bg-amber-50/30 border-amber-200'
+                                                                  : 'bg-slate-50 border-slate-200'
+                                                          }`}>
+                                                              <div className="flex items-start justify-between gap-2 mb-2">
+                                                                  <h5 className="font-bold text-xs text-slate-800 line-clamp-1 flex-1" title={cr.name}>
+                                                                      {cr.name}
+                                                                  </h5>
+                                                                  <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border shrink-0 ${
+                                                                      isWinner 
+                                                                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                                                                          : isDrain 
+                                                                          ? 'bg-rose-100 text-rose-800 border-rose-300' 
+                                                                          : isTesting
+                                                                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                                                          : 'bg-slate-200 text-slate-700 border-slate-300'
+                                                                  }`}>
+                                                                      {cr.badge_label || (isWinner ? '🔥 Winner' : isDrain ? '⚠️ Budget Drain' : isTesting ? '⏳ Low Spend' : '📊 Steady')}
                                                                   </span>
                                                               </div>
-                                                              <p className="text-xs mt-1.5 font-medium leading-relaxed opacity-90">{rec.description}</p>
+                                                              <p className="text-[11px] text-slate-600 leading-snug mb-3">{cr.verdict}</p>
+                                                              <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-slate-200/60 text-center">
+                                                                  <div>
+                                                                      <span className="text-[8px] text-slate-400 font-bold uppercase block">Spend</span>
+                                                                      <span className="text-xs font-black text-slate-700">{currency === 'INR' ? '₹' : '$'}{(cr.spend || 0).toFixed(0)}</span>
+                                                                  </div>
+                                                                  <div>
+                                                                      <span className="text-[8px] text-slate-400 font-bold uppercase block">CTR</span>
+                                                                      <span className={`text-xs font-black ${(cr.ctr || 0) >= 2 ? 'text-emerald-600' : (cr.ctr || 0) < 1 ? 'text-rose-600' : 'text-slate-700'}`}>
+                                                                          {(cr.ctr || 0).toFixed(1)}%
+                                                                      </span>
+                                                                  </div>
+                                                                  <div>
+                                                                      <span className="text-[8px] text-slate-400 font-bold uppercase block">CPC</span>
+                                                                      <span className={`text-xs font-black ${(cr.cpc || 0) > 12 ? 'text-rose-600' : (cr.cpc || 0) < 6 ? 'text-emerald-600' : 'text-slate-700'}`}>
+                                                                          {currency === 'INR' ? '₹' : '$'}{(cr.cpc || 0).toFixed(1)}
+                                                                      </span>
+                                                                  </div>
+                                                                  <div>
+                                                                      <span className="text-[8px] text-slate-400 font-bold uppercase block">Leads</span>
+                                                                      <span className="text-xs font-black text-slate-700">{cr.leads || 0}</span>
+                                                                  </div>
+                                                              </div>
                                                           </div>
-                                                      </div>
-                                                  ))
+                                                      );
+                                                  })}
+                                              </div>
+                                          </div>
+                                      )}
+
+                                      {/* Action Checklist with 1-Click Execution */}
+                                      <div className="space-y-3">
+                                          <div className="flex items-center justify-between ml-1">
+                                              <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest">Recommended Actions (Prioritized)</h4>
+                                              <span className="text-[10px] text-slate-400 font-semibold">Ordered by financial impact</span>
+                                          </div>
+                                          <div className="space-y-3">
+                                              {Array.isArray(analysisModal.selectedAnalysis.recommendations) && analysisModal.selectedAnalysis.recommendations.length > 0 ? (
+                                                  analysisModal.selectedAnalysis.recommendations.map((rec: any, idx: number) => {
+                                                      const isUrgent = rec.priority === 'urgent';
+                                                      const isHigh = rec.priority === 'high';
+                                                      const isPauseAd = rec.action_type === 'PAUSE_AD' && rec.target_ad_id;
+                                                      const actionKey = rec.id || rec.target_ad_id;
+                                                      const isExecuting = actionExecuting === actionKey;
+                                                      const isDone = executedActions[actionKey];
+
+                                                      return (
+                                                          <div key={idx} className={`p-5 rounded-[1.75rem] border transition-all ${
+                                                              isUrgent 
+                                                                  ? 'bg-rose-50/60 border-rose-200 text-rose-950 shadow-sm shadow-rose-500/5' 
+                                                                  : isHigh 
+                                                                  ? 'bg-amber-50/50 border-amber-200 text-amber-950' 
+                                                                  : 'bg-slate-50 border-slate-200 text-slate-800'
+                                                          }`}>
+                                                              <div className="flex items-start gap-3">
+                                                                  <div className={`p-2.5 rounded-2xl shrink-0 mt-0.5 ${
+                                                                      isUrgent 
+                                                                          ? 'bg-rose-100 text-rose-600' 
+                                                                          : isHigh 
+                                                                          ? 'bg-amber-100 text-amber-600' 
+                                                                          : 'bg-indigo-100 text-indigo-600'
+                                                                  }`}>
+                                                                      {isUrgent ? <AlertTriangle size={18} /> : <CheckCircle size={18} />}
+                                                                  </div>
+                                                                  <div className="flex-1 min-w-0">
+                                                                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                                                                          <h5 className="font-bold text-sm leading-snug">{rec.title}</h5>
+                                                                          <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${
+                                                                              isUrgent 
+                                                                                  ? 'bg-rose-100 text-rose-700 border-rose-300' 
+                                                                                  : isHigh 
+                                                                                  ? 'bg-amber-100 text-amber-700 border-amber-300' 
+                                                                                  : 'bg-slate-200 text-slate-600 border-slate-300'
+                                                                          }`}>
+                                                                              {rec.priority} Priority
+                                                                          </span>
+                                                                      </div>
+                                                                      
+                                                                      {rec.reason && (
+                                                                          <p className="text-xs font-semibold text-slate-700 mt-1 leading-relaxed">
+                                                                              💡 <span className="font-normal opacity-90">{rec.reason}</span>
+                                                                          </p>
+                                                                      )}
+
+                                                                      {rec.instruction && (
+                                                                          <p className="text-xs text-slate-600 mt-1.5 leading-relaxed bg-white/70 p-2.5 rounded-xl border border-slate-200/50">
+                                                                              👉 <strong className="text-slate-800 font-bold">Action:</strong> {rec.instruction}
+                                                                          </p>
+                                                                      )}
+
+                                                                      {rec.expected_impact && (
+                                                                          <p className="text-[11px] text-emerald-700 font-bold mt-2 flex items-center gap-1">
+                                                                              💰 Impact: {rec.expected_impact}
+                                                                          </p>
+                                                                      )}
+
+                                                                      {/* 1-Click Execution Button for Pause Ad */}
+                                                                      {isPauseAd && (
+                                                                          <div className="mt-3.5 pt-3 border-t border-rose-200/60 flex items-center justify-between gap-3">
+                                                                              <span className="text-[11px] text-slate-500 font-medium">Quick 1-click action:</span>
+                                                                              <button
+                                                                                  onClick={() => handleExecuteAction(rec)}
+                                                                                  disabled={isExecuting || isDone}
+                                                                                  className={`py-2 px-4 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm ${
+                                                                                      isDone
+                                                                                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 cursor-default'
+                                                                                          : 'bg-rose-600 hover:bg-rose-700 text-white active:scale-95 shadow-rose-600/20'
+                                                                                  }`}
+                                                                              >
+                                                                                  {isExecuting ? (
+                                                                                      <>
+                                                                                          <Loader2 size={13} className="animate-spin" /> Pausing on Meta...
+                                                                                      </>
+                                                                                  ) : isDone ? (
+                                                                                      <>
+                                                                                          <Check size={13} /> Ad Paused Successfully
+                                                                                      </>
+                                                                                  ) : (
+                                                                                      <>
+                                                                                          <PauseCircle size={14} /> Pause This Ad Now
+                                                                                      </>
+                                                                                  )}
+                                                                              </button>
+                                                                          </div>
+                                                                      )}
+                                                                  </div>
+                                                              </div>
+                                                          </div>
+                                                      );
+                                                  })
                                               ) : (
                                                   <div className="text-center py-6 text-xs text-slate-400 bg-slate-50 border border-slate-200 border-dashed rounded-2xl">
                                                       No specific recommendations found.
