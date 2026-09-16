@@ -2605,7 +2605,7 @@ CRITICAL CONVERSATIONAL RULES:
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution, voice_vobiz_number, voice_twilio_number, voice_twilio_sid')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution, voice_twilio_number, voice_twilio_sid')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -2631,7 +2631,7 @@ CRITICAL CONVERSATIONAL RULES:
                                             ownerContactNumber = selectedProfile.contact_number || selectedProfile.whatsapp_phone_number || '';
                                             ownerEnableDistribution = !!selectedProfile.enable_distribution;
                                             const sBi = typeof selectedProfile.business_info === 'string' ? JSON.parse(selectedProfile.business_info || '{}') : (selectedProfile.business_info || {});
-                                            ownerHasVoiceNumber = !!(selectedProfile.voice_vobiz_number || sBi.claimed_vobiz_number || sBi.voice_vobiz_number || (selectedProfile.voice_twilio_number && selectedProfile.voice_twilio_sid));
+                                            ownerHasVoiceNumber = !!(sBi.claimed_vobiz_number || sBi.voice_vobiz_number || (selectedProfile.voice_twilio_number && selectedProfile.voice_twilio_sid));
                                             console.log(`[Flow] Owner resolved from wabaPhoneId: ${selectedProfile.business_name} (${ownerUserId})`);
                                         }
                                     }
@@ -2664,7 +2664,7 @@ CRITICAL CONVERSATIONAL RULES:
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role, business_name, address, business_info, contact_number, whatsapp_phone_number, enable_distribution, voice_vobiz_number, voice_twilio_number, voice_twilio_sid')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role, business_name, address, business_info, contact_number, whatsapp_phone_number, enable_distribution, voice_twilio_number, voice_twilio_sid')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
@@ -2684,7 +2684,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                 ownerContactNumber = ownerProfile.contact_number || ownerProfile.whatsapp_phone_number || ownerContactNumber || '';
                                                 ownerEnableDistribution = !!ownerProfile.enable_distribution;
                                                 const oBi = typeof ownerProfile.business_info === 'string' ? JSON.parse(ownerProfile.business_info || '{}') : (ownerProfile.business_info || {});
-                                                ownerHasVoiceNumber = !!(ownerProfile.voice_vobiz_number || oBi.claimed_vobiz_number || oBi.voice_vobiz_number || (ownerProfile.voice_twilio_number && ownerProfile.voice_twilio_sid));
+                                                ownerHasVoiceNumber = !!(oBi.claimed_vobiz_number || oBi.voice_vobiz_number || (ownerProfile.voice_twilio_number && ownerProfile.voice_twilio_sid));
                                             }
                                             console.log(`[Flow] Owner resolved from lead match: ${selectedLead.name} -> user ${ownerUserId}`);
                                         }
@@ -5337,7 +5337,7 @@ RULES:
 
           // Trigger automated Voice Dialing ONLY if auto_call_new_leads is enabled AND user has a connected voice number
           const biProfile = typeof profile?.business_info === 'string' ? JSON.parse(profile.business_info || '{}') : (profile?.business_info || {});
-          const hasConnectedVoice = !!(profile?.voice_vobiz_number || biProfile?.claimed_vobiz_number || biProfile?.voice_vobiz_number || (profile?.voice_twilio_number && profile?.voice_twilio_sid));
+          const hasConnectedVoice = !!(biProfile?.claimed_vobiz_number || biProfile?.voice_vobiz_number || (profile?.voice_twilio_number && profile?.voice_twilio_sid));
           if (savedLead && phone && profile.auto_call_new_leads && hasConnectedVoice) {
               triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true).catch(err => {
                   console.error('[AUTO CALL] Auto voice call trigger failed:', err);
