@@ -179,10 +179,14 @@ export async function POST(request: Request) {
         access_token: token,
       };
 
+      const isWhatsApp = fields.creative?.ctaType === 'WHATSAPP_MESSAGE';
+      const targetLink = fields.creative?.linkUrl || (ctaValue && ctaValue.link);
+
       if (fields.creative.isVideo && videoId) {
-        const isWhatsApp = fields.creative?.ctaType === 'WHATSAPP_MESSAGE';
         const videoCtaType = isWhatsApp ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
-        const videoCtaValue = isWhatsApp ? { app_destination: 'WHATSAPP' } : ctaValue;
+        const videoCtaValue = isWhatsApp 
+          ? { app_destination: 'WHATSAPP', ...(targetLink ? { link: targetLink } : {}) } 
+          : ctaValue;
 
         creativePayload.object_story_spec.video_data = {
           video_id: videoId,
@@ -202,8 +206,8 @@ export async function POST(request: Request) {
           link: fields.creative.linkUrl || "https://adrolls.in", 
           image_hash: imageHash, 
           call_to_action: { 
-            type: 'LEARN_MORE', 
-            value: ctaValue
+            type: isWhatsApp ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE', 
+            value: isWhatsApp ? { app_destination: 'WHATSAPP', ...(targetLink ? { link: targetLink } : {}) } : ctaValue
           }
         };
       }

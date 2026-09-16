@@ -103,7 +103,7 @@ export async function POST(request: Request) {
 
     // --- Resolve profile data ---
     const { data: targetProfileData } = await supabaseAdmin.from('profiles')
-        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement, whatsapp_waba_id, whatsapp_access_token')
+        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number')
         .eq('id', targetUserId)
         .single();
     const targetProfile: any = targetProfileData;
@@ -119,6 +119,7 @@ export async function POST(request: Request) {
         data.privacyPolicyUrl = data.privacyPolicyUrl || `${targetBusinessUrl}/privacy`;
         data.business_name = targetProfile.business_name;
         data.contact_number = targetProfile.contact_number;
+        data.whatsappNumber = data.whatsappNumber || targetProfile.whatsapp_phone_number || '';
     }
 
     const {
@@ -325,9 +326,9 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         adCopy,
         adCopies,
         creativeProductIds: data.creativeProductIds || [],
-        whatsappNumber: data.whatsappNumber || "",
+        whatsappNumber: data.whatsappNumber || targetProfile?.whatsapp_phone_number || "",
         businessName: data.business_name || targetProfile?.business_name || "Our Business",
-        contactNumber: data.contact_number || targetProfile?.contact_number || "",
+        contactNumber: (campaignType === 'whatsapp_chat' ? (data.whatsappNumber || targetProfile?.whatsapp_phone_number) : null) || data.contact_number || targetProfile?.contact_number || "",
         businessInfo: targetProfile?.business_info || targetProfile?.bio || "",
         missionStatement: targetProfile?.mission_statement || "",
         currency,

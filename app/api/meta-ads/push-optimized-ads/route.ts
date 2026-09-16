@@ -314,7 +314,11 @@ export async function POST(request: Request) {
 
             const isWhatsApp = adSet.destination_type === 'WHATSAPP';
             const ctaType = isWhatsApp ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
-            const videoCtaValue = isWhatsApp ? { app_destination: 'WHATSAPP' } : ctaValue;
+            let waPhone = adSet.promoted_object?.whatsapp_phone_number || profile.whatsapp_phone_number || profile.contact_number || '';
+            let cleanWaPhone = waPhone.replace(/[^0-9]/g, '');
+            if (cleanWaPhone && cleanWaPhone.length === 10) cleanWaPhone = '91' + cleanWaPhone;
+            const waLink = cleanWaPhone ? `https://api.whatsapp.com/send?phone=${cleanWaPhone}` : `https://api.whatsapp.com/send`;
+            const videoCtaValue = isWhatsApp ? { app_destination: 'WHATSAPP', link: waLink } : ctaValue;
 
             if (isVideo) {
                 // Ensure video thumbnail hash is provided
@@ -351,13 +355,13 @@ export async function POST(request: Request) {
             } else {
                 creativePayload.object_story_spec.link_data = {
                     image_hash: imgHash,
-                    link: finalLinkUrl,
+                    link: isWhatsApp ? waLink : finalLinkUrl,
                     message: primaryText,
                     name: headline,
                     description: description,
                     call_to_action: { 
-                        type: 'LEARN_MORE',
-                        value: ctaValue
+                        type: ctaType,
+                        value: isWhatsApp ? { app_destination: 'WHATSAPP', link: waLink } : ctaValue
                     }
                 };
             }

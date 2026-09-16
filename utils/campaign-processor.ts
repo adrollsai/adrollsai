@@ -909,10 +909,17 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             const creativeItem = uploadedCreatives[i];
             const copy = copyVariations[i % copyVariations.length];
 
+            let cleanPhone = (whatsappNumber || '').replace(/[^0-9]/g, '');
+            if (cleanPhone && cleanPhone.length === 10) {
+                cleanPhone = "91" + cleanPhone;
+            }
+            const waLink = cleanPhone ? `https://api.whatsapp.com/send?phone=${cleanPhone}` : `https://api.whatsapp.com/send`;
+
             const ctaType = campaignType === 'whatsapp_chat' ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
             const ctaValue: any = {};
             if (campaignType === 'whatsapp_chat') {
                 ctaValue.app_destination = 'WHATSAPP';
+                ctaValue.link = waLink;
             } else if (isWebsiteCampaign) {
                 ctaValue.link = linkUrl;
             } else {
@@ -943,7 +950,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     message: copy.primary_text,
                     name: copy.headline,
                     description: copy.description,
-                    link: campaignType === 'whatsapp_chat' ? `https://api.whatsapp.com/send?phone=${(whatsappNumber || '').replace(/[^0-9]/g, '')}` : linkUrl,
+                    link: campaignType === 'whatsapp_chat' ? waLink : linkUrl,
                     image_hash: creativeItem.hash,
                     call_to_action: { type: ctaType, value: ctaValue }
                 };
