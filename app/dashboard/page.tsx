@@ -9,7 +9,7 @@ import { uploadToR2, compressImage } from '@/utils/upload-helper'
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
-import { getPropertyTags, formatPropertyConfigWithTags } from '@/utils/property-tags'
+import { getPropertyTags, formatPropertyConfigWithTags, parsePropertyConfigurations } from '@/utils/property-tags'
 
 const WhatsAppIcon = ({ size = 24, className = "" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -274,7 +274,7 @@ export default function ProductsPage() {
     setEditTagsInput(getPropertyTags(prop).join(', '))
     // Initialize existing images
     setExistingImages(prop.images && prop.images.length > 0 ? prop.images : (prop.image_url ? [prop.image_url] : []))
-    const configsObj = typeof prop.configurations === 'object' && prop.configurations !== null ? (prop.configurations as Record<string, any>) : {};
+    const configsObj = parsePropertyConfigurations(prop.configurations)
     setExistingPdfUrls(Array.isArray(configsObj.pdf_urls) ? configsObj.pdf_urls : [])
     setEditFiles([])
     setEditPreviews([])
@@ -328,12 +328,7 @@ export default function ProductsPage() {
       const finalImages = [...existingImages, ...uploadedUrls]
       const finalMainImage = finalImages.length > 0 ? finalImages[0] : ""
       const updatedTags = editTagsInput.split(',').map((t: string) => t.trim()).filter(Boolean)
-      let updatedConfigurations: any = formatPropertyConfigWithTags(editProp.configurations, updatedTags)
-      if (typeof updatedConfigurations === 'object' && updatedConfigurations !== null) {
-        updatedConfigurations = { ...updatedConfigurations, pdf_urls: finalPdfUrls }
-      } else {
-        updatedConfigurations = { pdf_urls: finalPdfUrls }
-      }
+      const updatedConfigurations = formatPropertyConfigWithTags(editProp.configurations, updatedTags, { pdf_urls: finalPdfUrls })
 
       const apiRes = await fetch('/api/inventory', {
         method: 'POST',
@@ -432,14 +427,7 @@ export default function ProductsPage() {
       }
 
       const newTagsArr = (newProp.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean)
-      let newConfigurations: any = formatPropertyConfigWithTags(null, newTagsArr)
-      if (pdfUrls.length > 0) {
-        if (typeof newConfigurations === 'object' && newConfigurations !== null) {
-          newConfigurations = { ...newConfigurations, pdf_urls: pdfUrls }
-        } else {
-          newConfigurations = { pdf_urls: pdfUrls }
-        }
-      }
+      const newConfigurations = formatPropertyConfigWithTags(null, newTagsArr, { pdf_urls: pdfUrls })
 
       const apiRes = await fetch('/api/inventory', {
         method: 'POST',

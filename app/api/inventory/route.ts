@@ -123,7 +123,9 @@ export async function POST(request: Request) {
           image_url: propertyData.image_url || '',
           images: propertyData.images || [],
           youtube_url: propertyData.youtube_url || null,
-          configurations: propertyData.configurations || null,
+          configurations: typeof propertyData.configurations === 'object' && propertyData.configurations !== null
+            ? JSON.stringify(propertyData.configurations)
+            : (propertyData.configurations || null),
           auto_generate: false,
           show_on_landing_page: propertyData.show_on_landing_page !== false
         })
@@ -147,7 +149,9 @@ export async function POST(request: Request) {
         show_on_landing_page: propertyData.show_on_landing_page !== false
       }
       if (propertyData.configurations !== undefined) {
-        updatePayload.configurations = propertyData.configurations
+        updatePayload.configurations = typeof propertyData.configurations === 'object' && propertyData.configurations !== null
+          ? JSON.stringify(propertyData.configurations)
+          : (propertyData.configurations || null)
       }
 
       const { data, error } = await supabaseAdmin
