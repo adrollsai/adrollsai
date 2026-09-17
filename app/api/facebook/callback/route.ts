@@ -248,9 +248,31 @@ export async function POST(req: Request) {
         const { createClient: createAdminClient } = await import('@supabase/supabase-js');
         const supabaseAdmin = createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
-        const { error: updateError } = await supabaseAdmin.from('profiles').update({
+        // Also attempt to refresh selected_page_token if user already has a selected page
+        let freshPageToken: string | null = null;
+        try {
+            const { data: currentProf } = await supabaseAdmin
+                .from('profiles')
+                .select('selected_page_id')
+                .eq('id', targetUserId)
+                .single();
+            if (currentProf?.selected_page_id) {
+                const pRes = await fetch(`https://graph.facebook.com/v19.0/${currentProf.selected_page_id}?fields=access_token&access_token=${accessToken}`);
+                const pData = await pRes.json();
+                if (pData?.access_token) {
+                    freshPageToken = pData.access_token;
+                }
+            }
+        } catch (e) {}
+
+        const updatePayload: Record<string, any> = {
             facebook_token: accessToken
-        }).eq('id', targetUserId);
+        };
+        if (freshPageToken) {
+            updatePayload.selected_page_token = freshPageToken;
+        }
+
+        const { error: updateError } = await supabaseAdmin.from('profiles').update(updatePayload).eq('id', targetUserId);
 
         if (updateError) throw updateError;
 

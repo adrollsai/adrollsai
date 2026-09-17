@@ -1349,6 +1349,7 @@ export default function ProfilePage() {
           }
         }, {
           scope: 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,business_management,ads_management,pages_manage_ads,pages_read_user_content,leads_retrieval,pages_manage_metadata',
+          auth_type: 'rerequest',
           display: isMobile ? 'touch' : 'popup'
         })
       } catch (err) {
