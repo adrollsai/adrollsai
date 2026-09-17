@@ -913,9 +913,9 @@ System-Wide Super Admin Stats:
                                     const systemContext = `
 Account Context for "${matchedProfile.business_name}" (Role: ${matchedProfile.role}):
 - Business Name: ${matchedProfile.business_name}
-- Office Address: ${matchedProfile.address || 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603'}
-- Business Overview: ${matchedProfile.business_info || 'Real Estate & Property Consultancy'}
-- Contact Phone: ${matchedProfile.contact_number || matchedProfile.whatsapp_phone_number || '+91 98724 90091'}
+- Office Address: ${matchedProfile.address || 'Contact representative'}
+- Business Overview: ${matchedProfile.business_info || `${matchedProfile.business_name} Professional Services & Offerings`}
+- Contact Phone: ${matchedProfile.contact_number || matchedProfile.whatsapp_phone_number || ''}
 - Total Products in Inventory: ${properties?.length || 0}
 - Inventory Products:
 ${propertiesText}
@@ -3621,45 +3621,28 @@ CRITICAL CONVERSATIONAL RULES:
                                                 }).join('\n\n');
                                             }
 
-                                            const effectiveAddress = ownerAddress || (ownerBusinessName.toLowerCase().includes('blue square') ? 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603' : '');
-                                            const effectivePhone = ownerContactNumber || (ownerBusinessName.toLowerCase().includes('blue square') ? '+91 98724 90091' : '');
-                                            const effectiveBusinessInfo = ownerBusinessInfo || (ownerBusinessName.toLowerCase().includes('blue square') ? 'BLUE SQUARE INFRA was founded with a clear vision, to enhance the wealth, growth, and satisfaction of its clients through expert real estate consultancy services across Tricity, Mohali, and New Chandigarh.' : 'Real Estate Consultancy & Property Advisory');
+                                            const effectiveAddress = ownerAddress || '';
+                                            const effectivePhone = ownerContactNumber || '';
+                                            const effectiveBusinessInfo = ownerBusinessInfo || `${ownerBusinessName} provides expert client services and solutions.`;
 
-                                            const systemPrompt = isNobogentAccount ? 
-`You are the friendly, knowledgeable AI Assistant for ${ownerBusinessName || 'Nobogent'}.
-Nobogent is the world's first AI Sales & Marketing Department for Real Estate developers and brokers.
-Official Contact & Office Details:
-• Business Name: ${ownerBusinessName || 'Nobogent'}
-• Office Address: ${effectiveAddress || 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603'}
-• Contact Phone: ${effectivePhone || '+91 98724 90091'}
+                                            const systemPrompt = `You are the friendly, professional AI Assistant representing "${ownerBusinessName}".
+You assist prospective clients, answering inquiries about services, offerings, pricing, and scheduling appointments.
 
-Answer the prospect's query clearly, politely, and accurately in 1-2 concise paragraphs (under 120 words).
-If they ask about office location, address, or where we are based, give the exact address clearly.
-Use standard WhatsApp formatting (bold *text*, bullet points •). Do NOT use markdown tables or HTML.
-Always end by inviting them to explore our platform features or speak with a specialist.`
-:
-`You are the friendly, expert AI Property Advisor representing "${ownerBusinessName}".
-You assist potential buyers, investors, and clients looking for premium real estate opportunities and advisory.
-
-Official Company & Office Details for ${ownerBusinessName}:
+Official Company Details for ${ownerBusinessName}:
 • Company / Business Name: ${ownerBusinessName}
-• Office Address: ${effectiveAddress || 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603'}
-• Contact Phone: ${effectivePhone || '+91 98724 90091'}
-• Business Profile: ${effectiveBusinessInfo}
+${effectiveAddress ? `• Office Address: ${effectiveAddress}` : ''}
+${effectivePhone ? `• Contact Phone: ${effectivePhone}` : ''}
+• Business Overview: ${effectiveBusinessInfo}
 
-Available Real Estate Inventory for ${ownerBusinessName}:
+Available Offerings & Catalog for ${ownerBusinessName}:
 ${inventoryText}
 
 RULES:
-1. OFFICE ADDRESS & LOCATION INQUIRIES:
-   If the client asks about your office address, location, where you are located, where to visit, or your physical headquarters, ALWAYS provide the exact official office address:
-   "${effectiveAddress || 'First Floor, Riverdale Business Center, SCO - 3, Zirakpur, Nabha, Punjab 140603'}" clearly and directly!
-   Warmly invite them to visit for a personal consultation or meeting over coffee.
-2. If the user asks about a specific location (e.g. New Chandigarh, Mohali, Mullanpur, Zirakpur, etc.), property type (e.g. villas, apartments, plots, commercial), or price range, highlight 2-3 of the best matching projects from the inventory above with their project name, key highlights, and price range.
-3. If they ask a general question or ask about an area not directly listed above, mention our primary options in New Chandigarh / Tricity / Zirakpur and reassure them that our advisory portfolio includes prime residential, commercial, and luxury inventory across the region.
-4. Keep the entire response under 150 words. Be concise, warm, and readable on mobile.
-5. Format strictly for WhatsApp: use standard bullet points (•) and bold (*project name* / *address*). NEVER use markdown tables (| --- |), code blocks, or HTML tags.
-6. Conclude with a helpful 1-sentence prompt inviting them to explore our catalog, visit our office, or connect with an expert.`;
+1. Always represent "${ownerBusinessName}" with utmost professionalism, warmth, and accuracy.
+2. If the user asks about your office location, address, or contact details, provide the official details above clearly.
+3. If they inquire about specific offerings, services, or products, reference the catalog highlights above with pricing and features.
+4. Keep responses concise (under 120 words), readable on mobile, using WhatsApp formatting (bold *text*, bullet points •). Do NOT use HTML or markdown tables.
+5. End with a helpful, friendly question or call to action to guide the client to the next step.`;
 
                                             let aiReply = '';
                                             try {
@@ -3675,9 +3658,7 @@ RULES:
                                             }
 
                                             if (!aiReply || aiReply.trim().length === 0) {
-                                                aiReply = isNobogentAccount
-                                                    ? `Thank you for reaching out to *${ownerBusinessName || 'Nobogent'}*! We are the AI Sales & Marketing platform built specifically for Real Estate. Feel free to explore our platform overview or connect directly with our team.`
-                                                    : `Thank you for reaching out to *${ownerBusinessName}*! We offer premium residential & commercial properties in prime locations. Please check our catalog below or speak directly with our specialist.`;
+                                                aiReply = `Thank you for reaching out to *${ownerBusinessName || 'our team'}*! We are delighted to assist you with our services, catalog, and offerings. Please let us know how we can help you today.`;
                                             }
 
                                             // Send AI answer as clear message

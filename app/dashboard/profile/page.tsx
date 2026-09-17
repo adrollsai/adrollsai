@@ -3936,7 +3936,7 @@ export default function ProfilePage() {
                     </div>
                     <div className="text-left">
                       <span className="font-bold text-sm text-slate-900 block">AI Qualification Questions</span>
-                      <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">Real Estate Template (Active)</span>
+                      <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">Customizable Criteria</span>
                     </div>
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />

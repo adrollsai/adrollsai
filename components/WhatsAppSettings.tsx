@@ -2541,9 +2541,9 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                           headerType={headerType}
                           headerMediaUrl={newBroadcast.headerMediaUrl}
                           bodyText={bodyText}
-                          sampleLeadName="Rahul Sharma"
-                          samplePropertyTitle="Green Valley Luxury Villas"
-                          sampleBusinessName="Nobogent AI"
+                          sampleLeadName="Alex Morgan"
+                          samplePropertyTitle="Product / Service Offer"
+                          sampleBusinessName="AI Assistant"
                         />
                       </div>
                     )

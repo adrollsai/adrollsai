@@ -988,9 +988,11 @@ export default function SharedCataloguePage() {
 
       {/* 5. FOOTER */}
       <footer className="mt-12 py-8 border-t border-slate-200/60 text-center">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Powered by Nobogent.com</p>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+            © {new Date().getFullYear()} {profile?.company_name || profile?.business_name || 'All Rights Reserved'}
+          </p>
           <a 
-            href={`https://app.nobogent.com/privacy/${profile?.id}`} 
+            href={`/privacy/${profile?.id}`} 
             target="_blank" 
             rel="noopener noreferrer" 
             className="text-[10px] font-bold text-blue-500 hover:text-blue-600 uppercase tracking-widest transition-colors"

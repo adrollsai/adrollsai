@@ -55,7 +55,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Check user's profile
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms, is_disabled')
+        .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms, is_disabled, client_features')
         .eq('id', session.user.id)
         .single()
 
@@ -114,6 +114,39 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (!isPaid && !isBillingPage && !isProfilePage && isAdminLike) {
         router.push('/dashboard/billing')
         return
+      }
+
+      // Enforce client_features access controls for client accounts
+      if (userProfile?.role === 'client' && Array.isArray(userProfile?.client_features)) {
+        const allowed = userProfile.client_features
+        if (pathname.startsWith('/dashboard/analytics') && !allowed.includes('analytics')) {
+          router.push('/dashboard')
+          return
+        }
+        if (pathname.startsWith('/dashboard/creation') && !allowed.includes('creation')) {
+          router.push('/dashboard')
+          return
+        }
+        if (pathname.startsWith('/dashboard/ads') && !allowed.includes('ads')) {
+          router.push('/dashboard')
+          return
+        }
+        if (pathname.startsWith('/dashboard/crm') && !allowed.includes('crm')) {
+          router.push('/dashboard')
+          return
+        }
+        if (pathname.startsWith('/dashboard/whatsapp') && !allowed.includes('whatsapp')) {
+          router.push('/dashboard')
+          return
+        }
+        if (pathname.startsWith('/dashboard/voice') && !allowed.includes('voice_agent')) {
+          router.push('/dashboard')
+          return
+        }
+        if (pathname.startsWith('/dashboard/flows') && !allowed.includes('flows')) {
+          router.push('/dashboard')
+          return
+        }
       }
 
       // Check if they are an existing client who already has properties or assets

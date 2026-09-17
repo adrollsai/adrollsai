@@ -26,9 +26,13 @@ export async function generateMetadata(): Promise<Metadata> {
 
   let profileData = null;
 
-  // Resolve branding based on host first (Custom Domain)
+  // Resolve branding based on host first (Custom Domain or Whitelabel Platform Domain)
   if (!isSystemHost(host)) {
-    const { data } = await supabase.from('profiles').select('business_name, logo_url, role, agency_id').eq('custom_domain', host).single();
+    const { data } = await supabase
+      .from('profiles')
+      .select('business_name, logo_url, role, agency_id, whitelabel_domain')
+      .or(`custom_domain.eq.${host},whitelabel_domain.eq.${host}`)
+      .maybeSingle();
     profileData = data;
   } else if (user) {
     // If on platform domain, use logged in user context
@@ -43,7 +47,7 @@ export async function generateMetadata(): Promise<Metadata> {
     }
   }
 
-  const defaultTitle = "Nobogent AI | Ultimate Marketing Automation for SMBs";
+  const defaultTitle = "AI Business Automation Platform";
   const title = profileData?.business_name || defaultTitle;
   const logoVersion = profileData?.logo_url ? encodeURIComponent(profileData.logo_url.split('/').pop() || 'v1') : 'v1';
   const uidParam = user ? `&uid=${user.id}` : '';
@@ -79,11 +83,11 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(`https://${host}`),
     title: {
       default: title,
-      template: `%s | ${defaultTitle}`
+      template: `%s | ${title}`
     },
     description: profileData?.business_name 
-      ? `Welcome to ${title}. Manage your real estate leads and marketing automation effortlessly.` 
-      : "Nobogent AI is the ultimate marketing automation platform for SMBs. Scale your Meta Ads, automate lead management, and grow your business with our agentic AI infrastructure.",
+      ? `Welcome to ${title}. Manage your customer leads, marketing campaigns, and business automations effortlessly.` 
+      : "The ultimate marketing automation and growth platform. Scale your advertising, automate lead workflows, and accelerate business growth.",
     icons: {
       icon: faviconUrl,
       shortcut: faviconUrl,
@@ -98,8 +102,8 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       title: title,
       description: profileData?.business_name 
-        ? `Scale your growth with ${title}. Professional real estate marketing automation.` 
-        : "Nobogent AI - Automate your Meta Ads, lead management, and SMB growth with agentic AI infrastructure.",
+        ? `Scale your growth with ${title}. Professional sales, advertising, and marketing automation.` 
+        : "Automate your advertising, customer lead pipelines, and business growth.",
       url: `https://${host}`,
       siteName: title,
       images: [{ url: iconUrl, width: 512, height: 512, alt: title }],
@@ -177,14 +181,18 @@ export default async function RootLayout({
   let brandingProfile = null;
 
   if (!isSystemHost(host)) {
-     const { data } = await supabase.from('profiles').select('logo_url, role, agency_id').eq('custom_domain', host).single();
+     const { data } = await supabase
+       .from('profiles')
+       .select('business_name, logo_url, role, agency_id, whitelabel_domain')
+       .or(`custom_domain.eq.${host},whitelabel_domain.eq.${host}`)
+       .maybeSingle();
      brandingProfile = data;
   } else if (user) {
-     const { data: userProfile } = await supabase.from('profiles').select('logo_url, role, agency_id').eq('id', user.id).single();
+     const { data: userProfile } = await supabase.from('profiles').select('business_name, logo_url, role, agency_id').eq('id', user.id).single();
      
      // Resolve Agency Branding if user is a client
      if (userProfile?.role === 'client' && userProfile.agency_id) {
-        const { data: agencyProfile } = await supabase.from('profiles').select('logo_url').eq('id', userProfile.agency_id).single();
+        const { data: agencyProfile } = await supabase.from('profiles').select('business_name, logo_url').eq('id', userProfile.agency_id).single();
         brandingProfile = agencyProfile;
      } else {
         brandingProfile = userProfile;
@@ -208,6 +216,8 @@ export default async function RootLayout({
     return `https://${host}${splashUrl}${sep}w=${w}&h=${h}`;
   };
 
+  const appDisplayName = brandingProfile?.business_name || "Workspace";
+
   return (
     <html lang="en" className="bg-white" style={{ backgroundColor: '#FFFFFF', colorScheme: 'light' }} suppressHydrationWarning>
       <head>
@@ -215,7 +225,7 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Nobogent" />
+        <meta name="apple-mobile-web-app-title" content={appDisplayName} />
         <meta name="theme-color" content="#FFFFFF" />
         <meta name="color-scheme" content="light" />
         <style

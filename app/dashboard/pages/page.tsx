@@ -972,7 +972,8 @@ const handleSendChatEdit = async () => {
     }
 
     const copyUrl = (slug: string, id: string) => {
-        const domainBase = customDomain || `app.nobogent.com/shared/${targetUserId}`
+        const host = typeof window !== 'undefined' ? window.location.host : 'app.nobogent.com'
+        const domainBase = customDomain || `${host}/shared/${targetUserId}`
         const fullUrl = `https://${domainBase}/${slug}`
         navigator.clipboard.writeText(fullUrl)
         setCopiedId(id)
@@ -1701,7 +1702,8 @@ const handleSendChatEdit = async () => {
                                                 
                                                 <button 
                                                     onClick={() => {
-                                                        const domainBase = customDomain || `app.nobogent.com/shared/${targetUserId}`
+                                                        const host = typeof window !== 'undefined' ? window.location.host : 'app.nobogent.com'
+                                                        const domainBase = customDomain || `${host}/shared/${targetUserId}`
                                                         window.open(`https://${domainBase}/${page.slug}`, '_blank')
                                                     }}
                                                     className="bg-slate-50 text-slate-600 hover:bg-slate-100 p-3 rounded-xl border border-slate-200 transition-colors"

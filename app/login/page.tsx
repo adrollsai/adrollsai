@@ -23,6 +23,48 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const [agreed, setAgreed] = useState(false)
 
+  const [brandInfo, setBrandInfo] = useState<{ name: string; logoUrl: string | null; brandColor?: string }>({
+    name: 'Workspace Login',
+    logoUrl: '/icon-512x512.png'
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const host = window.location.hostname.toLowerCase()
+    const isPlatform = host.includes('nobogent') || host.includes('adrolls') || host.includes('localhost') || host.includes('vercel.app')
+    
+    const fetchBranding = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('business_name, logo_url, brand_color')
+          .eq('whitelabel_domain', host)
+          .maybeSingle()
+        if (data && data.business_name) {
+          setBrandInfo({
+            name: data.business_name,
+            logoUrl: data.logo_url || null,
+            brandColor: data.brand_color || undefined
+          })
+          return
+        }
+      } catch (e) {}
+
+      if (isPlatform) {
+        setBrandInfo({
+          name: 'Nobogent AI',
+          logoUrl: '/icon-512x512.png'
+        })
+      } else {
+        setBrandInfo({
+          name: 'Workspace Portal',
+          logoUrl: null
+        })
+      }
+    }
+    fetchBranding()
+  }, [supabase])
+
   useEffect(() => {
     if (searchParams.get('disabled') === 'true') {
       setError('Your account has been disabled by your administrator. Please contact your admin for access.')
@@ -159,17 +201,20 @@ function LoginForm() {
       <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-8 duration-500">
         
         <div className="text-center mb-8">
-            <div className="w-20 h-20 mx-auto mb-5 relative drop-shadow-xl hover:scale-105 transition-transform duration-300">
-                <Image 
-                    src="/icon-512x512.png" 
-                    alt="Nobogent AI Logo" 
-                    width={80}
-                    height={80}
-                    priority
-                    className="w-full h-full object-contain rounded-2xl" 
-                />
+            <div className="w-20 h-20 mx-auto mb-5 relative drop-shadow-xl hover:scale-105 transition-transform duration-300 flex items-center justify-center">
+                {brandInfo.logoUrl ? (
+                    <img 
+                        src={brandInfo.logoUrl} 
+                        alt={brandInfo.name} 
+                        className="w-full h-full object-contain rounded-2xl" 
+                    />
+                ) : (
+                    <div className="w-full h-full bg-slate-900 text-white font-black text-2xl rounded-2xl flex items-center justify-center shadow-lg">
+                        {brandInfo.name.charAt(0)}
+                    </div>
+                )}
             </div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Nobogent AI</h1>
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{brandInfo.name}</h1>
             <p className="text-slate-500 font-medium mt-2">
               {mode === 'login' && 'Welcome back to your workspace'}
               {mode === 'signup' && 'Create your account to get started'}

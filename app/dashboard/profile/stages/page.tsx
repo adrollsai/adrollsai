@@ -8,7 +8,7 @@ import {
   Layers, Save, AlertCircle, CheckCircle2, ShieldCheck, Zap
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig } from '@/utils/pipeline-stages'
+import { DEFAULT_PIPELINE_STAGES, INDUSTRY_PIPELINE_PRESETS, PipelineStageConfig } from '@/utils/pipeline-stages'
 
 const CAPI_STANDARD_EVENTS = [
   'Lead',
@@ -159,9 +159,18 @@ export default function PipelineStagesPage() {
   }
 
   const handleResetToDefaults = () => {
-    if (!confirm('Reset all pipeline stages to standard real estate defaults? Any custom stages will be removed.')) return
+    if (!confirm('Reset all pipeline stages to Universal Business defaults? Any custom stages will be removed.')) return
     setStages(DEFAULT_PIPELINE_STAGES)
     handleSave(DEFAULT_PIPELINE_STAGES)
+  }
+
+  const handleLoadPreset = (presetKey: string) => {
+    const preset = INDUSTRY_PIPELINE_PRESETS[presetKey]
+    if (!preset) return
+    if (!confirm(`Load the "${preset.label}" pipeline template? You can customize it and click "Save Settings" to apply.`)) return
+    setStages(preset.stages)
+    handleSave(preset.stages)
+    toast.success(`Loaded ${preset.label} pipeline template!`)
   }
 
   const freshCount = stages.filter(s => s.category === 'fresh').length
@@ -195,7 +204,7 @@ export default function PipelineStagesPage() {
           <button
             onClick={handleResetToDefaults}
             className="px-4 py-2.5 rounded-xl border border-slate-200/80 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
-            title="Reset to Standard Real Estate Defaults"
+            title="Reset to Universal Business Defaults"
           >
             <RefreshCw size={13} className="text-slate-500" />
             <span>Reset Defaults</span>
@@ -208,6 +217,35 @@ export default function PipelineStagesPage() {
             <Save size={14} />
             <span>{saving ? 'Saving...' : 'Save Settings'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* 1-Click Industry Templates Bar */}
+      <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-xs">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-indigo-600" />
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
+              1-Click Industry Pipeline Templates
+            </h3>
+          </div>
+          <span className="text-[10px] text-slate-400 font-semibold">Click any template to switch workflow</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {Object.entries(INDUSTRY_PIPELINE_PRESETS).map(([key, preset]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleLoadPreset(key)}
+              className="p-3.5 rounded-2xl border border-slate-200/80 bg-slate-50/50 hover:bg-blue-50/60 hover:border-blue-300 transition-all text-left group active:scale-[0.99] cursor-pointer"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">{preset.icon}</span>
+                <span className="text-xs font-bold text-slate-800 group-hover:text-blue-700">{preset.label}</span>
+              </div>
+              <p className="text-[10px] text-slate-500 leading-tight line-clamp-2">{preset.description}</p>
+            </button>
+          ))}
         </div>
       </div>
 

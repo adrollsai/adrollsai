@@ -59,20 +59,76 @@ interface CampaignOption {
   objective?: string
 }
 
-const REAL_ESTATE_DEFAULT_QUESTIONS: QualifyingQuestionItem[] = [
+export const GENERIC_DEFAULT_QUESTIONS: QualifyingQuestionItem[] = [
+  {
+    question: 'What specific service or requirement are you looking for?',
+    options: ['Standard Consultation', 'Enterprise Solution', 'Custom Inquiries'],
+    type: 'choice'
+  },
+  {
+    question: 'What is your expected timeline for getting started?',
+    options: ['Immediately (< 1 Month)', 'Within 1 - 3 Months', 'Currently Exploring'],
+    type: 'choice'
+  },
+  {
+    question: 'What is your estimated budget or investment scale?',
+    options: ['Flexible / Discuss on Call', 'Standard Scale', 'High Growth Scale'],
+    type: 'choice'
+  }
+]
+
+export const REAL_ESTATE_DEFAULT_QUESTIONS: QualifyingQuestionItem[] = [
   {
     question: 'What type of property are you interested in?',
-    options: ['Residential', 'Commercial', 'Plots / Land']
+    options: ['Residential', 'Commercial', 'Plots / Land'],
+    type: 'choice'
   },
   {
     question: 'What is your budget range?',
-    options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr']
+    options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'],
+    type: 'choice'
   },
   {
     question: 'What is your purchase timeline?',
-    options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring']
+    options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'],
+    type: 'choice'
   }
 ]
+
+export const INDUSTRY_QUALIFYING_TEMPLATES: Record<string, { label: string; icon: string; name: string; questions: QualifyingQuestionItem[] }> = {
+  universal: {
+    label: 'Universal Business',
+    icon: '💼',
+    name: 'General Business Qualification',
+    questions: GENERIC_DEFAULT_QUESTIONS
+  },
+  real_estate: {
+    label: 'Real Estate',
+    icon: '🏢',
+    name: 'Property Buyer Qualification',
+    questions: REAL_ESTATE_DEFAULT_QUESTIONS
+  },
+  healthcare: {
+    label: 'Healthcare & Clinic',
+    icon: '🩺',
+    name: 'Patient Consultation Qualification',
+    questions: [
+      { question: 'What type of consultation or care do you require?', options: ['General Consultation', 'Specialist Review', 'Procedure / Therapy'], type: 'choice' },
+      { question: 'Have you visited our clinic before?', options: ['First Time Patient', 'Returning Patient'], type: 'choice' },
+      { question: 'What is your preferred appointment schedule?', options: ['Morning Slot', 'Afternoon Slot', 'Weekend Slot'], type: 'choice' }
+    ]
+  },
+  automotive: {
+    label: 'Automotive & Dealership',
+    icon: '🚗',
+    name: 'Vehicle Buyer Qualification',
+    questions: [
+      { question: 'Which vehicle model or segment are you interested in?', options: ['Sedan', 'SUV / Luxury', 'Electric / Hybrid'], type: 'choice' },
+      { question: 'Are you planning outright purchase or auto financing?', options: ['Bank Finance / EMI', 'Outright Purchase', 'Corporate Lease'], type: 'choice' },
+      { question: 'Would you like to schedule a test drive?', options: ['Showroom Test Drive', 'Home Visit Test Drive', 'Discuss Pricing First'], type: 'choice' }
+    ]
+  }
+}
 
 export default function QualifyingPage() {
   const router = useRouter()
@@ -166,7 +222,7 @@ export default function QualifyingPage() {
 
         if (!flowsErr && dbFlows && dbFlows.length > 0) {
           const formattedFlows: QuestionFlow[] = dbFlows.map((df: any) => {
-            const rawQuestions = Array.isArray(df.questions) ? df.questions : REAL_ESTATE_DEFAULT_QUESTIONS
+            const rawQuestions = Array.isArray(df.questions) ? df.questions : GENERIC_DEFAULT_QUESTIONS
             let completion: FlowCompletionConfig = {
               action: 'catalog',
               title: '',
@@ -202,18 +258,18 @@ export default function QualifyingPage() {
               name: df.name,
               linked_campaign_id: df.linked_campaign_id,
               is_active: df.is_active,
-              questions: filteredQuestions.length > 0 ? filteredQuestions : REAL_ESTATE_DEFAULT_QUESTIONS,
+              questions: filteredQuestions.length > 0 ? filteredQuestions : GENERIC_DEFAULT_QUESTIONS,
               completion
             }
           })
           setFlows(formattedFlows)
         } else {
-          // Initialize default Real Estate Flow if none exists
+          // Initialize generic default flow if none exists
           const defaultFlow: QuestionFlow = {
-            name: 'General Real Estate Flow',
+            name: 'Default Qualification Flow',
             linked_campaign_id: null,
             is_active: true,
-            questions: REAL_ESTATE_DEFAULT_QUESTIONS,
+            questions: GENERIC_DEFAULT_QUESTIONS,
             completion: { action: 'catalog' }
           }
           setFlows([defaultFlow])
@@ -497,11 +553,16 @@ export default function QualifyingPage() {
     setFlows(updated)
   }
 
-  const handleResetToRealEstate = () => {
+  const handleLoadIndustryPreset = (presetKey: string) => {
+    const preset = INDUSTRY_QUALIFYING_TEMPLATES[presetKey]
+    if (!preset || !flows[activeFlowIndex]) return
     const updated = [...flows]
-    updated[activeFlowIndex].questions = REAL_ESTATE_DEFAULT_QUESTIONS
+    updated[activeFlowIndex] = {
+      ...updated[activeFlowIndex],
+      questions: JSON.parse(JSON.stringify(preset.questions))
+    }
     setFlows(updated)
-    toast.success("Loaded Real Estate Template questions & options!")
+    toast.success(`Loaded ${preset.label} questions! Click "Save All Flows" to apply.`)
   }
 
   if (loading) {
@@ -838,13 +899,21 @@ export default function QualifyingPage() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleResetToRealEstate}
-                className="text-[11px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-all active:scale-95 shrink-0 flex items-center gap-1.5"
-              >
-                <RotateCcw size={12} /> Reset Template
-              </button>
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                <span className="text-[10px] font-bold text-slate-400 uppercase mr-1 hidden sm:inline">Templates:</span>
+                {Object.entries(INDUSTRY_QUALIFYING_TEMPLATES).map(([key, tpl]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => handleLoadIndustryPreset(key)}
+                    className="text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 border border-slate-200/80 px-2.5 py-1 rounded-xl transition-all active:scale-95 shrink-0 flex items-center gap-1 cursor-pointer"
+                    title={`Load ${tpl.label} qualification questions`}
+                  >
+                    <span>{tpl.icon}</span>
+                    <span>{tpl.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Questions List */}

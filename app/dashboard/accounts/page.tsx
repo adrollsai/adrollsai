@@ -14,9 +14,24 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  BarChart3
+  BarChart3,
+  SlidersHorizontal,
+  Coins,
+  Check,
+  Sparkles
 } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
+
+const AVAILABLE_MODULES = [
+  { id: 'analytics', label: 'Analytics & EOD Reports', description: 'Access to performance dashboard and daily EOD metrics.' },
+  { id: 'inventory', label: 'Offerings / Catalog', description: 'Manage portfolio items, products, or service listings.' },
+  { id: 'creation', label: 'AI Creative Studio', description: 'Generate marketing videos, ad copy, and visuals.' },
+  { id: 'ads', label: 'Ad Manager & Campaigns', description: 'Launch and monitor Meta Facebook & Instagram campaigns.' },
+  { id: 'crm', label: 'CRM & Pipeline Leads', description: 'Track leads, move stages, manage notes, and followups.' },
+  { id: 'whatsapp', label: 'WhatsApp Automation', description: 'Automated welcome drips, templates, and messaging.' },
+  { id: 'voice_agent', label: 'AI Voice Calling', description: 'Autonomous outbound AI phone calls and appointment setting.' },
+  { id: 'flows', label: 'Lead Qualification Flows', description: 'Interactive qualification flows and chatbot trees.' }
+]
 
 export default function AccountsPage() {
   const supabase = createClient()
@@ -33,6 +48,19 @@ export default function AccountsPage() {
   // Costing Module State (Super User only)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [costingData, setCostingData] = useState<Record<string, any>>({})
+
+  // Feature Permissions State
+  const [featureModalOpen, setFeatureModalOpen] = useState(false)
+  const [selectedAccountForFeatures, setSelectedAccountForFeatures] = useState<any>(null)
+  const [clientFeatures, setClientFeatures] = useState<string[]>([])
+  const [isSavingFeatures, setIsSavingFeatures] = useState(false)
+
+  // Credit Allocation State
+  const [creditModalOpen, setCreditModalOpen] = useState(false)
+  const [selectedAccountForCredits, setSelectedAccountForCredits] = useState<any>(null)
+  const [creditAmount, setCreditAmount] = useState('')
+  const [isAllocatingCredits, setIsAllocatingCredits] = useState(false)
+  const [creditFeedback, setCreditFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   
   // Create Modal State
   const [newAccount, setNewAccount] = useState({
@@ -184,6 +212,103 @@ export default function AccountsPage() {
     }
   }
 
+  const handleOpenFeaturesModal = (account: any) => {
+    setSelectedAccountForFeatures(account)
+    const existing = account.client_features
+    if (Array.isArray(existing) && existing.length > 0) {
+      setClientFeatures(existing)
+    } else {
+      setClientFeatures(['analytics', 'inventory', 'creation', 'ads', 'crm', 'whatsapp', 'voice_agent', 'flows'])
+    }
+    setFeatureModalOpen(true)
+  }
+
+  const toggleFeature = (featureId: string) => {
+    setClientFeatures(prev => 
+      prev.includes(featureId) ? prev.filter(f => f !== featureId) : [...prev, featureId]
+    )
+  }
+
+  const handleSaveFeatures = async () => {
+    if (!selectedAccountForFeatures || !currentUser) return
+    setIsSavingFeatures(true)
+    try {
+      const res = await fetch('/api/team/features', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: currentUser.id,
+          targetUserId: selectedAccountForFeatures.id,
+          features: clientFeatures
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to save permissions')
+
+      setAccounts(prev => prev.map(a => a.id === selectedAccountForFeatures.id ? { ...a, client_features: clientFeatures } : a))
+      setFeatureModalOpen(false)
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setIsSavingFeatures(false)
+    }
+  }
+
+  const handleOpenCreditsModal = (account: any) => {
+    setSelectedAccountForCredits(account)
+    setCreditAmount('')
+    setCreditFeedback(null)
+    setCreditModalOpen(true)
+  }
+
+  const handleAllocateCredits = async () => {
+    if (!selectedAccountForCredits || !currentUser) return
+    const amt = parseInt(creditAmount, 10)
+    if (isNaN(amt) || amt <= 0) {
+      setCreditFeedback({ type: 'error', message: 'Please enter a valid credit amount greater than 0.' })
+      return
+    }
+
+    setIsAllocatingCredits(true)
+    setCreditFeedback(null)
+    try {
+      const res = await fetch('/api/team/credits/allocate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: currentUser.id,
+          targetUserId: selectedAccountForCredits.id,
+          amount: amt
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to allocate credits')
+
+      setAccounts(prev => prev.map(a => {
+        if (a.id === selectedAccountForCredits.id) {
+          return { ...a, credits: data.clientBalance }
+        }
+        if (a.id === currentUser.id) {
+          return { ...a, credits: data.agencyBalance }
+        }
+        return a
+      }))
+
+      if (currentUser.id) {
+        setCurrentUser((prev: any) => ({ ...prev, credits: data.agencyBalance }))
+      }
+
+      setCreditFeedback({ type: 'success', message: data.message })
+      setTimeout(() => {
+        setCreditModalOpen(false)
+      }, 1200)
+    } catch (err: any) {
+      setCreditFeedback({ type: 'error', message: err.message })
+    } finally {
+      setIsAllocatingCredits(false)
+    }
+  }
+
   // Grouping logic for hierarchy
   const buildTree = (flatAccounts: any[]) => {
     const roots: any[] = []
@@ -283,8 +408,11 @@ export default function AccountsPage() {
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-indigo-100 text-indigo-700 tracking-tighter">
                         {root.role}
                       </span>
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60 tracking-tight flex items-center gap-1">
-                        🏢 Real Estate Template
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200/60 tracking-tight flex items-center gap-1">
+                        {root.company_name || 'Standard Workspace'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 tracking-tight flex items-center gap-1">
+                        ⚡ {root.credits || 0} Credits
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 truncate max-w-[250px] sm:max-w-md">{root.email}</p>
@@ -366,8 +494,11 @@ export default function AccountsPage() {
                             }`}>
                               {child.role}
                             </span>
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60 tracking-tight shrink-0">
-                              Real Estate Template
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-slate-100 text-slate-700 border border-slate-200/60 tracking-tight shrink-0">
+                              {child.company_name || 'Client Account'}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 tracking-tight shrink-0">
+                              ⚡ {child.credits || 0} Credits
                             </span>
                           </div>
                           <p className="text-[10px] text-slate-400 font-medium truncate">{child.email}</p>
@@ -410,6 +541,24 @@ export default function AccountsPage() {
                             </button>
                           </div>
                         )}
+                        {/* Features Button */}
+                        <button 
+                          onClick={() => handleOpenFeaturesModal(child)}
+                          className="bg-slate-50 hover:bg-purple-50 text-slate-600 hover:text-purple-700 px-2.5 py-1.5 rounded-xl text-xs font-bold border border-slate-200 transition-all flex items-center gap-1 active:scale-95 shrink-0"
+                          title="Client Feature Permissions"
+                        >
+                          <SlidersHorizontal size={13} />
+                          <span className="hidden sm:inline">Features</span>
+                        </button>
+                        {/* Credits Button */}
+                        <button 
+                          onClick={() => handleOpenCreditsModal(child)}
+                          className="bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 px-2.5 py-1.5 rounded-xl text-xs font-bold border border-slate-200 transition-all flex items-center gap-1 active:scale-95 shrink-0"
+                          title="Allocate Workspace Credits"
+                        >
+                          <Coins size={13} />
+                          <span className="hidden sm:inline">Credits</span>
+                        </button>
                         {isSuperAdmin && (
                           <button 
                             onClick={() => router.push(`/dashboard/accounts/costing/${child.id}`)}
@@ -546,6 +695,183 @@ export default function AccountsPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feature Permissions Modal */}
+      {featureModalOpen && selectedAccountForFeatures && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setFeatureModalOpen(false)} />
+          <div className="bg-white rounded-[2rem] w-full max-w-lg relative shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 max-h-[90vh] flex flex-col">
+            <div className="p-6 sm:p-8 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-purple-100 rounded-2xl flex items-center justify-center text-purple-600 shrink-0">
+                  <SlidersHorizontal size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-extrabold text-slate-900">Feature Access Control</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Configure accessible modules for <strong className="text-slate-800">{selectedAccountForFeatures.business_name}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 sm:p-8 overflow-y-auto space-y-3 flex-1">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Available Modules</span>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    if (clientFeatures.length === AVAILABLE_MODULES.length) {
+                      setClientFeatures([])
+                    } else {
+                      setClientFeatures(AVAILABLE_MODULES.map(m => m.id))
+                    }
+                  }}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                >
+                  {clientFeatures.length === AVAILABLE_MODULES.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+
+              {AVAILABLE_MODULES.map(module => {
+                const isEnabled = clientFeatures.includes(module.id)
+                return (
+                  <div 
+                    key={module.id}
+                    onClick={() => toggleFeature(module.id)}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                      isEnabled 
+                        ? 'border-blue-500 bg-blue-50/40 shadow-sm shadow-blue-500/5' 
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <h4 className={`text-sm font-bold ${isEnabled ? 'text-blue-950' : 'text-slate-800'}`}>
+                        {module.label}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">{module.description}</p>
+                    </div>
+                    <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors shrink-0 mt-0.5 ${
+                      isEnabled ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'
+                    }`}>
+                      {isEnabled && <Check size={13} strokeWidth={3} />}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex gap-3 shrink-0">
+              <button 
+                type="button"
+                onClick={() => setFeatureModalOpen(false)}
+                className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-all text-sm"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                disabled={isSavingFeatures}
+                onClick={handleSaveFeatures}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 text-sm active:scale-95"
+              >
+                {isSavingFeatures ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+                Save Permissions
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Credit Allocation Modal */}
+      {creditModalOpen && selectedAccountForCredits && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setCreditModalOpen(false)} />
+          <div className="bg-white rounded-[2rem] w-full max-w-md relative shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div className="p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600 shrink-0">
+                  <Coins size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-extrabold text-slate-900">Allocate Credits</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Transfer workspace credits to <strong className="text-slate-800">{selectedAccountForCredits.business_name}</strong>
+                  </p>
+                </div>
+              </div>
+
+              {/* Balances overview card */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 mb-5 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">Your Available Balance:</span>
+                  <span className="font-extrabold text-blue-600">⚡ {currentUser?.credits || 0} Credits</span>
+                </div>
+                <div className="flex justify-between items-center text-xs border-t border-slate-200/60 pt-2">
+                  <span className="text-slate-500 font-medium">Client Current Balance:</span>
+                  <span className="font-extrabold text-emerald-600">⚡ {selectedAccountForCredits.credits || 0} Credits</span>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">Credit Amount</label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    placeholder="e.g. 500"
+                    value={creditAmount}
+                    onChange={(e) => setCreditAmount(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-mono font-bold text-slate-800"
+                  />
+                </div>
+
+                {/* Quick add pills */}
+                <div className="flex gap-2">
+                  {[100, 500, 1000, 5000].map(amt => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setCreditAmount(String(amt))}
+                      className="flex-1 py-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 rounded-lg text-xs font-bold transition-all"
+                    >
+                      +{amt}
+                    </button>
+                  ))}
+                </div>
+
+                {creditFeedback && (
+                  <div className={`p-3 rounded-xl flex items-center gap-2 text-xs font-medium ${
+                    creditFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                  }`}>
+                    {creditFeedback.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                    {creditFeedback.message}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-4">
+                  <button 
+                    type="button"
+                    onClick={() => setCreditModalOpen(false)}
+                    className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-500 hover:bg-slate-50 transition-all text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    disabled={isAllocatingCredits}
+                    onClick={handleAllocateCredits}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-emerald-200 transition-all flex items-center justify-center gap-2 text-sm active:scale-95"
+                  >
+                    {isAllocatingCredits ? <Loader2 className="animate-spin" size={18} /> : <Coins size={18} />}
+                    Transfer
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

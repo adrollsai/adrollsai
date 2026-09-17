@@ -154,7 +154,7 @@ export default function UsagePage() {
                 {/* Header */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-10">
                     <div>
-                        <h1 className="text-4xl font-black text-slate-900 tracking-tight">Nobo Credits</h1>
+                        <h1 className="text-4xl font-black text-slate-900 tracking-tight">Workspace Credits</h1>
                         <p className="text-slate-500 mt-2 font-medium">Manage your prepaid credits balance, buy packages, and view billing ledger.</p>
                     </div>
                     
@@ -198,53 +198,71 @@ export default function UsagePage() {
 
                         {/* Recharge packages section */}
                         <div className="lg:col-span-2 space-y-6">
-                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Top-Up Credit Packages</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                {[
-                                    { id: 'starter', name: 'Starter Pack', basePrice: 2000, totalAmount: 2360, credits: 2000, desc: 'For growing campaigns', color: 'border-slate-200' },
-                                    { id: 'growth', name: 'Growth Pack', basePrice: 5000, totalAmount: 5900, credits: 5000, desc: 'Calling & manual chat combo', color: 'border-indigo-600 ring-2 ring-indigo-600/10 scale-102', recommended: true },
-                                    { id: 'enterprise', name: 'Enterprise Pack', basePrice: 10000, totalAmount: 11800, credits: 10000, desc: 'High volume voice calling', color: 'border-slate-200' }
-                                ].map((pkg, idx) => (
-                                    <div 
-                                        key={idx} 
-                                        className={`bg-white p-6 rounded-[2rem] border relative overflow-hidden flex flex-col justify-between shadow-sm transition-all hover:shadow-md hover:scale-[1.03] duration-300 ${pkg.color}`}
-                                    >
-                                        {pkg.recommended && (
-                                            <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-2 py-0.5 rounded-md shadow-sm">
-                                                Best Value
-                                            </span>
-                                        )}
-                                        <div>
-                                            <h4 className="text-sm font-bold text-slate-800 mb-1">{pkg.name}</h4>
-                                            <p className="text-[10px] text-slate-400 font-medium mb-4">{pkg.desc}</p>
-                                            <div className="mb-3">
-                                                <span className="text-2xl font-black text-slate-900">
-                                                    {pkg.credits.toLocaleString()}
-                                                </span>
-                                                <span className="text-xs font-bold text-slate-400 block mt-0.5">Credits</span>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div className="mb-3">
-                                                <div className="text-sm font-black text-slate-900">
-                                                    ₹{pkg.totalAmount.toLocaleString()}
-                                                </div>
-                                                <div className="text-[10px] font-bold text-slate-400">
-                                                    ₹{pkg.basePrice.toLocaleString()} + 18% GST
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={() => handleRecharge(pkg.id)}
-                                                disabled={isProcessing}
-                                                className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${pkg.recommended ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700'}`}
-                                            >
-                                                <PlusCircle size={14} />
-                                                {isProcessing ? 'Connecting...' : 'Recharge Now'}
-                                            </button>
-                                        </div>
+                            {usage.isManagedClient ? (
+                                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center h-full">
+                                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-4">
+                                        <ShieldCheck size={24} />
                                     </div>
-                                ))}
-                            </div>
+                                    <h3 className="text-xl font-bold text-slate-900 mb-1.5">Managed Workspace Allocation</h3>
+                                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                                        Your credits are directly provisioned and managed by your organization or agency partner. 
+                                        Each action (calls, AI creatives, messaging, campaigns) automatically debits from your allocated balance.
+                                    </p>
+                                    <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs text-slate-600 font-semibold flex items-center gap-2">
+                                        ⚡ Need additional credits? Contact your administrator to increase your allocation.
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Top-Up Credit Packages</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        {[
+                                            { id: 'starter', name: 'Starter Pack', basePrice: 2000, totalAmount: 2360, credits: 2000, desc: 'For growing campaigns', color: 'border-slate-200' },
+                                            { id: 'growth', name: 'Growth Pack', basePrice: 5000, totalAmount: 5900, credits: 5000, desc: 'Calling & manual chat combo', color: 'border-indigo-600 ring-2 ring-indigo-600/10 scale-102', recommended: true },
+                                            { id: 'enterprise', name: 'Enterprise Pack', basePrice: 10000, totalAmount: 11800, credits: 10000, desc: 'High volume voice calling', color: 'border-slate-200' }
+                                        ].map((pkg, idx) => (
+                                            <div 
+                                                key={idx} 
+                                                className={`bg-white p-6 rounded-[2rem] border relative overflow-hidden flex flex-col justify-between shadow-sm transition-all hover:shadow-md hover:scale-[1.03] duration-300 ${pkg.color}`}
+                                            >
+                                                {pkg.recommended && (
+                                                    <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-2 py-0.5 rounded-md shadow-sm">
+                                                        Best Value
+                                                    </span>
+                                                )}
+                                                <div>
+                                                    <h4 className="text-sm font-bold text-slate-800 mb-1">{pkg.name}</h4>
+                                                    <p className="text-[10px] text-slate-400 font-medium mb-4">{pkg.desc}</p>
+                                                    <div className="mb-3">
+                                                        <span className="text-2xl font-black text-slate-900">
+                                                            {pkg.credits.toLocaleString()}
+                                                        </span>
+                                                        <span className="text-xs font-bold text-slate-400 block mt-0.5">Credits</span>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="mb-3">
+                                                        <div className="text-sm font-black text-slate-900">
+                                                            ₹{pkg.totalAmount.toLocaleString()}
+                                                        </div>
+                                                        <div className="text-[10px] font-bold text-slate-400">
+                                                            ₹{pkg.basePrice.toLocaleString()} + 18% GST
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleRecharge(pkg.id)}
+                                                        disabled={isProcessing}
+                                                        className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${pkg.recommended ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700'}`}
+                                                    >
+                                                        <PlusCircle size={14} />
+                                                        {isProcessing ? 'Connecting...' : 'Recharge Now'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
 

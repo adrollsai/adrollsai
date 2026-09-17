@@ -21,19 +21,48 @@ export async function middleware(request: NextRequest) {
 
   const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|css|js|webmanifest|json|txt|xml|mp4|webm)$/i.test(url.pathname);
 
+  let isWhitelabelPlatform = false;
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-forwarded-host-custom', hostname);
+
   // If it's a custom domain...
   if (!isPlatformDomain) {
     if (url.pathname.startsWith('/api/') || isStaticAsset || url.pathname === '/sitemap.xml' || url.pathname === '/robots.txt') {
         // Do nothing, let it fall through
     } else {
-        // For root requests on custom domains, serve the SEO server-rendered landing page directly (no iframe)
-        const subpath = (url.pathname === '/' || url.pathname === '') ? '/index' : url.pathname;
-        return NextResponse.rewrite(new URL(`/shared/${hostname}${subpath}`, request.url));
+        // Check if this domain is registered as an Agency White-Label Platform Domain
+        try {
+          const supabaseAnon = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { cookies: { getAll: () => request.cookies.getAll(), setAll: () => {} } }
+          );
+          const { data: wlProfile } = await supabaseAnon
+            .from('profiles')
+            .select('id, business_name, logo_url')
+            .eq('whitelabel_domain', hostname)
+            .maybeSingle();
+
+          if (wlProfile) {
+            isWhitelabelPlatform = true;
+            requestHeaders.set('x-whitelabel-domain', hostname);
+            requestHeaders.set('x-whitelabel-id', wlProfile.id);
+            requestHeaders.set('x-whitelabel-name', wlProfile.business_name || '');
+          }
+        } catch (wlErr: any) {
+          console.error('[Middleware Whitelabel Check]:', wlErr?.message);
+        }
+
+        // If it is NOT an agency platform domain, serve the SEO server-rendered landing page directly
+        if (!isWhitelabelPlatform) {
+          const subpath = (url.pathname === '/' || url.pathname === '') ? '/index' : url.pathname;
+          return NextResponse.rewrite(new URL(`/shared/${hostname}${subpath}`, request.url));
+        }
     }
   }
 
   let response = NextResponse.next({
-    request: { headers: request.headers },
+    request: { headers: requestHeaders },
   })
 
   // 3. FAST PATH FOR STATIC ASSETS & PUBLIC APIS (Bypasses remote auth network calls)
@@ -115,8 +144,8 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
 
-    // Rule B: Redirect to login ONLY if it's the APP subdomain (starts with 'app.')
-    const isAppSubdomain = hostname.startsWith('app.');
+    // Rule B: Redirect to login if it's the APP subdomain (starts with 'app.') or an agency whitelabel domain
+    const isAppSubdomain = hostname.startsWith('app.') || isWhitelabelPlatform;
     
     if (!user && isRootRoute && isAppSubdomain) {
       return NextResponse.redirect(new URL('/login', request.url))

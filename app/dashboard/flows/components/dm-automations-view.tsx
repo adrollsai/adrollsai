@@ -33,14 +33,14 @@ const DEFAULT_DM_RULES: DmAutomationRule[] = [
     channels: ['whatsapp', 'instagram', 'messenger'],
     matchType: 'starts_with',
     keywords: ['hi', 'hello', 'hey', 'start', 'namaste'],
-    replyText: 'Hello! 👋 Welcome to Nobogent Real Estate Advisory. How can we assist you today?',
+    replyText: 'Hello! 👋 Welcome! How can we assist you today?',
     actionType: 'trigger_flow',
     triggerFlowId: 'flow_lead_qualification',
     triggerFlowName: 'WhatsApp Lead Receptionist & Qualification',
     buttons: [
-      { label: 'Explore Luxury Projects', action: 'explore' },
-      { label: 'Book Site Visit', action: 'visit' },
-      { label: 'Talk to Advisor', action: 'talk' }
+      { label: 'View Catalog / Services', action: 'explore' },
+      { label: 'Book Consultation', action: 'visit' },
+      { label: 'Talk to Team', action: 'talk' }
     ],
     isActive: false, // Default PAUSED
     triggerCount: 1248,
@@ -52,14 +52,14 @@ const DEFAULT_DM_RULES: DmAutomationRule[] = [
     name: 'Price & Brochure Delivery Auto-DM',
     channels: ['whatsapp', 'instagram'],
     matchType: 'contains',
-    keywords: ['price', 'pricing', 'cost', 'rate', 'brochure', 'floor plan'],
-    replyText: 'Here is the current unit pricing sheet and PDF brochure for Wave City & Mohali Luxury Enclave. Would you like a 3-bedroom or 4-bedroom layout?',
+    keywords: ['price', 'pricing', 'cost', 'rate', 'brochure', 'catalog'],
+    replyText: 'Here is our latest pricing sheet and information catalog. Would you like more details or personalized assistance?',
     actionType: 'trigger_flow',
     triggerFlowId: 'flow_portal_leads',
     triggerFlowName: 'Instant WhatsApp Speed-to-Lead Follow-up',
     buttons: [
-      { label: 'Download PDF (8.4MB)', action: 'download' },
-      { label: 'View 3D Virtual Tour', action: 'tour' }
+      { label: 'Download Brochure / Catalog', action: 'download' },
+      { label: 'Schedule Call', action: 'tour' }
     ],
     isActive: false, // Default PAUSED
     triggerCount: 894,
@@ -68,17 +68,17 @@ const DEFAULT_DM_RULES: DmAutomationRule[] = [
   },
   {
     id: 'dm_appointment',
-    name: 'Instant Site Visit / Demo Booking',
+    name: 'Instant Consultation / Demo Booking',
     channels: ['whatsapp', 'messenger'],
     matchType: 'contains',
     keywords: ['visit', 'demo', 'book', 'appointment', 'schedule', 'consultation'],
-    replyText: 'Great! Let me schedule an executive site visit with chauffeured pickup or an online consultation. Which day works best for you?',
+    replyText: 'Great! Let us schedule a consultation or product demo for you. Which day works best for you?',
     actionType: 'trigger_flow',
     triggerFlowId: 'flow_voice_call',
     triggerFlowName: 'Voice Call Callback & Live Calendar Booking',
     buttons: [
       { label: 'Book Tomorrow (11 AM)', action: 'slot_1' },
-      { label: 'Book Weekend (3 PM)', action: 'slot_2' }
+      { label: 'Book This Week (3 PM)', action: 'slot_2' }
     ],
     isActive: false, // Default PAUSED
     triggerCount: 412,

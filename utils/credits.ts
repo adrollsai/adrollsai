@@ -18,11 +18,15 @@ async function getPrimaryUserId(supabaseAdmin: any, userId: string): Promise<str
   try {
     const { data } = await supabaseAdmin
       .from('profiles')
-      .select('id, parent_id, agency_id')
+      .select('id, parent_id, agency_id, credits')
       .eq('id', userId)
       .single()
       
     if (data) {
+      // If user has their own dedicated credit balance (e.g. client has dedicated credits), deduct from them directly
+      if (typeof data.credits === 'number' && data.credits > 0) {
+        return data.id
+      }
       return data.parent_id || data.agency_id || data.id
     }
   } catch (e) {

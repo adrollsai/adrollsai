@@ -68,6 +68,10 @@ export default function BillingPage() {
         const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
         return cached?.isUnlimited || false;
     });
+    const [isManagedClient, setIsManagedClient] = useState<boolean>(() => {
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        return cached?.isManagedClient || false;
+    });
 
     const fetchBillingData = async () => {
         try {
@@ -90,6 +94,7 @@ export default function BillingPage() {
                 setActivePlanName(resolvedPlanName);
                 setCreditsBalance(data.credits || 0);
                 setIsUnlimited(!!data.isUnlimited);
+                setIsManagedClient(!!data.isManagedClient);
 
                 let formattedDate: string | null = null;
                 if (data.resetDate) {
@@ -357,19 +362,34 @@ export default function BillingPage() {
                         <div>
                             <div className="flex items-center gap-2 mb-2">
                                 <span className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-black text-base shadow-sm">
-                                    N
+                                    ⚡
                                 </span>
-                                <span className="text-xl font-black tracking-wider text-slate-900 uppercase">NOBOGENT</span>
+                                <span className="text-xl font-black tracking-wider text-slate-900 uppercase">ENTERPRISE PLATFORM</span>
                             </div>
                             <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mt-3">
-                                All-in-One <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">AI Marketing & Sales</span> Platform
+                                All-in-One <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">AI Marketing & Operations</span> Platform
                             </h2>
                             <p className="text-slate-500 text-sm font-semibold mt-2">
-                                Everything you need to grow, manage and scale your business.
+                                Everything you need to grow, automate, and scale your business.
                             </p>
                         </div>
                     </div>
 
+                    {isManagedClient ? (
+                        <div className="bg-slate-50 rounded-3xl border border-slate-200/80 p-8 sm:p-12 text-center max-w-2xl mx-auto my-6">
+                            <div className="w-16 h-16 bg-blue-100 rounded-3xl flex items-center justify-center mx-auto mb-4 text-blue-600">
+                                <ShieldCheck size={32} />
+                            </div>
+                            <h3 className="text-2xl font-black text-slate-900 mb-2">Managed Client Workspace</h3>
+                            <p className="text-slate-600 text-sm leading-relaxed mb-6">
+                                Your account subscription and software features are managed directly by your service provider / agency administrator. You have full access to all features assigned to your account.
+                            </p>
+                            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 rounded-full text-xs font-black uppercase tracking-wider">
+                                <CheckCircle size={16} /> Subscription Active & Fully Licensed
+                            </div>
+                        </div>
+                    ) : (
+                        <>
                     {/* Desktop Comparison Table (lg+) */}
                     <div className="hidden lg:block overflow-x-auto">
                         <table className="w-full border-collapse">
@@ -584,6 +604,8 @@ export default function BillingPage() {
                             </div>
                         ))}
                     </div>
+                    </>
+                    )}
 
                     {/* Guarantee & Trust Badges (Screenshot 2 Bottom) */}
                     <div className="mt-14 pt-10 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-6">

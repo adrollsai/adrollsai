@@ -248,7 +248,7 @@ export async function sendBookingConfirmationEmail(
           <p style="font-size: 14px; color: #64748b; line-height: 1.5; margin-top: 24px;">If you need to make changes or reschedule, please reach out to us directly.</p>
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              Nobogent AI Booking Platform
+              ${businessName || 'Automated Booking System'}
             </p>
           </div>
         </div>
@@ -328,7 +328,7 @@ export async function sendBookingReminderEmail(
 
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              Nobogent AI Booking Platform
+              ${businessName || 'Automated Booking System'}
             </p>
           </div>
         </div>
@@ -372,7 +372,7 @@ export async function sendFacebookLeadEmail(
     }
 
     const mailOptions: any = {
-      from: `"Nobogent CRM" <no-reply@mail.nobogent.com>`,
+      from: `"Lead Alert" <no-reply@mail.nobogent.com>`,
       to: to.join(', '),
       subject: `🔥 New Facebook Lead: ${leadDetails.name}`,
       html: `
@@ -407,7 +407,7 @@ export async function sendFacebookLeadEmail(
           ${customQuestionsHtml}
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              Sent automatically by Nobogent CRM Platform
+              Sent automatically via Instant Lead Notification
             </p>
           </div>
         </div>
@@ -437,7 +437,7 @@ export async function sendLeadAutoResponseEmail(
     const campaignInfo = adName ? ` regarding <strong>${adName}</strong>` : '';
 
     const mailOptions: any = {
-      from: `"${businessName || 'Nobogent'}" <no-reply@mail.nobogent.com>`,
+      from: `"${businessName || 'Notification'}" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `Thank you for contacting ${businessName || 'us'}!`,
       html: `
@@ -459,7 +459,7 @@ export async function sendLeadAutoResponseEmail(
           </div>
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-              Powered by Nobogent
+              ${businessName || 'All Rights Reserved'}
             </p>
           </div>
         </div>
@@ -469,19 +469,24 @@ export async function sendLeadAutoResponseEmail(
     const info = await transporter.sendMail(mailOptions);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
-    console.error("Lead AutoResponse Email Error:", error);
+    console.error("Auto Response Email Error:", error);
     return { success: false, error: error.message };
   }
 }
 
-export async function sendDailyEodReportEmail(to: string, businessName: string, htmlContent: string, bcc?: string | string[]) {
+export async function sendEodReportEmail(
+  to: string,
+  businessName: string,
+  htmlContent: string,
+  bcc?: string | string[]
+) {
   try {
     if (!to) {
       return { success: false, error: "No recipient email provided" };
     }
 
     const mailOptions: any = {
-      from: `"Nobogent Daily Analytics" <no-reply@mail.nobogent.com>`,
+      from: `"${businessName ? `${businessName} Analytics` : 'Daily Analytics'}" <no-reply@mail.nobogent.com>`,
       to: to,
       subject: `📊 Daily EOD Operations Report: ${businessName}`,
       html: htmlContent,
@@ -804,4 +809,22 @@ export async function sendLeadTransferEmail(to: string, agentName: string, sende
     return { success: false, error: error.message };
   }
 }
+
+export async function sendDailyEodReportEmail(to: string, businessName: string, emailHtml: string, bcc?: string | string[]) {
+  try {
+    const mailOptions: any = {
+      from: `"${businessName || 'CRM Reporting'}" <no-reply@mail.nobogent.com>`,
+      to: to,
+      subject: `Daily CRM EOD Performance Report - ${businessName || 'Workspace'}`,
+      html: emailHtml,
+    }
+    if (bcc) mailOptions.bcc = bcc
+    const info = await transporter.sendMail(mailOptions)
+    return { success: true, messageId: info.messageId }
+  } catch (error: any) {
+    console.error("EOD Email Error:", error)
+    return { success: false, error: error.message }
+  }
+}
+
 

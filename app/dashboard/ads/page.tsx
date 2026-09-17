@@ -652,9 +652,10 @@ export default function AdsPage() {
         setPixelId(targetProfile.pixel_id || null)
         
         // Construct Catalogue URL
+        const appOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://app.nobogent.com'
         const catalogueUrl = targetProfile.custom_domain 
           ? `https://${targetProfile.custom_domain}` 
-          : `https://app.nobogent.com/shared/${targetUserId}`
+          : `${appOrigin}/shared/${targetUserId}`
           
         setAdForm(prev => ({
           ...prev, 
@@ -1858,7 +1859,8 @@ export default function AdsPage() {
         if (tProf) targetProfile = tProf;
     }
 
-    const autoPrivacyUrl = `https://app.nobogent.com/privacy/${tUserId}`;
+    const appOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://app.nobogent.com';
+    const autoPrivacyUrl = `${appOrigin}/privacy/${tUserId}`;
 
     // Resolve final follow-up link url
     let finalLinkUrl = adForm.linkUrl;
@@ -5806,7 +5808,8 @@ export default function AdsPage() {
                                           setSelectedLandingPageId(pageId);
                                           const page = landingPages.find(p => p.id === pageId);
                                           if (page) {
-                                              const domainBase = customDomain || `app.nobogent.com/shared/${targetUserId}`;
+                                              const currentHost = typeof window !== 'undefined' ? window.location.host : 'app.nobogent.com';
+                                              const domainBase = customDomain || `${currentHost}/shared/${targetUserId}`;
                                               const fullUrl = `https://${domainBase}/${page.slug}`;
                                               setAdForm(prev => ({ ...prev, linkUrl: fullUrl }));
                                               

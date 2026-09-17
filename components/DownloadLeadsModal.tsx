@@ -963,7 +963,7 @@ export default function DownloadLeadsModal({
 
       const dateStamp = new Date().toISOString().slice(0, 10)
       const timeStamp = new Date().toTimeString().slice(0, 5).replace(':', '')
-      const fileName = `Nobogent_CRM_Leads_${dateStamp}_${timeStamp}.csv`
+      const fileName = `Leads_Export_${dateStamp}_${timeStamp}.csv`
 
       link.setAttribute('href', url)
       link.setAttribute('download', fileName)

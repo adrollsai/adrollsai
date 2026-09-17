@@ -5732,7 +5732,7 @@ export default function FlowsPage() {
                       </label>
                       <input
                         type="text"
-                        value={selectedNode.config.senderName || 'Nobogent Real Estate Advisory'}
+                        value={selectedNode.config.senderName || 'Our Team'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, senderName: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })

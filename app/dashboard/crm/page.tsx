@@ -632,7 +632,7 @@ export default function CRMPage() {
   const [isSendingTemplates, setIsSendingTemplates] = useState(false)
   const [isCallingCampaign, setIsCallingCampaign] = useState(false)
   const [templateVarMappings, setTemplateVarMappings] = useState<Record<string, { field: string; customVal: string }>>({})
-  const [userBusinessName, setUserBusinessName] = useState('Nobogent')
+  const [userBusinessName, setUserBusinessName] = useState('')
   const [userRole, setUserRole] = useState<string>('admin')
 
   // --- BULK ACTIONS & TRANSFER STATE ---

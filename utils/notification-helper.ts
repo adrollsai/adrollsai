@@ -487,7 +487,7 @@ export async function sendAdminMultiChannelNotification({
                   <a href="${leadPageUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">View Lead in CRM</a>
                 </div>
                 <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 24px;" />
-                <p style="font-size: 11px; color: #94a3b8; text-align: center; text-transform: uppercase; letter-spacing: 0.05em;">Nobogent Priority Alert</p>
+                <p style="font-size: 11px; color: #94a3b8; text-align: center; text-transform: uppercase; letter-spacing: 0.05em;">Priority Lead Alert</p>
               </div>
             `;
             await sendGenericEmail(toEmail, subject, emailHtml || defaultHtml, bccEmail);
@@ -617,7 +617,7 @@ export async function sendExpertEscalationNotification({
 
         <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
           <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
-            Nobogent AI Expert Escalation Alert
+            AI Expert Escalation Alert
           </p>
         </div>
       </div>

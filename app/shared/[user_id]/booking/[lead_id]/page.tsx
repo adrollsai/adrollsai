@@ -582,7 +582,7 @@ export default function PublicBookingPortal() {
 
       {/* Footer copyright */}
       <div className="text-center text-[10px] text-slate-400 font-semibold tracking-wider uppercase mt-12 pb-4">
-        © {new Date().getFullYear()} {profile?.business_name || 'Nobogent'}. All rights reserved.
+        © {new Date().getFullYear()} {profile?.business_name || profile?.company_name || 'All rights reserved'}.
       </div>
     </div>
   )

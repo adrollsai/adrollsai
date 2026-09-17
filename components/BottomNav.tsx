@@ -13,6 +13,7 @@ export default function BottomNav() {
 
   const [showDistribute, setShowDistribute] = useState(false)
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent' | null>(null)
+  const [clientFeatures, setClientFeatures] = useState<string[] | null>(null)
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export default function BottomNav() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('enable_distribution, role')
+        .select('enable_distribution, role, client_features')
         .eq('id', session.user.id)
         .single()
 
@@ -74,6 +75,9 @@ export default function BottomNav() {
       const fetchedRole = data?.role?.toLowerCase() as any
 
       setRole(fetchedRole || 'admin')
+      if (data?.client_features) {
+        setClientFeatures(data.client_features)
+      }
 
       if (data?.enable_distribution) {
         setShowDistribute(true)
@@ -100,7 +104,7 @@ export default function BottomNav() {
 
   const allNavItems = [
     { name: 'Analytics', icon: BarChart2, path: '/dashboard/analytics' },
-    { name: 'Inventory', icon: LayoutGrid, path: '/dashboard' },
+    { name: 'Catalog', icon: LayoutGrid, path: '/dashboard' },
     // { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
@@ -133,8 +137,25 @@ export default function BottomNav() {
     }
 
     if (role === 'agent') {
-      return ['Analytics', 'Inventory', 'CRM', 'Assets', 'Profile', 'WhatsApp'].includes(item.name)
+      return ['Analytics', 'Catalog', 'Inventory', 'CRM', 'Assets', 'Profile', 'WhatsApp'].includes(item.name)
     }
+
+    if (role === 'client' && Array.isArray(clientFeatures)) {
+      const featureKeyMap: Record<string, string> = {
+        'Analytics': 'analytics',
+        'Catalog': 'inventory',
+        'Inventory': 'inventory',
+        'Creation': 'creation',
+        'Ads': 'ads',
+        'CRM': 'crm',
+        'WhatsApp': 'whatsapp',
+      }
+      const reqKey = featureKeyMap[item.name]
+      if (reqKey && !clientFeatures.includes(reqKey)) {
+        return false
+      }
+    }
+
     return true
   })
 

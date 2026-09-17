@@ -221,7 +221,7 @@ export default function LeadProfilePage() {
     const [isEditingCallback, setIsEditingCallback] = useState(false)
     const [tempCallbackTime, setTempCallbackTime] = useState('')
     const [templateVarMappings, setTemplateVarMappings] = useState<Record<string, { field: string; customVal: string }>>({})
-    const [userBusinessName, setUserBusinessName] = useState('Nobogent')
+    const [userBusinessName, setUserBusinessName] = useState('')
     const [campaignName, setCampaignName] = useState('')
 
     const getDetectedTemplateVars = (bodyText: string): number[] => {
@@ -641,7 +641,7 @@ export default function LeadProfilePage() {
                         try {
                             const targetCampaignId = data.voice_campaign_id || data.campaign_id || data.custom_fields?.voice_campaign_id || data.custom_fields?.campaign_id || data.custom_fields?.meta_ad_origin?.campaign_id;
                             let loadedQuestions: any[] = [];
-                            let flowTitle = 'Standard Real Estate Qualification';
+                            let flowTitle = 'Default Qualification Flow';
 
                             // 1. Try API first to bypass RLS during impersonation
                             try {
@@ -2630,7 +2630,7 @@ END:VCARD`
                                                             const actorName = byMatch 
                                                                 ? byMatch[1].trim() 
                                                                 : isAiAutomation 
-                                                                    ? 'Nobogent AI' 
+                                                                    ? 'AI Assistant' 
                                                                     : (item.actor_name || (lead as any)?.assigned_agent_name || (lead?.assigned_to ? 'Assigned Agent' : 'System'));
 
                                                             const displayAction = item.action_type === 'STATUS_CHANGE'
@@ -2649,11 +2649,11 @@ END:VCARD`
                                                                 <div className="flex flex-wrap items-center justify-between gap-1 pb-1.5 border-b border-slate-200/60">
                                                                     <div className="flex items-center gap-2 min-w-0">
                                                                         <div className={`w-5 h-5 rounded-full font-black text-[10px] flex items-center justify-center border shrink-0 ${
-                                                                            actorName === 'Nobogent AI' 
+                                                                            actorName === 'AI Assistant' || actorName === 'Nobogent AI' 
                                                                                 ? 'bg-purple-100 text-purple-800 border-purple-300' 
                                                                                 : 'bg-amber-100 text-amber-800 border-amber-300'
                                                                         }`}>
-                                                                            {actorName === 'Nobogent AI' ? '🤖' : (actorName[0] || 'A').toUpperCase()}
+                                                                            {actorName === 'AI Assistant' || actorName === 'Nobogent AI' ? '🤖' : (actorName[0] || 'A').toUpperCase()}
                                                                         </div>
                                                                         <span className="font-bold text-xs text-slate-800 truncate">{actorName}</span>
                                                                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700">{displayAction}</span>

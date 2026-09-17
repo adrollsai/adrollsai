@@ -1248,6 +1248,7 @@ export type Database = {
           business_landing_hero_title: string | null
           business_landing_show_products: boolean | null
           business_name: string | null
+          client_features: Json | null
           campaign_launches_used: number | null
           character_audio_url: string | null
           character_description: string | null
@@ -1351,6 +1352,7 @@ export type Database = {
           business_landing_hero_title?: string | null
           business_landing_show_products?: boolean | null
           business_name?: string | null
+          client_features?: Json | null
           campaign_launches_used?: number | null
           character_audio_url?: string | null
           character_description?: string | null
@@ -1454,6 +1456,7 @@ export type Database = {
           business_landing_hero_title?: string | null
           business_landing_show_products?: boolean | null
           business_name?: string | null
+          client_features?: Json | null
           campaign_launches_used?: number | null
           character_audio_url?: string | null
           character_description?: string | null

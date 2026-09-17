@@ -77,7 +77,9 @@ export async function triggerWelcomeDrip(
         const mediaUrl = flow.header_media_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/stitched_1785757278763.mp4';
         const leadDisplayName = leadName || 'Valued Lead';
 
-        const captionText = `Hey ${leadDisplayName}! 👋\n\nThank you for reaching out to ${profile.business_name || 'Nobogent AI'}! 🚀\n\nWatch the breakdown video above to see how our system automates client acquisition, lead qualification, and 24/7 sales engine for your business. 🎥✨\n\nBook a 1-on-1 strategy call with our team: https://app.nobogent.com/book/${ownerId}`;
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
+        const businessTitle = profile.business_name || profile.company_name || 'our team';
+        const captionText = `Hey ${leadDisplayName}! 👋\n\nThank you for reaching out to ${businessTitle}! 🚀\n\nWatch the breakdown video above to see how our system automates client acquisition, lead qualification, and 24/7 sales engine for your business. 🎥✨\n\nBook a 1-on-1 strategy call with our team: ${appUrl}/book/${ownerId}`;
 
         // PRIORITY 1: Free-Form Video Message
         try {
@@ -129,14 +131,14 @@ export async function triggerWelcomeDrip(
             if (!field) {
                 if (i === 1) parameters.push({ type: 'text', text: leadDisplayName });
                 else if (i === 2) parameters.push({ type: 'text', text: campaignName || 'General Campaign' });
-                else if (i === 3) parameters.push({ type: 'text', text: profile.business_name || 'Nobogent Partner' });
+                else if (i === 3) parameters.push({ type: 'text', text: businessTitle });
                 else break;
             } else {
                 let resolvedText = '';
                 if (field === 'lead_name') resolvedText = leadDisplayName;
                 else if (field === 'lead_phone') resolvedText = leadPhone;
                 else if (field === 'campaign_name') resolvedText = campaignName || 'General Campaign';
-                else if (field === 'company_name') resolvedText = profile.business_name || 'Nobogent Partner';
+                else if (field === 'company_name') resolvedText = businessTitle;
                 else resolvedText = field;
 
                 parameters.push({ type: 'text', text: resolvedText });

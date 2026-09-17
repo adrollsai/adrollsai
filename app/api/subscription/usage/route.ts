@@ -80,9 +80,17 @@ export async function GET(request: Request) {
         const planKey = (primaryProfile.subscription_plan || 'free').toLowerCase();
         const activePlan = PLANS[planKey as keyof typeof PLANS] || PLANS.free;
 
+        const isClient = profile.role === 'client';
+        const isManagedClient = isClient && !!(profile.agency_id || profile.parent_id);
+        const hasDedicatedCredits = isClient && typeof profile.credits === 'number' && profile.credits > 0;
+        const effectiveCredits = hasDedicatedCredits ? profile.credits : (primaryProfile.credits || 0);
+        const targetLedgerUserId = hasDedicatedCredits ? user.id : primaryUserId;
+
         const usageData = {
             planName: activePlan.name,
             resetDate: primaryProfile.usage_reset_date,
+            isManagedClient,
+            role: profile.role,
             limits: {
                 videos: {
                     used: getUsage('videos_used', 'ai_creatives_used'),
@@ -125,7 +133,7 @@ export async function GET(request: Request) {
                     label: "Cloud Storage (GB)"
                 }
             },
-            credits: primaryProfile.credits || 0,
+            credits: effectiveCredits,
             isUnlimited: ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(primaryProfile?.email || ''),
             transactions: [] as any[],
             hasMore: false
@@ -135,7 +143,7 @@ export async function GET(request: Request) {
         const { data: txs } = await supabase
             .from('credit_transactions')
             .select('*')
-            .eq('user_id', primaryUserId)
+            .eq('user_id', targetLedgerUserId)
             .order('created_at', { ascending: false })
             .range(offset, offset + limit);
 
