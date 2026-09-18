@@ -76,17 +76,18 @@ export async function optimizeCaptionsForRetention(
         You are a world-class short-form video editor specialized in viral captions (Alex Hormozi style) and code-generated motion graphic effects.
         
         INPUT:
-        A list of video transcript segments. Each segment has a unique "id", "start", "end", and "text".
+        A list of video transcript segments that are ALREADY PRECISELY TIMED to the speaker's vocal audio. Each segment has a unique "id", "start", "end", and "text".
         
         TASK:
-        1. For each input segment, optimize the text:
+        1. For each input segment, optimize the styling:
            ${langFormattingRule}
-        2. Identify which words in each optimized segment should be emphasized (highly styled/highlighted, e.g. key high-impact nouns, verbs, or adjectives).
+           CRITICAL: Do NOT invent completely new sentences or drastically change the word count of each segment because each segment's timing is physically anchored to the speaker's mouth and voice. Keep the core words aligned.
+        2. Identify which words in each optimized segment should be emphasized (highlighted in viral colors, e.g. key high-impact numbers, nouns, action verbs, or prices).
         3. Map visual effects to key moments in the video:
            - "zoom": a temporary camera zoom (scale up to 1.15) to emphasize a bold point or transition (typically 1.0 - 2.5 seconds duration).
            - "emoji": an emoji popped in the center/corner of the screen (typically 0.8 - 1.5 seconds duration) timed with key nouns/adjectives.
            - "border": a glowing pulsing neon border around the video frame (typically 1.5 - 3.0 seconds duration).
-           - "shake": a intense screen-shake effect (typically 0.5 - 1.2 seconds duration) during high intensity words.
+           - "shake": an intense screen-shake effect (typically 0.5 - 1.2 seconds duration) during high intensity words.
         
         DATA:
         ${JSON.stringify(inputSegments)}
@@ -163,24 +164,37 @@ export async function optimizeCaptionsForRetention(
             const words = textToSplit.trim().split(/\s+/).filter(Boolean);
             if (words.length === 0) continue;
 
-            const duration = Math.max(0.5, rawSeg.end - rawSeg.start);
             const totalWords = words.length;
-            
-            // Mathematically group words into 1-2 words per chunk for Hormozi style
-            const groupSize = 2;
-            const totalGroups = Math.ceil(totalWords / groupSize);
-            const groupDuration = duration / totalGroups;
+            const segStart = Number(rawSeg.start.toFixed(2));
+            const segEnd = Number(Math.max(rawSeg.start + 0.3, rawSeg.end).toFixed(2));
 
-            for (let g = 0; g < totalGroups; g++) {
-                const groupWords = words.slice(g * groupSize, (g + 1) * groupSize);
-                const isEmphasized = groupWords.some((w: string) => cleanEmpWords.has(w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
-
+            // If the segment is already compact (1-3 words), preserve the EXACT audio timestamps
+            if (totalWords <= 3) {
+                const isEmphasized = words.some((w: string) => cleanEmpWords.has(w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
                 finalCaptions.push({
-                    text: groupWords.join(' '),
-                    start: Number((rawSeg.start + (g * groupDuration)).toFixed(2)),
-                    end: Number((rawSeg.start + ((g + 1) * groupDuration)).toFixed(2)),
+                    text: words.join(' '),
+                    start: segStart,
+                    end: segEnd,
                     emphasis: isEmphasized
                 });
+            } else {
+                // If segment has 4+ words, divide proportionally inside the acoustic window [segStart, segEnd]
+                const groupSize = totalWords > 6 ? 3 : 2;
+                const totalGroups = Math.ceil(totalWords / groupSize);
+                const duration = Math.max(0.4, segEnd - segStart);
+                const groupDuration = duration / totalGroups;
+
+                for (let g = 0; g < totalGroups; g++) {
+                    const groupWords = words.slice(g * groupSize, (g + 1) * groupSize);
+                    const isEmphasized = groupWords.some((w: string) => cleanEmpWords.has(w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
+
+                    finalCaptions.push({
+                        text: groupWords.join(' '),
+                        start: Number((segStart + (g * groupDuration)).toFixed(2)),
+                        end: Number((segStart + ((g + 1) * groupDuration)).toFixed(2)),
+                        emphasis: isEmphasized
+                    });
+                }
             }
         }
 
@@ -191,22 +205,36 @@ export async function optimizeCaptionsForRetention(
 
     } catch (error: any) {
         console.error("[Caption Optimizer] Optimization failed, generating baseline captions:", error?.message || error);
-        // Fallback: build baseline captions directly from raw segments
+        // Fallback: build baseline captions directly from raw segments preserving true timestamps
         const fallbackCaptions: { text: string; start: number; end: number; emphasis: boolean }[] = [];
-        for (const rawSeg of (segments || [])) {
+        for (let i = 0; i < (segments || []).length; i++) {
+            const rawSeg = segments[i];
             const words = (rawSeg.text || '').toUpperCase().trim().split(/\s+/).filter(Boolean);
             if (words.length === 0) continue;
-            const duration = Math.max(0.5, rawSeg.end - rawSeg.start);
-            const totalGroups = Math.ceil(words.length / 2);
-            const groupDuration = duration / totalGroups;
-            for (let g = 0; g < totalGroups; g++) {
-                const chunkWords = words.slice(g * 2, (g + 1) * 2);
+            
+            const segStart = Number(rawSeg.start.toFixed(2));
+            const segEnd = Number(Math.max(rawSeg.start + 0.3, rawSeg.end).toFixed(2));
+
+            if (words.length <= 3) {
                 fallbackCaptions.push({
-                    text: chunkWords.join(' '),
-                    start: Number((rawSeg.start + g * groupDuration).toFixed(2)),
-                    end: Number((rawSeg.start + (g + 1) * groupDuration).toFixed(2)),
-                    emphasis: g % 2 === 0
+                    text: words.join(' '),
+                    start: segStart,
+                    end: segEnd,
+                    emphasis: i % 2 === 0
                 });
+            } else {
+                const totalGroups = Math.ceil(words.length / 2);
+                const duration = Math.max(0.4, segEnd - segStart);
+                const groupDuration = duration / totalGroups;
+                for (let g = 0; g < totalGroups; g++) {
+                    const chunkWords = words.slice(g * 2, (g + 1) * 2);
+                    fallbackCaptions.push({
+                        text: chunkWords.join(' '),
+                        start: Number((segStart + g * groupDuration).toFixed(2)),
+                        end: Number((segStart + (g + 1) * groupDuration).toFixed(2)),
+                        emphasis: (i + g) % 2 === 0
+                    });
+                }
             }
         }
         return {

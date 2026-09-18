@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Player } from '@remotion/player'
 import { CaptionsComposition, Caption, Effect, Theme } from '@/remotion/CaptionsComposition'
-import { SUBTITLE_THEMES } from '@/remotion/Constants'
+import { SUBTITLE_THEMES, ANIMATION_OPTIONS } from '@/remotion/Constants'
 import { createClient } from '@/utils/supabase/client'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -21,7 +21,16 @@ import {
     Pause,
     History,
     Globe,
-    Languages
+    Languages,
+    Plus,
+    Trash2,
+    Clock,
+    FastForward,
+    Rewind,
+    Sliders,
+    Zap,
+    SlidersHorizontal,
+    Maximize2
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -42,6 +51,17 @@ const CAPTION_LANGUAGES = [
     { value: 'spanish', label: 'Spanish (Español)', flag: '🇪🇸' },
     { value: 'french', label: 'French (Français)', flag: '🇫🇷' },
     { value: 'german', label: 'German (Deutsch)', flag: '🇩🇪' },
+]
+
+const COLOR_SWATCHES = [
+    '#FFE600', // Hormozi Yellow
+    '#39FF14', // Neon Green
+    '#00EAFF', // Cyber Cyan
+    '#FF007F', // Neon Magenta
+    '#F59E0B', // Amber Gold
+    '#EF4444', // Crimson Red
+    '#FFFFFF', // Crisp White
+    '#A855F7', // Electric Violet
 ]
 
 export default function VideoEditorPage() {
@@ -69,10 +89,12 @@ export default function VideoEditorPage() {
     const [effects, setEffects] = useState<Effect[]>([])
     const [profile, setProfile] = useState<any>(null)
     const [selectedTheme, setSelectedTheme] = useState<string>('hormozi')
+    const [themeConfig, setThemeConfig] = useState<Theme>(SUBTITLE_THEMES.hormozi)
     const [captionLanguage, setCaptionLanguage] = useState<string>('hinglish')
     const [isGenerating, setIsGenerating] = useState(false)
     const [isRendering, setIsRendering] = useState(false)
     const [durationInFrames, setDurationInFrames] = useState<number>(30 * 30) // fallback default
+    const [activeTab, setActiveTab] = useState<'styles' | 'animations' | 'custom' | 'subtitles'>('styles')
 
     // Player controls
     const playerRef = useRef<any>(null)
@@ -126,7 +148,6 @@ export default function VideoEditorPage() {
             // 3. Load Video Duration dynamically in browser
             if (assetData.url) {
                 const proxyUrl = getBrowserMediaUrl(assetData.url)
-                const directUrl = fixR2Url(assetData.url)
                 const video = document.createElement('video')
                 video.preload = 'metadata'
 
@@ -190,7 +211,7 @@ export default function VideoEditorPage() {
                 setCaptions(data.captions)
                 setEffects(data.effects || [])
                 const langObj = CAPTION_LANGUAGES.find(l => l.value === activeLang)
-                toast.success(`Captions generated in ${langObj ? langObj.label.split(' ')[0] : activeLang}!`)
+                toast.success(`Captions synchronized in ${langObj ? langObj.label.split(' ')[0] : activeLang}!`)
             } else {
                 throw new Error(data.error)
             }
@@ -201,6 +222,53 @@ export default function VideoEditorPage() {
         }
     }
 
+    const handleSelectTheme = (themeKey: string) => {
+        setSelectedTheme(themeKey)
+        const preset = SUBTITLE_THEMES[themeKey]
+        if (preset) {
+            setThemeConfig({ ...preset })
+        }
+    }
+
+    const updateTheme = (patch: Partial<Theme>) => {
+        setThemeConfig(prev => ({ ...prev, ...patch }))
+    }
+
+    const nudgeAllCaptions = (deltaSeconds: number) => {
+        if (captions.length === 0) return
+        setCaptions(prev => prev.map(c => ({
+            ...c,
+            start: Math.max(0, Number((c.start + deltaSeconds).toFixed(2))),
+            end: Math.max(0.1, Number((c.end + deltaSeconds).toFixed(2)))
+        })))
+        toast.success(`Shifted captions by ${deltaSeconds > 0 ? '+' : ''}${deltaSeconds}s`)
+    }
+
+    const updateCaption = (index: number, patch: Partial<Caption>) => {
+        setCaptions(prev => {
+            const next = [...prev]
+            next[index] = { ...next[index], ...patch }
+            return next
+        })
+    }
+
+    const deleteCaption = (index: number) => {
+        setCaptions(prev => prev.filter((_, i) => i !== index))
+    }
+
+    const addCaption = () => {
+        const lastCaption = captions[captions.length - 1]
+        const newStart = lastCaption ? Number((lastCaption.end + 0.1).toFixed(2)) : 0
+        const newEnd = Number((newStart + 1.2).toFixed(2))
+        setCaptions(prev => [...prev, {
+            text: 'NEW CAPTION',
+            start: newStart,
+            end: newEnd,
+            emphasis: false
+        }])
+        toast.success("Added new caption segment")
+    }
+
     const startRender = async () => {
         setIsRendering(true)
         try {
@@ -209,7 +277,7 @@ export default function VideoEditorPage() {
                 method: 'POST',
                 body: JSON.stringify({
                     assetId: asset.id,
-                    theme: SUBTITLE_THEMES[selectedTheme],
+                    theme: themeConfig,
                     videoUrl: fixR2Url(asset.url),
                     captions,
                     effects, // Pass the visual effects as well
@@ -263,27 +331,28 @@ export default function VideoEditorPage() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-950 text-white flex flex-col md:flex-row overflow-y-auto">
+        <div className="min-h-screen bg-slate-950 text-white flex flex-col lg:flex-row overflow-y-auto">
 
-            {/* LEFT SIDE - PREVIEW */}
-            <div className="flex-1 relative flex flex-col items-center justify-center p-4 sm:p-8 bg-slate-900/50">
+            {/* LEFT SIDE - PREVIEW & PLAYER CONTROLS */}
+            <div className="flex-1 relative flex flex-col items-center justify-center p-4 sm:p-8 bg-slate-900/40">
 
                 <button
                     onClick={() => router.back()}
-                    className="absolute top-6 left-6 z-20 bg-white/10 hover:bg-white/20 p-2 rounded-full backdrop-blur-md transition-all"
+                    className="absolute top-6 left-6 z-20 bg-white/10 hover:bg-white/20 p-2.5 rounded-full backdrop-blur-md transition-all text-white border border-white/10 shadow-lg"
                 >
-                    <ChevronLeft size={24} />
+                    <ChevronLeft size={22} />
                 </button>
 
-                <div className="w-full max-w-[400px] aspect-[9/16] bg-black rounded-[2rem] overflow-hidden shadow-2xl shadow-blue-500/10 border border-white/10 relative group">
+                {/* Video Player Canvas */}
+                <div className="w-full max-w-[390px] aspect-[9/16] bg-black rounded-[2.5rem] overflow-hidden shadow-2xl shadow-blue-500/10 border-2 border-white/10 relative group">
                     {(!videoReady || isGenerating) && (
                         <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-30 space-y-3">
                             <Loader2 size={40} className="text-blue-500 animate-spin" />
                             <p className="font-extrabold text-sm text-white">
-                                {isGenerating ? 'AI Editing & Transcribing Video...' : 'Loading & Pre-buffering Video...'}
+                                {isGenerating ? 'AI Syncing & Transcribing Captions...' : 'Loading Video Timeline...'}
                             </p>
                             <p className="text-xs text-slate-400 font-medium">
-                                {isGenerating ? 'Extracting audio & generating AI subtitles' : 'Preparing video player timeline'}
+                                {isGenerating ? 'Matching exact audio speech speed & viral timing' : 'Preparing high-definition canvas'}
                             </p>
                         </div>
                     )}
@@ -300,165 +369,485 @@ export default function VideoEditorPage() {
                             videoUrl: getBrowserMediaUrl(asset.url),
                             captions: captions,
                             effects: effects,
-                            theme: SUBTITLE_THEMES[selectedTheme],
+                            theme: themeConfig,
                             profile: profile
                         }}
                     />
                 </div>
 
-                <div className="mt-8 flex gap-4">
-                    <button className="bg-white/5 hover:bg-white/10 p-4 rounded-2xl transition-all border border-white/5">
-                        <History size={20} className="text-slate-400" />
-                    </button>
-                    <button
-                        onClick={() => generateCaptions()}
-                        disabled={isGenerating || !videoReady || loading}
-                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 px-8 py-4 rounded-2xl font-black flex items-center gap-2 transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 active:scale-95 disabled:cursor-not-allowed"
-                    >
-                        {(!videoReady || isGenerating) ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                        {!videoReady ? 'Loading Video...' : (isGenerating ? 'AI Editing...' : (captions.length > 0 ? 'Re-run AI Edit' : 'AI EDIT'))}
-                    </button>
-                </div>
-
-                {/* MASSIVE SPACER FOR MOBILE */}
-                <div className="h-64 sm:hidden" />
-            </div>
-
-            {/* RIGHT SIDE - CONTROLS */}
-            <div className="w-full md:w-[400px] bg-slate-950 border-l border-white/10 flex flex-col overflow-y-auto custom-scrollbar">
-
-                <div className="p-8">
-                    <h2 className="text-2xl font-bold mb-1 flex items-center gap-2">
-                        <Sparkles className="text-blue-500 animate-pulse" /> AI Video Editor
-                    </h2>
-                    <p className="text-slate-400 text-sm mb-8">Let AI edit your video automatically</p>
-
-                    {/* Theme Selector */}
-                    <div className="space-y-6">
-                        {/* Caption Language Selector */}
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-1.5">
-                                    <Globe size={13} className="text-blue-400" /> Caption Language
-                                </label>
-                                {captions.length > 0 && (
-                                    <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                                        Active
-                                    </span>
-                                )}
-                            </div>
-                            <div className="relative">
-                                <select
-                                    value={captionLanguage}
-                                    onChange={(e) => {
-                                        const newLang = e.target.value
-                                        setCaptionLanguage(newLang)
-                                        if (captions.length > 0) {
-                                            generateCaptions(newLang)
-                                        }
-                                    }}
-                                    className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl py-3.5 pl-4 pr-10 text-xs font-bold text-white outline-none focus:border-blue-500 transition-all cursor-pointer appearance-none"
-                                >
-                                    {CAPTION_LANGUAGES.map((lang) => (
-                                        <option key={lang.value} value={lang.value} className="bg-slate-900 text-white">
-                                            {lang.flag} {lang.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <Languages size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                            </div>
-                            <p className="text-[10px] text-slate-500 mt-1.5 ml-1">
-                                Generates subtitles in this language (Hinglish, English, Hindi, etc.)
-                            </p>
+                {/* Quick Audio Sync & Re-run Bar */}
+                <div className="mt-6 flex flex-col items-center gap-3 w-full max-w-[420px]">
+                    <div className="w-full flex items-center justify-between bg-white/5 border border-white/10 rounded-2xl p-2.5 px-4">
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                            <Clock size={14} className="text-amber-400" />
+                            <span>Audio Sync Nudge:</span>
                         </div>
-
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1 mb-3 block">AI Editing Styles</label>
-                            <div className="grid grid-cols-2 gap-3">
-                                {Object.keys(SUBTITLE_THEMES).map((themeKey) => (
-                                    <button
-                                        key={themeKey}
-                                        onClick={() => setSelectedTheme(themeKey)}
-                                        className={`p-4 rounded-2xl border-2 transition-all text-left group ${selectedTheme === themeKey ? 'border-blue-600 bg-blue-600/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
-                                    >
-                                        <p className={`font-bold capitalize ${selectedTheme === themeKey ? 'text-blue-400' : 'text-slate-300'}`}>{themeKey.replace(/([A-Z])/g, ' $1')}</p>
-                                        <div className="flex gap-1 mt-2">
-                                            <div className="w-3 h-3 rounded-full bg-white opacity-20 group-hover:opacity-40" />
-                                            <div className="w-3 h-3 rounded-full bg-white opacity-10 group-hover:opacity-20" />
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => nudgeAllCaptions(-0.2)}
+                                title="Shift all captions earlier by 0.2s"
+                                className="bg-white/5 hover:bg-white/15 px-2.5 py-1 rounded-lg text-xs font-mono font-bold text-slate-300 border border-white/5 transition-all"
+                            >
+                                -0.2s
+                            </button>
+                            <button
+                                onClick={() => nudgeAllCaptions(-0.1)}
+                                title="Shift all captions earlier by 0.1s"
+                                className="bg-white/5 hover:bg-white/15 px-2.5 py-1 rounded-lg text-xs font-mono font-bold text-slate-300 border border-white/5 transition-all"
+                            >
+                                -0.1s
+                            </button>
+                            <button
+                                onClick={() => nudgeAllCaptions(0.1)}
+                                title="Shift all captions later by 0.1s"
+                                className="bg-white/5 hover:bg-white/15 px-2.5 py-1 rounded-lg text-xs font-mono font-bold text-slate-300 border border-white/5 transition-all"
+                            >
+                                +0.1s
+                            </button>
+                            <button
+                                onClick={() => nudgeAllCaptions(0.2)}
+                                title="Shift all captions later by 0.2s"
+                                className="bg-white/5 hover:bg-white/15 px-2.5 py-1 rounded-lg text-xs font-mono font-bold text-slate-300 border border-white/5 transition-all"
+                            >
+                                +0.2s
+                            </button>
                         </div>
+                    </div>
 
-                        {/* Caption Editor List */}
-                        <div>
-                            <div className="flex items-center justify-between mb-3">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Adjust AI Subtitles</label>
-                                {captions.length > 0 && (
-                                    <button
-                                        onClick={() => generateCaptions()}
-                                        disabled={isGenerating}
-                                        className="text-[10px] font-extrabold text-blue-400 hover:text-blue-300 flex items-center gap-1 bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1 rounded-lg border border-blue-500/20 transition-all"
-                                    >
-                                        <RefreshCw size={10} className={isGenerating ? 'animate-spin' : ''} />
-                                        Re-transcribe
-                                    </button>
-                                )}
-                            </div>
-                            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                                {captions.map((caption, i) => (
-                                    <div key={i} className="bg-white/5 border border-white/5 rounded-xl p-3 flex gap-3">
-                                        <div className="text-[10px] text-slate-500 font-mono mt-1 w-12 shrink-0">
-                                            {caption.start.toFixed(1)}s
-                                        </div>
-                                        <textarea
-                                            value={caption.text}
-                                            onChange={(e) => {
-                                                const newCaptions = [...captions]
-                                                newCaptions[i].text = e.target.value
-                                                setCaptions(newCaptions)
-                                            }}
-                                            rows={1}
-                                            className="flex-1 bg-transparent border-none outline-none text-sm font-medium resize-none focus:text-blue-400 transition-colors"
-                                        />
-                                        <button
-                                            onClick={() => {
-                                                const newCaptions = [...captions]
-                                                newCaptions[i].emphasis = !newCaptions[i].emphasis
-                                                setCaptions(newCaptions)
-                                            }}
-                                            className={`p-1.5 rounded-lg transition-colors ${caption.emphasis ? 'text-yellow-400 bg-yellow-400/10' : 'text-slate-600 hover:text-slate-400'}`}
-                                        >
-                                            <Sparkles size={14} />
-                                        </button>
-                                    </div>
-                                ))}
-                                {captions.length === 0 && (
-                                    <div className="text-center py-12 border-2 border-dashed border-white/5 rounded-2xl px-4">
-                                        <p className="text-slate-500 text-sm">Click "AI EDIT" to start automated editing</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                    <div className="flex gap-3 w-full">
+                        <button
+                            onClick={() => generateCaptions()}
+                            disabled={isGenerating || !videoReady || loading}
+                            className="flex-1 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 py-3.5 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 active:scale-95 disabled:cursor-not-allowed border border-blue-400/20"
+                        >
+                            {(!videoReady || isGenerating) ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                            {!videoReady ? 'Loading...' : (isGenerating ? 'Syncing...' : (captions.length > 0 ? 'Re-Sync AI Captions' : 'AI Generate Captions'))}
+                        </button>
                     </div>
                 </div>
 
-                {/* Footer Action */}
-                <div className="mt-auto p-8 pb-40 sm:pb-8 border-t border-white/10 bg-slate-950/80 backdrop-blur-xl">
+                {/* Mobile Spacer */}
+                <div className="h-44 sm:hidden" />
+            </div>
+
+            {/* RIGHT SIDE - CONTROLS & TABS */}
+            <div className="w-full lg:w-[480px] bg-slate-950 border-l border-white/10 flex flex-col h-screen overflow-hidden">
+
+                {/* Header */}
+                <div className="p-6 pb-4 border-b border-white/10 shrink-0 bg-slate-950/80 backdrop-blur-md">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-xl font-black flex items-center gap-2">
+                                <Sparkles className="text-blue-400 animate-pulse" size={20} /> AI Caption Studio
+                            </h2>
+                            <p className="text-slate-400 text-xs mt-0.5">High-retention viral styling & animations</p>
+                        </div>
+                        {captions.length > 0 && (
+                            <span className="text-[11px] font-extrabold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-full">
+                                {captions.length} Segments
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Navigation Tabs */}
+                    <div className="flex gap-1.5 mt-4 p-1 bg-white/5 border border-white/5 rounded-2xl">
+                        <button
+                            onClick={() => setActiveTab('styles')}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${activeTab === 'styles' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            <Palette size={13} /> Styles
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('animations')}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${activeTab === 'animations' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            <Zap size={13} /> Animations
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('custom')}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${activeTab === 'custom' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            <SlidersHorizontal size={13} /> Adjust
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('subtitles')}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${activeTab === 'subtitles' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            <Type size={13} /> Subtitles
+                        </button>
+                    </div>
+                </div>
+
+                {/* Tab Content Body (Scrollable) */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+
+                    {/* TAB 1: STYLES & PRESETS */}
+                    {activeTab === 'styles' && (
+                        <div className="space-y-6">
+                            {/* Caption Language */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 flex items-center gap-1.5">
+                                    <Globe size={13} className="text-blue-400" /> Caption Language
+                                </label>
+                                <div className="relative">
+                                    <select
+                                        value={captionLanguage}
+                                        onChange={(e) => {
+                                            const newLang = e.target.value
+                                            setCaptionLanguage(newLang)
+                                            if (captions.length > 0) {
+                                                generateCaptions(newLang)
+                                            }
+                                        }}
+                                        className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl py-3 pl-4 pr-10 text-xs font-bold text-white outline-none focus:border-blue-500 transition-all cursor-pointer appearance-none"
+                                    >
+                                        {CAPTION_LANGUAGES.map((lang) => (
+                                            <option key={lang.value} value={lang.value} className="bg-slate-900 text-white">
+                                                {lang.flag} {lang.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <Languages size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                </div>
+                            </div>
+
+                            {/* Preset Themes Grid */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1 mb-3 block">
+                                    Viral Subtitle Presets (8 Styles)
+                                </label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {Object.entries(SUBTITLE_THEMES).map(([themeKey, themeData]) => {
+                                        const isSelected = selectedTheme === themeKey
+                                        return (
+                                            <button
+                                                key={themeKey}
+                                                onClick={() => handleSelectTheme(themeKey)}
+                                                className={`p-3.5 rounded-2xl border-2 transition-all text-left group relative overflow-hidden ${isSelected ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+                                            >
+                                                {isSelected && (
+                                                    <div className="absolute top-2 right-2 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                                                        <Check size={10} className="text-white" />
+                                                    </div>
+                                                )}
+                                                <p className={`font-extrabold text-xs capitalize ${isSelected ? 'text-blue-400' : 'text-slate-200'}`}>
+                                                    {themeKey.replace(/([A-Z])/g, ' $1')}
+                                                </p>
+                                                <div className="flex items-center gap-1.5 mt-2.5">
+                                                    <div 
+                                                        className="w-4 h-4 rounded-full border border-white/20 shadow-sm" 
+                                                        style={{ backgroundColor: themeData.highlightColor }} 
+                                                        title="Highlight Color"
+                                                    />
+                                                    <div 
+                                                        className="w-4 h-4 rounded-full border border-white/20 shadow-sm" 
+                                                        style={{ backgroundColor: themeData.secondaryHighlightColor || themeData.color }} 
+                                                        title="Secondary Color"
+                                                    />
+                                                    <span className="text-[10px] text-slate-400 font-mono capitalize ml-1">
+                                                        {themeData.animation}
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* TAB 2: ANIMATIONS */}
+                    {activeTab === 'animations' && (
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">
+                                    Select Caption Animation
+                                </label>
+                                <p className="text-xs text-slate-400 ml-1 mb-4 leading-relaxed">
+                                    Control how subtitle words animate onto the screen in synchronization with speech tempo.
+                                </p>
+                            </div>
+
+                            <div className="space-y-2.5">
+                                {ANIMATION_OPTIONS.map((anim) => {
+                                    const isSelected = themeConfig.animation === anim.id
+                                    return (
+                                        <button
+                                            key={anim.id}
+                                            onClick={() => updateTheme({ animation: anim.id })}
+                                            className={`w-full p-4 rounded-2xl border-2 transition-all flex items-center justify-between text-left group ${isSelected ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/10' : 'border-white/5 bg-white/5 hover:bg-white/10'}`}
+                                        >
+                                            <div className="flex items-center gap-3.5">
+                                                <span className="text-2xl p-2 bg-white/5 rounded-xl border border-white/5">
+                                                    {anim.icon}
+                                                </span>
+                                                <div>
+                                                    <p className={`font-black text-sm ${isSelected ? 'text-blue-400' : 'text-white'}`}>
+                                                        {anim.label}
+                                                    </p>
+                                                    <p className="text-xs text-slate-400 mt-0.5">
+                                                        {anim.description}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-slate-700'}`}>
+                                                {isSelected && <Check size={12} className="text-white" />}
+                                            </div>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* TAB 3: CUSTOM ADJUSTMENTS */}
+                    {activeTab === 'custom' && (
+                        <div className="space-y-6">
+                            {/* Position */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2.5 block">
+                                    Vertical Position
+                                </label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {(['top', 'center', 'bottom'] as const).map((pos) => (
+                                        <button
+                                            key={pos}
+                                            onClick={() => updateTheme({ position: pos })}
+                                            className={`py-2.5 rounded-xl border font-extrabold text-xs capitalize transition-all ${themeConfig.position === pos ? 'border-blue-500 bg-blue-500/20 text-blue-400' : 'border-white/5 bg-white/5 text-slate-400 hover:text-white'}`}
+                                        >
+                                            {pos}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Fine-tune Vertical Offset Slider */}
+                            <div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">
+                                        Position Fine-Tune (Nudge Y)
+                                    </label>
+                                    <span className="text-xs font-mono font-bold text-blue-400">
+                                        {themeConfig.verticalOffset || 0}px
+                                    </span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="-180"
+                                    max="180"
+                                    step="5"
+                                    value={themeConfig.verticalOffset || 0}
+                                    onChange={(e) => updateTheme({ verticalOffset: parseInt(e.target.value) })}
+                                    className="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                                />
+                            </div>
+
+                            {/* Font Size Slider */}
+                            <div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">
+                                        Font Size
+                                    </label>
+                                    <span className="text-xs font-mono font-bold text-blue-400">
+                                        {themeConfig.fontSize || 88}px
+                                    </span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="56"
+                                    max="120"
+                                    step="2"
+                                    value={themeConfig.fontSize || 88}
+                                    onChange={(e) => updateTheme({ fontSize: parseInt(e.target.value) })}
+                                    className="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                                />
+                            </div>
+
+                            {/* Highlight Accent Colors */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2.5 block">
+                                    Viral Highlight Color
+                                </label>
+                                <div className="flex flex-wrap gap-2.5">
+                                    {COLOR_SWATCHES.map((color) => (
+                                        <button
+                                            key={color}
+                                            onClick={() => updateTheme({ highlightColor: color })}
+                                            className={`w-9 h-9 rounded-xl border-2 transition-transform active:scale-90 flex items-center justify-center shadow-md ${themeConfig.highlightColor === color ? 'border-white scale-110' : 'border-transparent hover:scale-105'}`}
+                                            style={{ backgroundColor: color }}
+                                        >
+                                            {themeConfig.highlightColor === color && (
+                                                <Check size={14} className={color === '#FFFFFF' || color === '#FFE600' ? 'text-black' : 'text-white'} />
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Secondary Highlight Color */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2.5 block">
+                                    Secondary Accent Color
+                                </label>
+                                <div className="flex flex-wrap gap-2.5">
+                                    {COLOR_SWATCHES.map((color) => (
+                                        <button
+                                            key={color}
+                                            onClick={() => updateTheme({ secondaryHighlightColor: color })}
+                                            className={`w-9 h-9 rounded-xl border-2 transition-transform active:scale-90 flex items-center justify-center shadow-md ${(themeConfig.secondaryHighlightColor || '#39FF14') === color ? 'border-white scale-110' : 'border-transparent hover:scale-105'}`}
+                                            style={{ backgroundColor: color }}
+                                        >
+                                            {(themeConfig.secondaryHighlightColor || '#39FF14') === color && (
+                                                <Check size={14} className={color === '#FFFFFF' || color === '#FFE600' ? 'text-black' : 'text-white'} />
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Container Box Style */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2.5 block">
+                                    Background Box / Badge
+                                </label>
+                                <div className="grid grid-cols-4 gap-2">
+                                    {(['none', 'shadow', 'badge', 'glass'] as const).map((box) => (
+                                        <button
+                                            key={box}
+                                            onClick={() => updateTheme({ boxStyle: box })}
+                                            className={`py-2 rounded-xl border font-bold text-xs capitalize transition-all ${(themeConfig.boxStyle || 'none') === box ? 'border-blue-500 bg-blue-500/20 text-blue-400' : 'border-white/5 bg-white/5 text-slate-400 hover:text-white'}`}
+                                        >
+                                            {box}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Glow Toggle */}
+                            <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-2xl">
+                                <div>
+                                    <p className="text-xs font-bold text-white">Neon Glow Shadow</p>
+                                    <p className="text-[11px] text-slate-400">Radiant luminous back-glow behind words</p>
+                                </div>
+                                <button
+                                    onClick={() => updateTheme({ glow: !themeConfig.glow })}
+                                    className={`w-12 h-6 rounded-full transition-colors p-1 flex items-center ${themeConfig.glow ? 'bg-blue-600 justify-end' : 'bg-slate-800 justify-start'}`}
+                                >
+                                    <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* TAB 4: SUBTITLES & TIMINGS */}
+                    {activeTab === 'subtitles' && (
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                                        Subtitle Timeline ({captions.length})
+                                    </p>
+                                    <p className="text-[11px] text-slate-500">Edit words and fine-tune start/end seconds</p>
+                                </div>
+                                <button
+                                    onClick={addCaption}
+                                    className="text-xs font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-xl border border-blue-500/20 transition-all"
+                                >
+                                    <Plus size={13} /> Add Subtitle
+                                </button>
+                            </div>
+
+                            {/* Caption List */}
+                            <div className="space-y-2.5">
+                                {captions.map((caption, i) => (
+                                    <div 
+                                        key={i} 
+                                        className="bg-white/5 hover:bg-white/[0.07] border border-white/10 rounded-2xl p-3.5 space-y-2 transition-all"
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            {/* Timestamp Inputs */}
+                                            <div className="flex items-center gap-1 text-xs">
+                                                <span className="text-slate-500 font-bold">Start:</span>
+                                                <input
+                                                    type="number"
+                                                    step="0.05"
+                                                    value={caption.start}
+                                                    onChange={(e) => updateCaption(i, { start: parseFloat(e.target.value) || 0 })}
+                                                    className="w-16 bg-black/40 border border-white/10 rounded-lg px-2 py-0.5 text-xs font-mono font-bold text-slate-200 text-center outline-none focus:border-blue-500"
+                                                />
+                                                <span className="text-slate-500 font-bold ml-1">End:</span>
+                                                <input
+                                                    type="number"
+                                                    step="0.05"
+                                                    value={caption.end}
+                                                    onChange={(e) => updateCaption(i, { end: parseFloat(e.target.value) || 0 })}
+                                                    className="w-16 bg-black/40 border border-white/10 rounded-lg px-2 py-0.5 text-xs font-mono font-bold text-slate-200 text-center outline-none focus:border-blue-500"
+                                                />
+                                                <span className="text-[10px] text-slate-500 font-mono">s</span>
+                                            </div>
+
+                                            {/* Actions */}
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => updateCaption(i, { emphasis: !caption.emphasis })}
+                                                    title={caption.emphasis ? 'Emphasized' : 'Normal'}
+                                                    className={`p-1.5 rounded-lg transition-colors ${caption.emphasis ? 'text-yellow-400 bg-yellow-400/10' : 'text-slate-600 hover:text-slate-400'}`}
+                                                >
+                                                    <Sparkles size={14} />
+                                                </button>
+                                                <button
+                                                    onClick={() => deleteCaption(i)}
+                                                    title="Delete subtitle"
+                                                    className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 transition-colors"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Subtitle Text Input */}
+                                        <textarea
+                                            value={caption.text}
+                                            onChange={(e) => updateCaption(i, { text: e.target.value })}
+                                            rows={2}
+                                            className="w-full bg-black/30 border border-white/5 rounded-xl p-2 text-sm font-semibold resize-none outline-none focus:border-blue-500 text-white transition-colors"
+                                        />
+                                    </div>
+                                ))}
+
+                                {captions.length === 0 && (
+                                    <div className="text-center py-12 border-2 border-dashed border-white/5 rounded-2xl px-4 space-y-3">
+                                        <Type size={32} className="mx-auto text-slate-600" />
+                                        <p className="text-slate-400 text-sm font-bold">No subtitles generated yet</p>
+                                        <button
+                                            onClick={() => generateCaptions()}
+                                            disabled={isGenerating}
+                                            className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all"
+                                        >
+                                            Generate AI Captions Now
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer Action Export */}
+                <div className="p-6 border-t border-white/10 bg-slate-950/90 backdrop-blur-xl shrink-0">
                     <button
                         onClick={startRender}
                         disabled={isRendering || captions.length === 0}
-                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 p-5 rounded-[1.5rem] font-black text-lg flex items-center justify-center gap-3 transition-all shadow-xl shadow-blue-600/20 disabled:opacity-50 active:scale-[0.98]"
+                        className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 p-4.5 py-4 rounded-2xl font-black text-base flex items-center justify-center gap-3 transition-all shadow-xl shadow-blue-600/20 disabled:opacity-50 active:scale-[0.98]"
                     >
-                        {isRendering ? <Loader2 size={24} className="animate-spin" /> : <Download size={24} />}
-                        {isRendering ? 'Rendering Video...' : 'Export Final Video'}
+                        {isRendering ? <Loader2 size={22} className="animate-spin" /> : <Download size={22} />}
+                        {isRendering ? 'Rendering Video...' : 'Export Final Rendered Video'}
                     </button>
-                    <p className="text-center text-[10px] text-slate-500 mt-4 font-bold uppercase tracking-widest">Render takes ~2-3 minutes</p>
+                    <p className="text-center text-[10px] text-slate-500 mt-2.5 font-bold uppercase tracking-widest">
+                        High-Speed Cloud Rendering (~2-3 minutes)
+                    </p>
                 </div>
 
-                {/* MASSIVE SPACER FOR MOBILE */}
-                <div className="h-64 sm:hidden" />
             </div>
         </div>
     )

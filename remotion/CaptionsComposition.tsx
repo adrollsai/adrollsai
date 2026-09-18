@@ -1,9 +1,15 @@
 import { AbsoluteFill, OffthreadVideo, Audio, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
 import React from 'react';
-import { loadFont } from "@remotion/google-fonts/Montserrat";
+import { loadFont as loadMontserrat } from "@remotion/google-fonts/Montserrat";
+import { loadFont as loadOutfit } from "@remotion/google-fonts/Outfit";
+import { loadFont as loadRoboto } from "@remotion/google-fonts/Roboto";
+import { loadFont as loadInter } from "@remotion/google-fonts/Inter";
 
-// Ensure Montserrat is loaded for viral captions
-loadFont();
+// Load Google Fonts for viral and professional captions
+loadMontserrat();
+loadOutfit();
+loadRoboto();
+loadInter();
 
 export type Caption = {
     text: string;
@@ -24,10 +30,16 @@ export type Theme = {
     fontSize: number;
     color: string;
     highlightColor: string;
-    animation: 'pop' | 'fade' | 'slide';
+    secondaryHighlightColor?: string;
+    animation: 'pop' | 'bounce' | 'slide' | 'fade' | 'karaoke' | 'glitch' | 'zoom';
     position: 'bottom' | 'center' | 'top';
+    verticalOffset?: number;
     outlineColor?: string;
+    strokeWidth?: number;
     glow?: boolean;
+    boxStyle?: 'none' | 'shadow' | 'badge' | 'glass';
+    boxColor?: string;
+    textTransform?: 'uppercase' | 'none' | 'capitalize';
 };
 
 interface CaptionsCompositionProps {
@@ -84,7 +96,7 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
         });
     }
 
-    // 2. Shake Transform (translation) - DISABLED to keep video stable and stable
+    // 2. Shake Transform (translation) - DISABLED to keep video stable and clean
     let translateX = 0;
     let translateY = 0;
 
@@ -93,6 +105,8 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
     if (activeBorder) {
         borderOpacity = interpolate(Math.sin(frame * 0.18), [-1, 1], [0.35, 1.0]);
     }
+
+    const vertOffset = theme.verticalOffset || 0;
 
     return (
         <AbsoluteFill style={{ backgroundColor: 'black' }}>
@@ -148,10 +162,9 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
             {/* Captions Layer */}
             <AbsoluteFill style={{ 
                 justifyContent: theme.position === 'bottom' ? 'flex-end' : theme.position === 'top' ? 'flex-start' : 'center',
-                paddingBottom: theme.position === 'bottom' ? '18%' : '0',
-                paddingTop: theme.position === 'top' ? '18%' : '0',
-                // If position is center, translate down slightly to avoid center watermark/logo overlap
-                transform: theme.position === 'center' ? 'translateY(280px)' : 'none',
+                paddingBottom: theme.position === 'bottom' ? `calc(18% - ${vertOffset}px)` : '0',
+                paddingTop: theme.position === 'top' ? `calc(18% + ${vertOffset}px)` : '0',
+                transform: theme.position === 'center' ? `translateY(${280 + vertOffset}px)` : 'none',
                 zIndex: 10,
             }}>
                 <div style={{
@@ -174,6 +187,7 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                                     frame={frame} 
                                     fps={fps} 
                                     startFrame={startFrame}
+                                    endFrame={endFrame}
                                 />
                             );
                         }
@@ -208,47 +222,172 @@ const AnimatedCaption: React.FC<{
     theme: Theme, 
     frame: number, 
     fps: number, 
-    startFrame: number 
-}> = ({ caption, theme, frame, fps, startFrame }) => {
-    const words = caption.text.split(" ");
-    
+    startFrame: number,
+    endFrame: number
+}> = ({ caption, theme, frame, fps, startFrame, endFrame }) => {
+    const relFrame = Math.max(0, frame - startFrame);
+    const durationInFrames = Math.max(1, endFrame - startFrame);
+    const anim = theme.animation || 'pop';
+
+    // Dynamic animation physics
+    let animScale = 1.0;
+    let animTranslateX = 0;
+    let animTranslateY = 0;
+    let animOpacity = 1.0;
+
+    if (anim === 'pop') {
+        const springVal = spring({
+            frame: relFrame,
+            fps,
+            config: { damping: 11, stiffness: 220, mass: 0.6 }
+        });
+        animScale = interpolate(springVal, [0, 1], [0.75, 1.0]);
+    } else if (anim === 'bounce') {
+        const springVal = spring({
+            frame: relFrame,
+            fps,
+            config: { damping: 9, stiffness: 180 }
+        });
+        animScale = interpolate(springVal, [0, 1], [0.85, 1.0]);
+        animTranslateY = interpolate(springVal, [0, 1], [35, 0]);
+    } else if (anim === 'slide') {
+        animTranslateY = interpolate(relFrame, [0, 6], [45, 0], {
+            extrapolateRight: 'clamp',
+            extrapolateLeft: 'clamp'
+        });
+        animOpacity = interpolate(relFrame, [0, 4], [0, 1], {
+            extrapolateRight: 'clamp',
+            extrapolateLeft: 'clamp'
+        });
+    } else if (anim === 'fade') {
+        animOpacity = interpolate(relFrame, [0, 6], [0, 1], {
+            extrapolateRight: 'clamp',
+            extrapolateLeft: 'clamp'
+        });
+    } else if (anim === 'zoom') {
+        animScale = interpolate(relFrame, [0, 7], [0.5, 1.0], {
+            extrapolateRight: 'clamp',
+            extrapolateLeft: 'clamp'
+        });
+        animOpacity = interpolate(relFrame, [0, 4], [0, 1], {
+            extrapolateRight: 'clamp',
+            extrapolateLeft: 'clamp'
+        });
+    } else if (anim === 'glitch') {
+        if (relFrame < 5) {
+            animTranslateX = (relFrame % 2 === 0 ? 1 : -1) * (5 - relFrame) * 4;
+            animTranslateY = (relFrame % 3 === 0 ? -1 : 1) * (5 - relFrame) * 2;
+            animScale = 1.08;
+        } else {
+            animScale = 1.0;
+        }
+    }
+
+    const words = caption.text.trim().split(/\s+/);
+    const strokeWidth = theme.strokeWidth !== undefined ? theme.strokeWidth : 14;
+    const strokeColor = theme.outlineColor || '#000000';
+    const hasStroke = strokeWidth > 0;
+
+    // Badges / Container styles
+    const boxStyle = theme.boxStyle || 'none';
+    let boxWrapperStyle: React.CSSProperties = {};
+    if (boxStyle === 'badge') {
+        boxWrapperStyle = {
+            backgroundColor: theme.boxColor || 'rgba(0,0,0,0.85)',
+            padding: '16px 36px',
+            borderRadius: '32px',
+            border: '3px solid rgba(255,255,255,0.18)',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+        };
+    } else if (boxStyle === 'glass') {
+        boxWrapperStyle = {
+            backgroundColor: 'rgba(15, 23, 42, 0.7)',
+            backdropFilter: 'blur(20px)',
+            padding: '16px 32px',
+            borderRadius: '28px',
+            border: '1.5px solid rgba(255,255,255,0.22)',
+            boxShadow: '0 16px 32px rgba(0,0,0,0.4)',
+        };
+    } else if (boxStyle === 'shadow') {
+        boxWrapperStyle = {
+            padding: '8px 24px',
+            filter: 'drop-shadow(0px 14px 20px rgba(0,0,0,0.85))',
+        };
+    }
+
     return (
         <div style={{
-            fontSize: theme.fontSize || 96,
-            fontFamily: '"Montserrat", "Arial Black", sans-serif',
-            fontWeight: 900,
-            textTransform: 'uppercase',
-            padding: '0 40px',
-            lineHeight: 1.0,
-            letterSpacing: '-0.02em',
-            WebkitTextStroke: '14px #000000',
-            paintOrder: 'stroke fill',
-            stroke: '#000000',
-            strokeWidth: '14px',
-            strokeLinejoin: 'round',
+            transform: `scale(${animScale}) translate(${animTranslateX}px, ${animTranslateY}px)`,
+            opacity: animOpacity,
             display: 'inline-flex',
-            flexWrap: 'wrap',
             justifyContent: 'center',
-            filter: 'drop-shadow(0px 12px 12px rgba(0,0,0,0.75))',
+            alignItems: 'center',
+            maxWidth: '92%',
+            ...boxWrapperStyle,
         }}>
-            {words.map((word, idx) => {
-                let wordColor = theme.color || '#FFFFFF';
-                if (caption.emphasis) {
-                    // Hormozi-style alternating yellow (#FFE600) and neon green (#39FF14) highlights
-                    wordColor = idx % 2 === 0 ? (theme.highlightColor || '#FFE600') : '#39FF14';
-                }
-                return (
-                    <span 
-                        key={idx} 
-                        style={{ 
-                            color: wordColor, 
-                            marginRight: idx === words.length - 1 ? '0px' : '18px' 
-                        }}
-                    >
-                        {word}
-                    </span>
-                );
-            })}
+            <div style={{
+                fontSize: theme.fontSize || 96,
+                fontFamily: `"${theme.fontFamily || 'Montserrat'}", "Outfit", "Inter", "Arial Black", sans-serif`,
+                fontWeight: 900,
+                textTransform: (theme.textTransform || 'uppercase') as any,
+                padding: '0 16px',
+                lineHeight: 1.05,
+                letterSpacing: '-0.02em',
+                WebkitTextStroke: hasStroke ? `${strokeWidth}px ${strokeColor}` : 'none',
+                paintOrder: 'stroke fill',
+                stroke: hasStroke ? strokeColor : undefined,
+                strokeWidth: hasStroke ? `${strokeWidth}px` : undefined,
+                strokeLinejoin: 'round',
+                display: 'inline-flex',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+                filter: theme.glow ? `drop-shadow(0px 0px 18px ${theme.highlightColor}66) drop-shadow(0px 12px 14px rgba(0,0,0,0.8))` : 'drop-shadow(0px 12px 14px rgba(0,0,0,0.75))',
+            }}>
+                {words.map((word, idx) => {
+                    let wordColor = theme.color || '#FFFFFF';
+                    let wordScale = 1.0;
+                    let wordOpacity = 1.0;
+
+                    if (anim === 'karaoke') {
+                        // Word-by-word karaoke progression
+                        const wordDuration = durationInFrames / Math.max(1, words.length);
+                        const wordStart = startFrame + idx * wordDuration;
+                        const wordEnd = startFrame + (idx + 1) * wordDuration;
+                        const isCurrentWord = frame >= wordStart && frame < wordEnd;
+                        const isPastWord = frame >= wordEnd;
+
+                        if (isCurrentWord) {
+                            wordColor = theme.highlightColor || '#FFE600';
+                            wordScale = 1.15;
+                            wordOpacity = 1.0;
+                        } else if (isPastWord) {
+                            wordColor = theme.secondaryHighlightColor || theme.highlightColor || '#FFE600';
+                            wordOpacity = 0.95;
+                        } else {
+                            wordColor = theme.color || '#FFFFFF';
+                            wordOpacity = 0.55; // Dim future words until spoken
+                        }
+                    } else if (caption.emphasis) {
+                        wordColor = idx % 2 === 0 ? (theme.highlightColor || '#FFE600') : (theme.secondaryHighlightColor || '#39FF14');
+                    }
+
+                    return (
+                        <span 
+                            key={idx} 
+                            style={{ 
+                                color: wordColor, 
+                                opacity: wordOpacity,
+                                transform: wordScale !== 1.0 ? `scale(${wordScale})` : undefined,
+                                transition: 'all 0.1s ease',
+                                marginRight: idx === words.length - 1 ? '0px' : '18px',
+                                display: 'inline-block'
+                            }}
+                        >
+                            {word}
+                        </span>
+                    );
+                })}
+            </div>
         </div>
     );
 };

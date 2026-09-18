@@ -107,6 +107,16 @@ export async function transcribeVideoWithGemini(videoUrl: string, fallbackAudioU
             languageSpecificInstruction = `Generate a precise transcript of this video/audio translated or transcribed into ${targetLanguage}.`;
         }
 
+        const promptInstructions = `
+${languageSpecificInstruction}
+
+CRITICAL SPEECH-SYNCHRONIZATION AND TIMING RULES:
+1. High-Precision Short Segments: Break speech into short viral subtitle segments of 1 to 3 words maximum per segment (Alex Hormozi / TikTok reel style).
+2. Exact Audio Alignment: "start" must be the precise timestamp (in seconds, e.g. 1.25) when the first word of this segment starts being uttered in the audio. "end" must be the precise timestamp when the last word ends.
+3. Respect Pauses and Cadence: If the speaker pauses or breathes between phrases, do NOT stretch the segment across silence. The segment must end when speech pauses, and the next segment must begin when speech resumes.
+4. Never merge long multi-word sentences into a single segment; keep it strictly 1-3 words so captions flash dynamically on screen in exact synchronization with the speaker's vocal speed.
+5. Provide timestamps in sequential order. Return JSON matching the schema.`;
+
         // 4. Generate Transcript using Gemini with fallback
         const result = await generateContentWithFallback(
             genAI,
@@ -117,7 +127,7 @@ export async function transcribeVideoWithGemini(videoUrl: string, fallbackAudioU
                         fileUri: file.uri,
                     },
                 },
-                { text: `${languageSpecificInstruction} For every segment of speech, provide the exact start time, end time, and text. Return the result in a clean JSON format matching the schema.` },
+                { text: promptInstructions },
             ],
             "gemini-3.5-flash",
             "gemini-3.5-flash",

@@ -187,6 +187,16 @@ export async function POST(req: Request) {
                 } catch (flowErr) {
                     // ignore
                 }
+
+                if (!resolvedHeaderUrl) {
+                    if (headerFormat === 'IMAGE') {
+                        resolvedHeaderUrl = templateName === 'webinar_thursday'
+                            ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png'
+                            : (profile.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png')
+                    } else if (headerFormat === 'VIDEO') {
+                        resolvedHeaderUrl = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/stitched_1785757278763.mp4'
+                    }
+                }
             }
         }
 

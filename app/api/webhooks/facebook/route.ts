@@ -123,7 +123,12 @@ async function extractLeadNameWithAI(rawText: string): Promise<{ hasName: boolea
 
     // 1. Zero-latency heuristic fast path for clean names (e.g. "Rahul", "Adinath Pawar", "Dr. Mehta", "my name is Rahul Sharma")
     const lower = raw.toLowerCase();
-    const refusalOrQuestionWords = /\b(what|price|cost|budget|rate|rates|brochure|detail|details|location|where|kahan|kitna|batao|send|bhejo|call|expert|appointment|visit|why|no|nahi|na|later|stop|bye|hi|hello|hey|yes|haan|ok|okay|broker|developer|agent|inventory|flat|villa|plot|commercial|residential)\b/i;
+    const refusalOrQuestionWords = /\b(what|price|cost|budget|rate|rates|brochure|detail|details|location|where|kahan|kitna|batao|send|bhejo|call|expert|appointment|visit|why|no|nahi|na|later|stop|bye|hi|hello|hey|yes|haan|ok|okay|broker|developer|agent|inventory|flat|villa|plot|commercial|residential|interested|interest|looking|share|tell|info|information|catalog|catalogue)\b/i;
+
+    // Explicit rejection for common button texts and phrases that are never person names
+    if (/^(interested|i am interested|im interested|yes interested|tell me more|more info|view properties|view products|talk to an expert|book an appointment|not interested|stop|cancel|unsubscribe)[!.]*$/i.test(raw)) {
+        return { hasName: false, name: null, isQuestionOrRefusal: false };
+    }
 
     if (!raw.includes('?') && !refusalOrQuestionWords.test(lower)) {
         const stripped = raw.replace(/^(my name is|i am|this is|name\s*:|mera naam|call me)\s*/i, '').trim();
@@ -4224,6 +4229,27 @@ RULES:
                                         return;
                                     }
 
+                                    // 2.5 Check for "Interested" button click or text from Broadcast / Campaign templates
+                                    const isInterestedClick = buttonReplyId === 'interested' || buttonReplyId === 'interested_btn' || /^(interested|i am interested|im interested|yes interested)[!.]*$/i.test(messageText.trim());
+                                    if (isInterestedClick) {
+                                        console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "Interested!".`);
+                                        await syncFieldsAndScore({ interested_clicked: true });
+                                        
+                                        const validName = latestLead?.name && !/^(interested|valued lead|valued customer|lead|prospect)$/i.test(latestLead.name.trim())
+                                            ? latestLead.name.trim()
+                                            : (chat.recipient_name && !/^(interested|valued lead|valued customer|lead|prospect)$/i.test(chat.recipient_name.trim()) ? chat.recipient_name.trim() : '');
+
+                                        const greeting = validName ? `Thank you, ${validName}! 🎉` : `Thank you! 🎉`;
+                                        const ackText = isNobogentAccount
+                                            ? `${greeting} Great to connect with you. Please let us know if you would like a live walkthrough or demo of Nobogent.`
+                                            : `${greeting} Great to connect with you. Please let us know if you have any questions or would like to schedule a visit.`;
+
+                                        await sendTextMessage(ackText);
+                                        await new Promise(r => setTimeout(r, 150));
+                                        await sendThreeButtons("What would you like to do next?");
+                                        return;
+                                    }
+
                                     // 3. Action Button 1: "View properties"
                                     const isViewProperties = buttonReplyId === 'view_properties' || /view propert|view product|explore propert|catalog|listings/i.test(messageText);
                                     if (isViewProperties) {
@@ -4377,7 +4403,8 @@ RULES:
                                         }
 
                                         // If qualification was already completed, but name was not previously captured, check if incoming text is the lead's name
-                                        if (!buttonReplyId && currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && messageText && messageText.trim().length > 0 && messageText.trim().split(/\s+/).length <= 4) {
+                                        const isActionOrCommonReply = /^(interested|i am interested|im interested|yes interested|tell me more|more info|view properties|view products|talk to an expert|book an appointment|hello|hi|hey|ok|okay|thanks|thank you)[!.]*$/i.test(messageText.trim());
+                                        if (!buttonReplyId && !isActionOrCommonReply && currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && messageText && messageText.trim().length > 0 && messageText.trim().split(/\s+/).length <= 4) {
                                             const nameAnalysis = await extractLeadNameWithAI(messageText);
                                             if (nameAnalysis.hasName && nameAnalysis.name) {
                                                 const cleanedName = nameAnalysis.name;
