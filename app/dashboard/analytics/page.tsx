@@ -1626,6 +1626,8 @@ export default function AnalyticsPage() {
     const matchStage = (l: any, stageKey: string) => {
       const target = stageKey.toLowerCase()
       const currentStage = (l.pipeline_stage || l.status || 'New Lead').trim().toLowerCase()
+      let cf = l.custom_fields
+      if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
 
       const isCurrentStageTarget = () => {
         if (target === 'new lead') return currentStage === 'new lead' || currentStage === 'new'
@@ -1655,8 +1657,6 @@ export default function AnalyticsPage() {
       // Only match leads that were explicitly put into this stage during the selected duration!
       // NO notes parsing is ever used for CRM stages.
       const leadEntries = historyByLeadInDateRange.get(l.id) || []
-      let cf = l.custom_fields
-      if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
 
       if (target === 'new lead') {
         return isDateInRange(l.created_at) && (currentStage === 'new lead' || currentStage === 'new' || !l.pipeline_stage)

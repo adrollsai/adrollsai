@@ -152,7 +152,20 @@ export async function sendPushNotification(
     url: string = '/dashboard/crm',
     type: string = 'general'
 ) {
-  console.log(`[PUSH] Looking for tokens for User: ${userId}`);
+  console.log(`[PUSH] Checking preferences and tokens for User: ${userId}`);
+
+  // Check user notification preference for push
+  try {
+    const { getUserNotificationPreferences, mapEventTypeToKey } = await import('@/utils/notification-preferences');
+    const { preferences } = await getUserNotificationPreferences(userId);
+    const categoryKey = mapEventTypeToKey(type, title);
+    if (preferences && preferences[categoryKey] && preferences[categoryKey].push === false) {
+      console.log(`[PUSH SKIP] User ${userId} has disabled push notifications for category "${categoryKey}" (${type}).`);
+      return { success: true, count: 0, skipped: true, reason: 'Disabled in user preferences' };
+    }
+  } catch (prefErr: any) {
+    console.warn('[PUSH PREFERENCE CHECK WARNING]:', prefErr.message);
+  }
 
   // Store in in-app notifications center
   try {
@@ -297,7 +310,7 @@ export async function sendAdminMultiChannelNotification({
     // Fetch owner profile
     const { data: ownerProfile } = await getSupabaseAdmin()
       .from('profiles')
-      .select('id, email, business_name, whatsapp_personal_number, contact_number, whatsapp_phone_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_info')
+      .select('id, email, business_name, role, whatsapp_personal_number, contact_number, whatsapp_phone_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_info, notification_preferences')
       .eq('id', ownerUserId)
       .maybeSingle();
 
@@ -306,32 +319,50 @@ export async function sendAdminMultiChannelNotification({
       return;
     }
 
-    // 1. In-App Dashboard Notification
-    try {
-      await getSupabaseAdmin().from('notifications').insert({
-        user_id: ownerUserId,
-        title,
-        message: body,
-        type: type || 'meeting_booked',
-        action_link: leadPageUrl,
-        is_read: false,
-        created_at: new Date().toISOString()
-      });
-    } catch (notifErr: any) {
-      console.error('[MULTI-CHANNEL DB NOTIF ERROR]', notifErr.message);
-    }
+    const { isUserAdminRole, normalizeUserPreferences, mapEventTypeToKey } = await import('@/utils/notification-preferences');
+    const isAdmin = isUserAdminRole(ownerProfile.role);
+    const userPrefs = normalizeUserPreferences(ownerProfile.notification_preferences, isAdmin);
+    const categoryKey = mapEventTypeToKey(type, title);
+    const categoryConfig = userPrefs[categoryKey];
 
-    // 2. Push Notification
-    if (!skipPush) {
+    const pushEnabled = !skipPush && (categoryConfig ? categoryConfig.push !== false : true);
+    const emailEnabled = !skipEmail && (categoryConfig ? categoryConfig.email === true : false);
+    // WhatsApp is STRICTLY allowed ONLY for Admins who have explicitly enabled it in preferences!
+    const whatsappEnabled = !skipWhatsApp && isAdmin && (categoryConfig ? categoryConfig.whatsapp === true : false);
+
+    // 1. In-App Dashboard Notification & Push Notification
+    if (pushEnabled) {
+      try {
+        await getSupabaseAdmin().from('notifications').insert({
+          user_id: ownerUserId,
+          title,
+          message: body,
+          type: type || 'meeting_booked',
+          action_link: leadPageUrl,
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+      } catch (notifErr: any) {
+        console.error('[MULTI-CHANNEL DB NOTIF ERROR]', notifErr.message);
+      }
+
       try {
         await sendPushNotification(ownerUserId, title, body, leadPageUrl, type);
       } catch (err: any) {
         console.error(`[MULTI-CHANNEL PUSH ERROR]`, err.message);
       }
+    } else {
+      console.log(`[MULTI-CHANNEL] In-app & Push disabled for user ${ownerUserId} under category "${categoryKey}".`);
     }
 
-    // 3. WhatsApp Notification to Admin (Template-first with text fallback)
-    if (!skipWhatsApp) {
+    // 2. WhatsApp Notification (STRICTLY ADMIN ONLY)
+    if (!isAdmin && !skipWhatsApp) {
+      console.log(`[MULTI-CHANNEL WA SKIP] Recipient ${ownerUserId} is an agent (role: ${ownerProfile.role || 'agent'}). WhatsApp notifications are strictly reserved for admins.`);
+    } else if (!whatsappEnabled && !skipWhatsApp) {
+      console.log(`[MULTI-CHANNEL WA SKIP] Admin ${ownerUserId} has disabled WhatsApp notifications for category "${categoryKey}".`);
+    }
+
+    if (whatsappEnabled) {
       try {
         const rawPhone = ownerProfile.whatsapp_personal_number || ownerProfile.contact_number || ownerProfile.whatsapp_phone_number;
         if (rawPhone) {
@@ -448,35 +479,16 @@ export async function sendAdminMultiChannelNotification({
       }
     }
 
-    // 3. Email Notification to Admin (Restricted strictly to High Priority events: Meeting Booked, Connect with Expert)
-    if (!skipEmail) {
+    // 3. Email Notification (controlled by user preference)
+    if (!emailEnabled) {
+      console.log(`[MULTI-CHANNEL EMAIL SKIP] Email notification disabled for user ${ownerUserId} under category "${categoryKey}".`);
+    } else {
       const { sendGenericEmail, resolveNotificationRecipients } = await import('@/utils/email-helper');
       const { toEmail, bccEmail } = resolveNotificationRecipients(ownerProfile);
 
       if (toEmail) {
-        const HIGH_PRIORITY_TYPES = [
-          'meeting_booked',
-          'appointment_booked',
-          'connect_with_expert',
-          'expert_requested',
-          'expert_escalation',
-          'expert_connection',
-          'urgent_alert',
-          'lead_interested',
-          'hot_lead'
-        ];
-        
-        const isHighPriorityEvent = (
-          HIGH_PRIORITY_TYPES.includes((type || '').toLowerCase()) ||
-          /meeting|appointment|expert|escalat|connect with expert|urgent|interested|hot lead/i.test(title || '') ||
-          /meeting|appointment|expert|escalat|connect with expert|urgent|interested|hot lead/i.test(emailSubject || '')
-        );
-
-        if (!isHighPriorityEvent) {
-          console.log(`[MULTI-CHANNEL EMAIL SKIP] Skipping email for non-priority event "${type}" ("${title}"). Email notifications are restricted to high-priority events (meeting booked, connect with expert).`);
-        } else {
-          try {
-            const subject = emailSubject || title;
+        try {
+          const subject = emailSubject || title;
             const defaultHtml = `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                 <div style="text-align: center; margin-bottom: 20px;">
@@ -497,8 +509,7 @@ export async function sendAdminMultiChannelNotification({
           }
         }
       }
-    }
-  } catch (err: any) {
+    } catch (err: any) {
     console.error(`[MULTI-CHANNEL NOTIFICATION FATAL ERROR]`, err.message);
   }
 }
