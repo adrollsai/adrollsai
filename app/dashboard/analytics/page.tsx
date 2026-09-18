@@ -174,6 +174,38 @@ function getLeadNextActionTime(lead: any): number {
   return isNaN(t) ? 0 : t
 }
 
+function parseActionDate(text?: string, fallbackCreatedAt?: string): Date | null {
+  if (text) {
+    // 1. Bracket notes format: [Followup (Call) - 31/8/2026, 12:10:24 pm] or [Call Not Picked - DNP (31/8/2026...)] or [Remark - 31/8/2026...]
+    const bracketMatch = text.match(/\[(?:📝[^-\]]*|⚠️[^-\]]*)\s*-\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
+    if (bracketMatch) {
+      const day = parseInt(bracketMatch[1], 10)
+      const month = parseInt(bracketMatch[2], 10) - 1
+      let year = parseInt(bracketMatch[3], 10)
+      if (year < 100) year += 2000
+      const d = new Date(year, month, day)
+      if (!isNaN(d.getTime())) return d
+    }
+
+    // 2. Workveu historical logs: 'Call on 30/07/2026' or 'Call Not Picked on 30/07/2026' or 'Follow up Date: 30/07/2026'
+    const workveuMatch = text.match(/(?:Call on|Call Not Picked on|Follow up Date\s*:)\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
+    if (workveuMatch) {
+      const day = parseInt(workveuMatch[1], 10)
+      const month = parseInt(workveuMatch[2], 10) - 1
+      let year = parseInt(workveuMatch[3], 10)
+      if (year < 100) year += 2000
+      const d = new Date(year, month, day)
+      if (!isNaN(d.getTime())) return d
+    }
+  }
+
+  if (fallbackCreatedAt) {
+    const d = new Date(fallbackCreatedAt)
+    if (!isNaN(d.getTime())) return d
+  }
+  return null
+}
+
 export default function AnalyticsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -270,35 +302,11 @@ export default function AnalyticsPage() {
   }, [campaignsList])
 
   // Action Report Horizontal Scrollbar Refs & Sync Handlers
-  const stageTableScrollRef = useRef<HTMLDivElement>(null)
-  const stageTopScrollRef = useRef<HTMLDivElement>(null)
-  const stageTableRef = useRef<HTMLTableElement>(null)
-  const [stageTableWidth, setStageTableWidth] = useState<number>(1600)
-  const isSyncingStageScroll = useRef<boolean>(false)
-
   const attemptsTableScrollRef = useRef<HTMLDivElement>(null)
   const attemptsTopScrollRef = useRef<HTMLDivElement>(null)
   const attemptsTableRef = useRef<HTMLTableElement>(null)
   const [attemptsTableWidth, setAttemptsTableWidth] = useState<number>(1100)
   const isSyncingAttemptsScroll = useRef<boolean>(false)
-
-  const handleStageTopScroll = () => {
-    if (isSyncingStageScroll.current) return
-    isSyncingStageScroll.current = true
-    if (stageTableScrollRef.current && stageTopScrollRef.current) {
-      stageTableScrollRef.current.scrollLeft = stageTopScrollRef.current.scrollLeft
-    }
-    requestAnimationFrame(() => { isSyncingStageScroll.current = false })
-  }
-
-  const handleStageTableScroll = () => {
-    if (isSyncingStageScroll.current) return
-    isSyncingStageScroll.current = true
-    if (stageTopScrollRef.current && stageTableScrollRef.current) {
-      stageTopScrollRef.current.scrollLeft = stageTableScrollRef.current.scrollLeft
-    }
-    requestAnimationFrame(() => { isSyncingStageScroll.current = false })
-  }
 
   const handleAttemptsTopScroll = () => {
     if (isSyncingAttemptsScroll.current) return
@@ -320,9 +328,6 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     const updateWidths = () => {
-      if (stageTableRef.current) {
-        setStageTableWidth(stageTableRef.current.scrollWidth)
-      }
       if (attemptsTableRef.current) {
         setAttemptsTableWidth(attemptsTableRef.current.scrollWidth)
       }
@@ -960,7 +965,28 @@ export default function AnalyticsPage() {
     const conversionRate = totalLeads > 0 ? ((wonLeads / totalLeads) * 100).toFixed(1) : '0.0'
 
     const totalCalls = filteredLeads.filter(l => l.last_call_at || l.last_call_status).length
-    const totalDnp = filteredLeads.reduce((acc, l) => acc + (l.dnp_count || l.custom_fields?.dnp_count || 0), 0)
+    
+    // Accurate DNP calculation: when date filter is active, count leads with an actual DNP logged during this duration
+    const dnpLeadsList = isFilteredByDate
+      ? filteredLeads.filter(l => {
+          let cf = l.custom_fields
+          if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+          const hasDnpInRange = (cf?.last_call_dnp === true && dateCutoffs.isDateInRange(cf?.last_followup_at))
+          const hasDnpAction = (l.dnp_count > 0 || cf?.dnp_count > 0) && (
+            dateCutoffs.isDateInRange(cf?.last_followup_at) ||
+            dateCutoffs.isDateInRange(cf?.last_action_date) ||
+            dateCutoffs.isDateInRange(l.last_call_at)
+          )
+          const notes = l.notes || ''
+          const hasNoteDnp = notes.includes('[⚠️') && notes.split(/(?=\[⚠️)/).some((chk: string) => {
+            const d = parseActionDate(chk)
+            return d && dateCutoffs.isDateInRange(d)
+          })
+          return Boolean(hasDnpInRange || hasDnpAction || hasNoteDnp)
+        })
+      : filteredLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0))
+
+    const totalDnp = dnpLeadsList.length
 
     const reopenedLeadsList = filteredLeads.filter(l => l.reopened_count > 0 || l.custom_fields?.reopened_count > 0)
     const unassignedLeadsList = filteredLeads.filter(l => !l.assigned_to)
@@ -994,6 +1020,7 @@ export default function AnalyticsPage() {
       conversionRate,
       totalCalls,
       totalDnp,
+      dnpLeadsList,
       reopenedCount: reopenedLeadsList.length,
       unassignedCount: unassignedLeadsList.length,
       duplicateCount: duplicateLeadsList.length,
@@ -1498,282 +1525,18 @@ export default function AnalyticsPage() {
     }).sort((a, b) => b.totalLeads - a.totalLeads)
   }, [leads])
 
-  // --- ACTION REPORT COMPUTATIONS (CRM Stages Matrix) ---
+  // --- ACTION REPORT COMPUTATIONS (Agent Action Attempts) ---
   const actionReportData = useMemo(() => {
     const { startCutoff, endCutoff, isDateInRange } = dateCutoffs
 
-    const REPORT_STAGES = [
-      { key: 'New Lead', label: 'New Lead', badge: 'bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white' },
-      { key: 'Requirement Taken', label: 'Requirement Taken', badge: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white' },
-      { key: 'Visit Planned', label: 'Visit Planned', badge: 'bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white' },
-      { key: 'Visit Done', label: 'Visit Done', badge: 'bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white' },
-      { key: 'Revisit Done', label: 'Revisit Done', badge: 'bg-violet-50 text-violet-700 hover:bg-violet-600 hover:text-white' },
-      { key: 'Meeting Planned', label: 'Meeting Planned', badge: 'bg-teal-50 text-teal-700 hover:bg-teal-600 hover:text-white' },
-      { key: 'Meeting Done', label: 'Meeting Done', badge: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white' },
-      { key: 'Negotiation', label: 'Negotiation', badge: 'bg-cyan-50 text-cyan-700 hover:bg-cyan-600 hover:text-white' },
-      { key: 'Deal/Token', label: 'Deal/Token', badge: 'bg-green-50 text-green-700 hover:bg-green-600 hover:text-white' },
-      { key: 'Never Picked', label: 'Never Picked', badge: 'bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white' },
-      { key: 'DNP', label: 'DNP', badge: 'bg-red-50 text-red-700 hover:bg-red-600 hover:text-white' },
-      { key: 'Lost/NI', label: 'Lost/NI', badge: 'bg-slate-100 text-slate-700 hover:bg-slate-600 hover:text-white' },
-      { key: 'Plan Postponed', label: 'Plan Postponed', badge: 'bg-orange-50 text-orange-700 hover:bg-orange-600 hover:text-white' },
-      { key: 'Already Purchased', label: 'Already Purchased', badge: 'bg-gray-100 text-gray-700 hover:bg-gray-600 hover:text-white' },
-      { key: 'Dealer', label: 'Dealer', badge: 'bg-zinc-100 text-zinc-700 hover:bg-zinc-600 hover:text-white' }
-    ]
-
-    const parseActionDate = (text?: string, fallbackCreatedAt?: string) => {
-      if (text) {
-        // 1. Bracket notes format: [Followup (Call) - 31/8/2026, 12:10:24 pm] or [Call Not Picked - DNP (31/8/2026...)] or [Remark - 31/8/2026...]
-        const bracketMatch = text.match(/\[(?:📝[^-\]]*|⚠️[^-\]]*)\s*-\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
-        if (bracketMatch) {
-          const day = parseInt(bracketMatch[1], 10)
-          const month = parseInt(bracketMatch[2], 10) - 1
-          let year = parseInt(bracketMatch[3], 10)
-          if (year < 100) year += 2000
-          const d = new Date(year, month, day)
-          if (!isNaN(d.getTime())) return d
-        }
-
-        // 2. Workveu historical logs: 'Call on 30/07/2026' or 'Call Not Picked on 30/07/2026' or 'Follow up Date: 30/07/2026'
-        const workveuMatch = text.match(/(?:Call on|Call Not Picked on|Follow up Date\s*:)\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
-        if (workveuMatch) {
-          const day = parseInt(workveuMatch[1], 10)
-          const month = parseInt(workveuMatch[2], 10) - 1
-          let year = parseInt(workveuMatch[3], 10)
-          if (year < 100) year += 2000
-          const d = new Date(year, month, day)
-          if (!isNaN(d.getTime())) return d
-        }
-      }
-
-      if (fallbackCreatedAt) {
-        const d = new Date(fallbackCreatedAt)
-        if (!isNaN(d.getTime())) return d
-      }
-      return null
-    }
-
-    const isDateFilterActive = Boolean(startCutoff || endCutoff)
-
-    // Index history in range by lead_id for accurate stage matching
-    const historyByLeadInDateRange = new Map<string, any[]>()
-    if (isDateFilterActive) {
-      history.forEach(h => {
-        if (!h.lead_id) return
-        const effectiveDate = parseActionDate(h.description, h.created_at)
-        if (isDateInRange(effectiveDate)) {
-          let list = historyByLeadInDateRange.get(h.lead_id)
-          if (!list) {
-            list = []
-            historyByLeadInDateRange.set(h.lead_id, list)
-          }
-          list.push(h)
-        }
-      })
-    }
-
-    const historyMatchesStage = (leadEntries: any[], target: string): boolean => {
-      return leadEntries.some(h => {
-        const type = (h.action_type || '').toUpperCase()
-        const desc = (h.description || '').toLowerCase()
-
-        // Ignore automated system imports/reopens/transfers
-        if (type === 'BULK_TRANSFER' || type === 'LEAD_IMPORT') return false
-        if (desc.includes('bulk transferred') || desc.includes('transferred from')) return false
-
-        if (target === 'visit done') {
-          return type === 'SITE_VISIT' || desc.includes('stage updated to visit done') || desc.includes('moved to visit done') || desc.includes('stage: visit done') || desc.includes('stage updated to appointment done') || desc.includes('stage: appointment done')
-        }
-        if (target === 'visit planned') {
-          return desc.includes('stage updated to visit planned') || desc.includes('moved to visit planned') || desc.includes('stage: visit planned') || desc.includes('stage updated to appointment booked') || desc.includes('stage: appointment booked')
-        }
-        if (target === 'revisit done') {
-          return desc.includes('stage updated to revisit done') || desc.includes('moved to revisit done') || desc.includes('stage: revisit done')
-        }
-        if (target === 'meeting planned') {
-          return desc.includes('stage updated to meeting planned') || desc.includes('moved to meeting planned') || desc.includes('stage: meeting planned')
-        }
-        if (target === 'meeting done') {
-          return type === 'MEETING' || desc.includes('stage updated to meeting done') || desc.includes('moved to meeting done') || desc.includes('stage: meeting done')
-        }
-        if (target === 'negotiation') {
-          return desc.includes('stage updated to negotiation') || desc.includes('moved to negotiation') || desc.includes('stage: negotiation')
-        }
-        if (target === 'deal/token') {
-          return desc.includes('stage updated to deal') || desc.includes('moved to deal') || desc.includes('stage: deal') || desc.includes('stage updated to closed') || desc.includes('stage updated to won') || desc.includes('stage: won') || desc.includes('stage: closed')
-        }
-        if (target === 'never picked') {
-          return type === 'DNP' || desc.includes('stage updated to never picked') || desc.includes('moved to never picked') || desc.includes('stage: never picked')
-        }
-        if (target === 'requirement taken') {
-          return desc.includes('stage updated to requirement taken') || desc.includes('moved to requirement taken') || desc.includes('stage: requirement taken') || desc.includes('stage updated to contacted') || desc.includes('stage: contacted')
-        }
-        if (target === 'lost/ni') {
-          return desc.includes('stage updated to lost') || desc.includes('moved to lost') || desc.includes('stage: lost') || desc.includes('stage updated to not interested') || desc.includes('stage: not interested') || desc.includes('stage updated to unqualified')
-        }
-        if (target === 'plan postponed') {
-          return desc.includes('stage updated to plan postponed') || desc.includes('moved to plan postponed') || desc.includes('stage: plan postponed')
-        }
-        if (target === 'already purchased') {
-          return desc.includes('stage updated to already purchased') || desc.includes('moved to already purchased') || desc.includes('stage: already purchased')
-        }
-        if (target === 'dealer') {
-          return desc.includes('stage updated to dealer') || desc.includes('moved to dealer') || desc.includes('stage: dealer')
-        }
-        return false
-      })
-    }
-
-    const matchStage = (l: any, stageKey: string) => {
-      const target = stageKey.toLowerCase()
-      const currentStage = (l.pipeline_stage || l.status || 'New Lead').trim().toLowerCase()
-      let cf = l.custom_fields
-      if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
-
-      const isCurrentStageTarget = () => {
-        if (target === 'new lead') return currentStage === 'new lead' || currentStage === 'new'
-        if (target === 'requirement taken') return currentStage === 'requirement taken' || currentStage === 'contacted'
-        if (target === 'visit planned') return currentStage === 'visit planned' || currentStage === 'appointment booked'
-        if (target === 'visit done') return currentStage === 'visit done' || currentStage === 'appointment done'
-        if (target === 'revisit done') return currentStage === 'revisit done'
-        if (target === 'meeting planned') return currentStage === 'meeting planned'
-        if (target === 'meeting done') return currentStage === 'meeting done'
-        if (target === 'negotiation') return currentStage === 'negotiation'
-        if (target === 'deal/token') return currentStage === 'deal/token' || currentStage === 'won' || currentStage === 'closed'
-        if (target === 'never picked') return currentStage === 'never picked' || currentStage === 'never_picked'
-        if (target === 'dnp') return currentStage === 'never picked' || currentStage === 'never_picked' || currentStage.includes('dnp') || Boolean(l.dnp_count > 0 || cf?.dnp_count > 0 || cf?.last_call_dnp === true)
-        if (target === 'lost/ni') return currentStage === 'lost/ni' || currentStage === 'lost' || currentStage === 'not interested' || currentStage === 'unqualified'
-        if (target === 'plan postponed') return currentStage === 'plan postponed'
-        if (target === 'already purchased') return currentStage === 'already purchased'
-        if (target === 'dealer') return currentStage === 'dealer'
-        return currentStage === target
-      }
-
-      // If no date filter is active (All Time), use the lead's current pipeline stage
-      if (!isDateFilterActive) {
-        return isCurrentStageTarget()
-      }
-
-      // When date filter IS active (e.g. Today, Yesterday, 7D, Custom Range):
-      // Only match leads that were explicitly put into this stage during the selected duration!
-      // NO notes parsing is ever used for CRM stages.
-      const leadEntries = historyByLeadInDateRange.get(l.id) || []
-
-      if (target === 'new lead') {
-        return isDateInRange(l.created_at) && (currentStage === 'new lead' || currentStage === 'new' || !l.pipeline_stage)
-      }
-
-      if (target === 'visit done') {
-        const hasVisitedInRange = isDateInRange(cf?.visited_at) || isDateInRange(cf?.visit_date)
-        const hasHistory = historyMatchesStage(leadEntries, 'visit done')
-        const isCurrentWithAction = isCurrentStageTarget() && (isDateInRange(cf?.last_followup_at) || isDateInRange(cf?.last_action_date) || isDateInRange(l.last_call_at))
-        return Boolean(hasVisitedInRange || hasHistory || isCurrentWithAction)
-      }
-
-      if (target === 'revisit done') {
-        const hasRevisitInRange = isDateInRange(cf?.revisit_at)
-        const hasHistory = historyMatchesStage(leadEntries, 'revisit done')
-        const isCurrentWithAction = isCurrentStageTarget() && (isDateInRange(cf?.last_followup_at) || isDateInRange(cf?.last_action_date) || isDateInRange(l.last_call_at))
-        return Boolean(hasRevisitInRange || hasHistory || isCurrentWithAction)
-      }
-
-      if (target === 'deal/token') {
-        const hasWonInRange = isDateInRange(cf?.won_at)
-        const hasHistory = historyMatchesStage(leadEntries, 'deal/token')
-        const isCurrentWithAction = isCurrentStageTarget() && (isDateInRange(cf?.last_followup_at) || isDateInRange(cf?.last_action_date) || isDateInRange(l.last_call_at))
-        return Boolean(hasWonInRange || hasHistory || isCurrentWithAction)
-      }
-
-      if (target === 'never picked') {
-        if (!isCurrentStageTarget()) return false
-        const hasHistory = historyMatchesStage(leadEntries, 'never picked')
-        const isCurrentWithAction = isDateInRange(cf?.last_followup_at) || isDateInRange(cf?.last_action_date) || isDateInRange(l.last_call_at)
-        return Boolean(hasHistory || isCurrentWithAction)
-      }
-
-      if (target === 'dnp') {
-        const hasDnpHistory = leadEntries.some(h => {
-          const type = (h.action_type || '').toUpperCase()
-          const desc = (h.description || '').toLowerCase()
-          return type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')
-        })
-        const hasDnpInRange = (cf?.last_call_dnp === true && isDateInRange(cf?.last_followup_at))
-        const hasDnpCount = (l.dnp_count > 0 || cf?.dnp_count > 0)
-        return Boolean(hasDnpHistory || hasDnpInRange || (hasDnpCount && (isDateInRange(cf?.last_followup_at) || isDateInRange(cf?.last_action_date) || isDateInRange(l.last_call_at))))
-      }
-
-      // For all other stages:
-      // Lead must either have an explicit stage transition in lead_history during the date range,
-      // OR its current pipeline stage matches target AND it was updated/followed up in this date range.
-      const hasHistory = historyMatchesStage(leadEntries, target)
-      const isCurrentWithAction = isCurrentStageTarget() && (isDateInRange(cf?.last_followup_at) || isDateInRange(cf?.last_action_date) || isDateInRange(l.last_call_at))
-      return Boolean(hasHistory || isCurrentWithAction)
-    }
-
-    const repsToReport = [
-      ...allSalesReps,
-      { id: 'unassigned', name: 'Unassigned Leads', email: '', role: 'system' }
-    ]
-
-    let rows = repsToReport.map(rep => {
-      const repLeads = leads.filter(l => isLeadAssignedToRep(l, rep.id))
-
-      const filteredRepLeads = repLeads.filter(l => {
-        if (!startCutoff && !endCutoff) return true
-        let cf = l.custom_fields
-        if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
-        return isDateInRange(cf?.last_followup_at) || 
-               isDateInRange(cf?.last_action_date) || 
-               isDateInRange(cf?.visited_at) ||
-               isDateInRange(cf?.visit_date) ||
-               isDateInRange(cf?.revisit_at) ||
-               isDateInRange(cf?.won_at) ||
-               isDateInRange(l.last_call_at) || 
-               isDateInRange(l.created_at) ||
-               historyByLeadInDateRange.has(l.id)
-      })
-
-      const stageLeads: Record<string, any[]> = {}
-      const stageCounts: Record<string, number> = {}
-
-      REPORT_STAGES.forEach(s => {
-        const matching = filteredRepLeads.filter(l => matchStage(l, s.key))
-        stageLeads[s.key] = matching
-        stageCounts[s.key] = matching.length
-      })
-
-      return {
-        rep,
-        stageLeads,
-        stageCounts,
-        total: filteredRepLeads.length,
-        repLeads: filteredRepLeads
-      }
-    }).filter(r => r.rep.id !== 'unassigned' || r.total > 0)
-      .sort((a, b) => b.total - a.total)
-
-    if (!isAdminLike && profile?.id) {
-      rows = rows.filter(r => r.rep.id === profile.id)
-    } else if (selectedAgentId && selectedAgentId !== 'all') {
-      rows = rows.filter(r => r.rep.id === selectedAgentId)
-    }
-
-    const stageTotals: Record<string, number> = {}
-    const stageTotalLeads: Record<string, any[]> = {}
-    REPORT_STAGES.forEach(s => {
-      stageTotals[s.key] = rows.reduce((sum, r) => sum + (r.stageCounts[s.key] || 0), 0)
-      stageTotalLeads[s.key] = rows.flatMap(r => r.stageLeads[s.key] || [])
-    })
-
-    const grandTotal = rows.reduce((sum, r) => sum + r.total, 0)
-    const grandTotalLeads = rows.flatMap(r => r.repLeads || [])
-
-    // --- Agent Action Attempt Totals from lead_history ---
     const ACTION_TYPES = [
       { key: 'calls', label: 'Call Attempts', icon: '📞', color: 'blue' },
-      { key: 'site_visits', label: 'Site Visit Attempts', icon: '🏠', color: 'purple' },
-      { key: 'whatsapp', label: 'WhatsApp Followups', icon: '💬', color: 'green' },
-      { key: 'meetings', label: 'Meeting Attempts', icon: '🤝', color: 'teal' },
       { key: 'dnp', label: 'DNP (Did Not Pick)', icon: '📵', color: 'rose' },
+      { key: 'visits', label: 'Visits', icon: '🏠', color: 'purple' },
+      { key: 'revisits', label: 'Re-visits', icon: '🔄', color: 'violet' },
+      { key: 'closing_meetings', label: 'Closing Meetings', icon: '💼', color: 'amber' },
+      { key: 'home_meetings', label: 'Home Meetings', icon: '🏡', color: 'teal' },
+      { key: 'whatsapp', label: 'WhatsApp Followups', icon: '💬', color: 'green' },
     ]
 
     const classifyAction = (h: any) => {
@@ -1784,8 +1547,11 @@ export default function AnalyticsPage() {
       if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return null
 
       if (type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return 'dnp'
-      if (type === 'SITE_VISIT' || desc.includes('site visit') || desc.includes('visit done') || desc.includes('revisit') || desc.includes('visit planned') || desc.includes('moved to visit')) return 'site_visits'
-      if (type === 'MEETING' || desc.includes('meeting') || desc.includes('moved to meeting')) return 'meetings'
+      if (type === 'REVISIT' || desc.includes('revisit') || desc.includes('re-visit')) return 'revisits'
+      if (desc.includes('closing meeting') || desc.includes('closing')) return 'closing_meetings'
+      if (desc.includes('home meeting')) return 'home_meetings'
+      if (type === 'SITE_VISIT' || desc.includes('site visit') || desc.includes('visit done') || desc.includes('visit')) return 'visits'
+      if (type === 'MEETING' || desc.includes('meeting')) return 'closing_meetings'
       if (type === 'WHATSAPP' || desc.includes('whatsapp') || desc.includes('message sent')) return 'whatsapp'
       
       // Every manual note, stage update, followup or call counts as a call/followup attempt
@@ -1801,8 +1567,8 @@ export default function AnalyticsPage() {
     const seenActionKeys = new Set<string>()
 
     allSalesReps.forEach(r => {
-      repActionCounts[r.id] = { calls: 0, site_visits: 0, whatsapp: 0, meetings: 0, dnp: 0 }
-      repActionLeadIds[r.id] = { calls: new Set(), site_visits: new Set(), whatsapp: new Set(), meetings: new Set(), dnp: new Set() }
+      repActionCounts[r.id] = { calls: 0, dnp: 0, visits: 0, revisits: 0, closing_meetings: 0, home_meetings: 0, whatsapp: 0 }
+      repActionLeadIds[r.id] = { calls: new Set(), dnp: new Set(), visits: new Set(), revisits: new Set(), closing_meetings: new Set(), home_meetings: new Set(), whatsapp: new Set() }
     })
 
     // 1. Process History Entries
@@ -1824,7 +1590,7 @@ export default function AnalyticsPage() {
       }
     })
 
-    // 2. Process Lead Notes Blocks (to guarantee zero missed followups)
+    // 2. Process Lead Notes Blocks
     leads.forEach(l => {
       const notes = l.notes || ''
       if (notes.includes('[📝') || notes.includes('[⚠️')) {
@@ -1848,8 +1614,11 @@ export default function AnalyticsPage() {
           const header = (headerMatch ? headerMatch[1] : '').toLowerCase()
           let cat = 'calls'
           if (header.includes('not picked') || header.includes('dnp')) cat = 'dnp'
-          else if (header.includes('site visit') || header.includes('visit')) cat = 'site_visits'
-          else if (header.includes('meeting')) cat = 'meetings'
+          else if (header.includes('revisit') || header.includes('re-visit')) cat = 'revisits'
+          else if (header.includes('closing')) cat = 'closing_meetings'
+          else if (header.includes('home')) cat = 'home_meetings'
+          else if (header.includes('site visit') || header.includes('visit')) cat = 'visits'
+          else if (header.includes('meeting')) cat = 'closing_meetings'
           else if (header.includes('whatsapp')) cat = 'whatsapp'
 
           if (repActionCounts[matchedRep.id]) {
@@ -1882,10 +1651,13 @@ export default function AnalyticsPage() {
           if (!matchedRep) return
 
           let cat = 'calls'
-          const fType = (f.type || f.stage || '').toLowerCase()
+          const fType = (f.type || f.stage || f.followupType || '').toLowerCase()
           if (fType.includes('dnp') || fType.includes('not picked')) cat = 'dnp'
-          else if (fType.includes('visit')) cat = 'site_visits'
-          else if (fType.includes('meeting')) cat = 'meetings'
+          else if (fType.includes('revisit') || fType.includes('re-visit')) cat = 'revisits'
+          else if (fType.includes('closing')) cat = 'closing_meetings'
+          else if (fType.includes('home')) cat = 'home_meetings'
+          else if (fType.includes('visit')) cat = 'visits'
+          else if (fType.includes('meeting')) cat = 'closing_meetings'
           else if (fType.includes('whatsapp')) cat = 'whatsapp'
 
           if (repActionCounts[matchedRep.id]) {
@@ -1899,26 +1671,62 @@ export default function AnalyticsPage() {
           }
         })
       }
+
+      // 4. Process Lead Level Last Followup
+      if (cf?.last_followup_at && isDateInRange(cf.last_followup_at)) {
+        const repId = l.assigned_to
+        if (repId && repActionCounts[repId]) {
+          const lType = (cf.last_followup_type || '').toLowerCase()
+          let cat = 'calls'
+          if (cf.last_call_dnp === true || lType.includes('dnp') || lType.includes('not picked')) cat = 'dnp'
+          else if (lType.includes('revisit') || lType.includes('re-visit')) cat = 'revisits'
+          else if (lType.includes('closing')) cat = 'closing_meetings'
+          else if (lType.includes('home')) cat = 'home_meetings'
+          else if (lType.includes('visit')) cat = 'visits'
+          else if (lType.includes('meeting')) cat = 'closing_meetings'
+          else if (lType.includes('whatsapp')) cat = 'whatsapp'
+
+          const dateKey = new Date(cf.last_followup_at).toISOString().slice(0, 13)
+          const dedupKey = `${l.id}_${cat}_${dateKey}`
+          if (!seenActionKeys.has(dedupKey)) {
+            seenActionKeys.add(dedupKey)
+            repActionCounts[repId][cat]++
+            repActionLeadIds[repId][cat].add(l.id)
+          }
+        }
+      }
     })
 
-    const actionAttemptRows = rows.map(row => {
-      const actionCounts = repActionCounts[row.rep.id] || { calls: 0, site_visits: 0, whatsapp: 0, meetings: 0, dnp: 0 }
+    let actionAttemptRows = allSalesReps.map(rep => {
+      const actionCounts = repActionCounts[rep.id] || { calls: 0, dnp: 0, visits: 0, revisits: 0, closing_meetings: 0, home_meetings: 0, whatsapp: 0 }
       const totalAttempts = Object.values(actionCounts).reduce((s, v) => s + v, 0)
 
       const actionLeads: Record<string, any[]> = {}
       ACTION_TYPES.forEach(a => {
-        const leadIdSet = repActionLeadIds[row.rep.id]?.[a.key] || new Set()
+        const leadIdSet = repActionLeadIds[rep.id]?.[a.key] || new Set()
         actionLeads[a.key] = Array.from(leadIdSet).map(id => leadLookup[id]).filter(Boolean)
       })
 
+      const allRepLeadIds = new Set<string>()
+      ACTION_TYPES.forEach(a => {
+        repActionLeadIds[rep.id]?.[a.key]?.forEach(id => allRepLeadIds.add(id))
+      })
+      const repLeads = Array.from(allRepLeadIds).map(id => leadLookup[id]).filter(Boolean)
+
       return {
-        rep: row.rep,
+        rep,
         actionCounts,
         actionLeads,
         totalAttempts,
-        repLeads: row.repLeads
+        repLeads
       }
     }).sort((a, b) => b.totalAttempts - a.totalAttempts)
+
+    if (!isAdminLike && profile?.id) {
+      actionAttemptRows = actionAttemptRows.filter(r => r.rep.id === profile.id)
+    } else if (selectedAgentId && selectedAgentId !== 'all') {
+      actionAttemptRows = actionAttemptRows.filter(r => r.rep.id === selectedAgentId)
+    }
 
     const actionTotals: Record<string, number> = {}
     const actionTotalLeads: Record<string, any[]> = {}
@@ -1931,22 +1739,21 @@ export default function AnalyticsPage() {
       actionTotalLeads[a.key] = Array.from(allIds).map(id => leadLookup[id]).filter(Boolean)
     })
     const grandTotalAttempts = actionAttemptRows.reduce((sum, r) => sum + r.totalAttempts, 0)
+    const grandTotalLeadIds = new Set<string>()
+    actionAttemptRows.forEach(r => {
+      r.repLeads?.forEach((l: any) => { if (l?.id) grandTotalLeadIds.add(l.id) })
+    })
+    const grandTotalLeads = Array.from(grandTotalLeadIds).map(id => leadLookup[id]).filter(Boolean)
 
     return {
-      stages: REPORT_STAGES,
-      rows,
-      stageTotals,
-      stageTotalLeads,
-      grandTotal,
-      grandTotalLeads,
-      // Action attempt data
       actionTypes: ACTION_TYPES,
       actionAttemptRows,
       actionTotals,
       actionTotalLeads,
-      grandTotalAttempts
+      grandTotalAttempts,
+      grandTotalLeads
     }
-  }, [leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId, history, isLeadAssignedToRep])
+  }, [leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId, history, isLeadAssignedToRep, dateCutoffs])
 
   // Open interactive drilldown drawer for leads
   const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[], defaultSort?: string) => {
@@ -2378,7 +2185,7 @@ export default function AnalyticsPage() {
 
                 {/* DNP Count */}
                 <div 
-                  onClick={() => openLeadsDrilldown('DNP / Didn\'t Pick', `Leads with DNP count > 0`, filteredLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0)))}
+                  onClick={() => openLeadsDrilldown('DNP / Didn\'t Pick', `Leads with DNP attempt in selected duration (${stats.totalDnp})`, stats.dnpLeadsList)}
                   className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1 cursor-pointer hover:border-rose-500 hover:shadow-md transition-all group"
                 >
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">DNP Count</span>
@@ -2697,194 +2504,12 @@ export default function AnalyticsPage() {
                 </div>
               </div>
 
-              {/* Summary KPI Cards for CRM Stages */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3">
-                <button
-                  type="button"
-                  onClick={() => openLeadsDrilldown('All Workspace Leads', `All ${actionReportData.grandTotal} leads across workspace`, actionReportData.grandTotalLeads)}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-blue-500 hover:shadow-md transition-all flex flex-col justify-between text-left cursor-pointer group"
-                >
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-blue-600 transition-colors">Total Leads</p>
-                  <p className="text-xl font-black text-slate-900 mt-2">{actionReportData.grandTotal}</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openLeadsDrilldown('Visit Planned Leads', `All ${actionReportData.stageTotals['Visit Planned'] || 0} Visit Planned leads`, actionReportData.stageTotalLeads['Visit Planned'] || [])}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-amber-500 hover:shadow-md transition-all flex flex-col justify-between text-left cursor-pointer group"
-                >
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-amber-600 transition-colors">Visit Planned</p>
-                  <p className="text-xl font-black text-amber-600 mt-2">{actionReportData.stageTotals['Visit Planned'] || 0}</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openLeadsDrilldown('Visit Done Leads', `All ${actionReportData.stageTotals['Visit Done'] || 0} Visit Done leads`, actionReportData.stageTotalLeads['Visit Done'] || [])}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-purple-500 hover:shadow-md transition-all flex flex-col justify-between text-left cursor-pointer group"
-                >
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-purple-600 transition-colors">Visit Done</p>
-                  <p className="text-xl font-black text-purple-600 mt-2">{actionReportData.stageTotals['Visit Done'] || 0}</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openLeadsDrilldown('Revisit Done Leads', `All ${actionReportData.stageTotals['Revisit Done'] || 0} Revisit Done leads`, actionReportData.stageTotalLeads['Revisit Done'] || [])}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-violet-500 hover:shadow-md transition-all flex flex-col justify-between text-left cursor-pointer group"
-                >
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-violet-600 transition-colors">Revisit Done</p>
-                  <p className="text-xl font-black text-violet-600 mt-2">{actionReportData.stageTotals['Revisit Done'] || 0}</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openLeadsDrilldown('Meeting Planned Leads', `All ${actionReportData.stageTotals['Meeting Planned'] || 0} Meeting Planned leads`, actionReportData.stageTotalLeads['Meeting Planned'] || [])}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-teal-500 hover:shadow-md transition-all flex flex-col justify-between text-left cursor-pointer group"
-                >
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-teal-600 transition-colors">Meeting Planned</p>
-                  <p className="text-xl font-black text-teal-600 mt-2">{actionReportData.stageTotals['Meeting Planned'] || 0}</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openLeadsDrilldown('Meeting Done Leads', `All ${actionReportData.stageTotals['Meeting Done'] || 0} Meeting Done leads`, actionReportData.stageTotalLeads['Meeting Done'] || [])}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between text-left cursor-pointer group"
-                >
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-emerald-600 transition-colors">Meeting Done</p>
-                  <p className="text-xl font-black text-emerald-600 mt-2">{actionReportData.stageTotals['Meeting Done'] || 0}</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const combined = [...(actionReportData.stageTotalLeads['Negotiation'] || []), ...(actionReportData.stageTotalLeads['Deal/Token'] || [])]
-                    const deduped = Array.from(new Map(combined.map(l => [l.id, l])).values())
-                    openLeadsDrilldown('Negotiation & Deal Leads', `All ${deduped.length} Negotiation & Deal leads`, deduped)
-                  }}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-green-500 hover:shadow-md transition-all flex flex-col justify-between text-left cursor-pointer group"
-                >
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-green-600 transition-colors">Negotiation / Deal</p>
-                  <p className="text-xl font-black text-green-600 mt-2">{(actionReportData.stageTotals['Negotiation'] || 0) + (actionReportData.stageTotals['Deal/Token'] || 0)}</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openLeadsDrilldown('Never Picked Leads', `All ${actionReportData.stageTotals['Never Picked'] || 0} Never Picked leads`, actionReportData.stageTotalLeads['Never Picked'] || [])}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-rose-500 hover:shadow-md transition-all flex flex-col justify-between text-left cursor-pointer group"
-                >
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-rose-600 transition-colors">Never Picked</p>
-                  <p className="text-xl font-black text-rose-600 mt-2">{actionReportData.stageTotals['Never Picked'] || 0}</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openLeadsDrilldown('DNP (Did Not Pick) Leads', `All ${actionReportData.stageTotals['DNP'] || 0} leads with DNP calls`, actionReportData.stageTotalLeads['DNP'] || [])}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-red-500 hover:shadow-md transition-all flex flex-col justify-between text-left cursor-pointer group"
-                >
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider group-hover:text-red-600 transition-colors">DNP</p>
-                  <p className="text-xl font-black text-red-600 mt-2">{actionReportData.stageTotals['DNP'] || 0}</p>
-                </button>
-              </div>
-
-              {/* Table: Agent CRM Stages Matrix */}
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900">Agent CRM Pipeline Stage Breakdown</h3>
-                    <p className="text-xs text-slate-500">Live breakdown of leads across all CRM stages per sales rep (click numbers to view leads list)</p>
-                  </div>
-                </div>
-
-                {/* TOP HORIZONTAL SCROLLBAR (SYNCS WITH TABLE) */}
-                <div 
-                  ref={stageTopScrollRef} 
-                  onScroll={handleStageTopScroll}
-                  className="hidden sm:block overflow-x-auto custom-scrollbar h-2 bg-slate-100/90 rounded-full border border-slate-200/80 shadow-inner mx-6 my-2"
-                  title="Drag to scroll table horizontally"
-                >
-                  <div style={{ width: `${stageTableWidth}px`, height: '4px' }} />
-                </div>
-
-                <div 
-                  ref={stageTableScrollRef}
-                  onScroll={handleStageTableScroll}
-                  className="overflow-x-auto"
-                >
-                  <table ref={stageTableRef} className="w-full text-left text-xs whitespace-nowrap">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase tracking-wider text-[10px]">
-                      <tr>
-                        <th className="py-3.5 px-5 sticky left-0 bg-slate-50 z-10 shadow-xs">Sales Rep</th>
-                        {actionReportData.stages.map(s => (
-                          <th key={s.key} className="py-3.5 px-3 text-center">{s.label}</th>
-                        ))}
-                        <th className="py-3.5 px-5 text-center font-black text-slate-900 bg-slate-100">Total Leads</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {actionReportData.rows.map(row => (
-                        <tr key={row.rep.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3.5 px-5 sticky left-0 bg-white z-10 shadow-xs">
-                            <div className="font-extrabold text-slate-900">{row.rep.name}</div>
-                            <div className="text-[10px] text-slate-400">{row.rep.email || row.rep.role}</div>
-                          </td>
-                          {actionReportData.stages.map(s => {
-                            const count = row.stageCounts[s.key] || 0
-                            return (
-                              <td key={s.key} className="py-3.5 px-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => count > 0 && openLeadsDrilldown(`${row.rep.name} - ${s.label}`, `Total ${count} leads in ${s.label}`, row.stageLeads[s.key] || [])}
-                                  className={`px-2.5 py-1 rounded-xl font-black text-xs transition-all ${count > 0 ? `${s.badge} cursor-pointer hover:shadow-xs` : 'bg-slate-50 text-slate-300 cursor-default'}`}
-                                >
-                                  {count}
-                                </button>
-                              </td>
-                            )
-                          })}
-                          <td className="py-3.5 px-5 text-center bg-slate-50/60">
-                            <button
-                              type="button"
-                              onClick={() => row.total > 0 && openLeadsDrilldown(`${row.rep.name} - All Assigned Leads`, `Total leads: ${row.total}`, row.repLeads)}
-                              className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all ${row.total > 0 ? 'bg-slate-900 text-white hover:bg-blue-600 cursor-pointer hover:shadow-xs' : 'bg-slate-50 text-slate-300 cursor-default'}`}
-                            >
-                              {row.total}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-slate-100/90 border-t-2 border-slate-300 text-xs font-black text-slate-900">
-                        <td className="py-3.5 px-5 uppercase tracking-wider sticky left-0 bg-slate-100 z-10 shadow-xs">TOTAL</td>
-                        {actionReportData.stages.map(s => {
-                          const total = actionReportData.stageTotals[s.key] || 0
-                          return (
-                            <td 
-                              key={s.key}
-                              onClick={() => total > 0 && openLeadsDrilldown(`All Sales Reps - ${s.label}`, `Total ${total} leads in ${s.label}`, actionReportData.stageTotalLeads[s.key] || [])}
-                              className="py-3.5 px-3 text-center cursor-pointer hover:bg-slate-200 transition-colors"
-                            >
-                              {total}
-                            </td>
-                          )
-                        })}
-                        <td 
-                          onClick={() => actionReportData.grandTotal > 0 && openLeadsDrilldown('All Workspace Leads', `Total ${actionReportData.grandTotal} leads across all reps`, actionReportData.grandTotalLeads)}
-                          className="py-3.5 px-5 text-center font-black text-sm bg-slate-200/80 cursor-pointer hover:bg-slate-300 transition-colors"
-                        >
-                          {actionReportData.grandTotal}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-
               {/* Agent Action Attempts Matrix */}
               <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-black text-slate-900">Agent Action Attempts</h3>
-                    <p className="text-xs text-slate-500">Total action attempts by each sales rep (calls, visits, meetings, WhatsApp, DNP) — click numbers to view leads list</p>
+                    <p className="text-xs text-slate-500">Total action attempts punched by each sales rep (calls, DNPs, visits, revisits, closing meetings, home meetings, WhatsApp) — click numbers to view leads list</p>
                   </div>
                   <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-xl border border-indigo-200">
                     {actionReportData.grandTotalAttempts} Total Attempts
@@ -2892,15 +2517,17 @@ export default function AnalyticsPage() {
                 </div>
 
                 {/* KPI Summary Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50/50">
                   {actionReportData.actionTypes.map(at => {
                     const total = actionReportData.actionTotals[at.key] || 0
                     const colorMap: Record<string, string> = {
                       blue: 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-600 hover:text-white',
-                      purple: 'text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-600 hover:text-white',
-                      green: 'text-green-700 bg-green-50 border-green-200 hover:bg-green-600 hover:text-white',
-                      teal: 'text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-600 hover:text-white',
                       rose: 'text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-600 hover:text-white',
+                      purple: 'text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-600 hover:text-white',
+                      violet: 'text-violet-700 bg-violet-50 border-violet-200 hover:bg-violet-600 hover:text-white',
+                      amber: 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-600 hover:text-white',
+                      teal: 'text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-600 hover:text-white',
+                      green: 'text-green-700 bg-green-50 border-green-200 hover:bg-green-600 hover:text-white',
                     }
                     return (
                       <button
@@ -2914,6 +2541,14 @@ export default function AnalyticsPage() {
                       </button>
                     )
                   })}
+                  <button
+                    type="button"
+                    onClick={() => actionReportData.grandTotalAttempts > 0 && openLeadsDrilldown('All Action Attempts', `Total ${actionReportData.grandTotalAttempts} action attempts across all agents`, actionReportData.grandTotalLeads)}
+                    className="p-3 rounded-2xl border transition-all cursor-pointer text-left text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-600 hover:text-white"
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-wider">⚡ Total Attempts</p>
+                    <p className="text-xl font-black mt-1">{actionReportData.grandTotalAttempts}</p>
+                  </button>
                 </div>
 
                 {/* TOP HORIZONTAL SCROLLBAR (SYNCS WITH TABLE) */}
@@ -2927,7 +2562,7 @@ export default function AnalyticsPage() {
                 </div>
 
                 <div 
-                  ref={attemptsTableScrollRef}
+                  ref={attemptsTableScrollRef} 
                   onScroll={handleAttemptsTableScroll}
                   className="overflow-x-auto"
                 >
@@ -2946,15 +2581,18 @@ export default function AnalyticsPage() {
                         <tr key={row.rep.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="py-3.5 px-5 sticky left-0 bg-white z-10 shadow-xs">
                             <div className="font-extrabold text-slate-900">{row.rep.name}</div>
+                            <div className="text-[10px] text-slate-400">{row.rep.email || row.rep.role}</div>
                           </td>
                           {actionReportData.actionTypes.map(at => {
                             const count = row.actionCounts[at.key] || 0
                             const actionColorMap: Record<string, string> = {
                               blue: 'bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white',
-                              purple: 'bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white',
-                              green: 'bg-green-50 text-green-700 hover:bg-green-600 hover:text-white',
-                              teal: 'bg-teal-50 text-teal-700 hover:bg-teal-600 hover:text-white',
                               rose: 'bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white',
+                              purple: 'bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white',
+                              violet: 'bg-violet-50 text-violet-700 hover:bg-violet-600 hover:text-white',
+                              amber: 'bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white',
+                              teal: 'bg-teal-50 text-teal-700 hover:bg-teal-600 hover:text-white',
+                              green: 'bg-green-50 text-green-700 hover:bg-green-600 hover:text-white',
                             }
                             return (
                               <td key={at.key} className="py-3.5 px-3 text-center">
@@ -2971,7 +2609,7 @@ export default function AnalyticsPage() {
                           <td className="py-3.5 px-5 text-center bg-slate-50/60">
                             <button
                               type="button"
-                              onClick={() => row.totalAttempts > 0 && openLeadsDrilldown(`${row.rep.name} - All Action Attempts`, `Total ${row.totalAttempts} action attempts`, row.repLeads)}
+                              onClick={() => row.totalAttempts > 0 && openLeadsDrilldown(`${row.rep.name} - All Action Attempts`, `Total ${row.totalAttempts} action attempts by ${row.rep.name}`, row.repLeads)}
                               className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all ${row.totalAttempts > 0 ? 'bg-slate-900 text-white hover:bg-blue-600 cursor-pointer hover:shadow-xs' : 'bg-slate-50 text-slate-300 cursor-default'}`}
                             >
                               {row.totalAttempts}
@@ -2989,7 +2627,7 @@ export default function AnalyticsPage() {
                             <td
                               key={at.key}
                               onClick={() => total > 0 && openLeadsDrilldown(`All Agents - ${at.label}`, `Total ${total} ${at.label.toLowerCase()} across all agents`, actionReportData.actionTotalLeads[at.key] || [])}
-                              className="py-3.5 px-3 text-center cursor-pointer hover:bg-slate-200 transition-colors"
+                              className="py-3.5 px-3 text-center cursor-pointer hover:bg-slate-200 transition-colors font-bold"
                             >
                               {total}
                             </td>

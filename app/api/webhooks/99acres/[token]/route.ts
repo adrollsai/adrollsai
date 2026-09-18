@@ -152,13 +152,14 @@ export async function POST(
                         const parsedGroup = JSON.parse(aut.description || '{}');
                         const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
                         const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
+                        const activeMembers = groupMembers.filter((m: any) => m.is_active !== false);
 
-                        if (groupMembers.length > 0 && groupCampaigns.length > 0) {
+                        if (activeMembers.length > 0 && groupCampaigns.length > 0) {
                             const matchesCamp = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx));
 
                             if (matchesCamp) {
                                 const weightedPool: any[] = [];
-                                groupMembers.forEach(m => {
+                                activeMembers.forEach(m => {
                                     for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
                                         weightedPool.push(m);
                                     }

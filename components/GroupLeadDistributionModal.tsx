@@ -14,6 +14,7 @@ export interface DistributionGroupMember {
   userId: string;
   name: string;
   weight: number;
+  is_active?: boolean;
 }
 
 export interface DistributionGroup {
@@ -115,7 +116,12 @@ export default function GroupLeadDistributionModal({
             loadedGroups.push({
               id: parsed.id || aut.id,
               group_name: parsed.group_name || gName,
-              members: Array.isArray(parsed.members) ? parsed.members : [],
+              members: Array.isArray(parsed.members) ? parsed.members.map((m: any) => ({
+                userId: m.userId,
+                name: m.name,
+                weight: m.weight ?? 1,
+                is_active: m.is_active !== false
+              })) : [],
               campaigns: Array.isArray(parsed.campaigns) ? parsed.campaigns : [],
               campaign_ids: Array.isArray(parsed.campaign_ids) ? parsed.campaign_ids : [],
               form_ids: Array.isArray(parsed.form_ids) ? parsed.form_ids : [],
@@ -575,7 +581,7 @@ export default function GroupLeadDistributionModal({
           toast.error(`${memberName} is already in this group.`);
           return g;
         }
-        const updatedMembers = [...g.members, { userId, name: memberName, weight: 1 }];
+        const updatedMembers = [...g.members, { userId, name: memberName, weight: 1, is_active: true }];
         const updatedGroup = { ...g, members: updatedMembers };
         saveGroupRuleToDb(updatedGroup);
         return updatedGroup;
@@ -584,6 +590,35 @@ export default function GroupLeadDistributionModal({
     }));
 
     setSelectedUserToAdd(prev => ({ ...prev, [groupId]: '' }));
+  };
+
+  const handleToggleMemberActive = (groupId: string, userId: string) => {
+    setGroups(prev => prev.map(g => {
+      if (g.id === groupId) {
+        let changedName = '';
+        let newState = true;
+        const updatedMembers = g.members.map(m => {
+          if (m.userId === userId) {
+            const currentlyActive = m.is_active !== false;
+            newState = !currentlyActive;
+            changedName = m.name;
+            return { ...m, is_active: newState };
+          }
+          return m;
+        });
+        const updatedGroup = { ...g, members: updatedMembers };
+        saveGroupRuleToDb(updatedGroup);
+        if (changedName) {
+          if (newState) {
+            toast.success(`Leads turned ON for ${changedName}`);
+          } else {
+            toast.info(`Leads paused for ${changedName}`);
+          }
+        }
+        return updatedGroup;
+      }
+      return g;
+    }));
   };
 
   const handleUpdateMemberWeight = (groupId: string, userId: string, delta: number) => {
@@ -734,6 +769,10 @@ export default function GroupLeadDistributionModal({
     if (group.members.length === 0) {
       return toast.error(`Please add at least one team member to group "${group.group_name}".`);
     }
+    const activeMembers = group.members.filter(m => m.is_active !== false);
+    if (activeMembers.length === 0) {
+      return toast.error(`All members in "${group.group_name}" are switched OFF. Please enable at least one member to distribute leads.`);
+    }
     if (group.campaigns.length === 0) {
       return toast.error(`Please assign at least one campaign, form or source to group "${group.group_name}".`);
     }
@@ -816,9 +855,9 @@ export default function GroupLeadDistributionModal({
         return toast.error(`No leads found matching group "${group.group_name}" campaigns or forms.`);
       }
 
-      // 3. Build weighted sequence pool
+      // 3. Build weighted sequence pool with active members only
       const weightedPool: DistributionGroupMember[] = [];
-      group.members.forEach(m => {
+      activeMembers.forEach(m => {
         for (let i = 0; i < Math.max(1, m.weight); i++) {
           weightedPool.push(m);
         }
@@ -834,7 +873,7 @@ export default function GroupLeadDistributionModal({
 
       let lastAssignedMember: DistributionGroupMember = weightedPool[currentPointer];
       const updatesByAgent: Record<string, string[]> = {};
-      group.members.forEach(m => { updatesByAgent[m.userId] = []; });
+      activeMembers.forEach(m => { updatesByAgent[m.userId] = []; });
 
       for (const lead of matchingLeads) {
         const assignedMember = weightedPool[currentPointer];
@@ -869,7 +908,7 @@ export default function GroupLeadDistributionModal({
       await saveGroupRuleToDb(updatedGroup);
       setGroups(prev => prev.map(g => g.id === group.id ? updatedGroup : g));
 
-      toast.success(`Distributed ${matchingLeads.length} leads across ${group.members.length} agents in "${group.group_name}"!`);
+      toast.success(`Distributed ${matchingLeads.length} leads across ${activeMembers.length} active agent(s) in "${group.group_name}"!`);
       onLeadsUpdated();
     } catch (err: any) {
       console.error('Failed to distribute group leads:', err);
@@ -1099,7 +1138,7 @@ export default function GroupLeadDistributionModal({
                           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
                           <span className="font-black text-slate-900 text-sm">{group.group_name}</span>
                           <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
-                            {group.members.length} member(s)
+                            {group.members.filter(m => m.is_active !== false).length}/{group.members.length} active member(s)
                           </span>
                         </div>
 
@@ -1123,43 +1162,78 @@ export default function GroupLeadDistributionModal({
 
                       {/* Mobile Section 1: Selected Users & Weightage */}
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                          Selected Users & Weightage Ratio
-                        </label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                            Selected Users & Weightage Ratio
+                          </label>
+                          <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md">
+                            {group.members.filter(m => m.is_active !== false).length}/{group.members.length} Active
+                          </span>
+                        </div>
                         <div className="space-y-1.5">
                           {group.members.length === 0 ? (
                             <span className="text-slate-400 text-xs italic block">No team members added</span>
                           ) : (
-                            group.members.map((m) => (
-                              <div key={m.userId} className="flex items-center justify-between bg-slate-50 border border-slate-200/80 px-2.5 py-1.5 rounded-xl text-xs">
-                                <div className="flex items-center gap-1.5 font-bold text-slate-800 truncate max-w-[170px]">
-                                  <UserCheck size={13} className="text-blue-600 shrink-0" />
-                                  <span className="truncate">{m.name}</span>
-                                  <span className="text-red-500 font-extrabold">({m.weight})</span>
-                                </div>
+                            group.members.map((m) => {
+                              const isMemberActive = m.is_active !== false;
+                              return (
+                                <div 
+                                  key={m.userId} 
+                                  className={`flex items-center justify-between border px-2.5 py-1.5 rounded-xl text-xs transition-all ${
+                                    isMemberActive 
+                                      ? 'bg-slate-50 border-slate-200/80 shadow-2xs' 
+                                      : 'bg-slate-100/70 border-slate-200/80 opacity-60'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 font-bold truncate max-w-[170px]">
+                                    {/* Active toggle button in front of member */}
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={isMemberActive}
+                                      onClick={() => handleToggleMemberActive(group.id, m.userId)}
+                                      title={isMemberActive ? `${m.name} is Active (receiving leads). Click to turn OFF.` : `${m.name} is Switched OFF (NOT receiving leads). Click to turn ON.`}
+                                      className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        isMemberActive ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-slate-300 hover:bg-slate-400'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                                          isMemberActive ? 'translate-x-3' : 'translate-x-0'
+                                        }`}
+                                      />
+                                    </button>
 
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    onClick={() => handleUpdateMemberWeight(group.id, m.userId, 1)}
-                                    className="w-6 h-6 bg-white hover:bg-slate-200 border border-slate-300 rounded-lg font-black text-slate-700 flex items-center justify-center text-xs cursor-pointer active:scale-95"
-                                  >
-                                    +
-                                  </button>
-                                  <button
-                                    onClick={() => handleUpdateMemberWeight(group.id, m.userId, -1)}
-                                    className="w-6 h-6 bg-white hover:bg-slate-200 border border-slate-300 rounded-lg font-black text-slate-700 flex items-center justify-center text-xs cursor-pointer active:scale-95"
-                                  >
-                                    -
-                                  </button>
-                                  <button
-                                    onClick={() => handleRemoveMember(group.id, m.userId)}
-                                    className="p-1 text-slate-400 hover:text-red-600 ml-1 cursor-pointer"
-                                  >
-                                    <X size={14} />
-                                  </button>
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <UserCheck size={13} className={`shrink-0 ${isMemberActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                                      <span className={`truncate ${isMemberActive ? 'text-slate-800' : 'text-slate-500 line-through'}`}>{m.name}</span>
+                                      <span className={`font-extrabold ${isMemberActive ? 'text-red-500' : 'text-slate-400'}`}>({m.weight})</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={() => handleUpdateMemberWeight(group.id, m.userId, 1)}
+                                      className="w-6 h-6 bg-white hover:bg-slate-200 border border-slate-300 rounded-lg font-black text-slate-700 flex items-center justify-center text-xs cursor-pointer active:scale-95"
+                                    >
+                                      +
+                                    </button>
+                                    <button
+                                      onClick={() => handleUpdateMemberWeight(group.id, m.userId, -1)}
+                                      className="w-6 h-6 bg-white hover:bg-slate-200 border border-slate-300 rounded-lg font-black text-slate-700 flex items-center justify-center text-xs cursor-pointer active:scale-95"
+                                    >
+                                      -
+                                    </button>
+                                    <button
+                                      onClick={() => handleRemoveMember(group.id, m.userId)}
+                                      className="p-1 text-slate-400 hover:text-red-600 ml-1 cursor-pointer"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            ))
+                              );
+                            })
                           )}
 
                           {availableUsers.length > 0 && (
@@ -1251,7 +1325,7 @@ export default function GroupLeadDistributionModal({
                                 <span className="text-sm font-black text-slate-900">{group.group_name}</span>
                               </div>
                               <div className="text-[10px] font-bold text-slate-400 mt-1">
-                                {group.members.length} member(s) • {group.campaigns.length} rule(s)
+                                {group.members.filter(m => m.is_active !== false).length}/{group.members.length} active member(s) • {group.campaigns.length} rule(s)
                               </div>
                             </td>
 
@@ -1261,39 +1335,69 @@ export default function GroupLeadDistributionModal({
                                 {group.members.length === 0 ? (
                                   <span className="text-slate-400 text-xs italic">No team members added</span>
                                 ) : (
-                                  group.members.map((m) => (
-                                    <div key={m.userId} className="flex items-center justify-between bg-slate-50 border border-slate-200/80 px-2.5 py-1.5 rounded-xl text-xs">
-                                      <div className="flex items-center gap-1.5 font-bold text-slate-800 truncate max-w-[130px]">
-                                        <UserCheck size={13} className="text-blue-600 shrink-0" />
-                                        <span className="truncate">{m.name}</span>
-                                        <span className="text-red-500 font-extrabold">({m.weight})</span>
+                                  group.members.map((m) => {
+                                    const isMemberActive = m.is_active !== false;
+                                    return (
+                                      <div 
+                                        key={m.userId} 
+                                        className={`flex items-center justify-between border px-2.5 py-1.5 rounded-xl text-xs transition-all ${
+                                          isMemberActive 
+                                            ? 'bg-slate-50 border-slate-200/80 shadow-2xs' 
+                                            : 'bg-slate-100/70 border-slate-200/80 opacity-60'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 font-bold truncate max-w-[150px]">
+                                          {/* Active toggle button in front of member */}
+                                          <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={isMemberActive}
+                                            onClick={() => handleToggleMemberActive(group.id, m.userId)}
+                                            title={isMemberActive ? `${m.name} is Active (receiving leads). Click to turn OFF.` : `${m.name} is Switched OFF (NOT receiving leads). Click to turn ON.`}
+                                            className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                              isMemberActive ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-slate-300 hover:bg-slate-400'
+                                            }`}
+                                          >
+                                            <span
+                                              className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                                                isMemberActive ? 'translate-x-3' : 'translate-x-0'
+                                              }`}
+                                            />
+                                          </button>
+
+                                          <div className="flex items-center gap-1.5 truncate">
+                                            <UserCheck size={13} className={`shrink-0 ${isMemberActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                                            <span className={`truncate ${isMemberActive ? 'text-slate-800' : 'text-slate-500 line-through'}`}>{m.name}</span>
+                                            <span className={`font-extrabold ${isMemberActive ? 'text-red-500' : 'text-slate-400'}`}>({m.weight})</span>
+                                          </div>
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <button
+                                            onClick={() => handleUpdateMemberWeight(group.id, m.userId, 1)}
+                                            className="w-5 h-5 bg-white hover:bg-slate-200 border border-slate-300 rounded font-black text-slate-700 flex items-center justify-center text-xs cursor-pointer"
+                                            title="Increase Weight"
+                                          >
+                                            +
+                                          </button>
+                                          <button
+                                            onClick={() => handleUpdateMemberWeight(group.id, m.userId, -1)}
+                                            className="w-5 h-5 bg-white hover:bg-slate-200 border border-slate-300 rounded font-black text-slate-700 flex items-center justify-center text-xs cursor-pointer"
+                                            title="Decrease Weight"
+                                          >
+                                            -
+                                          </button>
+                                          <button
+                                            onClick={() => handleRemoveMember(group.id, m.userId)}
+                                            className="w-5 h-5 text-slate-400 hover:text-red-600 flex items-center justify-center ml-1 cursor-pointer"
+                                            title="Remove User"
+                                          >
+                                            <X size={14} />
+                                          </button>
+                                        </div>
                                       </div>
-                                      
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        <button
-                                          onClick={() => handleUpdateMemberWeight(group.id, m.userId, 1)}
-                                          className="w-5 h-5 bg-white hover:bg-slate-200 border border-slate-300 rounded font-black text-slate-700 flex items-center justify-center text-xs cursor-pointer"
-                                          title="Increase Weight"
-                                        >
-                                          +
-                                        </button>
-                                        <button
-                                          onClick={() => handleUpdateMemberWeight(group.id, m.userId, -1)}
-                                          className="w-5 h-5 bg-white hover:bg-slate-200 border border-slate-300 rounded font-black text-slate-700 flex items-center justify-center text-xs cursor-pointer"
-                                          title="Decrease Weight"
-                                        >
-                                          -
-                                        </button>
-                                        <button
-                                          onClick={() => handleRemoveMember(group.id, m.userId)}
-                                          className="w-5 h-5 text-slate-400 hover:text-red-600 flex items-center justify-center ml-1 cursor-pointer"
-                                          title="Remove User"
-                                        >
-                                          <X size={14} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))
+                                    );
+                                  })
                                 )}
 
                                 {availableUsers.length > 0 && (

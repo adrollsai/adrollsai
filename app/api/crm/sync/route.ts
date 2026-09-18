@@ -265,7 +265,8 @@ export async function POST(request: Request) {
 
         if (matches) {
           const weightedPool: any[] = [];
-          rule.members.forEach((m: any) => {
+          const activeMembers = (rule.members || []).filter((m: any) => m.is_active !== false);
+          activeMembers.forEach((m: any) => {
             for (let w = 0; w < Math.max(1, m.weight || 1); w++) {
               weightedPool.push(m);
             }

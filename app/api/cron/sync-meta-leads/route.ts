@@ -376,8 +376,9 @@ async function handleSync(request: Request) {
                     const groupCampaignIds: string[] = Array.isArray(parsedGroup.campaign_ids) ? parsedGroup.campaign_ids : [];
                     const groupFormIds: string[] = Array.isArray(parsedGroup.form_ids) ? parsedGroup.form_ids : [];
                     const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
+                    const activeMembers = groupMembers.filter((m: any) => m.is_active !== false);
 
-                    if (groupMembers.length > 0 && (groupCampaigns.length > 0 || groupCampaignIds.length > 0 || groupFormIds.length > 0)) {
+                    if (activeMembers.length > 0 && (groupCampaigns.length > 0 || groupCampaignIds.length > 0 || groupFormIds.length > 0)) {
                       const leadCtx = {
                         campaignId,
                         campaignName,
@@ -397,7 +398,7 @@ async function handleSync(request: Request) {
 
                       if (matchesById || matchesByRule) {
                         const weightedPool: any[] = [];
-                        groupMembers.forEach(m => {
+                        activeMembers.forEach(m => {
                           for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
                             weightedPool.push(m);
                           }

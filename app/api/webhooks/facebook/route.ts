@@ -2794,8 +2794,9 @@ CRITICAL CONVERSATIONAL RULES:
                                                     const groupCampaignIds: string[] = Array.isArray(parsedGroup.campaign_ids) ? parsedGroup.campaign_ids : [];
                                                     const groupFormIds: string[] = Array.isArray(parsedGroup.form_ids) ? parsedGroup.form_ids : [];
                                                     const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
+                                                    const activeMembers = groupMembers.filter((m: any) => m.is_active !== false);
 
-                                                    if (groupMembers.length > 0 && (groupCampaigns.length > 0 || groupCampaignIds.length > 0 || groupFormIds.length > 0)) {
+                                                    if (activeMembers.length > 0 && (groupCampaigns.length > 0 || groupCampaignIds.length > 0 || groupFormIds.length > 0)) {
                                                         const leadCtx = {
                                                             campaignId: campaignId || null,
                                                             campaignName: campaignName || null,
@@ -2810,7 +2811,7 @@ CRITICAL CONVERSATIONAL RULES:
 
                                                         if (matchesCamp) {
                                                             const weightedPool: any[] = [];
-                                                            groupMembers.forEach(m => {
+                                                            activeMembers.forEach(m => {
                                                                 for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
                                                                     weightedPool.push(m);
                                                                 }
@@ -5011,7 +5012,8 @@ RULES:
                   const groupCampaignIds: string[] = Array.isArray(parsedGroup.campaign_ids) ? parsedGroup.campaign_ids : [];
                   const groupFormIds: string[] = Array.isArray(parsedGroup.form_ids) ? parsedGroup.form_ids : [];
                   const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
-                  if (groupMembers.length > 0 && (groupCampaigns.length > 0 || groupCampaignIds.length > 0 || groupFormIds.length > 0)) {
+                  const activeMembers = groupMembers.filter((m: any) => m.is_active !== false);
+                  if (activeMembers.length > 0 && (groupCampaigns.length > 0 || groupCampaignIds.length > 0 || groupFormIds.length > 0)) {
                     const matchesById = (campaignId && groupCampaignIds.includes(String(campaignId))) ||
                                         (fbLead.form_id && groupFormIds.includes(String(fbLead.form_id)));
                     const matchesCamp = matchesById || (groupCampaigns.length > 0 && groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx, campaignsMap)));
@@ -5019,7 +5021,7 @@ RULES:
                     if (matchesCamp) {
                       // Build weighted sequence pool
                       const weightedPool: any[] = [];
-                      groupMembers.forEach(m => {
+                      activeMembers.forEach(m => {
                         for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
                           weightedPool.push(m);
                         }
