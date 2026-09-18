@@ -1400,16 +1400,17 @@ export default function AnalyticsPage() {
         if (typeof cf === 'string') {
           try { cf = JSON.parse(cf); } catch (e) {}
         }
-        const nextAct = (cf?.next_action_type || l.next_action_type || '').toLowerCase();
-        const lastAct = (cf?.last_followup_type || l.last_followup_type || '').toLowerCase();
-        const st = (l.pipeline_stage || l.status || '').toLowerCase();
-        return st.includes('meeting') || st.includes('negotiation') || nextAct.includes('meeting') || nextAct.includes('closing') || nextAct.includes('home') || lastAct.includes('meeting') || lastAct.includes('closing') || lastAct.includes('home');
+        const lastAct = (cf?.last_followup_type || l.last_followup_type || '').toLowerCase().trim();
+        return lastAct === 'closing meeting' || lastAct === 'closing' || lastAct === 'home meeting';
       }).length
 
-      // Include both Visit Done AND Revisit Done
       const visits = repLeads.filter(l => {
-        const st = (l.status || l.pipeline_stage || '').toLowerCase()
-        return st === 'visit done' || st === 'revisit done' || st === 'appointment done'
+        let cf: any = l.custom_fields;
+        if (typeof cf === 'string') {
+          try { cf = JSON.parse(cf); } catch (e) {}
+        }
+        const lastAct = (cf?.last_followup_type || l.last_followup_type || '').toLowerCase().trim();
+        return lastAct === 'visit' || lastAct === 'site visit' || lastAct === 'revisit' || lastAct === 're-visit';
       }).length
 
       const dnp = repLeads.filter(l => {
@@ -1541,20 +1542,38 @@ export default function AnalyticsPage() {
 
     const classifyAction = (h: any) => {
       const type = (h.action_type || '').toUpperCase()
-      const desc = (h.description || '').toLowerCase()
+      const desc = (h.description || '').trim()
       // Exclude purely automated system imports/webhooks
       if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT', 'ASSIGNMENT'].includes(type)) return null
-      if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return null
+      const descLower = desc.toLowerCase()
+      if (descLower.includes('facebook ad submission') || descLower.includes('reopened from facebook') || descLower.includes('bulk transferred') || descLower.includes('transferred from')) return null
 
-      if (type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return 'dnp'
-      if (type === 'REVISIT' || desc.includes('revisit') || desc.includes('re-visit')) return 'revisits'
-      if (desc.includes('closing meeting') || desc.includes('closing')) return 'closing_meetings'
-      if (desc.includes('home meeting')) return 'home_meetings'
-      if (type === 'SITE_VISIT' || desc.includes('site visit') || desc.includes('visit done') || desc.includes('visit')) return 'visits'
-      if (type === 'MEETING' || desc.includes('meeting')) return 'closing_meetings'
-      if (type === 'WHATSAPP' || desc.includes('whatsapp') || desc.includes('message sent')) return 'whatsapp'
-      
-      // Every manual note, stage update, followup or call counts as a call/followup attempt
+      // 1. DNP check
+      if (type === 'DNP' || descLower.includes('call not picked - dnp') || descLower.startsWith('[⚠️ call not picked') || descLower.includes('not picked') || descLower.includes('did not pick')) return 'dnp'
+
+      // 2. Explicit Followup Type check from "Followup (Type)"
+      // Matches "Followup (Call)", "Followup (Visit)", "Followup (Revisit)", "Followup (Closing Meeting)", "Followup (Home Meeting)", "Followup (WhatsApp)"
+      const followupMatch = desc.match(/Followup\s*\(([^)]+)\)/i)
+      if (followupMatch) {
+        const fType = followupMatch[1].toLowerCase().trim()
+        if (fType.includes('dnp') || fType.includes('not picked')) return 'dnp'
+        if (fType === 'visit' || fType === 'site visit') return 'visits'
+        if (fType === 'revisit' || fType === 're-visit') return 'revisits'
+        if (fType === 'closing meeting' || fType === 'closing') return 'closing_meetings'
+        if (fType === 'home meeting' || fType === 'home') return 'home_meetings'
+        if (fType === 'whatsapp') return 'whatsapp'
+        if (fType === 'call') return 'calls'
+        return 'calls'
+      }
+
+      // 3. Structured action_type checks
+      if (type === 'SITE_VISIT') return 'visits'
+      if (type === 'REVISIT') return 'revisits'
+      if (type === 'MEETING') return 'closing_meetings'
+      if (type === 'WHATSAPP') return 'whatsapp'
+      if (['CALL', 'CALL_LOG', 'OUTBOUND_CALL', 'CALL_FEEDBACK'].includes(type)) return 'calls'
+
+      // 4. Default for any other manual update
       return 'calls'
     }
 
@@ -1610,16 +1629,32 @@ export default function AnalyticsPage() {
 
           if (!matchedRep) return
 
-          const headerMatch = chunk.match(/^\[([^\]\-]+)/)
-          const header = (headerMatch ? headerMatch[1] : '').toLowerCase()
+          const chunkLower = chunk.toLowerCase()
+          const fMatch = chunk.match(/Followup\s*\(([^)]+)\)/i)
           let cat = 'calls'
-          if (header.includes('not picked') || header.includes('dnp')) cat = 'dnp'
-          else if (header.includes('revisit') || header.includes('re-visit')) cat = 'revisits'
-          else if (header.includes('closing')) cat = 'closing_meetings'
-          else if (header.includes('home')) cat = 'home_meetings'
-          else if (header.includes('site visit') || header.includes('visit')) cat = 'visits'
-          else if (header.includes('meeting')) cat = 'closing_meetings'
-          else if (header.includes('whatsapp')) cat = 'whatsapp'
+
+          if (chunkLower.includes('call not picked') || chunkLower.includes('dnp') || chunkLower.includes('not picked')) {
+            cat = 'dnp'
+          } else if (fMatch) {
+            const fType = fMatch[1].toLowerCase().trim()
+            if (fType.includes('dnp') || fType.includes('not picked')) cat = 'dnp'
+            else if (fType === 'visit' || fType === 'site visit') cat = 'visits'
+            else if (fType === 'revisit' || fType === 're-visit') cat = 'revisits'
+            else if (fType === 'closing meeting' || fType === 'closing') cat = 'closing_meetings'
+            else if (fType === 'home meeting' || fType === 'home') cat = 'home_meetings'
+            else if (fType === 'whatsapp') cat = 'whatsapp'
+            else cat = 'calls'
+          } else {
+            const headerMatch = chunk.match(/^\[([^\]\-]+)/)
+            const header = (headerMatch ? headerMatch[1] : '').toLowerCase().trim()
+            if (header.includes('not picked') || header.includes('dnp')) cat = 'dnp'
+            else if (header === 'site visit' || header === 'visit') cat = 'visits'
+            else if (header === 'revisit' || header === 're-visit') cat = 'revisits'
+            else if (header === 'closing meeting') cat = 'closing_meetings'
+            else if (header === 'home meeting') cat = 'home_meetings'
+            else if (header === 'whatsapp') cat = 'whatsapp'
+            else cat = 'calls'
+          }
 
           if (repActionCounts[matchedRep.id]) {
             const dateKey = effectiveDate.toISOString().slice(0, 13)
@@ -1651,14 +1686,14 @@ export default function AnalyticsPage() {
           if (!matchedRep) return
 
           let cat = 'calls'
-          const fType = (f.type || f.stage || f.followupType || '').toLowerCase()
+          const fType = (f.followupType || f.type || '').toLowerCase().trim()
           if (fType.includes('dnp') || fType.includes('not picked')) cat = 'dnp'
-          else if (fType.includes('revisit') || fType.includes('re-visit')) cat = 'revisits'
-          else if (fType.includes('closing')) cat = 'closing_meetings'
-          else if (fType.includes('home')) cat = 'home_meetings'
-          else if (fType.includes('visit')) cat = 'visits'
-          else if (fType.includes('meeting')) cat = 'closing_meetings'
-          else if (fType.includes('whatsapp')) cat = 'whatsapp'
+          else if (fType === 'visit' || fType === 'site visit') cat = 'visits'
+          else if (fType === 'revisit' || fType === 're-visit') cat = 'revisits'
+          else if (fType === 'closing meeting' || fType === 'closing') cat = 'closing_meetings'
+          else if (fType === 'home meeting' || fType === 'home') cat = 'home_meetings'
+          else if (fType === 'whatsapp') cat = 'whatsapp'
+          else cat = 'calls'
 
           if (repActionCounts[matchedRep.id]) {
             const dateKey = fDate.toISOString().slice(0, 13)
@@ -1676,15 +1711,15 @@ export default function AnalyticsPage() {
       if (cf?.last_followup_at && isDateInRange(cf.last_followup_at)) {
         const repId = l.assigned_to
         if (repId && repActionCounts[repId]) {
-          const lType = (cf.last_followup_type || '').toLowerCase()
+          const lType = (cf.last_followup_type || '').toLowerCase().trim()
           let cat = 'calls'
           if (cf.last_call_dnp === true || lType.includes('dnp') || lType.includes('not picked')) cat = 'dnp'
-          else if (lType.includes('revisit') || lType.includes('re-visit')) cat = 'revisits'
-          else if (lType.includes('closing')) cat = 'closing_meetings'
-          else if (lType.includes('home')) cat = 'home_meetings'
-          else if (lType.includes('visit')) cat = 'visits'
-          else if (lType.includes('meeting')) cat = 'closing_meetings'
-          else if (lType.includes('whatsapp')) cat = 'whatsapp'
+          else if (lType === 'visit' || lType === 'site visit') cat = 'visits'
+          else if (lType === 'revisit' || lType === 're-visit') cat = 'revisits'
+          else if (lType === 'closing meeting' || lType === 'closing') cat = 'closing_meetings'
+          else if (lType === 'home meeting' || lType === 'home') cat = 'home_meetings'
+          else if (lType === 'whatsapp') cat = 'whatsapp'
+          else cat = 'calls'
 
           const dateKey = new Date(cf.last_followup_at).toISOString().slice(0, 13)
           const dedupKey = `${l.id}_${cat}_${dateKey}`
