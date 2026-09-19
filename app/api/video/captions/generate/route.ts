@@ -9,6 +9,8 @@ const supabaseAdmin = createAdminClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+export const maxDuration = 60; // Allow 60s for audio transcription and caption styling on Vercel
+
 export async function POST(request: Request) {
     try {
         const supabase = await createClient();
@@ -29,8 +31,8 @@ export async function POST(request: Request) {
             : {};
         const audioUrl = currentMetadata?.audioUrl || null;
 
-        // 1. Get Raw Transcript using Gemini in selected language
-        console.log(`[Captions API] Transcribing video (language: ${language}, audioUrl: ${audioUrl || 'none'})...`);
+        // 1. Get Word-Level Transcript using Gemini 3.8 Flash in selected language (audio-first)
+        console.log(`[Captions API] Transcribing audio with Gemini 3.8 Flash (language: ${language}, audioUrl: ${audioUrl || 'none'})...`);
         const rawTranscript = await transcribeVideoWithGemini(videoUrl, audioUrl, language);
 
         // 2. Optimize for Viral Retention & Visual Effects in target language
@@ -45,7 +47,8 @@ export async function POST(request: Request) {
                     metadata: { 
                         ...currentMetadata,
                         captions: captions,
-                        effects: effects 
+                        effects: effects,
+                        words: rawTranscript?.words || []
                     } 
                 })
                 .eq('id', assetId);
@@ -56,7 +59,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ 
             success: true, 
             captions,
-            effects
+            effects,
+            words: rawTranscript?.words || []
         });
 
     } catch (error: any) {

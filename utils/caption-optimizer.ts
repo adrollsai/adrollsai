@@ -131,8 +131,8 @@ export async function optimizeCaptionsForRetention(
         const result = await generateContentWithFallback(
             genAI,
             prompt,
-            "gemini-3.5-flash",
-            null,
+            "gemini-3.8-flash",
+            "gemini-2.5-flash",
             4,
             2000,
             {
@@ -157,45 +157,24 @@ export async function optimizeCaptionsForRetention(
             const rawSeg = segments[idx];
             const optSeg = optMap.get(idx);
             
-            const textToSplit = optSeg ? optSeg.optimized_text : rawSeg.text.toUpperCase();
+            const styledText = optSeg ? optSeg.optimized_text : rawSeg.text.toUpperCase();
             const emphasisWords = optSeg ? optSeg.emphasis_words : [];
             const cleanEmpWords = new Set((emphasisWords || []).map((w: string) => w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
             
-            const words = textToSplit.trim().split(/\s+/).filter(Boolean);
+            const words = styledText.trim().split(/\s+/).filter(Boolean);
             if (words.length === 0) continue;
 
-            const totalWords = words.length;
+            const isEmphasized = words.some((w: string) => cleanEmpWords.has(w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
             const segStart = Number(rawSeg.start.toFixed(2));
-            const segEnd = Number(Math.max(rawSeg.start + 0.3, rawSeg.end).toFixed(2));
+            const segEnd = Number(Math.max(rawSeg.start + 0.35, rawSeg.end).toFixed(2));
 
-            // If the segment is already compact (1-3 words), preserve the EXACT audio timestamps
-            if (totalWords <= 3) {
-                const isEmphasized = words.some((w: string) => cleanEmpWords.has(w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
-                finalCaptions.push({
-                    text: words.join(' '),
-                    start: segStart,
-                    end: segEnd,
-                    emphasis: isEmphasized
-                });
-            } else {
-                // If segment has 4+ words, divide proportionally inside the acoustic window [segStart, segEnd]
-                const groupSize = totalWords > 6 ? 3 : 2;
-                const totalGroups = Math.ceil(totalWords / groupSize);
-                const duration = Math.max(0.4, segEnd - segStart);
-                const groupDuration = duration / totalGroups;
-
-                for (let g = 0; g < totalGroups; g++) {
-                    const groupWords = words.slice(g * groupSize, (g + 1) * groupSize);
-                    const isEmphasized = groupWords.some((w: string) => cleanEmpWords.has(w.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')));
-
-                    finalCaptions.push({
-                        text: groupWords.join(' '),
-                        start: Number((segStart + (g * groupDuration)).toFixed(2)),
-                        end: Number((segStart + ((g + 1) * groupDuration)).toFixed(2)),
-                        emphasis: isEmphasized
-                    });
-                }
-            }
+            // Lock strictly to physical acoustic timestamps — zero artificial linear math
+            finalCaptions.push({
+                text: styledText.trim(),
+                start: segStart,
+                end: segEnd,
+                emphasis: isEmphasized
+            });
         }
 
         return {
@@ -205,37 +184,22 @@ export async function optimizeCaptionsForRetention(
 
     } catch (error: any) {
         console.error("[Caption Optimizer] Optimization failed, generating baseline captions:", error?.message || error);
-        // Fallback: build baseline captions directly from raw segments preserving true timestamps
+        // Fallback: build baseline captions directly from acoustic segments preserving true timestamps
         const fallbackCaptions: { text: string; start: number; end: number; emphasis: boolean }[] = [];
         for (let i = 0; i < (segments || []).length; i++) {
             const rawSeg = segments[i];
-            const words = (rawSeg.text || '').toUpperCase().trim().split(/\s+/).filter(Boolean);
-            if (words.length === 0) continue;
+            const text = (rawSeg.text || '').toUpperCase().trim();
+            if (!text) continue;
             
             const segStart = Number(rawSeg.start.toFixed(2));
-            const segEnd = Number(Math.max(rawSeg.start + 0.3, rawSeg.end).toFixed(2));
+            const segEnd = Number(Math.max(rawSeg.start + 0.35, rawSeg.end).toFixed(2));
 
-            if (words.length <= 3) {
-                fallbackCaptions.push({
-                    text: words.join(' '),
-                    start: segStart,
-                    end: segEnd,
-                    emphasis: i % 2 === 0
-                });
-            } else {
-                const totalGroups = Math.ceil(words.length / 2);
-                const duration = Math.max(0.4, segEnd - segStart);
-                const groupDuration = duration / totalGroups;
-                for (let g = 0; g < totalGroups; g++) {
-                    const chunkWords = words.slice(g * 2, (g + 1) * 2);
-                    fallbackCaptions.push({
-                        text: chunkWords.join(' '),
-                        start: Number((segStart + g * groupDuration).toFixed(2)),
-                        end: Number((segStart + (g + 1) * groupDuration).toFixed(2)),
-                        emphasis: (i + g) % 2 === 0
-                    });
-                }
-            }
+            fallbackCaptions.push({
+                text: text,
+                start: segStart,
+                end: segEnd,
+                emphasis: i % 2 === 0
+            });
         }
         return {
             captions: fallbackCaptions,
