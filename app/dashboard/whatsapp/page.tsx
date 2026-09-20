@@ -16,7 +16,8 @@ const TEMPLATE_BODY_MAP: Record<string, string> = {
   universal_followup_v2: 'Hi {{1}}, just following up from {{2}} regarding your inquiry for {{3}}. We have some exciting updates and new details to share with you. When would be a good time to connect?',
   universal_breakup_followup: 'Hi {{1}}, we haven\'t heard back from you regarding {{2}} for {{3}}. We will pause our follow-ups for now to respect your time. Feel free to reach back out whenever you\'re ready!',
   quick_followup: 'Hi {{1}}, following up on your inquiry with {{2}}. Let us know if you have any questions!',
-  offer_blast: 'Hi {{1}}, exclusive new updates from {{2}} regarding {{3}} are now live!'
+  offer_blast: 'Hi {{1}}, exclusive new updates from {{2}} regarding {{3}} are now live!',
+  sakhsi: 'Hi! Sakshi here, your Dubai property advisor. You had enquired about Dubai properties with us earlier.\n\n*Best time to look again:* homes from just 5% down payment, easy monthly plans, tax-free rental income.\n*Offers closing this month ‼️*\nClick "Interested" and I\'ll send you the best options'
 }
 
 // Map String names to Actual Icons
@@ -131,13 +132,15 @@ export default function AutomationPage() {
     'universal_followup_v2': 'Hi {{1}}, hope you\'re having a good day! Following up from {{2}} regarding {{3}}. {{4}} Would you like me to share more details or arrange a quick call?',
     'universal_breakup_followup': 'Hi {{1}}, hope you\'re doing well! Following up from {{2}} regarding {{3}}. Should we keep your inquiry active, or are you all sorted for now?',
     'hello_world': 'Welcome and thank you for choosing {{2}}. How can we help you today?',
-    'lead_auto_response': 'Thank you for reaching out to {{2}}! We have received your request and our team will connect with you shortly.'
+    'lead_auto_response': 'Thank you for reaching out to {{2}}! We have received your request and our team will connect with you shortly.',
+    'sakhsi': "Hi! Sakshi here, your Dubai property advisor. You had enquired about Dubai properties with us earlier.\n\n*Best time to look again:* homes from just 5% down payment, easy monthly plans, tax-free rental income.\n*Offers closing this month ‼️*\nClick \"Interested\" and I'll send you the best options"
   };
 
   // Pre-approved template buttons map for fallback expansion
   const TEMPLATE_BUTTONS_MAP: Record<string, string[]> = {
     'investment_inquiry': ['View Properties'],
-    'auto_drip_followup_48h': ['Connect with Expert']
+    'auto_drip_followup_48h': ['Connect with Expert'],
+    'sakhsi': ['Interested!']
   };
 
   // Helper to resolve full template content, body text, and interactive buttons
@@ -1533,8 +1536,11 @@ export default function AutomationPage() {
                       // 3. Resolve direct public URL vs proxy URL for media
                       const directMediaUrl = getResolvedMediaUrl(m.media_url)
                       const extractedImgFromText = !m.media_url ? extractImageFromText(m.message_text) : null
-                      const displayImageUrl = directMediaUrl || extractedImgFromText
-                      const isImage = (m.media_type === 'image' || m.media_type === 'sticker' || !m.media_type) && !!displayImageUrl
+                      const templateFallbackImg = (templateInfo?.templateName === 'sakhsi' || m.message_text?.includes('sakhsi'))
+                        ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/library/68b55a31-a16d-454d-a20f-11adabf590b0/1789877891600-5percent.jpg'
+                        : null
+                      const displayImageUrl = directMediaUrl || extractedImgFromText || templateFallbackImg
+                      const isImage = (m.media_type === 'image' || m.media_type === 'sticker' || !m.media_type || !!templateFallbackImg) && !!displayImageUrl
 
                       return (
                         <div key={m.id} className="space-y-2.5">
