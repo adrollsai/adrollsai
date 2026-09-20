@@ -6934,17 +6934,20 @@ export default function FlowsPage() {
                           <span className="truncate max-w-[120px]">{flow.trigger?.label || 'Meta Campaign'}</span>
                         </span>
                         <span className="text-[10px] text-slate-400">→</span>
-                        {flow.nodes.slice(0, 3).map((node, i) => (
-                          <span
-                            key={node.id}
-                            className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-lg border border-slate-200 truncate max-w-[100px]"
-                          >
-                            {node.title.slice(0, 18)}
-                          </span>
-                        ))}
-                        {flow.nodes.length > 3 && (
+                        {(flow.nodes || []).slice(0, 3).map((node: any, i: number) => {
+                          const title = node?.data?.title || node?.title || `Step ${i + 1}`
+                          return (
+                            <span
+                              key={node?.id || i}
+                              className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-lg border border-slate-200 truncate max-w-[100px]"
+                            >
+                              {String(title).slice(0, 18)}
+                            </span>
+                          )
+                        })}
+                        {(flow.nodes || []).length > 3 && (
                           <span className="text-[10px] font-medium text-slate-400">
-                            +{flow.nodes.length - 3}
+                            +{(flow.nodes || []).length - 3}
                           </span>
                         )}
                       </div>
@@ -6954,7 +6957,7 @@ export default function FlowsPage() {
                     <div className="flex items-center gap-3 shrink-0">
                       {/* Steps Count Badge */}
                       <div className="hidden sm:flex flex-col items-center gap-0.5 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200 min-w-[60px]">
-                        <span className="text-sm font-black text-slate-900">{flow.nodes.length}</span>
+                        <span className="text-sm font-black text-slate-900">{(flow.nodes || []).length}</span>
                         <span className="text-[9px] text-slate-500 font-medium uppercase tracking-wider">Steps</span>
                       </div>
 
