@@ -400,19 +400,30 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
   const leadPhone = '+' + cleanFrom
   const leadEmail = (latestLead as any)?.email || ''
 
+  const targetLeadId = latestLead?.id
+  const targetCrmUrl = targetLeadId ? `${appUrl}/dashboard/crm?leadId=${targetLeadId}` : `${appUrl}/dashboard/crm`
+  const targetChatUrl = chat?.id ? `${appUrl}/dashboard/whatsapp?chatId=${chat.id}` : `${appUrl}/dashboard/whatsapp`
+
   const variableMap: Record<string, string> = {
     inventory_url: inventoryUrl,
     catalogue_url: inventoryUrl,
+    catalog_url: inventoryUrl,
     booking_link: bookingUrl,
     booking_url: bookingUrl,
     lead_name: leadName,
+    name: leadName,
     lead_phone: leadPhone,
     phone: leadPhone,
     lead_email: leadEmail,
+    email: leadEmail,
     owner_email: ownerResolvedEmail,
     business_name: ownerBusinessName || 'our company',
     contact_number: ownerContactNumber || '',
-    app_url: appUrl
+    app_url: appUrl,
+    crm_link: targetCrmUrl,
+    crm_url: targetCrmUrl,
+    current_date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    current_time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   }
 
   // Support both xyNodes (ManyChat canvas) and standard nodes
@@ -426,18 +437,41 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
 
   // If edges exist, traverse from the button or trigger node using BFS to support both chains & branching!
   if (edges.length > 0 && allNodes.length > 0) {
-    const cleanBtnText = (buttonReplyTitle || buttonReplyId || '').toLowerCase()
-    let startEdges = edges.filter((e: any) => {
-      const handle = (e.sourceHandle || '').toLowerCase()
-      return handle.includes('btn') && (cleanBtnText.includes('interest') ? handle.includes('interest') : true)
-    })
+    const cleanBtnText = (buttonReplyTitle || '').trim().toLowerCase()
+    const cleanBtnId = (buttonReplyId || '').trim().toLowerCase()
+    const triggerNode = allNodes.find((n: any) => n.type === 'triggerNode' || n.type?.startsWith('trigger_'))
 
-    if (startEdges.length === 0) {
-      // Find edges leaving the trigger node
-      const triggerNode = allNodes.find((n: any) => n.type === 'triggerNode' || n.type?.startsWith('trigger_'))
-      if (triggerNode) {
-        startEdges = edges.filter((e: any) => e.source === triggerNode.id)
-      }
+    let startEdges: any[] = []
+
+    if (triggerNode && (isButtonClick || cleanBtnText || cleanBtnId)) {
+      const triggerButtons: any[] = triggerNode.data?.buttons || triggerNode.config?.buttons || []
+      
+      // Match edge originating from the specific button that was tapped
+      startEdges = edges.filter((e: any) => {
+        if (e.source !== triggerNode.id) return false
+        const handle = (e.sourceHandle || '').toLowerCase()
+        if (!handle) return false
+
+        // 1. Direct handle name matching (e.g. handle contains button title or id)
+        if (cleanBtnText && (handle.includes(cleanBtnText) || handle.includes(cleanBtnText.replace(/\s+/g, '_')))) return true
+        if (cleanBtnId && (handle.includes(cleanBtnId) || handle.includes(cleanBtnId.replace(/\s+/g, '_')))) return true
+
+        // 2. Check triggerButtons list mapping to btn_0, btn_1, btn_<id>
+        return triggerButtons.some((btn: any, idx: number) => {
+          const btnId = String(btn.id || '').toLowerCase()
+          const btnTitle = String(btn.title || '').toLowerCase()
+          const handleMatches = handle === `btn_${btnId}` || handle === `btn_${idx}` || (btnId && handle.includes(btnId)) || (btnTitle && handle.includes(btnTitle.replace(/\s+/g, '_')))
+          if (!handleMatches) return false
+
+          return (cleanBtnId && (cleanBtnId === btnId || cleanBtnId.includes(btnId) || btnId.includes(cleanBtnId))) ||
+                 (cleanBtnText && (cleanBtnText === btnTitle || cleanBtnText.includes(btnTitle) || btnTitle.includes(cleanBtnText)))
+        })
+      })
+    }
+
+    if (startEdges.length === 0 && triggerNode) {
+      // Find all edges leaving the trigger node
+      startEdges = edges.filter((e: any) => e.source === triggerNode.id)
     }
     if (startEdges.length === 0 && edges.length > 0) {
       startEdges = [edges[0]]
@@ -508,7 +542,7 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
           } else if (act.type === 'crm_stage') {
             const stageName = act.stage || 'Interested'
             if (latestLead?.id) {
-              await supabaseAdmin.from('leads').update({ pipeline_stage: stageName }).eq('id', latestLead.id)
+              await supabaseAdmin.from('leads').update({ pipeline_stage: stageName, status: stageName }).eq('id', latestLead.id)
               actionsExecuted.push(`update_stage:${stageName}`)
             }
           } else if (act.type === 'add_tag') {
@@ -616,7 +650,7 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
         if (node.data?.crmStage) {
           const stageName = node.data.crmStage
           if (latestLead?.id) {
-            await supabaseAdmin.from('leads').update({ pipeline_stage: stageName }).eq('id', latestLead.id)
+            await supabaseAdmin.from('leads').update({ pipeline_stage: stageName, status: stageName }).eq('id', latestLead.id)
             actionsExecuted.push(`update_stage:${stageName}`)
           }
         }
@@ -714,14 +748,14 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
         const rawSubject = cfg.subject || '🔥 New Interested Lead: {{lead_name}} ({{lead_phone}})'
         const subject = interpolateVariables(rawSubject, variableMap)
 
-        let targetRecipient = (cfg.recipient || cfg.to || '').trim()
+        let targetRecipient = (cfg.customEmail || cfg.customRecipient || cfg.to || (cfg.recipient !== 'custom' ? cfg.recipient : '') || '').trim()
         if (targetRecipient) {
           targetRecipient = interpolateVariables(targetRecipient, variableMap)
         }
 
-        // If recipient is empty, or evaluates to {{lead_email}} without lead having an email, or is set to owner_email / admin
-        if (!targetRecipient || targetRecipient === '{{lead_email}}' || targetRecipient === 'all_admins' || targetRecipient === 'owner') {
-          targetRecipient = ownerResolvedEmail || 'estatesbioque@gmail.com'
+        // If recipient is empty, or evaluates to {{lead_email}} without lead having an email, or is set to owner_email / admin / custom without valid email
+        if (!targetRecipient || !targetRecipient.includes('@') || targetRecipient === '{{lead_email}}' || targetRecipient === 'all_admins' || targetRecipient === 'owner') {
+          targetRecipient = ownerResolvedEmail || 'rchopra489@gmail.com'
         }
 
         const rawBody = cfg.body || cfg.message || ''
@@ -730,8 +764,9 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
         const targetLeadId = latestLead?.id
         const targetCrmUrl = targetLeadId ? `${appUrl}/dashboard/crm?leadId=${targetLeadId}` : `${appUrl}/dashboard/crm`
         const targetChatUrl = chat?.id ? `${appUrl}/dashboard/whatsapp?chatId=${chat.id}` : `${appUrl}/dashboard/whatsapp`
+        const templateNameToReport = resolvedTemplateName || (matchedFlow.templateName) || (trigger?.data?.templateName) || (trigger?.templateName) || 'sakhsi'
 
-        console.log(`[FlowRunner] 📧 Dispatching lead notification email to: ${targetRecipient} for lead ${leadName} (${leadPhone})`)
+        console.log(`[FlowRunner] 📧 Dispatching lead notification email to: "${targetRecipient}" for lead ${leadName} (${leadPhone}), template: ${templateNameToReport}`)
 
         await sendLeadNotificationEmail({
           to: targetRecipient,
@@ -739,6 +774,7 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
           leadName,
           leadPhone,
           businessName: ownerBusinessName,
+          templateName: templateNameToReport,
           campaignName: matchedFlow.name || 'WhatsApp Broadcast Flow',
           buttonClicked: buttonReplyTitle || 'Interested',
           customBody,
@@ -876,7 +912,7 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
       if (nodeType === 'crmStageNode' || nodeType === 'action_crm_stage') {
         const targetStage = cfg.stage || cfg.pipeline_stage || 'Interested'
         if (latestLead?.id) {
-          const leadUpdates: Record<string, any> = { pipeline_stage: targetStage }
+          const leadUpdates: Record<string, any> = { pipeline_stage: targetStage, status: targetStage }
           if (cfg.assignAgent) {
             leadUpdates.assigned_to_name = cfg.assignAgent
           }
@@ -898,8 +934,8 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
 
       // 4. ACTION: Notify Admin / Multi-Channel Alert (notifyNode or action_notify_team)
       if (nodeType === 'notifyNode' || nodeType === 'action_notify_team' || nodeType === 'action_notify_admin') {
-        const rawTitle = cfg.title || '🔥 Lead Engaged with Automation Flow!'
-        const rawBody = cfg.message || cfg.body || 'Prospect {{lead_name}} ({{lead_phone}}) engaged with automation for {{business_name}}!'
+        const rawTitle = cfg.title || cfg.subject || '🔥 Lead Clicked Interested on WhatsApp Broadcast!'
+        const rawBody = cfg.message || cfg.body || 'Prospect {{lead_name}} ({{lead_phone}}) clicked "{{button_title}}" for {{business_name}}! Follow up now.'
         const title = interpolateVariables(rawTitle, variableMap)
         const body = interpolateVariables(rawBody, variableMap)
         const targetLeadId = latestLead?.id
@@ -918,17 +954,21 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
 
         // If channels includes email or recipient is custom email, dispatch email notification
         const channels: string[] = Array.isArray(cfg.channels) ? cfg.channels : (cfg.channels ? [cfg.channels] : [])
-        if (channels.includes('email') || cfg.recipient === 'custom' || cfg.customRecipient?.includes('@')) {
-          let emailTo = cfg.recipient === 'custom' && cfg.customRecipient ? cfg.customRecipient.trim() : ownerResolvedEmail
-          emailTo = interpolateVariables(emailTo, variableMap)
+        const isEmailStep = channels.includes('email') || cfg.recipient === 'custom' || cfg.customEmail?.includes('@') || cfg.customRecipient?.includes('@')
+        if (isEmailStep) {
+          let emailTo = cfg.customEmail || cfg.customRecipient || cfg.to || (cfg.recipient === 'custom' ? cfg.customRecipient : '')
+          if (emailTo) emailTo = emailTo.trim()
+          emailTo = interpolateVariables(emailTo || '', variableMap)
           if (!emailTo && ownerResolvedEmail) emailTo = ownerResolvedEmail
           if (emailTo) {
+            const templateNameToReport = resolvedTemplateName || (matchedFlow.templateName) || (trigger?.data?.templateName) || cfg.templateName || ''
             await sendLeadNotificationEmail({
               to: emailTo,
               subject: title,
               leadName,
               leadPhone,
               businessName: ownerBusinessName,
+              templateName: templateNameToReport,
               campaignName: matchedFlow.name,
               buttonClicked: buttonReplyTitle || 'Interested',
               customBody: body,

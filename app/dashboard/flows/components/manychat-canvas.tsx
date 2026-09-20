@@ -2915,14 +2915,55 @@ export function ManyChatCanvas({
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Recipient
+                      Recipient Email Address
                     </label>
                     <input
                       type="text"
-                      value={selectedNode.data.recipient || '{{lead_email}}'}
-                      onChange={e => handleUpdateNodeData('recipient', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono"
+                      value={selectedNode.data.customEmail || selectedNode.data.customRecipient || (selectedNode.data.recipient !== 'custom' ? selectedNode.data.recipient : '') || ''}
+                      onChange={e => {
+                        const val = e.target.value
+                        handleUpdateNodeData('recipient', val)
+                        handleUpdateNodeData('customEmail', val)
+                        handleUpdateNodeData('customRecipient', val)
+                      }}
+                      placeholder="e.g. rchopra489@gmail.com or {{lead_email}}"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white focus:border-cyan-500 outline-none"
                     />
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleUpdateNodeData('recipient', 'rchopra489@gmail.com')
+                          handleUpdateNodeData('customEmail', 'rchopra489@gmail.com')
+                          handleUpdateNodeData('customRecipient', 'rchopra489@gmail.com')
+                        }}
+                        className="px-2 py-0.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 rounded-md text-[10px] font-bold border border-cyan-200 cursor-pointer"
+                      >
+                        + rchopra489@gmail.com
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleUpdateNodeData('recipient', 'owner')
+                          handleUpdateNodeData('customEmail', '')
+                          handleUpdateNodeData('customRecipient', '')
+                        }}
+                        className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold border border-slate-200 cursor-pointer"
+                      >
+                        + Workspace Owner
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleUpdateNodeData('recipient', '{{lead_email}}')
+                          handleUpdateNodeData('customEmail', '{{lead_email}}')
+                          handleUpdateNodeData('customRecipient', '{{lead_email}}')
+                        }}
+                        className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold border border-slate-200 cursor-pointer"
+                      >
+                        + {{lead_email}}
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">

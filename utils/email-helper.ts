@@ -1,14 +1,24 @@
 import nodemailer from 'nodemailer'
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_SECURE === 'true', 
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-})
+export function getTransporter() {
+  const host = process.env.SMTP_HOST || 'smtp.resend.com'
+  const port = parseInt(process.env.SMTP_PORT || '465')
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: {
+      user: process.env.SMTP_USER || 'resend',
+      pass: process.env.SMTP_PASS,
+    },
+  })
+}
+
+const transporter = {
+  sendMail: (options: any) => getTransporter().sendMail(options)
+}
+
 
 export function resolveNotificationRecipients(profile: {
   email?: string | null;
@@ -774,6 +784,7 @@ export async function sendLeadNotificationEmail({
   leadName,
   leadPhone,
   businessName,
+  templateName,
   campaignName,
   buttonClicked,
   customBody,
@@ -786,6 +797,7 @@ export async function sendLeadNotificationEmail({
   leadName: string;
   leadPhone: string;
   businessName?: string;
+  templateName?: string;
   campaignName?: string;
   buttonClicked?: string;
   customBody?: string;
@@ -844,6 +856,12 @@ ${customBody}
               <td style="padding: 6px 0; color: #64748b; font-size: 12px; font-weight: bold; text-transform: uppercase;">Button Clicked</td>
               <td style="padding: 6px 0; color: #16a34a; font-size: 14px; font-weight: 700;">✅ ${buttonClicked || 'Interested'}</td>
             </tr>
+            ${templateName ? `
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; font-size: 12px; font-weight: bold; text-transform: uppercase;">Template Name</td>
+              <td style="padding: 6px 0; color: #4f46e5; font-size: 14px; font-weight: 800; font-family: monospace;">${templateName}</td>
+            </tr>
+            ` : ''}
             ${campaignName ? `
             <tr>
               <td style="padding: 6px 0; color: #64748b; font-size: 12px; font-weight: bold; text-transform: uppercase;">Campaign / Flow</td>
