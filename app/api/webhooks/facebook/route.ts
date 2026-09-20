@@ -4121,7 +4121,7 @@ RULES:
                                         });
                                     }
 
-                                    if (!isInstantFormLead && parsedQuestionsList.length === 0) {
+                                    if (!isInstantFormLead && ownerQualifyingEnabled && parsedQuestionsList.length === 0) {
                                         if (isNobogentAccount) {
                                             parsedQuestionsList.push(
                                                 { index: 0, key: 'business_role', question: 'Are you a real estate broker or developer?', options: ['Broker', 'Developer', 'Channel Partner'] },
@@ -4625,8 +4625,8 @@ RULES:
                                             return;
                                         }
 
-                                        // If all questions are answered but name not yet asked (NON-instant form leads only, and only if qualification is not completed yet)
-                                        if (!isInstantFormLead && !currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
+                                        // If all questions are answered but name not yet asked (NON-instant form leads only, and only if qualification is enabled and not completed yet)
+                                        if (!isInstantFormLead && ownerQualifyingEnabled && !currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
                                             await syncFieldsAndScore({ awaiting_lead_name: true });
                                             const namePrompt = isNobogentAccount
                                                 ? "Great! 🎉 To share your personalized Nobogent platform walkthrough & access details, may I know your good name please?"
