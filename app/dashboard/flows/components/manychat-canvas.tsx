@@ -1141,6 +1141,16 @@ export function ManyChatCanvas({
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
   const [isTriggerMenuOpen, setIsTriggerMenuOpen] = useState(false)
 
+  // Sync canvas nodes and edges whenever initialNodes or flowId changes (e.g. flow loaded from database)
+  useEffect(() => {
+    if (initialNodes && initialNodes.length > 0) {
+      setNodes(initialNodes)
+    }
+    if (initialEdges && initialEdges.length > 0) {
+      setEdges(initialEdges)
+    }
+  }, [flowId, initialNodes, initialEdges])
+
   // Live test runner state for custom API node
   const [apiTestLoading, setApiTestLoading] = useState(false)
   const [apiTestResult, setApiTestResult] = useState<any | null>(null)

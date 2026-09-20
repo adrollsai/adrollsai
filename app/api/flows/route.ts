@@ -62,9 +62,11 @@ export async function GET(req: Request) {
         icon: row.icon_name || flowData.icon || 'Workflow',
         isActive: row.is_active ?? true,
         createdAt: row.created_at,
-        trigger: flowData.trigger || { type: 'meta_ad', label: 'Meta Ad Campaign' },
-        nodes: flowData.nodes || [],
-        edges: flowData.edges || [],
+        trigger: flowData.trigger || { type: 'whatsapp_broadcast', label: 'WhatsApp Broadcast' },
+        nodes: flowData.xyNodes || flowData.nodes || [],
+        edges: flowData.xyEdges || flowData.edges || [],
+        xyNodes: flowData.xyNodes || flowData.nodes || [],
+        xyEdges: flowData.xyEdges || flowData.edges || [],
         settings: flowData.settings || {},
         stats: statsData
       }
@@ -86,19 +88,24 @@ export async function POST(req: Request) {
 
     const effectiveUserId = await getEffectiveUserId(supabase, user, req)
     const body = await req.json()
-    const { name, description, icon, isActive = true, trigger, nodes = [], edges = [], settings = {} } = body
+    const { name, description, icon, isActive = true, trigger, nodes = [], edges = [], xyNodes, xyEdges, settings = {} } = body
 
     if (!name || typeof name !== 'string') {
       return NextResponse.json({ error: 'Flow name is required' }, { status: 400 })
     }
 
+    const finalNodes = (xyNodes && xyNodes.length > 0) ? xyNodes : nodes
+    const finalEdges = (xyEdges && xyEdges.length > 0) ? xyEdges : edges
+
     const payload = {
       name: name.trim(),
       description: description || '',
       icon: icon || 'Workflow',
-      trigger: trigger || { type: 'meta_ad', label: 'Meta Ad Campaign' },
-      nodes,
-      edges,
+      trigger: trigger || { type: 'whatsapp_broadcast', label: 'WhatsApp Broadcast' },
+      nodes: finalNodes,
+      edges: finalEdges,
+      xyNodes: finalNodes,
+      xyEdges: finalEdges,
       settings
     }
 
@@ -158,7 +165,7 @@ export async function PUT(req: Request) {
 
     const effectiveUserId = await getEffectiveUserId(supabase, user, req)
     const body = await req.json()
-    const { id, name, description, icon, isActive, trigger, nodes, edges, settings, stats } = body
+    const { id, name, description, icon, isActive, trigger, nodes, edges, xyNodes, xyEdges, settings, stats } = body
 
     if (!id) {
       return NextResponse.json({ error: 'Flow ID is required' }, { status: 400 })
@@ -181,13 +188,23 @@ export async function PUT(req: Request) {
       existingPayload = JSON.parse(existing.description || '{}')
     } catch (e) {}
 
+    const resolvedNodes = (xyNodes !== undefined ? xyNodes : nodes) !== undefined 
+      ? (xyNodes !== undefined ? xyNodes : nodes) 
+      : (existingPayload.xyNodes || existingPayload.nodes)
+
+    const resolvedEdges = (xyEdges !== undefined ? xyEdges : edges) !== undefined 
+      ? (xyEdges !== undefined ? xyEdges : edges) 
+      : (existingPayload.xyEdges || existingPayload.edges)
+
     const updatedPayload = {
       name: name !== undefined ? name.trim() : (existingPayload.name || existing.title.replace(/^Flow:\s*/, '')),
       description: description !== undefined ? description : existingPayload.description,
       icon: icon !== undefined ? icon : (existingPayload.icon || existing.icon_name),
       trigger: trigger !== undefined ? trigger : existingPayload.trigger,
-      nodes: nodes !== undefined ? nodes : existingPayload.nodes,
-      edges: edges !== undefined ? edges : existingPayload.edges,
+      nodes: resolvedNodes,
+      edges: resolvedEdges,
+      xyNodes: resolvedNodes,
+      xyEdges: resolvedEdges,
       settings: settings !== undefined ? settings : existingPayload.settings
     }
 

@@ -85,7 +85,7 @@ const PAYMENT_PLAN_TEXT = `🏢 *THE MARQ — SECTOR 82, GMADA AEROCITY*
 📱 9779278117`
 
 async function createHomcomFlow() {
-  console.log(`Setting up flow for HOMCOM REALTORS (${HOMCOM_USER_ID})...`)
+  console.log(`Configuring flow for HOMCOM REALTORS (${HOMCOM_USER_ID})...`)
 
   // Check if a flow for marq already exists
   const { data: existingFlows } = await supabase
@@ -97,12 +97,95 @@ async function createHomcomFlow() {
     f.title?.toLowerCase().includes('marq') || f.description?.includes('marq')
   )
 
+  const xyNodes = [
+    {
+      id: 'node_trigger',
+      type: 'triggerNode',
+      position: { x: 50, y: 150 },
+      data: {
+        title: 'The Marq — WhatsApp Broadcast',
+        subtitle: 'Starting Step • Outbound Broadcast',
+        triggerType: 'whatsapp_broadcast',
+        templateName: 'marq',
+        headerMediaUrl: HEADER_IMAGE_URL,
+        buttons: [
+          { id: 'view_payment_plan', title: 'View Payment Plan' }
+        ],
+        description: 'Fires when prospect clicks "View Payment Plan" on The Marq template message'
+      }
+    },
+    {
+      id: 'node_reply',
+      type: 'whatsappMessageNode',
+      position: { x: 440, y: 120 },
+      data: {
+        title: 'Send Full Payment Plan',
+        message: PAYMENT_PLAN_TEXT
+      }
+    },
+    {
+      id: 'node_crm_stage',
+      type: 'crmStageNode',
+      position: { x: 840, y: 60 },
+      data: {
+        title: 'Move Lead to Interested',
+        stage: 'Interested',
+        assignAgent: 'Inderjeet Kaur',
+        note: 'Prospect requested View Payment Plan for The Marq'
+      }
+    },
+    {
+      id: 'node_email',
+      type: 'emailNode',
+      position: { x: 840, y: 300 },
+      data: {
+        title: 'Email Alert to Admin',
+        recipient: ADMIN_EMAIL,
+        customEmail: ADMIN_EMAIL,
+        customRecipient: ADMIN_EMAIL,
+        templateName: 'marq',
+        subject: '🔥 HOT LEAD: {{lead_name}} requested Payment Plan for The Marq!',
+        body: `A prospect just clicked "View Payment Plan" on The Marq campaign.\n\nTemplate: marq\nLead Name: {{lead_name}}\nPhone: {{lead_phone}}\nDate: {{current_date}}\n\nCRM Link: {{crm_link}}`
+      }
+    }
+  ]
+
+  const xyEdges = [
+    {
+      id: 'edge_trigger_to_reply',
+      source: 'node_trigger',
+      sourceHandle: 'btn_view_payment_plan',
+      target: 'node_reply',
+      targetHandle: 'input',
+      animated: true,
+      style: { stroke: '#6366F1', strokeWidth: 3 }
+    },
+    {
+      id: 'edge_reply_to_crm',
+      source: 'node_reply',
+      sourceHandle: 'output',
+      target: 'node_crm_stage',
+      targetHandle: 'input',
+      animated: true,
+      style: { stroke: '#10B981', strokeWidth: 2.5 }
+    },
+    {
+      id: 'edge_reply_to_email',
+      source: 'node_reply',
+      sourceHandle: 'output',
+      target: 'node_email',
+      targetHandle: 'input',
+      animated: true,
+      style: { stroke: '#06B6D4', strokeWidth: 2.5 }
+    }
+  ]
+
   const flowData = {
-    name: 'Flow: The Marq — Sector 82 GMADA Aerocity',
+    name: 'The Marq — Sector 82',
     isActive: true,
     templateName: 'marq',
     trigger: {
-      type: 'triggerNode',
+      type: 'whatsapp_broadcast',
       templateName: 'marq',
       config: {
         trigger_on: 'button_click',
@@ -111,81 +194,13 @@ async function createHomcomFlow() {
         customEmail: ADMIN_EMAIL
       }
     },
-    xyNodes: [
-      {
-        id: 'node_trigger',
-        type: 'triggerNode',
-        position: { x: 50, y: 150 },
-        data: {
-          title: 'WhatsApp Broadcast: The Marq — Aerocity',
-          triggerType: 'whatsapp_broadcast',
-          templateName: 'marq',
-          headerMediaUrl: HEADER_IMAGE_URL,
-          buttons: [
-            { id: 'btn_view_payment_plan', title: 'View Payment Plan' },
-            { id: 'btn_payment_plan', title: 'Payment Plan' }
-          ],
-          description: 'Fires when a recipient taps "View Payment Plan" on The Marq template message'
-        }
-      },
-      {
-        id: 'node_reply',
-        type: 'whatsappMessageNode',
-        position: { x: 480, y: 80 },
-        data: {
-          title: 'Send The Marq Payment Plan',
-          message: PAYMENT_PLAN_TEXT
-        }
-      },
-      {
-        id: 'node_email',
-        type: 'emailNode',
-        position: { x: 480, y: 340 },
-        data: {
-          title: `Notify ${ADMIN_EMAIL}`,
-          recipient: ADMIN_EMAIL,
-          customEmail: ADMIN_EMAIL,
-          customRecipient: ADMIN_EMAIL,
-          templateName: 'marq',
-          subject: '🔥 HOT LEAD: {{lead_name}} requested Payment Plan for The Marq!',
-          body: `A prospect just clicked "View Payment Plan" on The Marq campaign.\n\nTemplate: marq\nLead Name: {{lead_name}}\nPhone: {{lead_phone}}\nDate: {{current_date}}\n\nCRM Link: {{crm_link}}`
-        }
-      },
-      {
-        id: 'node_crm_stage',
-        type: 'crmStageNode',
-        position: { x: 860, y: 200 },
-        data: {
-          title: 'Move Lead to Interested',
-          stage: 'Interested',
-          note: 'Clicked View Payment Plan on The Marq Sector 82 template'
-        }
-      }
-    ],
-    xyEdges: [
-      {
-        id: 'edge_trig_reply',
-        source: 'node_trigger',
-        target: 'node_reply',
-        sourceHandle: 'btn_view_payment_plan',
-        animated: true,
-        style: { stroke: '#6366F1', strokeWidth: 2.5 }
-      },
-      {
-        id: 'edge_reply_email',
-        source: 'node_reply',
-        target: 'node_email',
-        animated: true,
-        style: { stroke: '#10B981', strokeWidth: 2.5 }
-      },
-      {
-        id: 'edge_email_crm',
-        source: 'node_email',
-        target: 'node_crm_stage',
-        animated: true,
-        style: { stroke: '#F59E0B', strokeWidth: 2.5 }
-      }
-    ]
+    nodes: xyNodes,
+    edges: xyEdges,
+    xyNodes: xyNodes,
+    xyEdges: xyEdges,
+    settings: {
+      templateName: 'marq'
+    }
   }
 
   if (existingMarq) {
@@ -193,11 +208,11 @@ async function createHomcomFlow() {
     const { error } = await supabase
       .from('automations')
       .update({
-        title: 'Flow: The Marq — Sector 82 GMADA Aerocity',
+        title: 'Flow: The Marq — Sector 82',
         is_active: true,
-        icon_name: 'MessageCircle',
+        icon_name: 'Workflow',
         description: JSON.stringify(flowData),
-        stats: 'Active • Ready to Launch'
+        stats: JSON.stringify({ runs: 0, completed: 0, lastTriggeredAt: null })
       })
       .eq('id', existingMarq.id)
 
@@ -209,11 +224,11 @@ async function createHomcomFlow() {
       .from('automations')
       .insert({
         user_id: HOMCOM_USER_ID,
-        title: 'Flow: The Marq — Sector 82 GMADA Aerocity',
+        title: 'Flow: The Marq — Sector 82',
         is_active: true,
-        icon_name: 'MessageCircle',
+        icon_name: 'Workflow',
         description: JSON.stringify(flowData),
-        stats: 'Active • Ready to Launch'
+        stats: JSON.stringify({ runs: 0, completed: 0, lastTriggeredAt: null })
       })
       .select()
       .single()
