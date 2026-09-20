@@ -340,18 +340,16 @@ export async function POST(request: Request) {
                                                 .limit(1)
                                                 .maybeSingle();
 
-                                            if (lastOutbound && !lastOutbound.message_text.includes('Delivery Failed by Meta')) {
-                                                const errReason = firstErr.code === 131049 
-                                                    ? 'Meta suppressed delivery to maintain healthy ecosystem engagement (Marketing message frequency limit). The recipient has reached Meta’s marketing message cap.'
-                                                    : (firstErr.message || firstErr.title || 'Delivery failed');
-                                                
-                                                await supabaseAdmin
-                                                    .from('whatsapp_messages')
-                                                    .update({
-                                                        message_text: `${lastOutbound.message_text}\n\n⚠️ *Delivery Failed by Meta (Error ${firstErr.code})*: ${errReason}`
-                                                    })
-                                                    .eq('id', lastOutbound.id);
-                                            }
+                                            const errReason = firstErr.code === 131049 
+                                                ? 'Meta marketing frequency limit reached for recipient'
+                                                : (firstErr.message || firstErr.title || 'Delivery failed');
+
+                                            // Update broadcast recipient status cleanly in DB without corrupting chat bubble text
+                                            await supabaseAdmin
+                                                .from('whatsapp_broadcast_recipients')
+                                                .update({ status: 'failed', error_message: `Error ${firstErr.code}: ${errReason}` })
+                                                .ilike('phone_number', `%${phoneDigits}%`)
+                                                .eq('status', 'sent');
 
                                             if (chat.lead_id) {
                                                 await supabaseAdmin.from('lead_history').insert({
