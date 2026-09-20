@@ -2971,7 +2971,7 @@ export function ManyChatCanvas({
                         }}
                         className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold border border-slate-200 cursor-pointer"
                       >
-                        + {{lead_email}}
+                        {'+ {{lead_email}}'}
                       </button>
                     </div>
                   </div>
