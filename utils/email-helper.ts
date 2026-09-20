@@ -768,6 +768,128 @@ export async function sendGenericEmail(to: string, subject: string, html: string
   }
 }
 
+export async function sendLeadNotificationEmail({
+  to,
+  subject,
+  leadName,
+  leadPhone,
+  businessName,
+  campaignName,
+  buttonClicked,
+  customBody,
+  crmUrl,
+  chatUrl,
+  bcc
+}: {
+  to: string | string[];
+  subject?: string;
+  leadName: string;
+  leadPhone: string;
+  businessName?: string;
+  campaignName?: string;
+  buttonClicked?: string;
+  customBody?: string;
+  crmUrl?: string;
+  chatUrl?: string;
+  bcc?: string | string[];
+}) {
+  try {
+    const recipients = Array.isArray(to) ? to.filter(Boolean).join(', ') : to;
+    if (!recipients) return { success: false, error: 'No recipient email provided' };
+
+    const emailSubject = subject || `🔥 New Interested Lead: ${leadName} (${leadPhone}) - ${businessName || 'Nobogent'}`;
+    const cleanDigits = leadPhone.replace(/\D/g, '');
+    const waChatLink = cleanDigits ? `https://wa.me/${cleanDigits}` : null;
+    const callLink = leadPhone ? `tel:${leadPhone}` : null;
+
+    const htmlContent = customBody ? `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+        <div style="margin-bottom: 20px;">
+          <h2 style="color: #0f172a; margin: 0; font-size: 20px; font-weight: 800;">${emailSubject}</h2>
+          <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">${businessName || 'Sales Notification'}</p>
+        </div>
+        <div style="font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap; background-color: #f8fafc; border-radius: 12px; padding: 16px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+${customBody}
+        </div>
+        <div style="margin-top: 16px;">
+          ${waChatLink ? `<a href="${waChatLink}" style="display: inline-block; padding: 10px 18px; background-color: #25D366; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px; margin-right: 8px;">Open WhatsApp</a>` : ''}
+          ${crmUrl ? `<a href="${crmUrl}" style="display: inline-block; padding: 10px 18px; background-color: #4f46e5; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px;">View in CRM</a>` : ''}
+        </div>
+      </div>
+    ` : `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 28px; border: 1px solid #e2e8f0; border-radius: 20px; background-color: #ffffff; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);">
+        <div style="border-bottom: 2px solid #6366f1; padding-bottom: 16px; margin-bottom: 24px;">
+          <div style="display: inline-block; padding: 4px 10px; background-color: #eef2ff; color: #4f46e5; border-radius: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+            WhatsApp Automation Alert
+          </div>
+          <h2 style="color: #0f172a; margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -0.02em;">
+            🔥 Lead Clicked "${buttonClicked || 'Interested'}"!
+          </h2>
+          <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">
+            ${businessName || 'Our Workspace'} • Handled automatically via Flow Builder
+          </p>
+        </div>
+
+        <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px; margin-bottom: 24px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; font-size: 12px; font-weight: bold; text-transform: uppercase; width: 130px;">Lead Name</td>
+              <td style="padding: 6px 0; color: #0f172a; font-size: 16px; font-weight: 800;">${leadName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; font-size: 12px; font-weight: bold; text-transform: uppercase;">Phone Number</td>
+              <td style="padding: 6px 0; color: #0f172a; font-size: 16px; font-weight: 800; font-family: monospace;">${leadPhone}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; font-size: 12px; font-weight: bold; text-transform: uppercase;">Button Clicked</td>
+              <td style="padding: 6px 0; color: #16a34a; font-size: 14px; font-weight: 700;">✅ ${buttonClicked || 'Interested'}</td>
+            </tr>
+            ${campaignName ? `
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; font-size: 12px; font-weight: bold; text-transform: uppercase;">Campaign / Flow</td>
+              <td style="padding: 6px 0; color: #475569; font-size: 13px; font-weight: 600;">${campaignName}</td>
+            </tr>
+            ` : ''}
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; font-size: 12px; font-weight: bold; text-transform: uppercase;">Captured At</td>
+              <td style="padding: 6px 0; color: #475569; font-size: 13px;">${new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })} IST</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="margin-bottom: 24px; text-align: center;">
+          <p style="font-size: 13px; color: #475569; margin-bottom: 14px; font-weight: 500;">
+            The catalogue link was automatically delivered to the prospect on WhatsApp. Follow up promptly to convert:
+          </p>
+          <div style="display: inline-block;">
+            ${waChatLink ? `<a href="${waChatLink}" style="display: inline-block; padding: 12px 22px; background-color: #25D366; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 13px; margin: 4px; box-shadow: 0 2px 5px rgba(37, 211, 102, 0.2);">💬 Chat on WhatsApp</a>` : ''}
+            ${callLink ? `<a href="${callLink}" style="display: inline-block; padding: 12px 22px; background-color: #0f172a; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 13px; margin: 4px;">📞 Call ${leadPhone}</a>` : ''}
+            ${crmUrl ? `<a href="${crmUrl}" style="display: inline-block; padding: 12px 22px; background-color: #4f46e5; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 13px; margin: 4px;">🚀 Open Lead in CRM</a>` : ''}
+          </div>
+        </div>
+
+        <div style="border-top: 1px solid #f1f5f9; padding-top: 16px; text-align: center; color: #94a3b8; font-size: 11px; font-weight: 600;">
+          Sent automatically by Nobogent AI Marketing & Flow Builder Engine
+        </div>
+      </div>
+    `;
+
+    const mailOptions: any = {
+      from: `"${businessName || 'Nobogent CRM'}" <no-reply@mail.nobogent.com>`,
+      to: recipients,
+      subject: emailSubject,
+      html: htmlContent
+    };
+    if (bcc) mailOptions.bcc = bcc;
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error('[Email Helper] Error sending lead notification email:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 export async function sendFollowupReminderEmail(
   toEmail: string,
   agentName: string,

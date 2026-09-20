@@ -238,13 +238,17 @@ export async function POST(req: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const body = await req.json()
-        const { title, templateName, headerMediaUrl, mediaUrl, recipientStage, recipientPropertyId, recipientCsvAudience, scheduledAt, impersonateId, variableMappings, audienceFilter } = body
+        const { title, templateName, headerMediaUrl, mediaUrl, recipientStage, recipientPropertyId, recipientCsvAudience, scheduledAt, impersonateId, variableMappings, audienceFilter, flowId, flowTitle } = body
         const targetUserId = impersonateId || user.id
         const effectiveHeaderMediaUrl = headerMediaUrl || mediaUrl || null
 
         if (!title || !templateName) {
             return NextResponse.json({ error: 'Missing required broadcast parameters (title, templateName)' }, { status: 400 })
         }
+
+        const effectiveTitle = flowId
+            ? `[Flow: ${flowTitle || 'Campaign'}] ${title} [flow:${flowId}]`
+            : title
 
         // Fetch credentials
         const { data: profile } = await supabase
@@ -265,7 +269,7 @@ export async function POST(req: Request) {
             .from('whatsapp_broadcasts')
             .insert({
                 user_id: targetUserId,
-                title,
+                title: effectiveTitle,
                 template_name: templateName,
                 recipient_stage: recipientStage || 'All',
                 recipient_property_id: recipientPropertyId || null,
@@ -282,7 +286,7 @@ export async function POST(req: Request) {
                 .from('whatsapp_broadcasts')
                 .insert({
                     user_id: targetUserId,
-                    title,
+                    title: effectiveTitle,
                     template_name: templateName,
                     recipient_stage: recipientStage || 'All',
                     recipient_property_id: recipientPropertyId || null,
@@ -300,6 +304,33 @@ export async function POST(req: Request) {
             broadcast = bDataFallback
         } else {
             broadcast = bData
+        }
+
+        // Link broadcast to automation flow if triggered from Flow Builder
+        if (flowId) {
+            try {
+                const { data: currentAuto } = await supabaseAdmin
+                    .from('automations')
+                    .select('description')
+                    .eq('id', flowId)
+                    .maybeSingle()
+                if (currentAuto) {
+                    const desc = typeof currentAuto.description === 'string'
+                        ? JSON.parse(currentAuto.description || '{}')
+                        : (currentAuto.description || {})
+                    desc.lastBroadcastId = broadcast.id
+                    desc.lastBroadcastAt = new Date().toISOString()
+                    desc.lastBroadcastAudience = audienceFilter?.audienceGroupName || recipientCsvAudience || 'Target Audience'
+                    desc.lastBroadcastRecipients = (recipientPayloads && recipientPayloads.length) || 0
+                    await supabaseAdmin
+                        .from('automations')
+                        .update({ description: JSON.stringify(desc) })
+                        .eq('id', flowId)
+                    console.log(`[BROADCAST API] 🔗 Linked broadcast ${broadcast.id} to flow ${flowId}`)
+                }
+            } catch (autoErr) {
+                console.warn('[BROADCAST API] Warning: could not update automation with broadcast metadata:', autoErr)
+            }
         }
 
         // Fetch and filter matching leads with zero discrepancies (paginating through all user leads)

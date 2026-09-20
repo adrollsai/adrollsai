@@ -3236,6 +3236,7 @@ export default function FlowsPage() {
           {studioTab === 'builder' && (
             <div className="flex-1 h-full w-full relative">
               <ManyChatCanvas
+                flowId={currentFlow.id}
                 flowName={currentFlow.name}
                 onUpdateFlowName={(name) => setCurrentFlow(prev => prev ? ({ ...prev, name }) : null)}
                 isActive={currentFlow.isActive}

@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useMemo } from 'react'
+import React, { useState, useCallback, useMemo, useEffect } from 'react'
+import { toast } from 'sonner'
 import {
   ReactFlow,
   Background,
@@ -191,13 +192,29 @@ export function TriggerNode({ data, id }: { data: any; id: string }) {
           </p>
         </div>
 
-        {/* If broadcast template, show template & buttons */}
+        {/* If broadcast template, show audience, template & buttons */}
         {triggerType === 'whatsapp_broadcast' && (
           <>
+            {data.audienceGroupName && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px]">
+                <span className="text-emerald-700 font-bold uppercase tracking-wider text-[10px]">Audience:</span>
+                <span className="text-emerald-950 font-black truncate max-w-[170px]">
+                  {data.audienceGroupName} {data.audienceLeadCount ? `(${data.audienceLeadCount})` : ''}
+                </span>
+              </div>
+            )}
+
             <div className="bg-indigo-50/80 border border-indigo-200/80 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px]">
               <span className="text-indigo-600 font-bold uppercase tracking-wider text-[10px]">Template:</span>
               <span className="text-slate-900 font-black font-mono truncate max-w-[180px]">{data.templateName || 'client_project_announcement'}</span>
             </div>
+
+            {data.lastBroadcastAt && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-1 text-[10px] font-bold text-amber-900 flex items-center justify-between">
+                <span>🚀 Dispatched ({data.lastBroadcastRecipients || 0} leads)</span>
+                <span>{new Date(data.lastBroadcastAt).toLocaleDateString()}</span>
+              </div>
+            )}
 
             {data.message && (
               <div className="bg-[#E7F8EE] border border-emerald-200/80 rounded-xl p-2.5 text-[11px] text-slate-700 line-clamp-3">
@@ -974,6 +991,7 @@ export const nodeTypes = {
 // ============================================================================
 
 interface ManyChatCanvasProps {
+  flowId?: string
   flowName: string
   onUpdateFlowName: (name: string) => void
   isActive: boolean
@@ -986,6 +1004,7 @@ interface ManyChatCanvasProps {
 }
 
 export function ManyChatCanvas({
+  flowId,
   flowName,
   onUpdateFlowName,
   isActive,
@@ -1125,6 +1144,129 @@ export function ManyChatCanvas({
   // Live test runner state for custom API node
   const [apiTestLoading, setApiTestLoading] = useState(false)
   const [apiTestResult, setApiTestResult] = useState<any | null>(null)
+
+  // Audience & WhatsApp templates state for direct flow broadcasting
+  const [audiences, setAudiences] = useState<Array<{ id: string; name: string; leadCount: number }>>([])
+  const [templates, setTemplates] = useState<Array<{ name: string; components?: any[] }>>([])
+  const [loadingMetadata, setLoadingMetadata] = useState(false)
+  const [isLaunchingBroadcast, setIsLaunchingBroadcast] = useState(false)
+
+  // Fetch audiences and templates on mount
+  useEffect(() => {
+    let mounted = true
+    async function loadAudiencesAndTemplates() {
+      try {
+        setLoadingMetadata(true)
+        const [audRes, tplRes] = await Promise.allSettled([
+          fetch('/api/audiences'),
+          fetch('/api/whatsapp/templates')
+        ])
+
+        if (mounted && audRes.status === 'fulfilled' && audRes.value.ok) {
+          const audData = await audRes.value.json()
+          if (Array.isArray(audData.audiences)) {
+            setAudiences(
+              audData.audiences.map((a: any) => ({
+                id: a.id,
+                name: a.name || a.title || 'Audience',
+                leadCount: a.leadCount || a.count || 0
+              }))
+            )
+          }
+        }
+
+        if (mounted && tplRes.status === 'fulfilled' && tplRes.value.ok) {
+          const tplData = await tplRes.value.json()
+          if (Array.isArray(tplData.templates)) {
+            setTemplates(tplData.templates)
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load audiences/templates in canvas:', err)
+      } finally {
+        if (mounted) setLoadingMetadata(false)
+      }
+    }
+    loadAudiencesAndTemplates()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  // Direct flow campaign launcher
+  const handleLaunchFlowBroadcast = async () => {
+    if (!selectedNode || selectedNode.type !== 'triggerNode') return
+    const tplName = selectedNode.data.templateName
+    const audName = selectedNode.data.audienceGroupName
+    const audCount = selectedNode.data.audienceLeadCount || 0
+
+    if (!tplName) {
+      toast.error('Please specify a WhatsApp Template Name before launching.')
+      return
+    }
+    if (!audName) {
+      toast.error('Please select a Target Audience Group from Audience Maker.')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `🚀 Launch WhatsApp Campaign for this flow?\n\n` +
+      `• Flow: "${flowName || 'Campaign'}"\n` +
+      `• Target Audience: "${audName}" (${audCount} leads)\n` +
+      `• WhatsApp Template: "${tplName}"\n\n` +
+      `Leads who tap Quick Reply buttons will trigger this flow automatically.`
+    )
+    if (!confirmed) return
+
+    try {
+      setIsLaunchingBroadcast(true)
+      const res = await fetch('/api/whatsapp/broadcasts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `${flowName || 'Flow'} - ${tplName}`,
+          templateName: tplName,
+          headerMediaUrl: selectedNode.data.headerMediaUrl || null,
+          audienceFilter: {
+            targetType: 'audience_group',
+            audienceGroupName: audName
+          },
+          flowId: flowId || null,
+          flowTitle: flowName || null
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to dispatch broadcast')
+      }
+
+      const count = data.recipientsCount || audCount || 0
+      toast.success(`🚀 Flow campaign dispatched to ${count} leads in "${audName}"!`, {
+        description: 'Button replies to this broadcast are now exclusively routed to this flow.'
+      })
+
+      // Update node data with launch info
+      const nowIso = new Date().toISOString()
+      handleUpdateNodeData('lastBroadcastAt', nowIso)
+      handleUpdateNodeData('lastBroadcastRecipients', count)
+      handleUpdateNodeData('lastBroadcastId', data.broadcast?.id || null)
+
+      // Also auto-save the flow with these updated nodes
+      const updatedNodes = nodes.map(n => 
+        n.id === selectedNode.id 
+          ? { ...n, data: { ...n.data, lastBroadcastAt: nowIso, lastBroadcastRecipients: count, lastBroadcastId: data.broadcast?.id || null } }
+          : n
+      )
+      setNodes(updatedNodes)
+      onSave(updatedNodes, edges)
+    } catch (err: any) {
+      console.error('Error launching flow broadcast:', err)
+      toast.error(err.message || 'Error launching broadcast')
+    } finally {
+      setIsLaunchingBroadcast(false)
+    }
+  }
 
   const onNodesChange = useCallback((changes: any) => setNodes(nds => applyNodeChanges(changes, nds)), [])
   const onEdgesChange = useCallback((changes: any) => setEdges(eds => applyEdgeChanges(changes, eds)), [])
@@ -1883,10 +2025,90 @@ export function ManyChatCanvas({
 
                   {selectedNode.data.triggerType === 'whatsapp_broadcast' && (
                     <>
+                      {/* 1. Target Audience Selector (from Audience Maker) */}
+                      <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3.5 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-[11px] font-bold text-emerald-950">
+                            👥 Target Audience (Audience Maker)
+                          </label>
+                          {selectedNode.data.audienceLeadCount !== undefined && selectedNode.data.audienceLeadCount > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-black text-[10px]">
+                              {selectedNode.data.audienceLeadCount} Leads
+                            </span>
+                          )}
+                        </div>
+
+                        <select
+                          value={selectedNode.data.audienceGroupName || ''}
+                          onChange={e => {
+                            const selectedName = e.target.value
+                            const foundAud = audiences.find(a => a.name === selectedName)
+                            handleUpdateNodeData('audienceGroupName', selectedName)
+                            handleUpdateNodeData('audienceLeadCount', foundAud?.leadCount || 0)
+                            handleUpdateNodeData('audienceId', foundAud?.id || null)
+                          }}
+                          className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:border-emerald-500 outline-none cursor-pointer"
+                        >
+                          <option value="">-- Select Target Audience Group --</option>
+                          {audiences.map(aud => (
+                            <option key={aud.id} value={aud.name}>
+                              {aud.name} ({aud.leadCount} leads)
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-emerald-700 leading-tight font-medium">
+                          Build targeted audiences in <b>Audience Maker</b>, then select them here to trigger this flow.
+                        </p>
+                      </div>
+
+                      {/* 2. WhatsApp Template Selector */}
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          WhatsApp Template Name
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-700">
+                            WhatsApp Template
+                          </label>
+                          {templates.length > 0 && (
+                            <span className="text-[10px] text-indigo-600 font-semibold">
+                              {templates.length} Approved
+                            </span>
+                          )}
+                        </div>
+
+                        {templates.length > 0 ? (
+                          <select
+                            value={selectedNode.data.templateName || ''}
+                            onChange={e => {
+                              const tName = e.target.value
+                              handleUpdateNodeData('templateName', tName)
+                              const found = templates.find(t => t.name === tName)
+                              if (found) {
+                                const bodyComp = (found.components || []).find((c: any) => c.type === 'BODY')
+                                if (bodyComp?.text) handleUpdateNodeData('message', bodyComp.text)
+                                const buttonsComp = (found.components || []).find((c: any) => c.type === 'BUTTONS')
+                                if (buttonsComp?.buttons) {
+                                  const qrBtns = buttonsComp.buttons
+                                    .filter((b: any) => b.type === 'QUICK_REPLY')
+                                    .map((b: any, idx: number) => ({
+                                      id: `btn_${idx}_${Date.now()}`,
+                                      title: b.text || 'Quick Reply'
+                                    }))
+                                  if (qrBtns.length > 0) {
+                                    handleUpdateNodeData('buttons', qrBtns)
+                                  }
+                                }
+                              }
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-700 focus:bg-white focus:border-indigo-500 outline-none cursor-pointer mb-2"
+                          >
+                            <option value="">-- Choose Approved Template --</option>
+                            {templates.map(t => (
+                              <option key={t.name} value={t.name}>
+                                {t.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : null}
+
                         <input
                           type="text"
                           value={selectedNode.data.templateName || ''}
@@ -1896,6 +2118,21 @@ export function ManyChatCanvas({
                         />
                       </div>
 
+                      {/* 3. Header Media URL (Optional) */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Header Media URL (Optional for Image/Video templates)
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.data.headerMediaUrl || ''}
+                          onChange={e => handleUpdateNodeData('headerMediaUrl', e.target.value)}
+                          placeholder="https://... (Leave blank to use default template media)"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                        />
+                      </div>
+
+                      {/* 4. Template Message Preview */}
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">
                           Template Message Preview
@@ -1908,7 +2145,7 @@ export function ManyChatCanvas({
                         />
                       </div>
 
-                      {/* Template Quick Reply Buttons */}
+                      {/* 5. Template Quick Reply Buttons */}
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
                           <label className="block text-[11px] font-bold text-slate-700">
@@ -1956,6 +2193,43 @@ export function ManyChatCanvas({
                         >
                           <Plus size={13} /> Add Quick Reply Button
                         </button>
+                      </div>
+
+                      {/* 6. DIRECT LAUNCH FLOW ON AUDIENCE ACTION */}
+                      <div className="pt-3 border-t border-slate-200 space-y-2">
+                        {selectedNode.data.lastBroadcastAt && (
+                          <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between">
+                            <span className="font-semibold">✅ Last Campaign:</span>
+                            <span className="font-bold">
+                              {new Date(selectedNode.data.lastBroadcastAt).toLocaleDateString()} ({selectedNode.data.lastBroadcastRecipients || 0} leads)
+                            </span>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={isLaunchingBroadcast || !selectedNode.data.templateName || !selectedNode.data.audienceGroupName}
+                          onClick={handleLaunchFlowBroadcast}
+                          className="w-full py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:from-slate-300 disabled:to-slate-400 text-white font-extrabold rounded-xl shadow-lg shadow-emerald-500/20 text-xs flex items-center justify-center gap-2 cursor-pointer transition-all disabled:cursor-not-allowed"
+                        >
+                          {isLaunchingBroadcast ? (
+                            <>
+                              <Loader2 size={15} className="animate-spin" />
+                              <span>Dispatching Broadcast to Audience...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Send size={15} />
+                              <span>
+                                Launch Flow on {selectedNode.data.audienceGroupName ? `"${selectedNode.data.audienceGroupName}"` : 'Audience'}
+                                {selectedNode.data.audienceLeadCount ? ` (${selectedNode.data.audienceLeadCount} Leads)` : ''}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                        <p className="text-[10px] text-slate-400 text-center leading-tight">
+                          Dispatches the template to the selected audience. Any quick-reply button clicks will trigger this flow.
+                        </p>
                       </div>
                     </>
                   )}
