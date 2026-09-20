@@ -138,7 +138,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [loadingStats, setLoadingStats] = useState(false)
   const [statsData, setStatsData] = useState<any>(null)
   const [statsSearchQuery, setStatsSearchQuery] = useState('')
-  const [statsFilterStatus, setStatsFilterStatus] = useState<'all' | 'sent' | 'replied' | 'pending' | 'failed'>('all')
+  const [statsFilterStatus, setStatsFilterStatus] = useState<'all' | 'clicked' | 'sent' | 'replied' | 'pending' | 'failed'>('all')
   const [resumingBroadcast, setResumingBroadcast] = useState(false)
 
   const fetchBroadcastStats = async (broadcastId: string, silent = false) => {
@@ -207,6 +207,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
         r.phone.includes(statsSearchQuery)
       
       if (!matchesSearch) return false
+      if (statsFilterStatus === 'clicked') return r.is_button_click || r.status === 'clicked'
       if (statsFilterStatus === 'sent') return r.status === 'sent'
       if (statsFilterStatus === 'replied') return r.has_replied
       if (statsFilterStatus === 'pending') return r.status === 'pending'
@@ -221,12 +222,13 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
 
     const escapeCsv = (str: string) => `"${(str || '').replace(/"/g, '""')}"`
 
-    const headers = ['Lead Name', 'Phone Number', 'Delivery Status', 'Response Status', 'Last Response / Error', 'Sent Time']
+    const headers = ['Lead Name', 'Phone Number', 'Delivery Status', 'Response Status', 'Clicked Interested', 'Last Response / Button', 'Sent Time']
     const rows = filtered.map((r: any) => [
       escapeCsv(r.name),
       escapeCsv(r.phone),
       escapeCsv(r.status),
       escapeCsv(r.has_replied ? 'Replied' : 'No Reply'),
+      escapeCsv((r.is_button_click || r.status === 'clicked') ? 'Yes (Clicked Interested!)' : 'No'),
       escapeCsv(r.last_message || r.error_message || ''),
       escapeCsv(r.sent_at ? new Date(r.sent_at).toLocaleString() : '')
     ])
@@ -2574,14 +2576,28 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     const percent = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0
                     return (
                       <div key={b.id} className="border border-slate-100 rounded-3xl p-5 bg-slate-50 space-y-3 shadow-sm">
-                        <div className="flex justify-between items-start gap-4">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                           <div>
-                            <h4 className="font-extrabold text-sm text-slate-900">{b.title}</h4>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-extrabold text-sm text-slate-900">{b.title}</h4>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-violet-100 text-violet-800 text-[10px] font-black border border-violet-200">
+                                🔥 {(stats as any).clicked || 0} Clicked ({(stats as any).clickRate || '0'}% CTR)
+                              </span>
+                            </div>
                             <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
                               Template: {b.template_name} • Audience: Stage ({b.recipient_stage})
                             </p>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <a
+                              href={`/api/whatsapp/broadcasts?broadcastId=${b.id}&export=csv&filter=clicked${userId ? `&impersonate=${userId}` : ''}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 text-[10px] font-black px-3 py-1.5 rounded-full transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                              title="Download list of leads who clicked button"
+                            >
+                              <Download size={12} className="text-emerald-600" /> Download Clicked CSV
+                            </a>
                             <button
                               onClick={() => {
                                 setSelectedStatsBroadcast(b)
@@ -2695,7 +2711,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               ) : statsData ? (
                 <>
                   {/* KPI Cards Row */}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                     <div className="bg-white border border-slate-200/80 p-3.5 rounded-2xl shadow-xs space-y-1">
                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Target Recipients</span>
                       <div className="text-xl font-black text-slate-900">{statsData.stats.total}</div>
@@ -2706,6 +2722,12 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                       <span className="text-[9px] font-black text-emerald-700 uppercase tracking-wider block">Delivered</span>
                       <div className="text-xl font-black text-emerald-900">{statsData.stats.sent}</div>
                       <span className="text-[9px] font-extrabold text-emerald-600 block">{statsData.stats.deliveryRate}% Delivery Rate</span>
+                    </div>
+
+                    <div className="bg-violet-50/70 border border-violet-200 p-3.5 rounded-2xl shadow-xs space-y-1">
+                      <span className="text-[9px] font-black text-violet-700 uppercase tracking-wider block">🔥 Button Clicked</span>
+                      <div className="text-xl font-black text-violet-950">{statsData.stats.buttonClickCount || 0}</div>
+                      <span className="text-[9px] font-extrabold text-violet-600 block">{statsData.stats.clickRate || '0'}% CTR (Interested)</span>
                     </div>
 
                     <div className="bg-blue-50/60 border border-blue-100 p-3.5 rounded-2xl shadow-xs space-y-1">
@@ -2747,6 +2769,14 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                             }`}
                           >
                             All ({statsData.recipients?.length || 0})
+                          </button>
+                          <button
+                            onClick={() => setStatsFilterStatus('clicked')}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1 ${
+                              statsFilterStatus === 'clicked' ? 'bg-violet-600 text-white shadow-xs' : 'bg-violet-50 text-violet-700 hover:bg-violet-100'
+                            }`}
+                          >
+                            <span>🔥 Clicked ({statsData.stats.buttonClickCount || 0})</span>
                           </button>
                           <button
                             onClick={() => setStatsFilterStatus('sent')}
@@ -2823,6 +2853,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                                 r.phone.includes(statsSearchQuery);
                               
                               if (!matchesSearch) return false;
+                              if (statsFilterStatus === 'clicked') return r.is_button_click || r.status === 'clicked';
                               if (statsFilterStatus === 'sent') return r.status === 'sent';
                               if (statsFilterStatus === 'replied') return r.has_replied;
                               if (statsFilterStatus === 'pending') return r.status === 'pending';
@@ -2862,7 +2893,16 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                                   )}
                                 </td>
                                 <td className="p-3">
-                                  {r.has_replied ? (
+                                  {r.is_button_click || r.status === 'clicked' ? (
+                                    <div className="space-y-0.5">
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-black text-violet-800 bg-violet-100 px-2 py-0.5 rounded-md border border-violet-200">
+                                        🔥 Clicked Interested!
+                                      </span>
+                                      {r.last_message && (
+                                        <p className="text-[10px] text-slate-500 font-semibold truncate max-w-xs">{r.last_message}</p>
+                                      )}
+                                    </div>
+                                  ) : r.has_replied ? (
                                     <div className="space-y-0.5">
                                       <span className="inline-flex items-center gap-1 text-[9px] font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">
                                         💬 Replied

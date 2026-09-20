@@ -152,7 +152,11 @@ export async function GET(req: Request) {
                 if (hasReplied) replyCount++
 
                 const leadResponseText = latestInbound?.message_text || null
-                const isButtonClick = hasReplied && (leadResponseText === 'View Properties' || leadResponseText?.includes('Button'))
+                const isButtonClick = r.status === 'clicked' || Boolean(hasReplied && (
+                    leadResponseText?.toLowerCase().includes('interested') ||
+                    leadResponseText?.toLowerCase().includes('button') ||
+                    leadResponseText === 'View Properties'
+                ))
                 if (isButtonClick) buttonClickCount++
 
                 return {
@@ -163,12 +167,43 @@ export async function GET(req: Request) {
                     sent_at: r.sent_at,
                     error_message: r.error_message,
                     has_replied: hasReplied,
+                    is_button_click: isButtonClick,
                     last_message: leadResponseText
                 }
             })
 
             const deliveryRate = total > 0 ? ((sent / total) * 100).toFixed(1) : '0'
             const responseRate = sent > 0 ? ((replyCount / sent) * 100).toFixed(1) : '0'
+            const clickRate = total > 0 ? ((buttonClickCount / total) * 100).toFixed(1) : '0'
+
+            // Support direct 1-click CSV download of broadcast leads / clickers
+            if (searchParams.get('export') === 'csv' || searchParams.get('format') === 'csv') {
+                const onlyClicked = searchParams.get('filter') === 'clicked'
+                const recordsToExport = onlyClicked ? recipientDetails.filter(r => r.is_button_click) : recipientDetails
+                const csvRows = [
+                    ['Lead Name', 'Phone Number', 'Campaign', 'Template', 'Status', 'Clicked Interested', 'Sent At'].join(',')
+                ]
+                recordsToExport.forEach(r => {
+                    csvRows.push([
+                        `"${(r.name || '').replace(/"/g, '""')}"`,
+                        `"${r.phone}"`,
+                        `"${(broadcast.title || '').replace(/"/g, '""')}"`,
+                        `"${(broadcast.template_name || '').replace(/"/g, '""')}"`,
+                        `"${r.status}"`,
+                        `"${r.is_button_click ? 'Yes (Clicked Interested!)' : 'No'}"`,
+                        `"${r.sent_at || ''}"`
+                    ].join(','))
+                })
+
+                const csvContent = csvRows.join('\n')
+                const fileName = `${(broadcast.title || 'campaign').replace(/[^a-zA-Z0-9_-]/g, '_')}_${onlyClicked ? 'clicked_leads' : 'all_recipients'}.csv`
+                return new Response(csvContent, {
+                    headers: {
+                        'Content-Type': 'text/csv; charset=utf-8',
+                        'Content-Disposition': `attachment; filename="${fileName}"`
+                    }
+                })
+            }
 
             return NextResponse.json({
                 success: true,
@@ -181,7 +216,8 @@ export async function GET(req: Request) {
                     replyCount,
                     buttonClickCount,
                     deliveryRate,
-                    responseRate
+                    responseRate,
+                    clickRate
                 },
                 recipients: recipientDetails
             })
@@ -201,7 +237,7 @@ export async function GET(req: Request) {
 
         // Batch fetch status stats for all broadcasts in a single indexed query (prevents N+1 DB connection floods)
         const broadcastIds = (broadcasts || []).map(b => b.id).filter(Boolean)
-        let recipientsMap = new Map<string, { total: number; sent: number; failed: number }>()
+        let recipientsMap = new Map<string, { total: number; sent: number; failed: number; clicked: number }>()
 
         if (broadcastIds.length > 0) {
             const { data: allRecipients } = await supabaseAdmin
@@ -211,19 +247,27 @@ export async function GET(req: Request) {
 
             if (allRecipients) {
                 allRecipients.forEach(r => {
-                    let st = recipientsMap.get(r.broadcast_id) || { total: 0, sent: 0, failed: 0 }
+                    let st = recipientsMap.get(r.broadcast_id) || { total: 0, sent: 0, failed: 0, clicked: 0 }
                     st.total++
                     if (r.status === 'sent') st.sent++
                     if (r.status === 'failed') st.failed++
+                    if (r.status === 'clicked') st.clicked++
                     recipientsMap.set(r.broadcast_id, st)
                 })
             }
         }
 
-        const resolvedBroadcasts = (broadcasts || []).map(b => ({
-            ...b,
-            stats: recipientsMap.get(b.id) || { total: 0, sent: 0, failed: 0 }
-        }))
+        const resolvedBroadcasts = (broadcasts || []).map(b => {
+            const st = recipientsMap.get(b.id) || { total: 0, sent: 0, failed: 0, clicked: 0 }
+            const ctr = st.total > 0 ? ((st.clicked / st.total) * 100).toFixed(1) : '0'
+            return {
+                ...b,
+                stats: {
+                    ...st,
+                    clickRate: ctr
+                }
+            }
+        })
 
         return NextResponse.json({ success: true, broadcasts: resolvedBroadcasts })
     } catch (e: any) {
@@ -238,7 +282,7 @@ export async function POST(req: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const body = await req.json()
-        const { title, templateName, headerMediaUrl, mediaUrl, recipientStage, recipientPropertyId, recipientCsvAudience, scheduledAt, impersonateId, variableMappings, audienceFilter, flowId, flowTitle } = body
+        const { title, templateName, headerMediaUrl, mediaUrl, recipientStage, recipientPropertyId, recipientCsvAudience, scheduledAt, impersonateId, variableMappings, audienceFilter, flowId, flowTitle, limit, maxRecipients } = body
         const targetUserId = impersonateId || user.id
         const effectiveHeaderMediaUrl = headerMediaUrl || mediaUrl || null
 
@@ -321,7 +365,7 @@ export async function POST(req: Request) {
                     desc.lastBroadcastId = broadcast.id
                     desc.lastBroadcastAt = new Date().toISOString()
                     desc.lastBroadcastAudience = audienceFilter?.audienceGroupName || recipientCsvAudience || 'Target Audience'
-                    desc.lastBroadcastRecipients = (recipientPayloads && recipientPayloads.length) || 0
+                    desc.lastBroadcastRecipients = 0
                     await supabaseAdmin
                         .from('automations')
                         .update({ description: JSON.stringify(desc) })
@@ -433,7 +477,16 @@ export async function POST(req: Request) {
 
 
 
-        if (!leads || leads.length === 0) {
+        let selectedLeads = leads
+        const maxLimit = limit || maxRecipients
+        if (maxLimit) {
+            const parsedLimit = parseInt(maxLimit)
+            if (!isNaN(parsedLimit) && parsedLimit > 0) {
+                selectedLeads = selectedLeads.slice(0, parsedLimit)
+            }
+        }
+
+        if (!selectedLeads || selectedLeads.length === 0) {
             // No matching leads, mark sent/empty
             await supabase
                 .from('whatsapp_broadcasts')
@@ -449,7 +502,7 @@ export async function POST(req: Request) {
         }
 
         // Insert pending recipient records
-        const recipientPayloads = leads.map(l => ({
+        const recipientPayloads = selectedLeads.map(l => ({
             broadcast_id: broadcast.id,
             lead_id: l.id,
             user_id: targetUserId,
@@ -491,7 +544,7 @@ export async function POST(req: Request) {
         }
 
         // Otherwise execute immediately in background (don't block the HTTP response)
-        executeBroadcastImmediately(broadcast.id, targetUserId, profile, templateName, leads, recipientPayloads, variableMappings, effectiveHeaderMediaUrl).catch(console.error)
+        executeBroadcastImmediately(broadcast.id, targetUserId, profile, templateName, selectedLeads, recipientPayloads, variableMappings, effectiveHeaderMediaUrl).catch(console.error)
 
         return NextResponse.json({ 
             success: true, 

@@ -271,6 +271,7 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
 
   // Resolve outbound broadcast details to enable flow-level campaign isolation
   let matchedBroadcastTitle: string | null = null
+  let matchedBroadcastId: string | null = null
   if (cleanFrom) {
     try {
       const { data: bcastRec } = await supabaseAdmin
@@ -280,6 +281,8 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
+
+      matchedBroadcastId = bcastRec?.broadcast_id || null
 
       const foundName = (bcastRec as any)?.whatsapp_broadcasts?.template_name
       if (foundName && !resolvedTemplateName) {
@@ -502,6 +505,52 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
   // Fallback: execute all non-trigger nodes in sequence
   if (nodesToExecute.length === 0) {
     nodesToExecute = allNodes.filter((n: any) => n.type !== 'triggerNode')
+  }
+
+  // If this flow was triggered by a button click on a broadcast, record click in broadcast analytics
+  if (isButtonClick && cleanFrom) {
+    try {
+      if (matchedBroadcastId) {
+        await supabaseAdmin
+          .from('whatsapp_broadcast_recipients')
+          .update({
+            status: 'clicked',
+            error_message: `Button: ${buttonReplyTitle || buttonReplyId || 'Interested!'}`
+          })
+          .eq('broadcast_id', matchedBroadcastId)
+          .eq('phone_number', cleanFrom)
+      } else {
+        await supabaseAdmin
+          .from('whatsapp_broadcast_recipients')
+          .update({
+            status: 'clicked',
+            error_message: `Button: ${buttonReplyTitle || buttonReplyId || 'Interested!'}`
+          })
+          .eq('phone_number', cleanFrom)
+      }
+    } catch (clickErr) {
+      console.warn('[FlowRunner] Warning: could not update broadcast recipient click status:', clickErr)
+    }
+
+    if (latestLead?.id) {
+      try {
+        const existingCf = latestLead.custom_fields || {}
+        const updatedCf = {
+          ...existingCf,
+          last_button_clicked: buttonReplyTitle || buttonReplyId || 'Interested!',
+          last_button_clicked_at: new Date().toISOString(),
+          last_button_template: resolvedTemplateName || (matchedFlow.templateName) || 'sakhsi'
+        }
+        const currentTags = Array.isArray(latestLead.tags) ? latestLead.tags : []
+        const newTags = Array.from(new Set([...currentTags, 'Clicked Interested']))
+        await supabaseAdmin
+          .from('leads')
+          .update({ custom_fields: updatedCf, tags: newTags })
+          .eq('id', latestLead.id)
+      } catch (leadUpdateErr) {
+        console.warn('[FlowRunner] Warning: could not update lead tags on button click:', leadUpdateErr)
+      }
+    }
   }
 
   const actionsExecuted: string[] = []
@@ -763,8 +812,8 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
 
         const targetLeadId = latestLead?.id
         const targetCrmUrl = targetLeadId ? `${appUrl}/dashboard/crm?leadId=${targetLeadId}` : `${appUrl}/dashboard/crm`
-        const targetChatUrl = chat?.id ? `${appUrl}/dashboard/whatsapp?chatId=${chat.id}` : `${appUrl}/dashboard/whatsapp`
-        const templateNameToReport = resolvedTemplateName || (matchedFlow.templateName) || (trigger?.data?.templateName) || (trigger?.templateName) || 'sakhsi'
+        const flowTriggerNode: any = allNodes.find((n: any) => n.type === 'triggerNode')
+        const templateNameToReport = resolvedTemplateName || (matchedFlow.templateName) || (matchedFlow.trigger?.templateName) || (flowTriggerNode?.data?.templateName) || 'sakhsi'
 
         console.log(`[FlowRunner] 📧 Dispatching lead notification email to: "${targetRecipient}" for lead ${leadName} (${leadPhone}), template: ${templateNameToReport}`)
 
@@ -959,9 +1008,8 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
           let emailTo = cfg.customEmail || cfg.customRecipient || cfg.to || (cfg.recipient === 'custom' ? cfg.customRecipient : '')
           if (emailTo) emailTo = emailTo.trim()
           emailTo = interpolateVariables(emailTo || '', variableMap)
-          if (!emailTo && ownerResolvedEmail) emailTo = ownerResolvedEmail
           if (emailTo) {
-            const templateNameToReport = resolvedTemplateName || (matchedFlow.templateName) || (trigger?.data?.templateName) || cfg.templateName || ''
+            const templateNameToReport = resolvedTemplateName || (matchedFlow.templateName) || (matchedFlow.trigger?.templateName) || cfg.templateName || ''
             await sendLeadNotificationEmail({
               to: emailTo,
               subject: title,
