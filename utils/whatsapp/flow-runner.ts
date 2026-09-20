@@ -143,7 +143,18 @@ function isTriggerMatched(
     (triggerType === 'triggernode' && (specificTriggerType === 'whatsapp_broadcast' || config.templateName || trigger.templateName)) ||
     config.trigger_on === 'button_click'
   ) {
-    if (!params.isButtonClick) return false
+    // If not a native button click, allow text matching if user typed the button text (e.g. "View Payment Plan")
+    if (!params.isButtonClick) {
+      const targetBtn = (config.button_text || config.button_title || config.button_id || '').trim().toLowerCase()
+      const isTextMatch = rawText && targetBtn && (
+        rawText === targetBtn ||
+        rawText.includes(targetBtn) ||
+        (targetBtn.length > 5 && targetBtn.includes(rawText)) ||
+        (targetBtn.includes('payment') && rawText.includes('payment')) ||
+        (targetBtn.includes('plan') && rawText.includes('plan'))
+      )
+      if (!isTextMatch) return false
+    }
 
     // STRICT CAMPAIGN TEMPLATE ISOLATION:
     // If this flow specifies a templateName, only trigger if the lead received that specific template!
@@ -156,16 +167,17 @@ function isTriggerMatched(
     }
 
     const targetButton = (config.button_text || config.button_title || config.button_id || 'interested').trim().toLowerCase()
-    if (buttonText === targetButton || buttonText.includes(targetButton) || targetButton.includes(buttonText)) {
+    const textToCheck = (buttonText || rawText).toLowerCase()
+    if (textToCheck === targetButton || textToCheck.includes(targetButton) || targetButton.includes(textToCheck)) {
       return true
     }
     if (Array.isArray(config.buttons)) {
       return config.buttons.some((b: any) => {
         const t = (typeof b === 'string' ? b : (b.title || b.id || '')).trim().toLowerCase()
-        return buttonText.includes(t) || t.includes(buttonText)
+        return textToCheck.includes(t) || t.includes(textToCheck)
       })
     }
-    if (buttonText.includes('interest')) {
+    if (textToCheck.includes('interest') || (targetButton.includes('payment') && textToCheck.includes('payment'))) {
       if (targetTemplate && params.lastSentTemplate && targetTemplate !== params.lastSentTemplate.trim().toLowerCase()) {
         return false
       }
@@ -535,14 +547,21 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
     if (latestLead?.id) {
       try {
         const existingCf = latestLead.custom_fields || {}
+        const clickedBtn = buttonReplyTitle || buttonReplyId || 'Interested!'
+        const isPaymentPlan = clickedBtn.toLowerCase().includes('payment plan')
+        const currentTpl = resolvedTemplateName || (matchedFlow.templateName) || (matchedFlow.trigger?.templateName) || (isPaymentPlan ? 'marq' : 'sakhsi')
         const updatedCf = {
           ...existingCf,
-          last_button_clicked: buttonReplyTitle || buttonReplyId || 'Interested!',
+          last_button_clicked: clickedBtn,
           last_button_clicked_at: new Date().toISOString(),
-          last_button_template: resolvedTemplateName || (matchedFlow.templateName) || 'sakhsi'
+          last_button_template: currentTpl
         }
         const currentTags = Array.isArray(latestLead.tags) ? latestLead.tags : []
-        const newTags = Array.from(new Set([...currentTags, 'Clicked Interested']))
+        const addedTags = [isPaymentPlan ? 'Viewed Payment Plan' : 'Clicked Interested']
+        if (currentTpl === 'marq' || (matchedFlow.name && matchedFlow.name.toLowerCase().includes('marq')) || isPaymentPlan) {
+          addedTags.push('The Marq')
+        }
+        const newTags = Array.from(new Set([...currentTags, ...addedTags]))
         await supabaseAdmin
           .from('leads')
           .update({ custom_fields: updatedCf, tags: newTags })
@@ -813,7 +832,7 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
         const targetLeadId = latestLead?.id
         const targetCrmUrl = targetLeadId ? `${appUrl}/dashboard/crm?leadId=${targetLeadId}` : `${appUrl}/dashboard/crm`
         const flowTriggerNode: any = allNodes.find((n: any) => n.type === 'triggerNode')
-        const templateNameToReport = resolvedTemplateName || (matchedFlow.templateName) || (matchedFlow.trigger?.templateName) || (flowTriggerNode?.data?.templateName) || 'sakhsi'
+        const templateNameToReport = resolvedTemplateName || (matchedFlow.templateName) || (matchedFlow.trigger?.templateName) || (flowTriggerNode?.data?.templateName) || ((buttonReplyTitle || '').toLowerCase().includes('payment plan') ? 'marq' : 'sakhsi')
 
         console.log(`[FlowRunner] 📧 Dispatching lead notification email to: "${targetRecipient}" for lead ${leadName} (${leadPhone}), template: ${templateNameToReport}`)
 
