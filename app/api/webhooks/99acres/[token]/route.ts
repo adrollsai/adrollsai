@@ -142,9 +142,9 @@ export async function POST(
             if (groupAutomations && groupAutomations.length > 0) {
                 const leadCtx = {
                     source: '99 Acres',
-                    campaignName: projectName || null,
-                    adName: propertyType || null,
-                    adCampaignString: projectName || null
+                    campaignName: projectName || '99acres Lead',
+                    adName: projectName || '99acres Lead',
+                    adCampaignString: projectName || '99acres Lead'
                 };
 
                 for (const aut of groupAutomations) {
@@ -202,20 +202,6 @@ export async function POST(
             console.error('[99acres Webhook] Error evaluating group distribution:', distErr);
         }
 
-        // Fallback to standard round-robin if not matched by group rule
-        if (!assignedAgentId && profile.enable_distribution) {
-            const { data: teamData } = await supabaseAdmin
-                .from('profiles')
-                .select('id')
-                .or(`agency_id.eq.${profile.id},parent_id.eq.${profile.id}`)
-                .in('role', ['admin', 'agent'])
-                .neq('id', profile.id)
-
-            if (teamData && teamData.length > 0) {
-                const agentIds = teamData.map(t => t.id);
-                assignedAgentId = await getNextRoundRobinAgent(agentIds);
-            }
-        }
 
         // 4. Check for existing lead by phone to handle genuine reopens vs new leads
         let existingLeadToReopen: any = null;

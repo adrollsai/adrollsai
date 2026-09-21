@@ -290,14 +290,19 @@ export async function POST(req: Request) {
                     conversationId = 'gemini-live' 
                     console.log(`[TWILIO STATUS CALLBACK] Read ${transcript.length} transcript turns from voice bridge.`)
 
-                    // Perform agentic analysis on the bridge-saved transcript
-                    try {
-                        const formattedTranscript = transcript
-                            .map((t: any) => `${t.role === 'agent' ? 'Agent' : 'Lead'}: ${t.message}`)
-                            .join('\n')
+                    // Check if voice bridge already analyzed the call to prevent duplicate LLM calls and token waste
+                    if (updatedLead.voice_call_summary && updatedLead.voice_call_summary.trim().length > 0) {
+                        console.log('[TWILIO STATUS CALLBACK] Voice bridge already completed AI analysis. Skipping duplicate LLM call to conserve tokens.');
+                        summary = updatedLead.voice_call_summary;
+                    } else {
+                        // Perform agentic analysis on the bridge-saved transcript only if not already analyzed
+                        try {
+                            const formattedTranscript = transcript
+                                .map((t: any) => `${t.role === 'agent' ? 'Agent' : 'Lead'}: ${t.message}`)
+                                .join('\n')
 
-                        const nowIst = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'full' })
-                        const geminiPrompt = `
+                            const nowIst = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'full' })
+                            const geminiPrompt = `
 You are analyzing a phone call transcript between our AI voice assistant and a lead.
 Here is the transcript:
 ${formattedTranscript}
@@ -313,31 +318,32 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
   "unanswered_questions": ["array of raw question strings that the AI assistant was unable to answer because it lacked info in context, or empty array if none"]
 }
 `;
-                        const aiRes = await callGeminiWithUsage(geminiPrompt)
-                        const cleanJson = (aiRes.text || '').replace(/```json/g, '').replace(/```/g, '').trim()
-                        const extracted = JSON.parse(cleanJson)
+                            const aiRes = await callGeminiWithUsage(geminiPrompt)
+                            const cleanJson = (aiRes.text || '').replace(/```json/g, '').replace(/```/g, '').trim()
+                            const extracted = JSON.parse(cleanJson)
 
-                        summary = extracted.summary || summary
-                        callbackTime = extracted.callback_time || null
-                        bookingTime = extracted.booking_time || null
-                        isQualified = !!extracted.is_qualified
-                        extractedAllowAfterHours = !!extracted.allow_after_hours
-                        if (extracted.calling_enabled === false) {
-                            extractedCallingEnabled = false
-                        }
+                            summary = extracted.summary || summary
+                            callbackTime = extracted.callback_time || null
+                            bookingTime = extracted.booking_time || null
+                            isQualified = !!extracted.is_qualified
+                            extractedAllowAfterHours = !!extracted.allow_after_hours
+                            if (extracted.calling_enabled === false) {
+                                extractedCallingEnabled = false
+                            }
 
-                        if (extracted.unanswered_questions && Array.isArray(extracted.unanswered_questions) && extracted.unanswered_questions.length > 0) {
-                            const inserts = extracted.unanswered_questions.map((q: string) => ({
-                                user_id: lead.user_id,
-                                lead_id: leadId,
-                                channel: 'voice',
-                                question: q
-                            }));
-                            await supabaseAdmin.from('flagged_questions').insert(inserts);
-                            console.log('[TWILIO STATUS CALLBACK] Inserted flagged questions from transcript analysis:', inserts);
+                            if (extracted.unanswered_questions && Array.isArray(extracted.unanswered_questions) && extracted.unanswered_questions.length > 0) {
+                                const inserts = extracted.unanswered_questions.map((q: string) => ({
+                                    user_id: lead.user_id,
+                                    lead_id: leadId,
+                                    channel: 'voice',
+                                    question: q
+                                }));
+                                await supabaseAdmin.from('flagged_questions').insert(inserts);
+                                console.log('[TWILIO STATUS CALLBACK] Inserted flagged questions from transcript analysis:', inserts);
+                            }
+                        } catch (err: any) {
+                            console.error('[TWILIO STATUS CALLBACK] Transcript analysis failed:', err)
                         }
-                    } catch (err: any) {
-                        console.error('[TWILIO STATUS CALLBACK] Transcript analysis failed:', err)
                     }
                 } else {
                     console.log('[TWILIO STATUS CALLBACK] Voice bridge transcript not yet available. Skipping analysis.')

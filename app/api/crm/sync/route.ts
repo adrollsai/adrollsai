@@ -212,38 +212,7 @@ export async function POST(request: Request) {
       }
     }
 
-    let agentIds: string[] = [];
-    let currentAgentIndex = 0;
 
-    if (profile?.enable_distribution && trulyNewLeads.length > 0) {
-        const { data: teamData } = await supabase
-            .from('profiles')
-            .select('id')
-            .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
-            .in('role', ['admin', 'agent'])
-            .neq('id', targetUserId); // Exclude the owner
-
-        if (teamData && teamData.length > 0) {
-            agentIds = teamData.map(t => t.id);
-
-            // Find the last assigned agent to continue the sequence
-            const { data: lastAssignedLead } = await supabase
-                .from('leads')
-                .select('assigned_to')
-                .in('assigned_to', agentIds)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-            const lastAssignedId = lastAssignedLead?.assigned_to;
-            if (lastAssignedId) {
-                const lastIdx = agentIds.indexOf(lastAssignedId);
-                if (lastIdx !== -1) {
-                    currentAgentIndex = (lastIdx + 1) % agentIds.length;
-                }
-            }
-        }
-    }
 
     const getAssignedAgentForLead = (lead: any) => {
       const leadCtx = {
@@ -291,12 +260,6 @@ export async function POST(request: Request) {
         }
       }
 
-      // Global Round Robin Fallback
-      if (agentIds.length > 0) {
-        const fallbackAgent = agentIds[currentAgentIndex];
-        currentAgentIndex = (currentAgentIndex + 1) % agentIds.length;
-        return fallbackAgent;
-      }
 
       return null;
     };

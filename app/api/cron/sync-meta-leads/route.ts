@@ -167,19 +167,13 @@ async function handleSync(request: Request) {
           });
           const campaignsMap = { idToName, nameToId };
 
-          // 3. Fetch Team Members for Round Robin
-          let teamAgentIds: string[] = [];
-          if (profile.enable_distribution) {
-            const { data: teamData } = await supabaseAdmin
-              .from('profiles')
-              .select('id')
-              .or(`agency_id.eq.${profile.id},parent_id.eq.${profile.id}`)
-              .in('role', ['admin', 'agent'])
-              .neq('id', profile.id);
-            if (teamData && teamData.length > 0) {
-              teamAgentIds = teamData.map(t => t.id);
-            }
-          }
+          // Fetch workspace member IDs for deduplication
+          const { data: workspaceMembers } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .or(`parent_id.eq.${profile.id},agency_id.eq.${profile.id},id.eq.${profile.id}`);
+          const workspaceTeamIds = Array.from(new Set((workspaceMembers || []).map((p: any) => p.id)));
+          if (workspaceTeamIds.length === 0) workspaceTeamIds.push(profile.id);
 
           // 4. Also collect any active ads directly from Ad Account if available (STRICTLY scoped to profile's connected pages)
           const activeAdForms = new Set<string>();
@@ -449,14 +443,7 @@ async function handleSync(request: Request) {
                   } catch (e) {}
                 }
               }
-
-              // 3. Global Round Robin
-              if (!assignedAgentId && teamAgentIds.length > 0) {
-                assignedAgentId = await getNextRoundRobinAgent(supabaseAdmin, teamAgentIds);
-              }
-
               // Check Duplicate Phone Number across entire workspace to Reopen Existing Lead
-              const workspaceTeamIds = [profile.id, ...(teamAgentIds || [])];
               const cleanPhoneDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
               if (cleanPhoneDigits && cleanPhoneDigits.length >= 7) {
                 const { data: existingByPhone } = await supabaseAdmin

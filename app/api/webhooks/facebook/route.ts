@@ -372,12 +372,33 @@ export async function POST(request: Request) {
                         const msgId = message.id;
                         if (msgId) {
                             if (processedMessageIds.has(msgId)) {
-                                console.log(`[Facebook Webhook] Skipping duplicate message ID: ${msgId}`);
+                                console.log(`[Facebook Webhook] Skipping duplicate message ID (in-memory): ${msgId}`);
                                 continue;
                             }
                             processedMessageIds.add(msgId);
                             if (processedMessageIds.size > 1000) {
                                 processedMessageIds.clear();
+                            }
+
+                            // Persistent cross-instance serverless deduplication
+                            try {
+                                const { data: existingMsg } = await supabaseAdmin
+                                    .from('processed_webhook_messages')
+                                    .select('message_id')
+                                    .eq('message_id', msgId)
+                                    .maybeSingle();
+
+                                if (existingMsg) {
+                                    console.log(`[Facebook Webhook] Skipping duplicate message ID (database): ${msgId}`);
+                                    continue;
+                                }
+
+                                await supabaseAdmin
+                                    .from('processed_webhook_messages')
+                                    .insert({ message_id: msgId });
+                            } catch (dbDedupErr) {
+                                // Non-blocking fallback to in-memory set if table or network unavailable
+                                console.warn('[Facebook Webhook] DB dedup check warning:', dbDedupErr);
                             }
                         }
 
@@ -788,91 +809,6 @@ export async function POST(request: Request) {
                                      const leads: any[] = leadsList;
                                      if (false) console.log(leads);
                                         
-                                    let campaignsContext = '';
-                                    let facebookToken = matchedProfile.facebook_token;
-                                    let adAccountId = matchedProfile.ad_account_id;
-                                    
-                                    // Resolve token from parent if agent/admin
-                                    if ((matchedProfile.role === 'admin' || matchedProfile.role === 'agent') && (matchedProfile.parent_id || matchedProfile.agency_id)) {
-                                        const { data: parentProf } = await supabaseAdmin
-                                            .from('profiles')
-                                            .select('facebook_token, ad_account_id')
-                                            .eq('id', matchedProfile.parent_id || matchedProfile.agency_id)
-                                            .single();
-                                        if (parentProf) {
-                                            facebookToken = parentProf.facebook_token || facebookToken;
-                                            adAccountId = parentProf.ad_account_id || adAccountId;
-                                        }
-                                    }
-                                    
-                                    if (facebookToken && adAccountId) {
-                                        try {
-                                            const cleanAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
-                                            const fbUrl = `https://graph.facebook.com/v19.0/${cleanAdAccountId}/campaigns?fields=id,name,status,effective_status,objective,start_time,insights{results,spend,actions}&limit=20&access_token=${facebookToken}`;
-                                            const fbRes = await fetch(fbUrl);
-                                            if (fbRes.ok) {
-                                                const fbData = await fbRes.json();
-                                                if (fbData.data && Array.isArray(fbData.data)) {
-                                                    const liveCampaigns = fbData.data.map((c: any) => {
-                                                        let spend = "0.00";
-                                                        let primaryResults = "0";
-                                                        let breakdownText = "None";
-                                                        
-                                                        if (c.insights && c.insights.data && c.insights.data[0]) {
-                                                            const ins = c.insights.data[0];
-                                                            spend = ins.spend || "0.00";
-                                                            
-                                                            // Get the primary dashboard result count
-                                                            if (ins.results && Array.isArray(ins.results) && ins.results.length > 0) {
-                                                                primaryResults = ins.results[0].value || "0";
-                                                            }
-                                                            
-                                                            // Collect de-duplicated actions/events breakdown
-                                                            const actionMap: Record<string, string> = {};
-                                                            if (ins.actions && Array.isArray(ins.actions)) {
-                                                                ins.actions.forEach((a: any) => {
-                                                                    actionMap[a.action_type] = a.value;
-                                                                });
-                                                            }
-                                                            // Ensure results action types are also in the map if missing
-                                                            if (ins.results && Array.isArray(ins.results)) {
-                                                                ins.results.forEach((r: any) => {
-                                                                    if (r.action_type && !actionMap[r.action_type]) {
-                                                                        actionMap[r.action_type] = r.value;
-                                                                    }
-                                                                });
-                                                            }
-                                                            
-                                                            const actionParts = Object.entries(actionMap).map(([k, v]) => `${k}: ${v}`);
-                                                            if (actionParts.length > 0) {
-                                                                breakdownText = actionParts.join(', ');
-                                                            }
-                                                        }
-                                                        return `- Campaign Name: "${c.name}" (ID: ${c.id}), Status: ${c.effective_status || c.status}, Objective: ${c.objective}, Spent: Rs. ${spend}, Start Date: ${c.start_time ? new Date(c.start_time).toLocaleDateString() : 'N/A'}, Dashboard Results: ${primaryResults}, Actions Breakdown: [${breakdownText}]`;
-                                                    });
-                                                    campaignsContext = `Live Meta Ad Account campaigns found:\n${liveCampaigns.join('\n')}`;
-                                                }
-                                            } else {
-                                                const errJson = await fbRes.json();
-                                                console.error("[Webhook Status] Meta API returned status code:", fbRes.status, errJson);
-                                            }
-                                        } catch (err: any) {
-                                            console.error("[Webhook Status] Failed to fetch live campaigns from Meta:", err.message);
-                                        }
-                                    }
-                                    
-                                    if (!campaignsContext) {
-                                        const { data: campaigns } = await supabaseAdmin
-                                            .from('campaign_jobs')
-                                            .select('status, created_at')
-                                            .eq('user_id', matchedProfile.id)
-                                            .limit(5);
-                                        const campaignsText = campaigns
-                                            ?.map((c: any) => `- Created: ${new Date(c.created_at).toLocaleDateString()}, Status: ${c.status}`)
-                                            ?.join('\n') || 'No campaigns launched';
-                                        campaignsContext = `Campaign Jobs (Local DB status):\n${campaignsText}`;
-                                    }
-
                                     let systemWideStats = '';
                                     if (matchedProfile.role === 'super_admin') {
                                         const { count: totalUsers } = await supabaseAdmin
@@ -895,12 +831,8 @@ System-Wide Super Admin Stats:
                                     
                                     const totalLeadsCount = leads?.length || 0;
                                     const stageCounts: Record<string, number> = {};
-                                    const leadsByCampaign: Record<string, number> = {};
                                     leads?.forEach((l: any) => {
                                         stageCounts[l.pipeline_stage] = (stageCounts[l.pipeline_stage] || 0) + 1;
-                                        if (l.campaign_id) {
-                                            leadsByCampaign[l.campaign_id] = (leadsByCampaign[l.campaign_id] || 0) + 1;
-                                        }
                                     });
                                     
                                     const recentLeadsText = leads
@@ -909,28 +841,18 @@ System-Wide Super Admin Stats:
                                         ?.map((l: any) => `- ${l.name} (Stage: ${l.pipeline_stage})`)
                                         ?.join('\n') || 'None';
                                         
-                                    const propertiesText = properties
-                                        ?.map((p: any) => `- Name: "${p.title}", Price: ${p.price || 'Not Set'}, Type: ${p.property_type || 'General'}, Status: ${p.status || 'Active'}`)
-                                        ?.join('\n') || 'No products in inventory';
-                                        
                                     const systemContext = `
 Account Context for "${matchedProfile.business_name}" (Role: ${matchedProfile.role}):
 - Business Name: ${matchedProfile.business_name}
 - Office Address: ${matchedProfile.address || 'Contact representative'}
 - Business Overview: ${matchedProfile.business_info || `${matchedProfile.business_name} Professional Services & Offerings`}
 - Contact Phone: ${matchedProfile.contact_number || matchedProfile.whatsapp_phone_number || ''}
-- Total Products in Inventory: ${properties?.length || 0}
-- Inventory Products:
-${propertiesText}
-
+- Total Products in Inventory: ${properties?.length || 0} (Use get_inventory_list tool to inspect listings)
 - CRM Leads (Total: ${totalLeadsCount}):
   * Stage breakdown: ${JSON.stringify(stageCounts)}
-  * Lead Counts by Campaign ID (matching Meta Campaign IDs): ${JSON.stringify(leadsByCampaign)}
   * Recent 5 Leads:
 ${recentLeadsText}
-
-- Campaigns Launched:
-${campaignsContext}
+- Meta Campaigns: Available on-demand via get_account_campaigns tool.
 ${systemWideStats}
 `;
 
@@ -1146,6 +1068,89 @@ CRITICAL CONVERSATIONAL RULES:
                                     };
 
                                     const tools = {
+                                      get_account_campaigns: tool({
+                                        description: 'Fetch the live Meta Ad Account campaigns, spend, and metrics for the workspace on demand.',
+                                        inputSchema: z.object({
+                                          limit: z.number().optional().describe('Maximum number of campaigns to fetch (default 10)')
+                                        }),
+                                        execute: async (args: { limit?: number }) => {
+                                          console.log(`🤖 [TOOL: get_account_campaigns] Fetching campaigns for user: ${matchedProfile.id}`);
+                                          try {
+                                            let facebookToken = matchedProfile.facebook_token;
+                                            let adAccountId = matchedProfile.ad_account_id;
+
+                                            if ((matchedProfile.role === 'admin' || matchedProfile.role === 'agent') && (matchedProfile.parent_id || matchedProfile.agency_id)) {
+                                              const { data: parentProf } = await supabaseAdmin
+                                                .from('profiles')
+                                                .select('facebook_token, ad_account_id')
+                                                .eq('id', matchedProfile.parent_id || matchedProfile.agency_id)
+                                                .single();
+                                              if (parentProf) {
+                                                facebookToken = parentProf.facebook_token || facebookToken;
+                                                adAccountId = parentProf.ad_account_id || adAccountId;
+                                              }
+                                            }
+
+                                            if (facebookToken && adAccountId) {
+                                              const cleanAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+                                              const lim = args.limit || 10;
+                                              const fbUrl = `https://graph.facebook.com/v19.0/${cleanAdAccountId}/campaigns?fields=id,name,status,effective_status,objective,start_time,insights{results,spend,actions}&limit=${lim}&access_token=${facebookToken}`;
+                                              const fbRes = await fetch(fbUrl);
+                                              if (fbRes.ok) {
+                                                const fbData = await fbRes.json();
+                                                if (fbData.data && Array.isArray(fbData.data)) {
+                                                  return fbData.data.map((c: any) => {
+                                                    const ins = c.insights?.data?.[0] || {};
+                                                    return {
+                                                      id: c.id,
+                                                      name: c.name,
+                                                      status: c.effective_status || c.status,
+                                                      objective: c.objective,
+                                                      spend: ins.spend || "0.00",
+                                                      results: ins.results?.[0]?.value || "0"
+                                                    };
+                                                  });
+                                                }
+                                              }
+                                            }
+
+                                            const { data: campaigns } = await supabaseAdmin
+                                              .from('campaign_jobs')
+                                              .select('id, name, status, created_at')
+                                              .eq('user_id', matchedProfile.id)
+                                              .order('created_at', { ascending: false })
+                                              .limit(args.limit || 10);
+                                            return campaigns || [];
+                                          } catch (err: any) {
+                                            console.error("❌ [TOOL: get_account_campaigns] Error:", err);
+                                            return { error: err.message };
+                                          }
+                                        }
+                                      }),
+                                      get_inventory_list: tool({
+                                        description: 'Fetch the catalog of properties and inventory items for the business on demand.',
+                                        inputSchema: z.object({
+                                          search: z.string().optional().describe('Optional property title or keyword to filter'),
+                                          limit: z.number().optional().describe('Maximum number of items to return (default 10)')
+                                        }),
+                                        execute: async (args: { search?: string; limit?: number }) => {
+                                          console.log(`🤖 [TOOL: get_inventory_list] Querying inventory for user: ${matchedProfile.id}`);
+                                          try {
+                                            let q = supabaseAdmin
+                                              .from('properties')
+                                              .select('id, title, price, address, property_type, status')
+                                              .eq('user_id', matchedProfile.id);
+                                            if (args.search) {
+                                              q = q.ilike('title', `%${args.search}%`);
+                                            }
+                                            const { data, error } = await q.limit(args.limit || 10);
+                                            if (error) return { error: error.message };
+                                            return data || [];
+                                          } catch (err: any) {
+                                            return { error: err.message };
+                                          }
+                                        }
+                                      }),
                                       search_leads: tool({
                                         description: 'Search for leads in the database by name, phone number, or email. Returns matching leads.',
                                         inputSchema: z.object({
@@ -1406,7 +1411,7 @@ CRITICAL CONVERSATIONAL RULES:
                                               },
                                               total_calls_logged: callLogs?.length || 0,
                                               sample_live_call_notes: sampleCallNotes,
-                                              ad_campaigns_summary: campaignsContext || "No active Meta campaign data available."
+                                              ad_campaigns_summary: "Meta campaigns available on demand via get_account_campaigns tool."
                                             };
                                           } catch (err: any) {
                                             console.error("❌ [TOOL: analyze_lead_quality] Error:", err);
@@ -2447,7 +2452,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                     system: botPrompt,
                                                     prompt: ownerUserQueryPrompt,
                                                     tools: tools,
-                                                    stopWhen: stepCountIs(5)
+                                                    stopWhen: stepCountIs(2)
                                                 });
                                                 botResponseText = text;
                                                 successfulModelName = 'deepseek-chat';
@@ -2464,7 +2469,7 @@ CRITICAL CONVERSATIONAL RULES:
                                                     system: botPrompt,
                                                     prompt: ownerUserQueryPrompt,
                                                     tools: tools,
-                                                    stopWhen: stepCountIs(5)
+                                                    stopWhen: stepCountIs(2)
                                                 });
                                                 botResponseText = text;
                                                 successfulModelName = 'gemini-3.5-flash';
@@ -2852,35 +2857,7 @@ CRITICAL CONVERSATIONAL RULES:
                                         console.error('[WhatsApp Lead] Error evaluating group distribution:', distErr);
                                     }
 
-                                    if (!assignedAgentId && ownerEnableDistribution) {
-                                        try {
-                                            const { data: teamData } = await supabaseAdmin
-                                                .from('profiles')
-                                                .select('id')
-                                                .or(`agency_id.eq.${ownerUserId},parent_id.eq.${ownerUserId}`)
-                                                .in('role', ['admin', 'agent'])
-                                                .neq('id', ownerUserId);
 
-                                            if (teamData && teamData.length > 0) {
-                                                const agentIds = teamData.map(t => t.id);
-                                                const { data: lastAssignedLead } = await supabaseAdmin
-                                                    .from('leads')
-                                                    .select('assigned_to')
-                                                    .eq('user_id', ownerUserId)
-                                                    .not('assigned_to', 'is', null)
-                                                    .order('created_at', { ascending: false })
-                                                    .limit(1)
-                                                    .maybeSingle();
-
-                                                const lastAgentId = lastAssignedLead?.assigned_to;
-                                                const lastIndex = agentIds.indexOf(lastAgentId);
-                                                const nextIndex = (lastIndex + 1) % agentIds.length;
-                                                assignedAgentId = agentIds[nextIndex];
-                                            }
-                                        } catch (rrErr) {
-                                            console.error('[WhatsApp Lead] Error evaluating round robin:', rrErr);
-                                        }
-                                    }
 
                                     let { data: latestLead } = await supabaseAdmin
                                         .from('leads')
@@ -5084,20 +5061,6 @@ RULES:
             }
           }
 
-          // 2. Global Distribution Fallback
-          if (!assignedAgentId && profile.enable_distribution) {
-              const { data: teamData } = await supabaseAdmin
-                  .from('profiles')
-                  .select('id')
-                  .or(`agency_id.eq.${profile.id},parent_id.eq.${profile.id}`)
-                  .in('role', ['admin', 'agent'])
-                  .neq('id', profile.id) // Exclude the owner
-                  
-              if (teamData && teamData.length > 0) {
-                  const agentIds = teamData.map(t => t.id);
-                  assignedAgentId = await getNextRoundRobinAgent(supabaseAdmin, agentIds);
-              }
-          }
 
           // Check for existing lead with this facebook_lead_id to prevent duplicates from webhook retries
           const { data: existingLead } = await supabaseAdmin

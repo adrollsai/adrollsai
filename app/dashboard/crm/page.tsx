@@ -22,7 +22,7 @@ import CsvImportModal from '@/components/CsvImportModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import LeadAdPreviewModal from '@/components/LeadAdPreviewModal'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
-import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, getStageBadgeStyle, extractStagesFromProfile } from '@/utils/pipeline-stages'
+import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, extractStagesFromProfile } from '@/utils/pipeline-stages'
 import { getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
 import { openPhoneDialer } from '@/utils/dialer'
 
@@ -292,7 +292,6 @@ export default function CRMPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSyncingCalls, setIsSyncingCalls] = useState(false)
   const [showMobileCrmActions, setShowMobileCrmActions] = useState(false)
-  const [enableDistribution, setEnableDistribution] = useState(false)
 
   // Clean up any old cache keys on mount
   useEffect(() => {
@@ -875,7 +874,6 @@ export default function CRMPage() {
       const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads, badges').eq('id', user.id).single()
       const currentRole = (profile?.role as any) || 'admin'
       setRole(currentRole)
-      setEnableDistribution(!!profile?.enable_distribution)
       setAutoCallNewLeads(!!profile?.auto_call_new_leads)
       const parentId = profile?.parent_id || profile?.agency_id
       if (parentId) setParentAdminId(parentId)
@@ -1619,53 +1617,6 @@ export default function CRMPage() {
     }
   }
 
-  const executeRoundRobin = async (isTogglingOn = false) => {
-    // Filter out the main workspace owner (targetUserId) from auto-distribution if other team members exist
-    const distributionPool = team.filter(m => m.id !== targetUserId)
-    const finalPool = distributionPool.length > 0 ? distributionPool : team
-
-    if (finalPool.length === 0) {
-        if (!isTogglingOn) alert("Add team members first.")
-        return
-    }
-    const unassignedLeads = leads.filter(l => !l.assigned_to)
-    if (unassignedLeads.length === 0) {
-        if (!isTogglingOn) alert("All leads assigned.")
-        return
-    }
-
-    setIsAssigning(true)
-    let idx = 0
-    try {
-        for (const lead of unassignedLeads) {
-            const agentId = finalPool[idx].id;
-            await supabase.from('leads').update({ assigned_to: agentId }).eq('id', lead.id)
-            
-            // Notify
-            fetch('/api/crm/notify-assignment', {
-                method: 'POST',
-                body: JSON.stringify({ agentId, title: 'New Leads Assigned', message: `You have new leads from round-robin distribution.`, url: `/dashboard/crm` })
-            }).catch(() => {})
-            
-            idx = (idx + 1) % finalPool.length
-        }
-        fetchLeads(true)
-        if (!isTogglingOn) alert(`Distributed ${unassignedLeads.length} leads across ${finalPool.length} staff members.`)
-    } catch (e: any) { alert(e.message) } 
-    finally { setIsAssigning(false) }
-  }
-
-  const toggleGlobalDistribution = async () => {
-    const newValue = !enableDistribution
-    setEnableDistribution(newValue)
-    const effectiveUserId = targetUserId || userId
-    if (effectiveUserId) {
-        await supabase.from('profiles').update({ enable_distribution: newValue }).eq('id', effectiveUserId)
-    }
-    if (newValue) {
-        executeRoundRobin(true)
-    }
-  }
 
   const handleCampaignAssign = async () => {
     if (!batchCampaign || batchAgentIds.length === 0) return alert("Select both Campaign and at least one Agent")

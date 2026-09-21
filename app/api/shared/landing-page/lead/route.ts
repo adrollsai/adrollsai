@@ -4,6 +4,7 @@ import { sendPushNotification } from '@/utils/notification-helper'
 import { sendCAPIEvent } from '@/utils/external-apis'
 import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
 import { triggerOutboundCall } from '@/utils/voice-helper'
+import { matchesCampaignRule } from '@/utils/campaign-matcher'
 
 async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
     if (!agentIds || agentIds.length === 0) return null;
@@ -80,20 +81,75 @@ export async function POST(request: Request) {
             .eq('id', user_id)
             .maybeSingle()
 
-        // ASSIGNMENT LOGIC: Global Rule
+        // ASSIGNMENT LOGIC: Group-Distribution rules
         let assignedAgentId: string | null = null;
-        if (ownerProfile?.enable_distribution) {
-            const { data: teamData } = await supabaseAdmin
-                .from('profiles')
-                .select('id')
-                .or(`agency_id.eq.${user_id},parent_id.eq.${user_id}`)
-                .in('role', ['admin', 'agent'])
-                .neq('id', user_id) // Exclude the owner
-                
-            if (teamData && teamData.length > 0) {
-                const agentIds = teamData.map(t => t.id);
-                assignedAgentId = await getNextRoundRobinAgent(supabaseAdmin, agentIds);
+        try {
+            const { data: groupAutomations } = await supabaseAdmin
+                .from('automations')
+                .select('*')
+                .eq('user_id', user_id)
+                .like('title', 'Group-Distribution:%')
+                .eq('is_active', true);
+
+            if (groupAutomations && groupAutomations.length > 0) {
+                const leadCtx = {
+                    source: slug ? `Landing Page - ${slug}` : 'Landing Page',
+                    campaignName: slug || 'Landing Page',
+                    adName: slug || 'Landing Page',
+                    adCampaignString: slug || 'Landing Page'
+                };
+
+                for (const aut of groupAutomations) {
+                    try {
+                        const parsedGroup = JSON.parse(aut.description || '{}');
+                        const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
+                        const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
+                        const activeMembers = groupMembers.filter((m: any) => m.is_active !== false);
+
+                        if (activeMembers.length > 0 && groupCampaigns.length > 0) {
+                            const matchesCamp = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx));
+
+                            if (matchesCamp) {
+                                const weightedPool: any[] = [];
+                                activeMembers.forEach(m => {
+                                    for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
+                                        weightedPool.push(m);
+                                    }
+                                });
+
+                                let currentIdx = 0;
+                                if (parsedGroup.last_assigned_user_id) {
+                                    const lastIdx = weightedPool.findIndex(m => m.userId === parsedGroup.last_assigned_user_id);
+                                    if (lastIdx !== -1) {
+                                        currentIdx = (lastIdx + 1) % weightedPool.length;
+                                    }
+                                }
+
+                                const selectedMember = weightedPool[currentIdx];
+                                assignedAgentId = selectedMember.userId;
+
+                                parsedGroup.last_assigned_user_id = selectedMember.userId;
+                                parsedGroup.last_assigned_user_name = selectedMember.name;
+                                parsedGroup.last_assigned_at = new Date().toISOString();
+
+                                const updatedGroupJson = JSON.stringify(parsedGroup);
+                                aut.description = updatedGroupJson;
+
+                                await supabaseAdmin
+                                    .from('automations')
+                                    .update({ description: updatedGroupJson })
+                                    .eq('id', aut.id);
+
+                                break;
+                            }
+                        }
+                    } catch (pErr) {
+                        console.error('[Landing Page] Error evaluating group rule:', pErr);
+                    }
+                }
             }
+        } catch (distErr) {
+            console.error('[Landing Page] Error evaluating group distribution:', distErr);
         }
 
         // Fetch custom landing page details

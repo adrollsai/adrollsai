@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendContactFormEmail } from '@/utils/email-helper'
 import { sendPushNotification } from '@/utils/notification-helper'
+import { matchesCampaignRule } from '@/utils/campaign-matcher'
 
 // Initialize Supabase Admin Client using the service role key to bypass row-level security
 const supabaseAdmin = createClient(
@@ -82,44 +83,75 @@ export async function POST(request: Request) {
 
     let leadId = '';
     if (targetUserId) {
-      // Check if global distribution is enabled
-      const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('enable_distribution')
-        .eq('id', targetUserId)
-        .single();
-
+      // 1. Evaluate Group-Distribution rules
       let assignedAgentId: string | null = null;
-      if (profile?.enable_distribution) {
-        const { data: teamData } = await supabaseAdmin
-          .from('profiles')
-          .select('id')
-          .or(`agency_id.eq.${targetUserId},parent_id.eq.${targetUserId}`)
-          .in('role', ['admin', 'agent'])
-          .neq('id', targetUserId); // Exclude the owner
+      try {
+        const { data: groupAutomations } = await supabaseAdmin
+          .from('automations')
+          .select('*')
+          .eq('user_id', targetUserId)
+          .like('title', 'Group-Distribution:%')
+          .eq('is_active', true);
 
-        if (teamData && teamData.length > 0) {
-          const agentIds = teamData.map(t => t.id);
-          
-          // Find the last assigned agent to continue round robin
-          const { data: lastAssignedLead } = await supabaseAdmin
-            .from('leads')
-            .select('assigned_to')
-            .in('assigned_to', agentIds)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+        if (groupAutomations && groupAutomations.length > 0) {
+          const leadCtx = {
+            source: 'Website Contact Form',
+            campaignName: 'Website Contact Form',
+            adName: 'Website Contact Form',
+            adCampaignString: 'Website Contact Form'
+          };
 
-          const lastAssignedId = lastAssignedLead?.assigned_to;
-          let nextIndex = 0;
-          if (lastAssignedId) {
-            const lastIdx = agentIds.indexOf(lastAssignedId);
-            if (lastIdx !== -1) {
-              nextIndex = (lastIdx + 1) % agentIds.length;
+          for (const aut of groupAutomations) {
+            try {
+              const parsedGroup = JSON.parse(aut.description || '{}');
+              const groupCampaigns: string[] = Array.isArray(parsedGroup.campaigns) ? parsedGroup.campaigns : [];
+              const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
+              const activeMembers = groupMembers.filter((m: any) => m.is_active !== false);
+
+              if (activeMembers.length > 0 && groupCampaigns.length > 0) {
+                const matchesCamp = groupCampaigns.some(gc => matchesCampaignRule(gc, leadCtx));
+
+                if (matchesCamp) {
+                  const weightedPool: any[] = [];
+                  activeMembers.forEach(m => {
+                    for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
+                      weightedPool.push(m);
+                    }
+                  });
+
+                  let currentIdx = 0;
+                  if (parsedGroup.last_assigned_user_id) {
+                    const lastIdx = weightedPool.findIndex(m => m.userId === parsedGroup.last_assigned_user_id);
+                    if (lastIdx !== -1) {
+                      currentIdx = (lastIdx + 1) % weightedPool.length;
+                    }
+                  }
+
+                  const selectedMember = weightedPool[currentIdx];
+                  assignedAgentId = selectedMember.userId;
+
+                  parsedGroup.last_assigned_user_id = selectedMember.userId;
+                  parsedGroup.last_assigned_user_name = selectedMember.name;
+                  parsedGroup.last_assigned_at = new Date().toISOString();
+
+                  const updatedGroupJson = JSON.stringify(parsedGroup);
+                  aut.description = updatedGroupJson;
+
+                  await supabaseAdmin
+                    .from('automations')
+                    .update({ description: updatedGroupJson })
+                    .eq('id', aut.id);
+
+                  break;
+                }
+              }
+            } catch (pErr) {
+              console.error('[Contact Form] Error evaluating group rule:', pErr);
             }
           }
-          assignedAgentId = agentIds[nextIndex];
         }
+      } catch (distErr) {
+        console.error('[Contact Form] Error evaluating group distribution:', distErr);
       }
 
       // 2. Check if lead already exists in CRM by phone to reopen instead of creating duplicates

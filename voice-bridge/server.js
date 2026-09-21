@@ -1642,6 +1642,8 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                 let leadPriority = null;
                 let extractedBudget = null;
                 let extractedAnswers = {};
+                let extractedAllowAfterHours = false;
+                let extractedCallingEnabled = true;
 
                 try {
                     let questionsForPrompt = '';
@@ -1701,6 +1703,12 @@ STRICT QUALIFICATION & CLASSIFICATION CRITERIA:
 5. "callback_time": string or null
    - Return an ISO-8601 string ONLY IF the prospect asked to be called back at a specific future time (e.g. "call tomorrow morning", "call in the evening after 5"). Calculate relative to the reference IST time above. Otherwise null.
 
+6. "allow_after_hours": boolean (true/false)
+   - true if the prospect explicitly agreed or said it is okay to call them back after 7 PM or at any time.
+
+7. "calling_enabled": boolean (true/false)
+   - false if the prospect explicitly requested never to be called again or asked to opt out, otherwise true.
+
 Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks, or backticks:
 {
   "summary": "A concise, clean 2-3 sentence paragraph summarizing what transpired. Explicitly mention if the caller was interested, not interested, a job seeker, or requested callback.",
@@ -1709,6 +1717,8 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
   "lead_priority": "HOT" | "WARM" | "COLD",
   "callback_time": "ISO-8601 string or null",
   "booking_time": "ISO-8601 string or null",
+  "allow_after_hours": true/false,
+  "calling_enabled": true/false,
   "extracted_budget": "extracted budget string/number if mentioned (e.g. '₹1.5 Cr', '₹70 Lakhs'), else null",
   "extracted_answers": {
     /* Key-value pairs of answers provided by the prospect, e.g. "property_type": "Commercial Showroom", "budget": "₹1.5 Cr" */
@@ -1717,7 +1727,7 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
 `.trim();
 
                     // Post-call AI analysis: Use DeepSeek v4-flash for all text tasks
-                    const dsKey = process.env.DEEPSEEK_API_KEY || 'sk-20cf24c78eeb44669f22cd92b2d0382f';
+                    const dsKey = (process.env.DEEPSEEK_API_KEY || '').replace(/^["']|["']$/g, '').trim();
                     let analysisDone = false;
 
                     if (dsKey) {
@@ -1758,6 +1768,8 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                                     if (parsed.is_qualified !== undefined) isQualified = parsed.is_qualified === true && isInterested;
                                     if (parsed.lead_priority) leadPriority = parsed.lead_priority;
                                     if (parsed.extracted_budget) extractedBudget = parsed.extracted_budget;
+                                    if (parsed.allow_after_hours !== undefined) extractedAllowAfterHours = parsed.allow_after_hours === true;
+                                    if (parsed.calling_enabled === false) extractedCallingEnabled = false;
                                     if (parsed.extracted_answers && typeof parsed.extracted_answers === 'object') {
                                         extractedAnswers = parsed.extracted_answers;
                                     }
@@ -1796,6 +1808,8 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                                 if (parsed.is_qualified !== undefined) isQualified = parsed.is_qualified === true && isInterested;
                                 if (parsed.lead_priority) leadPriority = parsed.lead_priority;
                                 if (parsed.extracted_budget) extractedBudget = parsed.extracted_budget;
+                                if (parsed.allow_after_hours !== undefined) extractedAllowAfterHours = parsed.allow_after_hours === true;
+                                if (parsed.calling_enabled === false) extractedCallingEnabled = false;
                                 if (parsed.extracted_answers && typeof parsed.extracted_answers === 'object') {
                                     extractedAnswers = parsed.extracted_answers;
                                 }
@@ -1888,6 +1902,8 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
 
                 mergedCf.is_interested = isInterested;
                 mergedCf.is_qualified = isQualified;
+                mergedCf.allow_after_hours = extractedAllowAfterHours;
+                mergedCf.calling_enabled = extractedCallingEnabled;
                 updatePayload.custom_fields = mergedCf;
 
                 let isValidBooking = false;
