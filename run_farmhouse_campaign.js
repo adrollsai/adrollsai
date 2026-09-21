@@ -59,7 +59,6 @@ async function syncVobizRecording(leadId, callUuid, authId, authToken) {
     const { data: pubData } = supabase.storage
       .from('lead-voice-recordings')
       .getPublicUrl(fileName);
-
     const publicUrl = pubData.publicUrl;
 
     await supabase.from('leads').update({
@@ -92,8 +91,8 @@ async function syncVobizRecording(leadId, callUuid, authId, authToken) {
   }
 }
 
-async function runContinuousCampaign() {
-  const campaignId = '702a2914-544f-40a0-a14f-3ae28ed6f6be';
+async function runFarmhouseCampaign() {
+  const campaignId = '7bacf4e8-d8fb-4c70-bf24-aa5394dc9d40';
   const authId = 'MA_HOSGFZ86';
   const authToken = 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
   const callerId = '+917965853341';
@@ -111,63 +110,45 @@ async function runContinuousCampaign() {
     .single();
 
   const userId = campaign.user_id;
-  const filter = campaign.audience_filter || {};
 
   console.log('========================================================');
-  console.log('[CONTINUOUS CAMPAIGN RUNNER] Started');
+  console.log('[FARMHOUSE CAMPAIGN RUNNER] Started');
   console.log('Campaign:', campaign.name, `(${campaignId})`);
   console.log('Caller ID:', callerId);
-  console.log('Audience:', filter.meta_campaigns);
+  console.log('Target: 10 Successful Connected Conversations');
   console.log('========================================================\n');
 
-  // Fetch all leads for this user
+  // Fetch all assigned leads for this campaign
   const { data: allLeads } = await supabase
     .from('leads')
-    .select('id, name, phone, source, pipeline_stage, campaign_id, ad_name, csv_audience, custom_fields, voice_call_status')
+    .select('id, name, phone, source, pipeline_stage, campaign_id, ad_name, voice_call_status')
     .eq('user_id', userId)
+    .eq('voice_campaign_id', campaignId)
     .order('created_at', { ascending: false });
-
-  // Filter matching leads
-  const matchingLeads = (allLeads || []).filter(lead => {
-    let match = false;
-    for (const targetMeta of filter.meta_campaigns || []) {
-      const tId = targetMeta.includes('|') ? targetMeta.split('|')[0].trim() : targetMeta.trim();
-      const tName = targetMeta.includes('|') ? targetMeta.split('|')[1].trim() : targetMeta.trim();
-      if (lead.campaign_id && (lead.campaign_id === tId || lead.campaign_id === targetMeta)) match = true;
-      if (lead.ad_name && (lead.ad_name.toLowerCase().includes(tName.toLowerCase()) || tName.toLowerCase().includes(lead.ad_name.toLowerCase()))) match = true;
-      if (lead.custom_fields) {
-        const cfStr = typeof lead.custom_fields === 'string' ? lead.custom_fields : JSON.stringify(lead.custom_fields);
-        if (cfStr.includes(tId) || (tName && cfStr.toLowerCase().includes(tName.toLowerCase()))) match = true;
-      }
-    }
-    return match;
-  });
 
   // Deduplicate by 10-digit phone
   const phoneMap = new Map();
-  for (const l of matchingLeads) {
+  for (const l of (allLeads || [])) {
     if (!l.phone) continue;
     const cleanPhone = l.phone.replace(/\D/g, '').slice(-10);
     if (!cleanPhone || cleanPhone.length < 10) continue;
-    if (cleanPhone === '8288835235') continue;
+    if (cleanPhone === '8288835235') continue; // skip test phone
     if (!phoneMap.has(cleanPhone)) {
       phoneMap.set(cleanPhone, l);
     }
   }
 
-  // Filter only leads that have not yet been successfully completed
   const pendingLeads = Array.from(phoneMap.values()).filter(l => {
     return !l.voice_call_status || l.voice_call_status === 'not_called' || l.voice_call_status === 'calling';
   });
 
-  console.log(`[QUEUE] Found ${pendingLeads.length} uncalled leads to dial out of ${phoneMap.size} total campaign leads.\n`);
+  console.log(`[QUEUE] Found ${pendingLeads.length} uncalled Farmhouse leads ready to dial.\n`);
 
   let processedCount = 0;
   let answeredCount = 0;
   let completedConversationsCount = 0;
 
   for (let i = 0; i < pendingLeads.length; i++) {
-    // Check if campaign was paused or stopped by user
     const { data: currentCamp } = await supabase
       .from('voice_campaigns')
       .select('status')
@@ -175,13 +156,13 @@ async function runContinuousCampaign() {
       .single();
 
     if (currentCamp?.status === 'paused' || currentCamp?.status === 'draft') {
-      console.log(`[CAMPAIGN PAUSED] User changed campaign status to "${currentCamp.status}". Halting runner gracefully.`);
+      console.log(`[CAMPAIGN PAUSED] User changed campaign status to "${currentCamp.status}". Halting runner.`);
       break;
     }
 
     const lead = pendingLeads[i];
     console.log(`--------------------------------------------------------`);
-    console.log(`[PROGRESS ${i + 1}/${pendingLeads.length}] Calling: ${lead.name} (${lead.phone})`);
+    console.log(`[PROGRESS ${i + 1}/${pendingLeads.length}] Calling Farmhouse Lead: ${lead.name} (${lead.phone})`);
     console.log(`--------------------------------------------------------`);
 
     // Mark as calling in Supabase
@@ -230,9 +211,9 @@ async function runContinuousCampaign() {
     process.stdout.write(`[CALL RINGING] `);
     let callEnded = false;
     let finalStatus = 'calling';
-    let recTriggered = false;
     const startTime = Date.now();
 
+    let recTriggered = false;
     while (!callEnded && (Date.now() - startTime) < 95000) {
       await sleep(3500);
       const { data: currentLead } = await supabase
@@ -243,7 +224,7 @@ async function runContinuousCampaign() {
 
       finalStatus = currentLead?.voice_call_status || finalStatus;
 
-      // Trigger recording via REST API as soon as call is active
+      // Trigger recording via REST API as soon as call is initiated
       if (!recTriggered && callUuid) {
         recTriggered = true;
         fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`, {
@@ -270,10 +251,9 @@ async function runContinuousCampaign() {
       process.stdout.write(`.`);
     }
 
-    // Wait 5 seconds for background processing
+    // Wait 5 seconds for background audio processing
     await sleep(5000);
 
-    // Sync audio recording from Vobiz to Supabase storage if completed
     let publicAudioUrl = null;
     if (callUuid && finalStatus === 'completed') {
       publicAudioUrl = await syncVobizRecording(lead.id, callUuid, authId, authToken);
@@ -293,7 +273,7 @@ async function runContinuousCampaign() {
     if (isAnswered) answeredCount++;
     if (isCompletedConv) {
       completedConversationsCount++;
-      console.log(`\n🎉 [TARGET PROGRESS] ${completedConversationsCount}/10 connected conversations completed!`);
+      console.log(`\n🎉 [CONVERSATION #${completedConversationsCount}] Connected conversation completed with ${lead.name}!`);
     }
 
     console.log(`[CALL SUMMARY] Lead: ${lead.name} | Status: ${finalStatus} | Turns: ${transcript.length} | Recording: ${publicAudioUrl ? 'YES' : (finalLead?.voice_recording_url ? 'YES' : 'NONE')}`);
@@ -303,35 +283,44 @@ async function runContinuousCampaign() {
     if (transcript.length > 0) {
       console.log(`[TRANSCRIPT PREVIEW] Last Turn: "${transcript[transcript.length - 1]?.message}"`);
     }
-    console.log(`[RUNNER TOTALS] Processed: ${processedCount}/${pendingLeads.length} | Answered: ${answeredCount} | Connected Conversations: ${completedConversationsCount}/10\n`);
 
-    if (completedConversationsCount >= 10) {
-      console.log(`\n🎯 TARGET REACHED! 10 successful connected conversations completed. Pausing campaign runner for user report.`);
-      break;
+    // Automatic Admin Notification for Interested / Booked leads
+    if (finalStatus === 'completed' && finalLead) {
+      const summaryText = (finalLead.voice_call_summary || '').toLowerCase();
+      const isNotInterested = summaryText.includes('not interested') || summaryText.includes('disinterest') || summaryText.includes('no interest') || summaryText.includes('accidental');
+      const isInterested = !isNotInterested && (summaryText.includes('interested') || summaryText.includes('inquired') || summaryText.includes('looking for') || summaryText.includes('rates') || summaryText.includes('plot sizes') || summaryText.includes('location'));
+      const isBooked = summaryText.includes('booked') || summaryText.includes('scheduled a visit') || summaryText.includes('site visit confirmed');
+
+      if (isBooked || isInterested) {
+        console.log(`[ADMIN NOTIFY] 🔔 Triggering multi-channel admin alert for ${lead.name} (${isBooked ? 'Appointment Booked' : 'High-Interest Lead'})...`);
+        try {
+          await fetch('https://app.nobogent.com/api/voice/post-call-notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              leadId: lead.id,
+              profileId: userId,
+              isQualified: true,
+              leadPriority: isBooked ? 'HOT' : 'HOT',
+              bookingTime: isBooked ? new Date(Date.now() + 48 * 3600 * 1000).toISOString() : null,
+              summary: finalLead.voice_call_summary || '',
+              skipProspectWhatsApp: true
+            })
+          });
+          console.log(`[ADMIN NOTIFY] ✅ Admin notified successfully for ${lead.name}`);
+        } catch (nErr) {
+          console.warn('[ADMIN NOTIFY ERROR]', nErr.message);
+        }
+      }
     }
+
+    console.log(`[RUNNER TOTALS] Processed: ${processedCount}/${pendingLeads.length} | Answered: ${answeredCount} | Connected Conversations: ${completedConversationsCount}\n`);
 
     // Polite delay between outbound calls
     await sleep(4000);
   }
 
-  // If all pending leads processed, mark campaign completed
-  const { data: remainingLeads } = await supabase
-    .from('leads')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('voice_campaign_id', campaignId)
-    .or('voice_call_status.is.null,voice_call_status.eq.not_called')
-    .limit(1);
-
-  if (!remainingLeads || remainingLeads.length === 0) {
-    await supabase
-      .from('voice_campaigns')
-      .update({ status: 'completed' })
-      .eq('id', campaignId);
-    console.log('\n🎉 ALL LEADS IN CAMPAIGN PROCESSED! Campaign marked completed.');
-  }
-
-  console.log('Continuous campaign runner finished.');
+  console.log('Farmhouse campaign batch completed.');
 }
 
-runContinuousCampaign().catch(console.error);
+runFarmhouseCampaign().catch(console.error);

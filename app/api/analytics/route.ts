@@ -31,19 +31,22 @@ export async function GET(req: Request) {
             .single()
 
         const myRole = myProfile?.role?.toLowerCase() || 'admin'
-        const isTeamUser = myRole === 'agent' || myRole === 'team_member'
+        const hasParentWorkspace = Boolean(myProfile?.parent_id || (myProfile?.agency_id && myRole !== 'agency'))
+        const isTeamUser = myRole === 'agent' || myRole === 'team_member' || hasParentWorkspace
 
         // Determine target workspace owner ID
         let targetOwnerId = user.id
         if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
             targetOwnerId = impersonateId
-        } else if (isTeamUser && (myProfile?.parent_id || myProfile?.agency_id)) {
-            targetOwnerId = myProfile.parent_id || myProfile.agency_id || user.id
+        } else if (myProfile?.parent_id) {
+            targetOwnerId = myProfile.parent_id
+        } else if (myProfile?.agency_id && myRole !== 'agency') {
+            targetOwnerId = myProfile.agency_id
         }
 
         // Determine active agent filter
         let activeAgentId = (filterAgentId && filterAgentId !== 'null' && filterAgentId !== 'undefined' && filterAgentId !== 'all') ? filterAgentId : null
-        if (isTeamUser) {
+        if (!activeAgentId && (myRole === 'agent' || myRole === 'team_member')) {
             activeAgentId = user.id
         }
 

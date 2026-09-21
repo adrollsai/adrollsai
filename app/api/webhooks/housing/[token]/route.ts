@@ -219,6 +219,82 @@ export async function POST(
             console.error('[Housing Webhook] Error evaluating group distribution:', distErr);
         }
 
+        // Fallback: If not matched to a specific campaign rule, distribute among active group members or team members
+        if (!assignedAgentId) {
+            try {
+                const { data: fallbackGroupAutomations } = await supabaseAdmin
+                    .from('automations')
+                    .select('*')
+                    .eq('user_id', profile.id)
+                    .like('title', 'Group-Distribution:%')
+                    .eq('is_active', true);
+
+                if (fallbackGroupAutomations && fallbackGroupAutomations.length > 0) {
+                    for (const aut of fallbackGroupAutomations) {
+                        try {
+                            const parsedGroup = JSON.parse(aut.description || '{}');
+                            const groupMembers: any[] = Array.isArray(parsedGroup.members) ? parsedGroup.members : [];
+                            const activeMembers = groupMembers.filter((m: any) => m.is_active !== false);
+
+                            if (activeMembers.length > 0) {
+                                const weightedPool: any[] = [];
+                                activeMembers.forEach(m => {
+                                    for (let i = 0; i < Math.max(1, m.weight || 1); i++) {
+                                        weightedPool.push(m);
+                                    }
+                                });
+
+                                let currentIdx = 0;
+                                if (parsedGroup.last_assigned_user_id) {
+                                    const lastIdx = weightedPool.findIndex(m => m.userId === parsedGroup.last_assigned_user_id);
+                                    if (lastIdx !== -1) {
+                                        currentIdx = (lastIdx + 1) % weightedPool.length;
+                                    }
+                                }
+
+                                const selectedMember = weightedPool[currentIdx];
+                                assignedAgentId = selectedMember.userId;
+                                assignedAgentName = selectedMember.name || '';
+
+                                parsedGroup.last_assigned_user_id = selectedMember.userId;
+                                parsedGroup.last_assigned_user_name = selectedMember.name;
+                                parsedGroup.last_assigned_at = new Date().toISOString();
+
+                                const updatedGroupJson = JSON.stringify(parsedGroup);
+                                aut.description = updatedGroupJson;
+
+                                await supabaseAdmin
+                                    .from('automations')
+                                    .update({ description: updatedGroupJson })
+                                    .eq('id', aut.id);
+
+                                console.log(`[Housing Webhook] Fallback group distribution assigned lead to ${selectedMember.name} (${selectedMember.userId}) for rule ${aut.title}`);
+                                break;
+                            }
+                        } catch (pErr) {
+                            console.error('[Housing Webhook] Error evaluating fallback group rule:', pErr);
+                        }
+                    }
+                }
+
+                // If still not assigned, check if profile has active team members
+                if (!assignedAgentId) {
+                    const { data: teamMembers } = await supabaseAdmin
+                        .from('profiles')
+                        .select('id, full_name, business_name')
+                        .or(`parent_id.eq.${profile.id},agency_id.eq.${profile.id}`)
+                        .eq('role', 'agent');
+
+                    if (teamMembers && teamMembers.length > 0) {
+                        const agentIds = teamMembers.map(t => t.id);
+                        assignedAgentId = await getNextRoundRobinAgent(agentIds);
+                    }
+                }
+            } catch (fbDistErr) {
+                console.error('[Housing Webhook] Error evaluating fallback distribution:', fbDistErr);
+            }
+        }
+
 
         // 4. Check for existing lead by phone
         let existingLeadToReopen: any = null;
@@ -285,7 +361,7 @@ export async function POST(
                 status: 'New Lead',
                 notes: leadNotes,
                 custom_fields: customFields,
-                assigned_to: assignedAgentId || profile.id,
+                assigned_to: assignedAgentId || null,
                 created_at: new Date().toISOString()
             }
 

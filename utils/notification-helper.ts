@@ -289,8 +289,8 @@ export async function sendAdminMultiChannelNotification({
     const rawBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
     const baseUrl = rawBaseUrl.includes('local.nobogent.com') || rawBaseUrl.includes('localhost') ? 'https://app.nobogent.com' : rawBaseUrl;
     let leadPageUrl = url.startsWith('http') ? url : `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
-    if (leadId && !leadPageUrl.includes('leadId=')) {
-      leadPageUrl = `${baseUrl}/dashboard/crm?leadId=${leadId}`;
+    if (leadId && !leadPageUrl.includes('leadId=') && !leadPageUrl.includes(`/dashboard/crm/${leadId}`)) {
+      leadPageUrl = `${baseUrl}/dashboard/crm/${leadId}`;
     }
     // Clean any local tunnel or localhost urls for external notifications to ensure they always point to production
     leadPageUrl = leadPageUrl.replace(/^https?:\/\/(local\.nobogent\.com|localhost(:\d+)?)/i, 'https://app.nobogent.com');
@@ -385,9 +385,10 @@ export async function sendAdminMultiChannelNotification({
             
             if (isExpertAlert || isInterestedAlert) {
               // Approved Utility template guarantees delivery 24/7 even outside the 24-hour customer window
+              // Parameter 1: Name + Details + Direct CRM Link (no newlines permitted in template variables)
               const leadSummary = isInterestedAlert
-                ? `🔥 Interested: ${leadName || 'Prospect'} (${title || 'Interested in property'})`
-                : `☎️ Expert Call: ${leadName || 'Prospect'}`;
+                ? `🔥 Interested: ${leadName || 'Prospect'} | CRM: ${leadPageUrl}`
+                : `☎️ Expert Call: ${leadName || 'Prospect'} | CRM: ${leadPageUrl}`;
               payload = {
                 messaging_product: 'whatsapp',
                 to: cleanPhone,
@@ -399,7 +400,7 @@ export async function sendAdminMultiChannelNotification({
                     {
                       type: 'body',
                       parameters: [
-                        { type: 'text', text: leadSummary.slice(0, 60) },
+                        { type: 'text', text: leadSummary },
                         { type: 'text', text: targetLeadPhone }
                       ]
                     }
@@ -452,7 +453,7 @@ export async function sendAdminMultiChannelNotification({
                 recipient_type: 'individual',
                 to: cleanPhone,
                 type: 'text',
-                text: { body: `${title}\n\n${body}\n\n🔗 View Lead: ${leadPageUrl}` }
+                text: { body: `${title}\n\n${body}\n\n🔗 View Lead & History in CRM:\n${leadPageUrl}` }
               };
               waRes = await fetch(metaUrl, {
                 method: 'POST',
@@ -494,12 +495,17 @@ export async function sendAdminMultiChannelNotification({
                 <div style="text-align: center; margin-bottom: 20px;">
                   <h2 style="color: #0f172a; margin: 0; font-size: 22px; font-weight: bold; border-bottom: 2px solid #2563eb; padding-bottom: 10px;">${title}</h2>
                 </div>
-                <p style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${body}</p>
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                  <p style="font-size: 14px; color: #334155; line-height: 1.7; margin: 0; white-space: pre-wrap;">${body}</p>
+                </div>
                 <div style="margin-top: 24px; text-align: center;">
-                  <a href="${leadPageUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">View Lead in CRM</a>
+                  <a href="${leadPageUrl}" style="background-color: #2563eb; color: #ffffff; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 2px 4px rgba(37,99,235,0.2);">View Full Remarks & History in CRM</a>
+                </div>
+                <div style="margin-top: 14px; text-align: center;">
+                  <p style="font-size: 12px; color: #64748b; margin: 0;">Direct Link: <a href="${leadPageUrl}" style="color: #2563eb; word-break: break-all;">${leadPageUrl}</a></p>
                 </div>
                 <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 24px;" />
-                <p style="font-size: 11px; color: #94a3b8; text-align: center; text-transform: uppercase; letter-spacing: 0.05em;">Priority Lead Alert</p>
+                <p style="font-size: 11px; color: #94a3b8; text-align: center; text-transform: uppercase; letter-spacing: 0.05em;">Nobogent Priority Lead Alert</p>
               </div>
             `;
             await sendGenericEmail(toEmail, subject, emailHtml || defaultHtml, bccEmail);

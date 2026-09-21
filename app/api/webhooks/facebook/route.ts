@@ -4205,7 +4205,7 @@ RULES:
                                         return;
                                     }
 
-                                    // 2.5 Check for "Interested" button click or text from Broadcast / Campaign templates
+                                        // 2.5 Check for "Interested" button click or text from Broadcast / Campaign templates
                                     const isInterestedClick = buttonReplyId === 'interested' || buttonReplyId === 'interested_btn' || /^(interested|i am interested|im interested|yes interested)[!.]*$/i.test(messageText.trim());
                                     if (isInterestedClick) {
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "Interested!".`);
@@ -4221,6 +4221,24 @@ RULES:
                                             : `${greeting} Great to connect with you. Please let us know if you have any questions or would like to schedule a visit.`;
 
                                         await sendTextMessage(ackText);
+
+                                        // Alert admin/agent via multi-channel notification with direct lead link and campaign source
+                                        const notifyLeadName = validName || latestLead?.name || chat.recipient_name || 'Prospect';
+                                        const targetLeadId = latestLead?.id;
+                                        const targetUrl = targetLeadId ? `/dashboard/crm/${targetLeadId}` : '/dashboard/crm';
+                                        const campaignContext = latestLead?.ad_name || latestLead?.source || 'WhatsApp Broadcast / Inbound';
+
+                                        sendAdminMultiChannelNotification({
+                                            ownerUserId,
+                                            title: `🔥 Lead Clicked Interested on WhatsApp: ${notifyLeadName}`,
+                                            body: `Prospect ${notifyLeadName} (+${cleanFrom}) clicked "Interested" on WhatsApp!\n\n📢 Source / Campaign: ${campaignContext}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
+                                            url: targetUrl,
+                                            type: 'lead_interested',
+                                            leadPhone: '+' + cleanFrom,
+                                            leadName: notifyLeadName,
+                                            leadId: targetLeadId
+                                        }).catch(err => console.error('[WhatsApp Bot] Interested notification failed:', err));
+
                                         await new Promise(r => setTimeout(r, 150));
                                         await sendThreeButtons("What would you like to do next?");
                                         return;
@@ -4277,12 +4295,13 @@ RULES:
                                         // Alert admin/agent via high-priority multi-channel notification
                                         const leadName = chat.recipient_name || latestLead?.name || 'Prospect';
                                         const targetLeadId = latestLead?.id;
-                                        const targetUrl = targetLeadId ? `/dashboard/crm?leadId=${targetLeadId}` : '/dashboard/crm';
+                                        const targetUrl = targetLeadId ? `/dashboard/crm/${targetLeadId}` : '/dashboard/crm';
+                                        const campaignContext = latestLead?.ad_name || latestLead?.source || 'WhatsApp Inbound';
                                         
                                         sendAdminMultiChannelNotification({
                                             ownerUserId,
-                                            title: `🚨 Call with Expert Requested!`,
-                                            body: `High-intent lead ${leadName} (+${cleanFrom}) clicked "Talk to an expert" on WhatsApp! Contact them immediately.`,
+                                            title: `🚨 Call with Expert Requested: ${leadName}`,
+                                            body: `High-intent lead ${leadName} (+${cleanFrom}) clicked "Talk to an expert" on WhatsApp!\n\n📢 Source / Campaign: ${campaignContext}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
                                             url: targetUrl,
                                             type: 'connect_expert',
                                             leadPhone: '+' + cleanFrom,

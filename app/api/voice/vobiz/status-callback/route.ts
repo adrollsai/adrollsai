@@ -57,16 +57,21 @@ async function handleStatusCallback(req: Request) {
         }
 
         if (!recordingUrl && callUuid && ['completed', 'hangup', 'stopped', 'recording'].includes(callStatus)) {
-            try {
-                let fetchedRec = await fetchVobizCallRecording(callUuid)
-                if (!fetchedRec) {
-                    // Give Vobiz audio processing 2.5 seconds to finalize before trying once more
-                    await new Promise(r => setTimeout(r, 2500))
-                    fetchedRec = await fetchVobizCallRecording(callUuid)
+            // Actively fetch recording from Vobiz Recording API with retries (Vobiz needs time to process audio)
+            for (let recAttempt = 1; recAttempt <= 3; recAttempt++) {
+                try {
+                    const waitMs = recAttempt === 1 ? 3000 : 5000
+                    await new Promise(r => setTimeout(r, waitMs))
+                    const fetchedRec = await fetchVobizCallRecording(callUuid)
+                    if (fetchedRec) {
+                        recordingUrl = fetchedRec
+                        console.log(`[VOBIZ STATUS] Found recording URL on attempt ${recAttempt}: ${recordingUrl}`)
+                        break
+                    }
+                    console.log(`[VOBIZ STATUS] Recording not ready yet (attempt ${recAttempt}/3)...`)
+                } catch (fErr: any) {
+                    console.warn(`[VOBIZ STATUS] Recording fetch attempt ${recAttempt} error:`, fErr.message)
                 }
-                if (fetchedRec) recordingUrl = fetchedRec
-            } catch (fErr) {
-                console.warn('[VOBIZ STATUS] Fallback recording fetch error:', fErr)
             }
         }
 

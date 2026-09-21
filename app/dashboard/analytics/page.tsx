@@ -514,13 +514,16 @@ export default function AnalyticsPage() {
       if (userProfile) setProfile(userProfile)
 
       const myRole = userProfile?.role?.toLowerCase() || 'admin'
-      const isTeamUser = myRole === 'agent' || myRole === 'team_member'
+      const hasParentWorkspace = Boolean(userProfile?.parent_id || (userProfile?.agency_id && myRole !== 'agency'))
+      const isTeamUser = myRole === 'agent' || myRole === 'team_member' || hasParentWorkspace
 
       let targetOwnerId = user.id
       if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
         targetOwnerId = impersonateId
-      } else if (isTeamUser && (userProfile?.parent_id || userProfile?.agency_id)) {
-        targetOwnerId = userProfile.parent_id || userProfile.agency_id || user.id
+      } else if (userProfile?.parent_id) {
+        targetOwnerId = userProfile.parent_id
+      } else if (userProfile?.agency_id && myRole !== 'agency') {
+        targetOwnerId = userProfile.agency_id
       }
 
       // Get workspace team IDs
@@ -531,17 +534,20 @@ export default function AnalyticsPage() {
       if (workspaceTeamIds.length === 0) workspaceTeamIds.push(targetOwnerId)
 
       // Build filter function
-      const activeAgentId = (!isTeamUser && selectedAgentId && selectedAgentId !== 'all') ? selectedAgentId : (isTeamUser ? user.id : null)
+      // If an agent is selected in dropdown, filter by that agent
+      // If the current user is an agent / team user and no agent is selected, scope to their own leads
+      const activeAgentId = (selectedAgentId && selectedAgentId !== 'all')
+        ? selectedAgentId
+        : ((myRole === 'agent' || myRole === 'team_member') ? user.id : (isTeamUser && !selectedAgentId ? user.id : null))
 
       let filterFn: (q: any) => any
-      if (isTeamUser && activeAgentId) {
-        filterFn = (q: any) => q.in('user_id', workspaceTeamIds).or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
-      } else if (activeAgentId && activeAgentId !== 'unassigned') {
+      if (activeAgentId && activeAgentId !== 'unassigned') {
         filterFn = (q: any) => q.in('user_id', workspaceTeamIds).or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
       } else if (activeAgentId === 'unassigned') {
         filterFn = (q: any) => q.is('assigned_to', null).in('user_id', workspaceTeamIds)
       } else {
-        filterFn = (q: any) => q.in('user_id', workspaceTeamIds)
+        const workspaceOrConditions = workspaceTeamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
+        filterFn = (q: any) => q.or(workspaceOrConditions)
       }
 
       // Parse custom_fields helper

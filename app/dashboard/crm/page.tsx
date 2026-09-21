@@ -894,7 +894,7 @@ export default function CRMPage() {
       setTargetUserId(targetUserId)
 
       // Build filter condition for direct Supabase queries
-      const isTeamUser = currentRole === 'agent' || currentRole === 'team_member'
+      const isTeamUser = currentRole === 'agent' || currentRole === 'team_member' || Boolean(parentId)
       let filterFn: (q: any) => any
 
       if (isTeamUser) {

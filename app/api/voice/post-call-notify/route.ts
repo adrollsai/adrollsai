@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     // 1. Fetch lead and profile
     const { data: lead, error: leadErr } = await supabaseAdmin
       .from('leads')
-      .select('id, name, phone, email, pipeline_stage, status, custom_fields, user_id, budget')
+      .select('id, name, phone, email, pipeline_stage, status, custom_fields, user_id, budget, source, ad_name, campaign_id, voice_campaign_id, notes, summary, voice_call_summary')
       .eq('id', leadId)
       .single()
 
@@ -48,7 +48,34 @@ export async function POST(req: Request) {
 
     const leadName = lead.name || 'Valued Prospect'
     const leadPhone = lead.phone || 'N/A'
-    const budgetVal = extractedBudget || lead.budget || lead.custom_fields?.budget || 'Not specified'
+
+    let cf = lead.custom_fields || {}
+    if (typeof cf === 'string') {
+      try { cf = JSON.parse(cf) } catch (e) {}
+    }
+
+    const budgetVal = extractedBudget || lead.budget || cf.budget || 'Not specified'
+
+    // Dynamically resolve voice campaign name if available
+    let voiceCampaignName = ''
+    if (lead.voice_campaign_id) {
+      try {
+        const { data: vCamp } = await supabaseAdmin
+          .from('voice_campaigns')
+          .select('name')
+          .eq('id', lead.voice_campaign_id)
+          .maybeSingle()
+        if (vCamp?.name) {
+          voiceCampaignName = vCamp.name
+        }
+      } catch (e) {}
+    }
+
+    // Resolve property and source/campaign context
+    const projectName = cf.interested_property || cf.property_type || cf.project_name || voiceCampaignName || ''
+    const propertyLabel = projectName || (ownerProfile?.business_name ? `${ownerProfile.business_name} Property` : 'Real Estate Inquiry')
+    const leadSource = lead.source || cf.source || 'Meta Ads'
+    const campaignName = cf.meta_ad_origin?.campaign_name || cf.campaign_name || voiceCampaignName || lead.ad_name || 'Campaign'
 
     let formattedAnswersStr = ''
     if (extractedAnswers && typeof extractedAnswers === 'object' && Object.keys(extractedAnswers).length > 0) {
@@ -91,10 +118,13 @@ export async function POST(req: Request) {
       await sendAdminMultiChannelNotification({
         ownerUserId,
         title: `🎙️ Site Visit / Appointment Booked: ${leadName}`,
-        body: `AI Voice Agent successfully scheduled an on-site visit/appointment with ${leadName}!\n\n📅 Date & Time: ${formattedSlotDate} (IST)\n📞 Phone: ${leadPhone}\n💰 Budget: ${budgetVal}\n${formattedAnswersStr ? `\n📋 Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
+        body: `AI Voice Agent successfully scheduled an on-site visit/appointment with ${leadName}!\n\n📅 Date & Time: ${formattedSlotDate} (IST)\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}\n${formattedAnswersStr ? `\n📋 Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
         url: `/dashboard/crm/${leadId}`,
         type: 'meeting_booked',
-        emailSubject: `🎙️ Site Visit / Appointment Booked: ${leadName} (${formattedSlotDate})`
+        leadPhone,
+        leadName,
+        leadId,
+        emailSubject: `🎙️ Site Visit / Appointment Booked: ${leadName} (${propertyLabel})`
       })
 
       console.log(`[POST-CALL NOTIFY] Sent Appointment Booked admin alert for lead ${leadId}`)
@@ -128,10 +158,13 @@ export async function POST(req: Request) {
       await sendAdminMultiChannelNotification({
         ownerUserId,
         title: `🔥 High-Interest Lead Alert: ${leadName}`,
-        body: `Prospect expressed strong interest in commercial properties during AI calling!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🔥 Priority: ${priorityLabel}\n💰 Budget: ${budgetVal}\n${formattedAnswersStr ? `\n📋 Qualification Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
+        body: `Prospect expressed genuine interest during AI calling!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🔥 Priority: ${priorityLabel}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}\n${formattedAnswersStr ? `\n📋 Qualification Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
         url: `/dashboard/crm/${leadId}`,
         type: 'lead_interested',
-        emailSubject: `🔥 High-Interest Lead Alert: ${leadName} (${priorityLabel}) - Mohali Aerocity`
+        leadPhone,
+        leadName,
+        leadId,
+        emailSubject: `🔥 High-Interest Lead Alert: ${leadName} (${priorityLabel}) - ${propertyLabel}`
       })
 
       console.log(`[POST-CALL NOTIFY] Sent Interested Lead admin alert for lead ${leadId}`)

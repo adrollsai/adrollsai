@@ -556,6 +556,9 @@ wss.on('connection', (wsConnection, req) => {
     const queryTelephony = urlObj?.searchParams?.get('telephony') || urlObj?.searchParams?.get('amp;telephony');
     const queryCallUuid = urlObj?.searchParams?.get('callUuid') || urlObj?.searchParams?.get('amp;callUuid') || urlObj?.searchParams?.get('call_uuid');
 
+    // Resolve host from the WebSocket upgrade request headers (needed for Vobiz recording callback URL)
+    const wsHost = req.headers['x-forwarded-host'] || req.headers.host || process.env.VOICE_BRIDGE_HOST || 'gemini-voice-bridge-805895515412.us-central1.run.app';
+
     let isVobiz = queryTelephony === 'vobiz';
     let vobizStreamId = null;
     let vobizCallId = queryCallUuid || null;
@@ -679,7 +682,7 @@ wss.on('connection', (wsConnection, req) => {
                     if (vobizCallId) {
                         const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
                         const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
-                        const statusCallbackUrl = `https://${host}/vobiz-status?leadId=${leadId}`;
+                        const statusCallbackUrl = `https://${wsHost}/vobiz-status?leadId=${leadId}`;
                         fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Call/${vobizCallId}/Record/`, {
                             method: 'POST',
                             headers: {
@@ -1168,9 +1171,6 @@ ${genderGrammarInstruction}
 ${renderedCustomPrompt}
 
 ${qualifyingInstruction}
-
-${sourceInstructions}
-${contextInstruction}
 ${resolvedQuestionsInstruction}
 
 --- LEAD & BUSINESS CONTEXT ---
@@ -1822,12 +1822,121 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                     console.error('[BRIDGE] Auto-analysis failed:', sumErr);
                 }
 
+                // ──────────────────────────────────────────────────────────
+                // VOBIZ RECORDING FETCH: Actively fetch, download & upload
+                // the call recording from Vobiz Recording API.
+                // ──────────────────────────────────────────────────────────
+                let freshRecordingUrl = null;
+
+                // Step 1: Check if Vobiz status callback already saved a recording URL to the lead
+                try {
+                    const { data: freshLead } = await supabaseAdmin
+                        .from('leads')
+                        .select('voice_recording_url')
+                        .eq('id', leadId)
+                        .single();
+                    freshRecordingUrl = freshLead?.voice_recording_url || null;
+                } catch (freshErr) {
+                    console.warn('[BRIDGE] Failed to re-fetch fresh lead recording URL:', freshErr);
+                }
+
+                // Step 2: If no recording URL yet AND this is a Vobiz call, actively fetch from Vobiz Recording API
+                if (!freshRecordingUrl && isVobiz && vobizCallId) {
+                    console.log(`[BRIDGE] No recording URL found yet for Vobiz call ${vobizCallId}. Actively fetching from Vobiz Recording API...`);
+                    const recAuthId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+                    const recAuthToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+
+                    for (let recAttempt = 1; recAttempt <= 3; recAttempt++) {
+                        try {
+                            // Wait for Vobiz to finalize audio processing (3s first attempt, 5s subsequent)
+                            const waitMs = recAttempt === 1 ? 3000 : 5000;
+                            await new Promise(r => setTimeout(r, waitMs));
+
+                            const recListUrl = `https://api.vobiz.ai/api/v1/Account/${recAuthId}/Recording/?call_uuid=${vobizCallId}&limit=10`;
+                            const recListRes = await fetch(recListUrl, {
+                                headers: {
+                                    'X-Auth-ID': recAuthId,
+                                    'X-Auth-Token': recAuthToken
+                                }
+                            });
+
+                            if (recListRes.ok) {
+                                const recListData = await recListRes.json().catch(() => ({}));
+                                const objects = recListData.objects || (recListData.recording_url ? [recListData] : []);
+                                
+                                let bestBuffer = null;
+                                let bestRecUrl = null;
+
+                                for (const recObj of objects) {
+                                    const vobizRecUrl = recObj?.recording_url || recObj?.url || recObj?.mp3_url || null;
+                                    if (!vobizRecUrl) continue;
+                                    try {
+                                        const audioRes = await fetch(vobizRecUrl, {
+                                            headers: {
+                                                'X-Auth-ID': recAuthId,
+                                                'X-Auth-Token': recAuthToken
+                                            }
+                                        });
+                                        if (audioRes.ok) {
+                                            const buf = Buffer.from(await audioRes.arrayBuffer());
+                                            if (buf.byteLength > 5000 && (!bestBuffer || buf.byteLength > bestBuffer.byteLength)) {
+                                                bestBuffer = buf;
+                                                bestRecUrl = vobizRecUrl;
+                                            }
+                                        }
+                                    } catch (dErr) {}
+                                }
+
+                                if (bestBuffer && bestRecUrl) {
+                                    console.log(`[BRIDGE] Found valid Vobiz recording (${bestBuffer.byteLength} bytes) on attempt ${recAttempt}: ${bestRecUrl}. Uploading...`);
+                                    const storagePath = `${leadId}/vobiz_${vobizCallId}_${Date.now()}.mp3`;
+
+                                    const { error: uploadErr } = await supabaseAdmin.storage
+                                        .from('lead-voice-recordings')
+                                        .upload(storagePath, bestBuffer, {
+                                            contentType: 'audio/mpeg',
+                                            upsert: true
+                                        });
+
+                                    if (!uploadErr) {
+                                        const { data: pubData } = supabaseAdmin.storage
+                                            .from('lead-voice-recordings')
+                                            .getPublicUrl(storagePath);
+                                        freshRecordingUrl = pubData?.publicUrl || null;
+                                        console.log(`[BRIDGE] ✅ Vobiz recording uploaded to Supabase for lead ${leadId}: ${freshRecordingUrl}`);
+                                    } else {
+                                        console.warn('[BRIDGE] Supabase storage upload error for Vobiz recording:', uploadErr);
+                                        freshRecordingUrl = bestRecUrl;
+                                    }
+                                    break; // Successfully got recording, stop retrying
+                                } else {
+                                    console.log(`[BRIDGE] Vobiz recording not ready yet (attempt ${recAttempt}/3). Retrying...`);
+                                }
+                            } else {
+                                console.warn(`[BRIDGE] Vobiz Recording API returned ${recListRes.status} on attempt ${recAttempt}`);
+                            }
+                        } catch (recFetchErr) {
+                            console.warn(`[BRIDGE] Vobiz recording fetch attempt ${recAttempt} error:`, recFetchErr.message);
+                        }
+                    }
+
+                    if (!freshRecordingUrl) {
+                        console.warn(`[BRIDGE] ⚠️ Could not retrieve Vobiz recording after 3 attempts for call ${vobizCallId}`);
+                    }
+                }
+
                 // Build lead update payload with summary, transcript, stage transition, and qualification answers
                 const updatePayload = {
                     voice_call_status: 'completed',
                     voice_call_summary: summary,
                     voice_call_transcript: mergedTurns
                 };
+
+                // Attach recording URL to lead if available
+                if (freshRecordingUrl) {
+                    updatePayload.voice_recording_url = freshRecordingUrl;
+                    console.log(`[BRIDGE] Recording URL attached to lead ${leadId}: ${freshRecordingUrl}`);
+                }
 
                 // Merge extracted answers into lead.custom_fields
                 let currentCf = lead?.custom_fields || {};
@@ -2029,7 +2138,7 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                 // Insert into Supabase lead_history
                 const historyData = {
                     summary,
-                    recording_url: lead?.voice_recording_url || null,
+                    recording_url: freshRecordingUrl || lead?.voice_recording_url || null,
                     transcript: mergedTurns
                 };
 

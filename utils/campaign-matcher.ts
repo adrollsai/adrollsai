@@ -78,18 +78,17 @@ export function matchesCampaignRule(
 
   // 0. LEAD SOURCE MATCHING (Housing.com, 99 Acres, Facebook, WhatsApp, etc.)
   if (leadSourceNorm) {
+    const cleanLeadSrc = leadSourceNorm.replace(/[\s.-]/g, '').replace(/leads?$/i, '');
+    const cleanRuleSrc = ruleNorm.replace(/[\s.-]/g, '').replace(/leads?$/i, '');
+
     if (isExplicitSource) {
       if (leadSourceNorm === ruleNorm) return true;
-      const cleanLeadSrc = leadSourceNorm.replace(/[\s.-]/g, '');
-      const cleanRuleSrc = ruleNorm.replace(/[\s.-]/g, '');
       if (cleanLeadSrc && cleanRuleSrc && (cleanLeadSrc === cleanRuleSrc || cleanLeadSrc.includes(cleanRuleSrc) || cleanRuleSrc.includes(cleanLeadSrc))) {
         return true;
       }
     } else if (!isExplicitForm && !isExplicitCamp) {
       if (leadSourceNorm === ruleNorm) return true;
-      const cleanLeadSrc = leadSourceNorm.replace(/[\s.-]/g, '');
-      const cleanRuleSrc = ruleNorm.replace(/[\s.-]/g, '');
-      if (cleanLeadSrc && cleanRuleSrc && cleanLeadSrc === cleanRuleSrc) {
+      if (cleanLeadSrc && cleanRuleSrc && (cleanLeadSrc === cleanRuleSrc || cleanLeadSrc.includes(cleanRuleSrc) || cleanRuleSrc.includes(cleanLeadSrc))) {
         return true;
       }
     }
