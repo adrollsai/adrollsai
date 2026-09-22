@@ -3124,6 +3124,13 @@ CRITICAL CONVERSATIONAL RULES:
                                          return;
                                      }
 
+                                     // Bypass automated auto-replies / greetings from other business WhatsApp accounts to prevent bot-to-bot reply loops
+                                     const isAutoGreeting = /^(thank you for (contacting|reaching out|messaging|your message)|welcome to|we('re| are) (currently )?unavailable|we will (respond|reply) as soon as|we are at your service|greetings from|shukran|شكرًا|how may (i|we) assist|please let us know how we can (help|assist)|agents are waiting|to assist you better|to assist you with your|in order to assist you|not registered in our system|hi, what is your name|if you have a legal inquiry|we have demand of \d+\+|select the type of .* visa|reply with the number of the service|good day.*thank you for reaching out)/i.test((messageText || '').trim());
+                                     if (isAutoGreeting) {
+                                         console.log(`[Flow] Logged automated business greeting to CRM, skipping automated bot response for ${cleanFrom}: "${(messageText || '').slice(0, 80)}"`);
+                                         return;
+                                     }
+
                                       // 1. Dynamic User-Configured Automation Flows (ChatbotX Engine)
                                       try {
                                           const flowResult = await executeFlowRunner({
@@ -3525,7 +3532,11 @@ CRITICAL CONVERSATIONAL RULES:
                                         (ownerBusinessName || '').toLowerCase().includes('nobogent') ||
                                         (ownerBusinessName || '').toLowerCase().includes('adrolls');
 
-                                    // Helper: Send 3-Button Standard Action Menu (tailored for Real Estate vs Nobogent Platform)
+                                    const isPipixelAccount = 
+                                        ownerUserId === 'c7bede84-d7ea-4b02-bbbb-017d24a37914' ||
+                                        (ownerBusinessName || '').toLowerCase().includes('pipixel');
+
+                                    // Helper: Send 3-Button Standard Action Menu (tailored for Real Estate vs Nobogent Platform vs PiPixel)
                                     const sendThreeButtons = async (promptText = "What would you like to do?") => {
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
@@ -3533,6 +3544,10 @@ CRITICAL CONVERSATIONAL RULES:
                                                 { type: 'reply', reply: { id: 'view_properties', title: 'Explore Nobogent' } },
                                                 { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Expert' } },
                                                 { type: 'reply', reply: { id: 'book_appointment', title: 'Book Strategy Call' } }
+                                            ] : isPipixelAccount ? [
+                                                { type: 'reply', reply: { id: 'claim_trial', title: 'Claim Free Trial' } },
+                                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Specialist' } },
+                                                { type: 'reply', reply: { id: 'book_appointment', title: 'Schedule a Call' } }
                                             ] : [
                                                 { type: 'reply', reply: { id: 'view_properties', title: 'View properties' } },
                                                 { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to an expert' } },
@@ -3645,7 +3660,7 @@ RULES:
                                             // Send AI answer as clear message
                                             await sendTextMessage(aiReply);
                                             
-                                            if (!skipActionButtons) {
+                                            if (!skipActionButtons && !isPipixelAccount) {
                                                 await new Promise(r => setTimeout(r, 150));
                                                 
                                                 // Send 3 action buttons for easy next steps
@@ -3653,7 +3668,7 @@ RULES:
                                             }
                                         } catch (err) {
                                             console.error('[Customer AI] Failed to generate AI reply:', err);
-                                            if (!skipActionButtons) {
+                                            if (!skipActionButtons && !isPipixelAccount) {
                                                 await sendThreeButtons("What would you like to do next?");
                                             }
                                         }
@@ -4103,7 +4118,7 @@ RULES:
                                                 { index: 1, key: 'monthly_leads', question: 'Approximately how many leads do you receive per month?', options: ['Under 50', '50–200', '200+'] },
                                                 { index: 2, key: 'readiness', question: 'When would you be ready to implement Nobogent AI to scale your sales?', options: ['Immediate', 'This week', 'Next week'] }
                                             );
-                                        } else {
+                                        } else if (!isPipixelAccount) {
                                             parsedQuestionsList.push(
                                                 { index: 0, key: 'property_type', question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
                                                 { index: 1, key: 'budget', question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
@@ -4154,6 +4169,11 @@ RULES:
                                                 "Explore Nobogent 🚀",
                                                 catalogueLink
                                             );
+                                        } else if (isPipixelAccount) {
+                                            await sendTextMessage(
+                                                cleanedName ? `Thank you, ${cleanedName}! 🎉 Our PiPixel specialist will connect with you shortly to share details about our marketing systems and free trial.` : "Thank you! 🎉 Our PiPixel specialist will connect with you shortly to share details about our marketing systems and free trial."
+                                            );
+                                            return;
                                         } else {
                                             await sendCtaUrlMessage(
                                                 cleanedName ? `🎁 Tailored Catalog for ${cleanedName}` : "🏢 Your Curated Details",
@@ -4218,6 +4238,8 @@ RULES:
                                         const greeting = validName ? `Thank you, ${validName}! 🎉` : `Thank you! 🎉`;
                                         const ackText = isNobogentAccount
                                             ? `${greeting} Great to connect with you. Please let us know if you would like a live walkthrough or demo of Nobogent.`
+                                            : isPipixelAccount
+                                            ? `${greeting} Great to connect with you. Please let us know if you would like to claim your free trial or speak with a marketing specialist.`
                                             : `${greeting} Great to connect with you. Please let us know if you have any questions or would like to schedule a visit.`;
 
                                         await sendTextMessage(ackText);
@@ -4247,6 +4269,10 @@ RULES:
                                     // 3. Action Button 1: "View properties"
                                     const isViewProperties = buttonReplyId === 'view_properties' || /view propert|view product|explore propert|catalog|listings/i.test(messageText);
                                     if (isViewProperties) {
+                                        if (isPipixelAccount) {
+                                            console.log(`[WhatsApp Bot] PiPixel lead ${cleanFrom} sent view_properties/listings keyword. Bypassing real estate catalog.`);
+                                            return;
+                                        }
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "View properties".`);
                                         await syncFieldsAndScore({ view_properties_clicked: true });
                                         if (isNobogentAccount) {
@@ -4604,8 +4630,8 @@ RULES:
                                         }
 
                                         // 6. Default Fallback for New or In-Progress Leads (NON-instant form leads only):
-                                        // Check if any configured question is unanswered (only if session is active and not stale)
-                                        const unansweredQ = (!isInstantFormLead && !isStaleSession) ? parsedQuestionsList.find(q => !currentCustomFields[q.key]) : null;
+                                        // Check if any configured question is unanswered (only if session is active, qualification enabled, and not PiPixel)
+                                        const unansweredQ = (!isInstantFormLead && !isStaleSession && !isPipixelAccount && ownerQualifyingEnabled) ? parsedQuestionsList.find(q => !currentCustomFields[q.key]) : null;
                                         if (unansweredQ) {
                                             // If starting question 1, send encouraging lead magnet intro
                                             if (unansweredQ.index === 0 && Object.keys(currentCustomFields).filter(k => k !== 'lead_score' && k !== 'lead_tier').length === 0) {
@@ -4620,7 +4646,7 @@ RULES:
                                         }
 
                                         // If all questions are answered but name not yet asked (NON-instant form leads only, and only if qualification is enabled and not completed yet)
-                                        if (!isInstantFormLead && ownerQualifyingEnabled && !currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
+                                        if (!isInstantFormLead && !isPipixelAccount && ownerQualifyingEnabled && !currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
                                             await syncFieldsAndScore({ awaiting_lead_name: true });
                                             const namePrompt = isNobogentAccount
                                                 ? "Great! 🎉 To share your personalized Nobogent platform walkthrough & access details, may I know your good name please?"
@@ -4633,6 +4659,11 @@ RULES:
                                         const isGreeting = /^(hi|hello|hey|namaste|good morning|good afternoon|good evening|start|menu)$/i.test(messageText.trim().toLowerCase());
                                         if (isGreeting) {
                                             const leadDisplayName = chat.recipient_name || latestLead?.name;
+                                            if (isPipixelAccount) {
+                                                const greetingText = `Hello${leadDisplayName ? ' ' + leadDisplayName : ''}! 👋 Welcome to *PiPixel*. We help immigration and study-abroad businesses scale with high-converting marketing & client acquisition systems.\n\nHow can we assist you today?`;
+                                                await sendTextMessage(greetingText);
+                                                return;
+                                            }
                                             const greetingText = `Hello${leadDisplayName ? ' ' + leadDisplayName : ''}! 👋 Welcome to *${ownerBusinessName || 'our team'}*. How can we assist you today?`;
                                             await sendThreeButtons(greetingText);
                                             return;
