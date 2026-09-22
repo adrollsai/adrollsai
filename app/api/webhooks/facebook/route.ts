@@ -3536,23 +3536,49 @@ CRITICAL CONVERSATIONAL RULES:
                                         ownerUserId === 'c7bede84-d7ea-4b02-bbbb-017d24a37914' ||
                                         (ownerBusinessName || '').toLowerCase().includes('pipixel');
 
-                                    // Helper: Send 3-Button Standard Action Menu (tailored for Real Estate vs Nobogent Platform vs PiPixel)
+                                    // Check if this business actually sells properties (has entries in properties table)
+                                    const { count: propertiesCount } = await supabaseAdmin
+                                        .from('properties')
+                                        .select('id', { count: 'exact', head: true })
+                                        .eq('user_id', ownerUserId);
+                                    const hasProperties = (propertiesCount || 0) > 0;
+
+                                    // Helper: Send 3-Button Standard Action Menu (dynamic based on business type / industry)
                                     const sendThreeButtons = async (promptText = "What would you like to do?") => {
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
-                                            const threeButtonsList = isNobogentAccount ? [
-                                                { type: 'reply', reply: { id: 'view_properties', title: 'Explore Nobogent' } },
-                                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Expert' } },
-                                                { type: 'reply', reply: { id: 'book_appointment', title: 'Book Strategy Call' } }
-                                            ] : isPipixelAccount ? [
-                                                { type: 'reply', reply: { id: 'claim_trial', title: 'Claim Free Trial' } },
-                                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Specialist' } },
-                                                { type: 'reply', reply: { id: 'book_appointment', title: 'Schedule a Call' } }
-                                            ] : [
-                                                { type: 'reply', reply: { id: 'view_properties', title: 'View properties' } },
-                                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to an expert' } },
-                                                { type: 'reply', reply: { id: 'book_appointment', title: 'Book an appointment' } }
-                                            ];
+                                            let threeButtonsList: any[] = [];
+
+                                            if (Array.isArray(ownerButtons) && ownerButtons.length > 0) {
+                                                threeButtonsList = ownerButtons.slice(0, 3).map((b: any, idx: number) => ({
+                                                    type: 'reply',
+                                                    reply: { id: b.id || `btn_custom_${idx}`, title: String(b.title || b.text || 'Select').slice(0, 20) }
+                                                }));
+                                            } else if (isNobogentAccount) {
+                                                threeButtonsList = [
+                                                    { type: 'reply', reply: { id: 'view_properties', title: 'Explore Nobogent' } },
+                                                    { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Expert' } },
+                                                    { type: 'reply', reply: { id: 'book_appointment', title: 'Book Strategy Call' } }
+                                                ];
+                                            } else if (isPipixelAccount) {
+                                                threeButtonsList = [
+                                                    { type: 'reply', reply: { id: 'claim_trial', title: 'Claim Free Trial' } },
+                                                    { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Specialist' } },
+                                                    { type: 'reply', reply: { id: 'book_appointment', title: 'Schedule a Call' } }
+                                                ];
+                                            } else if (hasProperties) {
+                                                threeButtonsList = [
+                                                    { type: 'reply', reply: { id: 'view_properties', title: catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText.slice(0, 20) : 'View Properties' } },
+                                                    { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to an expert' } },
+                                                    { type: 'reply', reply: { id: 'book_appointment', title: 'Book an appointment' } }
+                                                ];
+                                            } else {
+                                                threeButtonsList = [
+                                                    { type: 'reply', reply: { id: 'view_properties', title: catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText.slice(0, 20) : 'Explore Services' } },
+                                                    { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Expert' } },
+                                                    { type: 'reply', reply: { id: 'book_appointment', title: 'Schedule a Call' } }
+                                                ];
+                                            }
 
                                             const payload = {
                                                 messaging_product: 'whatsapp',
@@ -4118,7 +4144,7 @@ RULES:
                                                 { index: 1, key: 'monthly_leads', question: 'Approximately how many leads do you receive per month?', options: ['Under 50', '50–200', '200+'] },
                                                 { index: 2, key: 'readiness', question: 'When would you be ready to implement Nobogent AI to scale your sales?', options: ['Immediate', 'This week', 'Next week'] }
                                             );
-                                        } else if (!isPipixelAccount) {
+                                        } else if (hasProperties) {
                                             parsedQuestionsList.push(
                                                 { index: 0, key: 'property_type', question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
                                                 { index: 1, key: 'budget', question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
@@ -4142,20 +4168,10 @@ RULES:
 
                                         // 2. Custom Link / Action CTA Button (e.g. Webinar, Calendly, Payment, Website, Brochure PDF)
                                         if (actionType === 'custom_link' && flowCompletionConfig?.url) {
-                                            const title = flowCompletionConfig.title?.trim() || `🔗 ${ownerBusinessName || 'Direct Access'}`;
-                                            const defaultBody = cleanedName 
-                                                ? `Thank you, ${cleanedName}! 🎉 Based on your responses, here is your link to proceed:`
-                                                : `Thank you! 🎉 Here is your direct access link:`;
-                                            let bodyText = (flowCompletionConfig.message && flowCompletionConfig.message.trim().length > 0)
-                                                ? flowCompletionConfig.message
-                                                : defaultBody;
-                                            if (cleanedName) {
-                                                bodyText = bodyText.replace(/\{name\}/gi, cleanedName);
-                                            }
-                                            const buttonText = (flowCompletionConfig.button_text && flowCompletionConfig.button_text.trim().length > 0)
-                                                ? flowCompletionConfig.button_text.slice(0, 20)
-                                                : "Proceed Now 🚀";
-                                            const linkUrl = flowCompletionConfig.url.trim();
+                                            const title = flowCompletionConfig.title || (cleanedName ? `🎁 Information for ${cleanedName}` : "Curated Details");
+                                            const bodyText = flowCompletionConfig.message || (cleanedName ? `Thank you, ${cleanedName}! Based on your preferences, here are your details:` : "Based on your preferences, here are your curated details:");
+                                            const buttonText = flowCompletionConfig.button_text || "View Details 🚀";
+                                            const linkUrl = flowCompletionConfig.url;
 
                                             await sendCtaUrlMessage(title, bodyText, buttonText, linkUrl);
                                             return;
@@ -4174,11 +4190,18 @@ RULES:
                                                 cleanedName ? `Thank you, ${cleanedName}! 🎉 Our PiPixel specialist will connect with you shortly to share details about our marketing systems and free trial.` : "Thank you! 🎉 Our PiPixel specialist will connect with you shortly to share details about our marketing systems and free trial."
                                             );
                                             return;
-                                        } else {
+                                        } else if (hasProperties) {
                                             await sendCtaUrlMessage(
                                                 cleanedName ? `🎁 Tailored Catalog for ${cleanedName}` : "🏢 Your Curated Details",
                                                 cleanedName ? `Thank you, ${cleanedName}! 🎉 Based on your requirements, here is your customized properties & inventory list with pricing and floor plans:` : "Here is your customized properties & inventory list with pricing and floor plans:",
-                                                "View Properties 🏢",
+                                                catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText : "View Properties 🏢",
+                                                catalogueLink
+                                            );
+                                        } else {
+                                            await sendCtaUrlMessage(
+                                                cleanedName ? `🎁 Information for ${cleanedName}` : `✨ ${ownerBusinessName || 'Our Offerings'}`,
+                                                cleanedName ? `Thank you, ${cleanedName}! 🎉 Here are the details tailored to your inquiry:` : "Here are the details tailored to your inquiry:",
+                                                catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText : "Learn More ✨",
                                                 catalogueLink
                                             );
                                         }
@@ -4240,7 +4263,9 @@ RULES:
                                             ? `${greeting} Great to connect with you. Please let us know if you would like a live walkthrough or demo of Nobogent.`
                                             : isPipixelAccount
                                             ? `${greeting} Great to connect with you. Please let us know if you would like to claim your free trial or speak with a marketing specialist.`
-                                            : `${greeting} Great to connect with you. Please let us know if you have any questions or would like to schedule a visit.`;
+                                            : hasProperties
+                                            ? `${greeting} Great to connect with you. Please let us know if you have any questions or would like to schedule a visit.`
+                                            : `${greeting} Great to connect with you. Please let us know how we can assist you today.`;
 
                                         await sendTextMessage(ackText);
 
@@ -4266,12 +4291,12 @@ RULES:
                                         return;
                                     }
 
-                                    // 3. Action Button 1: "View properties"
+                                    // 3. Action Button 1: "View properties" / "Explore Services"
                                     const isViewProperties = buttonReplyId === 'view_properties' || /view propert|view product|explore propert|catalog|listings/i.test(messageText);
                                     if (isViewProperties) {
                                         if (isPipixelAccount) {
-                                            console.log(`[WhatsApp Bot] PiPixel lead ${cleanFrom} sent view_properties/listings keyword. Bypassing real estate catalog.`);
-                                            return;
+                                             console.log(`[WhatsApp Bot] PiPixel lead ${cleanFrom} sent view_properties/listings keyword. Bypassing real estate catalog.`);
+                                             return;
                                         }
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "View properties".`);
                                         await syncFieldsAndScore({ view_properties_clicked: true });
@@ -4282,11 +4307,18 @@ RULES:
                                                 "Explore Nobogent 🚀",
                                                 catalogueLink
                                             );
-                                        } else {
+                                        } else if (hasProperties) {
                                             await sendCtaUrlMessage(
                                                 "🏢 Available Properties",
                                                 "Explore our latest premium properties catalog with pricing, layouts, and amenities:",
-                                                "View Properties 🏢",
+                                                catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText : "View Properties 🏢",
+                                                catalogueLink
+                                            );
+                                        } else {
+                                            await sendCtaUrlMessage(
+                                                `✨ ${ownerBusinessName || 'Our Offerings'}`,
+                                                "Explore our latest products, services, and solutions:",
+                                                catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText : "Explore More ✨",
                                                 catalogueLink
                                             );
                                         }
@@ -4315,7 +4347,7 @@ RULES:
                                         await syncFieldsAndScore({ connect_expert_clicked: true, requested_callback: true });
                                         
                                         // Confirm to lead
-                                        const specialistLabel = isNobogentAccount ? 'solutions specialist' : 'specialist';
+                                        const specialistLabel = isNobogentAccount ? 'solutions specialist' : hasProperties ? 'property advisor' : 'specialist';
                                         await sendTextMessage(`Thank you! Our ${specialistLabel} from ${ownerBusinessName || 'our team'} will reach out to you directly shortly. 🙏`);
                                         
                                         // Alert admin/agent via high-priority multi-channel notification
@@ -4620,7 +4652,9 @@ RULES:
                                                 await syncFieldsAndScore({ awaiting_lead_name: true });
                                                 const namePrompt = isNobogentAccount
                                                     ? "Great! 🎉 To share your personalized Nobogent platform walkthrough & access details, may I know your good name please?"
-                                                    : "Great! 🎉 To instantly send you our tailored inventory list & brochure matched to your preferences, may I know your good name please?";
+                                                    : hasProperties
+                                                    ? "Great! 🎉 To instantly send you our tailored inventory list & brochure matched to your preferences, may I know your good name please?"
+                                                    : "Great! 🎉 To share personalized information tailored to your requirements, may I know your good name please?";
                                                 await sendTextMessage(namePrompt);
                                                 return;
                                             } else {
@@ -4631,13 +4665,15 @@ RULES:
 
                                         // 6. Default Fallback for New or In-Progress Leads (NON-instant form leads only):
                                         // Check if any configured question is unanswered (only if session is active, qualification enabled, and not PiPixel)
-                                        const unansweredQ = (!isInstantFormLead && !isStaleSession && !isPipixelAccount && ownerQualifyingEnabled) ? parsedQuestionsList.find(q => !currentCustomFields[q.key]) : null;
+                                        const unansweredQ = (!isInstantFormLead && !isStaleSession && !isPipixelAccount && ownerQualifyingEnabled && parsedQuestionsList.length > 0) ? parsedQuestionsList.find(q => !currentCustomFields[q.key]) : null;
                                         if (unansweredQ) {
                                             // If starting question 1, send encouraging lead magnet intro
                                             if (unansweredQ.index === 0 && Object.keys(currentCustomFields).filter(k => k !== 'lead_score' && k !== 'lead_tier').length === 0) {
                                                 const introMsg = isNobogentAccount
                                                     ? "Hi! 👋 Please answer a few quick questions so we can share the right Nobogent AI automation solutions & live demo for your business: 🚀✨"
-                                                    : "Hi! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢";
+                                                    : hasProperties
+                                                    ? "Hi! 👋 Please answer a few quick questions so we can instantly send you a curated inventory list & brochure matched to your preferences: 🎁🏢"
+                                                    : "Hi! 👋 Please answer a few quick questions so we can assist you with the right details: ✨";
                                                 await sendTextMessage(introMsg);
                                                 await new Promise(r => setTimeout(r, 150));
                                             }
@@ -4646,11 +4682,13 @@ RULES:
                                         }
 
                                         // If all questions are answered but name not yet asked (NON-instant form leads only, and only if qualification is enabled and not completed yet)
-                                        if (!isInstantFormLead && !isPipixelAccount && ownerQualifyingEnabled && !currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
+                                        if (!isInstantFormLead && !isPipixelAccount && ownerQualifyingEnabled && parsedQuestionsList.length > 0 && !currentCustomFields?.qualification_completed && !currentCustomFields?.lead_name_captured && !currentCustomFields?.awaiting_lead_name) {
                                             await syncFieldsAndScore({ awaiting_lead_name: true });
                                             const namePrompt = isNobogentAccount
                                                 ? "Great! 🎉 To share your personalized Nobogent platform walkthrough & access details, may I know your good name please?"
-                                                : "Great! 🎉 To receive your tailored inventory list & brochure matched to your preferences, may I know your good name please?";
+                                                : hasProperties
+                                                ? "Great! 🎉 To receive your tailored inventory list & brochure matched to your preferences, may I know your good name please?"
+                                                : "Great! 🎉 To share personalized information tailored to your requirements, may I know your good name please?";
                                             await sendTextMessage(namePrompt);
                                             return;
                                         }
