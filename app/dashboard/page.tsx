@@ -715,7 +715,7 @@ export default function ProductsPage() {
     )
   })
 
-  const isAdminLike = ['super_admin', 'agency', 'admin', 'agent'].includes(role)
+  const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(role)
 
   // --- RENDER ---
   if (authError) return <div className="flex h-screen items-center justify-center"><button onClick={handleManualLogout} className="text-blue-600 font-bold bg-blue-50 px-6 py-3 rounded-full">Session Expired. Login Again</button></div>

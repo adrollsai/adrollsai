@@ -1,6 +1,7 @@
 import { warmupVoiceBridge } from '@/utils/voice-helper'
 import { hasEnoughCredits } from '@/utils/credits'
 import { VOBIZ_NUMBER_CATALOG, VobizAvailableNumber } from '@/utils/vobiz-catalog'
+import { computeValidCallingSlot } from '@/utils/calling-window'
 
 export { VOBIZ_NUMBER_CATALOG, type VobizAvailableNumber }
 
@@ -10,6 +11,7 @@ export interface VobizCallParams {
     toPhone: string
     campaignId?: string
     fromPhone?: string
+    allowAfterHours?: boolean
 }
 
 export interface VobizCallResult {
@@ -30,7 +32,39 @@ export async function triggerVobizOutboundCall(
     supabaseAdmin: any,
     params: VobizCallParams
 ): Promise<VobizCallResult> {
-    const { leadId, profileId, toPhone, campaignId, fromPhone } = params
+    const { leadId, profileId, toPhone, campaignId, fromPhone, allowAfterHours } = params
+
+    // 0. Strict Calling Hours Gatekeeper: 9:00 AM - 7:00 PM IST (09:00 - 19:00)
+    // Under NO circumstances may outbound calls dial between 7:00 PM and 9:00 AM IST.
+    const { isWithinWindow, scheduledTime } = computeValidCallingSlot(new Date(), 'Asia/Kolkata', !!allowAfterHours)
+    if (!isWithinWindow) {
+        console.warn(`[VOBIZ HELPER] Call to ${toPhone} BLOCKED: Outside allowed calling window (9:00 AM - 7:00 PM IST). Rescheduled for ${scheduledTime.toISOString()}.`)
+        if (leadId) {
+            await supabaseAdmin
+                .from('leads')
+                .update({
+                    voice_call_status: 'scheduled_callback',
+                    voice_call_scheduled_at: scheduledTime.toISOString()
+                })
+                .eq('id', leadId)
+
+            try {
+                await supabaseAdmin.from('lead_history').insert({
+                    lead_id: leadId,
+                    action_type: 'REMARK',
+                    description: `🕒 Outbound call blocked: Outside allowed calling window (9:00 AM - 7:00 PM IST). Rescheduled for ${scheduledTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST.`
+                })
+            } catch (hErr) {
+                console.error('[VOBIZ HELPER] Error writing history entry:', hErr)
+            }
+        }
+        return {
+            success: false,
+            scheduled: true,
+            scheduledTime,
+            error: 'Calling is strictly prohibited outside 9:00 AM - 7:00 PM IST. Call scheduled for next business window (9:00 AM IST).'
+        }
+    }
 
     // 1. Fetch user profile for subscription, credits, and concurrency limits
     const { data: profile, error: profErr } = await supabaseAdmin

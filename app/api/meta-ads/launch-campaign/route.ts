@@ -103,7 +103,7 @@ export async function POST(request: Request) {
 
     // --- Resolve profile data ---
     const { data: targetProfileData } = await supabaseAdmin.from('profiles')
-        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number')
+        .select('facebook_token, ad_account_id, selected_page_id, selected_page_token, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number')
         .eq('id', targetUserId)
         .single();
     const targetProfile: any = targetProfileData;
@@ -112,6 +112,14 @@ export async function POST(request: Request) {
         data.facebookToken = data.facebookToken || targetProfile.facebook_token;
         data.adAccountId = data.adAccountId || targetProfile.ad_account_id;
         data.pageId = data.pageId || targetProfile.selected_page_id;
+        if (!data.pageId && targetProfile.business_info) {
+            try {
+                const bi = typeof targetProfile.business_info === 'string' ? JSON.parse(targetProfile.business_info) : targetProfile.business_info;
+                if (Array.isArray(bi?.selected_pages) && bi.selected_pages.length > 0 && bi.selected_pages[0]?.id) {
+                    data.pageId = bi.selected_pages[0].id;
+                }
+            } catch (e) {}
+        }
         const targetBusinessUrl = targetProfile.custom_domain
             ? `https://${targetProfile.custom_domain}`
             : `https://app.nobogent.com/shared/${targetUserId}`;
@@ -335,7 +343,9 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         logoUrl: targetProfile?.logo_url || null,
         customInstructions: data.customInstructions || null,
         campaign_name: data.campaign_name || null,
-        adset_name: data.adset_name || null
+        adset_name: data.adset_name || null,
+        targetUserId,
+        selected_page_token: targetProfile?.selected_page_token || null
     };
 
     let jobId = null;

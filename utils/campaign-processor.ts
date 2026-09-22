@@ -536,16 +536,30 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
             // Obtain Page Access Token (Meta strictly requires Page Token for leadgen_forms)
             let pageAccessToken = payload.selected_page_token || payload.pageToken;
-            if (!pageAccessToken && (job?.user_id || payload.userId)) {
+            const effectiveTargetUserId = job?.target_user_id || payload.targetUserId || payload.target_user_id;
+            if (!pageAccessToken && effectiveTargetUserId) {
                 try {
                     const { data: prof } = await supabaseAdmin
                         .from('profiles')
                         .select('selected_page_token')
-                        .eq('id', job?.user_id || payload.userId)
+                        .eq('id', effectiveTargetUserId)
                         .single();
                     if (prof?.selected_page_token) pageAccessToken = prof.selected_page_token;
                 } catch (e) {}
             }
+
+            // Always resolve the dedicated Page Access Token directly for this pageId via Meta API using the active facebookToken
+            if (facebookToken && pageId) {
+                try {
+                    const pRes = await fetch(`${FB_MARKETING_URL}/${pageId}?fields=access_token&access_token=${facebookToken}`);
+                    const pData = await pRes.json();
+                    if (pData?.access_token) {
+                        pageAccessToken = pData.access_token;
+                        logToFile(`Resolved dedicated Page Access Token for page ${pageId}`);
+                    }
+                } catch (e) {}
+            }
+
             const tokenForLeadForm = pageAccessToken || facebookToken;
 
             // 1. Try to find an existing active lead form on this page first

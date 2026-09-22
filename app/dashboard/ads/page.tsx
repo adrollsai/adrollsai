@@ -610,7 +610,7 @@ export default function AdsPage() {
       // Resolve Target User ID
       const urlParams = new URLSearchParams(window.location.search)
       const impersonateId = urlParams.get('impersonate')
-      const { data: profile, error: profileErr } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency, pixel_id, whatsapp_phone_number, contact_number').eq('id', user.id).single()
+      const { data: profile, error: profileErr } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency, pixel_id, whatsapp_phone_number, contact_number, business_info').eq('id', user.id).single()
       if (profileErr) throw new Error("profileErr: " + profileErr.message)
       let targetUserId = user.id
       if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
@@ -636,7 +636,7 @@ export default function AdsPage() {
       if (targetUserId !== user.id) {
           const { data: tProf, error: tProfErr } = await supabase
             .from('profiles')
-            .select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency, pixel_id, whatsapp_phone_number, contact_number')
+            .select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency, pixel_id, whatsapp_phone_number, contact_number, business_info')
             .eq('id', targetUserId)
             .single()
           if (tProfErr) throw new Error("tProfErr: " + tProfErr.message)
@@ -657,14 +657,25 @@ export default function AdsPage() {
           ? `https://${targetProfile.custom_domain}` 
           : `${appOrigin}/shared/${targetUserId}`
           
+        // Resolve page ID with fallback to business_info.selected_pages
+        let effectivePageId = targetProfile.selected_page_id || ''
+        if (!effectivePageId && targetProfile.business_info) {
+          try {
+            const bi = typeof targetProfile.business_info === 'string' ? JSON.parse(targetProfile.business_info) : targetProfile.business_info
+            if (Array.isArray(bi?.selected_pages) && bi.selected_pages.length > 0 && bi.selected_pages[0]?.id) {
+              effectivePageId = bi.selected_pages[0].id
+            }
+          } catch (e) {}
+        }
+
         setAdForm(prev => ({
           ...prev, 
-          pageId: targetProfile.selected_page_id || '',
+          pageId: effectivePageId,
           linkUrl: (!prev.linkUrl || prev.linkUrl === 'https://nobogent.com' || prev.linkUrl === 'https://adrolls.in' || prev.linkUrl === '') ? catalogueUrl : prev.linkUrl
         }))
         setCustomDomain(targetProfile.custom_domain || '')
         if (targetProfile.ad_account_id && !force) {
-            checkAccountStatus(targetProfile.ad_account_id, targetProfile.selected_page_id)
+            checkAccountStatus(targetProfile.ad_account_id, effectivePageId)
         }
       }
       setTargetUserId(targetUserId)
@@ -1814,7 +1825,14 @@ export default function AdsPage() {
 
   const handleLaunchCampaign = async () => {
     if (isSubmitting) return
-    if (!adForm.pageId || !selectedAdAccountId) { alert("Missing Profile data."); return }
+    if (!selectedAdAccountId) {
+      toast.error("Meta Ad Account not found. Please connect or select your Ad Account in Profile Settings.");
+      return;
+    }
+    if (!adForm.pageId) {
+      toast.error("Facebook Page not connected. Please connect and select your Facebook Page in Profile Settings.");
+      return;
+    }
     
     const activeProducts = selectedProducts.length > 0 ? selectedProducts : (selectedProduct ? [selectedProduct] : []);
     // Product selection from inventory is now optional

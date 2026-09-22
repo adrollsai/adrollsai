@@ -160,6 +160,20 @@ async function runFarmhouseCampaign() {
       break;
     }
 
+    // Strict Calling Hours Guard: strictly 9:00 AM - 7:00 PM IST
+    const nowIst = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hourCycle: 'h23',
+      hour: 'numeric',
+      minute: 'numeric'
+    }).format(new Date());
+    const [h, m] = nowIst.split(':').map(Number);
+    const mins = h * 60 + m;
+    if (mins < 9 * 60 || mins >= 19 * 60) {
+      console.log(`[CALLING HOURS GUARD] Current time is ${nowIst} IST. Strictly prohibited from calling outside 9:00 AM - 7:00 PM IST. Halting runner.`);
+      break;
+    }
+
     const lead = pendingLeads[i];
     console.log(`--------------------------------------------------------`);
     console.log(`[PROGRESS ${i + 1}/${pendingLeads.length}] Calling Farmhouse Lead: ${lead.name} (${lead.phone})`);
@@ -284,32 +298,45 @@ async function runFarmhouseCampaign() {
       console.log(`[TRANSCRIPT PREVIEW] Last Turn: "${transcript[transcript.length - 1]?.message}"`);
     }
 
-    // Automatic Admin Notification for Interested / Booked leads
+    // Automatic Admin Notification for Interested / Booked leads (Safety Fallback)
     if (finalStatus === 'completed' && finalLead) {
       const summaryText = (finalLead.voice_call_summary || '').toLowerCase();
-      const isNotInterested = summaryText.includes('not interested') || summaryText.includes('disinterest') || summaryText.includes('no interest') || summaryText.includes('accidental');
+      const isNotInterested = summaryText.includes('not interested') || summaryText.includes('disinterest') || summaryText.includes('no interest') || summaryText.includes('accidental') || summaryText.includes('unqualified and cold') || summaryText.includes('cold');
       const isInterested = !isNotInterested && (summaryText.includes('interested') || summaryText.includes('inquired') || summaryText.includes('looking for') || summaryText.includes('rates') || summaryText.includes('plot sizes') || summaryText.includes('location'));
       const isBooked = summaryText.includes('booked') || summaryText.includes('scheduled a visit') || summaryText.includes('site visit confirmed');
 
       if (isBooked || isInterested) {
-        console.log(`[ADMIN NOTIFY] 🔔 Triggering multi-channel admin alert for ${lead.name} (${isBooked ? 'Appointment Booked' : 'High-Interest Lead'})...`);
-        try {
-          await fetch('https://app.nobogent.com/api/voice/post-call-notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              leadId: lead.id,
-              profileId: userId,
-              isQualified: true,
-              leadPriority: isBooked ? 'HOT' : 'HOT',
-              bookingTime: isBooked ? new Date(Date.now() + 48 * 3600 * 1000).toISOString() : null,
-              summary: finalLead.voice_call_summary || '',
-              skipProspectWhatsApp: true
-            })
-          });
-          console.log(`[ADMIN NOTIFY] ✅ Admin notified successfully for ${lead.name}`);
-        } catch (nErr) {
-          console.warn('[ADMIN NOTIFY ERROR]', nErr.message);
+        // Prevent duplicate if voice-bridge already dispatched within the last 2 minutes
+        const { data: existingNotifs } = await supabase
+          .from('notifications')
+          .select('id')
+          .eq('user_id', userId)
+          .ilike('action_link', `%${lead.id}%`)
+          .gt('created_at', new Date(Date.now() - 120000).toISOString())
+          .limit(1);
+
+        if (!existingNotifs || existingNotifs.length === 0) {
+          console.log(`[ADMIN NOTIFY] 🔔 Triggering multi-channel admin alert for ${lead.name} (${isBooked ? 'Appointment Booked' : 'High-Interest Lead'})...`);
+          try {
+            await fetch('https://app.nobogent.com/api/voice/post-call-notify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                leadId: lead.id,
+                profileId: userId,
+                isQualified: true,
+                leadPriority: isBooked ? 'HOT' : 'HOT',
+                bookingTime: isBooked ? new Date(Date.now() + 48 * 3600 * 1000).toISOString() : null,
+                summary: finalLead.voice_call_summary || '',
+                skipProspectWhatsApp: true
+              })
+            });
+            console.log(`[ADMIN NOTIFY] ✅ Admin notified successfully for ${lead.name}`);
+          } catch (nErr) {
+            console.warn('[ADMIN NOTIFY ERROR]', nErr.message);
+          }
+        } else {
+          console.log(`[ADMIN NOTIFY] ℹ️ Multi-channel alert already dispatched by voice-bridge for ${lead.name}. Skipping duplicate.`);
         }
       }
     }

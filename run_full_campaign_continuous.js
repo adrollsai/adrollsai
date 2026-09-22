@@ -175,7 +175,21 @@ async function runContinuousCampaign() {
       .single();
 
     if (currentCamp?.status === 'paused' || currentCamp?.status === 'draft') {
-      console.log(`[CAMPAIGN PAUSED] User changed campaign status to "${currentCamp.status}". Halting runner gracefully.`);
+      console.log(`[CAMPAIGN PAUSED] User changed campaign status to "${currentCamp.status}". Halting runner.`);
+      break;
+    }
+
+    // Strict Calling Hours Guard: strictly 9:00 AM - 7:00 PM IST
+    const nowIst = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hourCycle: 'h23',
+      hour: 'numeric',
+      minute: 'numeric'
+    }).format(new Date());
+    const [h, m] = nowIst.split(':').map(Number);
+    const mins = h * 60 + m;
+    if (mins < 9 * 60 || mins >= 19 * 60) {
+      console.log(`[CALLING HOURS GUARD] Current time is ${nowIst} IST. Strictly prohibited from calling outside 9:00 AM - 7:00 PM IST. Halting runner.`);
       break;
     }
 

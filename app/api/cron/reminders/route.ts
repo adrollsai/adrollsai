@@ -151,31 +151,36 @@ export async function GET(request: Request) {
     // 2. Dispatch Automated Outbound Calls for WhatsApp qualification drop-offs & scheduled retries
     let voiceDispatchedCount = 0
     if (voiceLeadsToCall && voiceLeadsToCall.length > 0) {
-      const { triggerOutboundCall } = await import('@/utils/voice-helper')
-      for (const vLead of voiceLeadsToCall) {
-        try {
-          const cf = parseCustomFields(vLead.custom_fields)
-          // If already qualified on WhatsApp in the meantime, cancel call and skip
-          if (cf?.qualification_completed) {
+      const { isWithinCallingWindow } = await import('@/utils/calling-window')
+      if (!isWithinCallingWindow('Asia/Kolkata')) {
+        console.log('[Reminders Cron] Outside calling window (9 AM - 7 PM IST). Skipping voice call reminders.')
+      } else {
+        const { triggerOutboundCall } = await import('@/utils/voice-helper')
+        for (const vLead of voiceLeadsToCall) {
+          try {
+            const cf = parseCustomFields(vLead.custom_fields)
+            // If already qualified on WhatsApp in the meantime, cancel call and skip
+            if (cf?.qualification_completed) {
+              await supabaseAdmin.from('leads').update({
+                voice_call_scheduled_at: null,
+                voice_call_status: 'qualified_via_whatsapp'
+              }).eq('id', vLead.id)
+              continue
+            }
+
+            // Clear scheduled_at first to prevent race condition re-dials
             await supabaseAdmin.from('leads').update({
-              voice_call_scheduled_at: null,
-              voice_call_status: 'qualified_via_whatsapp'
+              voice_call_scheduled_at: null
             }).eq('id', vLead.id)
-            continue
-          }
 
-          // Clear scheduled_at first to prevent race condition re-dials
-          await supabaseAdmin.from('leads').update({
-            voice_call_scheduled_at: null
-          }).eq('id', vLead.id)
-
-          console.log(`[Reminders Cron] Triggering outbound AI call for lead ${vLead.id} (${vLead.name || vLead.phone})...`)
-          const callRes = await triggerOutboundCall(supabaseAdmin, vLead.id, vLead.user_id, true, vLead.campaign_id)
-          if (callRes?.success || callRes?.scheduled) {
-            voiceDispatchedCount++
+            console.log(`[Reminders Cron] Triggering outbound AI call for lead ${vLead.id} (${vLead.name || vLead.phone})...`)
+            const callRes = await triggerOutboundCall(supabaseAdmin, vLead.id, vLead.user_id, true, vLead.campaign_id)
+            if (callRes?.success || callRes?.scheduled) {
+              voiceDispatchedCount++
+            }
+          } catch (vErr) {
+            console.error(`[Reminders Cron] Failed to trigger voice call for lead ${vLead.id}:`, vErr)
           }
-        } catch (vErr) {
-          console.error(`[Reminders Cron] Failed to trigger voice call for lead ${vLead.id}:`, vErr)
         }
       }
     }

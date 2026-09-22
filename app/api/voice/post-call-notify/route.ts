@@ -15,7 +15,9 @@ export async function POST(req: Request) {
       leadId,
       profileId,
       bookingTime,
+      callbackTime,
       isQualified,
+      isInterested,
       leadPriority,
       summary = '',
       extractedAnswers = {},
@@ -137,8 +139,9 @@ export async function POST(req: Request) {
       })
     }
 
-    // CASE 2: Prospect showed interest (Qualified / HOT / WARM) without fixed appointment slot
-    const hasClearInterest = isQualified || leadPriority === 'HOT' || leadPriority === 'WARM' || Object.keys(extractedAnswers || {}).length > 0
+    // CASE 2: Prospect showed genuine interest (Must be explicitly qualified AND interested, or marked HOT)
+    // STRICT RULE: If the prospect asked for a callback, had no budget, or was not genuinely interested, DO NOT send a high-interest alert!
+    const hasClearInterest = !bookingTime && isInterested === true && (isQualified === true || leadPriority === 'HOT')
 
     if (hasClearInterest) {
       // Transition CRM stage to 'Interested' if currently 'New' or 'New Lead'
@@ -173,6 +176,26 @@ export async function POST(req: Request) {
         success: true,
         action: 'interest_notified',
         leadPriority: priorityLabel,
+        leadId
+      })
+    }
+
+    // CASE 3: Prospect requested a callback at a specific time
+    if (callbackTime) {
+      let cbDate = new Date(callbackTime)
+      const formattedCbDate = !isNaN(cbDate.getTime())
+        ? cbDate.toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            dateStyle: 'medium',
+            timeStyle: 'short'
+          })
+        : callbackTime
+
+      console.log(`[POST-CALL NOTIFY] Callback requested for lead ${leadId} at ${formattedCbDate}. No high-interest alarm needed.`)
+      return NextResponse.json({
+        success: true,
+        action: 'callback_noted',
+        callbackTime,
         leadId
       })
     }

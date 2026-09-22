@@ -39,6 +39,18 @@ async function handleVoiceCallerDispatcher(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Strict Calling Hours Gatekeeper: 9:00 AM - 7:00 PM IST (09:00 - 19:00)
+    // Automated campaigns and scheduled dispatches MUST NOT run between 7 PM and 9 AM IST.
+    const { isWithinCallingWindow } = await import('@/utils/calling-window')
+    if (!isWithinCallingWindow('Asia/Kolkata')) {
+      console.log('[Voice Caller Dispatcher] Outside calling window (9:00 AM - 7:00 PM IST). Skipping all automated call dispatches.')
+      return NextResponse.json({
+        success: true,
+        message: 'Outside business calling hours (9:00 AM - 7:00 PM IST). No calls dispatched.',
+        dispatchedCount: 0
+      })
+    }
+
     // 1. Auto-resume and process active running bulk campaigns
     const { data: runningCampaigns } = await supabaseAdmin
       .from('voice_campaigns')

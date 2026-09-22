@@ -39,74 +39,9 @@ export async function warmupVoiceBridge(leadId?: string, profileId?: string, cam
 }
 
 
-/**
- * Computes whether a target time is within the allowed calling window (9:00 AM - 7:00 PM local time).
- * If outside the window, returns the next valid 9:00 AM working morning slot.
- */
-export function computeValidCallingSlot(
-    targetDate: Date = new Date(),
-    timeZone: string = 'Asia/Kolkata',
-    allowAfterHours: boolean = false
-): { isWithinWindow: boolean; scheduledTime: Date } {
-    if (allowAfterHours) {
-        return { isWithinWindow: true, scheduledTime: targetDate };
-    }
+import { computeValidCallingSlot, isWithinCallingWindow } from '@/utils/calling-window'
+export { computeValidCallingSlot, isWithinCallingWindow }
 
-    const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone,
-        hour: 'numeric',
-        minute: 'numeric',
-        hour12: false
-    });
-    const formattedStr = formatter.format(targetDate);
-    const [hStr, mStr] = formattedStr.split(':');
-    const hourVal = parseInt(hStr, 10);
-    const minuteVal = parseInt(mStr, 10);
-    
-    const timeInMinutes = hourVal * 60 + minuteVal;
-    const startMinutes = 9 * 60;     // 9:00 AM
-    const endMinutes = 19 * 60;      // 7:00 PM (19:00)
-
-    const isWithinWindow = timeInMinutes >= startMinutes && timeInMinutes < endMinutes;
-    if (isWithinWindow) {
-        return { isWithinWindow: true, scheduledTime: targetDate };
-    }
-
-    // Outside 9 AM - 7 PM -> schedule for next valid 9:00 AM
-    const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone,
-        year: 'numeric',
-        month: 'numeric',
-        day: 'numeric',
-        hour: 'numeric',
-        hour12: false
-    }).formatToParts(targetDate);
-    const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-    
-    const year = parseInt(partMap.year, 10);
-    const month = parseInt(partMap.month, 10) - 1;
-    const day = parseInt(partMap.day, 10);
-    const hour = parseInt(partMap.hour, 10);
-    
-    let targetDay = day;
-    if (hour >= 19) {
-        // After 7 PM -> schedule for tomorrow 9 AM
-        targetDay += 1;
-    }
-    // Before 9 AM -> schedule for today 9 AM
-
-    const localUtcTs = Date.UTC(year, month, targetDay, 9, 0, 0, 0);
-    const getOffset = (tz: string, d: Date) => {
-        const tzStr = d.toLocaleString('en-US', { timeZone: tz });
-        const locD = new Date(tzStr);
-        const utcD = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
-        return (locD.getTime() - utcD.getTime()) / 60000;
-    };
-    const offsetMin = getOffset(timeZone, new Date(localUtcTs));
-    const nextSlot = new Date(localUtcTs - offsetMin * 60000);
-
-    return { isWithinWindow: false, scheduledTime: nextSlot };
-}
 
 /**
  * Triggers an automated outbound AI call for a lead via Twilio and ElevenLabs.
@@ -220,58 +155,56 @@ export async function triggerOutboundCall(
             };
         }
 
-        if (isAutoTrigger) {
-            // Resolve timezone
-            let timeZone = 'Asia/Kolkata' // Default fallback timezone
-            if (profile && profile.google_refresh_token && profile.google_booking_enabled) {
-                try {
-                    const refreshToken = profile.google_refresh_token
-                    const accessToken = await refreshGoogleAccessToken(refreshToken)
-                    timeZone = await getCalendarTimezone(accessToken)
-                } catch (tzErr: any) {
-                    console.warn('[VOICE HELPER] Failed to fetch calendar timezone, defaulting to Asia/Kolkata:', tzErr.message)
-                }
+        // Check if within window (strictly 9 AM to 7 PM business local time)
+        let allowAfterHours = false
+        if (lead && lead.custom_fields) {
+            try {
+                const customFields = typeof lead.custom_fields === 'string'
+                    ? JSON.parse(lead.custom_fields)
+                    : lead.custom_fields
+                allowAfterHours = !!customFields?.allow_after_hours
+            } catch (e) {
+                console.warn('[VOICE HELPER] Failed to parse custom_fields for allow_after_hours:', e)
+            }
+        }
+
+        // Resolve timezone
+        let timeZone = 'Asia/Kolkata' // Default fallback timezone
+        if (profile && profile.google_refresh_token && profile.google_booking_enabled) {
+            try {
+                const refreshToken = profile.google_refresh_token
+                const accessToken = await refreshGoogleAccessToken(refreshToken)
+                timeZone = await getCalendarTimezone(accessToken)
+            } catch (tzErr: any) {
+                console.warn('[VOICE HELPER] Failed to fetch calendar timezone, defaulting to Asia/Kolkata:', tzErr.message)
+            }
+        }
+
+        const { isWithinWindow, scheduledTime } = computeValidCallingSlot(new Date(), timeZone, allowAfterHours)
+
+        if (!isWithinWindow) {
+            // Update lead in DB
+            await supabaseAdmin
+                .from('leads')
+                .update({ 
+                    voice_call_scheduled_at: scheduledTime.toISOString(),
+                    voice_call_status: 'scheduled_callback'
+                })
+                .eq('id', leadId)
+
+            // Log to history
+            try {
+                await supabaseAdmin.from('lead_history').insert({
+                    lead_id: leadId,
+                    action_type: 'REMARK',
+                    description: `🕒 Call prevented outside calling hours (9 AM - 7 PM). Rescheduled for ${scheduledTime.toLocaleString('en-IN', { timeZone })} (${timeZone}).`
+                })
+            } catch (histErr) {
+                console.error('[VOICE HELPER] Failed to insert lead history for scheduling outside hours:', histErr)
             }
 
-            // Check if within window (9 AM to 7 PM business local time)
-            let allowAfterHours = false
-            if (lead && lead.custom_fields) {
-                try {
-                    const customFields = typeof lead.custom_fields === 'string'
-                        ? JSON.parse(lead.custom_fields)
-                        : lead.custom_fields
-                    allowAfterHours = !!customFields?.allow_after_hours
-                } catch (e) {
-                    console.warn('[VOICE HELPER] Failed to parse custom_fields for allow_after_hours:', e)
-                }
-            }
-
-            const { isWithinWindow, scheduledTime } = computeValidCallingSlot(new Date(), timeZone, allowAfterHours)
-
-            if (!isWithinWindow) {
-                // Update lead in DB
-                await supabaseAdmin
-                    .from('leads')
-                    .update({ 
-                        voice_call_scheduled_at: scheduledTime.toISOString(),
-                        voice_call_status: 'scheduled_callback'
-                    })
-                    .eq('id', leadId)
-
-                // Log to history
-                try {
-                    await supabaseAdmin.from('lead_history').insert({
-                        lead_id: leadId,
-                        action_type: 'REMARK',
-                        description: `🕒 Auto-call queued for ${scheduledTime.toLocaleString('en-US', { timeZone })} (${timeZone}) because the lead arrived outside calling hours (9 AM - 7 PM).`
-                    })
-                } catch (histErr) {
-                    console.error('[VOICE HELPER] Failed to insert lead history for scheduling outside hours:', histErr)
-                }
-
-                console.log(`[VOICE HELPER] Lead ${leadId} call queued for ${scheduledTime.toISOString()} due to outside calling hours (9 AM - 7 PM).`)
-                return { success: true, scheduled: true, scheduledTime }
-            }
+            console.log(`[VOICE HELPER] Lead ${leadId} call scheduled for ${scheduledTime.toISOString()} due to outside calling hours (9 AM - 7 PM).`)
+            return { success: false, scheduled: true, scheduledTime, error: 'Calling hours restricted (9 AM - 7 PM). Call rescheduled.' }
         }
         
         // Check credit balance (must have at least 40 credits to dial 1 minute)
@@ -1248,6 +1181,14 @@ export async function cancelAppointment(
  */
 export async function dispatchNextCall(supabaseAdmin: any, userId: string): Promise<any> {
     console.log(`[CALL DISPATCHER] Dispatching next call for user ${userId}...`);
+
+    // 0. Strict Calling Hours Gatekeeper: 9:00 AM - 7:00 PM IST (09:00 - 19:00)
+    // Automated campaigns and scheduled dispatches MUST NOT dial outside business hours.
+    const { isWithinWindow: isAllowedNow } = computeValidCallingSlot(new Date(), 'Asia/Kolkata', false)
+    if (!isAllowedNow) {
+        console.log(`[CALL DISPATCHER] Outside business calling window (9:00 AM - 7:00 PM IST). Call dispatch skipped for user ${userId}.`)
+        return { dispatched: false, reason: 'Outside calling window (9:00 AM - 7:00 PM IST)' }
+    }
 
     // 1. Check if there is already an active call in progress for this user (respecting 3 concurrent channels by default)
     let maxConcurrent = 3

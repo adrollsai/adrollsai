@@ -61,6 +61,11 @@ export async function POST(request: Request) {
 
     const result = await triggerOutboundCall(supabaseAdmin, lead.id, lead.user_id, true)
     
+    if (result.scheduled) {
+      console.log(`[Voice Caller Worker] Call for lead ${lead.id} scheduled for ${result.scheduledTime?.toISOString()} (outside business hours or queued).`)
+      return NextResponse.json({ success: true, scheduled: true, scheduledTime: result.scheduledTime })
+    }
+
     if (!result.success) {
       console.error(`[Voice Caller Worker] Call failed to initiate for lead ${lead.id}:`, result.error)
       // Mark call as failed in DB
@@ -69,7 +74,7 @@ export async function POST(request: Request) {
         .update({ voice_call_status: 'failed' })
         .eq('id', lead.id)
       
-      throw new Error(result.error || 'Outbound call failed to initiate')
+      return NextResponse.json({ error: result.error || 'Outbound call failed to initiate' }, { status: 500 })
     }
 
     console.log(`[Voice Caller Worker] Call successfully initiated for lead ${lead.id}. SID: ${result.callSid}`)

@@ -47,6 +47,20 @@ async function runCampaignBatch() {
     }
 
     const lead = candidates[i];
+    // Strict Calling Hours Guard: strictly 9:00 AM - 7:00 PM IST
+    const nowIst = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hourCycle: 'h23',
+      hour: 'numeric',
+      minute: 'numeric'
+    }).format(new Date());
+    const [h, m] = nowIst.split(':').map(Number);
+    const mins = h * 60 + m;
+    if (mins < 9 * 60 || mins >= 19 * 60) {
+      console.log(`[CALLING HOURS GUARD] Current time is ${nowIst} IST. Strictly prohibited from calling outside 9:00 AM - 7:00 PM IST. Halting runner.`);
+      break;
+    }
+
     console.log(`\n--------------------------------------------------------`);
     console.log(`[DIALING ${i + 1}/${candidates.length}] Lead: ${lead.name} (${lead.phone})`);
     console.log(`--------------------------------------------------------`);

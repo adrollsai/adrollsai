@@ -1126,7 +1126,7 @@ Guidelines:
 - DO NOT read questions mechanically like a survey. Ask them conversationally and naturally.
 - Politely clarify any missing qualification details in friendly conversational Hinglish.
 - If an answer is already known in 'Attributed Details' or 'CRM Notes', do not re-ask.
-- ABSOLUTE PROHIBITION: NEVER mention WhatsApp or offer to send details on WhatsApp. Do NOT offer WhatsApp brochures or links. Focus on phone consultation and in-person site visits.
+- Do NOT proactively push WhatsApp on turn 1, but if the customer asks for details on WhatsApp, agree politely and end the call.
 `.trim();
 
                         let greetingName = (firstName && firstName !== 'there' && firstName !== 'Lead') ? firstName : '';
@@ -1146,15 +1146,31 @@ Guidelines:
 
                         const languageDirective = `
 MANDATORY LANGUAGE & CONVERSATIONAL RULES:
-1. You MUST speak in natural, warm, polite Hindi / Hinglish.
-2. Default to Hindi / Hinglish for all responses.
-3. MULTILINGUAL ADAPTATION: If the lead asks to speak in Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, Hindi, English, or any other regional language (e.g. "Telugu lo matladandi", "Can we speak in English?", "Tamil la pesunga"), you MUST IMMEDIATELY adapt and converse fluently in their requested language.
-4. Your ONLY opening greeting is: "${greetingMessage}". Speak this exact greeting clearly and warmly.
-5. STRICT FORBIDDEN SHORTCUTS:
-   - NEVER ask "Kya aap appointment book karna chahte hain?" abruptly at the start! Strictly follow the conversation flow step by step.
-   - NEVER offer proposals or ask for a site visit until you have completed the conversational steps.
-   - NEVER mention WhatsApp or ask to send details on WhatsApp.
-6. CALL CONCLUSION & HANGUP:
+1. NATURAL CONVERSATIONAL TONE & BREVITY:
+   - Speak in warm, polite, native conversational Hindi / Hinglish.
+   - Speak like a real, helpful human consultant, NOT a robotic telemarketer.
+   - STRICT LENGTH LIMIT: Keep EVERY single turn short, punchy, and UNDER 15-20 WORDS. NEVER deliver long monologues or paragraphs!
+   - Give the prospect room to speak and breathe. Always pause and listen actively.
+2. ACTIVE LISTENING & RESPECTING PROSPECT REQUESTS:
+   - If the prospect asks a question ("Kahan pe hai?", "Price kya hai?", "Details?"), you MUST answer their question directly, clearly, and concisely FIRST.
+   - NEVER deflect to booking an appointment or site visit when answering an informational question!
+   - If the prospect asks what they want to know, answer politely and suggest options (e.g. "Main aapko location aur pricing bata sakti hoon, ya aapka koi specific sawal hai?").
+3. STRICT CALLBACK TIME COMPLIANCE:
+   - If the prospect asks to be called back at a specific time or day (e.g. "kal 12 baje ke baad", "after 3 PM", "tomorrow morning", "next week"):
+     * CAREFULLY LISTEN to their exact requested time.
+     * NEVER override their requested time with an arbitrary default like "shaam ko 6 baje" or "kal subah"!
+     * Confirm their EXACT requested time back to them (e.g. "Bilkul sir, main kal dopahar 12 baje ke baad call back karungi. Thank you so much!").
+     * Say a warm goodbye and trigger your "end_call" function tool immediately.
+   - If the prospect says they are busy WITHOUT specifying a time: ask politely: "Koi baat nahi sir, kis time call back karna theek rahega?" (NEVER assume 6 PM).
+4. NO AGGRESSIVE APPOINTMENT PUSHING:
+   - NEVER jump straight to asking for a site visit or appointment.
+   - Only suggest a site visit or meeting AFTER the prospect has had their questions answered and has confirmed clear, positive interest.
+   - If they are not ready or say no to a visit, respect it immediately and never push again on that call.
+5. WHATSAPP INQUIRIES:
+   - Do NOT proactively deflect the live call to WhatsApp in the first turn.
+   - HOWEVER, if the prospect explicitly asks to send details or brochure on WhatsApp (e.g. "WhatsApp par bhej do"), say politely: "Ji bilkul sir, main WhatsApp par details aur brochure share karwa deti hoon. Aap review kar lijiye. Thank you, have a great day!" and trigger "end_call".
+6. MULTILINGUAL ADAPTATION: If the lead speaks in Punjabi, English, Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, etc., immediately switch and converse fluently in their requested language.
+7. CALL CONCLUSION & HANGUP:
    - Whenever you or the prospect conclude the call, say goodbye, or say "Thank you" / "Have a great day" / "Alvida" / "Shukriya", you MUST simultaneously trigger your "end_call" function tool in that same turn.
 `.trim();
 
@@ -1201,14 +1217,14 @@ CONVERSATION FLOW:
 CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
 1. STRICT CLOSED-WORLD ASSUMPTION: You must ONLY speak about the facts explicitly provided in the business profile info, catalog, and lead details.
 2. NO HALLUCINATIONS: Do NOT assume, extrapolate, guess, or invent any information if not explicitly written in the context below.
-3. Be polite, friendly, warm, and concise. Keep responses under 40 words.
+3. Be polite, friendly, warm, and concise. Keep EVERY response under 15-20 words.
 4. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish).
 5. MULTILINGUAL ADAPTATION: If the lead asks to speak in Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, Hindi, English, or any other regional language, you MUST IMMEDIATELY switch and converse fluently in their requested language.
 6. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
 7. APPLE LIVE VOICEMAIL & CALL SCREENING PROTOCOL: If you detect that an automated screening robot is speaking, state your name and wait silently.
 8. VOICEMAIL DETECTION: If you hear an automated machine prompt to leave a message, trigger "end_call" to hang up.
 9. NATURAL BACKCHANNELING: You MUST naturally use short Hinglish backchannels such as "Hmm", "Haan", "Ahaan", "Ji" to acknowledge the lead while listening.
-10. ABSOLUTE PROHIBITION: NEVER mention WhatsApp or offer to send details on WhatsApp. Focus on direct conversation and in-person site visits.
+10. ACTIVE LISTENING & RESPECT: Answer the customer's questions directly first before any follow-up. If the customer requests details on WhatsApp, politely agree and end the call. Never override a callback time requested by the prospect.
 
 ${sourceInstructions}
 ${resolvedQuestionsInstruction}
@@ -1680,28 +1696,36 @@ CURRENT TIME IN INDIA (IST, Asia/Kolkata, UTC+5:30): ${istDateStr}
 
 STRICT QUALIFICATION & CLASSIFICATION CRITERIA:
 1. "is_interested": boolean (true/false)
-   - MUST be TRUE ONLY IF: The prospect explicitly expressed genuine interest in purchasing, investing in, or exploring commercial or residential property (e.g. asked for prices, location, showroom/office/shop options, or agreed to explore properties).
+   - MUST be TRUE ONLY IF: The prospect explicitly expressed genuine interest in purchasing, investing in, or exploring the property (e.g. actively asked about features, layout, or agreed that this is what they are looking for).
    - MUST be FALSE IF:
-     * The prospect stated they have no money, are poor, or cannot afford it.
+     * The prospect stated they have no budget, cannot afford it, or said the price is out of their budget (e.g. ₹12.5 Cr is too much, have only ₹1-2 Cr, no money).
+     * The prospect asked to be called back later, said they are busy, driving, in a meeting, or told you to call tomorrow (e.g. "call after 12 pm", "call at 3 pm", "call later"). A CALLBACK REQUEST IS NOT CONFIRMED INTEREST!
+     * The prospect said "send details on WhatsApp" to deflect or end the call without confirming interest.
+     * The prospect stated they are a broker, agent, or also in the real estate business.
      * The prospect asked for employment, jobs, or work.
      * The prospect asked for free property, free rental, or charity.
      * The prospect hung up quickly, gave only passive "hello / haan / okay" without confirming any interest, or stated wrong number / not interested.
      * The call was answered by an automated voicemail or answering machine.
 
 2. "is_qualified": boolean (true/false)
-   - true ONLY IF is_interested is true AND the prospect shared at least one specific requirement (budget, preferred property type, timeline, or site visit willingness).
+   - MUST be TRUE ONLY IF: is_interested is TRUE AND the prospect has an adequate budget matching the project (e.g. >= ₹10 Cr for Farmhouses, or >= ₹70L for Aerocity) AND shared specific requirements or readiness.
+   - If the prospect stated the price is too high or budget is insufficient, is_qualified MUST be FALSE.
+   - If the prospect only asked for a callback, is_qualified MUST be FALSE.
 
 3. "lead_priority": "HOT" | "WARM" | "COLD"
-   - "HOT": Genuine commercial/property buyer who wants a site visit or has immediate purchase readiness.
-   - "WARM": Showed genuine interest in property or requested callback to discuss details.
-   - "COLD": Not interested, job seeker, no money, wrong number, or disconnected immediately.
+   - "HOT": Prospect explicitly confirmed an in-person physical site visit or confirmed high budget and immediate purchase readiness.
+   - "WARM": Prospect confirmed genuine interest in buying the property and asked for specific pricing/inventory details.
+   - "COLD": ANY of the following: Requested callback (without prior confirmed interest), said they are busy, price too high, no budget, not interested, job seeker, wrong number, or disconnected.
+   CRITICAL NOTE: Merely asking for a callback or saying "call tomorrow" MUST be classified as "COLD", NEVER "WARM"!
 
 4. "booking_time": string or null
-   - Return an ISO-8601 string (with +05:30 offset or UTC) ONLY IF the prospect EXPLICITLY agreed to or scheduled a future in-person site visit or meeting on a specific future day/date (e.g. "Saturday", "this weekend", "Monday at 11 AM").
-   - CRITICAL PROHIBITION: NEVER return the current call timestamp (${nowUtc.toISOString()})! If no specific future appointment date was confirmed, or if the prospect only gave vague filler words like "theek hai / yes / okay", booking_time MUST be null.
+   - Return an ISO-8601 string (with +05:30 offset or UTC) ONLY IF the prospect EXPLICITLY agreed to or scheduled a future PHYSICAL IN-PERSON SITE VISIT or IN-PERSON OFFICE MEETING on a specific future day/date (e.g. "Saturday at 11 AM I will come to the site").
+   - CRITICAL PROHIBITIONS:
+     * NEVER return booking_time for a PHONE CALL or FOLLOW-UP CALL! If the prospect agreed to a phone call tomorrow at 10 AM or 11 AM, booking_time MUST BE NULL and callback_time must be set instead!
+     * NEVER return the current call timestamp (${nowUtc.toISOString()})! If no specific future in-person appointment date was confirmed, booking_time MUST be null.
 
 5. "callback_time": string or null
-   - Return an ISO-8601 string ONLY IF the prospect asked to be called back at a specific future time (e.g. "call tomorrow morning", "call in the evening after 5"). Calculate relative to the reference IST time above. Otherwise null.
+   - Return an ISO-8601 string ONLY IF the prospect asked to be called back at a specific future time (e.g. "call after 12 pm tomorrow", "call at 3 PM", "call in the evening"). Calculate relative to the reference IST time above. Otherwise null.
 
 6. "allow_after_hours": boolean (true/false)
    - true if the prospect explicitly agreed or said it is okay to call them back after 7 PM or at any time.
@@ -2020,13 +2044,21 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                     const bDate = new Date(bookingTime);
                     // Must be a valid date at least 15 minutes in the future
                     if (!isNaN(bDate.getTime()) && bDate.getTime() > Date.now() + (15 * 60 * 1000)) {
-                        console.log(`[BRIDGE] Detected VALID future booking slot from call: ${bookingTime}. Updating stage to Appointment Booked!`);
-                        updatePayload.status = 'Appointment Booked';
-                        updatePayload.pipeline_stage = 'Appointment Booked';
-                        updatePayload.booked_time = bDate.toISOString();
-                        isValidBooking = true;
-                        mergedCf.is_interested = true;
-                        mergedCf.is_qualified = true;
+                        const sumLower = (summary || '').toLowerCase();
+                        const isJustCall = sumLower.includes('follow-up call') || sumLower.includes('phone call') || sumLower.includes('call back') || sumLower.includes('call tomorrow') || sumLower.includes('consultation call') || sumLower.includes('discuss on call') || sumLower.includes('collaborate');
+                        if (isJustCall) {
+                            console.log(`[BRIDGE] Reclassifying booking_time "${bookingTime}" to callback_time because it is a phone call: ${summary}`);
+                            callbackTime = bookingTime;
+                            bookingTime = null;
+                        } else {
+                            console.log(`[BRIDGE] Detected VALID future in-person site visit booking from call: ${bookingTime}. Updating stage to Appointment Booked!`);
+                            updatePayload.status = 'Appointment Booked';
+                            updatePayload.pipeline_stage = 'Appointment Booked';
+                            updatePayload.booked_time = bDate.toISOString();
+                            isValidBooking = true;
+                            mergedCf.is_interested = true;
+                            mergedCf.is_qualified = true;
+                        }
                     } else {
                         console.warn(`[BRIDGE] Rejected invalid/immediate booking time "${bookingTime}". Not a future appointment.`);
                         bookingTime = null;
@@ -2081,7 +2113,9 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                                 leadId,
                                 profileId: profileData?.id || profileId,
                                 bookingTime,
+                                callbackTime,
                                 isQualified,
+                                isInterested,
                                 leadPriority,
                                 summary,
                                 extractedAnswers,
