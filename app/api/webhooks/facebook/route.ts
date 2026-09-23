@@ -782,12 +782,8 @@ export async function POST(request: Request) {
                                     await deductCreditsByCost(supabaseAdmin, matchedProfile.id, totalOwnerCost, 'whatsapp', 'WhatsApp Owner Chat - AI Assistant Query');
                                     
                                     const recipientNumber = cleanFrom;
-                                    const whatsappToken = isMessageToOfficialBot
-                                        ? (process.env.DEV_WHATSAPP_ACCESS_TOKEN || matchedProfile.whatsapp_access_token || matchedProfile.facebook_token)
-                                        : (matchedProfile.whatsapp_access_token || matchedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN);
-                                    const whatsappPhoneId = isMessageToOfficialBot
-                                        ? (process.env.DEV_WHATSAPP_PHONE_ID || wabaPhoneId || matchedProfile.whatsapp_phone_number_id)
-                                        : (wabaPhoneId || matchedProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID);
+                                    const whatsappToken = matchedProfile.whatsapp_access_token || matchedProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
+                                    const whatsappPhoneId = wabaPhoneId || matchedProfile.whatsapp_phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.DEV_WHATSAPP_PHONE_ID;
                                      
                                     console.log(`🔐 Token resolution (isOfficialBot: ${isMessageToOfficialBot}) - DB Token exists: ${!!matchedProfile.whatsapp_access_token}, FB Token exists: ${!!matchedProfile.facebook_token}, Env Token exists: ${!!process.env.DEV_WHATSAPP_ACCESS_TOKEN}`);
                                     if (whatsappToken) {
