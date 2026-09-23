@@ -13,6 +13,8 @@ import { createCreativeSessionToken } from '@/utils/creative-token'
 import { updateLeadScoreInDB, parseCustomFields } from '@/utils/lead-scoring'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
+import { processLeadEvent } from '@/lib/agent/lead-orchestrator'
+import { processOwnerMessage, transcribeVoiceNote } from '@/lib/agent/owner-orchestrator'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -3131,6 +3133,15 @@ CRITICAL CONVERSATIONAL RULES:
                                          return;
                                      }
 
+                                      // 🚀 Trigger Autonomous Lead Agent & Handshake fulfillment on inbound customer message
+                                    if (latestLead?.id) {
+                                        processLeadEvent({
+                                            eventType: 'MESSAGE_RECEIVED',
+                                            leadId: latestLead.id,
+                                            inboundText: messageText
+                                        }).catch(err => console.error('[AUTONOMOUS AGENT] Error on customer inbound:', err));
+                                    }
+
                                       // 1. Dynamic User-Configured Automation Flows (ChatbotX Engine)
                                       try {
                                           const flowResult = await executeFlowRunner({
@@ -5288,7 +5299,13 @@ RULES:
 
           if (error) continue;
 
-          // Dispatch email notification to owner and assigned agent connected emails
+          // 🚀 Trigger Autonomous Lead Agent for new lead qualification & booking
+          if (savedLead?.id) {
+              processLeadEvent({
+                  eventType: 'LEAD_CREATED',
+                  leadId: savedLead.id
+              }).catch(err => console.error('[AUTONOMOUS AGENT] Error on LEAD_CREATED:', err));
+          }
           try {
               const recipientEmails: string[] = [];
               if (profile.email) {

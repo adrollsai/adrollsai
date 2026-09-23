@@ -318,7 +318,7 @@ export async function stitchClipsLocally(
 
             await supabaseAdmin.from('assets').update({
                 url: finalR2Url,
-                status: 'Draft',
+                status: 'Ready',
                 metadata: mergedMeta
             }).eq('id', videoTask.asset_id);
         }

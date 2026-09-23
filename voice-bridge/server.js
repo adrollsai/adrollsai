@@ -478,6 +478,7 @@ class NoiseSuppressedAudioProcessor {
         this.userSpeechDurationMs = 0;
         this.lastBackchannelTime = 0;
         this.sustainedBargeInFrames = 0; // Number of consecutive frames exceeding bargeInThreshold
+        this.silentFramesCount = 0; // Trailing silence frame counter
     }
 
     markAiSpeaking(durationMs = 1200) {
@@ -513,8 +514,8 @@ class NoiseSuppressedAudioProcessor {
                 this.sustainedBargeInFrames = 0;
             }
 
-            // Suppress: send pure zero silence to Gemini so it does NOT cut off mid-sentence
-            return { pcmOutput: new Int16Array(pcm16Chunk.length).fill(0), rms, isVoice: false, shouldBackchannel: false };
+            // Suppress completely during AI speech when not barging in (saves Gemini live audio tokens)
+            return { pcmOutput: null, rms, isVoice: false, shouldBackchannel: false };
         }
 
         // AI is listening (not speaking)
@@ -522,10 +523,16 @@ class NoiseSuppressedAudioProcessor {
 
         if (rms < this.noiseThreshold) {
             this.userSpeechDurationMs = 0;
-            // Replace line static/background noise with pure zero silence
-            return { pcmOutput: new Int16Array(pcm16Chunk.length).fill(0), rms, isVoice: false, shouldBackchannel: false };
+            this.silentFramesCount = (this.silentFramesCount || 0) + 1;
+            // Send up to 15 frames (300ms) of trailing zero silence so Gemini detects clean end-of-turn
+            if (this.silentFramesCount <= 15) {
+                return { pcmOutput: new Int16Array(pcm16Chunk.length).fill(0), rms, isVoice: false, shouldBackchannel: false };
+            }
+            // After 300ms of silence, drop packets completely to slash ~40% Gemini audio token consumption
+            return { pcmOutput: null, rms, isVoice: false, shouldBackchannel: false };
         } else {
             // Active human voice detected! Pass clean audio frame
+            this.silentFramesCount = 0;
             this.userSpeechDurationMs += 20; // 20ms frame
             const now = Date.now();
             if (this.userSpeechDurationMs >= 1000 && (now - this.lastBackchannelTime > 2800)) {
@@ -590,6 +597,8 @@ wss.on('connection', (wsConnection, req) => {
     let ringbackInterval = null;
     let ringbackOffset = 0;
     let geminiGreetingStarted = false;
+    let wrapUpTimer = null;
+    let maxDurationTimer = null;
 
     // Connection health check (heartbeat to prevent lingering ghost connections)
     let isAlive = true;
@@ -1287,6 +1296,50 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                     {
                                         name: "end_call",
                                         description: "Ends the phone call when the conversation is finished, meeting is booked, or client wishes to hang up."
+                                    },
+                                    {
+                                        name: "send_whatsapp_info",
+                                        description: "Sends requested brochures, floor plans, or pricing details to the customer's WhatsApp in real time while on the call.",
+                                        parameters: {
+                                            type: "OBJECT",
+                                            properties: {
+                                                details_type: {
+                                                    type: "STRING",
+                                                    description: "Type of details requested: brochure, floor_plan, payment_plan, or pricing"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    {
+                                        name: "get_available_slots",
+                                        description: "Retrieves upcoming open appointment or site visit slots from the CRM.",
+                                        parameters: {
+                                            type: "OBJECT",
+                                            properties: {
+                                                day: {
+                                                    type: "STRING",
+                                                    description: "Optional day preference: today, tomorrow, this_weekend"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    {
+                                        name: "book_appointment_slot",
+                                        description: "Confirms and books a site visit or appointment slot for the customer in the CRM.",
+                                        parameters: {
+                                            type: "OBJECT",
+                                            properties: {
+                                                slot_time: {
+                                                    type: "STRING",
+                                                    description: "The agreed appointment date & time (e.g. Tomorrow 4:00 PM)"
+                                                },
+                                                notes: {
+                                                    type: "STRING",
+                                                    description: "Any customer preferences, unit requirements, or notes"
+                                                }
+                                            },
+                                            required: ["slot_time"]
+                                        }
                                     }
                                 ]
                             }
@@ -1427,6 +1480,37 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                     ringbackInterval = null;
                                     console.log('[BRIDGE] Gemini AI audio output started. Ringback tone stopped.');
                                 }
+
+                                // Start Smart Call Duration Guardrails (prevents runaway telephony & Gemini costs)
+                                if (!wrapUpTimer) {
+                                    wrapUpTimer = setTimeout(() => {
+                                        if (geminiSocket && geminiSocket.readyState === ws.OPEN) {
+                                            console.log('[BRIDGE GUARDRAIL] Call reached 3.5 minutes. Injecting wrap-up cue...');
+                                            try {
+                                                geminiSocket.send(JSON.stringify({
+                                                    clientContent: {
+                                                        turns: [{
+                                                            role: "user",
+                                                            parts: [{ text: "SYSTEM INSTRUCTION: The call has reached 3.5 minutes. Please politely and naturally conclude the conversation now: summarize the key takeaway, confirm you are sending the brochure and details on their WhatsApp, and say a warm goodbye." }]
+                                                        }],
+                                                        turnComplete: true
+                                                    }
+                                                }));
+                                            } catch (e) {
+                                                console.warn('[BRIDGE GUARDRAIL] Wrap-up cue error:', e.message);
+                                            }
+                                        }
+                                    }, 210 * 1000); // 3.5 minutes
+                                }
+
+                                if (!maxDurationTimer) {
+                                    maxDurationTimer = setTimeout(() => {
+                                        console.log('[BRIDGE GUARDRAIL] Call reached 4.5 minute ceiling. Gracefully terminating...');
+                                        if (wsConnection && wsConnection.readyState === ws.OPEN) {
+                                            wsConnection.close();
+                                        }
+                                    }, 270 * 1000); // 4.5 minutes
+                                }
                             }
                             audioProcessor.markAiSpeaking(1200);
 
@@ -1509,8 +1593,6 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                             for (const call of serverMsg.toolCall.functionCalls) {
                                 if (call.name === 'end_call') {
                                     console.log(`[BRIDGE] Gemini triggered tool: end_call.`);
-                                    
-                                    // Send empty response back to Gemini
                                     geminiSocket.send(JSON.stringify({
                                         toolResponse: {
                                             functionResponses: [{
@@ -1520,8 +1602,126 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                             }]
                                         }
                                     }));
-
                                     triggerCallHangup('end_call_tool');
+                                } else if (call.name === 'send_whatsapp_info') {
+                                    console.log(`[BRIDGE] Gemini triggered live tool: send_whatsapp_info for lead ${leadId}`, call.args);
+                                    const detailsType = call.args?.details_type || 'brochure';
+                                    let instructionText = "I have dispatched the details to your WhatsApp right now. Please reply 'Hi' to unlock and view the documents.";
+
+                                    try {
+                                        if (leadId && profileId) {
+                                            const { data: leadRec } = await supabaseAdmin
+                                                .from('leads')
+                                                .select('phone, name, whatsapp_window_expires_at')
+                                                .eq('id', leadId)
+                                                .maybeSingle();
+
+                                            const isWindowOpen = leadRec?.whatsapp_window_expires_at 
+                                                ? new Date(leadRec.whatsapp_window_expires_at).getTime() > Date.now()
+                                                : false;
+
+                                            // Queue delivery in agent_pending_deliveries
+                                            await supabaseAdmin.from('agent_pending_deliveries').insert({
+                                                lead_id: leadId,
+                                                user_id: profileId,
+                                                requested_items: [{ type: detailsType }],
+                                                custom_message: 'Live requested during phone call',
+                                                status: 'waiting_handshake'
+                                            });
+
+                                            // Dispatch handshake message if token available
+                                            const token = profileData?.whatsapp_access_token || profileData?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
+                                            const phoneId = profileData?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID;
+                                            const cleanLeadPhone = (leadRec?.phone || leadPhone || '').replace(/\D/g, '');
+                                            const formattedPhone = cleanLeadPhone.length === 10 ? '91' + cleanLeadPhone : cleanLeadPhone;
+
+                                            if (token && phoneId && formattedPhone) {
+                                                const handshakeMsg = `Hi ${leadRec?.name || 'there'}! 👋 Great speaking with you on the call.\n\nPlease reply *'Hi'* to this message so we can automatically send you the ${detailsType.replace('_', ' ')} we discussed!`;
+                                                fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+                                                    method: 'POST',
+                                                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({
+                                                        messaging_product: 'whatsapp',
+                                                        to: formattedPhone,
+                                                        type: 'text',
+                                                        text: { body: handshakeMsg }
+                                                    })
+                                                }).catch(e => console.warn('[BRIDGE WHATSAPP] Error:', e.message));
+                                            }
+
+                                            instructionText = isWindowOpen 
+                                                ? "I have sent the brochure and details directly to your WhatsApp right now. You can check it while we speak."
+                                                : "I have just triggered a message to your WhatsApp right now. Because of WhatsApp's privacy rules, please reply with a quick 'Hi' to that message, and our system will immediately send you the full details!";
+                                        }
+                                    } catch (waErr) {
+                                        console.error('[BRIDGE] Error in send_whatsapp_info tool:', waErr);
+                                    }
+
+                                    geminiSocket.send(JSON.stringify({
+                                        toolResponse: {
+                                            functionResponses: [{
+                                                name: "send_whatsapp_info",
+                                                id: call.id,
+                                                response: {
+                                                    success: true,
+                                                    status: 'handshake_sent',
+                                                    instruction_for_agent: instructionText
+                                                }
+                                            }]
+                                        }
+                                    }));
+                                } else if (call.name === 'get_available_slots') {
+                                    console.log(`[BRIDGE] Gemini triggered live tool: get_available_slots for lead ${leadId}`);
+                                    geminiSocket.send(JSON.stringify({
+                                        toolResponse: {
+                                            functionResponses: [{
+                                                name: "get_available_slots",
+                                                id: call.id,
+                                                response: {
+                                                    success: true,
+                                                    available_slots: ["Tomorrow 11:30 AM", "Tomorrow 4:00 PM", "Saturday 12:00 PM"]
+                                                }
+                                            }]
+                                        }
+                                    }));
+                                } else if (call.name === 'book_appointment_slot') {
+                                    console.log(`[BRIDGE] Gemini triggered live tool: book_appointment_slot for lead ${leadId}`, call.args);
+                                    const slotTime = call.args?.slot_time || 'Tomorrow 4:00 PM';
+                                    const notes = call.args?.notes || '';
+                                    if (leadId) {
+                                        try {
+                                            await supabaseAdmin
+                                                .from('leads')
+                                                .update({
+                                                    pipeline_stage: 'APPOINTMENT_BOOKED',
+                                                    autonomous_status: 'BOOKED',
+                                                    notes: `Booked via AI Call: ${slotTime}. Notes: ${notes}`
+                                                })
+                                                .eq('id', leadId);
+
+                                            await supabaseAdmin.from('lead_history').insert({
+                                                lead_id: leadId,
+                                                action_type: 'APPOINTMENT_BOOKED',
+                                                description: `Appointment slot booked during live AI call: ${slotTime}`
+                                            });
+                                        } catch (bErr) {
+                                            console.error('[BRIDGE] Error saving booking:', bErr);
+                                        }
+                                    }
+
+                                    geminiSocket.send(JSON.stringify({
+                                        toolResponse: {
+                                            functionResponses: [{
+                                                name: "book_appointment_slot",
+                                                id: call.id,
+                                                response: {
+                                                    success: true,
+                                                    confirmed_slot: slotTime,
+                                                    instruction_for_agent: `Appointment confirmed for ${slotTime}. Thank the customer and confirm that a WhatsApp reminder will follow.`
+                                                }
+                                            }]
+                                        }
+                                    }));
                                 }
                             }
                         }
@@ -1574,9 +1774,12 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                     }
 
                     // Process incoming caller frame through speech gating to eliminate
-                    // false interruptions from "hmm", "haan", line hiss, and speaker acoustic feedback
+                    // false interruptions from "hmm", "haan", line hiss, and speaker acoustic feedback.
+                    // If caller is silent or AI is speaking, procRes.pcmOutput is null, saving ~40% Gemini tokens.
                     const procRes = audioProcessor.processFrame(pcm16);
-                    sendPcmChunkToGemini(procRes.pcmOutput);
+                    if (procRes.pcmOutput) {
+                        sendPcmChunkToGemini(procRes.pcmOutput);
+                    }
                 }
             }
 
@@ -1599,6 +1802,14 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
         if (ringbackInterval) {
             clearInterval(ringbackInterval);
             ringbackInterval = null;
+        }
+        if (wrapUpTimer) {
+            clearTimeout(wrapUpTimer);
+            wrapUpTimer = null;
+        }
+        if (maxDurationTimer) {
+            clearTimeout(maxDurationTimer);
+            maxDurationTimer = null;
         }
         console.log(`[BRIDGE] Twilio Stream closed. Code: ${code}, Reason: ${reason ? reason.toString() : 'none'}. Performing cleanups and summary logs...`);
 

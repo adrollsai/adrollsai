@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { syncVideoTasksForUser } from '@/utils/video-sync-helper';
 
 export const maxDuration = 60;
 
@@ -98,14 +99,42 @@ export async function GET(request: Request) {
             query = query.or(`created_at.gt.${since},status.eq.Processing,status.eq.Rendering`);
         }
 
-        const { data: assetData, error: assetError } = await query.order('created_at', { ascending: false });
+        const { data: initialAssetData, error: assetError } = await query.order('created_at', { ascending: false });
 
         if (assetError) {
             throw assetError;
         }
 
-        // --- Fast Concurrent Auto-Sync for processing assets from Kie.ai ---
-        const processingAssets = (assetData || []).filter(a => a.status === 'Processing' && a.kie_task_id);
+        let assetData = initialAssetData || [];
+
+        // --- Fast Concurrent Auto-Sync for processing video assets from Kie.ai ---
+        const hasProcessingVideos = assetData.some(a => 
+            (['Processing', 'Rendering'].includes(a.status) || (a.url && a.url.includes('/processing'))) && 
+            a.type === 'video'
+        );
+        if (hasProcessingVideos) {
+            try {
+                const forwardedHost = request.headers.get('x-forwarded-host');
+                const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+                const requestOrigin = new URL(request.url).origin;
+                let baseUrl = requestOrigin;
+                if (forwardedHost && !forwardedHost.includes('localhost')) {
+                    baseUrl = `${forwardedProto}://${forwardedHost}`;
+                } else if (!requestOrigin.includes('localhost')) {
+                    baseUrl = requestOrigin;
+                }
+                await syncVideoTasksForUser(effectiveUserIds, baseUrl);
+                const { data: refreshedData } = await query.order('created_at', { ascending: false });
+                if (refreshedData) {
+                    assetData = refreshedData;
+                }
+            } catch (vSyncErr) {
+                console.warn("[Assets Route] Auto video sync warning:", vSyncErr);
+            }
+        }
+
+        // --- Fast Concurrent Auto-Sync for processing image assets from Kie.ai ---
+        const processingAssets = assetData.filter(a => a.status === 'Processing' && a.kie_task_id);
         if (processingAssets.length > 0) {
             const syncPromises = processingAssets.slice(0, 5).map(async (asset) => {
                 try {

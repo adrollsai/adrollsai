@@ -168,8 +168,35 @@ export async function triggerVobizOutboundCall(
     const authId = profile.voice_vobiz_auth_id || bi.voice_vobiz_auth_id || bi.kyc_data?.vobizSubAuthId || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
     const authToken = profile.voice_vobiz_auth_token || bi.voice_vobiz_auth_token || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
     
-    // Priority for caller ID: passed fromPhone -> profile.voice_vobiz_number -> bi.claimed_vobiz_number -> bi.voice_vobiz_number -> profile.voice_twilio_number -> env.VOBIZ_TEST_NUMBER -> default
-    let callerId = fromPhone || profile.voice_vobiz_number || bi.claimed_vobiz_number || bi.voice_vobiz_number || profile.voice_twilio_number || process.env.VOBIZ_TEST_NUMBER || '+911171366938'
+    // Strictly require an assigned number for the account. NEVER fall back to master pool number unless explicitly passed for dev testing.
+    const assignedNumber = fromPhone 
+        || profile.voice_vobiz_number 
+        || bi.claimed_vobiz_number 
+        || bi.voice_vobiz_number 
+        || (profile.voice_twilio_number?.startsWith('+91') ? profile.voice_twilio_number : null)
+
+    if (!assignedNumber) {
+        console.warn(`[VOBIZ HELPER] Call aborted for lead ${leadId}: Account ${profile.email} (${profileId}) has NO assigned phone number.`);
+        await supabaseAdmin
+            .from('leads')
+            .update({ voice_call_status: 'failed' })
+            .eq('id', leadId);
+
+        try {
+            await supabaseAdmin.from('lead_history').insert({
+                lead_id: leadId,
+                action_type: 'REMARK',
+                description: `❌ Outbound call aborted: No dedicated phone number is assigned to your account. Please assign a virtual number in settings to enable calling.`
+            });
+        } catch (e) {}
+
+        return {
+            success: false,
+            error: 'NO_PHONE_NUMBER_ASSIGNED: Outbound calls cannot proceed because no dedicated phone number is assigned to this account.'
+        };
+    }
+
+    let callerId = assignedNumber;
 
     let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
     if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com') || appUrl.includes('127.0.0.1')) {

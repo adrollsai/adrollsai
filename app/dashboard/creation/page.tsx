@@ -1107,6 +1107,34 @@ export default function CreationPage() {
     }
   }
 
+  const startVideoSyncPolling = () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const impersonateId = urlParams.get('impersonate');
+    const syncUrl = impersonateId ? `/api/video/sync?impersonate=${encodeURIComponent(impersonateId)}` : '/api/video/sync';
+    
+    let attempts = 0;
+    const maxAttempts = 35; // ~4.5 minutes
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await fetch(syncUrl, { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (data?.synced?.some((s: any) => s.status === 'succeeded' || s.status === 'recovered_and_stitched')) {
+          clearInterval(interval);
+          toast.success("🎬 AI Video is ready in your Assets!", {
+            action: {
+              label: "Open Assets",
+              onClick: () => router.push(impersonateId ? `/dashboard/assets?impersonate=${encodeURIComponent(impersonateId)}` : '/dashboard/assets')
+            }
+          });
+        }
+      } catch (err) {}
+      if (attempts >= maxAttempts) {
+        clearInterval(interval);
+      }
+    }, 8000);
+  };
+
   const handleApproveVideo = async (script: any, refImages: string[], imageDescriptions?: string[], prompts?: string[]) => {
     if (isThinking) return
     setIsThinking(true)
@@ -1144,6 +1172,7 @@ export default function CreationPage() {
         toast.success("Video Production Started! 🎬", {
             description: `Your ${totalDuration}s Bytedance Seedance 2.0 Mini video is rendering.`
         });
+        startVideoSyncPolling();
 
         const aiMsg: Message = {
             id: Date.now(),
@@ -1240,6 +1269,7 @@ export default function CreationPage() {
         toast.success("Grok Video Production Started! 🎬", {
             description: `Your ${selectedDuration}s Grok video is generating & stitching.`
         });
+        startVideoSyncPolling();
 
         setMessages(prev => prev.map(m => {
             if (m.id === messageId) {

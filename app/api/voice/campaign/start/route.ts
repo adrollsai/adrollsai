@@ -44,6 +44,28 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
         }
 
+        // Validate user profile has an assigned outbound phone number
+        const { data: userProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('email, voice_vobiz_number, voice_twilio_number, business_info')
+            .eq('id', targetId)
+            .single()
+
+        const bi = typeof userProfile?.business_info === 'string' ? JSON.parse(userProfile.business_info) : (userProfile?.business_info || {})
+        const hasAssignedNumber = !!(
+            userProfile?.voice_vobiz_number ||
+            bi?.claimed_vobiz_number ||
+            bi?.voice_vobiz_number ||
+            userProfile?.voice_twilio_number
+        )
+
+        if (!hasAssignedNumber) {
+            console.warn(`[CAMPAIGN START] Refused: Account ${userProfile?.email} (${targetId}) has no assigned outbound phone number.`)
+            return NextResponse.json({
+                error: 'Cannot start campaign: No dedicated phone number is assigned to your account. Please assign or purchase a phone number in Voice Settings first.'
+            }, { status: 400 })
+        }
+
         // Fetch all leads of the user using admin client to bypass RLS select policy
         const { data: leads, error: leadsErr } = await supabaseAdmin
             .from('leads')
