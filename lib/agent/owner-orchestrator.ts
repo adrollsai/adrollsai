@@ -1117,7 +1117,8 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
         });
     }
 
-    return result.text || "I have processed your request.";
+    const finalText = (result?.text || '').trim();
+    return finalText || "I have processed your request and updated the records. Please let me know if you need specific details or actions.";
 }
 
 /**

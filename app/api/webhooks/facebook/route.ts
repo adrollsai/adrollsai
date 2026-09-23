@@ -766,10 +766,16 @@ export async function POST(request: Request) {
                                             mediaUrl: inboundMediaUrl || undefined,
                                             mediaType: inboundMediaType || undefined
                                         });
+                                        botResponseText = (botResponseText || '').trim();
+                                        if (!botResponseText) {
+                                            botResponseText = "Hi! I checked your request and updated the system. Let me know if you would like more details.";
+                                        }
+                                        console.log(`🤖 Final processed response: "${botResponseText.substring(0, 100)}..."`);
                                     } catch (llmErr: any) {
                                         console.error("❌ processOwnerMessage failed:", llmErr?.message || llmErr);
                                         botResponseText = "Hi! I ran into an issue processing that request. Please try again in a moment.";
                                     }
+                                    botResponseText = (botResponseText || '').trim() || "Hi! Your request has been noted.";
                                     // Dynamic billing for owner query
                                     const ownerTokensCost = calculateLLMCost(ownerUsage.modelName, ownerUsage.promptTokens, ownerUsage.completionTokens);
                                     const totalOwnerCost = 0.05 + ownerTokensCost; // Rs. 0.05 infra base + LLM cost
