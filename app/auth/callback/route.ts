@@ -89,6 +89,36 @@ export async function GET(request: Request) {
           }
       }
 
+      // 3.5. Link to agency if authenticating through a whitelabel domain
+      if (forwardedHost) {
+        const cleanHost = forwardedHost.split(':')[0].toLowerCase().replace(/^www\./, '');
+        const SYSTEM_HOSTS = ['nobogent.com', 'app.nobogent.com', 'adrolls.in', 'app.adrolls.in', 'localhost'];
+        if (!SYSTEM_HOSTS.some(h => cleanHost.includes(h))) {
+          try {
+            const { data: wlProfile } = await supabase
+              .from('profiles')
+              .select('id')
+              .or(`whitelabel_domain.eq.${cleanHost},whitelabel_domain.eq.${forwardedHost.split(':')[0].toLowerCase()}`)
+              .maybeSingle();
+
+            if (wlProfile && wlProfile.id !== userId) {
+              const { data: existingUser } = await supabase
+                .from('profiles')
+                .select('id, agency_id, role')
+                .eq('id', userId)
+                .maybeSingle();
+
+              if (existingUser && !existingUser.agency_id && !['super_admin', 'agency'].includes(existingUser.role || '')) {
+                updates.agency_id = wlProfile.id;
+                updates.role = 'client';
+              }
+            }
+          } catch (wlErr) {
+            console.warn('[AUTH CALLBACK] Whitelabel linking error:', wlErr);
+          }
+        }
+      }
+
       // 4. Update the profile with new linked identities
       if (Object.keys(updates).length > 0) {
           const { error: updateError } = await supabase

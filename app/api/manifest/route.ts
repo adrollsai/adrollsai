@@ -57,7 +57,7 @@ export async function GET(request: Request) {
 
   const isPrimaryDomain = SYSTEM_HOSTS.includes(host);
 
-  if (isPrimaryDomain) {
+  if (isPrimaryDomain && !uid) {
     return new NextResponse(JSON.stringify(defaultManifest), {
       headers: {
         'Content-Type': 'application/manifest+json',
@@ -74,29 +74,30 @@ export async function GET(request: Request) {
     
     let brandingProfile = null;
 
-    // 1. If it's a custom domain, fetch that profile directly
+    // 1. If it's a custom domain or whitelabel platform domain, fetch that profile directly
     if (!isPrimaryDomain) {
+      const cleanHost = host.replace(/^www\./, '');
       const { data } = await supabase
         .from('profiles')
-        .select('business_name, logo_url, role, agency_id')
-        .eq('custom_domain', host)
-        .single();
+        .select('id, business_name, logo_url, role, agency_id')
+        .or(`custom_domain.eq.${host},whitelabel_domain.eq.${host},custom_domain.eq.${cleanHost},whitelabel_domain.eq.${cleanHost}`)
+        .maybeSingle();
       brandingProfile = data;
     } 
     // 2. If it's the primary domain and a UID is provided, use that context
     else if (uid) {
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('business_name, logo_url, role, agency_id')
+        .select('id, business_name, logo_url, role, agency_id')
         .eq('id', uid)
-        .single();
+        .maybeSingle();
       
       if (userProfile?.role === 'client' && userProfile.agency_id) {
         const { data: agencyProfile } = await supabase
           .from('profiles')
-          .select('business_name, logo_url')
+          .select('id, business_name, logo_url')
           .eq('id', userProfile.agency_id)
-          .single();
+          .maybeSingle();
         brandingProfile = agencyProfile;
       } else {
         brandingProfile = userProfile;
@@ -109,25 +110,27 @@ export async function GET(request: Request) {
         ? encodeURIComponent(brandingProfile.logo_url.split('/').pop() || 'v1') 
         : 'v1';
       
+      const uidParam = uid ? `&uid=${uid}` : (brandingProfile.id ? `&uid=${brandingProfile.id}` : '');
+
       manifestData = {
         id: `/?org=${encodeURIComponent(host)}`,
         name: businessName,
-        short_name: businessName.substring(0, 12), 
+        short_name: businessName.substring(0, 16), 
         description: `Official portal for ${businessName}`,
-        start_url: '/', 
+        start_url: '/dashboard', 
         scope: '/',
         display: 'standalone',
         background_color: '#FFFFFF',
         theme_color: '#FFFFFF',
         icons: [
           { 
-            src: `/api/org-icon?type=icon&v=${logoVersion}`, 
+            src: `/api/org-icon?type=icon&v=${logoVersion}${uidParam}`, 
             sizes: '512x512', 
             type: 'image/png', 
             purpose: 'any maskable' 
           },
           { 
-            src: `/api/org-icon?type=icon&v=${logoVersion}`, 
+            src: `/api/org-icon?type=icon&v=${logoVersion}${uidParam}`, 
             sizes: '192x192', 
             type: 'image/png', 
             purpose: 'any maskable' 

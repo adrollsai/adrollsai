@@ -23,7 +23,7 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const [agreed, setAgreed] = useState(false)
 
-  const [brandInfo, setBrandInfo] = useState<{ name: string; logoUrl: string | null; brandColor?: string }>({
+  const [brandInfo, setBrandInfo] = useState<{ name: string; logoUrl: string | null; brandColor?: string; agencyId?: string }>({
     name: 'Workspace Login',
     logoUrl: '/icon-512x512.png'
   })
@@ -35,16 +35,18 @@ function LoginForm() {
     
     const fetchBranding = async () => {
       try {
+        const cleanHost = host.replace(/^www\./, '')
         const { data } = await supabase
           .from('profiles')
-          .select('business_name, logo_url, brand_color')
-          .eq('whitelabel_domain', host)
+          .select('id, business_name, logo_url, brand_color')
+          .or(`whitelabel_domain.eq.${host},whitelabel_domain.eq.${cleanHost},custom_domain.eq.${host},custom_domain.eq.${cleanHost}`)
           .maybeSingle()
         if (data && data.business_name) {
           setBrandInfo({
             name: data.business_name,
             logoUrl: data.logo_url || null,
-            brandColor: data.brand_color || undefined
+            brandColor: data.brand_color || undefined,
+            agencyId: data.id
           })
           return
         }
@@ -108,9 +110,14 @@ function LoginForm() {
         
         if (signUpData?.user) {
           try {
+            const profilePayload: any = { id: signUpData.user.id, accepted_terms: true }
+            if (brandInfo.agencyId) {
+              profilePayload.agency_id = brandInfo.agencyId
+              profilePayload.role = 'client'
+            }
             await supabase
               .from('profiles')
-              .upsert({ id: signUpData.user.id, accepted_terms: true }, { onConflict: 'id' })
+              .upsert(profilePayload, { onConflict: 'id' })
           } catch (pErr) {
             console.warn('Profile terms update non-fatal error:', pErr)
           }

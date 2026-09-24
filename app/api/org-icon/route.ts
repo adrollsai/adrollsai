@@ -78,10 +78,34 @@ export async function GET(request: NextRequest) {
     let logoUrl: string | null = null;
 
     if (SYSTEM_HOSTS.includes(host)) {
-        logoUrl = NOBOGENT_LOGO_URL;
+        if (uid) {
+          const { data: userProfile } = await supabase.from('profiles').select('business_name, logo_url, role, agency_id').eq('id', uid).maybeSingle();
+          if (userProfile?.role === 'client' && userProfile.agency_id) {
+            const { data: agencyProfile } = await supabase.from('profiles').select('logo_url').eq('id', userProfile.agency_id).maybeSingle();
+            logoUrl = agencyProfile?.logo_url || userProfile?.logo_url || NOBOGENT_LOGO_URL;
+          } else {
+            logoUrl = userProfile?.logo_url || NOBOGENT_LOGO_URL;
+          }
+        } else {
+          logoUrl = NOBOGENT_LOGO_URL;
+        }
     } else {
-        const { data: profile } = await supabase.from('profiles').select('logo_url').eq('custom_domain', host).single();
-        logoUrl = profile?.logo_url || NOBOGENT_LOGO_URL;
+        const cleanHost = host.replace(/^www\./, '');
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('logo_url')
+          .or(`custom_domain.eq.${host},whitelabel_domain.eq.${host},custom_domain.eq.${cleanHost},whitelabel_domain.eq.${cleanHost}`)
+          .maybeSingle();
+        logoUrl = profile?.logo_url || null;
+
+        if (!logoUrl && uid) {
+          const { data: userProfile } = await supabase.from('profiles').select('logo_url').eq('id', uid).maybeSingle();
+          logoUrl = userProfile?.logo_url || null;
+        }
+
+        if (!logoUrl) {
+          logoUrl = NOBOGENT_LOGO_URL;
+        }
     }
 
     let buffer: Buffer;

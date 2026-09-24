@@ -177,6 +177,8 @@ export default async function RootLayout({
   
   let splashUrl = "/api/org-icon?type=splash"; 
   let manifestUrl = "/api/manifest";
+  let iconUrl = "/api/org-icon?type=icon";
+  let faviconUrl = "/api/org-icon?type=favicon";
 
   let brandingProfile = null;
 
@@ -203,10 +205,14 @@ export default async function RootLayout({
      const v = encodeURIComponent(brandingProfile.logo_url.split('/').pop() || 'v1');
      const uidParam = user ? `&uid=${user.id}` : '';
      
+     iconUrl = `/api/org-icon?type=icon&v=${v}${uidParam}`;
+     faviconUrl = `/api/org-icon?type=favicon&v=${v}${uidParam}`;
      splashUrl = `/api/org-icon?type=splash&v=${v}${uidParam}`;
      manifestUrl = `/api/manifest?v=${v}${uidParam}`; 
      
   } else if (user) {
+     iconUrl = `/api/org-icon?type=icon&uid=${user.id}`;
+     faviconUrl = `/api/org-icon?type=favicon&uid=${user.id}`;
      splashUrl = `/api/org-icon?type=splash&uid=${user.id}`;
      manifestUrl = `/api/manifest?uid=${user.id}`;
   }
@@ -221,6 +227,10 @@ export default async function RootLayout({
   return (
     <html lang="en" className="bg-white" style={{ backgroundColor: '#FFFFFF', colorScheme: 'light' }} suppressHydrationWarning>
       <head>
+        <link rel="icon" type="image/png" sizes="32x32" href={faviconUrl} />
+        <link rel="icon" type="image/png" sizes="192x192" href={iconUrl} />
+        <link rel="shortcut icon" href={faviconUrl} />
+        <link rel="apple-touch-icon" href={iconUrl} />
         <link rel="manifest" href={manifestUrl} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />

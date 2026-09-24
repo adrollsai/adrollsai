@@ -19,6 +19,12 @@ export async function middleware(request: NextRequest) {
                            hostname.includes('vercel.app') || 
                            hostname.includes('ngrok-free.dev');
 
+  if (url.pathname === '/favicon.ico' || url.pathname === '/icon.png') {
+    if (!isPlatformDomain) {
+      return NextResponse.rewrite(new URL(`/api/org-icon?type=${url.pathname === '/favicon.ico' ? 'favicon' : 'icon'}`, request.url));
+    }
+  }
+
   const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|css|js|webmanifest|json|txt|xml|mp4|webm)$/i.test(url.pathname);
 
   let isWhitelabelPlatform = false;
@@ -174,6 +180,6 @@ export const config = {
      * - shared (custom domain internal routes)
      * - service workers & offline assets
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|auth|shared|sw.js|sw-v2.js|custom-sw.js|workbox-[a-f0-9]+.js).*)',
+    '/((?!api|_next/static|_next/image|auth|shared|sw.js|sw-v2.js|custom-sw.js|workbox-[a-f0-9]+.js).*)',
   ],
 }
