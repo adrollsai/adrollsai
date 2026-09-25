@@ -73,7 +73,7 @@ export async function GET(request: Request) {
 
   try {
     // Nested Graph API call: Fetch Campaign, its Ad Sets, its Ads, and dynamic insights (delivery stats) for each
-    const fields = 'id,name,status,objective,daily_budget,lifetime_budget,budget_remaining,insights.date_preset(maximum){spend,impressions,clicks,actions},adsets{id,name,status,destination_type,promoted_object,daily_budget,lifetime_budget,insights.date_preset(maximum){spend,impressions,clicks,actions},optimization_goal,billing_event,targeting},ads{id,name,status,adset_id,creative{id,name,image_url,thumbnail_url,object_story_spec},insights.date_preset(maximum){spend,impressions,clicks,actions}}';
+    const fields = 'id,name,status,objective,daily_budget,lifetime_budget,budget_remaining,insights.date_preset(maximum){spend,impressions,clicks,actions},adsets{id,name,status,destination_type,promoted_object,daily_budget,lifetime_budget,insights.date_preset(maximum){spend,impressions,clicks,actions},optimization_goal,billing_event,targeting},ads{id,name,status,adset_id,creative{id,name,image_url,thumbnail_url,call_to_action_type,object_story_spec},insights.date_preset(maximum){spend,impressions,clicks,actions}}';
     const fbUrl = `${FB_GRAPH_URL}/${campaignId}?fields=${fields}&access_token=${token}`;
 
     const response = await fetch(fbUrl);
@@ -210,6 +210,7 @@ export async function GET(request: Request) {
       const linkUrl = linkData.link || videoData.call_to_action?.value?.link || linkData.call_to_action?.value?.link || '';
       const leadFormId = linkData.call_to_action?.value?.lead_gen_form_id || videoData.call_to_action?.value?.lead_gen_form_id || '';
       const pageId = storySpec.page_id || '';
+      const ctaType = linkData.call_to_action?.type || videoData.call_to_action?.type || ad.creative?.call_to_action_type || '';
 
       return {
         id: ad.id,
@@ -228,7 +229,8 @@ export async function GET(request: Request) {
           description,
           linkUrl,
           leadFormId,
-          pageId
+          pageId,
+          ctaType
         }
       };
     });

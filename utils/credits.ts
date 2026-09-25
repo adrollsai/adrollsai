@@ -217,8 +217,9 @@ export const MODEL_RATES: Record<string, { inputPerK: number; outputPerK: number
   'gemini-1.5-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
   'gemini-2.0-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
   'gemini-3.5-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
-  'gemini-3.5-flash-preview': { inputPerK: 0.0063, outputPerK: 0.0252 },
   'deepseek-v4-flash': { inputPerK: 0.0119, outputPerK: 0.0238 },
+  'deepseek-flash': { inputPerK: 0.0119, outputPerK: 0.0238 },
+  'deepseek-chat': { inputPerK: 0.0119, outputPerK: 0.0238 },
   'deepseek': { inputPerK: 0.0119, outputPerK: 0.0238 },
   'default': { inputPerK: 0.0063, outputPerK: 0.0252 }
 };

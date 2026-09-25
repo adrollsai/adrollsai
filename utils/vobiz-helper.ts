@@ -168,12 +168,15 @@ export async function triggerVobizOutboundCall(
     const authId = profile.voice_vobiz_auth_id || bi.voice_vobiz_auth_id || bi.kyc_data?.vobizSubAuthId || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
     const authToken = profile.voice_vobiz_auth_token || bi.voice_vobiz_auth_token || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
     
-    // Strictly require an assigned number for the account. NEVER fall back to master pool number unless explicitly passed for dev testing.
+    // Strictly require an assigned number for the account. NEVER fall back to master pool number unless explicitly passed for dev testing or master account.
+    const isNobogentMaster = profile.email === 'rchopra489@gmail.com' || profile.role === 'super_admin'
+    const masterNumber = process.env.VOBIZ_TEST_NUMBER || '+911171366938'
     const assignedNumber = fromPhone 
         || profile.voice_vobiz_number 
         || bi.claimed_vobiz_number 
         || bi.voice_vobiz_number 
         || (profile.voice_twilio_number?.startsWith('+91') ? profile.voice_twilio_number : null)
+        || (isNobogentMaster ? masterNumber : null)
 
     if (!assignedNumber) {
         console.warn(`[VOBIZ HELPER] Call aborted for lead ${leadId}: Account ${profile.email} (${profileId}) has NO assigned phone number.`);

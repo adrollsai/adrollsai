@@ -5,7 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { 
     Globe, Plus, Trash2, Edit3, Eye, Copy, Check, MessageSquare, 
     Sparkles, ArrowRight, Loader2, List, Clipboard, ArrowLeft, Send, Paperclip,
-    Code, Image as ImageIcon, X, Smartphone, Tablet, Monitor
+    Code, Image as ImageIcon, X, Smartphone, Tablet, Monitor,
+    Download, ExternalLink, Zap, Building2, Laptop, Stethoscope, Briefcase, 
+    Dumbbell, Wrench, ShoppingBag, Palette, ChevronDown, CheckCircle2
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
@@ -103,6 +105,8 @@ export default function PagesDashboard() {
     const [selectedPropertyId, setSelectedPropertyId] = useState('')
     const [customInstructions, setCustomInstructions] = useState('')
     const [pageType, setPageType] = useState<'standard' | 'survey' | 'raw_survey' | 'business'>('standard')
+    const [selectedIndustry, setSelectedIndustry] = useState<string>('general')
+    const [selectedDesignTheme, setSelectedDesignTheme] = useState<string>('modern_slate')
 
     // Edit/Chat Console state
     const [activeEditorPage, setActiveEditorPage] = useState<LandingPage | null>(null)
@@ -590,9 +594,9 @@ export default function PagesDashboard() {
     }
 
     // --- 4. LANDING PAGE GENERATION ---
-const handleGenerateLandingPage = async () => {
+    const handleGenerateLandingPage = async () => {
         if (!pageProductName.trim() && !selectedPropertyId && pageType !== 'business') {
-            showToast("Please enter a product name or select a property from your inventory.", 'error')
+            showToast("Please enter a product/business name or select from inventory.", 'error')
             return
         }
 
@@ -613,7 +617,9 @@ const handleGenerateLandingPage = async () => {
                     customInstructions: customInstructions.trim(),
                     formId: selectedFormId || null,
                     mode: 'generate',
-                    pageType: pageType
+                    pageType: pageType,
+                    industry: selectedIndustry,
+                    designTheme: selectedDesignTheme
                 })
             })
 
@@ -628,24 +634,28 @@ const handleGenerateLandingPage = async () => {
 
             if (!response.ok) throw new Error(resData.error || "Generation failed")
 
-            showToast(`Generation started in background...prefix`)
             setPageProductName('')
             setPageContext('')
             setSelectedPropertyId('')
             setCustomInstructions('')
             setSelectedFormId('')
-            setPageType('standard')
             setShowPageGenerator(false)
             
-            // Auto open the newly generated page in the preview editor with a loading state
-            if (resData.page) {
+            // Check if page was generated synchronously with full HTML content
+            if (resData.page && resData.page.html_content && !resData.page.html_content.includes('Generating page content')) {
+                setActiveEditorPage(resData.page)
+                setEditedHtml(resData.page.html_content)
+                showToast("Landing page generated with DeepSeek V4.1 Flash!")
+                setChatLogs([
+                    { sender: 'ai', message: `✨ Awesome! Your landing page for "${resData.page.product_name}" is generated with DeepSeek V4.1 Flash! It is 100% responsive, Google SEO & LLM rankable with Schema.org JSON-LD. Click any text in the live preview to edit visually, or type requested changes below.` }
+                ])
+                await fetchListData(targetUserId)
+            } else if (resData.jobId && resData.page) {
+                showToast("Generating landing page with DeepSeek V4.1 Flash...")
                 setActiveEditorPage(resData.page)
                 setChatLogs([
-                    { sender: 'ai', message: `Building landing page for "${resData.page.product_name}" in the background... This can take up to a minute. Please wait.` }
+                    { sender: 'ai', message: `Building landing page for "${resData.page.product_name}" with DeepSeek V4.1 Flash in the background... Please wait.` }
                 ])
-            }
-            
-            if (resData.jobId && resData.page) {
                 startedBgJob = true
                 startPollingJobStatus(resData.jobId, resData.page.id, false)
             }
@@ -932,7 +942,16 @@ const handleSendChatEdit = async () => {
                 throw new Error(errMsg)
             }
 
-            if (resData.jobId && resData.page) {
+            if (resData.page && resData.page.html_content && !resData.page.html_content.includes('Generating page content')) {
+                setActiveEditorPage(resData.page)
+                setEditedHtml(resData.page.html_content)
+                setChatLogs(prev => [...prev, { 
+                    sender: 'ai', 
+                    message: "✨ I've updated the landing page styling and layout with DeepSeek Flash! Inspect the live preview." 
+                }])
+                showToast("Edits applied successfully!")
+                await fetchListData(targetUserId)
+            } else if (resData.jobId && resData.page) {
                 startedBgJob = true
                 setChatLogs(prev => [...prev, { 
                     sender: 'ai', 
@@ -947,6 +966,51 @@ const handleSendChatEdit = async () => {
                 setActionLoading(false)
             }
         }
+    }
+
+    const handleDownloadAstro = () => {
+        if (!activeEditorPage) return
+        const rawContent = editedHtml || activeEditorPage.html_content
+        const cleanContent = rawContent.replace(/<script id="preview-visual-edit-script">[\s\S]*?<\/script>/gi, '')
+        const astroComponent = `---
+// Generated by Nobogent Landing Page Generator (DeepSeek V4.1 Flash)
+// Framework: Astro JS 5.x Component (Static & SSR Compatible)
+// Google SEO & LLM Search Optimized with Schema.org JSON-LD
+
+export interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { 
+  title = ${JSON.stringify(activeEditorPage.product_name || 'Landing Page')}, 
+  description = ${JSON.stringify(activeEditorPage.title || 'Official Landing Page')} 
+} = Astro.props;
+---
+${cleanContent}
+`
+        const blob = new Blob([astroComponent], { type: 'text/plain;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${activeEditorPage.slug || 'landing-page'}.astro`
+        a.click()
+        URL.revokeObjectURL(url)
+        showToast("Downloaded as Astro (.astro) component!")
+    }
+
+    const handleDownloadHtml = () => {
+        if (!activeEditorPage) return
+        const rawContent = editedHtml || activeEditorPage.html_content
+        const cleanContent = rawContent.replace(/<script id="preview-visual-edit-script">[\s\S]*?<\/script>/gi, '')
+        const blob = new Blob([cleanContent], { type: 'text/html;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${activeEditorPage.slug || 'landing-page'}.html`
+        a.click()
+        URL.revokeObjectURL(url)
+        showToast("Downloaded as HTML (.html) file!")
     }
 
         const handleSaveHtml = async () => {
@@ -1365,8 +1429,29 @@ const handleSendChatEdit = async () => {
                             </div>
                         )}
 
+                        {/* Quick Action Prompt Chips */}
+                        <div className="flex gap-1.5 overflow-x-auto py-1.5 scrollbar-hide shrink-0">
+                            {[
+                                { label: '🌟 Luxury Gold', prompt: 'Switch to an ultra-luxurious gold & dark midnight noir aesthetic (Astro Bioque Estates style) with golden borders, dark slate cards, and champagne accents.' },
+                                { label: '❓ 5 FAQ Accordions', prompt: 'Add an interactive 5-question FAQ accordion section addressing common client objections with working expand/collapse toggle buttons.' },
+                                { label: '⭐ Reviews Grid', prompt: 'Add a 3-column "Wall of Love" reviews grid with authentic testimonials, verified badges, and 5-star ratings.' },
+                                { label: '🚀 Glowing CTA', prompt: 'Make the primary CTA buttons more prominent with high-contrast styling, subtle pulse animation, and urgency badges.' },
+                                { label: '📱 Mobile Bottom Bar', prompt: 'Ensure there is a fixed bottom bar on mobile screens with instant Call Now and WhatsApp buttons.' },
+                                { label: '📊 Pricing Table', prompt: 'Add a transparent pricing tiers or package comparison table with feature checkmarks and a "Most Popular" highlighted card.' }
+                            ].map((chip, idx) => (
+                                <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => setChatInput(chip.prompt)}
+                                    className="text-[10px] font-bold bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200/80 px-2.5 py-1 rounded-full whitespace-nowrap transition-all shadow-2xs active:scale-95 shrink-0"
+                                >
+                                    {chip.label}
+                                </button>
+                            ))}
+                        </div>
+
                         {/* Input bar */}
-                        <div className="mt-3 flex gap-2">
+                        <div className="mt-2 flex gap-2">
                             <input 
                                 type="file" 
                                 ref={chatFileInputRef} 
@@ -1473,25 +1558,61 @@ const handleSendChatEdit = async () => {
                                 </div>
                             )}
 
-                            <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
-                                {editorView === 'code' ? (
-                                    <button
-                                        onClick={handleSaveHtml}
-                                        disabled={actionLoading}
-                                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shadow-blue-500/10 active:scale-95 disabled:opacity-50"
-                                    >
-                                        {actionLoading ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                                        Save Code
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => copyUrl(activeEditorPage.slug, activeEditorPage.id)}
-                                        className="bg-white px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-100 text-slate-600 text-[10px] font-black flex items-center gap-1.5 transition-all shadow-sm active:scale-95 truncate"
-                                    >
-                                        {copiedId === activeEditorPage.id ? <Check size={12} className="text-green-600" /> : <Copy size={12} />} 
-                                        {copiedId === activeEditorPage.id ? 'Copied' : 'Copy URL'}
-                                    </button>
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end flex-wrap">
+                                {editorView === 'preview' && (
+                                    <span className="hidden sm:inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider text-slate-400 bg-white border border-slate-200/60 px-2.5 py-1 rounded-full shadow-2xs mr-1">
+                                        <Edit3 size={10} className="text-blue-500" /> Click text to edit
+                                    </span>
                                 )}
+                                
+                                <button
+                                    onClick={handleDownloadAstro}
+                                    className="bg-white hover:bg-purple-50 text-purple-700 border border-purple-200/70 hover:border-purple-300 px-2.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shadow-2xs active:scale-95"
+                                    title="Export full Astro JS Component (.astro)"
+                                >
+                                    <Download size={12} className="text-purple-600" />
+                                    <span>.astro</span>
+                                </button>
+
+                                <button
+                                    onClick={handleDownloadHtml}
+                                    className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shadow-2xs active:scale-95"
+                                    title="Download static HTML file (.html)"
+                                >
+                                    <Download size={12} />
+                                    <span>.html</span>
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        const host = typeof window !== 'undefined' ? window.location.host : 'app.nobogent.com'
+                                        const domainBase = customDomain || `${host}/shared/${targetUserId}`
+                                        window.open(`https://${domainBase}/${activeEditorPage.slug}`, '_blank')
+                                    }}
+                                    className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shadow-2xs active:scale-95"
+                                    title="Open live page in new tab"
+                                >
+                                    <ExternalLink size={12} />
+                                    <span className="hidden sm:inline">Live</span>
+                                </button>
+
+                                <button
+                                    onClick={() => copyUrl(activeEditorPage.slug, activeEditorPage.id)}
+                                    className="bg-white px-2.5 py-1.5 rounded-full border border-slate-200 hover:bg-slate-100 text-slate-600 text-[10px] font-black flex items-center gap-1 transition-all shadow-2xs active:scale-95"
+                                    title="Copy clean shareable public link"
+                                >
+                                    {copiedId === activeEditorPage.id ? <Check size={12} className="text-green-600" /> : <Copy size={12} />} 
+                                    <span>{copiedId === activeEditorPage.id ? 'Copied' : 'Link'}</span>
+                                </button>
+
+                                <button
+                                    onClick={handleSaveHtml}
+                                    disabled={actionLoading}
+                                    className="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                                >
+                                    {actionLoading ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} className="text-emerald-400" />}
+                                    Save
+                                </button>
                             </div>
                         </div>
 
@@ -2205,58 +2326,178 @@ const handleSendChatEdit = async () => {
                 </div>
             )}
 
-            {/* MODAL: AI PAGE GENERATOR */}
+            {/* MODAL: AI PAGE GENERATOR STUDIO */}
             {showPageGenerator && (
-                <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-                    <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-6 sm:p-8 shadow-2xl flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-300 overflow-y-auto custom-scrollbar">
-                        <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
-                            <h2 className="text-xl font-black text-slate-900">AI Landing Page Generator</h2>
-                            <button onClick={() => setShowPageGenerator(false)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors">
+                <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+                    <div className="bg-white w-full max-w-2xl rounded-[2.5rem] p-6 sm:p-8 shadow-2xl flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-300 overflow-y-auto custom-scrollbar border border-slate-100">
+                        {/* Header */}
+                        <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-5">
+                            <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-700">
+                                        <Zap size={11} className="fill-purple-600 text-purple-600" /> DeepSeek V4.1 Flash
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60">
+                                        Astro JS Ready
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/60">
+                                        SEO & Schema.org
+                                    </span>
+                                </div>
+                                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">AI Landing Page & Website Studio</h2>
+                                <p className="text-xs text-slate-500 font-medium mt-0.5">High-converting, responsive landing pages & websites across any niche</p>
+                            </div>
+                            <button 
+                                onClick={() => setShowPageGenerator(false)} 
+                                className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors shrink-0"
+                            >
                                 <Plus className="rotate-45" size={18} />
                             </button>
                         </div>
 
-                        {/* Scope Selection */}
-                        <div className="mb-6">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Scope of Landing Page</label>
-                            <div className="flex gap-2">
+                        {/* Step 1: Industry / Niche Selection */}
+                        <div className="mb-5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block flex items-center justify-between">
+                                <span>1. Select Industry / Niche</span>
+                                <span className="text-[10px] text-purple-600 font-bold normal-case">Tailors copywriting, trust badges & Schema.org</span>
+                            </label>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {[
+                                    { id: 'real_estate', label: 'Real Estate & Properties', icon: Building2 },
+                                    { id: 'saas', label: 'SaaS & Software', icon: Laptop },
+                                    { id: 'health', label: 'Health & Medical', icon: Stethoscope },
+                                    { id: 'agency', label: 'Agency & B2B', icon: Briefcase },
+                                    { id: 'fitness', label: 'Fitness & Wellness', icon: Dumbbell },
+                                    { id: 'services', label: 'Home & Pro Services', icon: Wrench },
+                                    { id: 'ecommerce', label: 'E-Commerce & DTC', icon: ShoppingBag },
+                                    { id: 'general', label: 'Custom / Other Niche', icon: Sparkles }
+                                ].map((ind) => {
+                                    const Icon = ind.icon
+                                    const isSelected = selectedIndustry === ind.id
+                                    return (
+                                        <button
+                                            key={ind.id}
+                                            type="button"
+                                            onClick={() => setSelectedIndustry(ind.id as any)}
+                                            className={`flex items-center gap-2 p-2.5 rounded-2xl border text-left transition-all ${
+                                                isSelected 
+                                                    ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/20 ring-2 ring-purple-400/30' 
+                                                    : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100/80 hover:border-slate-300'
+                                            }`}
+                                        >
+                                            <div className={`p-1.5 rounded-xl shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'bg-white text-slate-600 shadow-xs'}`}>
+                                                <Icon size={14} />
+                                            </div>
+                                            <span className="text-xs font-bold truncate leading-tight">{ind.label}</span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Step 2: Page Architecture / Scope */}
+                        <div className="mb-5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">
+                                2. Architecture & Purpose
+                            </label>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 <button
+                                    type="button"
                                     onClick={() => {
                                         setPageType('standard')
-                                        setSelectedPropertyId('')
-                                        setPageProductName('')
-                                        setPageContext('')
                                     }}
-                                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                                        pageType !== 'business' 
-                                            ? 'bg-slate-900 text-white border-slate-900' 
-                                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                    className={`p-3 rounded-2xl text-left border transition-all ${
+                                        pageType === 'standard'
+                                            ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                                            : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
                                     }`}
                                 >
-                                    Specific Product / Property
+                                    <div className="text-xs font-black mb-0.5">High-Converting Landing Page</div>
+                                    <div className={`text-[10px] leading-snug ${pageType === 'standard' ? 'text-slate-300' : 'text-slate-500'}`}>
+                                        Hero CTA, Dream Outcome, social proof, FAQ & lead capture modal
+                                    </div>
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={() => {
                                         setPageType('business')
                                         setSelectedPropertyId('')
-                                        setPageProductName(subAccountName || '')
-                                        setPageContext('')
+                                        if (!pageProductName && subAccountName) setPageProductName(subAccountName)
                                     }}
-                                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                                        pageType === 'business' 
-                                            ? 'bg-slate-900 text-white border-slate-900' 
-                                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                    className={`p-3 rounded-2xl text-left border transition-all ${
+                                        pageType === 'business'
+                                            ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                                            : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
                                     }`}
                                 >
-                                    Entire Business Homepage
+                                    <div className="text-xs font-black mb-0.5">Full Business Website</div>
+                                    <div className={`text-[10px] leading-snug ${pageType === 'business' ? 'text-slate-300' : 'text-slate-500'}`}>
+                                        Multi-service catalog, brand story, showcase grid, & inquiry flow
+                                    </div>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setPageType('survey')
+                                    }}
+                                    className={`p-3 rounded-2xl text-left border transition-all ${
+                                        pageType === 'survey' || pageType === 'raw_survey'
+                                            ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                                            : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                                    }`}
+                                >
+                                    <div className="text-xs font-black mb-0.5">Fast Qualifier / Survey Page</div>
+                                    <div className={`text-[10px] leading-snug ${pageType === 'survey' || pageType === 'raw_survey' ? 'text-slate-300' : 'text-slate-500'}`}>
+                                        Ultra-fast inline multi-step form to pre-qualify inbound traffic
+                                    </div>
                                 </button>
                             </div>
                         </div>
 
-                        {/* Select Product from Inventory */}
-                        {pageType !== 'business' && (
-                            <div className="mb-6">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Select Product from Inventory</label>
+                        {/* Step 3: Visual Design Theme */}
+                        <div className="mb-5">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block flex items-center justify-between">
+                                <span>3. Visual Aesthetic & Theme</span>
+                                <span className="text-[10px] text-slate-500 font-bold normal-case">Tailwind 3 + Astro typography</span>
+                            </label>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {[
+                                    { id: 'luxury_gold', label: 'Luxury Gold & Dark', bg: 'bg-[#0a0a0c]', dot: 'bg-amber-400', desc: 'Prestige & high-ticket' },
+                                    { id: 'modern_slate', label: 'Modern Slate & Blue', bg: 'bg-slate-900', dot: 'bg-blue-500', desc: 'Clean SaaS & B2B' },
+                                    { id: 'vibrant_bold', label: 'Vibrant Emerald', bg: 'bg-emerald-950', dot: 'bg-emerald-400', desc: 'Growth, clinics & health' },
+                                    { id: 'clean_minimal', label: 'Clean Studio White', bg: 'bg-white', dot: 'bg-slate-900', desc: 'Minimalist & modern' }
+                                ].map((t) => {
+                                    const isSelected = selectedDesignTheme === t.id
+                                    return (
+                                        <button
+                                            key={t.id}
+                                            type="button"
+                                            onClick={() => setSelectedDesignTheme(t.id as any)}
+                                            className={`p-2.5 rounded-2xl border text-left transition-all ${
+                                                isSelected 
+                                                    ? 'border-slate-900 bg-slate-900 text-white shadow-md' 
+                                                    : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-1.5 mb-1">
+                                                <span className={`w-3 h-3 rounded-full ${t.dot} inline-block shadow-xs border border-white/20`} />
+                                                <span className="text-xs font-black truncate">{t.label}</span>
+                                            </div>
+                                            <div className={`text-[9px] font-medium leading-none ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                                                {t.desc}
+                                            </div>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Inventory selection (If available and applicable) */}
+                        {pageType !== 'business' && properties.length > 0 && (
+                            <div className="mb-4">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">
+                                    Autofill from Catalog / Properties (Optional)
+                                </label>
                                 <select 
                                     value={selectedPropertyId}
                                     onChange={e => {
@@ -2273,9 +2514,9 @@ const handleSendChatEdit = async () => {
                                             }
                                         }
                                     }}
-                                    className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
+                                    className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/60 transition-all cursor-pointer"
                                 >
-                                    <option value="">Custom Product / Raw Input</option>
+                                    <option value="">Start from scratch / Custom input</option>
                                     {properties.map(p => (
                                         <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
                                     ))}
@@ -2283,85 +2524,95 @@ const handleSendChatEdit = async () => {
                             </div>
                         )}
 
-                        {/* Product/Business Name */}
-                        <div className="mb-6">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">
-                                {pageType === 'business' ? 'Business Name' : 'Product Name / Title'}
+                        {/* Name Input */}
+                        <div className="mb-4">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
+                                {pageType === 'business' ? 'Business or Company Name' : 'Product / Project / Service Name'} *
                             </label>
                             <input 
                                 type="text"
                                 value={pageProductName}
                                 onChange={e => setPageProductName(e.target.value)}
-                                placeholder={pageType === 'business' ? 'e.g. Homcom Realtors' : 'e.g. Homeland Regalia Luxury Apartments'}
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all"
+                                placeholder={
+                                    selectedIndustry === 'real_estate' ? 'e.g. Bioque Estates Luxury Residences' :
+                                    selectedIndustry === 'saas' ? 'e.g. LeadPulse AI Automation' :
+                                    selectedIndustry === 'health' ? 'e.g. Apex Regenerative Health Clinic' :
+                                    selectedIndustry === 'agency' ? 'e.g. Veloce Growth Partners' :
+                                    'e.g. Acme Premium Solutions'
+                                }
+                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all"
                             />
                         </div>
 
-                        {/* Product/Business Details context */}
-                        <div className="mb-6">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">
-                                {pageType === 'business' ? 'Business Description & Mission' : 'Product Details & Context'}
+                        {/* Details / Offer Context */}
+                        <div className="mb-4">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
+                                Core Offer, Key Benefits & Proof Points *
                             </label>
                             <textarea 
                                 value={pageContext}
                                 onChange={e => setPageContext(e.target.value)}
-                                placeholder={pageType === 'business' ? 'Describe your business services, value proposition, areas served, and overall mission...' : 'Describe product details, location, pricing, special hooks, aesthetics, and premium benefits to guide the copywriting...'}
-                                rows={4}
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all resize-none leading-relaxed"
+                                placeholder={
+                                    selectedIndustry === 'real_estate' 
+                                        ? 'e.g. 4 & 5 BHK luxury villas starting at $1.2M, private infinity pools, 5 min from international airport, concierge security, 20% down payment plan.' 
+                                        : selectedIndustry === 'saas'
+                                        ? 'e.g. AI-powered customer outreach tool that books 3x more discovery calls on autopilot. Integrates with HubSpot & Slack. 14-day free trial, no credit card required.'
+                                        : 'Describe your core offer, pricing structure, key pain points solved, social proof/results, and why prospects should choose you...'
+                                }
+                                rows={3}
+                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-2xl text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all resize-none leading-relaxed"
                             />
                         </div>
 
                         {/* Custom Instructions */}
-                        <div className="mb-6">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Custom Instructions (Optional)</label>
-                            <textarea 
+                        <div className="mb-4">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
+                                Custom Creative Instructions (Optional)
+                            </label>
+                            <input 
+                                type="text"
                                 value={customInstructions}
                                 onChange={e => setCustomInstructions(e.target.value)}
-                                placeholder="e.g. Focus on proximity to Mohali airport, maintain smart elegant dark gold theme, highlight gated safety..."
-                                rows={3}
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all resize-none leading-relaxed"
+                                placeholder="e.g. Emphasize limited availability (only 6 slots left), add WhatsApp floating CTA button, highlight trust guarantee"
+                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3 rounded-2xl text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all"
                             />
                         </div>
 
-                        {/* Page Type Selection */}
-                        {pageType !== 'business' && (
-                            <div className="mb-6">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Generation Format / Type</label>
-                                <select 
-                                    value={pageType}
-                                    onChange={e => setPageType(e.target.value as 'standard' | 'survey' | 'raw_survey')}
-                                    className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
-                                >
-                                    <option value="standard">Standard Landing Page (Conversion Copy + Modal Form)</option>
-                                    <option value="survey">Survey Form Only (Super Fast + Direct Inline Form)</option>
-                                    <option value="raw_survey">Raw Survey Card (Photos + Form Callout, No extra info)</option>
-                                </select>
-                            </div>
-                        )}
-
-                        {/* Connect Form */}
-                        <div className="mb-8">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Link Qualification Form</label>
+                        {/* Link Qualification Form */}
+                        <div className="mb-6">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
+                                Connect Lead Capture / Qualification Form
+                            </label>
                             <select 
                                 value={selectedFormId}
                                 onChange={e => setSelectedFormId(e.target.value)}
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
+                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all cursor-pointer"
                             >
-                                <option value="">Select a Form (None - collects Name, WhatsApp, City only)</option>
+                                <option value="">Built-in High-Converting Form (Name, Phone / WhatsApp, Email)</option>
                                 {forms.map(f => (
-                                    <option key={f.id} value={f.id}>{f.name}</option>
+                                    <option key={f.id} value={f.id}>📋 {f.name}</option>
                                 ))}
                             </select>
                         </div>
 
-                        {/* Submit */}
+                        {/* Submit Button */}
                         <button
+                            type="button"
                             onClick={handleGenerateLandingPage}
-                            disabled={actionLoading}
-                            className="bg-slate-900 text-white w-full py-4 rounded-full font-black text-sm shadow-lg shadow-slate-900/10 hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 mt-auto shrink-0"
+                            disabled={actionLoading || !pageProductName.trim()}
+                            className="bg-gradient-to-r from-purple-600 via-indigo-600 to-slate-900 text-white w-full py-4 rounded-2xl font-black text-sm shadow-xl shadow-purple-500/20 hover:opacity-95 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 active:scale-[0.99] mt-auto shrink-0 cursor-pointer"
                         >
-                            {actionLoading ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} className="text-purple-400" />}
-                            {actionLoading ? 'Asking Gemini to generate HTML...' : 'Generate High-Converting Landing Page'}
+                            {actionLoading ? (
+                                <>
+                                    <Loader2 className="animate-spin text-purple-200" size={18} />
+                                    <span>Generating High-Converting Astro Landing Page with DeepSeek Flash...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Zap size={18} className="fill-amber-300 text-amber-300" />
+                                    <span>Generate Complete Landing Page (DeepSeek V4.1 Flash)</span>
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>

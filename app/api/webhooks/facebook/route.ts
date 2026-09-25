@@ -1388,7 +1388,8 @@ export async function POST(request: Request) {
                                      }
 
                                      // Bypass automated auto-replies / greetings from other business WhatsApp accounts to prevent bot-to-bot reply loops
-                                     const isAutoGreeting = /^(thank you for (contacting|reaching out|messaging|your message)|welcome to|we('re| are) (currently )?unavailable|we will (respond|reply) as soon as|we are at your service|greetings from|shukran|شكرًا|how may (i|we) assist|please let us know how we can (help|assist)|agents are waiting|to assist you better|to assist you with your|in order to assist you|not registered in our system|hi, what is your name|if you have a legal inquiry|we have demand of \d+\+|select the type of .* visa|reply with the number of the service|good day.*thank you for reaching out)/i.test((messageText || '').trim());
+                                     const isAutoGreeting = /^(thank you for (contacting|reaching out|messaging|your message)|welcome to|we('re| are) (currently )?unavailable|we will (respond|reply) as soon as|we are at your service|greetings from|shukran|شكرًا|how may (i|we) assist|please let us know how we can (help|assist)|agents are waiting|to assist you better|to assist you with your|in order to assist you|not registered in our system|hi, what is your name|if you have a legal inquiry|we have demand of \d+\+|select the type of .* visa|reply with the number of the service|good day.*thank you for reaching out|our services\b|please share the below details|please provide the following details|to assist you promptly|start your business in uae|important announcement|passport, visa & attestation services|are at your service|dedicated visa expert)/i.test((messageText || '').trim()) ||
+                                         /\b(not registered in our system|contact our support team at support@)\b/i.test(messageText || '');
                                      if (isAutoGreeting) {
                                          console.log(`[Flow] Logged automated business greeting to CRM, skipping automated bot response for ${cleanFrom}: "${(messageText || '').slice(0, 80)}"`);
                                          return;
@@ -1901,25 +1902,56 @@ export async function POST(request: Request) {
                                                 sendTypingIndicator(ownerWaPhoneId, ownerWaToken, msgId);
                                             }
                                             
-                                            // Fetch real-time available properties for owner
-                                            const { data: properties } = await supabaseAdmin
-                                                .from('properties')
-                                                .select('title, price, address, property_type, description')
-                                                .eq('user_id', ownerUserId)
-                                                .limit(15);
-                                                
-                                            let inventoryText = 'No specific listings in database yet.';
-                                            if (properties && properties.length > 0) {
-                                                inventoryText = properties.map((p: any, idx: number) => {
-                                                    return `${idx + 1}. *${p.title}*\n   • Type: ${p.property_type || 'Residential'}\n   • Price: ${p.price || 'Contact for Price'}\n   • Location: ${p.address || 'New Chandigarh / Tri-city'}\n   • Highlights: ${p.description ? p.description.slice(0, 250) : 'Premium property'}`;
-                                                }).join('\n\n');
-                                            }
-
                                             const effectiveAddress = ownerAddress || '';
                                             const effectivePhone = ownerContactNumber || '';
                                             const effectiveBusinessInfo = ownerBusinessInfo || `${ownerBusinessName} provides expert client services and solutions.`;
 
-                                            const systemPrompt = `You are the friendly, professional AI Assistant representing "${ownerBusinessName}".
+                                            let systemPrompt = '';
+                                            if (isPipixelAccount) {
+                                                systemPrompt = `You are the friendly, expert AI Assistant representing "PiPixel" (https://pipixel.io).
+PiPixel is a premier digital marketing, performance advertising, and technology agency specializing in helping immigration consultants, study-abroad agencies, and visa education businesses scale their digital presence and acquire high-intent clients.
+
+Official Company Details for PiPixel:
+• Company Name: PiPixel
+• Office Address: Plot No 163, Sector 82, JLPL Industrial Area, Sahibzada Ajit Singh Nagar (Mohali), Punjab 160055, India
+• Contact Phone / WhatsApp: +91 97800-56666 / +91 77102 67163
+• Website: https://pipixel.io
+• Email: pawan@pipixel.io
+
+Core Services & Offerings for Immigration & Study-Abroad Businesses:
+1. Performance Marketing & Paid Ads: High-converting Meta (Facebook & Instagram) and Google Ads campaigns tailored for immigration, student visas (Canada, UK, Australia, Europe, USA), PR, and study-abroad consultants.
+2. WhatsApp Automation & 24/7 AI Sales Rep: Instant lead qualification, automated drip follow-ups, and instant lead engagement so zero leads go cold.
+3. High-Converting Websites & Landing Pages: Fast, mobile-first funnels designed specifically to capture student & visa inquiries.
+4. Lead Management CRM & Pipeline Automation: Complete tracking of every prospect from ad click to consultation booking to visa filing.
+5. Creative Ad Content & Video Ads: Engaging social media creatives, ad scripts, and video hooks tailored to the immigration industry.
+6. Free Growth Trial: We offer a risk-free trial / live 1-on-1 strategy walkthrough to show how our client acquisition systems deliver qualified leads.
+
+CRITICAL RULES FOR PIPIXEL:
+1. STRICTLY FORBIDDEN: NEVER mention real estate, properties, flats, apartments, villas, plots, floor plans, or site visits under ANY circumstance. PiPixel is an IT, digital marketing, and automation agency.
+2. Always represent PiPixel with utmost professionalism, warmth, clarity, and industry expertise.
+3. If they inquire about services, explain how PiPixel helps immigration and study-abroad businesses generate qualified student/visa leads and automate client follow-ups.
+4. If they ask about office location, provide the official Mohali, Punjab address and contact number +91 97800-56666.
+5. If they ask about pricing or free trial, explain that we offer a free trial/demo strategy session and encourage them to connect with our specialist or schedule a call.
+6. Keep responses concise (under 90 words), highly readable on mobile, using WhatsApp formatting (bold *text*, bullet points •). Do NOT use HTML or markdown tables.
+7. End with a helpful, friendly question or call to action to guide the client to the next step.`;
+                                            } else {
+                                                // Fetch real-time available properties for owner if applicable
+                                                let inventoryText = 'No specific listings in database yet.';
+                                                if (hasProperties) {
+                                                    const { data: properties } = await supabaseAdmin
+                                                        .from('properties')
+                                                        .select('title, price, address, property_type, description')
+                                                        .eq('user_id', ownerUserId)
+                                                        .limit(15);
+                                                        
+                                                    if (properties && properties.length > 0) {
+                                                        inventoryText = properties.map((p: any, idx: number) => {
+                                                            return `${idx + 1}. *${p.title}*\n   • Type: ${p.property_type || 'Residential'}\n   • Price: ${p.price || 'Contact for Price'}\n   • Location: ${p.address || 'New Chandigarh / Tri-city'}\n   • Highlights: ${p.description ? p.description.slice(0, 250) : 'Premium property'}`;
+                                                        }).join('\n\n');
+                                                    }
+                                                }
+
+                                                systemPrompt = `You are the friendly, professional AI Assistant representing "${ownerBusinessName}".
 You assist prospective clients, answering inquiries about services, offerings, pricing, and scheduling appointments.
 
 Official Company Details for ${ownerBusinessName}:
@@ -1937,6 +1969,7 @@ RULES:
 3. If they inquire about specific offerings, services, or products, reference the catalog highlights above with pricing and features.
 4. Keep responses concise (under 120 words), readable on mobile, using WhatsApp formatting (bold *text*, bullet points •). Do NOT use HTML or markdown tables.
 5. End with a helpful, friendly question or call to action to guide the client to the next step.`;
+                                            }
 
                                             let aiReply = '';
                                             try {
@@ -1952,21 +1985,22 @@ RULES:
                                             }
 
                                             if (!aiReply || aiReply.trim().length === 0) {
-                                                aiReply = `Thank you for reaching out to *${ownerBusinessName || 'our team'}*! We are delighted to assist you with our services, catalog, and offerings. Please let us know how we can help you today.`;
+                                                aiReply = isPipixelAccount
+                                                    ? `Thank you for reaching out to *PiPixel*! We help immigration and study-abroad businesses scale with high-converting marketing & automated client acquisition systems. Please let us know how we can assist you today.`
+                                                    : `Thank you for reaching out to *${ownerBusinessName || 'our team'}*! We are delighted to assist you with our services, catalog, and offerings. Please let us know how we can help you today.`;
                                             }
 
                                             // Send AI answer as clear message
                                             await sendTextMessage(aiReply);
                                             
-                                            if (!skipActionButtons && !isPipixelAccount) {
+                                            if (!skipActionButtons) {
                                                 await new Promise(r => setTimeout(r, 150));
-                                                
                                                 // Send 3 action buttons for easy next steps
                                                 await sendThreeButtons("What would you like to do next?");
                                             }
                                         } catch (err) {
                                             console.error('[Customer AI] Failed to generate AI reply:', err);
-                                            if (!skipActionButtons && !isPipixelAccount) {
+                                            if (!skipActionButtons) {
                                                 await sendThreeButtons("What would you like to do next?");
                                             }
                                         }
@@ -2563,6 +2597,41 @@ RULES:
                                         return;
                                     }
 
+                                    // 2.6 Check for "Claim Free Trial" button click or text (PiPixel)
+                                    const isClaimTrial = buttonReplyId === 'claim_trial' || /^(claim free trial|claim trial|free trial|get trial|start trial|trial)[!.]*$/i.test(messageText.trim());
+                                    if (isClaimTrial || (isPipixelAccount && /claim.*trial|free.*trial/i.test(messageText.trim()))) {
+                                        console.log(`[WhatsApp Bot] PiPixel lead ${cleanFrom} requested "Claim Free Trial".`);
+                                        await syncFieldsAndScore({ claim_trial_clicked: true, interested_clicked: true });
+                                        
+                                        const validName = latestLead?.name && !/^(interested|valued lead|valued customer|lead|prospect)$/i.test(latestLead.name.trim())
+                                            ? latestLead.name.trim()
+                                            : (chat.recipient_name && !/^(interested|valued lead|valued customer|lead|prospect)$/i.test(chat.recipient_name.trim()) ? chat.recipient_name.trim() : '');
+
+                                        const greeting = validName ? `Thank you, ${validName}! 🎉` : `Thank you! 🎉`;
+                                        const trialAckText = `${greeting} We are thrilled to help you scale! Our PiPixel growth specialist will connect with you right away to activate your free trial for your immigration or study-abroad business.\n\nTo help us prepare your custom client acquisition setup, what is your company name or website, and which visa countries do you primarily focus on?`;
+
+                                        await sendTextMessage(trialAckText);
+
+                                        const notifyLeadName = validName || latestLead?.name || chat.recipient_name || 'Prospect';
+                                        const targetLeadId = latestLead?.id;
+                                        const targetUrl = targetLeadId ? `/dashboard/crm/${targetLeadId}` : '/dashboard/crm';
+
+                                        sendAdminMultiChannelNotification({
+                                            ownerUserId,
+                                            title: `🔥 PiPixel Free Trial Claimed: ${notifyLeadName}`,
+                                            body: `Prospect ${notifyLeadName} (+${cleanFrom}) clicked "Claim Free Trial" on WhatsApp!\n\n🔗 CRM Link: https://app.nobogent.com${targetUrl}`,
+                                            url: targetUrl,
+                                            type: 'lead_interested',
+                                            leadPhone: '+' + cleanFrom,
+                                            leadName: notifyLeadName,
+                                            leadId: targetLeadId
+                                        }).catch(err => console.error('[WhatsApp Bot] Claim trial notification failed:', err));
+
+                                        await new Promise(r => setTimeout(r, 150));
+                                        await sendThreeButtons("What would you like to do next?");
+                                        return;
+                                    }
+
                                     // 3. Action Button 1: "View properties" / "Explore Services"
                                     const isViewProperties = buttonReplyId === 'view_properties' || /view propert|view product|explore propert|catalog|listings/i.test(messageText);
                                     if (isViewProperties) {
@@ -2619,7 +2688,7 @@ RULES:
                                         await syncFieldsAndScore({ connect_expert_clicked: true, requested_callback: true });
                                         
                                         // Confirm to lead
-                                        const specialistLabel = isNobogentAccount ? 'solutions specialist' : hasProperties ? 'property advisor' : 'specialist';
+                                        const specialistLabel = isNobogentAccount ? 'solutions specialist' : isPipixelAccount ? 'growth specialist' : hasProperties ? 'property advisor' : 'specialist';
                                         await sendTextMessage(`Thank you! Our ${specialistLabel} from ${ownerBusinessName || 'our team'} will reach out to you directly shortly. 🙏`);
                                         
                                         // Alert admin/agent via high-priority multi-channel notification
@@ -2627,10 +2696,11 @@ RULES:
                                         const targetLeadId = latestLead?.id;
                                         const targetUrl = targetLeadId ? `/dashboard/crm/${targetLeadId}` : '/dashboard/crm';
                                         const campaignContext = latestLead?.ad_name || latestLead?.source || 'WhatsApp Inbound';
+                                        const expertAlertTitle = isPipixelAccount ? `🚨 Call with PiPixel Specialist Requested: ${leadName}` : `🚨 Call with Expert Requested: ${leadName}`;
                                         
                                         sendAdminMultiChannelNotification({
                                             ownerUserId,
-                                            title: `🚨 Call with Expert Requested: ${leadName}`,
+                                            title: expertAlertTitle,
                                             body: `High-intent lead ${leadName} (+${cleanFrom}) clicked "Talk to an expert" on WhatsApp!\n\n📢 Source / Campaign: ${campaignContext}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
                                             url: targetUrl,
                                             type: 'connect_expert',
@@ -2657,14 +2727,25 @@ RULES:
                                     }
 
                                     // 5. Action Button 3: "Book an appointment"
-                                    const isBookAppointment = buttonReplyId === 'book_appointment' || /book an appointment|book appointment|schedule visit|book site visit|schedule meeting/i.test(messageText);
+                                    const isBookAppointment = buttonReplyId === 'book_appointment' || /book an appointment|book appointment|schedule visit|book site visit|schedule meeting|schedule a call/i.test(messageText);
                                     if (isBookAppointment) {
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "Book an appointment".`);
                                         await syncFieldsAndScore({ book_appointment_clicked: true });
+
+                                        const appointmentTitle = isPipixelAccount ? "📅 Schedule Strategy Call" : isNobogentAccount ? "📅 Book Strategy Call" : "📅 Schedule Appointment";
+                                        const appointmentSubtitle = isPipixelAccount
+                                            ? "Select a convenient slot for a 1-on-1 digital growth consultation with our marketing team:"
+                                            : isNobogentAccount
+                                            ? "Select a convenient slot for a 1-on-1 walkthrough of the Nobogent AI sales platform:"
+                                            : hasProperties
+                                            ? "Select a convenient consultation or site visit slot directly from our calendar:"
+                                            : "Select a convenient consultation slot directly from our calendar:";
+                                        const appointmentBtnText = isPipixelAccount ? "Schedule Call 📅" : isNobogentAccount ? "Book Strategy Call 📅" : hasProperties ? "Book Appointment 📅" : "Schedule Call 📅";
+
                                         await sendCtaUrlMessage(
-                                            "📅 Schedule Appointment",
-                                            "Select a convenient consultation or site visit slot directly from our calendar:",
-                                            "Book Appointment 📅",
+                                            appointmentTitle,
+                                            appointmentSubtitle,
+                                            appointmentBtnText,
                                             bookingLink
                                         );
 
@@ -2673,7 +2754,14 @@ RULES:
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
                                                 await new Promise(r => setTimeout(r, 150));
-                                                await sendTextMessage("To prepare the best options for your visit, please answer:");
+                                                const prepMsg = isPipixelAccount
+                                                    ? "To prepare the best marketing strategy for your call, please answer:"
+                                                    : isNobogentAccount
+                                                    ? "To prepare the best live demo for your call, please answer:"
+                                                    : hasProperties
+                                                    ? "To prepare the best options for your visit, please answer:"
+                                                    : "To prepare the best details for your consultation, please answer:";
+                                                await sendTextMessage(prepMsg);
                                                 await new Promise(r => setTimeout(r, 100));
                                                 await askQuestionMCQ(pendingQIndex);
                                                 return;
@@ -2872,66 +2960,63 @@ RULES:
                                                     await sendTextMessage(namePrompt);
                                                     return;
                                                 } else {
-                                                    await syncFieldsAndScore({ qualification_completed: true });
-                                                    await deliverPostQualificationLink(currentCustomFields?.full_name);
+                                                    await sendThreeButtons("What would you like to do?");
                                                     return;
                                                 }
                                             }
                                         }
 
-                                        // Legacy Real Estate Button / Keyword Fallbacks
-                                        if (buttonReplyId?.startsWith('q_prop_') || /^(residential|commercial|plots|land|flat|apartment|villa)/i.test(messageText.trim())) {
-                                            let selectedType = 'Residential';
-                                            if (buttonReplyId === 'q_prop_commercial' || /commercial/i.test(messageText)) selectedType = 'Commercial';
-                                            if (buttonReplyId === 'q_prop_plots' || /plot|land/i.test(messageText)) selectedType = 'Plots / Land';
-                                            
-                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Property Type: ${selectedType}`);
-                                            await syncFieldsAndScore({ property_type: selectedType, interested_property: selectedType });
+                                        // Legacy Real Estate Button / Keyword Fallbacks (Only for real estate accounts with properties)
+                                        if (!isPipixelAccount && !isNobogentAccount && hasProperties) {
+                                            if (buttonReplyId?.startsWith('q_prop_') || /^(residential|commercial|plots|land|flat|apartment|villa)/i.test(messageText.trim())) {
+                                                let selectedType = 'Residential';
+                                                if (buttonReplyId === 'q_prop_commercial' || /commercial/i.test(messageText)) selectedType = 'Commercial';
+                                                if (buttonReplyId === 'q_prop_plots' || /plot|land/i.test(messageText)) selectedType = 'Plots / Land';
+                                                
+                                                console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Property Type: ${selectedType}`);
+                                                await syncFieldsAndScore({ property_type: selectedType, interested_property: selectedType });
 
-                                            if (parsedQuestionsList.length > 1) {
-                                                await askQuestionMCQ(1);
-                                            } else {
-                                                await sendThreeButtons("What would you like to do?");
-                                            }
-                                            return;
-                                        }
-
-                                        if (buttonReplyId?.startsWith('q_bud_') || /(under|50l|1\.5|cr|lacs|budget)/i.test(messageText.trim())) {
-                                            let selectedBudget = '₹50L - ₹1.5 Cr';
-                                            if (buttonReplyId === 'q_bud_under_50l' || /under/i.test(messageText)) selectedBudget = 'Under ₹50 Lacs';
-                                            if (buttonReplyId === 'q_bud_above_1_5cr' || /above/i.test(messageText)) selectedBudget = 'Above ₹1.5 Cr';
-
-                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Budget: ${selectedBudget}`);
-                                            await syncFieldsAndScore({ budget: selectedBudget });
-
-                                            if (parsedQuestionsList.length > 2) {
-                                                await askQuestionMCQ(2);
-                                            } else {
-                                                await sendThreeButtons("What would you like to do?");
-                                            }
-                                            return;
-                                        }
-
-                                        if (buttonReplyId?.startsWith('q_time_') || /(immediate|month|exploring|timeline)/i.test(messageText.trim())) {
-                                            let selectedTime = '1 - 3 Months';
-                                            if (buttonReplyId === 'q_time_immediate' || /immediate/i.test(messageText)) selectedTime = 'Immediate (<1 Mo)';
-                                            if (buttonReplyId === 'q_time_exploring' || /exploring/i.test(messageText)) selectedTime = 'Exploring';
-
-                                            console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Timeline: ${selectedTime}`);
-                                            await syncFieldsAndScore({ timeline: selectedTime });
-
-                                            if (!currentCustomFields?.lead_name_captured) {
-                                                await syncFieldsAndScore({ awaiting_lead_name: true });
-                                                const namePrompt = isNobogentAccount
-                                                    ? "Great! 🎉 To share your personalized Nobogent platform walkthrough & access details, may I know your good name please?"
-                                                    : hasProperties
-                                                    ? "Great! 🎉 To instantly send you our tailored inventory list & brochure matched to your preferences, may I know your good name please?"
-                                                    : "Great! 🎉 To share personalized information tailored to your requirements, may I know your good name please?";
-                                                await sendTextMessage(namePrompt);
+                                                if (parsedQuestionsList.length > 1) {
+                                                    await askQuestionMCQ(1);
+                                                } else {
+                                                    await sendThreeButtons("What would you like to do?");
+                                                }
                                                 return;
-                                            } else {
-                                                await sendThreeButtons("What would you like to do?");
+                                            }
+
+                                            if (buttonReplyId?.startsWith('q_bud_') || /(under|50l|1\.5|cr|lacs|budget)/i.test(messageText.trim())) {
+                                                let selectedBudget = '₹50L - ₹1.5 Cr';
+                                                if (buttonReplyId === 'q_bud_under_50l' || /under/i.test(messageText)) selectedBudget = 'Under ₹50 Lacs';
+                                                if (buttonReplyId === 'q_bud_above_1_5cr' || /above/i.test(messageText)) selectedBudget = 'Above ₹1.5 Cr';
+
+                                                console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Budget: ${selectedBudget}`);
+                                                await syncFieldsAndScore({ budget: selectedBudget });
+
+                                                if (parsedQuestionsList.length > 2) {
+                                                    await askQuestionMCQ(2);
+                                                } else {
+                                                    await sendThreeButtons("What would you like to do?");
+                                                }
                                                 return;
+                                            }
+
+                                            if (buttonReplyId?.startsWith('q_time_') || /(immediate|month|exploring|timeline)/i.test(messageText.trim())) {
+                                                let selectedTime = '1 - 3 Months';
+                                                if (buttonReplyId === 'q_time_immediate' || /immediate/i.test(messageText)) selectedTime = 'Immediate (<1 Mo)';
+                                                if (buttonReplyId === 'q_time_exploring' || /exploring/i.test(messageText)) selectedTime = 'Exploring';
+
+                                                console.log(`[WhatsApp Bot] Lead ${cleanFrom} answered Timeline: ${selectedTime}`);
+                                                await syncFieldsAndScore({ timeline: selectedTime });
+
+                                                if (!currentCustomFields?.lead_name_captured) {
+                                                    await syncFieldsAndScore({ awaiting_lead_name: true });
+                                                    const namePrompt = "Great! 🎉 To instantly send you our tailored inventory list & brochure matched to your preferences, may I know your good name please?";
+                                                    await sendTextMessage(namePrompt);
+                                                    return;
+                                                } else {
+                                                    await sendThreeButtons("What would you like to do?");
+                                                    return;
+                                                }
                                             }
                                         }
 

@@ -95,6 +95,15 @@ export default function AdsPage() {
       linkUrl?: string;
       leadFormId?: string;
       pageId?: string;
+      ctaType?: string;
+    };
+    initialState?: {
+      headline?: string;
+      primaryText?: string;
+      description?: string;
+      linkUrl?: string;
+      leadFormId?: string;
+      imageUrl?: string;
     };
     targeting?: {
       locations: {
@@ -1390,7 +1399,20 @@ export default function AdsPage() {
       fields.budgetType = editingNode.budgetType
     }
     if (editingNode.type === 'ad' && editingNode.creative) {
-      fields.creative = editingNode.creative
+      const init = editingNode.initialState;
+      const cr = editingNode.creative;
+      const isCreativeChanged = init ? (
+        (cr.headline || '') !== (init.headline || '') ||
+        (cr.primaryText || '') !== (init.primaryText || '') ||
+        (cr.description || '') !== (init.description || '') ||
+        (cr.linkUrl || '') !== (init.linkUrl || '') ||
+        (cr.leadFormId || '') !== (init.leadFormId || '') ||
+        (cr.imageUrl || '') !== (init.imageUrl || '')
+      ) : false;
+
+      if (isCreativeChanged) {
+        fields.creative = editingNode.creative;
+      }
     }
     if (editingNode.type === 'adset' && editingNode.targeting?.locations) {
       const geo: any = { countries: [] };
@@ -4704,7 +4726,16 @@ export default function AdsPage() {
                                                     description: ad.creative?.description || '',
                                                     linkUrl: ad.creative?.linkUrl || '',
                                                     leadFormId: ad.creative?.leadFormId || '',
-                                                    pageId: ad.creative?.pageId || ''
+                                                    pageId: ad.creative?.pageId || '',
+                                                    ctaType: ad.creative?.ctaType || ''
+                                                  },
+                                                  initialState: {
+                                                    headline: ad.creative?.headline || '',
+                                                    primaryText: ad.creative?.primaryText || '',
+                                                    description: ad.creative?.description || '',
+                                                    linkUrl: ad.creative?.linkUrl || '',
+                                                    leadFormId: ad.creative?.leadFormId || '',
+                                                    imageUrl: ad.creative?.imageUrl || ''
                                                   }
                                                 })} 
                                                 className="text-slate-400 hover:text-blue-600 p-0.5"
@@ -4784,7 +4815,8 @@ export default function AdsPage() {
                                                                 description: ad.creative?.description || '',
                                                                 linkUrl: editState.url,
                                                                 leadFormId: ad.creative?.leadFormId || '',
-                                                                pageId: ad.creative?.pageId || ''
+                                                                pageId: ad.creative?.pageId || '',
+                                                                ctaType: ad.creative?.ctaType || ''
                                                               }
                                                             }
                                                           })

@@ -562,56 +562,46 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
             const tokenForLeadForm = pageAccessToken || facebookToken;
 
-            // 1. Try to find an existing active lead form on this page first
-            try {
-                const existingFormsRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms?access_token=${tokenForLeadForm}&limit=10`);
-                const existingFormsData = await existingFormsRes.json();
-                if (existingFormsData?.data && Array.isArray(existingFormsData.data) && existingFormsData.data.length > 0) {
-                    const activeForm = existingFormsData.data.find((f: any) => f.status === 'ACTIVE') || existingFormsData.data[0];
-                    if (activeForm?.id) {
-                        leadFormId = activeForm.id;
-                        logToFile(`Found and reused existing active lead form: ${leadFormId} (${activeForm.name})`);
-                    }
-                }
-            } catch (formFindErr: any) {
-                logToFile("Could not list existing lead forms:", formFindErr.message);
-            }
-
-            // 2. If no existing form found, create a new instant lead form
+            // 1. If user provided a specific leadFormId, we use it directly.
+            // Otherwise, ALWAYS create a new instant lead form matching the user's campaign configuration & custom questions!
             if (!leadFormId) {
                 logToFile("Creating new instant lead form on Meta Page...");
                 let metaCustomQuestions: any[] = [];
+                let hasCustomQuestions = false;
                 if (customQuestionsStr && customQuestionsStr !== "[]") {
                     try {
                         const parsedQuestions = JSON.parse(customQuestionsStr);
-                        metaCustomQuestions = parsedQuestions.map((q: any) => {
-                            const label = q.label.trim();
-                            const lowerLabel = label.toLowerCase();
-                            
-                            if (q.type !== 'MULTIPLE_CHOICE') {
-                                if (lowerLabel.includes('company') || lowerLabel.includes('business name')) return { type: 'COMPANY_NAME', key: 'company_name' };
-                                if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) return { type: 'JOB_TITLE', key: 'job_title' };
-                                if (lowerLabel.includes('city')) return { type: 'CITY', key: 'city' };
-                                if (lowerLabel.includes('state')) return { type: 'STATE', key: 'state' };
-                            }
+                        if (Array.isArray(parsedQuestions) && parsedQuestions.length > 0) {
+                            hasCustomQuestions = true;
+                            metaCustomQuestions = parsedQuestions.map((q: any) => {
+                                const label = q.label.trim();
+                                const lowerLabel = label.toLowerCase();
+                                
+                                if (q.type !== 'MULTIPLE_CHOICE') {
+                                    if (lowerLabel.includes('company') || lowerLabel.includes('business name')) return { type: 'COMPANY_NAME', key: 'company_name' };
+                                    if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) return { type: 'JOB_TITLE', key: 'job_title' };
+                                    if (lowerLabel.includes('city')) return { type: 'CITY', key: 'city' };
+                                    if (lowerLabel.includes('state')) return { type: 'STATE', key: 'state' };
+                                }
 
-                            const metaQ: any = { type: 'CUSTOM', label: label.substring(0, 200) };
-                            if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-                                const validOptions = q.options
-                                    .filter((o: string) => o.trim() !== '')
-                                    .map((opt: string) => ({ value: opt.trim(), key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50) }));
-                                if (validOptions.length > 0) metaQ.options = validOptions;
-                            }
-                            return metaQ;
-                        });
+                                const metaQ: any = { type: 'CUSTOM', label: label.substring(0, 200) };
+                                if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
+                                    const validOptions = q.options
+                                        .filter((o: string) => o.trim() !== '')
+                                        .map((opt: string) => ({ value: opt.trim(), key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50) }));
+                                    if (validOptions.length > 0) metaQ.options = validOptions;
+                                }
+                                return metaQ;
+                            });
 
-                        const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
-                        metaCustomQuestions = metaCustomQuestions.filter((q: any) => {
-                            if (q.type === 'CUSTOM') return true;
-                            if (seenTypes.has(q.type)) return false;
-                            seenTypes.add(q.type);
-                            return true;
-                        });
+                            const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
+                            metaCustomQuestions = metaCustomQuestions.filter((q: any) => {
+                                if (q.type === 'CUSTOM') return true;
+                                if (seenTypes.has(q.type)) return false;
+                                seenTypes.add(q.type);
+                                return true;
+                            });
+                        }
                     } catch (e) {
                         logToFile("Failed to parse custom questions", e);
                     }
@@ -646,12 +636,36 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 });
                 const formCreateData = await formCreateRes.json();
 
-                if (!formCreateRes.ok) {
+                if (formCreateRes.ok && formCreateData.id) {
+                    leadFormId = formCreateData.id;
+                    logToFile(`Lead Form Created: ${leadFormId}`);
+                } else {
                     logToFile("Lead Form Creation Failed:", formCreateData);
-                    throw new Error(`Meta Lead Form Error: ${formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error"}`);
+                    // If user had specified custom questions, don't silently pick a random old form with wrong questions
+                    if (hasCustomQuestions) {
+                        throw new Error(`Meta Lead Form Error: ${formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error"}`);
+                    }
+                    
+                    // Fallback only if no custom questions were required
+                    logToFile("Attempting fallback to find an existing active lead form on this page...");
+                    try {
+                        const existingFormsRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms?access_token=${tokenForLeadForm}&limit=10`);
+                        const existingFormsData = await existingFormsRes.json();
+                        if (existingFormsData?.data && Array.isArray(existingFormsData.data) && existingFormsData.data.length > 0) {
+                            const activeForm = existingFormsData.data.find((f: any) => f.status === 'ACTIVE') || existingFormsData.data[0];
+                            if (activeForm?.id) {
+                                leadFormId = activeForm.id;
+                                logToFile(`Fallback reused existing active lead form: ${leadFormId} (${activeForm.name})`);
+                            }
+                        }
+                    } catch (formFindErr: any) {
+                        logToFile("Could not list existing lead forms for fallback:", formFindErr.message);
+                    }
+
+                    if (!leadFormId) {
+                        throw new Error(`Meta Lead Form Error: ${formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error"}`);
+                    }
                 }
-                leadFormId = formCreateData.id;
-                logToFile(`Lead Form Created: ${leadFormId}`);
             }
         }
 

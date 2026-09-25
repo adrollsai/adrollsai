@@ -547,10 +547,9 @@ import { generateContentWithFallback } from "./gemini-fallback";
 
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabaseAdmin = (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+    ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+    : null;
 
 let cachedLLMModel: string | null = null;
 let lastLLMCacheFetchTime = 0;
@@ -563,6 +562,7 @@ async function getSuperAdminSelectedLLM(): Promise<string> {
     }
 
     try {
+        if (!supabaseAdmin) return cachedLLMModel || 'deepseek';
         const { data, error } = await supabaseAdmin
             .from('profiles')
             .select('selected_text_llm')
@@ -585,24 +585,35 @@ async function getSuperAdminSelectedLLM(): Promise<string> {
     return cachedLLMModel || 'deepseek';
 }
 
-export async function callDeepSeekWithUsage(prompt: string): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
+export async function callDeepSeekWithUsage(
+    prompt: string,
+    options?: { system?: string; maxTokens?: number; temperature?: number; model?: string }
+): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
     const rawApiKey = process.env.DEEPSEEK_API_KEY || '';
     const apiKey = rawApiKey.replace(/^["']|["']$/g, '').trim();
     if (!apiKey) {
         throw new Error("DEEPSEEK_API_KEY environment variable is not set");
     }
 
-    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+    const messages: any[] = [];
+    if (options?.system) {
+        messages.push({ role: "system", content: options.system });
+    }
+    messages.push({ role: "user", content: prompt });
+
+    const modelName = options?.model || "deepseek-chat";
+
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-            model: "deepseek-chat",
-            messages: [
-                { role: "user", content: prompt }
-            ],
+            model: modelName,
+            messages,
+            max_tokens: options?.maxTokens || 8192,
+            temperature: options?.temperature ?? 0.35,
             stream: false
         })
     });
@@ -622,7 +633,7 @@ export async function callDeepSeekWithUsage(prompt: string): Promise<{ text: str
         text,
         promptTokens,
         completionTokens,
-        modelName: "deepseek-chat"
+        modelName
     };
 }
 

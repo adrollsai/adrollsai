@@ -77,9 +77,46 @@ export async function POST(request: Request) {
   try {
     let creativeId = fields.creative?.id;
 
-    // Check if we need to create a new creative (if any copy, image, or form changes)
-    if (fields.creative && (fields.creative.imageUrl || fields.creative.primaryText || fields.creative.headline || fields.creative.description || fields.creative.leadFormId)) {
-      let imageHash = fields.creative.imageHash;
+    // If updating an ad, fetch current ad status and creative from Meta first
+    let currentAdData: any = null;
+    if (type === 'ad') {
+      try {
+        const adRes = await fetch(
+          `${FB_GRAPH_URL}/${nodeId}?fields=name,creative{id,name,call_to_action_type,object_story_spec},adset{id,destination_type,optimization_goal}&access_token=${token}`
+        );
+        currentAdData = await adRes.json();
+      } catch (err: any) {
+        console.error('[Update Campaign Node] Failed to fetch current ad from Meta:', err?.message);
+      }
+    }
+
+    const curStory = currentAdData?.creative?.object_story_spec || {};
+    const curLink = curStory.link_data || {};
+    const curVideo = curStory.video_data || {};
+    const curPrimaryText = curLink.message || curVideo.message || '';
+    const curHeadline = curLink.name || curVideo.title || '';
+    const curDescription = curLink.description || curVideo.link_description || '';
+    const curLinkUrl = curLink.link || curVideo.call_to_action?.value?.link || curLink.call_to_action?.value?.link || '';
+    const curLeadFormId = curLink.call_to_action?.value?.lead_gen_form_id || curVideo.call_to_action?.value?.lead_gen_form_id || '';
+    const curImageHash = curLink.image_hash || curVideo.image_hash || '';
+
+    // Determine if any creative attribute was actually modified
+    const isCreativeExplicitlyModified = Boolean(
+      fields.creative && (
+        (fields.creative.primaryText !== undefined && fields.creative.primaryText.trim() !== curPrimaryText.trim()) ||
+        (fields.creative.headline !== undefined && fields.creative.headline.trim() !== curHeadline.trim()) ||
+        (fields.creative.description !== undefined && fields.creative.description.trim() !== curDescription.trim()) ||
+        (fields.creative.linkUrl !== undefined && fields.creative.linkUrl.trim() !== curLinkUrl.trim()) ||
+        (fields.creative.leadFormId !== undefined && fields.creative.leadFormId !== curLeadFormId) ||
+        (fields.creative.imageHash && fields.creative.imageHash !== curImageHash) ||
+        (fields.creative.imageUrl && fields.creative.isNewUpload) ||
+        (fields.creative.isVideo && !curVideo.video_id)
+      )
+    );
+
+    // Only create a new creative if creative fields were actually modified
+    if (isCreativeExplicitlyModified && fields.creative) {
+      let imageHash = fields.creative.imageHash || curImageHash;
       const imageUrl = fields.creative.imageUrl;
 
       let videoId = null;
@@ -136,8 +173,8 @@ export async function POST(request: Request) {
           }
         }
       } else {
-        // Only upload image if not a video
-        if (imageUrl && !imageHash) {
+        // Only upload image if not a video and image changed
+        if (imageUrl && !imageHash && fields.creative.isNewUpload) {
           try {
             const imageFetch = await fetch(imageUrl);
             if (imageFetch.ok) {
@@ -162,52 +199,75 @@ export async function POST(request: Request) {
       }
 
       const ctaValue: any = {};
-      if (fields.creative.leadFormId) {
-        ctaValue.lead_gen_form_id = fields.creative.leadFormId;
+      if (fields.creative.leadFormId || curLeadFormId) {
+        ctaValue.lead_gen_form_id = fields.creative.leadFormId || curLeadFormId;
       }
-      if (fields.creative.linkUrl) {
-        ctaValue.link = fields.creative.linkUrl;
+      if (fields.creative.linkUrl || curLinkUrl) {
+        ctaValue.link = fields.creative.linkUrl || curLinkUrl;
       } else {
         ctaValue.link = "https://adrolls.in";
       }
 
+      const pageId = fields.creative.pageId || curStory.page_id;
       const creativePayload: any = {
         name: `Edited Creative - ${Date.now()}`,
         object_story_spec: {
-          page_id: fields.creative.pageId, 
+          page_id: pageId, 
         },
         access_token: token,
       };
 
-      const isWhatsApp = fields.creative?.ctaType === 'WHATSAPP_MESSAGE';
-      const targetLink = fields.creative?.linkUrl || (ctaValue && ctaValue.link);
+      const isWhatsApp = 
+        fields.creative?.ctaType === 'WHATSAPP_MESSAGE' ||
+        currentAdData?.adset?.destination_type === 'WHATSAPP' ||
+        currentAdData?.adset?.optimization_goal === 'CONVERSATIONS' ||
+        currentAdData?.creative?.call_to_action_type === 'WHATSAPP_MESSAGE' ||
+        curLink.call_to_action?.type === 'WHATSAPP_MESSAGE' ||
+        curVideo.call_to_action?.type === 'WHATSAPP_MESSAGE';
 
-      if (fields.creative.isVideo && videoId) {
-        const videoCtaType = isWhatsApp ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE';
-        const videoCtaValue = isWhatsApp 
-          ? { app_destination: 'WHATSAPP', ...(targetLink ? { link: targetLink } : {}) } 
-          : ctaValue;
+      const isLeadGen = Boolean(
+        fields.creative.leadFormId || curLeadFormId ||
+        curLink.call_to_action?.type === 'SIGN_UP' ||
+        curVideo.call_to_action?.type === 'SIGN_UP'
+      );
 
+      const targetLink = fields.creative?.linkUrl || curLinkUrl || (ctaValue && ctaValue.link);
+
+      let chosenCtaType = 'LEARN_MORE';
+      let chosenCtaValue: any = ctaValue;
+
+      if (isWhatsApp) {
+        chosenCtaType = 'WHATSAPP_MESSAGE';
+        chosenCtaValue = { app_destination: 'WHATSAPP', ...(targetLink ? { link: targetLink } : {}) };
+      } else if (isLeadGen) {
+        chosenCtaType = 'SIGN_UP';
+        chosenCtaValue = {
+          lead_gen_form_id: fields.creative.leadFormId || curLeadFormId,
+          link: targetLink || 'http://fb.me/'
+        };
+      }
+
+      if (fields.creative.isVideo && (videoId || curVideo.video_id)) {
         creativePayload.object_story_spec.video_data = {
-          video_id: videoId,
-          message: fields.creative.primaryText || "Exclusive Property Deal. View pricing & details now.", 
-          title: fields.creative.headline || "View Details", 
+          video_id: videoId || curVideo.video_id,
+          message: fields.creative.primaryText || curPrimaryText || "Exclusive Property Deal. View pricing & details now.", 
+          title: fields.creative.headline || curHeadline || "View Details", 
           image_hash: imageHash, 
           call_to_action: { 
-            type: videoCtaType, 
-            value: videoCtaValue
+            type: chosenCtaType, 
+            value: chosenCtaValue
           }
         };
       } else {
         creativePayload.object_story_spec.link_data = {
-          message: fields.creative.primaryText || "Exclusive Property Deal. View pricing & details now.", 
-          name: fields.creative.headline || "View Details", 
-          description: fields.creative.description || "",
-          link: fields.creative.linkUrl || "https://adrolls.in", 
+          message: fields.creative.primaryText || curPrimaryText || "Exclusive Property Deal. View pricing & details now.", 
+          name: fields.creative.headline || curHeadline || "View Details", 
+          description: fields.creative.description || curDescription || "",
+          link: targetLink || "https://adrolls.in", 
           image_hash: imageHash, 
           call_to_action: { 
-            type: isWhatsApp ? 'WHATSAPP_MESSAGE' : 'LEARN_MORE', 
-            value: isWhatsApp ? { app_destination: 'WHATSAPP', ...(targetLink ? { link: targetLink } : {}) } : ctaValue
+            type: chosenCtaType, 
+            value: chosenCtaValue
           }
         };
       }
@@ -223,6 +283,9 @@ export async function POST(request: Request) {
         throw new Error(`Creative Update Error: ${creativeData.error?.message || "Failed to create ad creative"}`);
       }
       creativeId = creativeData.id;
+    } else {
+      // If the creative was NOT modified (e.g. user only changed ad name), DO NOT touch the creative
+      creativeId = undefined;
     }
 
     // Construct request body for updating node

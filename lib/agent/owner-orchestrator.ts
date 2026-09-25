@@ -79,7 +79,7 @@ export async function processOwnerMessage(params: {
     const [profRes, policyRes, learnings, teamRes] = await Promise.all([
         supabaseAdmin
             .from('profiles')
-            .select('id, business_name, business_info, address, contact_number, whatsapp_phone_number, role, facebook_token, ad_account_id, selected_page_id, selected_page_token, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number_id, privacy_policy_url')
+            .select('id, email, business_name, business_info, address, contact_number, whatsapp_personal_number, whatsapp_phone_number, role, facebook_token, ad_account_id, selected_page_id, selected_page_token, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number_id, privacy_policy_url')
             .eq('id', userId)
             .single(),
         supabaseAdmin.from('agent_policies').select('*').eq('user_id', userId).maybeSingle(),
@@ -143,11 +143,19 @@ When asked about system health, outreach status, or if calling drops:
 2. If anomalies are found, report symptoms, root cause, and ask: "Shall I execute this self-healing fix now?"
 3. If confirmed, call 'execute_self_healing'.
 
-CURRENT BUSINESS POLICIES:
+CURRENT BUSINESS POLICIES & TELEPHONY:
+- Role: ${profile?.role || 'owner'} ${profile?.role === 'super_admin' || profile?.email === 'rchopra489@gmail.com' ? '(SUPER ADMIN - Master SIP Trunk & Vobiz Line Connected: +91 11 7136 6938)' : ''}
 - Calling Enabled: ${policy?.calling_enabled !== false}
 - Contact Intensity: ${policy?.contact_intensity || 'medium'}
 - Business Hours: ${policy?.business_hours_start || '09:30'} to ${policy?.business_hours_end || '19:00'}
 - Appointment Goal: ${policy?.appointment_goal || 'site_visit'}
+- Owner Registered Phone: ${profile?.whatsapp_personal_number || profile?.contact_number || '+918288835235'}
+
+CALLING & TEST DIALING PROTOCOL:
+When the owner requests to test a voice call or dial a phone number (e.g. "call my number", "call me", "call 8288835235", "test call super admin"):
+- ALWAYS invoke 'trigger_ai_call' with their phone number or "me".
+- NEVER refuse by saying voice calling is inactive or disabled without calling 'trigger_ai_call'.
+- Master telephony is active, and test calls bypass out-of-hours restriction.
 
 RECENT ADAPTATIONS & LEARNINGS FOR THIS ACCOUNT:
 ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.'}
@@ -584,7 +592,7 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
         trigger_ai_call: tool({
             description: "Triggers an instant autonomous AI voice call to a lead or test phone number using Nobogent's voice AI calling engine.",
             inputSchema: z.object({
-                leadIdOrPhone: z.string().describe("Lead UUID or phone number to call"),
+                leadIdOrPhone: z.string().describe("Lead UUID or phone number to call (or 'me' / 'my number' / 'self' for the owner's phone)"),
                 forceNow: z.boolean().default(true).describe("Force dial immediately")
             }),
             execute: async ({ leadIdOrPhone, forceNow }) => {
@@ -593,24 +601,52 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
                     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadIdOrPhone);
 
                     if (!isUuid) {
+                        let phoneToDial = (leadIdOrPhone || '').trim();
+                        // Handle owner self-dialing shortcuts
+                        if (/^(me|myself|my\s*number|self|admin|super\s*admin)$/i.test(phoneToDial) || !phoneToDial) {
+                            phoneToDial = profile?.whatsapp_personal_number || profile?.contact_number || '8288835235';
+                        }
+
+                        // Auto-correct 9 digits typos matching the user's registered phone
+                        let cleanDigits = phoneToDial.replace(/\D/g, '');
+                        const registeredDigits = (profile?.whatsapp_personal_number || profile?.contact_number || '8288835235').replace(/\D/g, '');
+                        if (cleanDigits.length === 9 && registeredDigits.includes(cleanDigits)) {
+                            phoneToDial = registeredDigits;
+                            cleanDigits = registeredDigits;
+                        }
+
                         const { data: existingLead } = await supabaseAdmin
                             .from('leads')
-                            .select('id')
+                            .select('id, custom_fields')
                             .eq('user_id', userId)
-                            .or(`phone.ilike.%${leadIdOrPhone}%`)
+                            .or(`phone.ilike.%${cleanDigits.slice(-10)}%`)
                             .limit(1)
                             .maybeSingle();
 
                         if (existingLead) {
                             targetLeadId = existingLead.id;
+                            if (forceNow) {
+                                const cf = typeof existingLead.custom_fields === 'string'
+                                    ? JSON.parse(existingLead.custom_fields || '{}')
+                                    : (existingLead.custom_fields || {});
+                                cf.allow_after_hours = true;
+                                await supabaseAdmin
+                                    .from('leads')
+                                    .update({ custom_fields: cf })
+                                    .eq('id', targetLeadId);
+                            }
                         } else {
+                            const formattedPhone = phoneToDial.startsWith('+') 
+                                ? phoneToDial 
+                                : (cleanDigits.length === 10 ? `+91${cleanDigits}` : `+${cleanDigits}`);
                             const { data: createdLead } = await supabaseAdmin
                                 .from('leads')
                                 .insert({
                                     user_id: userId,
-                                    name: 'Phone Test Lead',
-                                    phone: leadIdOrPhone,
-                                    source: 'WhatsApp Voice Test'
+                                    name: 'Super Admin Test Call',
+                                    phone: formattedPhone,
+                                    source: 'WhatsApp Voice Test',
+                                    custom_fields: { allow_after_hours: true }
                                 })
                                 .select('id')
                                 .single();
@@ -618,12 +654,12 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
                         }
                     }
 
-                    const res = await triggerOutboundCall(supabaseAdmin, targetLeadId, userId, !forceNow);
+                    const res = await triggerOutboundCall(supabaseAdmin, targetLeadId, userId, false);
                     if (!res.success) return { success: false, error: res.error || 'Failed to initiate AI call' };
                     return {
                         success: true,
                         callSid: res.callSid,
-                        message: res.scheduled ? 'Call scheduled for next calling window.' : 'AI Outbound call initiated! Prospect phone is ringing.'
+                        message: res.scheduled ? 'Call scheduled for next calling window.' : 'AI Outbound call initiated! Phone is ringing.'
                     };
                 } catch (e: any) {
                     return { success: false, error: e.message };
@@ -1088,11 +1124,17 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
                 businessHoursEnd: z.string().optional()
             }),
             execute: async (updates) => {
+                const dbUpdates: Record<string, any> = { user_id: userId, updated_at: new Date().toISOString() };
+                if (updates.callingEnabled !== undefined) dbUpdates.calling_enabled = updates.callingEnabled;
+                if (updates.contactIntensity) dbUpdates.contact_intensity = updates.contactIntensity;
+                if (updates.businessHoursStart) dbUpdates.business_hours_start = updates.businessHoursStart;
+                if (updates.businessHoursEnd) dbUpdates.business_hours_end = updates.businessHoursEnd;
+
                 const { error } = await supabaseAdmin
                     .from('agent_policies')
-                    .upsert({ user_id: userId, ...updates, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+                    .upsert(dbUpdates, { onConflict: 'user_id' });
                 if (error) return { success: false, error: error.message };
-                return { success: true, updated: updates };
+                return { success: true, updated: dbUpdates };
             }
         })
     };

@@ -3,58 +3,13 @@ import { NextResponse } from 'next/server'
 export const maxDuration = 60
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
-import { callGemini, callGeminiWithUsage, createKieImageTask } from '@/utils/external-apis'
+import { callDeepSeekWithUsage, callGeminiWithUsage } from '@/utils/external-apis'
 import { hasEnoughCredits, calculateLLMCost, deductCreditsByCost } from '@/utils/credits'
 
 const supabaseAdmin = createSupabaseAdmin(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-function extractImageUrl(checkData: any): string | null {
-    if (!checkData) return null;
-    const dataObj = checkData.data || checkData;
-    
-    // 1. Direct resultUrl fields
-    const directUrl = dataObj.image_url || 
-                      dataObj.imageUrl || 
-                      dataObj.url || 
-                      dataObj.output_url || 
-                      dataObj.outputUrl;
-                      
-    if (directUrl && typeof directUrl === 'string' && directUrl.startsWith('http')) {
-        return directUrl;
-    }
-    
-    // 2. Try resultJson
-    const resultJson = dataObj.resultJson || checkData.resultJson;
-    if (resultJson) {
-        try {
-            const parsed = JSON.parse(resultJson);
-            const parsedUrls = parsed.resultUrls || parsed.result_urls || parsed.fullResultUrls || parsed.full_result_urls || [parsed.url];
-            const firstUrl = Array.isArray(parsedUrls) ? parsedUrls[0] : parsedUrls;
-            if (firstUrl && typeof firstUrl === 'string' && firstUrl.startsWith('http')) {
-                return firstUrl;
-            }
-        } catch (e) {
-            console.error("[Lander API] Error parsing resultJson for image:", e);
-        }
-    }
-    
-    // 3. Nested result object fallback
-    const result = dataObj.result;
-    if (result) {
-        const nestedUrl = result.image_url || result.imageUrl || result.url;
-        if (nestedUrl && typeof nestedUrl === 'string' && nestedUrl.startsWith('http')) {
-            return nestedUrl;
-        }
-        if (Array.isArray(result.resultUrls) && result.resultUrls.length > 0) {
-            return result.resultUrls[0];
-        }
-    }
-    
-    return null;
-}
 
 export async function POST(request: Request) {
     try {
@@ -113,11 +68,13 @@ export async function POST(request: Request) {
             instructions, 
             currentHtml,
             imageUrls,
-            pageType = 'standard'
+            pageType = 'standard',
+            industry = 'general',
+            designTheme = 'modern'
         } = body
 
         // Check credit balance dynamically (must have enough credits for generation / editing)
-        const requiredCredits = 1 // default minimum for copywriting/editing/analysis (image generation bypassed as requested)
+        const requiredCredits = 1 
 
         const hasCredits = await hasEnoughCredits(supabaseAdmin, targetUserId, requiredCredits)
         if (!hasCredits) {
@@ -134,7 +91,7 @@ export async function POST(request: Request) {
             .maybeSingle()
 
         if (mode === 'generate' && !productName && !propertyId && pageType !== 'business') {
-            return NextResponse.json({ error: "Product name or inventory listing selection is required for page generation." }, { status: 400 })
+            return NextResponse.json({ error: "Product name, business name, or inventory listing selection is required." }, { status: 400 })
         }
 
         if (mode === 'edit' && (!instructions || !currentHtml)) {
@@ -148,7 +105,7 @@ export async function POST(request: Request) {
         let resolvedContext = context || (pageType === 'business' ? (profile?.mission_statement || '') : "")
         let propertyRera = ""
         let propertyFloorPlan = "https://i.ibb.co/NdSPkfxQ/3bhk.webp"
-        let propertyPrice = "₹ 1.7 Cr"
+        let propertyPrice = ""
         let propertyYoutubeUrl = ""
 
         if (pageType === 'business') {
@@ -186,7 +143,6 @@ ${propertyDetails || "No listings currently active."}
                 resolvedProductName = resolvedProductName || property.title
                 resolvedContext = resolvedContext || property.description || ""
                 
-                // Filter out placeholder images from propertyImagesList
                 propertyImagesList = (property.images || []).filter((img: string) => img && !img.includes('placehold.co') && !img.includes('placeholder'))
                 if (property.image_url && !property.image_url.includes('placehold.co') && !property.image_url.includes('placeholder') && !propertyImagesList.includes(property.image_url)) {
                     propertyImagesList.unshift(property.image_url)
@@ -225,23 +181,32 @@ PROPERTY INVENTORY CONTEXT:
                         (resolvedContext || '').toLowerCase().includes('india') || 
                         (resolvedContext || '').toLowerCase().includes('₹') ||
                         (resolvedContext || '').toLowerCase().includes('rs.') ||
+                        (resolvedProductName || '').toLowerCase().includes('bioque') ||
                         (resolvedProductName || '').toLowerCase().includes('bluesquare') ||
                         (profile?.email || '').endsWith('.in')
-        
-        const resolvedEthnicity = isIndia ? 'South Asian/Indian' : 'appropriate'
+
+        const contactPhone = profile?.contact_number || "+91 98726 69935"
+        const cleanPhone = contactPhone.replace(/[^0-9]/g, '')
+        const businessName = profile?.business_name || resolvedProductName || "Premium Business"
+        const businessEmail = profile?.email || "info@nobogent.com"
+        const domainBase = profile?.custom_domain || `app.nobogent.com/shared/${targetUserId}`
+        const brandColor = profile?.brand_color || "#2563eb"
+        const logoUrl = profile?.logo_url || ""
 
         const contactInfoText = `
-BUSINESS CONTACT INFO:
-- Brand/Business Name: ${profile?.business_name || resolvedProductName || "Premium Listings"}
-- Contact Phone Number: ${profile?.contact_number || "+91 98726 69935"}
-- Contact Email: ${profile?.email || "info@nobogent.com"}
-- Custom Connected Domain: ${profile?.custom_domain || `app.nobogent.com/shared/${targetUserId}`}
-- Brand Base Accent Color: ${profile?.brand_color || "#9e755c"}
-- Business Logo Image URL: ${profile?.logo_url || ""}
+BUSINESS CONTACT & BRAND IDENTITY:
+- Business/Brand Name: ${businessName}
+- Contact Phone: ${contactPhone}
+- WhatsApp Number (raw digits): ${cleanPhone}
+- Contact Email: ${businessEmail}
+- Canonical Domain: ${domainBase}
+- Brand Primary Color: ${brandColor}
+- Business Logo URL: ${logoUrl || "None provided (use styled text brand name in header)"}
+- Target Market / Geography: ${isIndia ? "India (use INR ₹ currency formatting if price mentioned)" : "International"}
 `
 
         // 3. Fetch connected form if available to enrich the prompt context
-        let formFieldsText = ""
+        let formFieldsText = "Full Name, WhatsApp Number, City"
         if (formId) {
             const { data: form } = await supabaseAdmin
                 .from('qualification_forms')
@@ -260,294 +225,78 @@ BUSINESS CONTACT INFO:
                 }
             }
         }
-        if (!formFieldsText) {
-            formFieldsText = "Full Name, WhatsApp Number, City"
-        }
 
-        // 4. Image Generation Bypassed (as requested, if no images exist, no images are generated/placed)
-        let imageAnalysisResults = ""
-        if (mode === 'generate' && propertyImagesList.length > 0) {
-            console.log(`[Lander API] Performing multimodal image analysis on ${propertyImagesList.length} images...`)
-            try {
-                const analysisPrompt = `You are an expert design and marketing AI. You are given a list of image URLs associated with the product/property "${resolvedProductName}".
-Analyze these images and perform the following:
-1. Describe what each image shows.
-2. Suggest the best placement for each image in a high-converting landing page HTML code (e.g. hero banner background, features showcase, interior gallery, testimonial avatar, or section backdrop).
-3. Provide clear design guidelines on how to structure the HTML/CSS layout around these images to maximize visual appeal.
+        // Schema.org type resolver based on industry/niche
+        const resolvedIndustry = industry || (propertyId ? 'real_estate' : 'general')
+        let schemaType = "LocalBusiness"
+        if (resolvedIndustry === 'real_estate' || propertyId) schemaType = "RealEstateAgent"
+        else if (resolvedIndustry === 'saas') schemaType = "SoftwareApplication"
+        else if (resolvedIndustry === 'health') schemaType = "MedicalBusiness"
+        else if (resolvedIndustry === 'agency') schemaType = "ProfessionalService"
+        else if (resolvedIndustry === 'fitness') schemaType = "HealthAndBeautyBusiness"
+        else if (resolvedIndustry === 'ecommerce') schemaType = "Product"
 
-Here are the image URLs for reference:
-${propertyImagesList.map((url, idx) => `Image ${idx}: ${url}`).join('\n')}
-
-Format your response as a detailed summary that a frontend developer can easily follow.`
-                
-                const analysisRes = await callGeminiWithUsage(analysisPrompt, propertyImagesList)
-                imageAnalysisResults = analysisRes.text
-                console.log("[Lander API] Image Analysis Successful:", imageAnalysisResults)
-                
-                // Deduct credits dynamically
-                const analysisInr = calculateLLMCost(analysisRes.modelName, analysisRes.promptTokens, analysisRes.completionTokens)
-                await deductCreditsByCost(supabaseAdmin, targetUserId, analysisInr, 'ai_generation', `AI Landing Page - Multimodal Image Analysis`)
-            } catch (e: any) {
-                console.error("[Lander API] Failed to perform image analysis:", e)
-                imageAnalysisResults = "Failed to perform automated image analysis. Place the images logically within the layout based on general best practices."
-            }
-        }
-
-        let imageAnalysisSection = ""
-        if (imageAnalysisResults) {
-            imageAnalysisSection = `
-### IMAGE LAYOUT & PLACEMENT ANALYSIS (CRITICAL)
-Below is the visual analysis and layout recommendations for the product images. You MUST follow these layout placement recommendations and use the specified image URLs in the corresponding sections/cards of your HTML code:
-${imageAnalysisResults}
+        // Theme palette definitions
+        let themeDirectives = ""
+        if (designTheme === 'luxury_gold') {
+            themeDirectives = `
+DESIGN THEME: Luxury Gold & Midnight Noir (Astro Bioque Estates style)
+- Background: Deep sleek dark mode (#070C18 to #0B0F19) with luxury gold gradients (#D4AF37 to #F9E7B9).
+- Text: Crisp white (#FFFFFF) and champagne gold (#F3E5AB) with slate subtitles (#94A3B8).
+- Accents: 1px subtle gold borders (rgba(212, 175, 55, 0.25)) and golden glow buttons (background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%), text: #070C18 font-extrabold).
 `
-        }
-
-        let systemPrompt = ''
-        if (mode === 'generate') {
-            if (pageType === 'raw_survey') {
-                systemPrompt = `You are a world-class front-end developer and elite copywriter.
-Create a complete, responsive, premium raw survey form page in HTML based on the details below.
-The page MUST focus entirely on presenting a minimal, clean, centered survey layout with NO extra copy, sections, features list, FAQs, or content whatsoever. Just a clear callout at the top, a gallery/grid/slider of a couple of product photos immediately below it, and the dynamic form container beneath the photos.
-
-### CRITICAL ACCURACY RULE (MANDATORY):
-- You must ONLY include, describe, or reference the exact information passed as context in this prompt (such as titles, description context, and actual assets).
-- Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided.
-
-### INPUT VARIABLES
-* Brand/Product Name: "${resolvedProductName}"
-* Core Offer/Product Context: "${resolvedContext}"
-* Target Audience & Brand Info: 
-${contactInfoText}
-${propertyDataText}
-${imageAnalysisSection}
-
-### LAYOUT STRUCTURE (RAW SURVEY PAGE):
-1. **Header Callout (Top)**:
-   - Display a prominent, elegant callout message instructing the visitor to fill out the form to get the price list, brochure, and dynamic details (e.g. "Fill out the quick form below to receive the price list, brochure, and exclusive details").
-   - Use bold, high-contrast, clean typography.
-2. **Product Photos (Middle)**:
-   - Below the header text, display a premium visual section containing a couple of high-quality photos.
-   - If images are available in this list: ${JSON.stringify(propertyImagesList)}, show a clean grid of 2-3 images or a beautiful image slider.
-   - If the list is empty, display a clean placeholder gradient block or typography element. Do NOT use external generic stock placeholder domains.
-3. **Form Container (Bottom)**:
-   - Below the photos, mount the qualification container EXACTLY like this: '<div id="qualification-form-container" data-page-type="survey" data-button-text="Next"></div>'.
-   - Do NOT write a form element, inputs, or any button HTML inside this container, and do NOT write any "Start Survey" trigger cards or trigger buttons. The platform dynamically injects the survey questions, and the first question must render inline immediately.
-
-### STYLING & DESIGN GUIDELINES (LIGHT THEME BY DEFAULT):
-- Use a soft, clean light theme background (no dark themes unless explicitly requested).
-- Configured Tailwind via CDN with a custom config extension that maps 'brand' theme colors based on the base brand color '${profile?.brand_color || "#9e755c"}'.
-- Keep margins, paddings, and card shadows clean, minimal, and modern.
-- Ensure the page body is fully scrollable and does NOT cap layout height (do NOT use height: 100vh or overflow: hidden on html/body/main elements).
-
-### OUTPUT FORMAT:
-- Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-- ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw HTML string.`
-            } else if (pageType === 'survey') {
-                systemPrompt = `You are a world-class front-end developer and elite copywriter.
-Create a complete, responsive, premium survey form page in HTML based on the details below.
-The page MUST focus entirely on presenting a single, beautifully centered survey card. It must load super fast, look extremely professional, and have a minimal visual footprint with no extra landing page content.
-
-### CRITICAL ACCURACY RULE (MANDATORY):
-- You must ONLY include, describe, or reference the exact information passed as context in this prompt (such as titles, description context, and actual assets).
-- Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided.
-
-### INPUT VARIABLES
-* Brand/Product Name: "${resolvedProductName}"
-* Core Offer/Product Context: "${resolvedContext}"
-* Target Audience & Brand Info: 
-${contactInfoText}
-${propertyDataText}
-${imageAnalysisSection}
-
-### LAYOUT STRUCTURE (SURVEY ONLY PAGE):
-- **Fullscreen Centered Single-Card Design:** Center the survey card vertically and horizontally on the page so that the visitor is immediately focused on the survey. The page must have a light, clean, elegant background (no dark mode backgrounds).
-- **Property Visuals on Top:** 
-  - At the top of the card (as a header image or banner), display a clean, elegant visual showcase of the property.
-  - If images are available in this list: ${JSON.stringify(propertyImagesList)}, display a high-quality header image or a simple auto-rotating gallery/slider of these images using inline CSS/JS at the top of the card.
-  - If the list is empty, display an elegant typography layout with a premium gradient background instead. Do NOT use stock placeholders or placeholder domains.
-- **Survey Container:** 
-  - Directly underneath the header image / gallery (inside the card), mount the qualification container EXACTLY like this: '<div id="qualification-form-container" data-page-type="survey" data-button-text="Next"></div>'.
-  - Put the '#qualification-form-container' directly below the images/slider inside the card. Ensure that no other sections, highlights, grids, description text, or configuration tables are placed above this container. The survey container MUST be immediately below the visuals.
-  - Wrap the container inside the card in a clean styling box (like bg-slate-50/50, rounded corners, padding) so it integrates seamlessly.
-  - Any highlights, text descriptions, or configurations, if generated at all, MUST be placed below the survey form container (never above it).
-  - Do NOT write a form element, inputs, or any button HTML inside this container, and do NOT write any "Start Survey" trigger cards or trigger buttons. The platform dynamically injects the survey questions, and the first question must render inline immediately.
-
-### STYLING & DESIGN GUIDELINES (LIGHT THEME BY DEFAULT):
-- **Default to Light Theme:** The entire page and card must default to a clean, light, high-contrast premium theme. Use soft light backgrounds (e.g., '#f8fafc' or '#fdfbf7'), dark slate text ('#0f172a'), and the custom brand color as interactive accents. Do NOT use dark backgrounds (black, charcoal, deep gray) unless explicitly requested in custom instructions.
-- Configured Tailwind via CDN with a custom config extension that maps 'brand' theme colors based on the base brand color '${profile?.brand_color || "#9e755c"}':
-  - 'brand.DEFAULT' = Primary color (e.g., '${profile?.brand_color || "#9e755c"}')
-  - 'brand.light' = Elegant light pastel/gold tone (e.g., '#c9b2a1')
-  - 'brand.dark' = Deep premium tone (e.g., '#7a5743')
-  - 'brand.bg' = Soft premium background color (e.g., '#fdfbf7')
-  - 'brand.heading' = Deep luxury brown/black tone (e.g., '#4a3324')
-- Use elegant Google Fonts (e.g. Outfit, Inter or Georgia) for premium typography.
-- Clean, premium aesthetic with subtle micro-animations or hover states on interactive components.
-- Do NOT include any navigation bars, footers, grids of testimonials, how-it-works, FAQs, accordions, or extra content. Only show the centered survey card with property visuals.
-- Ensure the page body is fully scrollable and does NOT cap layout height (do NOT use height: 100vh or overflow: hidden on html/body/main elements).
-
-### OUTPUT FORMAT:
-- Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-- ABSOLUTELY DO NOT wrap the output in markdown code blocks (e.g., do NOT start with \`\`\`html or end with \`\`\`).`
-            } else if (pageType === 'business') {
-                systemPrompt = `You are a world-class front-end developer and elite copywriter.
-Create a complete, responsive, premium business portfolio and lead-generation landing page in HTML for the business "${resolvedProductName}" based on the details below.
-
-### CRITICAL ACCURACY RULE (MANDATORY):
-- You must ONLY include, describe, or reference the exact information passed as context in this prompt (such as business names, description context, and actual assets).
-- Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided.
-
-### INPUT VARIABLES
-* Business Name: "${resolvedProductName}"
-* Business Mission/About: "${resolvedContext}"
-* Contact & Brand Info: 
-${contactInfoText}
-${propertyDataText}
-${imageAnalysisSection}
-
-### LAYOUT STRUCTURE:
-1. **Hero Section (Top)**:
-   - Display a bold, premium headline showcasing the business's value proposition.
-   - Elegant button to scroll to featured listings or open the contact modal.
-2. **About / Services Section**:
-   - Highlight the business value, locations served, expertise, and benefits of working with them.
-3. **Products Showcase Container (CRITICAL - MANDATORY)**:
-   - You MUST place EXACTLY this empty div where you want the active listings/products catalog to render:
-     '<div id="business-products-container"></div>'
-   - The platform will dynamically inject the portfolio product catalog grid inside this container. Do not write cards or lists inside it.
-4. **Lead Capturing Form Section**:
-   - Embed the qualification form container EXACTLY like this:
-     '<div id="qualification-form-container" data-page-type="standard" data-button-text="Submit Enquiry"></div>'
-   - Do NOT write form inputs or submit button HTML inside this container.
-
-### STYLING & DESIGN GUIDELINES (LIGHT THEME BY DEFAULT):
-- Use a soft, clean light theme background (no dark themes unless explicitly requested).
-- Configured Tailwind via CDN with custom brand color accents based on '${profile?.brand_color || "#9e755c"}'.
-### SEARCH ENGINE OPTIMIZATION & GOOGLE RANKABILITY (CRITICAL):
-- Include complete semantic HTML5 tags (<header>, <main>, <section>, <article>, <footer>).
-- Include comprehensive <head> tags with <title>, <meta name="description" content="...">, <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">, and OpenGraph/Twitter preview tags.
-- Include Schema.org JSON-LD structured data ("@type": "RealEstateAgent") with business name, telephone, and logo.
-- Ensure all navigation links to the catalog use crawlable anchor tags (e.g., '<a href="/properties">All Properties</a>' and '<a href="/">Home</a>') so search engine bots can discover all child pages.
-
-### OUTPUT FORMAT:
-- Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-- ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw HTML string.`
-            } else {
-                // Determine if this is a real estate listing
-                let realEstateDetails = ""
-                if (propertyId) {
-                    realEstateDetails = `
-REAL-ESTATE LISTING SPECIFICATIONS:
-${propertyRera ? `- Prominently display the RERA ID/Number: "${propertyRera}".` : ''}
-- Floor Plan Section: Display the floor plan image "${propertyFloorPlan}" with buttons to switch configurations (e.g. 3 BHK, Duplex). Place an overlay with blurry backdrop and a secure lock icon overlay: '<div id="floorplan-overlay" class="absolute inset-0 bg-white/40 backdrop-blur-md flex flex-col items-center justify-center">Submit Enquiry to Unlock Floor Plan</div>'. Supply the JavaScript function 'changeFloorPlan(button, imgSrc, isLocked, titleText)' to handle config changes.
-- Project Connectivity: An accessibility distances accordion/section detailing distances with clear visual '+' / '-' icons.
-- Smart Living features grid.
-- Amenities Grid.
+        } else if (designTheme === 'vibrant_bold') {
+            themeDirectives = `
+DESIGN THEME: Vibrant High-Energy & Dynamic Gradients
+- Background: Modern high-contrast clean background (#FAFAFC) with electric violet and royal blue gradients.
+- Accents: High-impact vibrant CTA buttons with subtle pulse animations, glossy badges, and energetic modern typography.
 `
-                }
-
-
-
-                let youtubeEmbedSection = ""
-                if (propertyYoutubeUrl) {
-                    youtubeEmbedSection = `
-### YOUTUBE VIDEO EMBED INSTRUCTIONS (CRITICAL)
-- YouTube Video URL: "${propertyYoutubeUrl}"
-- You MUST embed this YouTube video in a highly visible, premium section on the landing page (e.g., directly below the hero section or inside a feature showcase card/video presentation section).
-- Parse the YouTube URL to extract the 11-character video ID, and generate a responsive iframe pointing to "https://www.youtube.com/embed/<VIDEO_ID>".
-- Ensure the iframe is wrapped in a responsive Tailwind container with professional styling (e.g., class="w-full aspect-video rounded-2xl shadow-lg border border-slate-200/60 overflow-hidden").
+        } else if (designTheme === 'clean_minimal') {
+            themeDirectives = `
+DESIGN THEME: Swiss Minimalist & Editorial Luxury
+- Background: Soft milk paper white (#FAFAFA) and warm charcoal (#111827).
+- Typography: High editorial contrast, generous whitespace, refined hairline borders (#E5E7EB), and black/white micro-buttons.
 `
-                }
-
-                systemPrompt = `You are a world-class front-end developer and elite direct-response landing page copywriter specializing in high-converting landing pages.
-Create a complete, responsive, premium single-page landing page in HTML based on the details below, strictly following Alex Hormozi's "Value Equation" conversion framework.
-
-### CRITICAL ACCURACY RULE (MANDATORY):
-- You must ONLY include, describe, or reference the exact information passed as context in this prompt (such as titles, description context, and actual assets).
-- Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided.
-- If a RERA ID or number is not explicitly provided in the specifications above, DO NOT mention RERA, do not write "RERA Approved", and do not show any fake/placeholder registration numbers.
-
-### INPUT VARIABLES
-* Brand/Product Name: "${resolvedProductName}"
-* Core Offer/Product Context: "${resolvedContext}"
-* Target Audience & Brand Info: 
-${contactInfoText}
-${propertyDataText}
-${imageAnalysisSection}
-${youtubeEmbedSection}
-
-### CRITICAL HORMOZI CONVERSION FRAMEWORK (Apply strictly to copy and layout):
-
-1. ABOVE-THE-FOLD (80% of page effort):
-   - Headline (Dream Outcome + Time Delay): Articulate the ultimate dream outcome using the "so that" principle. Explicitly state the timeline or speed of the result (Time Delay). Formula: "Do [Thing] so that you can [Dream Outcome] in [Timeframe]". Never use vague copy or simply state the company name.
-   - Sub-headline (Reduce Effort & Sacrifice): Explain how the headline's result is achieved while making it feel effortless. Use a "without [Common Pain Points / Fears]" structure.
-   - Hero Media: If images are available in this list: ${JSON.stringify(propertyImagesList)}, display a visual representation of the dream outcome (e.g. a beautiful background fade slider or carousel cycling through the images via inline JS).
-     * CRITICAL RULE: If the list is empty (no images are available), DO NOT use generic stock placeholders, placehold.co, or placeholder images. Instead, generate a highly elegant typographic hero section that relies on beautiful fonts, high-contrast CTA buttons, background patterns, and structured copy.
-   - Call-To-Action (CTA): High-contrast, clear, action-oriented button (e.g. "Schedule your exclusive site visit", "Get Started Now", "Request Details"). Clicking this should smoothly scroll the visitor directly to the nearest form container.
-   - Risk Reversals: Immediately beneath the CTA button, code in 3 trust badges or checkmarks (e.g. Money-Back Guarantee, Fast Setup, Secure Checkout) to increase perceived likelihood of success and reduce fear.
-   - Lead Qualification Form Card: A styled card enclosing EXACTLY this structural container: '<div id="qualification-form-container" data-button-text="Start Eligibility Check"></div>'. Do NOT write a form element inside this container! The platform will automatically inject a high-converting form collecting fields: ${formFieldsText}. Wrap it in a beautiful styling card (white background, rounded corners, soft shadow) so that it integrates seamlessly. You can customize the button text by editing the 'data-button-text' attribute of this div (e.g. set it to "book exclusive site visit" or whatever specific text the user asks for). You can also add 'data-title' and 'data-description' attributes to customize the title and description inside this card.
-
-2. SOCIAL PROOF (Increase Likelihood of Success):
-   - Design a visual "Wall of Love" section.
-   - CRITICAL RULE: Do NOT hide reviews inside a slider, tab, or carousel. Lay all visual proof, video placeholders, and text reviews out cleanly in a grid or stack so the user is overwhelmed with proof just by scrolling. Make it heavily visual (candid photos/avatators of real customers, star ratings, and text testimonials).
-
-3. "HOW IT WORKS" (Reduce Effort):
-   - Explain the process of getting started or using the product in EXACTLY 3 or 4 simple steps. If it is more than 4 steps, it increases perceived effort and hurts conversions. Keep it incredibly simple.
-
-4. THE "SCANNER" RULE FOR ALL HEADLINES:
-   - Assume the visitor will ONLY read the H2s and H3s on the page.
-   - Never use generic section labels like "How It Works", "Features", "Amenities", "Testimonials", or "What Customers Say".
-   - Instead, every H2 itself must be the distinct value proposition, unique differentiator, or the actual customer result.
-
-${realEstateDetails}
-
-### STYLING & DESIGN GUIDELINES:
-- Configured Tailwind via CDN with a custom config extension that maps 'brand' theme colors based on the base brand color '${profile?.brand_color || "#9e755c"}':
-  - 'brand.DEFAULT' = Primary color (e.g., '${profile?.brand_color || "#9e755c"}')
-  - 'brand.light' = Elegant light pastel/gold tone (e.g., '#c9b2a1')
-  - 'brand.dark' = Deep premium tone (e.g., '#7a5743')
-  - 'brand.bg' = Soft premium background color (e.g., '#fdfbf7')
-  - 'brand.heading' = Deep luxury brown/black tone (e.g., '#4a3324')
-- Use elegant Google Fonts (e.g. Outfit, Inter or Georgia) for premium typography.
-- Ensure the page body is fully scrollable and does NOT cap layout height (do NOT use height: 100vh or overflow: hidden on html/body/main elements).
-- Mobile Bottom Floating CTA Bar: Include a fixed bottom bar visible only on mobile screens with a Call Now button (tel:${profile?.contact_number || "+919872669935"}) and WhatsApp button (https://wa.me/${(profile?.contact_number || "919872669935").replace(/[^0-9]/g, "")}) for immediate touch-to-connect conversions.
-
-### OUTPUT FORMAT:
-- Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-- ABSOLUTELY DO NOT wrap the output in markdown code blocks (e.g., do NOT start with \`\`\`html or end with \`\`\`).
-- Output ONLY the pure raw HTML string. No intro, conversational chat, or outro.`
-            }
         } else {
-            systemPrompt = `You are a master front-end developer.
-Edit the provided landing page HTML strictly according to the user's instructions.
-User Instructions: "${instructions}"
-${imageUrls && imageUrls.length > 0 ? `The user has attached the following image(s)/screenshot(s) as visual reference: ${JSON.stringify(imageUrls)}. Analyze these attached images carefully and apply any visual edits, layout fixes, styling corrections, or component updates requested by the user based on what is pointed out in the images.` : ''}
-
-CURRENT HTML:
-${currentHtml}
-
-CRITICAL RULES:
-1. Preserve the structural container '<div id="qualification-form-container" ...></div>' (and all its attributes), modifying ONLY the attributes or container itself as requested by the user. Do NOT write a form element inside this container.
-2. Retain all existing styling, layout elements, assets, and copywriting, modifying ONLY the parts requested by the user.
-3. If the user asks to change the form button text, modify the 'data-button-text' attribute on the '<div id="qualification-form-container" ...>' element. Do NOT write button HTML inside that container, only modify the attribute.
-4. Return ONLY the raw, complete, valid updated HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-5. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output ONLY the pure raw updated HTML string. No conversational text.
-6. DO NOT delete, alter, or omit any existing page sections, styles, JS scripts, or sections unless explicitly instructed to do so. Your edit must be a direct, surgical modification of the provided CURRENT HTML, maintaining 100% of the other page elements, structure, and images.
-7. CRITICAL ACCURACY RULE: You must ONLY include, describe, or reference the exact information passed as context in this prompt. Absolutely DO NOT hallucinate, assume, or generate registration numbers, RERA IDs, approvals, or any parameters/specifications not explicitly provided. If a RERA ID or number is not explicitly provided, DO NOT mention RERA, do not write "RERA Approved", and do not show any fake/placeholder registration numbers.
-8. SURVEY LAYOUT RULE: If the instructions request a survey page format, or if the current HTML contains a survey (data-page-type='survey'), you must structure the page as a single fullscreen centered card (light theme). The property visuals/images must be at the top of the card, and the qualification container '<div id="qualification-form-container" data-page-type="survey" data-button-text="Next"></div>' must be placed **directly below** the property images/slider. Ensure all other elements (like highlights or text descriptions), if present, are placed BELOW the survey container. Do NOT generate any "Start Survey" buttons or trigger card HTML; the first question must render immediately.`
+            themeDirectives = `
+DESIGN THEME: Modern Premium SaaS & High-Converting Direct Response
+- Background: Clean high-contrast slate (#F8FAFC) with pure white (#FFFFFF) elevated cards.
+- Accents: Custom brand color accents based on '${brandColor}' with rich dark slate text (#0F172A) and soft shadows (box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05)).
+`
         }
 
-        // Resolve slug
+        // Real Estate specific instructions if applicable
+        let realEstateSection = ""
+        if (propertyId || resolvedIndustry === 'real_estate') {
+            realEstateSection = `
+REAL-ESTATE LISTING SPECIFICATIONS:
+${propertyRera ? `- Prominently display verified RERA Registration Number: "${propertyRera}".` : ''}
+${propertyPrice ? `- Prominently display the Price/Starting Range: "${propertyPrice}".` : ''}
+- Floor Plan Section: Display floor plan "${propertyFloorPlan}" with configuration switcher buttons.
+- Connectivity & Landmarks Accordion: Distances to nearby airport, highways, hospitals, and educational hubs.
+- Amenities Grid: 6+ luxury amenities (Clubhouse, Swimming Pool, 24/7 Tier-3 Security, EV Charging, Landscaped Greens, High-Speed Elevators) with SVG icons.
+`
+        }
+
+        let youtubeEmbedSection = ""
+        if (propertyYoutubeUrl) {
+            youtubeEmbedSection = `
+YOUTUBE VIDEO EMBED:
+- Video URL: "${propertyYoutubeUrl}"
+- Embed this video in a responsive 16:9 aspect ratio container directly inside a feature showcase card.
+`
+        }
+
+        // Resolve slug early
         let slug = requestSlug
         if (!slug) {
             if (pageType === 'business') {
                 slug = 'index'
             } else {
-                const baseSlug = resolvedProductName
-                    ? resolvedProductName
-                        .toLowerCase()
-                        .replace(/[^a-z0-9]+/g, '-')
-                        .replace(/(^-|-$)/g, '')
-                    : 'listing'
+                const baseSlug = (resolvedProductName || 'page')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/(^-|-$)/g, '')
                     
                 slug = mode === 'generate' 
                     ? `${baseSlug}-${Date.now().toString().slice(-4)}` 
@@ -555,12 +304,183 @@ CRITICAL RULES:
             }
         }
 
+        const publicPageUrl = `https://${domainBase}/${slug}`
+
+        // Construct DeepSeek V4.1 Flash System Prompt
+        let systemPrompt = ""
+        if (mode === 'generate') {
+            if (pageType === 'raw_survey') {
+                systemPrompt = `You are a world-class front-end engineer and direct-response architect using modern Astro JS & Tailwind CSS principles.
+Generate a minimal, lightning-fast Raw Survey Qualification Page in pure HTML.
+
+### CRITICAL GOAL:
+A focused, distraction-free page with:
+1. Header callout text with bold value proposition.
+2. 2-3 product images in a responsive grid or header banner. (Images: ${JSON.stringify(propertyImagesList)}).
+3. The dynamic lead qualification container EXACTLY like this:
+   '<div id="qualification-form-container" data-page-type="survey" data-button-text="Next"></div>'
+   Do NOT write form inputs or buttons inside this container; the platform injects them inline dynamically.
+
+### GOOGLE SEO & LLM OPTIMIZATION (ASTRO STANDARD):
+- Full semantic <head> with <title>, <meta name="description">, <meta name="robots" content="index, follow, max-image-preview:large">.
+- Schema.org JSON-LD structured data ("@type": "${schemaType}") with business info.
+- Google Fonts (Outfit, Inter) and Tailwind CDN.
+
+### OUTPUT FORMAT:
+- Return ONLY valid HTML starting with "<!DOCTYPE html>" and ending with "</html>".
+- ABSOLUTELY NO markdown code blocks (\`\`\`html). Output pure raw HTML.`
+            } else if (pageType === 'survey') {
+                systemPrompt = `You are an elite front-end developer and conversion copywriter.
+Generate a high-converting, single-card Survey & Qualification Page in pure HTML.
+
+### LAYOUT STRUCTURE:
+- Fullscreen centered card layout on a clean backdrop.
+- At the top of the card: Visual showcase of "${resolvedProductName}" (Images: ${JSON.stringify(propertyImagesList)}).
+- Directly beneath the visuals inside the card: The qualification container:
+  '<div id="qualification-form-container" data-page-type="survey" data-button-text="Next"></div>'
+  Do NOT write form elements inside; the platform injects the questions immediately inline.
+- Underneath the form container: 3 brief bullet points of why to apply (zero risk, immediate response, privacy protected).
+- Mobile sticky Call & WhatsApp buttons.
+
+### GOOGLE SEO & LLM OPTIMIZATION:
+- Semantic <head> with <title>, <meta name="description">, OpenGraph, Twitter, and Schema.org JSON-LD.
+- Return ONLY the raw HTML string starting with "<!DOCTYPE html>" and ending with "</html>". No markdown blocks.`
+            } else if (pageType === 'business') {
+                systemPrompt = `You are a world-class web architect and Astro JS expert.
+Generate a complete, responsive, full-feature business website homepage in pure HTML for "${businessName}".
+
+### BUSINESS IDENTITY & CONTEXT:
+${contactInfoText}
+Mission & Services: "${resolvedContext}"
+${propertyDataText}
+${themeDirectives}
+
+### CORE SECTIONS REQUIRED:
+1. **Sticky Header / Navigation**:
+   - Logo / Business Name
+   - Nav anchors: Services, Featured Listings/Products, About, FAQs, Contact
+   - Primary Call CTA button ("Call Now" or "Book Consultation")
+2. **Hero Section (Hormozi Value Equation)**:
+   - Trust Badge ("⭐ Top Rated | Verified Excellence")
+   - Dream Outcome H1 Headline (Clear value, no fluff)
+   - Frictionless Sub-headline
+   - Dual CTAs: Primary ("Explore Portfolio" or "Connect with Us") + Secondary ("Watch Video" / "Call Us")
+   - 3 Trust Checkmarks / Risk Reversal badges
+3. **Key Stats & Social Proof Banner**:
+   - 4 compelling statistics (e.g. "10+ Years Experience", "1,200+ Satisfied Clients", "₹500Cr+ Portfolio Delivered", "4.9/5 Average Rating")
+4. **Services / Value Proposition Grid**:
+   - 3-4 structured cards with custom inline SVG icons detailing core offerings and client benefits.
+5. **Dynamic Products / Inventory Showcase Container (MANDATORY)**:
+   - You MUST place EXACTLY this structural container:
+     '<div id="business-products-container"></div>'
+     The platform dynamically injects the active products / property catalog grid into this container.
+6. **"Wall of Love" Social Proof Grid**:
+   - 3 genuine-sounding client testimonials with reviewer names, roles/locations, and 5-star ratings.
+7. **Interactive FAQ Accordion**:
+   - 4-5 common questions answered with a working inline JavaScript toggle function \`toggleFaq(btn)\`.
+8. **Lead Capture & Contact Section**:
+   - Enclose the qualification container:
+     '<div id="qualification-form-container" data-page-type="standard" data-button-text="Submit Enquiry"></div>'
+9. **Mobile Bottom Floating Bar**:
+   - Sticky bar on mobile with Call Now (\`tel:${cleanPhone}\`) and WhatsApp (\`https://wa.me/${cleanPhone}\`).
+10. **Semantic Footer**:
+    - Logo, description, contact details, navigation links, and copyright notice.
+
+### GOOGLE SEO & LLM OPTIMIZATION (ASTRO STANDARD):
+- Full semantic tags (<header>, <nav>, <main>, <section>, <article>, <footer>).
+- Complete <head> with <title>, <meta name="description">, <meta name="robots" content="index, follow, max-image-preview:large">, canonical link "${publicPageUrl}", OpenGraph, and Twitter tags.
+- Schema.org JSON-LD structured data with "@graph" including:
+  * Primary "@type": "${schemaType}" with business details.
+  * "@type": "FAQPage" with question and acceptedAnswer entities matching on-page FAQs.
+- Return ONLY valid HTML starting with "<!DOCTYPE html>" and ending with "</html>". No markdown blocks.`
+            } else {
+                // High-Converting Standard Landing Page
+                systemPrompt = `You are a world-class front-end developer, Astro JS architect, and direct-response marketing master.
+Generate a complete, fully-responsive, high-converting landing page in pure HTML for "${resolvedProductName}".
+
+### CONTEXT & INPUTS:
+* Product/Offer Name: "${resolvedProductName}"
+* Industry / Niche: "${resolvedIndustry}"
+* Offer Context & Benefits: "${resolvedContext}"
+* Custom Instructions: "${customInstructions || 'Create an irresistible, high-converting presentation'}"
+${contactInfoText}
+${propertyDataText}
+${realEstateSection}
+${youtubeEmbedSection}
+${themeDirectives}
+
+### ALEX HORMOZI VALUE EQUATION & DIRECT-RESPONSE CONVERSION FRAMEWORK:
+Build the page following proven high-conversion principles:
+1. **Sticky Header / Navigation**:
+   - Logo or bold brand title, anchor links (Overview, Features, Reviews, FAQs), and a high-contrast CTA button.
+2. **Above-the-Fold Hero Section (80% Conversion Impact)**:
+   - Trust Pill / Badge (e.g. "⭐ Rated 4.9/5 by 500+ Clients" or "⚡ Exclusive Limited Allocation")
+   - Dream Outcome H1 Headline: Articulate the ultimate dream outcome ("Achieve [Result] Without [Fear/Pain] in [Timeframe]").
+   - Sub-headline: Eliminate friction and reduce perceived effort.
+   - Dual Call-to-Action Buttons: Primary action button smoothly scrolling to form (\`onclick="document.getElementById('qualification-form-container')?.scrollIntoView({ behavior: 'smooth' })"\`) + Secondary phone/contact button.
+   - Trust Checkmarks: 3 risk-reversal guarantees (e.g. "100% Transparency", "Zero Obligation", "Fast Personalized Assistance").
+   - Social Proof Avatars: Visual cluster with "Trusted by 1,200+ clients" and 5 stars.
+   - Hero Media: If images are available (${JSON.stringify(propertyImagesList)}), display a premium hero gallery or showcase.
+3. **Proof & Metrics Banner**:
+   - 3-4 high-impact numerical statistics.
+4. **The "Why Us" / Problem vs. Solution Section**:
+   - Clearly delineate what makes this offer superior to traditional alternatives.
+5. **Key Features & Benefits Grid**:
+   - 4-6 benefit-driven feature cards with clean inline SVG icons. Focus on tangible outcomes.
+6. **"Wall of Love" (Social Proof Grid)**:
+   - 3-4 visual testimonial cards with client quotes, names, verified badges, and star ratings.
+7. **Frictionless "How It Works" in 3-4 Simple Steps**:
+   - 3 or 4 clear, effortless steps to get started.
+8. **Interactive FAQ Accordion**:
+   - 4-5 high-value questions answering the top customer objections.
+   - Include a working vanilla JS accordion script:
+     \`<script>function toggleFaq(btn) { const c = btn.nextElementSibling; const ic = btn.querySelector('.faq-icon'); c.classList.toggle('hidden'); if(ic) ic.classList.toggle('rotate-180'); }</script>\`
+9. **Lead Qualification Form Card**:
+   - A styled, elevated card enclosing EXACTLY this structural container:
+     '<div id="qualification-form-container" data-button-text="Claim Your Free Consultation"></div>'
+   - Do NOT write form elements inside; the platform injects them automatically.
+10. **Mobile Sticky Bottom Bar**:
+    - Sticky bottom bar visible on mobile (< 640px) with Call Now (\`tel:${cleanPhone}\`) and WhatsApp (\`https://wa.me/${cleanPhone}\`).
+11. **Semantic Footer**:
+    - Clean footer with copyright, contact info, and legal disclaimer.
+
+### GOOGLE SEO & LLM OPTIMIZATION (ASTRO STANDARD):
+- Complete semantic HTML5 structure with strictly ONE <h1>, hierarchical <h2> and <h3> tags.
+- Full <head> with <title>, <meta name="description">, <meta name="keywords">, <meta name="robots" content="index, follow, max-image-preview:large">, canonical link "${publicPageUrl}", OpenGraph, and Twitter tags.
+- Schema.org JSON-LD structured data with "@graph":
+  * "@type": "${schemaType}" with business details.
+  * "@type": "FAQPage" with all on-page questions & answers for Google rich search snippet eligibility!
+- Preconnected Google Fonts (Outfit, Plus Jakarta Sans, or Inter) and Tailwind CDN with brand configuration.
+
+### OUTPUT FORMAT:
+- Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
+- ABSOLUTELY DO NOT wrap the output in markdown code blocks (\`\`\`html). Output pure raw HTML string.`
+            }
+        } else {
+            // Edit mode
+            systemPrompt = `You are a master front-end developer and Astro JS architect.
+Edit the provided landing page HTML strictly according to the user's instructions.
+User Instructions: "${instructions}"
+${imageUrls && imageUrls.length > 0 ? `Visual reference images attached by user: ${JSON.stringify(imageUrls)}. Incorporate visual fixes, layouts, or styling based on these references.` : ''}
+
+CURRENT HTML:
+${currentHtml}
+
+CRITICAL RULES:
+1. Preserve the structural container '<div id="qualification-form-container" ...></div>' and '<div id="business-products-container"></div>' (and all their attributes). Do NOT write form inputs inside qualification-form-container.
+2. If the user asks to change the button text, modify the 'data-button-text' attribute on '<div id="qualification-form-container" ...>'.
+3. Maintain all existing SEO meta tags, Google Fonts, Tailwind config, and Schema.org JSON-LD scripts unless explicitly instructed to update them.
+4. If updating styles or layout, ensure full responsiveness across mobile, tablet, and desktop.
+5. Return ONLY the raw, complete, valid updated HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
+6. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output pure raw updated HTML.`
+        }
+
         const payload: any = {
             user_id: targetUserId,
             slug,
-            title: `${resolvedProductName || 'Offer'} | High-Converting Listing`,
-            product_name: resolvedProductName || 'Property Listing',
-            html_content: mode === 'edit' ? currentHtml : '<!-- Generating page content... please wait. -->',
+            title: `${resolvedProductName || 'Offer'} | ${businessName}`,
+            product_name: resolvedProductName || businessName,
+            html_content: mode === 'edit' ? currentHtml : '<!-- Generating page content with DeepSeek V4.1 Flash... -->',
             form_id: formId || null,
             updated_at: new Date().toISOString()
         }
@@ -581,7 +501,7 @@ CRITICAL RULES:
 
         if (dbError) {
             console.error("❌ Failed to save landing page:", dbError)
-            return NextResponse.json({ error: "Failed to persist landing page to database." }, { status: 500 })
+            return NextResponse.json({ error: "Failed to persist landing page to database: " + dbError.message }, { status: 500 })
         }
 
         // Create a tracking record in campaign_jobs
@@ -593,6 +513,7 @@ CRITICAL RULES:
                 status: 'processing',
                 payload: {
                     type: 'landing_page_generation',
+                    model: 'deepseek-v4.1-flash',
                     mode,
                     page_id: pageRecord.id,
                     product_name: resolvedProductName,
@@ -607,26 +528,86 @@ CRITICAL RULES:
             return NextResponse.json({ error: "Failed to initialize background task tracking." }, { status: 500 })
         }
 
-        // Execute Gemini generation synchronously to guarantee completion before response
+        // Execute DeepSeek V4.1 Flash generation (with Gemini fallback for 100% reliability)
         let cleanedHtml = mode === 'edit' ? currentHtml : ''
         try {
-            console.log(`[Lander API] Calling Gemini for job ${job.id} / page ${pageRecord.id} in mode: ${mode}...`)
-            const generateRes = await callGeminiWithUsage(systemPrompt, imageUrls)
-            const aiRawResult = generateRes.text
-            
-            // Deduct credits dynamically
-            const generateInr = calculateLLMCost(generateRes.modelName, generateRes.promptTokens, generateRes.completionTokens)
-            await deductCreditsByCost(supabaseAdmin, targetUserId, generateInr, 'ai_generation', `AI Landing Page - Page Copy Generation (${mode})`)
-            
-            // Clean markdown formatting if LLM failed to follow the instruction
+            console.log(`[Lander API] Calling DeepSeek V4.1 Flash for job ${job.id} / page ${pageRecord.id} in mode: ${mode}...`)
+            let aiRawResult = ""
+            let usedModel = "deepseek-chat"
+            let promptTokens = 0
+            let completionTokens = 0
+
+            try {
+                const dsRes = await callDeepSeekWithUsage(systemPrompt, {
+                    system: "You are a world-class front-end developer, Astro JS architect, and direct-response marketing expert specializing in high-converting landing pages and websites.",
+                    maxTokens: 8192,
+                    temperature: 0.35,
+                    model: "deepseek-chat"
+                })
+                aiRawResult = dsRes.text
+                usedModel = dsRes.modelName
+                promptTokens = dsRes.promptTokens
+                completionTokens = dsRes.completionTokens
+                console.log(`[Lander API] DeepSeek Flash generation completed (${promptTokens} prompt tokens, ${completionTokens} completion tokens).`)
+            } catch (dsErr: any) {
+                console.warn(`[Lander API] DeepSeek Flash failed, falling back to Gemini. Error: ${dsErr.message}`)
+                const geminiRes = await callGeminiWithUsage(systemPrompt, imageUrls)
+                aiRawResult = geminiRes.text
+                usedModel = geminiRes.modelName
+                promptTokens = geminiRes.promptTokens
+                completionTokens = geminiRes.completionTokens
+            }
+
+            // Deduct credits dynamically based on token usage
+            const generateInr = calculateLLMCost(usedModel, promptTokens, completionTokens)
+            await deductCreditsByCost(supabaseAdmin, targetUserId, generateInr, 'ai_generation', `AI Landing Page - DeepSeek Flash Generation (${mode})`)
+
+            // Clean markdown formatting if LLM wrapped in code block
             const htmlResult = aiRawResult
                 .replace(/^```html\s*/i, '')
                 .replace(/^```\s*/, '')
                 .replace(/\s*```$/, '')
                 .trim()
 
-            // Clean spaces
+            // Normalize spaces
             cleanedHtml = htmlResult.replace(/\u00a0/g, ' ')
+
+            // Ensure DOCTYPE exists
+            if (!cleanedHtml.toLowerCase().includes('<!doctype html>')) {
+                cleanedHtml = `<!DOCTYPE html>\n${cleanedHtml}`
+            }
+
+            // GUARANTEE 1: Structural qualification-form-container presence
+            if (!cleanedHtml.includes('id="qualification-form-container"')) {
+                const containerSnippet = `\n<!-- Qualification Container Injected by Nobogent Studio -->\n<section id="inquiry" class="py-16 px-4 bg-slate-50 dark:bg-slate-900/50">\n    <div class="max-w-xl mx-auto">\n        <div id="qualification-form-container" data-page-type="${pageType}" data-button-text="Submit Details"></div>\n    </div>\n</section>\n`
+                if (cleanedHtml.includes('<footer')) {
+                    cleanedHtml = cleanedHtml.replace('<footer', `${containerSnippet}<footer`)
+                } else if (cleanedHtml.includes('</body>')) {
+                    cleanedHtml = cleanedHtml.replace('</body>', `${containerSnippet}</body>`)
+                } else {
+                    cleanedHtml += containerSnippet
+                }
+            }
+
+            // GUARANTEE 2: Interactive FAQ Accordion Script
+            if (cleanedHtml.includes('toggleFaq') && !cleanedHtml.includes('function toggleFaq')) {
+                const faqScript = `\n<script>\nfunction toggleFaq(btn) {\n    const content = btn.nextElementSibling;\n    const icon = btn.querySelector('.faq-icon');\n    if (content) content.classList.toggle('hidden');\n    if (icon) icon.classList.toggle('rotate-180');\n}\n</script>\n`
+                if (cleanedHtml.includes('</body>')) {
+                    cleanedHtml = cleanedHtml.replace('</body>', `${faqScript}</body>`)
+                } else {
+                    cleanedHtml += faqScript
+                }
+            }
+
+            // GUARANTEE 3: Interactive Modal / Scroll Helpers
+            if (cleanedHtml.includes('openQualificationModal') && !cleanedHtml.includes('function openQualificationModal')) {
+                const modalScript = `\n<script>\nfunction openQualificationModal() {\n    const el = document.getElementById('qualification-form-container') || document.getElementById('survey-wizard-container');\n    if (el) {\n        el.scrollIntoView({ behavior: 'smooth' });\n    } else if (typeof window.openModal === 'function') {\n        window.openModal();\n    }\n}\n</script>\n`
+                if (cleanedHtml.includes('</body>')) {
+                    cleanedHtml = cleanedHtml.replace('</body>', `${modalScript}</body>`)
+                } else {
+                    cleanedHtml += modalScript
+                }
+            }
 
             // Save final HTML content to landing page
             const { error: pageUpdateErr } = await supabaseAdmin
@@ -654,7 +635,6 @@ CRITICAL RULES:
         } catch (genError: any) {
             console.error(`[Lander API] Generation error for job ${job.id}:`, genError)
             
-            // Update job status to failed
             await supabaseAdmin
                 .from('campaign_jobs')
                 .update({
@@ -665,29 +645,61 @@ CRITICAL RULES:
                 .eq('id', job.id)
 
             if (!cleanedHtml || cleanedHtml.includes('Generating page content')) {
-                // If initial creation failed to generate HTML, fallback to a clean responsive template
+                // High-converting, Astro-ready responsive fallback template
                 cleanedHtml = `<!DOCTYPE html>
 <html lang="en" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>${resolvedProductName || 'Offer'} | ${profile?.business_name || 'Exclusive Offer'}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>${resolvedProductName || 'Offer'} | ${businessName}</title>
+    <meta name="description" content="Discover exclusive offerings from ${businessName}. Contact our specialists today.">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: '${brandColor}'
+                    },
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans antialiased max-w-full overflow-x-hidden">
-    <header class="bg-white border-b border-slate-200 py-4 px-4 sm:px-8 flex justify-between items-center">
-        <h1 class="text-xl font-black text-slate-900 truncate">${resolvedProductName || 'Special Offer'}</h1>
-        ${profile?.contact_number ? `<a href="tel:${profile.contact_number}" class="bg-blue-600 text-white font-bold text-xs px-4 py-2 rounded-xl">Call Us</a>` : ''}
+    <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80 py-4 px-4 sm:px-8">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <div class="font-display font-black text-xl text-slate-900">${businessName}</div>
+            <div class="flex items-center gap-3">
+                ${contactPhone ? `<a href="tel:${cleanPhone}" class="text-xs font-bold text-slate-600 hover:text-slate-900 hidden sm:inline-block">${contactPhone}</a>` : ''}
+                <button onclick="document.getElementById('qualification-form-container')?.scrollIntoView({ behavior: 'smooth' })" class="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-5 py-2.5 rounded-full transition-all shadow-sm">Get Started</button>
+            </div>
+        </div>
     </header>
-    <main class="max-w-4xl mx-auto px-4 py-8 sm:py-12 flex flex-col gap-8">
-        <section class="text-center space-y-4">
-            <h2 class="text-2xl sm:text-4xl font-extrabold text-slate-900 leading-tight">${resolvedProductName || 'Exclusive Opportunity'}</h2>
-            <p class="text-slate-600 text-sm sm:text-base leading-relaxed max-w-2xl mx-auto">${resolvedContext || 'Welcome to our official landing page. Fill out your details below to connect with our team.'}</p>
+    <main class="max-w-5xl mx-auto px-4 py-12 sm:py-20 flex flex-col gap-12">
+        <section class="text-center space-y-5 max-w-3xl mx-auto">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-blue-600 text-xs font-bold uppercase tracking-wider">
+                <span>⚡ Premium Verified Offer</span>
+            </div>
+            <h1 class="font-display text-3xl sm:text-5xl lg:text-6xl font-black text-slate-900 leading-[1.1] tracking-tight">${resolvedProductName || 'Exclusive Opportunity'}</h1>
+            <p class="text-slate-600 text-sm sm:text-lg leading-relaxed">${resolvedContext || 'Experience verified excellence tailored to your goals. Submit your inquiry below to connect with our team.'}</p>
         </section>
-        <section class="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xl max-w-md mx-auto w-full">
+        <section class="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200 shadow-xl max-w-md mx-auto w-full">
             <div id="qualification-form-container" data-button-text="Submit Details"></div>
         </section>
     </main>
+    <div class="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 sm:hidden z-40 flex gap-2">
+        <a href="tel:${cleanPhone}" class="flex-1 bg-slate-900 text-white text-xs font-bold py-3 rounded-xl text-center">Call Now</a>
+        <a href="https://wa.me/${cleanPhone}" target="_blank" class="flex-1 bg-emerald-600 text-white text-xs font-bold py-3 rounded-xl text-center">WhatsApp</a>
+    </div>
 </body>
 </html>`
                 await supabaseAdmin
@@ -696,9 +708,6 @@ CRITICAL RULES:
                     .eq('id', pageRecord.id)
             }
         }
-
-        const domainBase = profile?.custom_domain || `app.nobogent.com/shared/${targetUserId}`
-        const publicUrl = `https://${domainBase}/${slug}`
 
         const updatedPageRecord = {
             ...pageRecord,
@@ -709,7 +718,7 @@ CRITICAL RULES:
             success: true,
             jobId: job.id,
             page: updatedPageRecord,
-            publicUrl
+            publicUrl: publicPageUrl
         })
 
     } catch (error: any) {

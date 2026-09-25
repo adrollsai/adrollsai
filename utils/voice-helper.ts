@@ -231,9 +231,11 @@ export async function triggerOutboundCall(
         // Primary Telephony Routing: Vobiz for Indian calls & numbers (if a valid Vobiz number is owned)
         let cleanPhone = (lead.phone || '').replace(/\D/g, '')
         const bi = typeof profile?.business_info === 'string' ? JSON.parse(profile.business_info) : (profile?.business_info || {})
+        const isNobogentMaster = profile?.email === 'rchopra489@gmail.com' || profile?.role === 'super_admin'
         const telephonyProvider = profile?.voice_telephony_provider || bi?.voice_telephony_provider || profile?.voice_provider || 'vobiz'
-        const vobizNumber = profile?.voice_vobiz_number || bi?.claimed_vobiz_number || bi?.voice_vobiz_number || (profile?.voice_twilio_number?.startsWith('+91') ? profile.voice_twilio_number : null)
-        const useVobiz = (telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz') && !!vobizNumber
+        const masterVobizNumber = process.env.VOBIZ_TEST_NUMBER || '+911171366938'
+        const vobizNumber = profile?.voice_vobiz_number || bi?.claimed_vobiz_number || bi?.voice_vobiz_number || (profile?.voice_twilio_number?.startsWith('+91') ? profile.voice_twilio_number : null) || (isNobogentMaster ? masterVobizNumber : null)
+        const useVobiz = (telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz' || isNobogentMaster) && !!vobizNumber
 
         if (useVobiz) {
             const vobizRes = await triggerVobizOutboundCall(supabaseAdmin, {
@@ -257,9 +259,9 @@ export async function triggerOutboundCall(
         }
 
         // Secondary / Explicit Twilio Routing: ONLY if user explicitly configured their own Twilio credentials
-        const twilioSid = profile.voice_twilio_sid
-        const twilioToken = profile.voice_twilio_token
-        const voiceNumber = profile.voice_twilio_number
+        const twilioSid = profile.voice_twilio_sid || (isNobogentMaster ? process.env.MASTER_TWILIO_SID : null)
+        const twilioToken = profile.voice_twilio_token || (isNobogentMaster ? process.env.MASTER_TWILIO_TOKEN : null)
+        const voiceNumber = profile.voice_twilio_number || (isNobogentMaster ? (process.env.MASTER_TWILIO_NUMBER || '+16592137728') : null)
 
         if (!twilioSid || !twilioToken || !voiceNumber) {
             console.warn(`[VOICE HELPER] Call aborted for lead ${lead.id}: User ${profile.email} has not connected a Vobiz number or Twilio credentials.`)
