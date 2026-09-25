@@ -232,17 +232,24 @@ export async function triggerOutboundCall(
         let cleanPhone = (lead.phone || '').replace(/\D/g, '')
         const bi = typeof profile?.business_info === 'string' ? JSON.parse(profile.business_info) : (profile?.business_info || {})
         const isNobogentMaster = profile?.email === 'rchopra489@gmail.com' || profile?.role === 'super_admin'
-        const telephonyProvider = profile?.voice_telephony_provider || bi?.voice_telephony_provider || profile?.voice_provider || 'vobiz'
-        const masterVobizNumber = process.env.VOBIZ_TEST_NUMBER || '+911171366938'
-        const vobizNumber = profile?.voice_vobiz_number || bi?.claimed_vobiz_number || bi?.voice_vobiz_number || (profile?.voice_twilio_number?.startsWith('+91') ? profile.voice_twilio_number : null) || (isNobogentMaster ? masterVobizNumber : null)
-        const useVobiz = (telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz' || isNobogentMaster) && !!vobizNumber
+        
+        // Telephony Routing:
+        // For super admin / nobogent master, prioritize Twilio line for testing unless explicitly configured with an owned Vobiz number
+        const telephonyProvider = profile?.voice_telephony_provider || bi?.voice_telephony_provider || profile?.voice_provider || (isNobogentMaster ? 'twilio' : 'vobiz')
+        const masterVobizNumber = process.env.VOBIZ_TEST_NUMBER || null
+        const vobizNumber = profile?.voice_vobiz_number || bi?.claimed_vobiz_number || bi?.voice_vobiz_number || (profile?.voice_twilio_number?.startsWith('+91') && profile?.voice_twilio_number !== '+911171366938' ? profile.voice_twilio_number : null) || masterVobizNumber
+        
+        // Master account only uses Vobiz if telephonyProvider is explicitly 'vobiz' AND a valid owned vobizNumber exists
+        const useVobiz = !isNobogentMaster 
+            ? ((telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz') && !!vobizNumber)
+            : (telephonyProvider === 'vobiz' && !!vobizNumber && vobizNumber !== '+911171366938')
 
         if (useVobiz) {
             const vobizRes = await triggerVobizOutboundCall(supabaseAdmin, {
                 leadId: lead.id,
                 profileId: effectiveProfileId,
                 toPhone: lead.phone,
-                fromPhone: vobizNumber,
+                fromPhone: vobizNumber!,
                 campaignId
             })
             if (vobizRes.success || vobizRes.scheduled) {
@@ -258,10 +265,15 @@ export async function triggerOutboundCall(
             return { success: false, error: vobizRes.error || 'Vobiz call failed.' }
         }
 
-        // Secondary / Explicit Twilio Routing: ONLY if user explicitly configured their own Twilio credentials
+        // Secondary / Explicit Twilio Routing: ONLY if user explicitly configured their own Twilio credentials OR isNobogentMaster
         const twilioSid = profile.voice_twilio_sid || (isNobogentMaster ? process.env.MASTER_TWILIO_SID : null)
         const twilioToken = profile.voice_twilio_token || (isNobogentMaster ? process.env.MASTER_TWILIO_TOKEN : null)
-        const voiceNumber = profile.voice_twilio_number || (isNobogentMaster ? (process.env.MASTER_TWILIO_NUMBER || '+16592137728') : null)
+        let voiceNumber = profile.voice_twilio_number || (isNobogentMaster ? (process.env.MASTER_TWILIO_NUMBER || '+16592137728') : null)
+
+        // Ensure master account doesn't use an unverified Indian number or dummy number on Twilio
+        if (isNobogentMaster && (!voiceNumber || voiceNumber.startsWith('+91') || voiceNumber === '+911171366938')) {
+            voiceNumber = process.env.MASTER_TWILIO_NUMBER || '+16592137728'
+        }
 
         if (!twilioSid || !twilioToken || !voiceNumber) {
             console.warn(`[VOICE HELPER] Call aborted for lead ${lead.id}: User ${profile.email} has not connected a Vobiz number or Twilio credentials.`)

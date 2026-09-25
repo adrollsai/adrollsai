@@ -160,11 +160,46 @@ app.post('/stitch', async (req, res) => {
         const concatTxtPath = path.join(tempDir, 'concat.txt');
         fs.writeFileSync(concatTxtPath, concatContent);
 
+        // Probe audio duration and video duration to prevent voiceover cutoff
+        let audioDuration = 0;
+        let totalVideoDuration = 0;
+        if (localAudioPath) {
+            try {
+                const audProbe = await new Promise(res => {
+                    exec(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${localAudioPath}"`, (err, stdout) => {
+                        res(parseFloat(stdout?.trim()) || 0);
+                    });
+                });
+                audioDuration = audProbe;
+                console.log(`[Stitcher] Probed audio duration: ${audioDuration.toFixed(2)}s`);
+            } catch (audErr) {
+                console.warn(`[Stitcher] Could not probe audio duration:`, audErr.message);
+            }
+        }
+        for (const f of localFiles) {
+            try {
+                const vidProbe = await new Promise(res => {
+                    exec(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${f}"`, (err, stdout) => {
+                        res(parseFloat(stdout?.trim()) || 0);
+                    });
+                });
+                totalVideoDuration += vidProbe;
+            } catch {}
+        }
+        console.log(`[Stitcher] Probed total video duration: ${totalVideoDuration.toFixed(2)}s`);
+
         // Run system FFmpeg cleanly
         const outputPath = path.join(tempDir, 'stitched.mp4');
-        const cmd = localAudioPath
-            ? `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -ar 48000 -ac 2 -shortest -movflags +faststart "${outputPath}"`
-            : `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+        let cmd;
+        if (localAudioPath && audioDuration > totalVideoDuration && totalVideoDuration > 0) {
+            const padDuration = (audioDuration - totalVideoDuration) + 0.35;
+            console.log(`[Stitcher] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalVideoDuration.toFixed(2)}s). Extending with tpad clone by ${padDuration.toFixed(2)}s...`);
+            cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v]" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -ar 48000 -ac 2 -movflags +faststart "${outputPath}"`;
+        } else if (localAudioPath) {
+            cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -ar 48000 -ac 2 -movflags +faststart "${outputPath}"`;
+        } else {
+            cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+        }
 
         
         console.log(`[Stitcher] Executing FFmpeg: ${cmd}`);

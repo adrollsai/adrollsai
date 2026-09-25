@@ -207,6 +207,17 @@ export async function stitchClipsLocally(
         // Check if multi-clip transition is possible
         let stitchCompleted = false;
 
+        // Probe audio duration if voiceover is present
+        let audioDuration = 0;
+        if (localAudioPath) {
+            try {
+                audioDuration = await probeClipDuration(localAudioPath, ffprobeExec);
+                console.log(`[Local Stitch] Probed voiceover audio duration: ${audioDuration.toFixed(2)}s`);
+            } catch (audErr) {
+                console.warn(`[Local Stitch] Failed to probe audio duration:`, audErr);
+            }
+        }
+
         if (localClipPaths.length > 1) {
             try {
                 console.log(`[Local Stitch] Attempting cinematic xfade crossfade transitions across ${localClipPaths.length} clips...`);
@@ -228,17 +239,31 @@ export async function stitchClipsLocally(
                     } else {
                         currentOffset = Math.max(0.5, currentOffset + durations[i - 1] - transitionDuration);
                     }
-                    const nextStream = i === localClipPaths.length - 1 ? '[v]' : `[v${i}]`;
+                    const nextStream = i === localClipPaths.length - 1 ? '[v_trans]' : `[v${i}]`;
                     filterParts.push(`${currentStream}[${i}:v]xfade=transition=fade:duration=${transitionDuration}:offset=${currentOffset.toFixed(2)}${nextStream}`);
                     currentStream = nextStream;
+                }
+
+                const totalVideoDuration = currentOffset + durations[durations.length - 1];
+                console.log(`[Local Stitch] Estimated total video duration after xfade: ${totalVideoDuration.toFixed(2)}s`);
+
+                // If voiceover is longer than visual duration (e.g. 47s audio vs 44.2s video),
+                // freeze the last video frame with tpad so voiceover finishes completely with ZERO cutoff!
+                let finalVideoStream = '[v_trans]';
+                if (audioDuration > totalVideoDuration) {
+                    const padDuration = (audioDuration - totalVideoDuration) + 0.35;
+                    console.log(`[Local Stitch] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalVideoDuration.toFixed(2)}s). Extending last video frame by ${padDuration.toFixed(2)}s using tpad...`);
+                    filterParts.push(`[v_trans]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v_padded]`);
+                    finalVideoStream = '[v_padded]';
                 }
 
                 const filterComplex = filterParts.join(';');
                 const inputsStr = localClipPaths.map(p => `-i "${p}"`).join(' ');
 
+                // Note: We intentionally avoid -shortest so the entire voiceover narration is always preserved
                 const xfadeCmd = localAudioPath
-                    ? `"${ffmpegExec}" -nostdin -y ${inputsStr} -i "${localAudioPath}" -filter_complex "${filterComplex}" -map "[v]" -map ${localClipPaths.length}:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
-                    : `"${ffmpegExec}" -nostdin -y ${inputsStr} -filter_complex "${filterComplex}" -map "[v]" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
+                    ? `"${ffmpegExec}" -nostdin -y ${inputsStr} -i "${localAudioPath}" -filter_complex "${filterComplex}" -map "${finalVideoStream}" -map ${localClipPaths.length}:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`
+                    : `"${ffmpegExec}" -nostdin -y ${inputsStr} -filter_complex "${filterComplex}" -map "${finalVideoStream}" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
 
                 console.log(`[Local Stitch] Executing FFmpeg xfade transition command: ${xfadeCmd}`);
                 await new Promise<void>((resolve, reject) => {
@@ -263,9 +288,23 @@ export async function stitchClipsLocally(
 
         // Fallback or single-clip execution: fast concat demuxer
         if (!stitchCompleted) {
-            const ffmpegCmd = localAudioPath
-                ? `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`
-                : `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+            let totalFallbackDuration = 0;
+            for (const p of localClipPaths) {
+                try {
+                    totalFallbackDuration += await probeClipDuration(p, ffprobeExec);
+                } catch {}
+            }
+
+            let ffmpegCmd: string;
+            if (localAudioPath && audioDuration > totalFallbackDuration && totalFallbackDuration > 0) {
+                const padDuration = (audioDuration - totalFallbackDuration) + 0.35;
+                console.log(`[Local Stitch Fallback] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalFallbackDuration.toFixed(2)}s). Extending with tpad clone by ${padDuration.toFixed(2)}s...`);
+                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v]" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+            } else if (localAudioPath) {
+                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+            } else {
+                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+            }
 
             console.log(`[Local Stitch] Executing direct stream concat FFmpeg command: ${ffmpegCmd}`);
             await new Promise<void>((resolve, reject) => {

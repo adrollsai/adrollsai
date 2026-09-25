@@ -403,18 +403,17 @@ Your goal is to synthesize this information and output an extremely detailed, de
 Follow these 20-year direct-response advertising master rules to maximize click-throughs and conversion:
 1. SCROLL-STOPPING COMMERCIAL PHOTOGRAPHY: The creative must look like authentic live-action commercial photography captured by a top advertising photographer. Never make it look like a 3D render, cartoon, architectural blueprint, or CGI illustration. Bright, airy, commercial natural morning or golden-hour lighting with crisp shadows and believable textures.
 ${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific product is selected. Focus the visual canvas on high-impact commercial branding, aspirational imagery, and clean graphic typography representing ${businessName || 'the brand'} in the ${industry || 'commercial'} sector according to the custom user instructions.` : `2. 60-70% HERO FOCUS: The real product or subject must occupy 60-70% of the canvas as the undisputed hero. ${excludeHousePhoto ? 'CRITICAL EXCLUSION: Do NOT describe or include any exterior architectural house, villa, or building photos.' : 'Keep the generated visuals faithful to the real subject in the input.'}`}
-3. STRICT PROHIBITION ON AMATEUR AI GIMMICKS (ZERO TOLERANCE):
-   - ABSOLUTELY NEVER generate floating 3D glass cubes, floating green bars, floating isometric blocks, or 3D glowing shapes.
-   - ABSOLUTELY NEVER generate fake floating holographic stock charts, line graphs, or floating checklist pills.
-   - ABSOLUTELY NEVER generate cheap circular gold ribbon stickers, medal seals, starburst badges, or tacky "FREE TRIAL" ribbons.
-   - ABSOLUTELY NEVER generate neon gaming button glows, cyan plastic highlights, or repetitive stacked pills.
-4. SOPHISTICATED DIRECT-RESPONSE TYPOGRAPHY HIERARCHY:
-   - Exactly ONE bold, compelling benefit hook headline that addresses the buyer's primary desire or solves their core friction.
-   - Exactly ONE crisp, supporting subline with generous whitespace.
-   - Modern, authoritative grotesque sans-serif (Neue Haas Grotesk, Inter) or elegant editorial serif. Crisp white or dark obsidian letters. Absolutely NO flat yellow gradients or bevel drop-shadows.
-5. PRISTINE ANTI-SMUDGE BRAND LOGO & CLEAN FOOTER:
+3. HIGH-CONVERTING PERFORMANCE AD POSTER ARCHITECTURE (META / INSTAGRAM / LINKEDIN):
+   - TOP BANNER: Frosted category/offer pill tag (e.g. "OFFICIAL IMMIGRATION PATHWAY", "EXCLUSIVE PRE-LAUNCH", "AI REVENUE ENGINE", "PREMIUM CRAFTSMANSHIP") placed cleanly near the top margin.
+   - HERO VISUAL (55-65% CANVAS): Aspirational, photorealistic hero visual featuring the product, service, or customer in an authentic real-world environment with tangible proof artifacts (passports, approval letters, certificates, product packaging, keys, or modern dashboard interfaces).
+   - BENEFIT HOOK HEADLINE: Exactly ONE dominant, high-contrast outcome-driven headline (e.g., "Live & Work in Canada in 2026", "Own Luxury for 1% Monthly", "Automate 80% of Support") that instantly hooks the target customer.
+   - TRUST PROOF BADGES / VALUE PILLS: Exactly 2 to 3 sleek, modern frosted glass or flat solid contrast chips/badges highlighting key credibility and risk-reversal points (e.g. "Licensed Consultants", "98% Success Rate", "Fast-Track Approval", "RERA Certified", "Zero Hidden Fees", "Free Consultation"). Badges must be modern, minimal, executive-grade UI elements.
+   - FOOTER CTA BAR: Crisp high-contrast bottom action bar with a clear call-to-action button ("Book Free Consultation", "Explore Inventory", "Claim Offer", "Get Free Assessment") alongside the contact details "${finalContactNumber || ''}".
+4. STRICT BAN ON AMATEUR GIMMICKS:
+   - ABSOLUTELY NEVER generate floating 3D glass cubes, floating green bars, floating holographic stock charts, or neon gaming button glows. All badges and chips must be modern, minimal, flat or frosted glass executive-grade UI elements.
+5. PRISTINE ANTI-SMUDGE BRAND LOGO & TYPOGRAPHY:
    - If brand logo is included, position it cleanly in an upper corner as a razor-sharp, crisp vector mark. STRICT DIRECTIVE: Do NOT smudge, melt, blur, distort, or warp the logo icon or lettering.
-   - Place the contact number "${finalContactNumber || ''}" cleanly and prominently in a sleek, minimalist footer strip at the bottom margin with generous padding.
+   - Modern, authoritative grotesque sans-serif (Neue Haas Grotesk, Inter) or elegant editorial typography. Crisp white or obsidian dark letters with razor-sharp legibility.
 6. AUTHENTIC HUMAN PERSONA: ${activePersona.promptDirective} Regional ethnicity must match the business location. Real skin pores and candid expressions of joy, strictly no plastic AI faces.
 7. OUTPUT FORMAT: Output ONLY a single cohesive, highly detailed, descriptive paragraph containing the exact scene description, layouts, styling, text overlays, and details for the image model. Do NOT include any intro, conversational text, or markdown code blocks.`;
 
@@ -527,16 +526,22 @@ Make the edits clean, professional, and blend seamlessly with the original conte
     } else {
       const disambiguationPreamble = buildImageDisambiguationPreamble(validPropImages.length, validLogo.length > 0);
       const fallbackPrompt = [
-          `Create a highly detailed, premium, and professional ad creative design adhering to seasoned direct-response advertising standards.`,
+          `Create a highly detailed, premium, high-converting performance marketing ad poster adhering to top-tier Meta / Instagram / LinkedIn direct-response advertising standards.`,
+          `AD ARCHITECTURE:
+- TOP: Clean category/offer pill tag and razor-sharp brand logo.
+- HERO VISUAL (55-65% canvas): High-impact, photorealistic subject with authentic contextual proof artifacts.
+- COPY: 1 bold outcome-driven benefit hook headline + 1 punchy subline.
+- TRUST PROOF: 2 to 3 sleek modern frosted glass or flat contrast trust badges / value pills highlighting credibility, speed, or guarantees.
+- BOTTOM CTA BAR: High-contrast action banner with clear CTA button and contact details.`,
           effectiveIsBrandOnly ? `Subject: Brand Campaign for ${businessName || 'Business'}` : (propertyTitle ? `Subject: ${propertyTitle}` : ''),
           effectiveIsBrandOnly ? `Business Info & Context: ${cleanBusinessInfo || profile?.mission_statement || propertyDescription || ''}` : (propertyDescription ? `Details/Description: ${propertyDescription}` : ''),
           (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
           (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly in an upper corner as a razor-sharp vector mark. STRICT ANTI-SMUDGE DIRECTIVE: Do NOT smudge, melt, blur, distort, or warp the logo icon or font lettering.` : '',
-          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly in a sleek, minimalist footer bar at the bottom of the poster (e.g. "Call: ${finalContactNumber}").` : '',
+          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Include the contact number "${finalContactNumber}" clearly and elegantly in a sleek, minimalist footer CTA bar at the bottom of the poster (e.g. "Call: ${finalContactNumber}").` : '',
           effectiveIsBrandOnly ? `Create a brand-focused commercial visual emphasizing ${businessName || 'the business'}, industry prestige, and the user's custom instructions.` : (excludeHousePhoto ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any unwanted building or house exterior image. Focus on clean product showcases, minimalist typography, or lifestyle close-ups.` : `You are provided with multiple inventory/product photos. Carefully analyze all input photos, identify the most relevant/aesthetically appealing ones matching the subject, and use only those relevant images as the visual base for the design (ignore any unrelated images).`),
           `Ensure the overall composition is highly professional, balanced, featuring cinematic commercial lighting, authentic textures, and a luxury editorial aesthetic. Strictly avoid floating 3D glass cubes, fake stock chart lines, or circular gold ribbon stickers.`,
           (!userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i)) ? `Include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (e.g. a happy customer, team professional, or entrepreneur, depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy. Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) looking completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. The ethnicity of the humans must match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).` : '',
-          !excludeBusinessInfo ? (effectiveIsBrandOnly ? `If text is not excluded, make the creative highly impactful: exactly one bold, clean benefit-driven headline based on the brand and custom instructions, one supporting subline, brand logo in an upper corner, and contact details cleanly at the bottom.` : `If text is not excluded, make the creative highly impactful: exactly one bold, clean benefit-driven headline (based on ${propertyTitle || 'the product'}), a concise sub-headline highlighting key specs or features (based on ${propertyDescription || 'the product description'}), brand logo in an upper corner, and contact details cleanly at the bottom.`) : '',
+          !excludeBusinessInfo ? (effectiveIsBrandOnly ? `Structure layout: (1) Category pill tag at top, (2) One bold benefit hook headline based on the brand, (3) 2-3 sleek modern trust badges/value pills, (4) Brand logo in an upper corner, and (5) High-contrast footer bar with CTA button and contact details.` : `Structure layout: (1) Category pill tag at top, (2) One bold benefit hook headline based on ${propertyTitle || 'the product'}, (3) 2-3 sleek modern trust badges or value pills highlighting key features/guarantees, (4) Brand logo in an upper corner, and (5) High-contrast footer bar with CTA button and contact details.`) : '',
           excludeBusinessInfo ? `Do NOT add any text overlays, slogans, contact numbers, writing, or labels on the image. Keep it purely as a clean, raw photograph.` : '',
           excludeLogo ? `Do NOT include any brand logo or watermark on the image.` : '',
           userInstructions ? `Custom Instructions: ${userInstructions}` : ''

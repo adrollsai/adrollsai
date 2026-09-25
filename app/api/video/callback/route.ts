@@ -13,7 +13,7 @@ import os from 'os';
 import fs from 'fs';
 import { generateAndUploadVideoThumbnail } from '@/utils/video-thumbnail-helper';
 import { resolveVoiceoverAudio } from '@/utils/video-voiceover-helper';
-import { getFfmpegPath } from '@/utils/ffmpeg-helper';
+import { getFfmpegPath, getFfprobePath } from '@/utils/ffmpeg-helper';
 import { dispatchCloudRunStitch, stitchClipsLocally } from '@/utils/video-stitcher';
 
 const supabaseAdmin = createClient(
@@ -524,7 +524,22 @@ export async function POST(request: Request) {
                     fs.writeFileSync(audioPath, Buffer.from(await aRes.arrayBuffer()));
 
                     const ffmpegBinary = getFfmpegPath();
-                    const cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart "${outputPath}"`;
+                    const ffprobeBinary = getFfprobePath();
+                    let audDur = 0, vidDur = 0;
+                    try {
+                        const audOut = await new Promise<string>((res) => exec(`"${ffprobeBinary}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`, (_, out) => res(out || '')));
+                        audDur = parseFloat(audOut.trim()) || 0;
+                        const vidOut = await new Promise<string>((res) => exec(`"${ffprobeBinary}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${localPath}"`, (_, out) => res(out || '')));
+                        vidDur = parseFloat(vidOut.trim()) || 0;
+                    } catch {}
+
+                    let cmd: string;
+                    if (audDur > vidDur && vidDur > 0) {
+                        const pad = (audDur - vidDur) + 0.35;
+                        cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=${pad.toFixed(2)}[v]" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                    } else {
+                        cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                    }
                     console.log(`[Video Callback] Running FFmpeg single-clip voiceover mux command: ${cmd}`);
 
                     await new Promise<void>((resolvePromise, rejectPromise) => {
