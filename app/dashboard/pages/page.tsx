@@ -324,17 +324,22 @@ export default function PagesDashboard() {
             setLandingPages(finalPages)
             try { localStorage.setItem(`pages_landing_pages_cache_${userId}`, JSON.stringify(finalPages)); } catch (e) {}
 
-            // Load properties inventory
-            const { data: propertiesData, error: propertiesErr } = await supabase
-                .from('properties')
-                .select('id, title, description, tags, configurations')
-                .eq('user_id', userId)
-                .order('created_at', { ascending: false })
-            if (propertiesErr) throw propertiesErr
-            const finalProps = propertiesData || []
-            setProperties(finalProps)
-            try { localStorage.setItem(`pages_properties_cache_${userId}`, JSON.stringify(finalProps)); } catch (e) {}
+            // Load properties inventory (safely query without nonexistent tags column)
+            try {
+                const { data: propertiesData, error: propertiesErr } = await supabase
+                    .from('properties')
+                    .select('id, title, description, configurations')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false })
+                if (!propertiesErr && propertiesData) {
+                    setProperties(propertiesData)
+                    try { localStorage.setItem(`pages_properties_cache_${userId}`, JSON.stringify(propertiesData)); } catch (e) {}
+                }
+            } catch (propErr) {
+                console.warn("[Pages] Optional properties inventory fetch notice:", propErr)
+            }
         } catch (e: any) {
+            console.error("Dashboard list data loading error:", e)
             setErrorMessage("Failed to load dashboard data: " + e.message)
         } finally {
             setLoading(false)
@@ -1291,10 +1296,10 @@ ${cleanContent}
             <div className="max-w-7xl mx-auto mb-8">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
-                        <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none flex items-center gap-3">
-                            <Globe className="text-blue-500" size={30} /> Landing Pages Manager
+                        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-tight flex items-center gap-3">
+                            <Globe className="text-blue-500" size={28} /> Landing Pages Manager
                         </h1>
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-2.5">
+                        <p className="text-xs text-slate-500 font-medium tracking-wide mt-1.5">
                             {subAccountName ? `Configuring Client Listing: ${subAccountName}` : 'Create & Optimize High-Converting Landers'}
                         </p>
                     </div>
@@ -1312,16 +1317,16 @@ ${cleanContent}
                                     setPageType('standard');
                                     setShowPageGenerator(true);
                                 }}
-                                className="bg-slate-900 text-white font-extrabold hover:bg-slate-800 text-sm px-6 py-3 rounded-full shadow-md shadow-slate-900/10 flex items-center gap-2 active:scale-95 transition-all"
+                                className="bg-slate-900 text-white font-semibold hover:bg-slate-800 text-xs sm:text-sm px-5 py-2.5 rounded-full shadow-sm flex items-center gap-2 active:scale-95 transition-all"
                             >
-                                <Sparkles size={16} className="text-purple-400" /> AI Lander Generator
+                                <Sparkles size={15} className="text-purple-400" /> AI Lander Generator
                             </button>
                         ) : (
                             <button 
                                 onClick={handleOpenNewFormModal}
-                                className="bg-slate-900 text-white font-extrabold hover:bg-slate-800 text-sm px-6 py-3 rounded-full shadow-md shadow-slate-900/10 flex items-center gap-2 active:scale-95 transition-all"
+                                className="bg-slate-900 text-white font-semibold hover:bg-slate-800 text-xs sm:text-sm px-5 py-2.5 rounded-full shadow-sm flex items-center gap-2 active:scale-95 transition-all"
                             >
-                                <Plus size={16} /> Custom Form
+                                <Plus size={15} /> Custom Form
                             </button>
                         )}
                     </div>
@@ -1653,22 +1658,22 @@ ${cleanContent}
                             onClick={() => setActiveTab('landing_pages')}
                             className={`pb-4 text-sm font-black flex items-center gap-2 relative transition-colors ${activeTab === 'landing_pages' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            <Globe size={18} /> Landing Pages
-                            {activeTab === 'landing_pages' && <span className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
+                            <Globe size={16} /> Landing Pages
+                            {activeTab === 'landing_pages' && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
                         </button>
                         <button 
                             onClick={() => setActiveTab('forms')}
-                            className={`pb-4 text-sm font-black flex items-center gap-2 relative transition-colors ${activeTab === 'forms' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            className={`pb-3.5 text-xs sm:text-sm font-semibold flex items-center gap-2 relative transition-colors ${activeTab === 'forms' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            <List size={18} /> Qualification Forms
-                            {activeTab === 'forms' && <span className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
+                            <List size={16} /> Qualification Forms
+                            {activeTab === 'forms' && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
                         </button>
                         <button 
                             onClick={() => setActiveTab('business_landing')}
-                            className={`pb-4 text-sm font-black flex items-center gap-2 relative transition-colors ${activeTab === 'business_landing' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            className={`pb-3.5 text-xs sm:text-sm font-semibold flex items-center gap-2 relative transition-colors ${activeTab === 'business_landing' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            <Sparkles size={18} /> Business Landing Page
-                            {activeTab === 'business_landing' && <span className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
+                            <Sparkles size={16} /> Business Landing Page
+                            {activeTab === 'business_landing' && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
                         </button>
                     </div>
 
@@ -1676,12 +1681,12 @@ ${cleanContent}
                     {activeTab === 'landing_pages' && (
                         <div className="animate-in fade-in duration-300">
                             {landingPages.length === 0 ? (
-                                <div className="text-center py-20 bg-white border border-slate-200/60 rounded-[3rem] border-dashed shadow-sm">
-                                    <div className="w-16 h-16 bg-blue-50 flex items-center justify-center rounded-2xl mx-auto mb-4 text-blue-500 shadow-inner">
-                                        <Globe size={28} />
+                                <div className="text-center py-16 sm:py-20 bg-white border border-slate-200/60 rounded-3xl border-dashed shadow-xs">
+                                    <div className="w-14 h-14 bg-blue-50/80 flex items-center justify-center rounded-2xl mx-auto mb-3.5 text-blue-500">
+                                        <Globe size={24} />
                                     </div>
-                                    <h3 className="text-lg font-black text-slate-800">No landing pages yet</h3>
-                                    <p className="text-xs font-semibold text-slate-400 mt-2 max-w-[280px] mx-auto leading-relaxed">Let Gemini generate high-converting landers with custom forms instantly.</p>
+                                    <h3 className="text-base sm:text-lg font-bold text-slate-800 tracking-tight">No landing pages yet</h3>
+                                    <p className="text-xs font-normal text-slate-500 mt-1.5 max-w-[320px] mx-auto leading-relaxed">Create high-converting, SEO-optimized landing pages powered by DeepSeek Flash & Astro JS.</p>
                                     <button 
                                         onClick={() => {
                                             setPageProductName('');
@@ -1692,7 +1697,7 @@ ${cleanContent}
                                             setPageType('standard');
                                             setShowPageGenerator(true);
                                         }}
-                                        className="mt-6 bg-slate-900 text-white font-extrabold text-xs px-5 py-3 rounded-full hover:bg-slate-800 transition-colors shadow-md shadow-slate-900/10 inline-flex items-center gap-2 active:scale-95"
+                                        className="mt-5 bg-slate-900 text-white font-semibold text-xs px-5 py-2.5 rounded-full hover:bg-slate-800 transition-colors shadow-sm inline-flex items-center gap-2 active:scale-95 cursor-pointer"
                                     >
                                         <Sparkles size={14} className="text-purple-400" /> Generate First Page
                                     </button>
@@ -1700,13 +1705,13 @@ ${cleanContent}
                             ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {landingPages.map((page) => (
-                                        <div key={page.id} className="bg-white border border-slate-200/60 rounded-[2rem] p-5 shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col h-full border-t-4 border-t-blue-500">
-                                            <div className="flex items-center gap-2 mb-2 min-w-0">
-                                                <h3 className="text-lg font-black text-slate-800 leading-tight line-clamp-1 flex-1">{page.product_name}</h3>
+                                        <div key={page.id} className="bg-white border border-slate-200/70 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all duration-200 group flex flex-col h-full border-t-2 border-t-blue-500">
+                                            <div className="flex items-center gap-2 mb-1.5 min-w-0">
+                                                <h3 className="text-base font-bold text-slate-800 leading-tight line-clamp-1 flex-1 tracking-tight">{page.product_name}</h3>
                                                 {page.html_content?.includes('data-page-type="survey"') ? (
-                                                    <span className="text-[9px] bg-purple-50 text-purple-600 font-extrabold px-2 py-0.5 rounded-full shrink-0 border border-purple-100">Survey Form</span>
+                                                    <span className="text-[10px] bg-purple-50 text-purple-700 font-semibold px-2 py-0.5 rounded-full shrink-0 border border-purple-100">Survey Form</span>
                                                 ) : (
-                                                    <span className="text-[9px] bg-blue-50 text-blue-600 font-extrabold px-2 py-0.5 rounded-full shrink-0 border border-blue-100">Standard Page</span>
+                                                    <span className="text-[10px] bg-blue-50 text-blue-700 font-semibold px-2 py-0.5 rounded-full shrink-0 border border-blue-100">Standard Page</span>
                                                 )}
                                             </div>
                                             <p className="text-xs font-semibold text-slate-400 line-clamp-2 leading-relaxed mb-4">{page.title}</p>
@@ -2329,27 +2334,27 @@ ${cleanContent}
             {/* MODAL: AI PAGE GENERATOR STUDIO */}
             {showPageGenerator && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-                    <div className="bg-white w-full max-w-2xl rounded-[2.5rem] p-6 sm:p-8 shadow-2xl flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-300 overflow-y-auto custom-scrollbar border border-slate-100">
+                    <div className="bg-white w-full max-w-2xl rounded-[2rem] p-6 sm:p-8 shadow-2xl flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-300 overflow-y-auto custom-scrollbar border border-slate-100">
                         {/* Header */}
                         <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-5">
                             <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-700">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-purple-100 text-purple-700">
                                         <Zap size={11} className="fill-purple-600 text-purple-600" /> DeepSeek V4.1 Flash
                                     </span>
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200/60">
                                         Astro JS Ready
                                     </span>
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/60">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200/60">
                                         SEO & Schema.org
                                     </span>
                                 </div>
-                                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">AI Landing Page & Website Studio</h2>
-                                <p className="text-xs text-slate-500 font-medium mt-0.5">High-converting, responsive landing pages & websites across any niche</p>
+                                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">AI Landing Page & Website Studio</h2>
+                                <p className="text-xs text-slate-500 font-normal mt-0.5">High-converting, responsive landing pages & websites across any niche</p>
                             </div>
                             <button 
                                 onClick={() => setShowPageGenerator(false)} 
-                                className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors shrink-0"
+                                className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 transition-colors shrink-0 cursor-pointer"
                             >
                                 <Plus className="rotate-45" size={18} />
                             </button>
@@ -2357,9 +2362,9 @@ ${cleanContent}
 
                         {/* Step 1: Industry / Niche Selection */}
                         <div className="mb-5">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block flex items-center justify-between">
+                            <label className="text-xs font-semibold text-slate-700 ml-0.5 mb-2 block flex items-center justify-between">
                                 <span>1. Select Industry / Niche</span>
-                                <span className="text-[10px] text-purple-600 font-bold normal-case">Tailors copywriting, trust badges & Schema.org</span>
+                                <span className="text-[11px] text-purple-600 font-medium normal-case">Tailors copywriting, trust badges & Schema.org</span>
                             </label>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                 {[
@@ -2379,16 +2384,16 @@ ${cleanContent}
                                             key={ind.id}
                                             type="button"
                                             onClick={() => setSelectedIndustry(ind.id as any)}
-                                            className={`flex items-center gap-2 p-2.5 rounded-2xl border text-left transition-all ${
+                                            className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                                                 isSelected 
                                                     ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/20 ring-2 ring-purple-400/30' 
-                                                    : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100/80 hover:border-slate-300'
+                                                    : 'bg-slate-50/80 text-slate-700 border-slate-200/80 hover:bg-slate-100/80 hover:border-slate-300'
                                             }`}
                                         >
-                                            <div className={`p-1.5 rounded-xl shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'bg-white text-slate-600 shadow-xs'}`}>
+                                            <div className={`p-1.5 rounded-lg shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'bg-white text-slate-600 shadow-xs'}`}>
                                                 <Icon size={14} />
                                             </div>
-                                            <span className="text-xs font-bold truncate leading-tight">{ind.label}</span>
+                                            <span className="text-xs font-medium truncate leading-tight">{ind.label}</span>
                                         </button>
                                     )
                                 })}
@@ -2397,7 +2402,7 @@ ${cleanContent}
 
                         {/* Step 2: Page Architecture / Scope */}
                         <div className="mb-5">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">
+                            <label className="text-xs font-semibold text-slate-700 ml-0.5 mb-2 block">
                                 2. Architecture & Purpose
                             </label>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -2406,14 +2411,14 @@ ${cleanContent}
                                     onClick={() => {
                                         setPageType('standard')
                                     }}
-                                    className={`p-3 rounded-2xl text-left border transition-all ${
+                                    className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${
                                         pageType === 'standard'
                                             ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                                            : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                                            : 'bg-slate-50/80 text-slate-700 border-slate-200/80 hover:bg-slate-100'
                                     }`}
                                 >
-                                    <div className="text-xs font-black mb-0.5">High-Converting Landing Page</div>
-                                    <div className={`text-[10px] leading-snug ${pageType === 'standard' ? 'text-slate-300' : 'text-slate-500'}`}>
+                                    <div className="text-xs font-semibold mb-0.5">High-Converting Landing Page</div>
+                                    <div className={`text-[11px] leading-snug font-normal ${pageType === 'standard' ? 'text-slate-300' : 'text-slate-500'}`}>
                                         Hero CTA, Dream Outcome, social proof, FAQ & lead capture modal
                                     </div>
                                 </button>
@@ -2424,14 +2429,14 @@ ${cleanContent}
                                         setSelectedPropertyId('')
                                         if (!pageProductName && subAccountName) setPageProductName(subAccountName)
                                     }}
-                                    className={`p-3 rounded-2xl text-left border transition-all ${
+                                    className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${
                                         pageType === 'business'
                                             ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                                            : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                                            : 'bg-slate-50/80 text-slate-700 border-slate-200/80 hover:bg-slate-100'
                                     }`}
                                 >
-                                    <div className="text-xs font-black mb-0.5">Full Business Website</div>
-                                    <div className={`text-[10px] leading-snug ${pageType === 'business' ? 'text-slate-300' : 'text-slate-500'}`}>
+                                    <div className="text-xs font-semibold mb-0.5">Full Business Website</div>
+                                    <div className={`text-[11px] leading-snug font-normal ${pageType === 'business' ? 'text-slate-300' : 'text-slate-500'}`}>
                                         Multi-service catalog, brand story, showcase grid, & inquiry flow
                                     </div>
                                 </button>
@@ -2440,14 +2445,14 @@ ${cleanContent}
                                     onClick={() => {
                                         setPageType('survey')
                                     }}
-                                    className={`p-3 rounded-2xl text-left border transition-all ${
+                                    className={`p-3 rounded-xl text-left border transition-all cursor-pointer ${
                                         pageType === 'survey' || pageType === 'raw_survey'
                                             ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                                            : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                                            : 'bg-slate-50/80 text-slate-700 border-slate-200/80 hover:bg-slate-100'
                                     }`}
                                 >
-                                    <div className="text-xs font-black mb-0.5">Fast Qualifier / Survey Page</div>
-                                    <div className={`text-[10px] leading-snug ${pageType === 'survey' || pageType === 'raw_survey' ? 'text-slate-300' : 'text-slate-500'}`}>
+                                    <div className="text-xs font-semibold mb-0.5">Fast Qualifier / Survey Page</div>
+                                    <div className={`text-[11px] leading-snug font-normal ${pageType === 'survey' || pageType === 'raw_survey' ? 'text-slate-300' : 'text-slate-500'}`}>
                                         Ultra-fast inline multi-step form to pre-qualify inbound traffic
                                     </div>
                                 </button>
@@ -2456,9 +2461,9 @@ ${cleanContent}
 
                         {/* Step 3: Visual Design Theme */}
                         <div className="mb-5">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block flex items-center justify-between">
+                            <label className="text-xs font-semibold text-slate-700 ml-0.5 mb-2 block flex items-center justify-between">
                                 <span>3. Visual Aesthetic & Theme</span>
-                                <span className="text-[10px] text-slate-500 font-bold normal-case">Tailwind 3 + Astro typography</span>
+                                <span className="text-[11px] text-slate-500 font-normal normal-case">Tailwind 3 + Astro typography</span>
                             </label>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                 {[
@@ -2473,17 +2478,17 @@ ${cleanContent}
                                             key={t.id}
                                             type="button"
                                             onClick={() => setSelectedDesignTheme(t.id as any)}
-                                            className={`p-2.5 rounded-2xl border text-left transition-all ${
+                                            className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                                                 isSelected 
                                                     ? 'border-slate-900 bg-slate-900 text-white shadow-md' 
-                                                    : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                                                    : 'bg-slate-50/80 text-slate-700 border-slate-200/80 hover:bg-slate-100'
                                             }`}
                                         >
                                             <div className="flex items-center gap-1.5 mb-1">
-                                                <span className={`w-3 h-3 rounded-full ${t.dot} inline-block shadow-xs border border-white/20`} />
-                                                <span className="text-xs font-black truncate">{t.label}</span>
+                                                <span className={`w-2.5 h-2.5 rounded-full ${t.dot} inline-block shadow-xs border border-white/20`} />
+                                                <span className="text-xs font-semibold truncate">{t.label}</span>
                                             </div>
-                                            <div className={`text-[9px] font-medium leading-none ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                                            <div className={`text-[10px] font-normal leading-none ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
                                                 {t.desc}
                                             </div>
                                         </button>
@@ -2495,7 +2500,7 @@ ${cleanContent}
                         {/* Inventory selection (If available and applicable) */}
                         {pageType !== 'business' && properties.length > 0 && (
                             <div className="mb-4">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">
+                                <label className="text-xs font-medium text-slate-700 ml-0.5 mb-1.5 block">
                                     Autofill from Catalog / Properties (Optional)
                                 </label>
                                 <select 
@@ -2514,7 +2519,7 @@ ${cleanContent}
                                             }
                                         }
                                     }}
-                                    className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/60 transition-all cursor-pointer"
+                                    className="w-full bg-slate-50/80 hover:bg-slate-100/50 focus:bg-white p-3 rounded-xl text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all cursor-pointer"
                                 >
                                     <option value="">Start from scratch / Custom input</option>
                                     {properties.map(p => (
@@ -2526,7 +2531,7 @@ ${cleanContent}
 
                         {/* Name Input */}
                         <div className="mb-4">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
+                            <label className="text-xs font-medium text-slate-700 ml-0.5 mb-1.5 block">
                                 {pageType === 'business' ? 'Business or Company Name' : 'Product / Project / Service Name'} *
                             </label>
                             <input 
@@ -2540,13 +2545,13 @@ ${cleanContent}
                                     selectedIndustry === 'agency' ? 'e.g. Veloce Growth Partners' :
                                     'e.g. Acme Premium Solutions'
                                 }
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all"
+                                className="w-full bg-slate-50/80 hover:bg-slate-100/50 focus:bg-white p-3 rounded-xl text-sm font-normal text-slate-800 placeholder:text-slate-400 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all"
                             />
                         </div>
 
                         {/* Details / Offer Context */}
                         <div className="mb-4">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
+                            <label className="text-xs font-medium text-slate-700 ml-0.5 mb-1.5 block">
                                 Core Offer, Key Benefits & Proof Points *
                             </label>
                             <textarea 
@@ -2560,13 +2565,13 @@ ${cleanContent}
                                         : 'Describe your core offer, pricing structure, key pain points solved, social proof/results, and why prospects should choose you...'
                                 }
                                 rows={3}
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-2xl text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all resize-none leading-relaxed"
+                                className="w-full bg-slate-50/80 hover:bg-slate-100/50 focus:bg-white p-3 rounded-xl text-xs font-normal text-slate-700 placeholder:text-slate-400 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all resize-none leading-relaxed"
                             />
                         </div>
 
                         {/* Custom Instructions */}
                         <div className="mb-4">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
+                            <label className="text-xs font-medium text-slate-700 ml-0.5 mb-1.5 block">
                                 Custom Creative Instructions (Optional)
                             </label>
                             <input 
@@ -2574,19 +2579,19 @@ ${cleanContent}
                                 value={customInstructions}
                                 onChange={e => setCustomInstructions(e.target.value)}
                                 placeholder="e.g. Emphasize limited availability (only 6 slots left), add WhatsApp floating CTA button, highlight trust guarantee"
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3 rounded-2xl text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all"
+                                className="w-full bg-slate-50/80 hover:bg-slate-100/50 focus:bg-white p-3 rounded-xl text-xs font-normal text-slate-700 placeholder:text-slate-400 placeholder:font-normal outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all"
                             />
                         </div>
 
                         {/* Link Qualification Form */}
                         <div className="mb-6">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
+                            <label className="text-xs font-medium text-slate-700 ml-0.5 mb-1.5 block">
                                 Connect Lead Capture / Qualification Form
                             </label>
                             <select 
                                 value={selectedFormId}
                                 onChange={e => setSelectedFormId(e.target.value)}
-                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all cursor-pointer"
+                                className="w-full bg-slate-50/80 hover:bg-slate-100/50 focus:bg-white p-3 rounded-xl text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-purple-500/20 border border-slate-200/80 transition-all cursor-pointer"
                             >
                                 <option value="">Built-in High-Converting Form (Name, Phone / WhatsApp, Email)</option>
                                 {forms.map(f => (
@@ -2600,16 +2605,16 @@ ${cleanContent}
                             type="button"
                             onClick={handleGenerateLandingPage}
                             disabled={actionLoading || !pageProductName.trim()}
-                            className="bg-gradient-to-r from-purple-600 via-indigo-600 to-slate-900 text-white w-full py-4 rounded-2xl font-black text-sm shadow-xl shadow-purple-500/20 hover:opacity-95 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 active:scale-[0.99] mt-auto shrink-0 cursor-pointer"
+                            className="bg-gradient-to-r from-purple-600 via-indigo-600 to-slate-900 text-white w-full py-3.5 rounded-xl font-semibold text-sm shadow-md shadow-purple-500/15 hover:opacity-95 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 active:scale-[0.99] mt-auto shrink-0 cursor-pointer"
                         >
                             {actionLoading ? (
                                 <>
-                                    <Loader2 className="animate-spin text-purple-200" size={18} />
+                                    <Loader2 className="animate-spin text-purple-200" size={17} />
                                     <span>Generating High-Converting Astro Landing Page with DeepSeek Flash...</span>
                                 </>
                             ) : (
                                 <>
-                                    <Zap size={18} className="fill-amber-300 text-amber-300" />
+                                    <Zap size={17} className="fill-amber-300 text-amber-300" />
                                     <span>Generate Complete Landing Page (DeepSeek V4.1 Flash)</span>
                                 </>
                             )}

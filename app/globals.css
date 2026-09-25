@@ -3,21 +3,72 @@
 @tailwind utilities;
 
 @layer base {
-  html, body {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
     @apply antialiased bg-white text-slate-900;
     background-color: #ffffff !important;
     color-scheme: light;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     overscroll-behavior-y: none;
     overscroll-behavior: none;
+    letter-spacing: -0.011em;
   }
 
   button, a, select, input, textarea, [role="button"] {
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.022em;
+  }
+}
+
+/* ========================================================
+   GLOBAL TYPOGRAPHY CALIBRATION (Clean, Sleek, Professional SaaS)
+   Softens aggressive fat/bulky weights (800/900) across all pages
+   ======================================================== */
+
+.font-black {
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+}
+
+.font-extrabold {
+  font-weight: 600 !important;
+  letter-spacing: -0.015em;
+}
+
+/* Refine tiny uppercase sub-headers and badges so they look sleek instead of chunky */
+.uppercase.tracking-widest {
+  letter-spacing: 0.05em !important;
+  font-weight: 600 !important;
+}
+
+.uppercase.tracking-wider {
+  letter-spacing: 0.035em !important;
+  font-weight: 600 !important;
+}
+
+/* Refine inputs and textareas: natural weight, never fat text */
+input, textarea, select {
+  font-weight: 500 !important;
+  letter-spacing: -0.01em;
+}
+
+input::placeholder, textarea::placeholder {
+  font-weight: 400 !important;
+  color: #94a3b8 !important;
+  opacity: 1 !important;
 }
 
 /* Mobile View Scaling & Sleek Typography Adjustments */
