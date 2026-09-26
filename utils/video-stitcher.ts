@@ -132,25 +132,50 @@ async function downloadSceneClipResiliently(s: StitchSibling, tempPath: string):
 }
 
 /**
- * Probes the exact duration of an MP4 clip using FFprobe.
+ * Probes the exact duration of a video or audio clip using FFprobe or FFmpeg fallback.
  */
-async function probeClipDuration(clipPath: string, ffprobeExec: string): Promise<number> {
+async function probeClipDuration(clipPath: string, ffprobeExec: string, isAudio = false): Promise<number> {
+    // 1. Try ffprobe if available
+    if (ffprobeExec && (ffprobeExec === 'ffprobe' || fs.existsSync(ffprobeExec))) {
+        try {
+            const probeResult = await new Promise<string>((resolve, reject) => {
+                exec(
+                    `"${ffprobeExec}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${clipPath}"`,
+                    (err, stdout) => {
+                        if (err) reject(err);
+                        else resolve(stdout?.trim() || '');
+                    }
+                );
+            });
+            const dur = parseFloat(probeResult);
+            if (!isNaN(dur) && dur > 0.5) {
+                return dur;
+            }
+        } catch (_) {}
+    }
+
+    // 2. Resilient FFmpeg -i fallback (always available via ffmpeg-static across all environments)
     try {
-        const probeResult = await new Promise<string>((resolve, reject) => {
-            exec(
-                `"${ffprobeExec}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${clipPath}"`,
-                (err, stdout) => {
-                    if (err) reject(err);
-                    else resolve(stdout.trim());
-                }
-            );
+        const ffmpegExec = getFfmpegPath();
+        const ffmpegOut = await new Promise<string>((resolve) => {
+            exec(`"${ffmpegExec}" -i "${clipPath}"`, (_, __, stderr) => {
+                resolve(stderr || '');
+            });
         });
-        const dur = parseFloat(probeResult);
-        if (!isNaN(dur) && dur > 1) {
-            return dur;
+        const match = ffmpegOut.match(/Duration:\s*(\d+):(\d+):([\d\.]+)/);
+        if (match) {
+            const hours = parseFloat(match[1]);
+            const mins = parseFloat(match[2]);
+            const secs = parseFloat(match[3]);
+            const dur = hours * 3600 + mins * 60 + secs;
+            if (!isNaN(dur) && dur > 0.5) {
+                return dur;
+            }
         }
     } catch (_) {}
-    return 15.0; // fallback standard 15s clip
+
+    // 3. Fallback: 15s ONLY for video clips; NEVER fabricate audio duration!
+    return isAudio ? 0 : 15.0;
 }
 
 /**
@@ -211,7 +236,7 @@ export async function stitchClipsLocally(
         let audioDuration = 0;
         if (localAudioPath) {
             try {
-                audioDuration = await probeClipDuration(localAudioPath, ffprobeExec);
+                audioDuration = await probeClipDuration(localAudioPath, ffprobeExec, true);
                 console.log(`[Local Stitch] Probed voiceover audio duration: ${audioDuration.toFixed(2)}s`);
             } catch (audErr) {
                 console.warn(`[Local Stitch] Failed to probe audio duration:`, audErr);
@@ -246,7 +271,7 @@ export async function stitchClipsLocally(
                 let shouldTrimToAudio = false;
                 let targetTotalDuration = rawTotalVideoDuration;
 
-                if (audioDuration > 0 && (rawTotalVideoDuration - audioDuration) > 1.0) {
+                if (audioDuration > 5.0 && (rawTotalVideoDuration - audioDuration) > 1.0) {
                     // Video duration significantly exceeds voiceover:
                     // Proportionately scale clip durations so all scenes get balanced airtime across the voiceover,
                     // with a natural 0.8s breath and smooth outro fade, eliminating awkward trailing silence!
@@ -348,7 +373,7 @@ export async function stitchClipsLocally(
                 console.log(`[Local Stitch Fallback] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalFallbackDuration.toFixed(2)}s). Extending with tpad clone by ${padDuration.toFixed(2)}s...`);
                 const vf = filter9x16 ? `[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)},${filter9x16}[v]` : `[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v]`;
                 ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "${vf}" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
-            } else if (localAudioPath && audioDuration > 0 && totalFallbackDuration > audioDuration + 1.0) {
+            } else if (localAudioPath && audioDuration > 5.0 && totalFallbackDuration > audioDuration + 1.0) {
                 const targetDur = audioDuration + 0.8;
                 const fadeStart = Math.max(0, targetDur - 0.5);
                 console.log(`[Local Stitch Fallback] Video (${totalFallbackDuration.toFixed(2)}s) exceeds audio (${audioDuration.toFixed(2)}s). Trimming video to ${targetDur.toFixed(2)}s with outro fade...`);

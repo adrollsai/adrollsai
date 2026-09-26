@@ -309,13 +309,28 @@ export async function syncVideoTasksForUser(
 
                                 const ffmpegBinary = getFfmpegPath();
                                 const ffprobeBinary = getFfprobePath();
-                                let audDur = 0, vidDur = 0;
                                 try {
                                     const audOut = await new Promise<string>((res) => exec(`"${ffprobeBinary}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`, (_, out) => res(out || '')));
                                     audDur = parseFloat(audOut.trim()) || 0;
                                     const vidOut = await new Promise<string>((res) => exec(`"${ffprobeBinary}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${localPath}"`, (_, out) => res(out || '')));
                                     vidDur = parseFloat(vidOut.trim()) || 0;
                                 } catch {}
+
+                                // Resilient FFmpeg -i fallback if ffprobe was missing or returned 0
+                                if (audDur <= 0) {
+                                    try {
+                                        const ffmpegOut = await new Promise<string>((res) => exec(`"${ffmpegBinary}" -i "${audioPath}"`, (_, __, stderr) => res(stderr || '')));
+                                        const m = ffmpegOut.match(/Duration:\s*(\d+):(\d+):([\d\.]+)/);
+                                        if (m) audDur = parseFloat(m[1]) * 3600 + parseFloat(m[2]) * 60 + parseFloat(m[3]);
+                                    } catch {}
+                                }
+                                if (vidDur <= 0) {
+                                    try {
+                                        const ffmpegOut = await new Promise<string>((res) => exec(`"${ffmpegBinary}" -i "${localPath}"`, (_, __, stderr) => res(stderr || '')));
+                                        const m = ffmpegOut.match(/Duration:\s*(\d+):(\d+):([\d\.]+)/);
+                                        if (m) vidDur = parseFloat(m[1]) * 3600 + parseFloat(m[2]) * 60 + parseFloat(m[3]);
+                                    } catch {}
+                                }
 
                                 let cmd: string;
                                 if (audDur > vidDur && vidDur > 0) {

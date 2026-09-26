@@ -317,7 +317,11 @@ export default function ProfilePage() {
     }
   }, [searchParams])
 
-  const navigateToSection = (section: 'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal') => {
+  const navigateToSection = (section: 'main' | 'whatsapp' | 'voice' | 'calendar' | 'flagged' | 'legal' | 'history') => {
+    if (section === 'history') {
+      router.push(`/dashboard/profile/history${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
+      return
+    }
     if (section === 'voice') {
       router.push(`/dashboard/voice-agent${impersonateId ? `?impersonate=${impersonateId}` : ''}`)
       return
@@ -3835,6 +3839,31 @@ export default function ProfilePage() {
                     </div>
                   </div>
                   <ChevronRight size={20} className="text-slate-400 group-hover:text-violet-600 transition-colors" />
+                </button>
+
+                <button 
+                  onClick={() => router.push(`/dashboard/profile/history${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-blue-50/40 transition-all border-b border-slate-100 group cursor-pointer"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-gradient-to-br from-blue-500/10 to-indigo-500/10 text-blue-600 p-3 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
+                      <Clock size={20} />
+                    </div>
+                    <div className="text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition-colors">
+                          Account Activity & Audit History
+                        </span>
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100 rounded-full">
+                          Live Logs
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 font-medium block">
+                        Trace all lead transfers, AI generations, campaign launches, and credit transactions
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
                 </button>
 
                 <button 

@@ -928,6 +928,7 @@ export default function CreationPage() {
                     presenterType: presenterMode,
                     customInstructions: `${videoInstructions ? `${videoInstructions}\n\n` : ''}${concept.description || concept.visualConcept || ''}`.trim(),
                     preview: true,
+                    duration: selectedDuration,
                     language: videoLanguage,
                     useUploadedAudio
                 })
@@ -1055,6 +1056,7 @@ export default function CreationPage() {
                     presenterType: presenterMode,
                     customInstructions: `${videoInstructions ? `${videoInstructions}\n\n` : ''}${concept.description || concept.visualConcept || ''}`.trim(),
                     preview: true,
+                    duration: selectedDuration,
                     language: videoLanguage,
                     useUploadedAudio
                 })
@@ -1154,6 +1156,7 @@ export default function CreationPage() {
                 presenterType: presenterMode,
                 customInstructions: `${videoInstructions ? `${videoInstructions}\n\n` : ''}${script.concept?.description || script.concept?.visualConcept || ''}`.trim(),
                 prompts,
+                duration: selectedDuration,
                 language: videoLanguage,
                 useUploadedAudio
             })
@@ -1311,6 +1314,7 @@ export default function CreationPage() {
                 presenterType: presenterMode,
                 customInstructions: `${videoInstructions ? `${videoInstructions}\n\n` : ''}${script.concept?.description || script.concept?.visualConcept || ''}`.trim(),
                 preview: true,
+                duration: selectedDuration,
                 language: videoLanguage,
                 useUploadedAudio
             })
