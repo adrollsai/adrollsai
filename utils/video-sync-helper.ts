@@ -321,6 +321,10 @@ export async function syncVideoTasksForUser(
                                 if (audDur > vidDur && vidDur > 0) {
                                     const pad = (audDur - vidDur) + 0.35;
                                     cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=${pad.toFixed(2)}[v]" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                                } else if (audDur > 0 && vidDur > audDur + 1.0) {
+                                    const targetDur = audDur + 0.8;
+                                    const fadeStart = Math.max(0, targetDur - 0.5);
+                                    cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -filter_complex "[0:v]trim=0:${targetDur.toFixed(2)},setpts=PTS-STARTPTS,fade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[v];[1:a]atrim=0:${targetDur.toFixed(2)},asetpts=PTS-STARTPTS,afade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[a]" -map "[v]" -map "[a]" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
                                 } else {
                                     cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
                                 }

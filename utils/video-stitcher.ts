@@ -229,32 +229,71 @@ export async function stitchClipsLocally(
                 console.log(`[Local Stitch] Probed clip durations for transitions:`, durations);
 
                 const transitionDuration = 0.4;
+
+                // Calculate raw total video duration with crossfades
+                let rawOffset = 0;
+                for (let i = 1; i < localClipPaths.length; i++) {
+                    if (i === 1) {
+                        rawOffset = Math.max(0.5, durations[0] - transitionDuration);
+                    } else {
+                        rawOffset = Math.max(0.5, rawOffset + durations[i - 1] - transitionDuration);
+                    }
+                }
+                const rawTotalVideoDuration = rawOffset + durations[durations.length - 1];
+                console.log(`[Local Stitch] Raw total video duration: ${rawTotalVideoDuration.toFixed(2)}s`);
+
+                let effectiveDurations = [...durations];
+                let shouldTrimToAudio = false;
+                let targetTotalDuration = rawTotalVideoDuration;
+
+                if (audioDuration > 0 && (rawTotalVideoDuration - audioDuration) > 1.0) {
+                    // Video duration significantly exceeds voiceover:
+                    // Proportionately scale clip durations so all scenes get balanced airtime across the voiceover,
+                    // with a natural 0.8s breath and smooth outro fade, eliminating awkward trailing silence!
+                    shouldTrimToAudio = true;
+                    targetTotalDuration = audioDuration + 0.8;
+                    const targetClipDur = (targetTotalDuration + (localClipPaths.length - 1) * transitionDuration) / localClipPaths.length;
+                    effectiveDurations = durations.map(d => Math.min(d, targetClipDur));
+                    console.log(`[Local Stitch] Video (${rawTotalVideoDuration.toFixed(2)}s) exceeds voiceover (${audioDuration.toFixed(2)}s). Proportionately scaling ${localClipPaths.length} clips to ${targetClipDur.toFixed(2)}s each (target total: ${targetTotalDuration.toFixed(2)}s) with zero trailing silence...`);
+                }
+
                 const filterParts: string[] = [];
                 let currentStream = '[0:v]';
                 let currentOffset = 0;
 
                 for (let i = 1; i < localClipPaths.length; i++) {
                     if (i === 1) {
-                        currentOffset = Math.max(0.5, durations[0] - transitionDuration);
+                        currentOffset = Math.max(0.5, effectiveDurations[0] - transitionDuration);
                     } else {
-                        currentOffset = Math.max(0.5, currentOffset + durations[i - 1] - transitionDuration);
+                        currentOffset = Math.max(0.5, currentOffset + effectiveDurations[i - 1] - transitionDuration);
                     }
                     const nextStream = i === localClipPaths.length - 1 ? '[v_trans]' : `[v${i}]`;
                     filterParts.push(`${currentStream}[${i}:v]xfade=transition=fade:duration=${transitionDuration}:offset=${currentOffset.toFixed(2)}${nextStream}`);
                     currentStream = nextStream;
                 }
 
-                const totalVideoDuration = currentOffset + durations[durations.length - 1];
-                console.log(`[Local Stitch] Estimated total video duration after xfade: ${totalVideoDuration.toFixed(2)}s`);
+                const totalVideoDuration = currentOffset + effectiveDurations[effectiveDurations.length - 1];
+                console.log(`[Local Stitch] Estimated video duration after xfade: ${totalVideoDuration.toFixed(2)}s`);
 
-                // If voiceover is longer than visual duration (e.g. 47s audio vs 44.2s video),
-                // freeze the last video frame with tpad so voiceover finishes completely with ZERO cutoff!
                 let finalVideoStream = '[v_trans]';
-                if (audioDuration > totalVideoDuration) {
-                    const padDuration = (audioDuration - totalVideoDuration) + 0.35;
-                    console.log(`[Local Stitch] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalVideoDuration.toFixed(2)}s). Extending last video frame by ${padDuration.toFixed(2)}s using tpad...`);
+                let finalAudioStream = `${localClipPaths.length}:a:0`;
+
+                if (audioDuration > rawTotalVideoDuration) {
+                    // Voiceover exceeds video: pad last video frame so narration completes without cutoff
+                    const padDuration = (audioDuration - rawTotalVideoDuration) + 0.35;
+                    console.log(`[Local Stitch] Audio (${audioDuration.toFixed(2)}s) exceeds video (${rawTotalVideoDuration.toFixed(2)}s). Extending last video frame by ${padDuration.toFixed(2)}s using tpad...`);
                     filterParts.push(`[v_trans]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v_padded]`);
                     finalVideoStream = '[v_padded]';
+                } else if (shouldTrimToAudio) {
+                    // Voiceover ended early: trim cleanly to targetTotalDuration with smooth 0.5s fade out
+                    const fadeStart = Math.max(0, targetTotalDuration - 0.5);
+                    console.log(`[Local Stitch] Trimming video stream to ${targetTotalDuration.toFixed(2)}s with outro fade from ${fadeStart.toFixed(2)}s...`);
+                    filterParts.push(`[v_trans]trim=0:${targetTotalDuration.toFixed(2)},setpts=PTS-STARTPTS,fade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[v_trimmed]`);
+                    finalVideoStream = '[v_trimmed]';
+                    if (localAudioPath) {
+                        filterParts.push(`[${localClipPaths.length}:a:0]atrim=0:${targetTotalDuration.toFixed(2)},asetpts=PTS-STARTPTS,afade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[a_faded]`);
+                        finalAudioStream = '[a_faded]';
+                    }
                 }
 
                 // Enforce 9:16 portrait output if aspect_ratio is 9:16 (the default standard)
@@ -266,9 +305,8 @@ export async function stitchClipsLocally(
                 const filterComplex = filterParts.join(';');
                 const inputsStr = localClipPaths.map(p => `-i "${p}"`).join(' ');
 
-                // Note: We intentionally avoid -shortest so the entire voiceover narration is always preserved
                 const xfadeCmd = localAudioPath
-                    ? `"${ffmpegExec}" -nostdin -y ${inputsStr} -i "${localAudioPath}" -filter_complex "${filterComplex}" -map "${finalVideoStream}" -map ${localClipPaths.length}:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`
+                    ? `"${ffmpegExec}" -nostdin -y ${inputsStr} -i "${localAudioPath}" -filter_complex "${filterComplex}" -map "${finalVideoStream}" -map "${finalAudioStream}" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`
                     : `"${ffmpegExec}" -nostdin -y ${inputsStr} -filter_complex "${filterComplex}" -map "${finalVideoStream}" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
 
                 console.log(`[Local Stitch] Executing FFmpeg xfade transition command: ${xfadeCmd}`);
@@ -310,6 +348,15 @@ export async function stitchClipsLocally(
                 console.log(`[Local Stitch Fallback] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalFallbackDuration.toFixed(2)}s). Extending with tpad clone by ${padDuration.toFixed(2)}s...`);
                 const vf = filter9x16 ? `[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)},${filter9x16}[v]` : `[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v]`;
                 ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "${vf}" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+            } else if (localAudioPath && audioDuration > 0 && totalFallbackDuration > audioDuration + 1.0) {
+                const targetDur = audioDuration + 0.8;
+                const fadeStart = Math.max(0, targetDur - 0.5);
+                console.log(`[Local Stitch Fallback] Video (${totalFallbackDuration.toFixed(2)}s) exceeds audio (${audioDuration.toFixed(2)}s). Trimming video to ${targetDur.toFixed(2)}s with outro fade...`);
+                const vfilter = filter9x16 
+                    ? `[0:v]trim=0:${targetDur.toFixed(2)},setpts=PTS-STARTPTS,fade=t=out:st=${fadeStart.toFixed(2)}:d=0.5,${filter9x16}[v]`
+                    : `[0:v]trim=0:${targetDur.toFixed(2)},setpts=PTS-STARTPTS,fade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[v]`;
+                const filterComplex = `${vfilter};[1:a]atrim=0:${targetDur.toFixed(2)},asetpts=PTS-STARTPTS,afade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[a]`;
+                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "${filterComplex}" -map "[v]" -map "[a]" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
             } else if (localAudioPath) {
                 if (filter9x16) {
                     ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[0:v]${filter9x16}[v]" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
