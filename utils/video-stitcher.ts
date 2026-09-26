@@ -257,6 +257,12 @@ export async function stitchClipsLocally(
                     finalVideoStream = '[v_padded]';
                 }
 
+                // Enforce 9:16 portrait output if aspect_ratio is 9:16 (the default standard)
+                if (videoTask.aspect_ratio === '9:16' || !videoTask.aspect_ratio) {
+                    filterParts.push(`${finalVideoStream}scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280[v_portrait]`);
+                    finalVideoStream = '[v_portrait]';
+                }
+
                 const filterComplex = filterParts.join(';');
                 const inputsStr = localClipPaths.map(p => `-i "${p}"`).join(' ');
 
@@ -296,14 +302,26 @@ export async function stitchClipsLocally(
             }
 
             let ffmpegCmd: string;
+            const is9x16 = videoTask.aspect_ratio === '9:16' || !videoTask.aspect_ratio;
+            const filter9x16 = is9x16 ? 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280' : '';
+
             if (localAudioPath && audioDuration > totalFallbackDuration && totalFallbackDuration > 0) {
                 const padDuration = (audioDuration - totalFallbackDuration) + 0.35;
                 console.log(`[Local Stitch Fallback] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalFallbackDuration.toFixed(2)}s). Extending with tpad clone by ${padDuration.toFixed(2)}s...`);
-                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v]" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                const vf = filter9x16 ? `[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)},${filter9x16}[v]` : `[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v]`;
+                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "${vf}" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
             } else if (localAudioPath) {
-                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                if (filter9x16) {
+                    ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[0:v]${filter9x16}[v]" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                } else {
+                    ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                }
             } else {
-                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+                if (filter9x16) {
+                    ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -filter_complex "[0:v]${filter9x16}[v]" -map "[v]" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
+                } else {
+                    ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
+                }
             }
 
             console.log(`[Local Stitch] Executing direct stream concat FFmpeg command: ${ffmpegCmd}`);

@@ -630,7 +630,7 @@ export async function POST(request: Request) {
         // Ensure all reference images are in JPEG format for Kie.ai compatibility
         console.log(`[Video Generate] Ensuring all reference images are JPEG format for user: ${targetUserId} (${combinedRefImages.length} images)`);
         const convertedRefImages = await Promise.all(
-            combinedRefImages.map(imgUrl => ensureJpegImage(imgUrl, targetUserId))
+            combinedRefImages.map(imgUrl => ensureJpegImage(imgUrl, targetUserId, '9:16'))
         );
         
         // If the character is a video, build the reference_video_urls array for Kie.ai Seedance 2.0

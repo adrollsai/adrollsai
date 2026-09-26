@@ -1444,9 +1444,29 @@ export default function AssetsPage() {
                                                         setSelectedAsset(asset);
                                                     }}
                                                     className="bg-white p-3 rounded-full text-blue-600 shadow-xl hover:scale-110 transition-all"
+                                                    title="Post & Share Asset"
                                                 >
                                                     <Globe size={20} />
                                                 </button>
+
+                                                {asset.type === 'video' && (
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const urlParams = new URLSearchParams(window.location.search);
+                                                            const impersonateId = urlParams.get('impersonate');
+                                                            if (impersonateId) {
+                                                                router.push(`/dashboard/video-editor/${asset.id}?impersonate=${impersonateId}`);
+                                                            } else {
+                                                                router.push(`/dashboard/video-editor/${asset.id}`);
+                                                            }
+                                                        }}
+                                                        className="bg-white p-3 rounded-full text-indigo-600 shadow-xl hover:scale-110 transition-all"
+                                                        title="AI Video Editor (Captions)"
+                                                    >
+                                                        <Sparkles size={20} />
+                                                    </button>
+                                                )}
                                                 
                                                 {userRole !== 'agent' && (
                                                     <button 
@@ -1752,7 +1772,7 @@ export default function AssetsPage() {
                                     </button>
 
                                     {/* AI Video Editor Action */}
-                                    {selectedAsset.type === 'video' && (userRole === 'super_admin' || userEmail === 'infobluesquareinfra@gmail.com') && (
+                                    {selectedAsset.type === 'video' && (
                                         <button
                                             onClick={() => {
                                                 const urlParams = new URLSearchParams(window.location.search);
