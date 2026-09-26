@@ -1029,11 +1029,12 @@ wss.on('connection', (wsConnection, req) => {
                         if (isInbound) {
                             sourceInstructions = `\nThis is an INBOUND call from a customer calling ${companyName}.`;
                             contextInstruction = `   The caller has dialed in to ${companyName}. Greet them politely, introduce yourself from ${companyName}, and ask how you can assist them today. Answer all their questions about ${companyName}, features, pricing, products, or services based on the Business Context provided below.`;
+                        } else if (lead?.notes) {
+                            sourceInstructions = isFirstCall ? `\nThis is your FIRST call to this lead.` : `\nThis is a DIRECT custom call to this lead.`;
+                            contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. State clearly and naturally that you are calling regarding their specific inquiry/note: "${lead.notes}". Explain the features, capabilities, and solutions clearly and warmly based on what they asked for and the business info provided below. DO NOT talk about unrelated topics like real estate/properties unless their note or inquiry explicitly asks for it!`;
                         } else if (isFirstCall) {
                             sourceInstructions = `\nThis is your FIRST call to this lead.`;
-                            if (lead?.notes) {
-                                contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. State clearly and naturally that you are calling regarding their specific inquiry/note: "${lead.notes}". Explain the features, capabilities, and solutions clearly and warmly based on what they asked for and the business info provided below. DO NOT talk about unrelated topics like real estate/properties unless their note or inquiry explicitly asks for it!`;
-                            } else if (isFromAd && targetProduct) {
+                            if (isFromAd && targetProduct) {
                                 contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, explicitly reference the SPECIFIC project/product they showed interest in ("${targetProduct}"). Say something like: "Aapne ${companyName} ki ad dekhi thi ${targetProduct} ke regarding, main usi ke regarding complete details share karne ke liye call kar rahi hoon." If asked "kiske regarding call hai?", answer directly: "Ye call ${companyName} ke ${targetProduct} ke regarding hai."`;
                             } else if (isFromAd) {
                                 contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar rahi hoon."`;
@@ -1054,28 +1055,32 @@ wss.on('connection', (wsConnection, req) => {
                         }
 
                         // Check for campaign-specific or active question flows
-                        let activeQualifyingQuestions = profile?.qualifying_questions || [];
-                        if (Array.isArray(campaign?.audience_filter?.qualifying_questions) && campaign.audience_filter.qualifying_questions.length > 0) {
-                            activeQualifyingQuestions = campaign.audience_filter.qualifying_questions;
-                            console.log(`[BRIDGE] Using campaign audience_filter qualifying questions (${activeQualifyingQuestions.length}) for lead ${leadId}`);
-                        } else {
-                            const targetLeadCampId = lead?.campaign_id || lead?.voice_campaign_id || campaignId;
-                            try {
-                                if (targetLeadCampId) {
-                                    const { data: matchedFlow } = await supabaseAdmin
-                                        .from('whatsapp_question_flows')
-                                        .select('questions, name')
-                                        .eq('user_id', effectiveProfileId)
-                                        .eq('linked_campaign_id', targetLeadCampId)
-                                        .maybeSingle();
+                        const isQualifyingEnabled = profile?.qualifying_enabled !== false;
+                        let activeQualifyingQuestions = [];
+                        if (isQualifyingEnabled) {
+                            activeQualifyingQuestions = profile?.qualifying_questions || [];
+                            if (Array.isArray(campaign?.audience_filter?.qualifying_questions) && campaign.audience_filter.qualifying_questions.length > 0) {
+                                activeQualifyingQuestions = campaign.audience_filter.qualifying_questions;
+                                console.log(`[BRIDGE] Using campaign audience_filter qualifying questions (${activeQualifyingQuestions.length}) for lead ${leadId}`);
+                            } else {
+                                const targetLeadCampId = lead?.campaign_id || lead?.voice_campaign_id || campaignId;
+                                try {
+                                    if (targetLeadCampId) {
+                                        const { data: matchedFlow } = await supabaseAdmin
+                                            .from('whatsapp_question_flows')
+                                            .select('questions, name')
+                                            .eq('user_id', effectiveProfileId)
+                                            .eq('linked_campaign_id', targetLeadCampId)
+                                            .maybeSingle();
 
-                                    if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
-                                        console.log(`[BRIDGE] Using campaign question flow "${matchedFlow.name}" for lead ${leadId}`);
-                                        activeQualifyingQuestions = matchedFlow.questions;
+                                        if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
+                                            console.log(`[BRIDGE] Using campaign question flow "${matchedFlow.name}" for lead ${leadId}`);
+                                            activeQualifyingQuestions = matchedFlow.questions;
+                                        }
                                     }
+                                } catch (fErr) {
+                                    console.warn('[BRIDGE] Error fetching campaign flow:', fErr);
                                 }
-                            } catch (fErr) {
-                                console.warn('[BRIDGE] Error fetching campaign flow:', fErr);
                             }
                         }
 
@@ -1089,9 +1094,18 @@ wss.on('connection', (wsConnection, req) => {
 
 
                         let parsedQuestions = [];
-                        if (Array.isArray(activeQualifyingQuestions) && activeQualifyingQuestions.length > 0) {
+                        if (isQualifyingEnabled && Array.isArray(activeQualifyingQuestions) && activeQualifyingQuestions.length > 0) {
                             parsedQuestions = activeQualifyingQuestions.map((item) => {
                                 if (typeof item === 'string') {
+                                    try {
+                                        const parsedObj = JSON.parse(item);
+                                        if (parsedObj && typeof parsedObj === 'object') {
+                                            return {
+                                                question: parsedObj.question || parsedObj.text || '',
+                                                options: Array.isArray(parsedObj.options) ? parsedObj.options : []
+                                            };
+                                        }
+                                    } catch {}
                                     const match = item.match(/\(([^)]+)\)/);
                                     const qText = item.replace(/\s*\([^)]+\)/, '').trim();
                                     const options = match ? match[1].split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -1107,7 +1121,8 @@ wss.on('connection', (wsConnection, req) => {
                             }).filter(q => q.question.trim().length > 0);
                         }
 
-                        if (parsedQuestions.length === 0) {
+                        // ONLY fallback to default property qualification questions if qualifying is actually ENABLED AND no specific lead note exists
+                        if (isQualifyingEnabled && parsedQuestions.length === 0 && !lead?.notes) {
                             parsedQuestions = [
                                 { question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
                                 { question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
@@ -1122,7 +1137,7 @@ wss.on('connection', (wsConnection, req) => {
                             return `   ${i + 1}. "${q.question}"${optStr}`;
                         }).join('\n');
 
-                        const qualifyingInstruction = `
+                        const qualifyingInstruction = parsedQuestions.length > 0 ? `
 NATURAL CONVERSATIONAL QUALIFICATION & INVENTORY VALUE PITCH:
 During the call, your objective is strictly to:
 1. Note the lead's requirement so our sales team can curate the exact property options matching their preference.
@@ -1136,6 +1151,13 @@ Guidelines:
 - Politely clarify any missing qualification details in friendly conversational Hinglish.
 - If an answer is already known in 'Attributed Details' or 'CRM Notes', do not re-ask.
 - Do NOT proactively push WhatsApp on turn 1, but if the customer asks for details on WhatsApp, agree politely and end the call.
+`.trim() : `
+CONVERSATIONAL CONSULTATION & DIRECT ASSISTANCE:
+During the call, your objective is strictly to:
+1. Warmly address the lead's specific requirement, topic, or question.
+2. Answer any questions the lead has about ${companyName}, services, capabilities, or solutions based on the business info.
+3. Assist the lead in scheduling / booking an appointment or consultation slot.
+- Qualification questions are DISABLED on this account. Do NOT ask survey/qualification questions or interrogate the customer. Keep the conversation 100% natural, helpful, and directly aligned with their inquiry.
 `.trim();
 
                         let greetingName = (firstName && firstName !== 'there' && firstName !== 'Lead') ? firstName : '';

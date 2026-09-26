@@ -154,6 +154,7 @@ CURRENT BUSINESS POLICIES & TELEPHONY:
 CALLING & TEST DIALING PROTOCOL:
 When the owner requests to test a voice call or dial a phone number (e.g. "call my number", "call me", "call 8288835235", "test call super admin"):
 - ALWAYS invoke 'trigger_ai_call' with their phone number or "me".
+- If the owner mentions a specific topic, purpose, or question to discuss on the call (e.g. "ask them what are their plans on Nobogent", "call regarding XYZ"), ALWAYS extract that and pass it into 'topicOrNotes'.
 - NEVER refuse by saying voice calling is inactive or disabled without calling 'trigger_ai_call'.
 - Master telephony is active, and test calls bypass out-of-hours restriction.
 
@@ -593,9 +594,10 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
             description: "Triggers an instant autonomous AI voice call to a lead or test phone number using Nobogent's voice AI calling engine.",
             inputSchema: z.object({
                 leadIdOrPhone: z.string().describe("Lead UUID or phone number to call (or 'me' / 'my number' / 'self' for the owner's phone)"),
-                forceNow: z.boolean().default(true).describe("Force dial immediately")
+                forceNow: z.boolean().default(true).describe("Force dial immediately"),
+                topicOrNotes: z.string().optional().describe("Specific topic, objective, or instruction for what the voice AI should discuss on the call (e.g. 'Ask them what are their plans on Nobogent basically')")
             }),
-            execute: async ({ leadIdOrPhone, forceNow }) => {
+            execute: async ({ leadIdOrPhone, forceNow, topicOrNotes }) => {
                 try {
                     let targetLeadId = leadIdOrPhone;
                     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadIdOrPhone);
@@ -617,7 +619,7 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
 
                         const { data: existingLead } = await supabaseAdmin
                             .from('leads')
-                            .select('id, custom_fields')
+                            .select('id, custom_fields, notes')
                             .eq('user_id', userId)
                             .or(`phone.ilike.%${cleanDigits.slice(-10)}%`)
                             .limit(1)
@@ -625,16 +627,19 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
 
                         if (existingLead) {
                             targetLeadId = existingLead.id;
-                            if (forceNow) {
-                                const cf = typeof existingLead.custom_fields === 'string'
-                                    ? JSON.parse(existingLead.custom_fields || '{}')
-                                    : (existingLead.custom_fields || {});
-                                cf.allow_after_hours = true;
-                                await supabaseAdmin
-                                    .from('leads')
-                                    .update({ custom_fields: cf })
-                                    .eq('id', targetLeadId);
-                            }
+                            const cf = typeof existingLead.custom_fields === 'string'
+                                ? JSON.parse(existingLead.custom_fields || '{}')
+                                : (existingLead.custom_fields || {});
+                            if (forceNow) cf.allow_after_hours = true;
+                            if (topicOrNotes) cf.call_objective = topicOrNotes;
+
+                            const updatePayload: any = { custom_fields: cf };
+                            if (topicOrNotes) updatePayload.notes = topicOrNotes;
+
+                            await supabaseAdmin
+                                .from('leads')
+                                .update(updatePayload)
+                                .eq('id', targetLeadId);
                         } else {
                             const formattedPhone = phoneToDial.startsWith('+') 
                                 ? phoneToDial 
@@ -646,12 +651,18 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
                                     name: 'Super Admin Test Call',
                                     phone: formattedPhone,
                                     source: 'WhatsApp Voice Test',
-                                    custom_fields: { allow_after_hours: true }
+                                    notes: topicOrNotes || null,
+                                    custom_fields: { allow_after_hours: true, call_objective: topicOrNotes || undefined }
                                 })
                                 .select('id')
                                 .single();
                             if (createdLead) targetLeadId = createdLead.id;
                         }
+                    } else if (topicOrNotes) {
+                        await supabaseAdmin
+                            .from('leads')
+                            .update({ notes: topicOrNotes })
+                            .eq('id', targetLeadId);
                     }
 
                     const res = await triggerOutboundCall(supabaseAdmin, targetLeadId, userId, false);

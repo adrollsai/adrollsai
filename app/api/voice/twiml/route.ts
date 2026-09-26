@@ -443,24 +443,28 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
 
         // Check for campaign-specific or active question flows
         const targetLeadCampId = lead.campaign_id || lead.voice_campaign_id || campaignId;
-        let activeQualifyingQuestions = profile?.qualifying_questions || [];
+        const isQualifyingEnabled = profile?.qualifying_enabled !== false;
+        let activeQualifyingQuestions: any[] = [];
 
-        try {
-            if (targetLeadCampId) {
-                const { data: matchedFlow } = await supabaseAdmin
-                    .from('whatsapp_question_flows')
-                    .select('questions, name')
-                    .eq('user_id', profileId)
-                    .eq('linked_campaign_id', targetLeadCampId)
-                    .maybeSingle();
+        if (isQualifyingEnabled) {
+            activeQualifyingQuestions = profile?.qualifying_questions || [];
+            try {
+                if (targetLeadCampId) {
+                    const { data: matchedFlow } = await supabaseAdmin
+                        .from('whatsapp_question_flows')
+                        .select('questions, name')
+                        .eq('user_id', profileId)
+                        .eq('linked_campaign_id', targetLeadCampId)
+                        .maybeSingle();
 
-                if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
-                    console.log(`[TWIML VOICE] Using campaign question flow "${matchedFlow.name}" for lead ${lead.id}`);
-                    activeQualifyingQuestions = matchedFlow.questions;
+                    if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
+                        console.log(`[TWIML VOICE] Using campaign question flow "${matchedFlow.name}" for lead ${lead.id}`);
+                        activeQualifyingQuestions = matchedFlow.questions;
+                    }
                 }
+            } catch (fErr) {
+                console.warn('[TWIML VOICE] Error fetching campaign flow:', fErr);
             }
-        } catch (fErr) {
-            console.warn('[TWIML VOICE] Error fetching campaign flow:', fErr);
         }
 
         const voiceGender = (profile?.voice_gender || profile?.gender || '').toLowerCase();
@@ -473,14 +477,28 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
 
         // Direct context instruction
         const isWhatsappOrigin = (lead?.source || '').toLowerCase().includes('whatsapp') || !!lead?.custom_fields?.meta_ad_origin;
-        const contextInstruction = isWhatsappOrigin
-            ? `After the lead responds to your greeting, say: "Aapne ${companyName} ka WhatsApp par inquiry start kiya tha, usi ke regarding call kiya hai taaki aapko right details provide kar sakein." Then naturally ask about their requirement.`
-            : `After the lead responds to your greeting, say: "Aapne ${companyName} ka ek ad dekha tha, usi ke regarding call kiya hai." Then naturally ask about their requirement.`;
+        let contextInstruction = '';
+        if (lead?.notes) {
+            contextInstruction = `After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. State clearly and naturally that you are calling regarding their specific inquiry/topic: "${lead.notes}". Explain the features, capabilities, and solutions clearly and warmly based on what they asked for and the business info provided below. DO NOT talk about unrelated topics unless their note or inquiry explicitly asks for it!`;
+        } else if (isWhatsappOrigin) {
+            contextInstruction = `After the lead responds to your greeting, say: "Aapne ${companyName} ka WhatsApp par inquiry start kiya tha, usi ke regarding call kiya hai taaki aapko right details provide kar sakein." Then naturally ask about their requirement.`;
+        } else {
+            contextInstruction = `After the lead responds to your greeting, say: "Aapne ${companyName} ka ek ad dekha tha, usi ke regarding call kiya hai." Then naturally ask about their requirement.`;
+        }
 
         let parsedQuestions: { question: string; options: string[] }[] = [];
-        if (Array.isArray(activeQualifyingQuestions) && activeQualifyingQuestions.length > 0) {
+        if (isQualifyingEnabled && Array.isArray(activeQualifyingQuestions) && activeQualifyingQuestions.length > 0) {
             parsedQuestions = activeQualifyingQuestions.map((item: any) => {
                 if (typeof item === 'string') {
+                    try {
+                        const parsedObj = JSON.parse(item);
+                        if (parsedObj && typeof parsedObj === 'object') {
+                            return {
+                                question: parsedObj.question || parsedObj.text || '',
+                                options: Array.isArray(parsedObj.options) ? parsedObj.options : []
+                            };
+                        }
+                    } catch {}
                     const match = item.match(/\(([^)]+)\)/);
                     const qText = item.replace(/\s*\([^)]+\)/, '').trim();
                     const options = match ? match[1].split(',').map((s: string) => s.trim()).filter(Boolean) : [];
@@ -496,7 +514,8 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
             }).filter((q: { question: string; options: string[] }) => q.question.trim().length > 0);
         }
 
-        if (parsedQuestions.length === 0) {
+        // ONLY fallback to default property qualification questions if qualifying is actually ENABLED AND no specific lead note exists
+        if (isQualifyingEnabled && parsedQuestions.length === 0 && !lead?.notes) {
             parsedQuestions = [
                 { question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
                 { question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
@@ -509,7 +528,7 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
             return `   ${i + 1}. "${q.question}"${optStr}`;
         }).join('\n');
 
-        const qualifyingInstruction = `
+        const qualifyingInstruction = parsedQuestions.length > 0 ? `
 NATURAL CONVERSATIONAL QUALIFICATION & INVENTORY VALUE PITCH:
 During the call, your objective is strictly to:
 1. Note the lead's requirement so our sales team can curate the exact property options matching their preference.
@@ -523,7 +542,14 @@ Guidelines:
 - Politely clarify any missing qualification details in friendly conversational Hinglish.
 - If an answer is already known in 'Attributed Details' or 'CRM Notes', do not re-ask.
 - ABSOLUTE PROHIBITION: NEVER mention WhatsApp or offer to share anything on WhatsApp. Focus on direct consultation and scheduling a physical site visit.
-`.trim()
+`.trim() : `
+CONVERSATIONAL CONSULTATION & DIRECT ASSISTANCE:
+During the call, your objective is strictly to:
+1. Warmly address the lead's specific requirement, topic, or question.
+2. Answer any questions the lead has about ${companyName}, services, capabilities, or solutions based on the business info.
+3. Assist the lead in scheduling / booking an appointment or consultation slot.
+- Qualification questions are DISABLED on this account. Do NOT ask survey/qualification questions or interrogate the customer. Keep the conversation 100% natural, helpful, and directly aligned with their inquiry.
+`.trim();
 
         const effectiveGreeting = `Hi ${firstName}, kaise hain aap?`
 

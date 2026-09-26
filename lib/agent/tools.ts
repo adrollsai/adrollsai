@@ -540,6 +540,10 @@ export async function triggerOutboundVoiceCall(params: {
             return { success: false, error: `Maximum call attempts (${maxCalls}) already reached for this lead.` };
         }
 
+        if (params.reason) {
+            await supabaseAdmin.from('leads').update({ notes: params.reason }).eq('id', params.leadId);
+        }
+
         const res = await triggerOutboundCall(supabaseAdmin, params.leadId, params.profileId, true);
         if (res.success) {
             await supabaseAdmin.from('lead_history').insert({
