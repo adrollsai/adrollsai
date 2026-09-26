@@ -11,16 +11,24 @@ export function parsePropertyConfigurations(rawConfig: any): Record<string, any>
 
 export function getPropertyTags(prop: any): string[] {
   if (!prop) return [];
-  if (Array.isArray(prop.tags) && prop.tags.length > 0) {
-    return prop.tags.map((t: any) => String(t).trim()).filter(Boolean);
+  const tagList: string[] = [];
+
+  if (Array.isArray(prop.tags)) {
+    tagList.push(...prop.tags.map((t: any) => String(t).trim()).filter(Boolean));
+  }
+  if (Array.isArray(prop.internal_tags)) {
+    tagList.push(...prop.internal_tags.map((t: any) => String(t).trim()).filter(Boolean));
   }
   if (prop.configurations) {
     const parsed = parsePropertyConfigurations(prop.configurations);
     if (Array.isArray(parsed?.tags)) {
-      return parsed.tags.map((t: any) => String(t).trim()).filter(Boolean);
+      tagList.push(...parsed.tags.map((t: any) => String(t).trim()).filter(Boolean));
+    }
+    if (Array.isArray(parsed?.internal_tags)) {
+      tagList.push(...parsed.internal_tags.map((t: any) => String(t).trim()).filter(Boolean));
     }
   }
-  return [];
+  return Array.from(new Set(tagList));
 }
 
 export function formatPropertyConfigWithTags(

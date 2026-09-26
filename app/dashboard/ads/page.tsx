@@ -11,8 +11,10 @@ import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@
 import LazyVideo from '@/components/LazyVideo'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { getVideoPosterUrl } from '@/utils/get-video-poster'
+import ProductSearchableSelect from '@/components/ProductSearchableSelect'
+import { getPropertyTags } from '@/utils/property-tags'
 
-type Property = { id: string; title: string; price: string; image_url: string; description?: string }
+type Property = { id: string; title: string; price: string; image_url: string; description?: string; configurations?: any; tags?: string[]; images?: string[]; address?: string; name?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string; metadata?: any }
 type Campaign = { 
   id: string; 
@@ -5581,66 +5583,54 @@ export default function AdsPage() {
                   Select one or more products if this campaign promotes specific inventory items. If you are promoting your general brand or service, you can skip this.
                 </p>
                 
-                <div className="max-h-48 overflow-y-auto space-y-2 pr-2 scrollbar-thin">
-                  {properties.length === 0 ? (
-                    <div className="p-4 text-center text-xs font-semibold text-amber-800 bg-white/80 rounded-xl border border-amber-200/50">
-                      No inventory products found. You can still launch campaigns using your custom creatives & business profile!
-                    </div>
-                  ) : (
-                    properties.map(p => {
-                      const isSelected = selectedProducts.some(sp => sp.id === p.id);
-                      return (
-                        <div 
-                          key={p.id} 
-                          onClick={() => {
-                            if (isSelected) {
-                              const updated = selectedProducts.filter(sp => sp.id !== p.id);
-                              setSelectedProducts(updated);
-                              // Also update legacy selectedProduct fallback if it matches
-                              if (selectedProduct?.id === p.id) {
-                                setSelectedProduct(updated[0] || null);
-                              }
-                            } else {
-                              const updated = [...selectedProducts, p];
-                              setSelectedProducts(updated);
-                              if (!selectedProduct) setSelectedProduct(p);
-                            }
-                          }}
-                          className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer bg-white ${isSelected ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-slate-200 hover:border-amber-300'}`}
-                        >
-                          <input 
-                            type="checkbox" 
-                            checked={isSelected}
-                            readOnly
-                            className="rounded text-amber-600 focus:ring-amber-500 h-4 w-4 border-slate-300 cursor-pointer"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-bold text-slate-800 truncate">{p.title}</div>
-                            {p.price && <div className="text-[10px] text-amber-600 font-bold">{p.price}</div>}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                <ProductSearchableSelect
+                  products={properties}
+                  mode="multi"
+                  selectedIds={selectedProducts.map(p => p.id)}
+                  onMultiChange={(newSelected) => {
+                    setSelectedProducts(newSelected);
+                    if (newSelected.length === 0) {
+                      setSelectedProduct(null);
+                    } else if (!selectedProduct || !newSelected.some(p => p.id === selectedProduct.id)) {
+                      setSelectedProduct(newSelected[0]);
+                    }
+                  }}
+                  variant="amber"
+                  placeholder="Select Products from Inventory (Optional - Promote Brand)"
+                  searchPlaceholder="Search products or internal tags..."
+                />
 
                 {selectedProducts.length > 0 && (
                   <div className="mt-3 bg-white border border-amber-100 p-4 rounded-2xl">
-                    <div className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-1.5">Selected Products ({selectedProducts.length})</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedProducts.map(p => (
-                        <span key={p.id} className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[10px] font-bold px-2.5 py-1 rounded-full border border-amber-200">
-                          {p.title.substring(0, 25)}{p.title.length > 25 ? '...' : ''}
-                          <button onClick={(e) => {
-                            e.stopPropagation();
-                            const updated = selectedProducts.filter(sp => sp.id !== p.id);
-                            setSelectedProducts(updated);
-                            if (selectedProduct?.id === p.id) {
-                              setSelectedProduct(updated[0] || null);
-                            }
-                          }} className="hover:text-amber-950 font-black">×</button>
-                        </span>
-                      ))}
+                    <div className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-2">Selected Products ({selectedProducts.length})</div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedProducts.map(p => {
+                        const tags = getPropertyTags(p);
+                        return (
+                          <span key={p.id} className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-900 text-[11px] font-bold px-3 py-1 rounded-xl border border-amber-200 shadow-xs">
+                            <span className="truncate max-w-[200px]">{p.title}</span>
+                            {tags.length > 0 && (
+                              <span className="text-[9px] font-bold bg-amber-200/70 text-amber-900 px-1.5 py-0.5 rounded">
+                                {tags.slice(0, 2).join(', ')}{tags.length > 2 ? ` +${tags.length - 2}` : ''}
+                              </span>
+                            )}
+                            <button 
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const updated = selectedProducts.filter(sp => sp.id !== p.id);
+                                setSelectedProducts(updated);
+                                if (selectedProduct?.id === p.id) {
+                                  setSelectedProduct(updated[0] || null);
+                                }
+                              }} 
+                              className="text-amber-600 hover:text-amber-950 font-black ml-0.5"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

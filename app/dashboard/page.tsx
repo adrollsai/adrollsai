@@ -993,195 +993,205 @@ export default function ProductsPage() {
       {/* ADD MODAL */}
       {isAdminLike && showAddModal && (
         <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white w-full max-w-lg md:max-w-4xl lg:max-w-5xl rounded-t-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-extrabold text-slate-900">Add Product</h2>
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900">Add Product</h2>
+                <p className="text-xs font-semibold text-slate-400 mt-0.5">Add a new property or product to your active inventory</p>
+              </div>
               <button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
             </div>
  
-            <div className="space-y-5">
-              <div onClick={() => fileInputRef.current?.click()} className="w-full h-44 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/50 hover:border-blue-400 transition-colors relative overflow-hidden group">
-                  <ImageIcon size={36} className="text-slate-400 mb-3 group-hover:scale-110 group-hover:text-blue-500 transition-transform"/>
-                  <span className="text-sm font-bold text-slate-500 group-hover:text-blue-600">Upload Product Photos</span>
-                  <input type="file" multiple ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
-              </div>
-              
-              {previews.length > 0 && (
-                <div className="space-y-1">
-                  <div className="flex justify-between items-center px-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Uploaded Photos ({previews.length})</span>
-                    <span className="text-[10px] text-slate-400 font-medium">Use ← → to reorder</span>
-                  </div>
-                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                    {previews.map((src, i) => (
-                      <div key={i} className="relative flex-shrink-0 group">
-                        <img src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 shadow-sm" alt="Preview" />
-                        <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between p-1 rounded-b-xl">
-                          <button
-                            type="button"
-                            disabled={i === 0}
-                            onClick={() => {
-                              if (i === 0) return;
-                              const newP = [...previews];
-                              const newF = [...selectedFiles];
-                              [newP[i - 1], newP[i]] = [newP[i], newP[i - 1]];
-                              [newF[i - 1], newF[i]] = [newF[i], newF[i - 1]];
-                              setPreviews(newP);
-                              setSelectedFiles(newF);
-                            }}
-                            className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
-                            title="Move Left"
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* LEFT COLUMN: Visual Media & PDF Documents */}
+              <div className="space-y-5">
+                <div onClick={() => fileInputRef.current?.click()} className="w-full h-44 sm:h-52 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/50 hover:border-blue-400 transition-colors relative overflow-hidden group">
+                    <ImageIcon size={36} className="text-slate-400 mb-3 group-hover:scale-110 group-hover:text-blue-500 transition-transform"/>
+                    <span className="text-sm font-bold text-slate-500 group-hover:text-blue-600">Upload Product Photos</span>
+                    <span className="text-[11px] font-medium text-slate-400 mt-1">PNG, JPG, WEBP up to 25MB</span>
+                    <input type="file" multiple ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
+                </div>
+                
+                {previews.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Uploaded Photos ({previews.length})</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Use ← → to reorder</span>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                      {previews.map((src, i) => (
+                        <div key={i} className="relative flex-shrink-0 group">
+                          <img src={src} className="w-20 h-20 rounded-xl object-cover border border-slate-200 shadow-sm" alt="Preview" />
+                          <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between p-1 rounded-b-xl">
+                            <button
+                              type="button"
+                              disabled={i === 0}
+                              onClick={() => {
+                                if (i === 0) return;
+                                const newP = [...previews];
+                                const newF = [...selectedFiles];
+                                [newP[i - 1], newP[i]] = [newP[i], newP[i - 1]];
+                                [newF[i - 1], newF[i]] = [newF[i], newF[i - 1]];
+                                setPreviews(newP);
+                                setSelectedFiles(newF);
+                              }}
+                              className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
+                              title="Move Left"
+                            >
+                              <ChevronLeft size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={i === previews.length - 1}
+                              onClick={() => {
+                                if (i === previews.length - 1) return;
+                                const newP = [...previews];
+                                const newF = [...selectedFiles];
+                                [newP[i + 1], newP[i]] = [newP[i], newP[i + 1]];
+                                [newF[i + 1], newF[i]] = [newF[i], newF[i + 1]];
+                                setPreviews(newP);
+                                setSelectedFiles(newF);
+                              }}
+                              className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
+                              title="Move Right"
+                            >
+                              <ChevronRight size={14} />
+                            </button>
+                          </div>
+                          <button 
+                              type="button"
+                              onClick={() => {
+                                  setPreviews(prev => prev.filter((_, idx) => idx !== i));
+                                  setSelectedFiles(prev => prev.filter((_, idx) => idx !== i));
+                              }} 
+                              className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                              title="Remove Photo"
                           >
-                            <ChevronLeft size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={i === previews.length - 1}
-                            onClick={() => {
-                              if (i === previews.length - 1) return;
-                              const newP = [...previews];
-                              const newF = [...selectedFiles];
-                              [newP[i + 1], newP[i]] = [newP[i], newP[i + 1]];
-                              [newF[i + 1], newF[i]] = [newF[i], newF[i + 1]];
-                              setPreviews(newP);
-                              setSelectedFiles(newF);
-                            }}
-                            className="p-1 text-white hover:text-blue-300 disabled:opacity-30"
-                            title="Move Right"
-                          >
-                            <ChevronRight size={14} />
+                              <X size={12}/>
                           </button>
                         </div>
-                        <button 
-                            type="button"
-                            onClick={() => {
-                                setPreviews(prev => prev.filter((_, idx) => idx !== i));
-                                setSelectedFiles(prev => prev.filter((_, idx) => idx !== i));
-                            }} 
-                            className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
-                            title="Remove Photo"
-                        >
-                            <X size={12}/>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* PDF Document Upload Field */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1"><FileText size={12} className="text-red-500" /> Upload PDF Documents (Brochure / Layouts)</span>
-                </label>
-                <div 
-                  onClick={() => pdfFileInputRef.current?.click()} 
-                  className="w-full bg-slate-50 border border-slate-200 hover:bg-slate-100/50 p-3.5 rounded-xl flex items-center justify-between cursor-pointer border-dashed transition-all"
-                >
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <FileText size={18} className="text-red-500" />
-                    <span className="text-xs font-bold text-slate-700">
-                      {selectedPdfFiles.length > 0 ? `${selectedPdfFiles.length} PDF file(s) attached` : 'Upload PDF Brochure / Floor Plans'}
-                    </span>
-                  </div>
-                  <Upload size={16} className="text-slate-400" />
-                  <input 
-                    type="file" 
-                    multiple 
-                    ref={pdfFileInputRef} 
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        setSelectedPdfFiles(prev => [...prev, ...Array.from(e.target.files!)])
-                      }
-                    }} 
-                    accept="application/pdf" 
-                    className="hidden" 
-                  />
-                </div>
-                {selectedPdfFiles.length > 0 && (
-                  <div className="mt-2 space-y-1.5">
-                    {selectedPdfFiles.map((pdfFile, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-2.5 bg-red-50/60 rounded-xl border border-red-100 text-xs font-semibold text-slate-800">
-                        <div className="flex items-center gap-2 truncate">
-                          <FileText size={14} className="text-red-500 shrink-0" />
-                          <span className="truncate">{pdfFile.name}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPdfFiles(prev => prev.filter((_, i) => i !== idx))}
-                          className="text-red-500 hover:bg-red-100 p-1 rounded-full shrink-0"
-                          title="Remove PDF"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 )}
-              </div>
-               
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Title</label>
-                <input 
-                  type="text" 
-                  value={newProp.title} 
-                  onChange={(e) => setNewProp({...newProp, title: e.target.value})} 
-                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-bold text-slate-900 transition-all" 
-                  placeholder="e.g. Luxury Villa Setup" 
-                />
-              </div>
-              
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Details</label>
-                <textarea 
-                  value={newProp.description} 
-                  onChange={(e) => setNewProp({...newProp, description: e.target.value})} 
-                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all resize-none" 
-                  placeholder="Features, pricing, or specifications..." 
-                  rows={4} 
-                />
-              </div>
-              
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">YouTube Video URL</label>
-                <input 
-                  type="text" 
-                  value={newProp.youtube_url || ''} 
-                  onChange={(e) => setNewProp({...newProp, youtube_url: e.target.value})} 
-                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-905 transition-all" 
-                  placeholder="e.g. https://www.youtube.com/watch?v=..." 
-                />
+
+                {/* PDF Document Upload Field */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1"><FileText size={12} className="text-red-500" /> Upload PDF Documents (Brochure / Layouts)</span>
+                  </label>
+                  <div 
+                    onClick={() => pdfFileInputRef.current?.click()} 
+                    className="w-full bg-slate-50 border border-slate-200 hover:bg-slate-100/50 p-3.5 rounded-xl flex items-center justify-between cursor-pointer border-dashed transition-all"
+                  >
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <FileText size={18} className="text-red-500" />
+                      <span className="text-xs font-bold text-slate-700">
+                        {selectedPdfFiles.length > 0 ? `${selectedPdfFiles.length} PDF file(s) attached` : 'Upload PDF Brochure / Floor Plans'}
+                      </span>
+                    </div>
+                    <Upload size={16} className="text-slate-400" />
+                    <input 
+                      type="file" 
+                      multiple 
+                      ref={pdfFileInputRef} 
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          setSelectedPdfFiles(prev => [...prev, ...Array.from(e.target.files!)])
+                        }
+                      }} 
+                      accept="application/pdf" 
+                      className="hidden" 
+                    />
+                  </div>
+                  {selectedPdfFiles.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {selectedPdfFiles.map((pdfFile, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-2.5 bg-red-50/60 rounded-xl border border-red-100 text-xs font-semibold text-slate-800">
+                          <div className="flex items-center gap-2 truncate">
+                            <FileText size={14} className="text-red-500 shrink-0" />
+                            <span className="truncate">{pdfFile.name}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPdfFiles(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-red-500 hover:bg-red-100 p-1 rounded-full shrink-0"
+                            title="Remove PDF"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1">
-                  <Tag size={12} className="text-blue-500" /> Internal Tags (App Users Only, Hidden Publicly)
-                </label>
-                <input 
-                  type="text" 
-                  value={newProp.tags || ''} 
-                  onChange={(e) => setNewProp({...newProp, tags: e.target.value})} 
-                  className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-900 transition-all" 
-                  placeholder="e.g. luxury, 3bhk, prime-location (comma separated)" 
-                />
-              </div>
+              {/* RIGHT COLUMN: Product Info & Publishing */}
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Title</label>
+                  <input 
+                    type="text" 
+                    value={newProp.title} 
+                    onChange={(e) => setNewProp({...newProp, title: e.target.value})} 
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-bold text-slate-900 transition-all" 
+                    placeholder="e.g. Luxury Villa Setup" 
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Details</label>
+                  <textarea 
+                    value={newProp.description} 
+                    onChange={(e) => setNewProp({...newProp, description: e.target.value})} 
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all resize-none" 
+                    placeholder="Features, pricing, or specifications..." 
+                    rows={4} 
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">YouTube Video URL</label>
+                  <input 
+                    type="text" 
+                    value={newProp.youtube_url || ''} 
+                    onChange={(e) => setNewProp({...newProp, youtube_url: e.target.value})} 
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-905 transition-all" 
+                    placeholder="e.g. https://www.youtube.com/watch?v=..." 
+                  />
+                </div>
 
-              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 mt-2">
-                <input 
-                  type="checkbox" 
-                  id="add-show-landing"
-                  checked={newProp.show_on_landing_page}
-                  onChange={(e) => setNewProp({...newProp, show_on_landing_page: e.target.checked})}
-                  className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300 cursor-pointer"
-                />
-                <label htmlFor="add-show-landing" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
-                  Show on Custom Landing Page
-                </label>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1">
+                    <Tag size={12} className="text-blue-500" /> Internal Tags (App Users Only, Hidden Publicly)
+                  </label>
+                  <input 
+                    type="text" 
+                    value={newProp.tags || ''} 
+                    onChange={(e) => setNewProp({...newProp, tags: e.target.value})} 
+                    className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-3.5 px-4 rounded-xl text-sm focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none font-medium text-slate-900 transition-all" 
+                    placeholder="e.g. luxury, 3bhk, prime-location (comma separated)" 
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 mt-2">
+                  <input 
+                    type="checkbox" 
+                    id="add-show-landing"
+                    checked={newProp.show_on_landing_page}
+                    onChange={(e) => setNewProp({...newProp, show_on_landing_page: e.target.checked})}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 border-slate-300 cursor-pointer"
+                  />
+                  <label htmlFor="add-show-landing" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                    Show on Custom Landing Page
+                  </label>
+                </div>
+                
+                <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4 disabled:opacity-50 disabled:scale-100">
+                  {isSubmitting ? <><Loader2 size={18} className="animate-spin mr-2" /> Saving...</> : 'Save Product'}
+                </button>
               </div>
-              
-              <button onClick={handleAddProperty} disabled={isSubmitting} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4 disabled:opacity-50 disabled:scale-100">
-                {isSubmitting ? <><Loader2 size={18} className="animate-spin mr-2" /> Saving...</> : 'Save Product'}
-              </button>
             </div>
           </div>
         </div>
@@ -1190,16 +1200,22 @@ export default function ProductsPage() {
       {/* EDIT MODAL */}
       {isAdminLike && showEditModal && editProp && (
         <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white w-full max-w-lg md:max-w-4xl lg:max-w-5xl rounded-t-[2rem] sm:rounded-3xl p-6 sm:p-8 shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-extrabold text-slate-900">Edit Product</h2>
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900">Edit Product</h2>
+                <p className="text-xs font-semibold text-slate-400 mt-0.5">Update details, photos, or documents for this product</p>
+              </div>
               <button onClick={() => setShowEditModal(false)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 transition-colors"><X size={20} /></button>
             </div>
  
-            <div className="space-y-5">
-              <div onClick={() => editFileInputRef.current?.click()} className="w-full h-44 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/50 hover:border-blue-400 transition-colors relative overflow-hidden group">
-                  <ImageIcon size={36} className="text-slate-400 mb-3 group-hover:scale-110 group-hover:text-blue-500 transition-transform"/>
-                  <span className="text-sm font-bold text-slate-500 group-hover:text-blue-600">Add More Photos</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* LEFT COLUMN: Photos & Documents */}
+              <div className="space-y-5">
+                <div onClick={() => editFileInputRef.current?.click()} className="w-full h-44 sm:h-52 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50/50 hover:border-blue-400 transition-colors relative overflow-hidden group">
+                    <ImageIcon size={36} className="text-slate-400 mb-3 group-hover:scale-110 group-hover:text-blue-500 transition-transform"/>
+                    <span className="text-sm font-bold text-slate-500 group-hover:text-blue-600">Add More Photos</span>
+                    <span className="text-[11px] font-medium text-slate-400 mt-1">PNG, JPG, WEBP up to 25MB</span>
                   <input type="file" multiple ref={editFileInputRef} onChange={handleEditFileSelect} accept="image/*" className="hidden" />
               </div>
               
@@ -1377,7 +1393,10 @@ export default function ProductsPage() {
                   </div>
                 )}
               </div>
-               
+              </div>
+
+              {/* RIGHT COLUMN: Product Info & Publishing */}
+              <div className="space-y-5">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Title</label>
                 <input 
@@ -1438,6 +1457,7 @@ export default function ProductsPage() {
               <button onClick={handleSaveEdit} disabled={isSubmitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-[1.5rem] text-sm font-bold shadow-lg shadow-blue-600/20 active:scale-[0.98] transition-all flex items-center justify-center mt-4 disabled:opacity-50 disabled:scale-100">
                 {isSubmitting ? <><Loader2 size={18} className="animate-spin mr-2" /> Saving Changes...</> : 'Save Changes'}
               </button>
+              </div>
             </div>
           </div>
         </div>

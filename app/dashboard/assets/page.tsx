@@ -14,6 +14,7 @@ import { useUpload } from '@/utils/UploadContext'
 import LazyVideo from '@/components/LazyVideo'
 import { getVideoPosterUrl } from '@/utils/get-video-poster'
 import { getPropertyTags } from '@/utils/property-tags'
+import ProductSearchableSelect from '@/components/ProductSearchableSelect'
 
 type Asset = {
     id: string
@@ -1545,260 +1546,268 @@ export default function AssetsPage() {
                     </div>
                 )}
 
-                {/* SHARE MODAL (Responsive Bottom Sheet / Centered Card) */}
+                {/* SHARE MODAL (Responsive 2-Column Desktop / Bottom Sheet Mobile) */}
                 {selectedAsset && (
                     <div className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
-                        <div className="bg-white w-full max-w-lg rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
+                        <div className="bg-white w-full max-w-lg md:max-w-4xl lg:max-w-5xl rounded-t-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300 max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
 
                             {/* MODAL HEADER */}
                             <div className="flex justify-between items-center p-6 bg-white border-b border-slate-100 flex-shrink-0">
-                                <h2 className="text-xl font-bold text-slate-900">Share Asset</h2>
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-900">Share Asset</h2>
+                                    <p className="text-xs text-slate-400 font-medium mt-0.5">Post to socials, generate ad copy, or share directly</p>
+                                </div>
                                 <button onClick={() => setSelectedAsset(null)} className="bg-slate-100 p-2.5 rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors">
                                     <X size={20} />
                                 </button>
                             </div>
 
-                            {/* MODAL BODY (Scrollable) */}
+                            {/* MODAL BODY (Scrollable 2-Column Responsive Layout) */}
                             <div className="p-6 overflow-y-auto custom-scrollbar">
-
-                                {/* Media Preview */}
-                                <div className="rounded-[1.5rem] overflow-hidden bg-slate-100 mb-6 border border-slate-200/60 shadow-inner">
-                                    {(selectedAsset.type === 'pdf' || selectedAsset.type === 'document' || selectedAsset.url.toLowerCase().includes('.pdf')) ? (
-                                        <div className="flex flex-col items-center gap-3 p-2 bg-slate-900 rounded-2xl">
-                                            <iframe src={fixR2Url(selectedAsset.url)} className="w-full h-[260px] rounded-xl border border-slate-700 bg-white" title="PDF Preview" />
-                                            <a 
-                                                href={fixR2Url(selectedAsset.url)} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer" 
-                                                className="text-xs font-bold text-red-400 hover:text-red-300 underline flex items-center gap-1.5 py-1"
-                                            >
-                                                <Download size={14} /> Open PDF in New Window / Download
-                                            </a>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                                    {/* LEFT COLUMN: Media Preview & Sharing Actions */}
+                                    <div className="space-y-4">
+                                        {/* Media Preview */}
+                                        <div className="rounded-[1.5rem] overflow-hidden bg-slate-100 border border-slate-200/60 shadow-inner flex items-center justify-center min-h-[220px] max-h-[360px] p-2">
+                                            {(selectedAsset.type === 'pdf' || selectedAsset.type === 'document' || selectedAsset.url.toLowerCase().includes('.pdf')) ? (
+                                                <div className="flex flex-col items-center gap-3 p-2 bg-slate-900 rounded-2xl w-full">
+                                                    <iframe src={fixR2Url(selectedAsset.url)} className="w-full h-[260px] rounded-xl border border-slate-700 bg-white" title="PDF Preview" />
+                                                    <a 
+                                                        href={fixR2Url(selectedAsset.url)} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer" 
+                                                        className="text-xs font-bold text-red-400 hover:text-red-300 underline flex items-center gap-1.5 py-1"
+                                                    >
+                                                        <Download size={14} /> Open PDF in New Window / Download
+                                                    </a>
+                                                </div>
+                                            ) : selectedAsset.type === 'video' ? (
+                                                <video 
+                                                    src={fixR2Url(selectedAsset.url)} 
+                                                    poster={selectedAsset.metadata?.thumbnailUrl ? fixR2Url(selectedAsset.metadata.thumbnailUrl) : undefined}
+                                                    controls 
+                                                    preload="metadata" 
+                                                    className="w-full max-h-[340px] object-contain rounded-xl bg-black" 
+                                                />
+                                            ) : (
+                                                <img src={fixR2Url(selectedAsset.url)} className="w-full max-h-[340px] object-contain rounded-xl" alt="Preview" />
+                                            )}
                                         </div>
-                                    ) : selectedAsset.type === 'video' ? (
-                                        <video 
-                                            src={fixR2Url(selectedAsset.url)} 
-                                            poster={selectedAsset.metadata?.thumbnailUrl ? fixR2Url(selectedAsset.metadata.thumbnailUrl) : undefined}
-                                            controls 
-                                            preload="metadata" 
-                                            className="w-full max-h-[250px] object-contain bg-black" 
-                                        />
-                                    ) : (
-                                        <img src={fixR2Url(selectedAsset.url)} className="w-full max-h-[250px] object-contain" alt="Preview" />
-                                    )}
-                                </div>
 
-                                {/* Mapping product & Custom Instructions */}
-                                <div className="mb-6 space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200/60">
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Linked Product</label>
-                                        <select
-                                            value={selectedAsset.property_id || ''}
-                                            onChange={(e) => handleLinkProduct(selectedAsset.id, e.target.value)}
-                                            className="w-full bg-white border border-slate-200 text-slate-700 py-2.5 px-3 rounded-xl text-xs font-bold outline-none cursor-pointer hover:bg-slate-50 transition-all"
-                                        >
-                                            <option value="">-- No Product Linked --</option>
-                                            {properties.map(p => (
-                                                <option key={p.id} value={p.id}>{p.title}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Copywriting Instructions for Gemini</label>
-                                        <textarea
-                                            value={customInstructions}
-                                            onChange={(e) => setCustomInstructions(e.target.value)}
-                                            placeholder="E.g. Focus on key benefits, professional tone..."
-                                            className="w-full bg-white border border-slate-200 p-3 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none"
-                                            rows={2}
-                                        />
-                                    </div>
-                                </div>
+                                        {/* Actions Grid */}
+                                        <div className="flex flex-col gap-3 pt-2">
+                                            {userRole !== 'agent' && (
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <button
+                                                        onClick={handlePostFacebook}
+                                                        disabled={isPosting || isDownloading}
+                                                        className="bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2] hover:text-white py-3 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                                                    >
+                                                        <Facebook size={18} /> FB
+                                                    </button>
+                                                    <button
+                                                        onClick={handlePostInstagram}
+                                                        disabled={isPosting || isDownloading}
+                                                        className="bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white opacity-90 hover:opacity-100 py-3 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-1.5 transition-opacity shadow-sm disabled:opacity-50"
+                                                    >
+                                                        <Instagram size={18} /> Insta
+                                                    </button>
+                                                    <button
+                                                        onClick={handlePostLinkedin}
+                                                        disabled={isPosting || isDownloading}
+                                                        className="bg-[#0A66C2]/10 text-[#0A66C2] hover:bg-[#0A66C2] hover:text-white py-3 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                                                    >
+                                                        <Linkedin size={18} /> LinkedIn
+                                                    </button>
+                                                </div>
+                                            )}
 
-                                {/* Caption Area */}
-                                <div className="mb-6">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <label className="text-xs font-bold text-slate-500 ml-2 block uppercase tracking-wider">Asset Caption</label>
-                                        <button
-                                            type="button"
-                                            onClick={handleGenerateAICaptions}
-                                            disabled={isGeneratingCaptions || isPosting}
-                                            className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 px-3 py-1.5 rounded-xl transition-all active:scale-95 disabled:opacity-50"
-                                        >
-                                            {isGeneratingCaptions ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                                            {isGeneratingCaptions ? 'Generating...' : 'Generate AI Captions'}
-                                        </button>
-                                    </div>
-                                    <textarea
-                                        value={caption}
-                                        onChange={(e) => setCaption(e.target.value)}
-                                        placeholder="Write a compelling caption..."
-                                        className="w-full bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none resize-none border border-slate-200/60 focus:border-blue-400 transition-all"
-                                        rows={4}
-                                    />
-                                    <div className="flex justify-end gap-2 mt-2">
-                                        <button
-                                            type="button"
-                                            onClick={handleSaveCopyChanges}
-                                            disabled={isPosting}
-                                            className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
-                                        >
-                                            <Save size={12} /> Save Copy & Caption
-                                        </button>
-                                    </div>
-                                </div>
+                                            {/* Universal Post */}
+                                            {userRole !== 'agent' && (
+                                                <button
+                                                    onClick={handleUniversalPost}
+                                                    disabled={isPosting || isDownloading}
+                                                    className="w-full bg-slate-900 text-white py-3.5 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all disabled:opacity-50 active:scale-95"
+                                                >
+                                                    {isPosting ? <Loader2 size={18} className="animate-spin" /> : <Globe size={18} />}
+                                                    Publish Everywhere
+                                                </button>
+                                            )}
 
-                                {/* AI Generated Ad Fields (Headline & Primary Text) */}
-                                <div className="mb-6 space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200/60">
-                                    <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-600 uppercase tracking-widest">
-                                        <Sparkles size={14} className="text-blue-500" />
-                                        <span>AI Ad Copy (Headline & Primary Text)</span>
-                                    </div>
-                                    
-                                    {/* Headline Field */}
-                                    <div className="space-y-1.5">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Headline</span>
+                                            {userRole !== 'agent' && (
+                                                <div className="relative py-1 flex items-center">
+                                                    <div className="flex-grow border-t border-slate-200/80"></div>
+                                                    <span className="flex-shrink-0 mx-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">or share manually</span>
+                                                    <div className="flex-grow border-t border-slate-200/80"></div>
+                                                </div>
+                                            )}
+
+                                            {/* WhatsApp Direct Share */}
                                             <button
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(headline);
-                                                    toast.success("Headline copied to clipboard!");
-                                                }}
-                                                className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
-                                            >
-                                                <Copy size={12} /> Copy
-                                            </button>
-                                        </div>
-                                        <input
-                                            type="text"
-                                            value={headline}
-                                            onChange={(e) => setHeadline(e.target.value)}
-                                            placeholder="No headline generated yet"
-                                            className="w-full bg-white border border-slate-200 px-4 py-3 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                                        />
-                                    </div>
-
-                                    {/* Primary Text Field */}
-                                    <div className="space-y-1.5">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Primary Text</span>
-                                            <button
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(primaryText);
-                                                    toast.success("Primary Text copied to clipboard!");
-                                                }}
-                                                className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
-                                            >
-                                                <Copy size={12} /> Copy
-                                            </button>
-                                        </div>
-                                        <textarea
-                                            value={primaryText}
-                                            onChange={(e) => setPrimaryText(e.target.value)}
-                                            placeholder="No primary text generated yet"
-                                            rows={3}
-                                            className="w-full bg-white border border-slate-200 px-4 py-3 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none"
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Actions Grid */}
-                                <div className="flex flex-col gap-3">
-                                    {userRole !== 'agent' && (
-                                        <div className="grid grid-cols-3 gap-3 mb-4">
-                                            <button
-                                                onClick={handlePostFacebook}
+                                                onClick={handleShareWhatsApp}
                                                 disabled={isPosting || isDownloading}
-                                                className="bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                                className="w-full bg-[#25D366] hover:bg-[#1ebe57] text-white py-3.5 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/20 transition-all disabled:opacity-50 active:scale-95"
                                             >
-                                                <Facebook size={18} /> FB
+                                                {isDownloading ? (
+                                                    <>
+                                                        <Loader2 size={18} className="animate-spin" />
+                                                        <span>Preparing Asset...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                                                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
+                                                        </svg>
+                                                        <span>Direct WhatsApp Share</span>
+                                                    </>
+                                                )}
                                             </button>
+
+                                            {/* AI Video Editor Action */}
+                                            {selectedAsset.type === 'video' && (
+                                                <button
+                                                    onClick={() => {
+                                                        const urlParams = new URLSearchParams(window.location.search);
+                                                        const impersonateId = urlParams.get('impersonate');
+                                                        if (impersonateId) {
+                                                            router.push(`/dashboard/video-editor/${selectedAsset.id}?impersonate=${impersonateId}`);
+                                                        } else {
+                                                            router.push(`/dashboard/video-editor/${selectedAsset.id}`);
+                                                        }
+                                                    }}
+                                                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-3.5 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all active:scale-95"
+                                                >
+                                                    <Sparkles size={18} />
+                                                    <span>AI Video Edit</span>
+                                                </button>
+                                            )}
+
+                                            {/* Download Action */}
                                             <button
-                                                onClick={handlePostInstagram}
+                                                onClick={handleDownload}
                                                 disabled={isPosting || isDownloading}
-                                                className="bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white opacity-90 hover:opacity-100 py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-opacity shadow-sm disabled:opacity-50"
+                                                className="w-full bg-slate-50 text-slate-700 py-3.5 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-100 border border-slate-200/60 transition-colors active:scale-95 disabled:opacity-50"
                                             >
-                                                <Instagram size={18} /> Insta
-                                            </button>
-                                            <button
-                                                onClick={handlePostLinkedin}
-                                                disabled={isPosting || isDownloading}
-                                                className="bg-[#0A66C2]/10 text-[#0A66C2] hover:bg-[#0A66C2] hover:text-white py-3.5 rounded-[1.25rem] text-[11px] font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
-                                            >
-                                                <Linkedin size={18} /> LinkedIn
+                                                {isDownloading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+                                                {isDownloading ? 'Downloading...' : 'Download High-Res File'}
                                             </button>
                                         </div>
-                                    )}
+                                    </div>
 
-                                    {/* Universal Post */}
-                                    {userRole !== 'agent' && (
-                                        <button
-                                            onClick={handleUniversalPost}
-                                            disabled={isPosting || isDownloading}
-                                            className="w-full bg-slate-900 text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all disabled:opacity-50 active:scale-95"
-                                        >
-                                            {isPosting ? <Loader2 size={18} className="animate-spin" /> : <Globe size={18} />}
-                                            Publish Everywhere
-                                        </button>
-                                    )}
-
-                                    {userRole !== 'agent' && (
-                                        <div className="relative py-2 flex items-center">
-                                            <div className="flex-grow border-t border-slate-200/80"></div>
-                                            <span className="flex-shrink-0 mx-4 text-xs font-bold text-slate-400 uppercase tracking-widest">or share manually</span>
-                                            <div className="flex-grow border-t border-slate-200/80"></div>
+                                    {/* RIGHT COLUMN: Linked Product, Copywriting Instructions & Captions */}
+                                    <div className="space-y-4">
+                                        {/* Mapping product & Custom Instructions */}
+                                        <div className="space-y-3.5 p-4 bg-slate-50 rounded-2xl border border-slate-200/60">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Linked Product</label>
+                                                <ProductSearchableSelect
+                                                    products={properties}
+                                                    selectedId={selectedAsset.property_id || null}
+                                                    onSelect={(product) => handleLinkProduct(selectedAsset.id, product?.id || '')}
+                                                    placeholder="-- No Product Linked --"
+                                                    searchPlaceholder="Search product title or tags..."
+                                                    variant="compact"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Copywriting Instructions for Gemini</label>
+                                                <textarea
+                                                    value={customInstructions}
+                                                    onChange={(e) => setCustomInstructions(e.target.value)}
+                                                    placeholder="E.g. Focus on key benefits, professional tone, include price..."
+                                                    className="w-full bg-white border border-slate-200 p-3 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none"
+                                                    rows={2}
+                                                />
+                                            </div>
                                         </div>
-                                    )}
 
-                                    {/* WhatsApp Direct Share */}
-                                    <button
-                                        onClick={handleShareWhatsApp}
-                                        disabled={isPosting || isDownloading}
-                                        className="w-full bg-[#25D366] hover:bg-[#1ebe57] text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/20 transition-all disabled:opacity-50 active:scale-95"
-                                    >
-                                        {isDownloading ? (
-                                            <>
-                                                <Loader2 size={18} className="animate-spin" />
-                                                <span>Preparing Asset...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
-                                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
-                                                </svg>
-                                                <span>Direct WhatsApp Share</span>
-                                            </>
-                                        )}
-                                    </button>
+                                        {/* Caption Area */}
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between items-center">
+                                                <label className="text-xs font-bold text-slate-500 ml-1 block uppercase tracking-wider">Asset Caption</label>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleGenerateAICaptions}
+                                                    disabled={isGeneratingCaptions || isPosting}
+                                                    className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 px-3 py-1.5 rounded-xl transition-all active:scale-95 disabled:opacity-50"
+                                                >
+                                                    {isGeneratingCaptions ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                                                    {isGeneratingCaptions ? 'Generating...' : 'Generate AI Captions'}
+                                                </button>
+                                            </div>
+                                            <textarea
+                                                value={caption}
+                                                onChange={(e) => setCaption(e.target.value)}
+                                                placeholder="Write a compelling caption..."
+                                                className="w-full bg-slate-50 hover:bg-slate-100/50 p-3.5 rounded-2xl text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none resize-none border border-slate-200/60 focus:border-blue-400 transition-all"
+                                                rows={3}
+                                            />
+                                            <div className="flex justify-end gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleSaveCopyChanges}
+                                                    disabled={isPosting}
+                                                    className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                                                >
+                                                    <Save size={12} /> Save Copy & Caption
+                                                </button>
+                                            </div>
+                                        </div>
 
-                                    {/* AI Video Editor Action */}
-                                    {selectedAsset.type === 'video' && (
-                                        <button
-                                            onClick={() => {
-                                                const urlParams = new URLSearchParams(window.location.search);
-                                                const impersonateId = urlParams.get('impersonate');
-                                                if (impersonateId) {
-                                                    router.push(`/dashboard/video-editor/${selectedAsset.id}?impersonate=${impersonateId}`);
-                                                } else {
-                                                    router.push(`/dashboard/video-editor/${selectedAsset.id}`);
-                                                }
-                                            }}
-                                            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all mt-2 active:scale-95"
-                                        >
-                                            <Sparkles size={18} />
-                                            <span>AI Video Edit</span>
-                                        </button>
-                                    )}
+                                        {/* AI Generated Ad Fields (Headline & Primary Text) */}
+                                        <div className="space-y-3.5 p-4 bg-slate-50 rounded-2xl border border-slate-200/60">
+                                            <div className="flex items-center gap-2 mb-1 text-xs font-bold text-slate-600 uppercase tracking-widest">
+                                                <Sparkles size={14} className="text-blue-500" />
+                                                <span>AI Ad Copy (Headline & Primary Text)</span>
+                                            </div>
+                                            
+                                            {/* Headline Field */}
+                                            <div className="space-y-1.5">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Headline</span>
+                                                    <button
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(headline);
+                                                            toast.success("Headline copied to clipboard!");
+                                                        }}
+                                                        className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
+                                                    >
+                                                        <Copy size={12} /> Copy
+                                                    </button>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    value={headline}
+                                                    onChange={(e) => setHeadline(e.target.value)}
+                                                    placeholder="No headline generated yet"
+                                                    className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                                                />
+                                            </div>
 
-                                    {/* Download Action */}
-                                    <button
-                                        onClick={handleDownload}
-                                        disabled={isPosting || isDownloading}
-                                        className="w-full bg-slate-50 text-slate-700 py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-100 border border-slate-200/60 transition-colors mt-2 active:scale-95 disabled:opacity-50"
-                                    >
-                                        {isDownloading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-                                        {isDownloading ? 'Downloading...' : 'Download High-Res File'}
-                                    </button>
+                                            {/* Primary Text Field */}
+                                            <div className="space-y-1.5">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ad Primary Text</span>
+                                                    <button
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(primaryText);
+                                                            toast.success("Primary Text copied to clipboard!");
+                                                        }}
+                                                        className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-all"
+                                                    >
+                                                        <Copy size={12} /> Copy
+                                                    </button>
+                                                </div>
+                                                <textarea
+                                                    value={primaryText}
+                                                    onChange={(e) => setPrimaryText(e.target.value)}
+                                                    placeholder="No primary text generated yet"
+                                                    rows={3}
+                                                    className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

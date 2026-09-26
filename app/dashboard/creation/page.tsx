@@ -10,6 +10,7 @@ import { getLocalCache, getCachedValue, setCachedValue } from '@/utils/client-ca
 import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
+import ProductSearchableSelect from '@/components/ProductSearchableSelect'
 
 // --- TYPES ---
 type Message = {
@@ -1668,27 +1669,19 @@ export default function CreationPage() {
 
 
             {/* Product Selector Pill (Full width on mobile, 1/3 on desktop) */}
-            <div className="relative w-full">
-                <Package size={14} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${isLoadingProperties ? 'text-slate-400' : 'text-blue-500'}`} />
-                <select 
-                    value={selectedPropId}
-                    onChange={(e) => {
-                        setSelectedPropId(e.target.value);
+            <div className="w-full">
+                <ProductSearchableSelect 
+                    products={properties}
+                    selectedId={selectedPropId}
+                    onSelect={(p) => {
+                        setSelectedPropId(p?.id || '');
                         setDeselectedCatalogImages([]);
                     }}
-                    disabled={isLoadingProperties}
-                    className="w-full bg-blue-50/50 hover:bg-blue-100/50 border border-blue-100 text-blue-900 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer h-full disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                    <option value="">{isLoadingProperties ? 'Loading catalog...' : '-- Attach Product --'}</option>
-                    {properties.map(p => (
-                         <option key={p.id} value={p.id}>{getPropertyDisplayLabel(p)}</option>
-                    ))}
-                </select>
-                {isLoadingProperties ? (
-                    <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 animate-spin" />
-                ) : (
-                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
-                )}
+                    isLoading={isLoadingProperties}
+                    placeholder="-- Attach Product --"
+                    searchPlaceholder="Search product or internal tags..."
+                    variant="compact"
+                />
             </div>
         </div>
 
@@ -3371,7 +3364,7 @@ function CreativeFlowModal({
             {currentStep === 'setup' && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                 <div>
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-2.5">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block">
                       1. Select Target Product or Custom Brand Mode
                     </label>
@@ -3381,61 +3374,27 @@ function CreativeFlowModal({
                         onClick={() => setCreativeFlow((prev: any) => ({ ...prev, product: null, batchExcludedImages: [] }))}
                         className="text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors"
                       >
-                        Clear (Use Brand Mode)
+                        Reset to Brand Mode
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {/* Brand / Custom Option Card */}
-                    <div 
-                      onClick={() => setCreativeFlow((prev: any) => ({ ...prev, product: null, batchExcludedImages: [] }))}
-                      className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all p-3.5 flex flex-col justify-between ${
-                        creativeFlow.product === null 
-                          ? 'border-blue-600 bg-gradient-to-br from-blue-50 via-indigo-50/40 to-white ring-4 ring-blue-500/10 shadow-sm' 
-                          : 'border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className={`p-2.5 rounded-xl ${creativeFlow.product === null ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'bg-slate-200 text-slate-600'}`}>
-                          <Sparkles size={18} />
-                        </div>
-                        {creativeFlow.product === null && (
-                          <div className="bg-blue-600 text-white p-1 rounded-full"><CheckCircle size={12} /></div>
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-[11px] font-extrabold text-slate-900 leading-tight">Brand / Custom</div>
-                        <div className="text-[9px] font-medium text-slate-500 leading-tight mt-1">
-                          No product • Custom instructions & business info
-                        </div>
-                      </div>
-                    </div>
 
-                    {/* Properties list */}
-                    {properties.map((p: any) => {
-                      const isSelected = creativeFlow.product?.id === p.id;
-                      return (
-                        <div 
-                          key={p.id}
-                          onClick={() => setCreativeFlow((prev: any) => ({ 
-                            ...prev, 
-                            product: isSelected ? null : p, 
-                            batchExcludedImages: [] 
-                          }))}
-                          className={`relative aspect-square rounded-2xl overflow-hidden cursor-pointer border-2 transition-all ${
-                            isSelected ? 'border-blue-600 ring-4 ring-blue-500/10' : 'border-transparent hover:border-slate-200'
-                          }`}
-                        >
-                          <img src={p.image_url} className="w-full h-full object-cover" alt={p.title} />
-                          <div className="absolute inset-0 bg-black/20" />
-                          <div className="absolute bottom-2 left-2 right-2 truncate text-[10px] font-bold text-white drop-shadow-sm">{p.title}</div>
-                          {isSelected && (
-                            <div className="absolute top-2 right-2 bg-blue-600 text-white p-1 rounded-full"><CheckCircle size={12} /></div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <ProductSearchableSelect
+                    products={properties}
+                    selectedId={creativeFlow.product?.id || null}
+                    onSelect={(p) => {
+                      setCreativeFlow((prev: any) => ({
+                        ...prev,
+                        product: p,
+                        batchExcludedImages: []
+                      }));
+                    }}
+                    showBrandOption={true}
+                    brandOptionLabel="Brand / Custom Mode"
+                    brandOptionDescription="No product • Custom instructions & business info"
+                    variant="modal"
+                    searchPlaceholder="Search products or internal tags..."
+                  />
                 </div>
 
                 {/* IMAGE SELECTOR: Show product images and brand logo for include/exclude */}
