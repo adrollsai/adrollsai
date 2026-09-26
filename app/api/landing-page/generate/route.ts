@@ -394,85 +394,133 @@ ${themeDirectives}
   * "@type": "FAQPage" with question and acceptedAnswer entities matching on-page FAQs.
 - Return ONLY valid HTML starting with "<!DOCTYPE html>" and ending with "</html>". No markdown blocks.`
             } else {
-                // High-Converting Standard Landing Page
+                // High-Converting Full-Length Standard Landing Page (Alex Hormozi Framework & Industry Standard)
                 systemPrompt = `You are a world-class front-end developer, Astro JS architect, and direct-response marketing master.
-Generate a complete, fully-responsive, high-converting landing page in pure HTML for "${resolvedProductName}".
+Generate a comprehensive, full-length, high-converting landing page in pure HTML for "${resolvedProductName}".
 
-### CONTEXT & INPUTS:
-* Product/Offer Name: "${resolvedProductName}"
+### CONTEXT & BUSINESS IDENTITY:
+* Offer/Service: "${resolvedProductName}"
 * Industry / Niche: "${resolvedIndustry}"
-* Offer Context & Benefits: "${resolvedContext}"
-* Custom Instructions: "${customInstructions || 'Create an irresistible, high-converting presentation'}"
+* Offer Context: "${resolvedContext}"
+* Custom Directives: "${customInstructions || 'Create an irresistible, high-converting, long-form presentation'}"
 ${contactInfoText}
 ${propertyDataText}
 ${realEstateSection}
 ${youtubeEmbedSection}
 ${themeDirectives}
 
-### ALEX HORMOZI VALUE EQUATION & DIRECT-RESPONSE CONVERSION FRAMEWORK:
-Build the page following proven high-conversion principles:
-1. **Sticky Header / Navigation**:
-   - Logo or bold brand title, anchor links (Overview, Features, Reviews, FAQs), and a high-contrast CTA button.
-2. **Above-the-Fold Hero Section (80% Conversion Impact)**:
-   - Trust Pill / Badge (e.g. "⭐ Rated 4.9/5 by 500+ Clients" or "⚡ Exclusive Limited Allocation")
-   - Dream Outcome H1 Headline: Articulate the ultimate dream outcome ("Achieve [Result] Without [Fear/Pain] in [Timeframe]").
-   - Sub-headline: Eliminate friction and reduce perceived effort.
-   - Dual Call-to-Action Buttons: Primary action button smoothly scrolling to form (\`onclick="document.getElementById('qualification-form-container')?.scrollIntoView({ behavior: 'smooth' })"\`) + Secondary phone/contact button.
-   - Trust Checkmarks: 3 risk-reversal guarantees (e.g. "100% Transparency", "Zero Obligation", "Fast Personalized Assistance").
-   - Social Proof Avatars: Visual cluster with "Trusted by 1,200+ clients" and 5 stars.
-   - Hero Media: If images are available (${JSON.stringify(propertyImagesList)}), display a premium hero gallery or showcase.
-3. **Proof & Metrics Banner**:
-   - 3-4 high-impact numerical statistics.
-4. **The "Why Us" / Problem vs. Solution Section**:
-   - Clearly delineate what makes this offer superior to traditional alternatives.
-5. **Key Features & Benefits Grid**:
-   - 4-6 benefit-driven feature cards with clean inline SVG icons. Focus on tangible outcomes.
-6. **"Wall of Love" (Social Proof Grid)**:
-   - 3-4 visual testimonial cards with client quotes, names, verified badges, and star ratings.
-7. **Frictionless "How It Works" in 3-4 Simple Steps**:
-   - 3 or 4 clear, effortless steps to get started.
-8. **Interactive FAQ Accordion**:
-   - 4-5 high-value questions answering the top customer objections.
-   - Include a working vanilla JS accordion script:
-     \`<script>function toggleFaq(btn) { const c = btn.nextElementSibling; const ic = btn.querySelector('.faq-icon'); c.classList.toggle('hidden'); if(ic) ic.classList.toggle('rotate-180'); }</script>\`
-9. **Lead Qualification Form Card**:
-   - A styled, elevated card enclosing EXACTLY this structural container:
-     '<div id="qualification-form-container" data-button-text="Claim Your Free Consultation"></div>'
-   - Do NOT write form elements inside; the platform injects them automatically.
-10. **Mobile Sticky Bottom Bar**:
-    - Sticky bottom bar visible on mobile (< 640px) with Call Now (\`tel:${cleanPhone}\`) and WhatsApp (\`https://wa.me/${cleanPhone}\`).
-11. **Semantic Footer**:
-    - Clean footer with copyright, contact info, and legal disclaimer.
+### TOKEN BUDGET & COMPLETION MANDATE (CRITICAL):
+- Keep the <head> clean, concise, and token-efficient. Preconnect Google Fonts (Outfit, Plus Jakarta Sans), load Tailwind CDN (<script src="https://cdn.tailwindcss.com"></script>), and add a compact Schema.org JSON-LD ("@type": "${schemaType}"). Do NOT dump hundreds of duplicate FAQ lines into the Schema in <head>.
+- Do NOT write bloated custom CSS animations or repetitive CSS keyframes; use Tailwind classes directly.
+- Use clean, concise 1-2 line inline SVGs for icons.
+- You MUST thoroughly write ALL 12 sections listed below from start to finish.
+- You MUST ALWAYS conclude cleanly with "</body></html>" without cutting off.
 
-### GOOGLE SEO & LLM OPTIMIZATION (ASTRO STANDARD):
-- Complete semantic HTML5 structure with strictly ONE <h1>, hierarchical <h2> and <h3> tags.
-- Full <head> with <title>, <meta name="description">, <meta name="keywords">, <meta name="robots" content="index, follow, max-image-preview:large">, canonical link "${publicPageUrl}", OpenGraph, and Twitter tags.
-- Schema.org JSON-LD structured data with "@graph":
-  * "@type": "${schemaType}" with business details.
-  * "@type": "FAQPage" with all on-page questions & answers for Google rich search snippet eligibility!
-- Preconnected Google Fonts (Outfit, Plus Jakarta Sans, or Inter) and Tailwind CDN with brand configuration.
+### MANDATORY FULL-LENGTH 12-SECTION STRUCTURE:
+1. **Sticky Header / Navigation**:
+   - Brand logo or styled brand title ("${businessName}"), navigation links (Overview, Pathway, Features, Compare, Reviews, FAQs), phone call link ("${contactPhone}"), and primary CTA button ("Free Assessment" or "Book Consultation").
+2. **Hero Section (Hormozi Value Equation - Dream Outcome)**:
+   - Trust Pill Badge (e.g. "⭐ Rated 4.9/5 by 1,200+ Clients · 98.4% Historic Approval").
+   - Dream-Outcome H1 Headline: Articulate the ultimate goal with zero fluff (e.g. "Achieve Your [Outcome] Without [Pain/Rejection] in [Timeframe]").
+   - Frictionless Sub-headline explaining how the expert process eliminates anxiety and delays.
+   - 3 Trust Checkmarks (e.g. "100% Transparency", "Zero Obligation Consultation", "Direct Expert Handling").
+   - Dual Call-to-Action Buttons:
+     * Primary CTA: "Claim Your Free Consultation →" with \`onclick="document.getElementById('qualification-form-container')?.scrollIntoView({ behavior: 'smooth' })"\`
+     * Secondary CTA: "Chat on WhatsApp" (\`https://wa.me/${cleanPhone}\`)
+   - Hero Media: Showcase card with provided visuals (${JSON.stringify(propertyImagesList)}) or a high-converting offer badge card.
+3. **Key Stats & Authority Marquee**:
+   - 4 compelling statistics in a high-contrast proof banner (e.g., "98.4% Success Rate", "1,200+ Successful Cases", "4 Key Pathways", "10-14 Months Avg").
+   - "Recognized & Aligned With" logo/text marquee with relevant regulatory or governing bodies.
+4. **The Problem & Cost of Inaction ("Why Most Applicants Struggle or Get Rejected")**:
+   - 3 deep-dive problem cards exposing common pitfalls (e.g., rule changes, miscalculated criteria/NOC codes, missed deadlines, rejection risks).
+   - High-impact copy contrasting the cost of trial-and-error vs expert legal strategy.
+5. **The Signature 4-Step Strategic Roadmap / Pathway**:
+   - A visual 4-step process from initial audit to final success:
+     * Step 1: In-depth Profile Diagnostic & Eligibility Strategy
+     * Step 2: Documentation & Credential Fast-Tracking
+     * Step 3: Targeted Category & Nomination Maximization
+     * Step 4: Final Submission, Verification & Approval
+6. **Comprehensive 6-Card Features & Deliverables Grid**:
+   - 6 rich cards with outcome-driven descriptions and clean inline SVG icons:
+     1) Comprehensive Strategic Optimization & Bonus Points Audit
+     2) Expedited Credential Assessment & Evaluation Support
+     3) Targeted Category & High-Demand Stream Prioritization
+     4) Certified / Expert Legal Supervision & Quality Review
+     5) Fast-Track Document Preparation & Police/Medical Coordination
+     6) Dedicated 1-on-1 Senior Case Manager Support
+7. **Side-by-Side Comparison Matrix ("Why Us vs Traditional Agencies vs Doing It Alone")**:
+   - A clean, modern HTML table or 3-column card comparison covering Approval Rate, Personalized Strategy, Turnaround Time, Milestone Pricing, and Dedicated Support.
+8. **"Wall of Love" (4 Detailed Client Case Studies & Testimonials)**:
+   - 4 authentic-sounding client success stories with client names, roles/locations, metrics (e.g. CRS jump or timeline), quotes, and 5-star ratings.
+9. **Transparent Investment & Milestone Pricing Overview**:
+   - A clear card presenting the transparent fee structure (e.g. Starting from ₹75,000, 100% milestone-based, no hidden costs).
+10. **Interactive FAQ Accordion (6 High-Value Objections)**:
+    - 6 detailed questions and answers handling top customer hesitation (timelines, job offer requirements, point cutoffs, payment milestones, eligibility guarantees, documentation checklists).
+    - Include the working inline toggle script:
+      \`<script>function toggleFaq(btn){const c=btn.nextElementSibling;const ic=btn.querySelector('.faq-icon');if(c)c.classList.toggle('hidden');if(ic)ic.classList.toggle('rotate-180');}</script>\`
+11. **Lead Qualification & Consultation Section**:
+    - An elevated, high-converting card enclosing EXACTLY this structural container:
+      '<div id="qualification-form-container" data-button-text="Claim Your Free Consultation"></div>'
+    - Do NOT write form elements inside; the platform injects them automatically.
+12. **Mobile Sticky Quick-Action Bar & Semantic Footer**:
+    - Sticky bottom bar visible on mobile (< 640px) with Call Now (\`tel:${cleanPhone}\`) and WhatsApp (\`https://wa.me/${cleanPhone}\`).
+    - Full footer with brand info, legal disclaimers, contact email, phone, and copyright notice.
 
 ### OUTPUT FORMAT:
-- Return ONLY the raw, complete, valid HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
+- Return ONLY valid HTML starting with "<!DOCTYPE html>" and ending with "</html>".
 - ABSOLUTELY DO NOT wrap the output in markdown code blocks (\`\`\`html). Output pure raw HTML string.`
             }
         } else {
             // Edit mode
-            systemPrompt = `You are a master front-end developer and Astro JS architect.
-Edit the provided landing page HTML strictly according to the user's instructions.
-User Instructions: "${instructions}"
-${imageUrls && imageUrls.length > 0 ? `Visual reference images attached by user: ${JSON.stringify(imageUrls)}. Incorporate visual fixes, layouts, or styling based on these references.` : ''}
+            const isExpansionRequested = 
+                /length|longer|extend|expand|short|more section|detailed|flesh out|add more|comprehensive/i.test(instructions || '') ||
+                (currentHtml && currentHtml.length < 16000)
+
+            systemPrompt = `You are a master front-end developer, Astro JS architect, and direct-response marketing expert.
+You are updating an existing landing page according to the user's instructions.
+
+USER INSTRUCTIONS:
+"${instructions}"
+
+PAGE CONTEXT & BRAND:
+* Offer/Product: "${resolvedProductName}"
+* Business Name: "${businessName}"
+* Context & Benefits: "${resolvedContext}"
+${contactInfoText}
+${propertyDataText}
+${realEstateSection}
+${youtubeEmbedSection}
+${themeDirectives}
+${imageUrls && imageUrls.length > 0 ? `* Attached Reference Images: ${JSON.stringify(imageUrls)}` : ''}
 
 CURRENT HTML:
 ${currentHtml}
 
+${isExpansionRequested ? `
+CRITICAL EXPANSION MANDATE:
+The user specifically requested a lengthy, expansive, and comprehensive landing page.
+Ensure the landing page is a rich, full-length presentation with ALL 12 sections:
+1. Sticky Navigation Bar
+2. Hormozi-style Dream-Outcome Hero Section with dual CTAs and badges
+3. Key Stats Proof Banner (4 metrics) and Authority Marquee
+4. Problem Deep-Dive (3 in-depth cards on why applicants struggle or get delayed)
+5. 4-Step Strategic Roadmap
+6. 6 In-Depth Feature & Deliverable Cards with icons
+7. Side-by-Side Comparison Table ("Why Us vs Others vs Doing It Alone")
+8. "Wall of Love" (4 detailed client case studies with star ratings)
+9. Transparent Investment & Milestone Pricing Overview
+10. 6 Interactive FAQs with working toggle script (\`toggleFaq\`)
+11. Qualification container: '<div id="qualification-form-container" data-button-text="..."></div>'
+12. Mobile Sticky Call/WhatsApp Bar & full Footer.
+` : `
+Apply the user's requested modifications accurately while preserving the existing layout, styles, and full-length structure.
+`}
+
 CRITICAL RULES:
-1. Preserve the structural container '<div id="qualification-form-container" ...></div>' and '<div id="business-products-container"></div>' (and all their attributes). Do NOT write form inputs inside qualification-form-container.
-2. If the user asks to change the button text, modify the 'data-button-text' attribute on '<div id="qualification-form-container" ...>'.
-3. Maintain all existing SEO meta tags, Google Fonts, Tailwind config, and Schema.org JSON-LD scripts unless explicitly instructed to update them.
-4. If updating styles or layout, ensure full responsiveness across mobile, tablet, and desktop.
-5. Return ONLY the raw, complete, valid updated HTML string starting with "<!DOCTYPE html>" and ending with "</html>".
-6. ABSOLUTELY DO NOT wrap the output in markdown code blocks. Output pure raw updated HTML.`
+1. Preserve the structural container '<div id="qualification-form-container" ...></div>' and '<div id="business-products-container"></div>' (and all their attributes).
+2. Keep <head> token-efficient (Google Fonts, Tailwind CDN, compact config, no bloated custom CSS).
+3. Budget tokens so you complete every section and ALWAYS terminate cleanly with "</body></html>".
+4. Return ONLY valid, complete HTML. ABSOLUTELY NO markdown code blocks (\`\`\`html). Output pure raw HTML string.`
         }
 
         const payload: any = {
@@ -549,6 +597,47 @@ CRITICAL RULES:
                 promptTokens = dsRes.promptTokens
                 completionTokens = dsRes.completionTokens
                 console.log(`[Lander API] DeepSeek Flash generation completed (${promptTokens} prompt tokens, ${completionTokens} completion tokens).`)
+
+                // If output was truncated before </html>, trigger seamless continuation to complete remaining sections
+                if (!aiRawResult.includes('</html>')) {
+                    console.log(`[Lander API] Output truncated before </html>. Executing seamless DeepSeek Flash continuation...`)
+                    try {
+                        const continuationPrompt = `You are a master front-end developer and Astro JS architect.
+You were generating this high-converting landing page in pure HTML, but your output reached the token limit right here:
+
+\`\`\`html
+${aiRawResult.slice(-1200)}
+\`\`\`
+
+CONTINUATION MANDATE:
+Continue generating the remaining sections starting EXACTLY from where you stopped.
+Ensure you complete:
+- Any in-progress section
+- Pricing / Offer breakdown
+- The 6-Question Interactive FAQ Accordion (with toggleFaq script)
+- The Lead Qualification container: '<div id="qualification-form-container" data-button-text="..."></div>'
+- The Mobile Sticky Call/WhatsApp bar and Semantic Footer
+- Terminate cleanly with </body></html>.
+
+Output ONLY raw HTML continuing from the cutoff. Do NOT repeat previous text. Do NOT wrap in markdown code blocks.`
+
+                        const contRes = await callDeepSeekWithUsage(continuationPrompt, {
+                            system: "You are a master front-end developer specializing in complete, high-converting landing pages.",
+                            maxTokens: 4096,
+                            temperature: 0.35,
+                            model: "deepseek-chat"
+                        })
+
+                        if (contRes.text) {
+                            aiRawResult += '\n' + contRes.text
+                            promptTokens += contRes.promptTokens
+                            completionTokens += contRes.completionTokens
+                            console.log(`[Lander API] Continuation succeeded. Added ${contRes.text.length} chars. Total length: ${aiRawResult.length}`)
+                        }
+                    } catch (contErr: any) {
+                        console.warn(`[Lander API] Continuation attempt failed: ${contErr.message}`)
+                    }
+                }
             } catch (dsErr: any) {
                 console.warn(`[Lander API] DeepSeek Flash failed, falling back to Gemini. Error: ${dsErr.message}`)
                 const geminiRes = await callGeminiWithUsage(systemPrompt, imageUrls)
@@ -577,35 +666,57 @@ CRITICAL RULES:
                 cleanedHtml = `<!DOCTYPE html>\n${cleanedHtml}`
             }
 
-            // GUARANTEE 1: Structural qualification-form-container presence
-            if (!cleanedHtml.includes('id="qualification-form-container"')) {
-                const containerSnippet = `\n<!-- Qualification Container Injected by Nobogent Studio -->\n<section id="inquiry" class="py-16 px-4 bg-slate-50 dark:bg-slate-900/50">\n    <div class="max-w-xl mx-auto">\n        <div id="qualification-form-container" data-page-type="${pageType}" data-button-text="Submit Details"></div>\n    </div>\n</section>\n`
-                if (cleanedHtml.includes('<footer')) {
-                    cleanedHtml = cleanedHtml.replace('<footer', `${containerSnippet}<footer`)
-                } else if (cleanedHtml.includes('</body>')) {
-                    cleanedHtml = cleanedHtml.replace('</body>', `${containerSnippet}</body>`)
-                } else {
-                    cleanedHtml += containerSnippet
-                }
-            }
+            // Auto-heal truncated HTML if model ended before closing tags
+            if (!cleanedHtml.includes('</html>')) {
+                console.warn(`[Lander API] Output was truncated by token limit. Healing and appending required closing sections...`);
+                // Strip dangling partial tag at the end (e.g. <span class="font-extrab)
+                cleanedHtml = cleanedHtml.replace(/<[^>]*$/, '').trim();
 
-            // GUARANTEE 2: Interactive FAQ Accordion Script
-            if (cleanedHtml.includes('toggleFaq') && !cleanedHtml.includes('function toggleFaq')) {
-                const faqScript = `\n<script>\nfunction toggleFaq(btn) {\n    const content = btn.nextElementSibling;\n    const icon = btn.querySelector('.faq-icon');\n    if (content) content.classList.toggle('hidden');\n    if (icon) icon.classList.toggle('rotate-180');\n}\n</script>\n`
-                if (cleanedHtml.includes('</body>')) {
-                    cleanedHtml = cleanedHtml.replace('</body>', `${faqScript}</body>`)
-                } else {
-                    cleanedHtml += faqScript
+                // Guarantee qualification form container
+                if (!cleanedHtml.includes('id="qualification-form-container"')) {
+                    cleanedHtml += `\n<!-- Qualification Container Injected by Nobogent Studio -->\n<section id="inquiry" class="py-16 px-4 bg-slate-50 dark:bg-slate-900/50">\n    <div class="max-w-xl mx-auto">\n        <div id="qualification-form-container" data-page-type="${pageType}" data-button-text="Submit Details"></div>\n    </div>\n</section>\n`;
                 }
-            }
 
-            // GUARANTEE 3: Interactive Modal / Scroll Helpers
-            if (cleanedHtml.includes('openQualificationModal') && !cleanedHtml.includes('function openQualificationModal')) {
-                const modalScript = `\n<script>\nfunction openQualificationModal() {\n    const el = document.getElementById('qualification-form-container') || document.getElementById('survey-wizard-container');\n    if (el) {\n        el.scrollIntoView({ behavior: 'smooth' });\n    } else if (typeof window.openModal === 'function') {\n        window.openModal();\n    }\n}\n</script>\n`
-                if (cleanedHtml.includes('</body>')) {
-                    cleanedHtml = cleanedHtml.replace('</body>', `${modalScript}</body>`)
-                } else {
-                    cleanedHtml += modalScript
+                // Guarantee FAQ script if toggleFaq is present
+                if (cleanedHtml.includes('toggleFaq') && !cleanedHtml.includes('function toggleFaq')) {
+                    cleanedHtml += `\n<script>\nfunction toggleFaq(btn) {\n    const content = btn.nextElementSibling;\n    const icon = btn.querySelector('.faq-icon');\n    if (content) content.classList.toggle('hidden');\n    if (icon) icon.classList.toggle('rotate-180');\n}\n</script>\n`;
+                }
+
+                // Guarantee mobile floating sticky bar
+                if (!cleanedHtml.includes(`tel:${cleanPhone}`)) {
+                    cleanedHtml += `\n<div class="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 sm:hidden z-40 flex gap-2">\n    <a href="tel:${cleanPhone}" class="flex-1 bg-slate-900 text-white text-xs font-bold py-3 rounded-xl text-center">Call Now</a>\n    <a href="https://wa.me/${cleanPhone}" target="_blank" class="flex-1 bg-emerald-600 text-white text-xs font-bold py-3 rounded-xl text-center">WhatsApp</a>\n</div>\n`;
+                }
+
+                cleanedHtml += `\n</body>\n</html>`;
+            } else {
+                // Document completed normally - ensure critical platform hooks are present
+                if (!cleanedHtml.includes('id="qualification-form-container"')) {
+                    const containerSnippet = `\n<!-- Qualification Container Injected by Nobogent Studio -->\n<section id="inquiry" class="py-16 px-4 bg-slate-50 dark:bg-slate-900/50">\n    <div class="max-w-xl mx-auto">\n        <div id="qualification-form-container" data-page-type="${pageType}" data-button-text="Submit Details"></div>\n    </div>\n</section>\n`
+                    if (cleanedHtml.includes('<footer')) {
+                        cleanedHtml = cleanedHtml.replace('<footer', `${containerSnippet}<footer`)
+                    } else if (cleanedHtml.includes('</body>')) {
+                        cleanedHtml = cleanedHtml.replace('</body>', `${containerSnippet}</body>`)
+                    } else {
+                        cleanedHtml += containerSnippet
+                    }
+                }
+
+                if (cleanedHtml.includes('toggleFaq') && !cleanedHtml.includes('function toggleFaq')) {
+                    const faqScript = `\n<script>\nfunction toggleFaq(btn) {\n    const content = btn.nextElementSibling;\n    const icon = btn.querySelector('.faq-icon');\n    if (content) content.classList.toggle('hidden');\n    if (icon) icon.classList.toggle('rotate-180');\n}\n</script>\n`
+                    if (cleanedHtml.includes('</body>')) {
+                        cleanedHtml = cleanedHtml.replace('</body>', `${faqScript}</body>`)
+                    } else {
+                        cleanedHtml += faqScript
+                    }
+                }
+
+                if (cleanedHtml.includes('openQualificationModal') && !cleanedHtml.includes('function openQualificationModal')) {
+                    const modalScript = `\n<script>\nfunction openQualificationModal() {\n    const el = document.getElementById('qualification-form-container') || document.getElementById('survey-wizard-container');\n    if (el) {\n        el.scrollIntoView({ behavior: 'smooth' });\n    } else if (typeof window.openModal === 'function') {\n        window.openModal();\n    }\n}\n</script>\n`
+                    if (cleanedHtml.includes('</body>')) {
+                        cleanedHtml = cleanedHtml.replace('</body>', `${modalScript}</body>`)
+                    } else {
+                        cleanedHtml += modalScript
+                    }
                 }
             }
 

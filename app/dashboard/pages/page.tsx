@@ -1272,10 +1272,19 @@ ${cleanContent}
             })();
             </script>
         `
+        const devicePreviewStyles = `
+            <style id="nobogent-preview-beautify">
+                /* Clean scrollbars for professional preview frame */
+                ::-webkit-scrollbar { width: 5px; height: 5px; }
+                ::-webkit-scrollbar-track { background: transparent; }
+                ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.4); border-radius: 9999px; }
+                ::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.7); }
+            </style>
+        `
         if (html.includes('</body>')) {
-            html = html.replace('</body>', `${editableScript}</body>`)
+            html = html.replace('</body>', `${devicePreviewStyles}${editableScript}</body>`)
         } else {
-            html = html + editableScript
+            html = html + devicePreviewStyles + editableScript
         }
 
         return html
@@ -1411,7 +1420,7 @@ ${cleanContent}
                             ))}
                             {actionLoading && (
                                 <div className="bg-white text-slate-800 border border-slate-200 rounded-2xl rounded-tl-none p-3 text-xs flex items-center gap-2 self-start mr-auto shadow-sm">
-                                    <Loader2 className="animate-spin text-blue-500 w-4 h-4" /> {isUploadingChatFiles ? "Uploading attachments..." : "Asking Gemini to update landing page styles..."}
+                                    <Loader2 className="animate-spin text-blue-500 w-4 h-4" /> {isUploadingChatFiles ? "Uploading attachments..." : "Updating landing page with DeepSeek Flash..."}
                                 </div>
                             )}
                         </div>
@@ -1622,19 +1631,73 @@ ${cleanContent}
                         </div>
 
                         {editorView === 'preview' ? (
-                            <div className="flex-1 overflow-auto flex items-center justify-center bg-slate-200/50 rounded-[1.5rem] p-2 relative">
-                                <div className={`transition-all duration-300 bg-white shadow-xl overflow-hidden ${
-                                    previewDevice === 'mobile'
-                                        ? 'w-[375px] h-[667px] max-h-full rounded-[2.5rem] border-[8px] border-slate-900 shadow-2xl relative my-auto'
-                                        : previewDevice === 'tablet'
-                                            ? 'w-[768px] h-full max-h-full rounded-[2rem] border-[8px] border-slate-900 shadow-2xl relative my-auto'
-                                            : 'w-full h-full rounded-[1.5rem] border border-slate-200'
-                                }`}>
-                                    <iframe 
-                                        srcDoc={getPreviewHtml(activeEditorPage)} 
-                                        className="w-full h-full border-none"
-                                    />
-                                </div>
+                            <div className="flex-1 overflow-auto flex items-center justify-center bg-slate-200/60 rounded-[1.5rem] p-4 relative">
+                                {previewDevice === 'mobile' ? (
+                                    <div className="relative my-auto flex flex-col items-center">
+                                        {/* iPhone Physical Side Buttons */}
+                                        <div className="absolute -left-[5px] top-20 w-[4px] h-6 bg-slate-700 rounded-l-sm shadow-xs"></div>
+                                        <div className="absolute -left-[5px] top-30 w-[4px] h-10 bg-slate-700 rounded-l-sm shadow-xs"></div>
+                                        <div className="absolute -left-[5px] top-44 w-[4px] h-10 bg-slate-700 rounded-l-sm shadow-xs"></div>
+                                        <div className="absolute -right-[5px] top-32 w-[4px] h-14 bg-slate-700 rounded-r-sm shadow-xs"></div>
+
+                                        {/* iPhone 16 Pro Titanium Chassis */}
+                                        <div className="w-[393px] h-[810px] max-h-[calc(100vh-220px)] rounded-[50px] p-[10px] bg-gradient-to-b from-slate-700 via-slate-800 to-slate-950 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,255,255,0.15)_inset] relative flex flex-col items-center transition-all duration-300">
+                                            {/* Dynamic Island */}
+                                            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-28 h-6 bg-black rounded-full z-30 flex items-center justify-between px-3 pointer-events-none shadow-sm">
+                                                <div className="w-2.5 h-2.5 rounded-full bg-slate-900 ring-1 ring-slate-800/80 flex items-center justify-center">
+                                                    <div className="w-1 h-1 rounded-full bg-blue-950"></div>
+                                                </div>
+                                                <div className="w-2 h-2 rounded-full bg-slate-950"></div>
+                                            </div>
+
+                                            {/* Screen Bezel */}
+                                            <div className="w-full h-full bg-white rounded-[40px] overflow-hidden relative shadow-inner flex flex-col">
+                                                <iframe 
+                                                    srcDoc={getPreviewHtml(activeEditorPage)} 
+                                                    className="w-full h-full border-none"
+                                                />
+                                                {/* Home Indicator */}
+                                                <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-32 h-1 bg-slate-900/35 rounded-full z-30 pointer-events-none"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : previewDevice === 'tablet' ? (
+                                    <div className="relative my-auto flex flex-col items-center">
+                                        {/* iPad Pro Chassis */}
+                                        <div className="w-[768px] h-[900px] max-h-[calc(100vh-220px)] rounded-[32px] p-[10px] bg-slate-900 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.1)_inset] relative flex flex-col items-center transition-all duration-300">
+                                            {/* Camera Pinhole */}
+                                            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-slate-800 ring-1 ring-slate-700 pointer-events-none"></div>
+                                            <div className="w-full h-full bg-white rounded-[24px] overflow-hidden relative shadow-inner">
+                                                <iframe 
+                                                    srcDoc={getPreviewHtml(activeEditorPage)} 
+                                                    className="w-full h-full border-none"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    /* Desktop Studio Browser Window */
+                                    <div className="w-full h-full rounded-[1.5rem] border border-slate-200 shadow-xl bg-white overflow-hidden flex flex-col">
+                                        <div className="bg-slate-100/90 border-b border-slate-200/80 px-4 py-2 flex items-center justify-between gap-3 shrink-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80"></span>
+                                                <span className="w-2.5 h-2.5 rounded-full bg-amber-400/80"></span>
+                                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
+                                            </div>
+                                            <div className="flex-1 max-w-sm mx-auto bg-white border border-slate-200/80 rounded-md px-3 py-1 flex items-center justify-center gap-1.5 text-[11px] text-slate-500 font-medium shadow-2xs truncate">
+                                                <span className="text-[10px] text-emerald-600 font-bold">🔒</span>
+                                                <span className="text-slate-700 font-semibold">{customDomain || 'app.nobogent.com'}/shared/{activeEditorPage.slug}</span>
+                                            </div>
+                                            <div className="w-12"></div>
+                                        </div>
+                                        <div className="flex-1 overflow-hidden relative">
+                                            <iframe 
+                                                srcDoc={getPreviewHtml(activeEditorPage)} 
+                                                className="w-full h-full border-none"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="flex-1 rounded-[1.5rem] overflow-hidden border border-slate-200 shadow-inner relative bg-slate-950 flex flex-col p-2">
