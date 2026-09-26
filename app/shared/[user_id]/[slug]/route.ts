@@ -1600,6 +1600,7 @@ export async function GET(request: Request, { params }: RouteProps) {
 
                             let nameVal = '';
                             let phoneVal = '';
+                            let emailVal = '';
                             let cityVal = '';
                             let budgetVal = '';
 
@@ -1612,15 +1613,18 @@ export async function GET(request: Request, { params }: RouteProps) {
 
                                 if ((type === 'radio' || type === 'checkbox') && !input.checked) return;
 
-                                const isPhone = type === 'tel' || placeholder.includes('phone') || placeholder.includes('number') || placeholder.includes('whatsapp') || nameAttr.includes('phone') || nameAttr.includes('number') || nameAttr.includes('whatsapp');
-                                const isCity = placeholder.includes('city') || placeholder.includes('location') || placeholder.includes('mohali') || nameAttr.includes('city') || nameAttr.includes('location');
-                                const isBudget = placeholder.includes('budget') || placeholder.includes('plot') || placeholder.includes('size') || nameAttr.includes('budget') || nameAttr.includes('size') || nameAttr.includes('plot');
-                                const isName = !isPhone && !isCity && !isBudget && (type === 'text' || placeholder.includes('name') || placeholder.includes('john') || nameAttr.includes('name'));
+                                const idAttr = (input.id || '').toLowerCase();
+                                const isPhone = type === 'tel' || placeholder.includes('phone') || placeholder.includes('number') || placeholder.includes('whatsapp') || nameAttr.includes('phone') || nameAttr.includes('number') || nameAttr.includes('whatsapp') || idAttr.includes('phone');
+                                const isEmail = type === 'email' || val.includes('@') || placeholder.includes('email') || nameAttr.includes('email') || idAttr.includes('email');
+                                const isCity = !isPhone && !isEmail && (placeholder.includes('city') || placeholder.includes('location') || placeholder.includes('country') || placeholder.includes('dubai') || placeholder.includes('mohali') || nameAttr.includes('city') || nameAttr.includes('location') || idAttr.includes('city'));
+                                const isBudget = !isPhone && !isEmail && !isCity && (placeholder.includes('budget') || placeholder.includes('plot') || placeholder.includes('size') || nameAttr.includes('budget') || nameAttr.includes('size') || nameAttr.includes('plot') || idAttr.includes('budget'));
+                                const isName = !isPhone && !isEmail && !isCity && !isBudget && !val.includes('@') && (nameAttr === 'name' || nameAttr.includes('name') || placeholder.includes('full name') || placeholder.includes('legal name') || placeholder.includes('first name') || placeholder.includes('john') || idAttr.includes('name') || (!nameVal && type === 'text'));
 
                                 if (isPhone) phoneVal = val;
+                                else if (isEmail) emailVal = val;
                                 else if (isCity) cityVal = val;
                                 else if (isBudget) budgetVal = val;
-                                else if (isName) nameVal = val;
+                                else if (isName && val && !val.includes('@')) nameVal = val;
                             });
 
                             if (!phoneVal) {
@@ -1637,6 +1641,7 @@ export async function GET(request: Request, { params }: RouteProps) {
                                 slug: '${slug}',
                                 name: nameVal || 'Prospect',
                                 phone: phoneVal,
+                                email: emailVal || '',
                                 city: cityVal || '',
                                 custom_question_0: budgetVal ? ('Selected Plot Size: ' + budgetVal) : '',
                                 eventId: eventId
@@ -1688,7 +1693,7 @@ export async function GET(request: Request, { params }: RouteProps) {
                         // Clone-replace each form to strip any AI-generated listeners (e.g. "Sending..." freeze)
                         const forms = Array.from(document.querySelectorAll('form'));
                         forms.forEach(function(form) {
-                            if (form.id && (form.id.startsWith('eligibility-') || form.id.startsWith('survey-'))) return;
+                            if (form.id && (form.id.startsWith('eligibility-') || form.id.startsWith('survey-') || form.hasAttribute('data-no-auto-hook'))) return;
                             
                             const clone = form.cloneNode(true);
                             clone.removeAttribute('action');
