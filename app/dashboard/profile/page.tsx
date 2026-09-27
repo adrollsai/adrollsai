@@ -2084,12 +2084,27 @@ export default function ProfilePage() {
                   <p className="text-xs text-slate-500 font-medium">Set slot durations and availability for appointment bookings.</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    const bookingUrl = domainData.domain 
+                      ? `https://${domainData.domain}/booking`
+                      : `${typeof window !== 'undefined' ? window.location.origin : ''}/shared/${targetUserId || userId}/booking`
+                    navigator.clipboard.writeText(bookingUrl)
+                    toast.success('Direct Booking Link copied to clipboard!')
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 px-3.5 py-2 rounded-full text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                  title="Copy direct booking link to share"
+                >
+                  <Copy size={13} />
+                  <span>Copy Link</span>
+                </button>
                 <a 
                   href={
                     domainData.domain 
-                      ? `https://${domainData.domain}/booking/preview`
-                      : `${typeof window !== 'undefined' ? window.location.origin : ''}/shared/${targetUserId || userId}/booking/preview`
+                      ? `https://${domainData.domain}/booking`
+                      : `${typeof window !== 'undefined' ? window.location.origin : ''}/shared/${targetUserId || userId}/booking`
                   }
                   target="_blank"
                   rel="noopener noreferrer"
@@ -2108,6 +2123,50 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-6">
+              {/* Public Direct Booking Link Banner */}
+              <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Your Public Booking Page Link</span>
+                    <span className="px-2 py-0.2 bg-emerald-50 text-emerald-600 border border-emerald-150 rounded-full text-[10px] font-bold">Live</span>
+                  </div>
+                  <span className="text-xs font-semibold text-slate-800 break-all select-all font-mono block">
+                    {domainData.domain 
+                      ? `https://${domainData.domain}/booking`
+                      : `${typeof window !== 'undefined' ? window.location.origin : ''}/shared/${targetUserId || userId}/booking`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const bookingUrl = domainData.domain 
+                        ? `https://${domainData.domain}/booking`
+                        : `${typeof window !== 'undefined' ? window.location.origin : ''}/shared/${targetUserId || userId}/booking`
+                      navigator.clipboard.writeText(bookingUrl)
+                      toast.success('Direct Booking Link copied to clipboard!')
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                  >
+                    <Copy size={12} />
+                    <span>Copy Link</span>
+                  </button>
+                  <a
+                    href={
+                      domainData.domain 
+                        ? `https://${domainData.domain}/booking`
+                        : `${typeof window !== 'undefined' ? window.location.origin : ''}/shared/${targetUserId || userId}/booking`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs active:scale-95"
+                  >
+                    <span>Open Page</span>
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+
               {/* Enable Booking Toggle */}
               <div className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100">
                 <div>

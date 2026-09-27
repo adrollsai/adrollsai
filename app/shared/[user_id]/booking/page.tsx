@@ -65,11 +65,11 @@ export default function PublicDirectBooking() {
 
         setProfile(data.profile)
 
-        // Pre-select tomorrow's date
-        const tomorrow = new Date()
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        const tomorrowStr = tomorrow.toISOString().split('T')[0]
-        setSelectedDate(tomorrowStr)
+        // Pre-select first available date (skipping Sundays)
+        const availableDates = getNext7Days()
+        if (availableDates.length > 0) {
+          setSelectedDate(availableDates[0].value)
+        }
 
       } catch (err: any) {
         console.error('[PUBLIC BOOKING] Failed to load profile:', err)
@@ -158,12 +158,15 @@ export default function PublicDirectBooking() {
   const getNext7Days = () => {
     const dates = []
     const now = new Date()
-    for (let i = 1; i <= 8; i++) {
+    for (let i = 1; i <= 10; i++) {
       const d = new Date()
       d.setDate(now.getDate() + i)
       if (d.getDay() === 0) continue // Skip Sunday
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
       dates.push({
-        value: d.toISOString().split('T')[0],
+        value: `${year}-${month}-${day}`,
         label: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
       })
     }
