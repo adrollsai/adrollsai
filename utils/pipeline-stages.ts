@@ -230,7 +230,6 @@ export function categorizeLeadStage(
 
   let stageStr = ''
   let cf: any = null
-  let hasDnpOrActiveFollowup = false
 
   if (typeof rawStageOrLead === 'object' && rawStageOrLead !== null) {
     stageStr = (rawStageOrLead.pipeline_stage || rawStageOrLead.status || '').trim()
@@ -240,14 +239,6 @@ export function categorizeLeadStage(
     }
     if (!stageStr && cf) {
       stageStr = (cf.pipeline_stage || cf.status || cf.lead_status || cf.client_status || '').trim()
-    }
-
-    const dnpCount = rawStageOrLead.dnp_count || cf?.dnp_count || 0
-    const isDnp = rawStageOrLead.last_call_dnp === true || cf?.last_call_dnp === true
-    const hasNextFollowup = !!rawStageOrLead.next_followup || !!cf?.next_action_date
-
-    if (dnpCount > 0 || isDnp || hasNextFollowup) {
-      hasDnpOrActiveFollowup = true
     }
   } else if (typeof rawStageOrLead === 'string') {
     stageStr = rawStageOrLead.trim()
@@ -261,18 +252,31 @@ export function categorizeLeadStage(
     return 'trash'
   }
 
-  // 2. Match against configured customStages
+  // 2. Fresh stages (New Lead, Fresh, New, Unprocessed, Uncontacted) - always in Fresh section!
+  // Reopened leads get to the Fresh section with all their history and next actions intact.
+  const isFreshStageName = (
+    normalized === 'new' ||
+    normalized === 'new lead' ||
+    normalized === 'new inquiry' ||
+    normalized === 'unprocessed' ||
+    normalized === 'uncontacted' ||
+    normalized === 'fresh' ||
+    normalized === 'new_lead'
+  )
+
+  if (isFreshStageName) {
+    return 'fresh'
+  }
+
+  // 3. Match against configured customStages (respect explicitly assigned stage)
   if (Array.isArray(customStages) && customStages.length > 0) {
     const matched = customStages.find(s => s.name.trim().toLowerCase() === normalized || s.id.toLowerCase() === normalized)
     if (matched) {
-      if (matched.category === 'fresh') {
-        return hasDnpOrActiveFollowup ? 'ongoing' : 'fresh'
-      }
       return matched.category
     }
   }
 
-  // 3. Check for Not Interested / Lost heuristic (including legacy terms)
+  // 4. Check for Not Interested / Lost (legacy stage names)
   if (
     normalized.includes('lost') ||
     normalized.includes('ni') ||
@@ -291,18 +295,6 @@ export function categorizeLeadStage(
     normalized.includes('unresponsive')
   ) {
     return 'not_interested'
-  }
-
-  // 4. Check for Fresh (New Lead, Fresh, New, Unprocessed, Uncontacted)
-  if (
-    normalized === 'new' ||
-    normalized === 'new lead' ||
-    normalized === 'new inquiry' ||
-    normalized === 'unprocessed' ||
-    normalized === 'uncontacted' ||
-    normalized === 'fresh'
-  ) {
-    return hasDnpOrActiveFollowup ? 'ongoing' : 'fresh'
   }
 
   // 5. Default fallback to ongoing (contacted, meeting, visit, qualified, proposal, deal, negotiation)

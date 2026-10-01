@@ -3558,6 +3558,10 @@ RULES:
               const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
               const updatedSources = [...previousSources, currentSourceId];
 
+              if (!cf.original_created_at) {
+                cf.original_created_at = existingLead.created_at;
+              }
+
               cf = {
                 ...cf,
                 is_instant_form: true,
@@ -3565,29 +3569,33 @@ RULES:
                 reopened_count: reopenedCount,
                 reopened_sources: updatedSources,
                 last_reopened_at: new Date().toISOString(),
-                last_reopened_source: currentSourceId
+                last_reopened_source: currentSourceId,
+                meta_ad_origin: customFields?.meta_ad_origin || cf.meta_ad_origin
               };
 
+              const newLeadTimestamp = fbLead.created_time || new Date().toISOString();
               const updatePayloadObj: Record<string, any> = {
                 custom_fields: cf,
-                reopened_count: reopenedCount
+                pipeline_stage: 'New Lead',
+                status: 'New Lead',
+                created_at: newLeadTimestamp
               };
-              if (leadgen_id && !existingLead.facebook_lead_id) {
+              if (leadgen_id) {
                 updatePayloadObj.facebook_lead_id = leadgen_id;
               }
-              if (fbLead.form_id && !existingLead.form_id) {
+              if (fbLead.form_id) {
                 updatePayloadObj.form_id = fbLead.form_id;
               }
-              if (campaignId && !existingLead.campaign_id) {
+              if (campaignId) {
                 updatePayloadObj.campaign_id = campaignId;
               }
-              if (adCampaignString && !existingLead.ad_name) {
+              if (adCampaignString) {
                 updatePayloadObj.ad_name = adCampaignString;
               }
-              if (formName && !existingLead.form_name) {
+              if (formName) {
                 updatePayloadObj.form_name = formName;
               }
-              if (!existingLead.assigned_to && assignedAgentId) {
+              if (assignedAgentId) {
                 updatePayloadObj.assigned_to = assignedAgentId;
               }
 
@@ -3596,11 +3604,11 @@ RULES:
                 .update(updatePayloadObj)
                 .eq('id', existingLead.id);
 
-              const reopenDesc = `The lead was reopened from Facebook Ads\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${currentSourceId}\nReopen Count : ${reopenedCount}\nCurrent Stage : ${existingLead.pipeline_stage || 'New'}`;
+              const reopenDesc = `The lead was reopened from Facebook Ads\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${currentSourceId}\nReopen Count : ${reopenedCount}\nCurrent Stage : New Lead`;
 
               await supabaseAdmin.from('lead_history').insert({
                 lead_id: existingLead.id,
-                user_id: existingLead.assigned_to || existingLead.user_id,
+                user_id: assignedAgentId || existingLead.assigned_to || existingLead.user_id,
                 action_type: 'REOPENED',
                 performed_by: 'System / Facebook',
                 actor_name: 'Facebook Ads',
@@ -3616,6 +3624,27 @@ RULES:
                 },
                 created_at: new Date().toISOString()
               });
+
+              // Multi-channel notifications for reopened lead
+              const cleanSource = (adCampaignString || 'Meta Ads').split(' / ')[0];
+              sendAdminMultiChannelNotification({
+                ownerUserId: profile.id,
+                title: "🔄 Reopened Facebook Lead!",
+                body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
+                url: `/dashboard/crm/${existingLead.id}`,
+                type: 'new_lead'
+              }).catch(() => {});
+
+              const notifAgent = assignedAgentId || existingLead.assigned_to;
+              if (notifAgent && notifAgent !== profile.id) {
+                sendAdminMultiChannelNotification({
+                  ownerUserId: notifAgent,
+                  title: "🔄 Reopened Lead Assigned to You!",
+                  body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
+                  url: `/dashboard/crm/${existingLead.id}`,
+                  type: 'new_lead'
+                }).catch(() => {});
+              }
 
               console.log(`[Facebook Webhook] Lead ${existingLead.id} reopened (${reopenedCount} times) from ${currentSourceId}`);
               continue;

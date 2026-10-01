@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   // Get Page & Ad Account Credentials
   const { data: profile } = await supabase
     .from('profiles')
-    .select('selected_page_token, selected_page_id, facebook_token, ad_account_id, parent_id, agency_id')
+    .select('selected_page_token, selected_page_id, facebook_token, ad_account_id, parent_id, agency_id, business_info')
     .eq('id', targetUserId)
     .single()
 
@@ -55,7 +55,26 @@ export async function GET(request: Request) {
   }
 
   try {
-    const forms = await fetchLeadForms(profile.selected_page_token, profile.selected_page_id)
+    const pagesMap = new Map<string, string>();
+    if (profile.selected_page_id && profile.selected_page_token) {
+      pagesMap.set(String(profile.selected_page_id), profile.selected_page_token);
+    }
+    try {
+      const bInfo = typeof profile.business_info === 'string' ? JSON.parse(profile.business_info) : (profile.business_info || {});
+      if (Array.isArray(bInfo.selected_pages)) {
+        for (const sp of bInfo.selected_pages) {
+          if (sp.id && (sp.access_token || profile.selected_page_token || profile.facebook_token)) {
+            pagesMap.set(String(sp.id), sp.access_token || profile.selected_page_token || profile.facebook_token);
+          }
+        }
+      }
+    } catch (e) {}
+
+    const formsPromises = Array.from(pagesMap.entries()).map(([pId, pToken]) =>
+      fetchLeadForms(pToken, pId).catch(() => [])
+    );
+    const formsArrays = await Promise.all(formsPromises);
+    const forms = formsArrays.flat();
 
     // Resolve Facebook Token and Ad Account ID for active ads lookup
     let fbToken = profile.facebook_token;

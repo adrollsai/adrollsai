@@ -871,7 +871,7 @@ export default function CRMPage() {
       const impersonateId = urlParams.get('impersonate')
 
       // Get profile for role resolution
-      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, enable_distribution, ad_account_id, auto_call_new_leads, badges').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, full_name, enable_distribution, ad_account_id, auto_call_new_leads, badges').eq('id', user.id).single()
       const currentRole = (profile?.role as any) || 'admin'
       setRole(currentRole)
       setAutoCallNewLeads(!!profile?.auto_call_new_leads)
@@ -1047,7 +1047,7 @@ export default function CRMPage() {
             }
             setTeam(finalTeam)
           } else {
-            setTeam([{ id: user.id, business_name: profile?.business_name || 'You' }])
+            setTeam([{ id: user.id, business_name: profile?.business_name || profile?.full_name || 'You', full_name: profile?.full_name || profile?.business_name || 'You' }])
           }
         } catch (bgErr) {}
       })()

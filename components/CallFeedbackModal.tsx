@@ -13,6 +13,7 @@ interface CallFeedbackModalProps {
     id: string
     name: string
     phone?: string
+    status?: string
     pipeline_stage?: string
     dnp_count?: number
   } | null

@@ -73,7 +73,7 @@ export async function GET(request: Request) {
 
   try {
     // Nested Graph API call: Fetch Campaign, its Ad Sets, its Ads, and dynamic insights (delivery stats) for each
-    const fields = 'id,name,status,objective,daily_budget,lifetime_budget,budget_remaining,insights.date_preset(maximum){spend,impressions,clicks,actions},adsets{id,name,status,destination_type,promoted_object,daily_budget,lifetime_budget,insights.date_preset(maximum){spend,impressions,clicks,actions},optimization_goal,billing_event,targeting},ads{id,name,status,adset_id,creative{id,name,image_url,thumbnail_url,call_to_action_type,object_story_spec},insights.date_preset(maximum){spend,impressions,clicks,actions}}';
+    const fields = 'id,name,status,objective,daily_budget,lifetime_budget,budget_remaining,insights.date_preset(maximum){spend,impressions,clicks,actions},adsets{id,name,status,destination_type,promoted_object,daily_budget,lifetime_budget,insights.date_preset(maximum){spend,impressions,clicks,actions},optimization_goal,billing_event,targeting},ads{id,name,status,adset_id,creative{id,name,title,body,image_url,thumbnail_url,call_to_action_type,object_story_spec,asset_feed_spec},insights.date_preset(maximum){spend,impressions,clicks,actions}}';
     const fbUrl = `${FB_GRAPH_URL}/${campaignId}?fields=${fields}&access_token=${token}`;
 
     const response = await fetch(fbUrl);
@@ -203,14 +203,22 @@ export async function GET(request: Request) {
         ? (videoSourceUrl || ad.creative?.image_url || ad.creative?.thumbnail_url || '')
         : (ad.creative?.image_url || ad.creative?.thumbnail_url || linkData.picture || '');
       
-      // Extract copy from either link_data or video_data
-      const primaryText = linkData.message || videoData.message || '';
-      const headline = linkData.name || videoData.title || '';
-      const description = linkData.description || videoData.link_description || '';
-      const linkUrl = linkData.link || videoData.call_to_action?.value?.link || linkData.call_to_action?.value?.link || '';
-      const leadFormId = linkData.call_to_action?.value?.lead_gen_form_id || videoData.call_to_action?.value?.lead_gen_form_id || '';
+      // Extract copy from either link_data, video_data, asset_feed_spec, or root creative
+      const assetFeed = ad.creative?.asset_feed_spec || {};
+      const assetBody = Array.isArray(assetFeed.bodies) && assetFeed.bodies[0]?.text;
+      const assetTitle = Array.isArray(assetFeed.titles) && assetFeed.titles[0]?.text;
+      const assetDesc = Array.isArray(assetFeed.descriptions) && assetFeed.descriptions[0]?.text;
+      const assetLinkUrl = Array.isArray(assetFeed.link_urls) && assetFeed.link_urls[0]?.website_url;
+      const assetCta = Array.isArray(assetFeed.call_to_actions) && assetFeed.call_to_actions[0];
+      const assetFormId = assetCta?.value?.lead_gen_form_id;
+
+      const primaryText = linkData.message || videoData.message || ad.creative?.body || assetBody || '';
+      const headline = linkData.name || videoData.title || ad.creative?.title || assetTitle || '';
+      const description = linkData.description || videoData.link_description || assetDesc || '';
+      const linkUrl = linkData.link || videoData.call_to_action?.value?.link || linkData.call_to_action?.value?.link || assetLinkUrl || '';
+      const leadFormId = linkData.call_to_action?.value?.lead_gen_form_id || videoData.call_to_action?.value?.lead_gen_form_id || assetFormId || '';
       const pageId = storySpec.page_id || '';
-      const ctaType = linkData.call_to_action?.type || videoData.call_to_action?.type || ad.creative?.call_to_action_type || '';
+      const ctaType = linkData.call_to_action?.type || videoData.call_to_action?.type || assetCta?.type || ad.creative?.call_to_action_type || '';
 
       return {
         id: ad.id,

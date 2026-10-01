@@ -321,6 +321,8 @@ export async function POST(
                 .from('leads')
                 .update({
                     custom_fields: cf,
+                    pipeline_stage: 'New Lead',
+                    status: 'New Lead',
                     budget: budget ? (typeof budget === 'string' ? budget : String(budget)) : undefined,
                     updated_at: new Date().toISOString()
                 })

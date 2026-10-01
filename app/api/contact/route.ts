@@ -190,6 +190,8 @@ export async function POST(request: Request) {
           .from('leads')
           .update({
             custom_fields: cf,
+            pipeline_stage: 'New Lead',
+            status: 'New Lead',
             budget: budget || undefined,
             timeline: timeline || undefined,
             updated_at: new Date().toISOString()

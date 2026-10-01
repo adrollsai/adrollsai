@@ -144,7 +144,9 @@ export async function POST(request: Request) {
                 await supabase
                     .from('leads')
                     .update({
-                        custom_fields: JSON.stringify(cf),
+                        pipeline_stage: 'New Lead',
+                        status: 'New Lead',
+                        custom_fields: cf,
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', existingLead.id);

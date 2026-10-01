@@ -249,7 +249,13 @@ export default function UpdateFollowupModal({
       }
     }
 
-    const effectiveStage = (!isDnp && (leadStage === 'New Lead' || leadStage === 'New' || leadStage === 'Fresh')) ? 'Contacted' : leadStage
+    const isCurrentFresh = (
+      lead.status === 'New Lead' || lead.status === 'New' || lead.status === 'Fresh' ||
+      lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.pipeline_stage === 'Fresh'
+    )
+    const effectiveStage = isDnp ? (isCurrentFresh ? 'Contacted' : (lead.pipeline_stage || lead.status || 'Contacted')) : leadStage
+    const effectiveStatus = effectiveStage
+    const effectivePipelineStage = effectiveStage
 
     const payload = {
       action: 'update_followup',
@@ -257,8 +263,8 @@ export default function UpdateFollowupModal({
       isDnp,
       followupType,
       followupDate,
-      leadStatus: isDnp ? (lead.status || lead.pipeline_stage || 'Contacted') : effectiveStage,
-      pipelineStage: isDnp ? (lead.pipeline_stage || lead.status || 'Contacted') : effectiveStage,
+      leadStatus: effectiveStatus,
+      pipelineStage: effectivePipelineStage,
       clientStatus: isDnp ? lead.client_status : clientStatus,
       propertyId: selectedPropertyId || null,
       budget: budget || null,
@@ -275,7 +281,9 @@ export default function UpdateFollowupModal({
       let sessionToken: string | null = null
       let currentUserId: string | null = null
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        const sessionPromise = supabase.auth.getSession()
+        const sessionTimeout = new Promise<any>((resolve) => setTimeout(() => resolve({ data: { session: null } }), 2500))
+        const { data: { session } } = await Promise.race([sessionPromise, sessionTimeout])
         if (session) {
           sessionToken = session.access_token
           currentUserId = session.user?.id || null
@@ -287,15 +295,21 @@ export default function UpdateFollowupModal({
 
       let saveSuccess = false
 
+      // Try API route with a strict 12-second timeout so poor mobile connections never hang indefinitely
       try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 12000)
+
         const res = await fetch('/api/crm/followup', {
           method: 'POST',
           headers,
+          signal: controller.signal,
           body: JSON.stringify({
             ...payload,
             userId: currentUserId || lead.assigned_to || lead.user_id
           })
         })
+        clearTimeout(timer)
 
         if (res.ok) {
           saveSuccess = true
@@ -307,12 +321,12 @@ export default function UpdateFollowupModal({
         }
       } catch (fetchErr: any) {
         console.warn('[UpdateFollowupModal] API route fetch failed, falling back to direct Supabase update:', fetchErr)
-        if (fetchErr.message && !fetchErr.message.includes('Failed to fetch') && !fetchErr.message.includes('NetworkError') && !fetchErr.message.includes('fetch')) {
+        if (fetchErr.name !== 'AbortError' && fetchErr.message && !fetchErr.message.includes('Failed to fetch') && !fetchErr.message.includes('NetworkError') && !fetchErr.message.includes('fetch') && !fetchErr.message.includes('abort')) {
           throw fetchErr
         }
       }
 
-      // Resilient Direct Supabase Fallback if API route had connection error
+      // Resilient Direct Supabase Fallback if API route had connection error or timed out
       if (!saveSuccess) {
         console.log('[UpdateFollowupModal] Executing resilient direct Supabase update...')
         
@@ -359,10 +373,16 @@ export default function UpdateFollowupModal({
         if (budget) directUpdate.budget = budget
         if (assignedTo) directUpdate.assigned_to = assignedTo
 
-        const { error: dbErr } = await supabase
+        const dbUpdatePromise = supabase
           .from('leads')
           .update(directUpdate)
           .eq('id', lead.id)
+
+        const dbTimeout = new Promise<any>((_, reject) => 
+          setTimeout(() => reject(new Error('Database update timed out. Please check your network connection.')), 8000)
+        )
+
+        const { error: dbErr } = await Promise.race([dbUpdatePromise, dbTimeout])
 
         if (dbErr) {
           throw new Error(dbErr.message || 'Failed to save followup to database.')
@@ -401,7 +421,8 @@ export default function UpdateFollowupModal({
       if (onSuccess) onSuccess(updatedPayload)
       onClose()
     } catch (err: any) {
-      setError(err.message || 'An error occurred while saving.')
+      console.error('[UpdateFollowupModal] Save error:', err)
+      setError(err.message || 'Failed to save followup. Please check your internet connection and try again.')
     } finally {
       setLoading(false)
     }
@@ -606,11 +627,10 @@ export default function UpdateFollowupModal({
               {/* Followup Detail / Remarks */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Followup Detail & Key Discussion Points <span className="text-rose-500">*</span>
+                  Followup Detail & Key Discussion Points <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
                 <textarea
                   rows={3}
-                  required={!isDnp}
                   placeholder="Enter notes on what was discussed during the call, client requirements, timeline, etc."
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
@@ -806,7 +826,7 @@ export default function UpdateFollowupModal({
                     >
                       <option value="">Me (Current User)</option>
                       {teamMembers.map(m => (
-                        <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+                        <option key={m.id} value={m.id}>{m.full_name || m.business_name || m.email || 'Team Member'}</option>
                       ))}
                     </select>
                   </div>

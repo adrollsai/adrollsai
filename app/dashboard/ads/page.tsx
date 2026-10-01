@@ -731,8 +731,16 @@ export default function AdsPage() {
           setMetaLeadForms(cachedMetaForms);
 
            const leadCounts: Record<string, number> = {};
-           cachedLeads.forEach((l: any) => {
-               if (l.campaign_id) leadCounts[l.campaign_id] = (leadCounts[l.campaign_id] || 0) + 1;
+           cachedCampaigns.forEach((camp: Campaign) => {
+               const matched = cachedLeads.filter((l: any) => {
+                   if (l.campaign_id && String(l.campaign_id) === String(camp.id)) return true;
+                   if (camp.name && (
+                       (l.ad_name && l.ad_name.toLowerCase().includes(camp.name.toLowerCase())) ||
+                       (l.form_name && l.form_name.toLowerCase().includes(camp.name.toLowerCase()))
+                   )) return true;
+                   return false;
+               });
+               leadCounts[camp.id] = matched.length;
            });
            setCampaignLeadCounts(leadCounts);
 
@@ -795,7 +803,7 @@ export default function AdsPage() {
               console.error("Failed to load properties from API", e);
               return { properties: [] };
           }),
-          supabase.from('leads').select('campaign_id, ad_name, form_name').in('user_id', effectiveUserIds),
+          supabase.from('leads').select('campaign_id, ad_name, form_name').in('user_id', effectiveUserIds).order('created_at', { ascending: false }).limit(4000),
           pageQuery.order('created_at', { ascending: false }),
           formQuery.order('created_at', { ascending: false }),
           fetch(`/api/assets${impersonateId ? `?impersonate=${impersonateId}` : ''}${maxAssetTime && !force ? `${impersonateId ? '&' : '?'}since=${encodeURIComponent(maxAssetTime)}` : ''}`).then(r => r.json()).catch(e => {

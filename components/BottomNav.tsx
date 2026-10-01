@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers } from 'lucide-react'
+import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers, Bot } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -13,6 +13,7 @@ export default function BottomNav() {
 
   const [showDistribute, setShowDistribute] = useState(false)
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent' | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [clientFeatures, setClientFeatures] = useState<string[] | null>(null)
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
 
@@ -61,11 +62,13 @@ export default function BottomNav() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('enable_distribution, role, client_features')
+        .select('enable_distribution, role, client_features, email')
         .eq('id', session.user.id)
         .single()
 
       if (!isMounted) return;
+
+      setUserEmail(data?.email?.toLowerCase() || session.user.email?.toLowerCase() || null)
 
       if (error) {
         setRole('admin')
@@ -90,7 +93,10 @@ export default function BottomNav() {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
         checkProfile()
       } else if (event === 'SIGNED_OUT') {
-        if (isMounted) setRole(null)
+        if (isMounted) {
+          setRole(null)
+          setUserEmail(null)
+        }
       }
     })
 
@@ -104,6 +110,7 @@ export default function BottomNav() {
 
   const allNavItems = [
     { name: 'Analytics', icon: BarChart2, path: '/dashboard/analytics' },
+    { name: 'Nobo', icon: Bot, path: '/dashboard/agent' },
     { name: 'Catalog', icon: LayoutGrid, path: '/dashboard' },
     // { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
@@ -116,6 +123,11 @@ export default function BottomNav() {
   ]
 
   const navItems = allNavItems.filter(item => {
+    // Restrict Nobo strictly to Nobogent super admin account for now
+    if (item.name === 'Nobo') {
+      return role === 'super_admin' || userEmail === 'rchopra489@gmail.com';
+    }
+
     // Hide Accounts from non-admin/non-agency
     if (item.name === 'Accounts') {
       return ['super_admin', 'agency'].includes(role)

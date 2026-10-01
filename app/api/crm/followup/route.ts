@@ -8,28 +8,39 @@ import { categorizeLeadStage } from '@/utils/pipeline-stages'
 export async function POST(request: Request) {
   const body = await request.json()
 
-  const supabase = await createClient()
-  let { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) user = session.user
-  }
-
   const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
+  let user: any = null
+
+  // Fast-path: Check Bearer token in Authorization header
   const authHeader = request.headers.get('Authorization')
-  if (!user && authHeader) {
+  if (authHeader) {
     const token = authHeader.replace('Bearer ', '').trim()
     if (token) {
-      const { data: authUserData } = await supabaseAdmin.auth.getUser(token)
-      if (authUserData?.user) user = authUserData.user
+      try {
+        const { data: authUserData } = await supabaseAdmin.auth.getUser(token)
+        if (authUserData?.user) user = authUserData.user
+      } catch (e) {}
     }
   }
 
+  // Fallback to cookie session if not authenticated via Bearer
+  if (!user) {
+    try {
+      const supabase = await createClient()
+      const { data: userData } = await supabase.auth.getUser()
+      if (userData?.user) user = userData.user
+      if (!user) {
+        const { data: sessionData } = await supabase.auth.getSession()
+        if (sessionData?.session?.user) user = sessionData.session.user
+      }
+    } catch (e) {}
+  }
+
+  // Fallback to userId/impersonateId
   if (!user && (body.userId || body.impersonateId)) {
     const targetId = body.userId || body.impersonateId
     const { data: fallbackProfile } = await supabaseAdmin
