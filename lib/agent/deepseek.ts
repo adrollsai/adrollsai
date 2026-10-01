@@ -1,14 +1,25 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { google } from '@ai-sdk/google';
 
-const deepseekApiKey = (process.env.DEEPSEEK_API_KEY || '').replace(/^["']|["']$/g, '').trim();
+function getDeepseekApiKey() {
+  return (process.env.DEEPSEEK_API_KEY || '').replace(/^["']|["']$/g, '').trim();
+}
 
-export const deepseekProvider = createOpenAI({
-  name: 'deepseek',
-  baseURL: 'https://api.deepseek.com/v1',
-  apiKey: deepseekApiKey,
-  compatibility: 'compatible',
-});
+let cachedProvider: ReturnType<typeof createOpenAI> | null = null;
+
+export function getDeepseekProvider() {
+  const key = getDeepseekApiKey();
+  if (!key) return null;
+  if (!cachedProvider) {
+    cachedProvider = createOpenAI({
+      name: 'deepseek',
+      baseURL: 'https://api.deepseek.com',
+      apiKey: key,
+      compatibility: 'compatible',
+    });
+  }
+  return cachedProvider;
+}
 
 /**
  * Returns the best model for the current task:
@@ -24,9 +35,10 @@ export function getAgentModel(options: { preferReasoning?: boolean; hasVision?: 
     return google('gemini-2.5-flash');
   }
 
-  if (deepseekApiKey) {
+  const provider = getDeepseekProvider();
+  if (provider) {
     const modelName = preferReasoning ? 'deepseek-reasoner' : 'deepseek-chat';
-    return deepseekProvider.chat(modelName);
+    return provider.chat(modelName);
   }
 
   // Fallback to Google Gemini

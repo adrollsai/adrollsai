@@ -3,7 +3,6 @@ import { createClient } from '@/utils/supabase/server';
 import { streamText, convertToModelMessages, stepCountIs } from 'ai';
 import { getAgentModel } from '@/lib/agent/deepseek';
 import { createAgentContext } from '@/lib/agent/orchestrator';
-
 import { google } from '@ai-sdk/google';
 
 export const maxDuration = 60;
@@ -63,9 +62,17 @@ export async function POST(req: Request) {
         messages: modelMessages,
         stopWhen: stepCountIs(10),
         tools,
+        onStepFinish: ({ text, toolCalls, toolResults }) => {
+          if (toolCalls?.length) {
+            console.log('[Nobo Agent Step Tools]:', toolCalls.map(t => t.toolName).join(', '));
+          }
+          if (text) {
+            console.log('[Nobo Agent Step Text]:', text.slice(0, 100));
+          }
+        },
       });
     } catch (modelErr: any) {
-      console.warn('[Agent API] Primary model failed, falling back to Gemini 2.5 Flash:', modelErr?.message);
+      console.warn('[Nobo Agent] Primary model failed, falling back to Gemini 2.5 Flash:', modelErr?.message);
       result = streamText({
         model: google('gemini-2.5-flash'),
         system: systemPrompt,
@@ -75,9 +82,14 @@ export async function POST(req: Request) {
       });
     }
 
-    return result.toTextStreamResponse();
+    return result.toUIMessageStreamResponse({
+      sendReasoning: true,
+      onError: (err) => {
+        console.error('[Nobo Agent Stream Error]:', err);
+      },
+    });
   } catch (err: any) {
-    console.error('[Agent API] Error:', err);
+    console.error('[Agent API] Fatal Error:', err);
     return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });
   }
 }

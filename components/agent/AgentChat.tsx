@@ -57,6 +57,11 @@ export default function AgentChat() {
 
   const { messages, sendMessage, status, stop, setMessages } = useChat({
     transport: new DefaultChatTransport({ api: '/api/agent/v2/chat' }),
+    onError: (err: any) => {
+      console.error('[Nobo Agent Stream Error]:', err);
+      addLog(`Error encountered: ${err.message || 'Stream interrupted'}`, 'error');
+      toast.error(err.message || 'Failed to get response from Nobo');
+    },
   }) as any;
 
   const isLoading = status === 'submitted' || status === 'streaming';
@@ -80,7 +85,7 @@ export default function AgentChat() {
     if (status === 'submitted') {
       addLog('User instruction received. Formulating execution plan...', 'thought');
     } else if (status === 'streaming') {
-      addLog('Streaming reasoning & coordinating agent tools...', 'info');
+      addLog('Executing tools & coordinating response...', 'info');
     }
   }, [status]);
 
