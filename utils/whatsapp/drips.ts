@@ -445,7 +445,14 @@ export async function sendInstantFormCatalogMessage(
                             .select('custom_fields')
                             .eq('id', leadId)
                             .maybeSingle();
-                        const cf = (leadRec?.custom_fields && typeof leadRec.custom_fields === 'object') ? leadRec.custom_fields : {};
+                        let cf: Record<string, any> = {};
+                        if (leadRec?.custom_fields) {
+                            if (typeof leadRec.custom_fields === 'string') {
+                                try { cf = JSON.parse(leadRec.custom_fields); } catch (e) { cf = {}; }
+                            } else if (typeof leadRec.custom_fields === 'object') {
+                                cf = { ...leadRec.custom_fields };
+                            }
+                        }
                         await supabaseAdmin
                             .from('leads')
                             .update({

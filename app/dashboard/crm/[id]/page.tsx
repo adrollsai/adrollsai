@@ -99,6 +99,7 @@ export default function LeadProfilePage() {
     // Flow Questions & Name editing states
     const [flowQuestions, setFlowQuestions] = useState<any[]>([])
     const [linkedFlowName, setLinkedFlowName] = useState<string>('')
+    const [isEditingFlowQuestions, setIsEditingFlowQuestions] = useState(false)
     const [isEditingName, setIsEditingName] = useState(false)
     const [nameInput, setNameInput] = useState('')
     const [isSavingName, setIsSavingName] = useState(false)
@@ -126,10 +127,10 @@ export default function LeadProfilePage() {
     const [isCalling, setIsCalling] = useState(false)
     const [showTranscript, setShowTranscript] = useState(true)
 
-    // Collapsible Section States (Voice Details open by default so recording & transcript are immediately visible)
+    // Collapsible Section States (Voice & Qualification open by default)
     const [isMetaOriginOpen, setIsMetaOriginOpen] = useState(false)
     const [isVoiceDetailsOpen, setIsVoiceDetailsOpen] = useState(true)
-    const [isQualificationOpen, setIsQualificationOpen] = useState(false)
+    const [isQualificationOpen, setIsQualificationOpen] = useState(true)
 
     const effectiveRecordingUrl = useMemo(() => {
         if (lead?.voice_recording_url) return lead.voice_recording_url
@@ -1957,7 +1958,122 @@ END:VCARD`
                                     </div>
                                 )}
 
-                                 {/* Interactive Qualification Questions (Linked Campaign / Default Flow) */}
+                                 {/* Submitted Form Answers (From Meta Lead Form, Web Form, etc.) */}
+                                {(() => {
+                                    const cf = parseCustomFields(lead.custom_fields);
+                                    const EXCLUDE_KEYS = new Set([
+                                        'meta_ad_origin', 'score_breakdown', 'lead_score', 'lead_tier', 
+                                        'score_updated_at', 'awaiting_lead_name', 'qualification_completed', 
+                                        'voice_campaign_id', 'campaign_id', 'is_instant_form', 'dnp_count', 
+                                        'last_reopened_at', 'last_reopened_source', 'reopened_count', 
+                                        'form_answers', 'history_visible_from', 'whatsapp_number', 'phone_number',
+                                        'phone', 'email', 'email_address', 'full_name', 'name', 'first_name', 'last_name'
+                                    ]);
+
+                                    const formatQuestionKey = (raw: string) => {
+                                        let q = raw.replace(/_/g, ' ').trim();
+                                        if (!q.endsWith('?') && (q.toLowerCase().startsWith('what') || q.toLowerCase().startsWith('how') || q.toLowerCase().startsWith('which') || q.toLowerCase().startsWith('when') || q.toLowerCase().startsWith('where') || q.toLowerCase().startsWith('are') || q.toLowerCase().startsWith('do'))) {
+                                            q = q + '?';
+                                        }
+                                        return q.charAt(0).toUpperCase() + q.slice(1);
+                                    };
+
+                                    const formatDisplayVal = (val: any) => {
+                                        if (typeof val === 'string') {
+                                            const trimmed = val.trim();
+                                            if (trimmed.toLowerCase() === 'true') return 'Yes';
+                                            if (trimmed.toLowerCase() === 'false') return 'No';
+                                            if (trimmed.includes('_') && !trimmed.includes(' ') && !trimmed.includes('@')) {
+                                                return trimmed.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                                            }
+                                            return trimmed;
+                                        }
+                                        if (val === true) return 'Yes';
+                                        if (val === false) return 'No';
+                                        return String(val);
+                                    };
+
+                                    const submittedAnswers: { question: string; answer: string; fieldKey: string }[] = [];
+                                    const seenKeys = new Set<string>();
+
+                                    // 1. From explicit cf.form_answers
+                                    if (cf.form_answers && typeof cf.form_answers === 'object') {
+                                        Object.entries(cf.form_answers).forEach(([k, v]) => {
+                                            if (v !== undefined && v !== null && String(v).trim().length > 0 && !EXCLUDE_KEYS.has(k)) {
+                                                seenKeys.add(k.toLowerCase());
+                                                submittedAnswers.push({
+                                                    fieldKey: k,
+                                                    question: formatQuestionKey(k),
+                                                    answer: formatDisplayVal(v)
+                                                });
+                                            }
+                                        });
+                                    }
+
+                                    // 2. From top-level custom_fields
+                                    Object.entries(cf).forEach(([k, v]) => {
+                                        if (EXCLUDE_KEYS.has(k) || seenKeys.has(k.toLowerCase())) return;
+                                        if (v !== undefined && v !== null && typeof v !== 'object') {
+                                            const str = String(v).trim();
+                                            if (str.length > 0) {
+                                                seenKeys.add(k.toLowerCase());
+                                                submittedAnswers.push({
+                                                    fieldKey: k,
+                                                    question: formatQuestionKey(k),
+                                                    answer: formatDisplayVal(v)
+                                                });
+                                            }
+                                        }
+                                    });
+
+                                    if (submittedAnswers.length === 0) return null;
+
+                                    return (
+                                        <div className="bg-gradient-to-br from-blue-50/90 via-indigo-50/40 to-emerald-50/40 border border-blue-200/90 rounded-2xl p-4.5 space-y-3.5 shadow-xs">
+                                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                    <span className="p-2 bg-blue-600 text-white rounded-xl text-xs font-black shrink-0 shadow-xs">
+                                                        📝
+                                                    </span>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                                                                Submitted Form Answers
+                                                            </h4>
+                                                            <span className="text-[10px] font-black text-blue-700 bg-blue-100 border border-blue-200 px-2.5 py-0.5 rounded-full shadow-2xs">
+                                                                {lead.form_name || (lead.facebook_lead_id ? 'Meta Instant Form' : 'Lead Form')}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-[11px] text-slate-500 font-medium">Exact questions answered and submitted by the prospect</p>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] font-black px-3 py-1 rounded-full border shadow-2xs bg-emerald-500 text-white border-emerald-600 flex items-center gap-1.5">
+                                                    <Check size={12} className="stroke-[3]" /> {submittedAnswers.length} Form Answers Verified
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                                                {submittedAnswers.map((item, idx) => (
+                                                    <div key={idx} className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-1.5 hover:border-blue-300 transition-colors">
+                                                        <div className="flex items-start justify-between gap-1.5">
+                                                            <span className="text-[11px] font-extrabold text-slate-600 leading-snug">
+                                                                <span className="text-blue-600 font-black mr-1">#{idx + 1}</span> {item.question}
+                                                            </span>
+                                                            <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0 flex items-center gap-1">
+                                                                <Check size={10} className="stroke-[3]" /> Lead Answer
+                                                            </span>
+                                                        </div>
+                                                        <div className="text-xs font-black text-slate-900 bg-slate-50/80 px-3 py-2 rounded-lg border border-slate-100 break-words">
+                                                            {item.answer}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Qualification Flow / Criteria (Protected Read-Only by Default) */}
                                 {flowQuestions && flowQuestions.length > 0 && (() => {
                                     const cf = parseCustomFields(lead.custom_fields);
                                     const normalizedFlow = flowQuestions.map((q: any, idx: number) => normalizeQualifyingQuestion(q, idx));
@@ -1981,29 +2097,86 @@ END:VCARD`
                                                     <span className="p-1.5 bg-emerald-600 text-white rounded-lg text-xs font-black shrink-0">🎯</span>
                                                     <div>
                                                         <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">{linkedFlowName || 'Qualification Questions'}</h4>
-                                                        <p className="text-[10px] text-slate-500 font-medium">Update prospect answers directly to recalculate lead score</p>
+                                                        <p className="text-[10px] text-slate-500 font-medium">
+                                                            {isEditingFlowQuestions ? '✏️ Edit Mode Active — Click options or type answers to update' : 'View qualification criteria • Click Edit Answers to change'}
+                                                        </p>
                                                     </div>
                                                 </div>
-                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border shadow-xs ${
-                                                    isAllDone 
-                                                        ? 'bg-emerald-500 text-white border-emerald-600' 
-                                                        : 'bg-amber-100 text-amber-800 border-amber-300'
-                                                }`}>
-                                                    {isAllDone ? '✅ Complete (+40 pts)' : `${answeredCount}/${normalizedFlow.length} Answered`}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border shadow-xs ${
+                                                        isAllDone 
+                                                            ? 'bg-emerald-500 text-white border-emerald-600' 
+                                                            : 'bg-amber-100 text-amber-800 border-amber-300'
+                                                    }`}>
+                                                        {isAllDone ? '✅ Complete (+40 pts)' : `${answeredCount}/${normalizedFlow.length} Answered`}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsEditingFlowQuestions(!isEditingFlowQuestions)}
+                                                        className={`text-[10px] font-black px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 shadow-2xs cursor-pointer ${
+                                                            isEditingFlowQuestions
+                                                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 ring-2 ring-emerald-300'
+                                                                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                                                        }`}
+                                                    >
+                                                        {isEditingFlowQuestions ? (
+                                                            <>
+                                                                <Check size={11} className="stroke-[3]" />
+                                                                <span>Done Editing</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Pencil size={10} />
+                                                                <span>Edit Answers</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </div>
                                             </div>
+
+                                            {isEditingFlowQuestions && (
+                                                <div className="bg-amber-50 border border-amber-200/80 rounded-xl px-3 py-2 text-[10px] font-bold text-amber-900 flex items-center justify-between">
+                                                    <span>⚠️ Edit Mode is ON: Click an option or edit answer values. Changes save automatically.</span>
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => setIsEditingFlowQuestions(false)} 
+                                                        className="text-amber-800 hover:underline font-extrabold"
+                                                    >
+                                                        Finish
+                                                    </button>
+                                                </div>
+                                            )}
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                                                 {normalizedFlow.map((q, idx) => {
                                                     const qKey = q.key;
                                                     const qText = q.question;
                                                     const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
-                                                    const rawVal = cf[qKey] || cf[qClean] || 
+                                                    let rawVal = cf[qKey] || cf[qClean] || 
                                                         (qKey === 'budget' ? (cf.budget || lead.budget) : undefined) ||
                                                         (qKey === 'timeline' ? (cf.timeline || lead.timeline) : undefined) ||
                                                         (qKey === 'property_type' ? (cf.property_type || cf.interested_property) : undefined) || '';
                                                     const options: string[] = Array.isArray(q.options) ? q.options : [];
                                                     const isSaving = savingQuestionKey === qKey;
+
+                                                    // Auto-link to form answers if question not yet assigned
+                                                    if (!rawVal && cf.form_answers && typeof cf.form_answers === 'object') {
+                                                        const qCleanSimple = qText.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                                        for (const [fKey, fVal] of Object.entries(cf.form_answers)) {
+                                                            const fKeySimple = fKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                                            if (fKeySimple.includes(qCleanSimple) || qCleanSimple.includes(fKeySimple)) {
+                                                                rawVal = fVal;
+                                                                break;
+                                                            }
+                                                            if (options.length > 0 && typeof fVal === 'string') {
+                                                                const matchedOpt = options.find(o => fVal.toLowerCase().includes(o.toLowerCase()) || o.toLowerCase().includes(fVal.toLowerCase()));
+                                                                if (matchedOpt) {
+                                                                    rawVal = matchedOpt;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
 
                                                     return (
                                                         <div key={idx} className="bg-white p-3 rounded-xl border border-slate-200/90 shadow-xs space-y-2">
@@ -2022,16 +2195,33 @@ END:VCARD`
                                                                 <div className="flex flex-wrap gap-1.5 pt-1">
                                                                     {options.map((opt, oIdx) => {
                                                                         const isSelected = String(rawVal).toLowerCase().trim() === opt.toLowerCase().trim();
+                                                                        if (!isEditingFlowQuestions) {
+                                                                            // Protected Read-Only View (NO ACCIDENTAL CLICKS)
+                                                                            return (
+                                                                                <span
+                                                                                    key={oIdx}
+                                                                                    className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg border select-none transition-all ${
+                                                                                        isSelected
+                                                                                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs font-black ring-1 ring-emerald-400'
+                                                                                            : 'bg-slate-50 text-slate-400 border-slate-200 opacity-60'
+                                                                                    }`}
+                                                                                >
+                                                                                    {isSelected && '✓ '} {opt}
+                                                                                </span>
+                                                                            );
+                                                                        }
+
+                                                                        // Interactive in explicit Edit Mode
                                                                         return (
                                                                             <button
                                                                                 key={oIdx}
                                                                                 type="button"
                                                                                 disabled={isSaving}
                                                                                 onClick={() => handleUpdateQualificationAnswer(qKey, opt)}
-                                                                                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                                                                                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
                                                                                     isSelected
-                                                                                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs scale-102'
-                                                                                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                                                                                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-300'
+                                                                                        : 'bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 text-slate-700 border-slate-200'
                                                                                 }`}
                                                                             >
                                                                                 {isSelected && '✓ '} {opt}
@@ -2040,23 +2230,29 @@ END:VCARD`
                                                                     })}
                                                                 </div>
                                                             ) : (
-                                                                <div className="flex items-center gap-1.5 pt-1">
-                                                                    <input
-                                                                        type="text"
-                                                                        defaultValue={rawVal}
-                                                                        placeholder="Type prospect answer..."
-                                                                        onBlur={(e) => {
-                                                                            if (e.target.value !== rawVal) {
-                                                                                handleUpdateQualificationAnswer(qKey, e.target.value.trim());
-                                                                            }
-                                                                        }}
-                                                                        onKeyDown={(e) => {
-                                                                            if (e.key === 'Enter') {
-                                                                                handleUpdateQualificationAnswer(qKey, (e.target as HTMLInputElement).value.trim());
-                                                                            }
-                                                                        }}
-                                                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:bg-white focus:border-emerald-500"
-                                                                    />
+                                                                <div className="pt-1">
+                                                                    {!isEditingFlowQuestions ? (
+                                                                        <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800">
+                                                                            {rawVal || <span className="text-slate-400 italic font-normal">Pending prospect response...</span>}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <input
+                                                                            type="text"
+                                                                            defaultValue={rawVal}
+                                                                            placeholder="Type prospect answer..."
+                                                                            onBlur={(e) => {
+                                                                                if (e.target.value !== rawVal) {
+                                                                                    handleUpdateQualificationAnswer(qKey, e.target.value.trim());
+                                                                                }
+                                                                            }}
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === 'Enter') {
+                                                                                    handleUpdateQualificationAnswer(qKey, (e.target as HTMLInputElement).value.trim());
+                                                                                }
+                                                                            }}
+                                                                            className="w-full bg-white border border-emerald-400 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-200"
+                                                                        />
+                                                                    )}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -2082,7 +2278,16 @@ END:VCARD`
                                         'voice_campaign_id',
                                         'campaign_id',
                                         'is_qualified',
-                                        'full_name'
+                                        'full_name',
+                                        'is_instant_form',
+                                        'dnp_count',
+                                        'last_reopened_at',
+                                        'last_reopened_source',
+                                        'reopened_count',
+                                        'form_answers',
+                                        'history_visible_from',
+                                        'whatsapp_number',
+                                        'phone_number'
                                     ];
                                     const entries = Object.entries(customFields).filter(([k]) => !HIDDEN_INTERNAL_FIELDS.includes(k));
                                     const matchedProp = properties.find(p => p.id === lead.property_id || p.id === origin?.product_id || p.title === origin?.product_name);
@@ -2135,7 +2340,7 @@ END:VCARD`
                                                 </div>
                                             ) : !origin && (
                                                 <div className="text-center py-6 text-xs text-slate-400 font-medium">
-                                                    No custom fields added yet.
+                                                    No additional custom fields added yet.
                                                 </div>
                                             )}
                                         </div>
