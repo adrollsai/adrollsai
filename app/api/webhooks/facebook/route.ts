@@ -3543,20 +3543,59 @@ RULES:
               let cf = existingLead.custom_fields || {};
               if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
 
-              const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
-              const lastReopenTime = cf.last_reopened_at ? new Date(cf.last_reopened_at).getTime() : 0;
-              const isRecentReopenGlitch = (Date.now() - lastReopenTime) < 3600000 && cf.last_reopened_source === currentSourceId;
+              // 1. Gather all previously processed facebook_lead_ids for this lead
+              const allFbLeadIds: string[] = Array.isArray(cf.all_facebook_lead_ids)
+                ? cf.all_facebook_lead_ids.map(String)
+                : (existingLead.facebook_lead_id ? [String(existingLead.facebook_lead_id)] : []);
 
-              if (isRecentReopenGlitch) {
-                console.log(`[Facebook Webhook] Skipping duplicate reopen for lead ${existingLead.id} within 1h cooldown.`);
+              // 2. Duplicate submission check: if this leadgen_id has ALREADY been recorded, skip!
+              if (leadgen_id && (allFbLeadIds.includes(String(leadgen_id)) || String(existingLead.facebook_lead_id) === String(leadgen_id))) {
+                console.log(`[Facebook Webhook] Lead submission ${leadgen_id} already processed for lead ${existingLead.id}. Skipping duplicate reopen.`);
                 continue;
               }
 
-              const reopenedCount = (existingLead.reopened_count || cf.reopened_count || 0) + 1;
+              // 3. Historical Form Submission Guard:
+              const submissionTime = fbLead.created_time ? new Date(fbLead.created_time).getTime() : Date.now();
+              const isHistoricalOldLead = !isNaN(submissionTime) && (Date.now() - submissionTime) > (48 * 3600 * 1000);
 
-              // Track sources for audit (append even if same source)
+              if (isHistoricalOldLead) {
+                const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgen_id)]));
+                await supabaseAdmin
+                  .from('leads')
+                  .update({
+                    custom_fields: {
+                      ...cf,
+                      all_facebook_lead_ids: updatedAllIds
+                    }
+                  })
+                  .eq('id', existingLead.id);
+                continue;
+              }
+
+              // 4. Global Cooldown Guard: at least 4 hours between ANY reopens for the same lead
+              const lastReopenTime = cf.last_reopened_at ? new Date(cf.last_reopened_at).getTime() : 0;
+              const isRecentReopenGlitch = (Date.now() - lastReopenTime) < (4 * 3600 * 1000);
+
+              if (isRecentReopenGlitch) {
+                console.log(`[Facebook Webhook] Skipping duplicate reopen for lead ${existingLead.id} within 4h cooldown.`);
+                const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgen_id)]));
+                await supabaseAdmin
+                  .from('leads')
+                  .update({
+                    custom_fields: {
+                      ...cf,
+                      all_facebook_lead_ids: updatedAllIds
+                    }
+                  })
+                  .eq('id', existingLead.id);
+                continue;
+              }
+
+              const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
+              const reopenedCount = (existingLead.reopened_count || cf.reopened_count || 0) + 1;
               const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
               const updatedSources = [...previousSources, currentSourceId];
+              const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgen_id)]));
 
               if (!cf.original_created_at) {
                 cf.original_created_at = existingLead.created_at;
@@ -3564,6 +3603,7 @@ RULES:
 
               cf = {
                 ...cf,
+                all_facebook_lead_ids: updatedAllIds,
                 is_instant_form: true,
                 qualification_completed: true,
                 reopened_count: reopenedCount,
@@ -3573,13 +3613,21 @@ RULES:
                 meta_ad_origin: customFields?.meta_ad_origin || cf.meta_ad_origin
               };
 
-              const newLeadTimestamp = fbLead.created_time || new Date().toISOString();
+              // Determine stage preservation:
+              const terminalStages = ['lost', 'lost/ni', 'not interested', 'junk', 'archive', 'closed', 'dropped'];
+              const currentStageLower = (existingLead.pipeline_stage || existingLead.status || '').toLowerCase().trim();
+              const isDeadOrNew = !currentStageLower || currentStageLower === 'new lead' || currentStageLower === 'fresh' || terminalStages.some(s => currentStageLower.includes(s));
+
               const updatePayloadObj: Record<string, any> = {
                 custom_fields: cf,
-                pipeline_stage: 'New Lead',
-                status: 'New Lead',
-                created_at: newLeadTimestamp
+                updated_at: new Date().toISOString()
               };
+
+              if (isDeadOrNew) {
+                updatePayloadObj.pipeline_stage = 'New Lead';
+                updatePayloadObj.status = 'New Lead';
+              }
+
               if (leadgen_id) {
                 updatePayloadObj.facebook_lead_id = leadgen_id;
               }
@@ -3662,7 +3710,7 @@ RULES:
             facebook_created_at: fbLead.created_time,
             form_id: fbLead.form_id,
             form_name: formName,
-            custom_fields: { ...(customFields || {}), is_instant_form: true, qualification_completed: true },
+            custom_fields: { ...(customFields || {}), is_instant_form: true, qualification_completed: true, all_facebook_lead_ids: leadgen_id ? [String(leadgen_id)] : [] },
             pipeline_stage: 'New Lead',
             status: 'New Lead',
             ad_name: adCampaignString,

@@ -4247,27 +4247,16 @@ END:VCARD\n`
 
        {/* UPDATE FOLLOWUP MODAL */}
        <UpdateFollowupModal
-         isOpen={!!updateFollowupLead}
-         lead={updateFollowupLead}
-         onClose={() => setUpdateFollowupLead(null)}
-         onSuccess={(updatedFields) => {
-           if (updatedFields && updateFollowupLead) {
-             setLeads(prev => prev.map(l => l.id === updateFollowupLead.id ? { 
-               ...l, 
-               ...updatedFields, 
-               custom_fields: { 
-                 ...(typeof l.custom_fields === 'object' ? l.custom_fields : {}), 
-                 ...(updatedFields.custom_fields || {}) 
-               } 
-             } : l))
-           } else {
-             fetchLeads(false, false)
-           }
-           setUpdateFollowupLead(null)
-         }}
-         properties={properties}
-         teamMembers={team}
-       />
+          isOpen={!!updateFollowupLead}
+          lead={updateFollowupLead}
+          onClose={() => setUpdateFollowupLead(null)}
+          onSuccess={(updatedFields) => {
+            handleUpdateFollowupSuccess(updatedFields);
+            setUpdateFollowupLead(null);
+          }}
+          properties={properties}
+          teamMembers={team}
+        />
 
        {/* LEAD HISTORY TIMELINE MODAL */}
        <LeadHistoryModal
