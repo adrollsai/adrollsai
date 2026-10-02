@@ -1,5 +1,23 @@
 import { createClient } from '@supabase/supabase-js'
 
+export function isNobogentAccount(ownerId: string, profile?: any): boolean {
+    if (
+        ownerId === 'bc63c065-9bcc-4793-bedc-f0960406425b' ||
+        ownerId === '91553adf-20b5-4c4c-9614-6b6f89fd0bfd' ||
+        ownerId === 'b1645a6d-4b73-41ef-a197-8247d0168905'
+    ) {
+        return true;
+    }
+    if (profile) {
+        const email = (profile.email || '').toLowerCase();
+        const bName = (profile.business_name || '').toLowerCase();
+        if (email.includes('nobogent') || email === 'rchopra489@gmail.com' || bName.includes('nobogent')) {
+            return true;
+        }
+    }
+    return false;
+}
+
 export async function triggerWelcomeDrip(
     supabaseAdmin: any, 
     leadId: string, 
@@ -9,6 +27,11 @@ export async function triggerWelcomeDrip(
     campaignName: string
 ) {
     try {
+        if (isNobogentAccount(ownerId)) {
+            console.log(`[DRIP TRIGGER] Automated WhatsApp template message sending is stopped for Nobogent account (${ownerId}). Skipping.`);
+            return;
+        }
+
         console.log(`[DRIP TRIGGER] Checking drip campaigns for owner: ${ownerId}, campaign: ${campaignName}`);
 
         // Find active welcome flows for this user
@@ -220,6 +243,11 @@ export async function sendInstantFormCatalogMessage(
     campaignName?: string
 ) {
     try {
+        if (isNobogentAccount(ownerId)) {
+            console.log(`[INSTANT CATALOG WA] Automated WhatsApp template message sending is stopped for Nobogent account (${ownerId}). Skipping.`);
+            return;
+        }
+
         console.log(`[INSTANT CATALOG WA] Dispatching instant form WhatsApp welcome template to lead: ${leadName} (${leadPhone}), owner: ${ownerId}`);
 
         // Fetch owner's WhatsApp credentials & Business profile
@@ -228,6 +256,11 @@ export async function sendInstantFormCatalogMessage(
             .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, custom_domain')
             .eq('id', ownerId)
             .maybeSingle();
+
+        if (isNobogentAccount(ownerId, profile)) {
+            console.log(`[INSTANT CATALOG WA] Automated WhatsApp template message sending is stopped for Nobogent account. Skipping.`);
+            return;
+        }
 
         const token = profile?.whatsapp_access_token || profile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
         const phoneId = profile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID;

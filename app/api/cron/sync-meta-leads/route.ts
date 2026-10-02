@@ -602,8 +602,17 @@ async function handleSync(request: Request) {
                 }).catch(() => {});
               }
 
+              // Check if Nobogent account (automated WhatsApp templates paused upon request)
+              const isNobogentAccount = 
+                  profile.id === 'bc63c065-9bcc-4793-bedc-f0960406425b' ||
+                  profile.id === '91553adf-20b5-4c4c-9614-6b6f89fd0bfd' ||
+                  profile.id === 'b1645a6d-4b73-41ef-a197-8247d0168905' ||
+                  (profile.email || '').toLowerCase().includes('nobogent') || 
+                  (profile.email || '').toLowerCase() === 'rchopra489@gmail.com' ||
+                  (profile.business_name || '').toLowerCase().includes('nobogent');
+
               // Automated WhatsApp Welcome Drip & Instant Catalog (non-blocking)
-              if (savedLead && phone) {
+              if (!isNobogentAccount && savedLead && phone) {
                 const targetCampaignName = matchedPropertyTitle || campaignName || 'our properties';
                 sendInstantFormCatalogMessage(
                   supabaseAdmin,

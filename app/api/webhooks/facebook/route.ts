@@ -3761,8 +3761,17 @@ RULES:
 
           const targetCampaignName = welcomePropertyTitle || campaignName || 'our properties';
 
+          // Check if Nobogent account (automated WhatsApp templates paused upon request)
+          const isNobogentAccount = 
+              profile.id === 'bc63c065-9bcc-4793-bedc-f0960406425b' ||
+              profile.id === '91553adf-20b5-4c4c-9614-6b6f89fd0bfd' ||
+              profile.id === 'b1645a6d-4b73-41ef-a197-8247d0168905' ||
+              (profile.email || '').toLowerCase().includes('nobogent') || 
+              (profile.email || '').toLowerCase() === 'rchopra489@gmail.com' ||
+              (profile.business_name || '').toLowerCase().includes('nobogent');
+
           // Trigger automated WhatsApp welcome drip campaign & instant catalog template with 'View Listings' button
-          if (savedLead && phone) {
+          if (!isNobogentAccount && savedLead && phone) {
               sendInstantFormCatalogMessage(
                   supabaseAdmin,
                   savedLead.id,
