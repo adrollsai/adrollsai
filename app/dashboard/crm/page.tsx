@@ -23,7 +23,7 @@ import LeadScoreBadge from '@/components/LeadScoreBadge'
 import LeadAdPreviewModal from '@/components/LeadAdPreviewModal'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, extractStagesFromProfile } from '@/utils/pipeline-stages'
-import { getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
+import { parseCustomFields, getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
 import { openPhoneDialer } from '@/utils/dialer'
 
 
@@ -3325,13 +3325,14 @@ END:VCARD\n`
                                                     {customStages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                                                 </select>
                                                 {(() => {
-                                                    const rawNextDate = lead.next_followup || lead.custom_fields?.next_action_date;
+                                                    const cf = parseCustomFields(lead.custom_fields);
+                                                    const rawNextDate = lead.next_followup || cf.next_action_date;
                                                     if (!rawNextDate) return null;
                                                     const nextActionRemark = getLeadNextActionRemark(lead);
                                                     return (
                                                         <div className="mt-1.5 flex flex-col gap-1">
                                                             <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded flex items-center gap-1 w-fit whitespace-nowrap">
-                                                                ⏰ {lead.custom_fields?.next_action_type || 'Followup'}: {new Date(rawNextDate).toLocaleDateString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                                                ⏰ {cf.next_action_type || 'Followup'}: {new Date(rawNextDate).toLocaleDateString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
                                                             </span>
                                                             {nextActionRemark && (
                                                                 <div className="bg-indigo-50/90 border border-indigo-200/90 px-2 py-0.5 rounded-lg text-[10px] text-indigo-950 font-semibold leading-tight max-w-[190px] shadow-2xs" title={nextActionRemark}>
@@ -3706,13 +3707,14 @@ END:VCARD\n`
                                     <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
                                 </div>
                                 {(() => {
-                                    const rawNextDate = lead.next_followup || lead.custom_fields?.next_action_date;
+                                    const cf = parseCustomFields(lead.custom_fields);
+                                    const rawNextDate = lead.next_followup || cf.next_action_date;
                                     if (!rawNextDate) return null;
                                     const nextActionRemark = getLeadNextActionRemark(lead);
                                     return (
                                         <div className="flex flex-col gap-1 mt-1 max-w-full">
                                             <span className="text-xs font-black bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-200/80 flex items-center gap-1.5 shadow-sm shrink-0">
-                                                ⏰ Next Action: {lead.custom_fields?.next_action_type || 'Followup'} on {new Date(rawNextDate).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                                ⏰ Next Action: {cf.next_action_type || 'Followup'} on {new Date(rawNextDate).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
                                             </span>
                                             {nextActionRemark && (
                                                 <div className="text-[11px] font-semibold text-indigo-950 bg-indigo-50/80 border border-indigo-200/80 px-2.5 py-1 rounded-lg flex items-start gap-1.5 leading-snug shadow-2xs">

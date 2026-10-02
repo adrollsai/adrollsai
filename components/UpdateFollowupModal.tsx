@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { X, Calendar, User, Building2, PhoneCall, CheckSquare, Clock, Tag, Sparkles, Loader2, AlertCircle } from 'lucide-react'
 import { getPropertyTags } from '@/utils/property-tags'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
 import { categorizeLeadStage } from '@/utils/pipeline-stages'
+import { parseCustomFields } from '@/utils/lead-helpers'
 
 export const isPlanPostponedStage = (stage?: string | null): boolean => {
   if (!stage) return false
@@ -127,6 +128,8 @@ export default function UpdateFollowupModal({
   const [assignedTo, setAssignedTo] = useState('')
   const [nextRemarks, setNextRemarks] = useState('')
   const [remindMe, setRemindMe] = useState(true)
+  const [noFutureFollowup, setNoFutureFollowup] = useState(false)
+  const nextActionRef = useRef<HTMLDivElement>(null)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -192,9 +195,16 @@ export default function UpdateFollowupModal({
     if (lead && isOpen) {
       setError(null)
       setIsDnp(false)
-      const currentStage = lead.status || lead.pipeline_stage || 'New Lead'
-      setLeadStage(currentStage)
-      setClientStatus(lead.client_status || 'Warm')
+      setNoFutureFollowup(false)
+
+      const cf = parseCustomFields(lead.custom_fields)
+      const rawCurrentStage = (lead.pipeline_stage || lead.status || '').trim()
+      const rawNorm = rawCurrentStage.toLowerCase()
+      const isFresh = !rawNorm || ['new', 'new lead', 'new_lead', 'fresh', 'new inquiry', 'uncontacted', 'unprocessed'].includes(rawNorm)
+
+      // When an agent opens followup modal to log an interaction on a fresh lead, default stage to Contacted!
+      setLeadStage(isFresh ? 'Contacted' : (rawCurrentStage || 'Contacted'))
+      setClientStatus(lead.client_status || cf.client_status || 'Warm')
       setSelectedPropertyId(lead.property_id || '')
       setBudget(lead.budget || '')
       setAssignedTo(lead.assigned_to || '')
@@ -203,7 +213,7 @@ export default function UpdateFollowupModal({
 
       // Always reset followupType and nextActionType to 'Call' by default when opening for a lead
       setFollowupType('Call')
-      setNextActionType('Call')
+      setNextActionType(cf.next_action_type || 'Call')
 
       // Default dates
       const now = new Date()
@@ -214,8 +224,21 @@ export default function UpdateFollowupModal({
       
       setFollowupDate(formatLocalIso(now))
       
-      // Next Action Date & Time is EMPTY by default so agent specifies it intentionally
-      setNextActionDate('')
+      // Intelligent Next Action Date: Preserve existing action date if available, or default to tomorrow 11 AM!
+      const existingDate = lead.next_followup || cf.next_action_date || lead.next_action_date
+      let initialNextDate = ''
+      if (existingDate) {
+        try {
+          const d = new Date(existingDate)
+          if (!isNaN(d.getTime())) {
+            initialNextDate = formatLocalIso(d)
+          }
+        } catch (e) {}
+      }
+      if (!initialNextDate) {
+        initialNextDate = getTomorrowDefaultIso(now)
+      }
+      setNextActionDate(initialNextDate)
     }
   }, [lead, isOpen])
 
@@ -229,11 +252,12 @@ export default function UpdateFollowupModal({
     const supabase = createClient()
     const isClosedStatus = isNotInterestedOrLostStage(leadStage)
     const isPostponed = isPlanPostponedStage(leadStage)
-    const hasNextAction = !!nextActionDate && nextActionDate.trim() !== ''
+    const hasNextAction = !noFutureFollowup && !!nextActionDate && nextActionDate.trim() !== ''
 
-    if (!isClosedStatus && !isPostponed && !hasNextAction) {
-      setError('Next Action Date & Time is required for active/ongoing leads.')
+    if (!isClosedStatus && !isPostponed && !hasNextAction && !noFutureFollowup) {
+      setError('Next Action Date & Time is required for active/ongoing leads. Please select a date or choose "No Followup Needed".')
       setLoading(false)
+      nextActionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
 
@@ -249,11 +273,17 @@ export default function UpdateFollowupModal({
       }
     }
 
+    const currentStageNorm = (lead.pipeline_stage || lead.status || '').toLowerCase().trim()
     const isCurrentFresh = (
-      lead.status === 'New Lead' || lead.status === 'New' || lead.status === 'Fresh' ||
-      lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.pipeline_stage === 'Fresh'
+      !currentStageNorm ||
+      ['new', 'new lead', 'new_lead', 'fresh', 'new inquiry', 'uncontacted', 'unprocessed'].includes(currentStageNorm)
     )
-    const effectiveStage = isDnp ? (isCurrentFresh ? 'Contacted' : (lead.pipeline_stage || lead.status || 'Contacted')) : leadStage
+    const stageNorm = (leadStage || '').toLowerCase().trim()
+    const isChosenFresh = !stageNorm || ['new', 'new lead', 'new_lead', 'fresh'].includes(stageNorm)
+
+    const effectiveStage = isDnp 
+      ? (isCurrentFresh ? 'Contacted' : (lead.pipeline_stage || lead.status || 'Contacted')) 
+      : (isChosenFresh ? 'Contacted' : leadStage)
     const effectiveStatus = effectiveStage
     const effectivePipelineStage = effectiveStage
 
@@ -666,7 +696,7 @@ export default function UpdateFollowupModal({
             const isPostponed = isPlanPostponedStage(leadStage)
 
             return (
-              <div className="pt-4 border-t border-slate-100 space-y-4">
+              <div ref={nextActionRef} className="pt-4 border-t border-slate-100 space-y-4">
                 <div className="flex items-center space-x-2">
                   <Clock className="w-4 h-4 text-blue-600" />
                   <h4 className="text-sm font-extrabold text-slate-900">Next Action Schedule</h4>
@@ -799,6 +829,21 @@ export default function UpdateFollowupModal({
                       >
                         +3 Months
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNextActionDate('')
+                          setNoFutureFollowup(true)
+                        }}
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md border transition-colors cursor-pointer ${
+                          noFutureFollowup || !nextActionDate
+                            ? 'bg-rose-50 text-rose-700 border-rose-300'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
+                        }`}
+                        title="Do not schedule any future follow-up for this lead"
+                      >
+                        🚫 No Followup Needed
+                      </button>
                     </div>
                   </div>
 
@@ -858,6 +903,14 @@ export default function UpdateFollowupModal({
               </div>
             )
           })()}
+
+          {/* Bottom inline error so agent ALWAYS sees validation or network errors even when scrolled to bottom */}
+          {error && (
+            <div className="flex items-center space-x-2 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold animate-in fade-in duration-200">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Buttons */}
           <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100">

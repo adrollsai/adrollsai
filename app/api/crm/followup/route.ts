@@ -231,29 +231,57 @@ export async function POST(request: Request) {
       customFields.client_status = clientStatus
     }
 
-    const currentStage = (lead.pipeline_stage || lead.status || 'New Lead').trim()
-    const isCurrentFresh = currentStage === 'New Lead' || currentStage === 'New' || currentStage === 'Fresh'
+    const currentStageNorm = (lead.pipeline_stage || lead.status || '').toLowerCase().trim()
+    const isCurrentFresh = (
+      !currentStageNorm ||
+      currentStageNorm === 'new' ||
+      currentStageNorm === 'new lead' ||
+      currentStageNorm === 'new_lead' ||
+      currentStageNorm === 'fresh' ||
+      currentStageNorm === 'new inquiry' ||
+      currentStageNorm === 'uncontacted' ||
+      currentStageNorm === 'unprocessed'
+    )
+
+    const incomingStageNorm = (leadStatus || '').toLowerCase().trim()
+    const isIncomingFresh = (
+      !incomingStageNorm ||
+      incomingStageNorm === 'new' ||
+      incomingStageNorm === 'new lead' ||
+      incomingStageNorm === 'new_lead' ||
+      incomingStageNorm === 'fresh' ||
+      incomingStageNorm === 'ongoing'
+    )
 
     if (isDnp) {
       customFields.last_call_dnp = true
       customFields.dnp_count = (customFields.dnp_count || 0) + 1
       // Maintain existing lead stage or transition fresh lead to Contacted. Never force to Never Picked!
-      if (leadStatus && leadStatus !== 'Ongoing' && leadStatus !== 'New Lead' && leadStatus !== 'New' && leadStatus !== 'Fresh' && leadStatus !== 'Never Picked') {
+      if (!isIncomingFresh && incomingStageNorm !== 'never picked') {
         updatePayload.status = leadStatus
         updatePayload.pipeline_stage = leadStatus
-      } else if (isCurrentFresh || currentStage === 'Ongoing') {
+      } else if (isCurrentFresh || currentStageNorm === 'ongoing' || currentStageNorm === 'never picked') {
         updatePayload.status = 'Contacted'
         updatePayload.pipeline_stage = 'Contacted'
       } else if (lead.pipeline_stage) {
         updatePayload.status = lead.status || lead.pipeline_stage
         updatePayload.pipeline_stage = lead.pipeline_stage
+      } else {
+        updatePayload.status = 'Contacted'
+        updatePayload.pipeline_stage = 'Contacted'
       }
     } else {
       customFields.last_call_dnp = false
-      if (leadStatus && leadStatus !== 'Ongoing' && leadStatus !== 'New Lead' && leadStatus !== 'New' && leadStatus !== 'Fresh') {
+      if (!isIncomingFresh) {
         updatePayload.status = leadStatus
         updatePayload.pipeline_stage = leadStatus
-      } else if (isCurrentFresh || currentStage === 'Ongoing') {
+      } else if (isCurrentFresh || currentStageNorm === 'ongoing') {
+        updatePayload.status = 'Contacted'
+        updatePayload.pipeline_stage = 'Contacted'
+      } else if (lead.pipeline_stage) {
+        updatePayload.status = lead.status || lead.pipeline_stage
+        updatePayload.pipeline_stage = lead.pipeline_stage
+      } else {
         updatePayload.status = 'Contacted'
         updatePayload.pipeline_stage = 'Contacted'
       }

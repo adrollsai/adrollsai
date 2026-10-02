@@ -78,9 +78,7 @@ export async function GET(request: Request) {
     // Process due followup push notifications directly
     const processedIds: string[] = []
     if (leadsToRemind && leadsToRemind.length > 0) {
-      // 1. Immediately clear next_followup from all due leads to prevent race conditions & duplicate cron triggers
-      const leadIdsToClear = leadsToRemind.map(l => l.id)
-      await supabaseAdmin.from('leads').update({ next_followup: null }).in('id', leadIdsToClear)
+      // Track leads due for notification (DO NOT clear next_followup as that erases CRM follow-up dates & breaks overdue filters!)
 
       // Gather all user IDs to resolve profiles (agent names and parent/agency admin IDs)
       const userIdsToFetch = new Set<string>()

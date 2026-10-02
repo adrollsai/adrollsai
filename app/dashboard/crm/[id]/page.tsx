@@ -1418,14 +1418,20 @@ END:VCARD`
                             </div>
 
                             {/* Quick Reminder / Next Action Button */}
-                            <button
-                                onClick={() => setIsUpdateFollowupOpen(true)}
-                                className="text-xs font-extrabold bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1 hover:bg-amber-100 transition-all shadow-xs shrink-0 cursor-pointer"
-                                title="Schedule Next Followup / Reminder"
-                            >
-                                <Clock size={12} />
-                                <span>{lead.next_action_date ? `Next: ${new Date(lead.next_action_date).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}` : 'Set Followup / Reminder'}</span>
-                            </button>
+                            {(() => {
+                                const cf = parseCustomFields(lead.custom_fields);
+                                const actionDateStr = lead.next_followup || cf.next_action_date || lead.next_action_date;
+                                return (
+                                    <button
+                                        onClick={() => setIsUpdateFollowupOpen(true)}
+                                        className="text-xs font-extrabold bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1 hover:bg-amber-100 transition-all shadow-xs shrink-0 cursor-pointer"
+                                        title="Schedule Next Followup / Reminder"
+                                    >
+                                        <Clock size={12} />
+                                        <span>{actionDateStr ? `Next: ${new Date(actionDateStr).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}` : 'Set Followup / Reminder'}</span>
+                                    </button>
+                                );
+                            })()}
 
                             {(lead.dnp_count > 0 || lead.custom_fields?.dnp_count > 0) && (
                                 <span className="text-[10px] font-black bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md border border-rose-200 shrink-0 flex items-center gap-1">
@@ -1533,10 +1539,11 @@ END:VCARD`
 
                 {/* HIGHLIGHTED NEXT ACTION & REMINDER BANNER */}
                 {(() => {
-                    const actionDate = lead.next_action_date || lead.next_followup || lead.custom_fields?.next_action_date;
-                    const actionType = lead.next_action_type || lead.custom_fields?.next_action_type || lead.last_followup_type || 'Call';
-                    const actionRemarks = lead.next_action_remarks || lead.custom_fields?.next_remarks || lead.custom_fields?.next_action_remarks || lead.last_followup_remark;
-                    const hasReminder = lead.remind_me !== false && lead.custom_fields?.remind_me !== false;
+                    const cf = parseCustomFields(lead.custom_fields);
+                    const actionDate = lead.next_followup || cf.next_action_date || lead.next_action_date;
+                    const actionType = lead.next_action_type || cf.next_action_type || lead.last_followup_type || 'Call';
+                    const actionRemarks = lead.next_action_remarks || cf.next_remarks || cf.next_action_remark || cf.next_action_remarks || lead.last_followup_remark;
+                    const hasReminder = lead.remind_me !== false && cf.remind_me !== false;
                     
                     if (!actionDate) return null;
                     const actionDateObj = new Date(actionDate);
