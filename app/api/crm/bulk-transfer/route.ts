@@ -341,6 +341,10 @@ export async function POST(req: Request) {
             delete cf.last_call_status
             delete cf.last_call_dnp
             delete cf.dnp_count
+            delete cf.lead_status
+            cf.pipeline_stage = 'New Lead'
+            cf.status = 'New Lead'
+            cf.followup_count = 0
             updatePayload.status = 'New Lead'
             updatePayload.pipeline_stage = 'New Lead'
           }

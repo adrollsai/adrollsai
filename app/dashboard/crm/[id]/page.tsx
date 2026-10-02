@@ -14,6 +14,7 @@ import { normalizeQualifyingQuestion, parseCustomFields } from '@/utils/lead-sco
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
 import { openPhoneDialer } from '@/utils/dialer'
+import { categorizeLeadStage } from '@/utils/pipeline-stages'
 
 const STAGES = [
   'New Lead',
@@ -1190,20 +1191,37 @@ export default function LeadProfilePage() {
         updateLocalCRMCacheWithHistory(newHist)
         setRemarkInput('')
 
-        // Update local lead state so notes and last_remark reflect this manual remark immediately
+        // Determine if lead is currently fresh (uncontacted)
+        const isFresh = categorizeLeadStage(lead) === 'fresh'
+
+        // Update local lead state so notes, stage, and last_remark reflect this manual remark immediately
         const nowFormatted = new Date().toLocaleString([], { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
         const prependedNote = `[${nowFormatted}]: ${text}\n\n${lead?.notes || ''}`
         let cf = { ...(lead?.custom_fields || {}) }
         if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
         cf.last_remark = text
-        const nextLead = { ...lead, notes: prependedNote, custom_fields: cf }
+        if (isFresh) {
+            cf.pipeline_stage = 'Contacted'
+            cf.status = 'Contacted'
+        }
+        const nextLead = { 
+            ...lead, 
+            notes: prependedNote, 
+            custom_fields: cf,
+            ...(isFresh ? { pipeline_stage: 'Contacted', status: 'Contacted' } : {})
+        }
         setLead(nextLead)
         updateLocalCRMCache(nextLead)
 
         await fetch('/api/crm/lead-action', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ leadId: id, actionType: 'REMARK', description: text })
+            body: JSON.stringify({ 
+                leadId: id, 
+                actionType: 'REMARK', 
+                description: text,
+                ...(isFresh ? { updateStage: 'Contacted' } : {})
+            })
         })
     }
 

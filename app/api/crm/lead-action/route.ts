@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { categorizeLeadStage } from '@/utils/pipeline-stages'
 
 export async function POST(request: Request) {
   try {
@@ -78,15 +79,27 @@ export async function POST(request: Request) {
       updates.next_followup = nextFollowup
     }
 
-    if (updateStage) {
-      updates.pipeline_stage = updateStage
-      updates.status = updateStage
-    }
-
     // Handle DNP increment & custom fields
     let customFields = currentLead.custom_fields || {}
     if (typeof customFields === 'string') {
       try { customFields = JSON.parse(customFields) } catch (e) { customFields = {} }
+    }
+
+    // Check if the current lead is fresh (unattempted)
+    const currentCategory = categorizeLeadStage(currentLead)
+    const isFreshLead = currentCategory === 'fresh'
+
+    if (updateStage) {
+      updates.pipeline_stage = updateStage
+      updates.status = updateStage
+      customFields.pipeline_stage = updateStage
+      customFields.status = updateStage
+    } else if (isFreshLead) {
+      // Attempting or remarking on a fresh lead automatically transitions it to Contacted (Ongoing category)
+      updates.pipeline_stage = 'Contacted'
+      updates.status = 'Contacted'
+      customFields.pipeline_stage = 'Contacted'
+      customFields.status = 'Contacted'
     }
 
     let newDnpCount = currentLead.dnp_count || 0
