@@ -107,7 +107,7 @@ export function SuiteHeader({
     }
   ]
 
-  const tabs = allTabs.filter(t => isSuperAdmin ? true : t.id !== 'flows')
+  const tabs = allTabs
 
   return (
     <div className="bg-white border-b border-slate-200/90 sticky top-0 z-30 shadow-[0_2px_8px_-3px_rgba(0,0,0,0.04)]">

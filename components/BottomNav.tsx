@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers, Bot } from 'lucide-react'
+import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers, Bot, MapPin } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -117,6 +117,7 @@ export default function BottomNav() {
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     { name: 'WhatsApp', icon: MessageCircle, path: '/dashboard/whatsapp' },
+    { name: 'GBP Audit', icon: MapPin, path: '/dashboard/gbp-audit' },
     ...(showDistribute ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
@@ -141,6 +142,11 @@ export default function BottomNav() {
     // Hide Distribute from admin accounts
     if (item.name === 'Distribute') {
       return ['super_admin', 'agency'].includes(role)
+    }
+
+    // Restrict GBP Audit strictly to Nobogent super admin account
+    if (item.name === 'GBP Audit') {
+      return role === 'super_admin' || userEmail === 'rchopra489@gmail.com';
     }
 
     // Team visibility

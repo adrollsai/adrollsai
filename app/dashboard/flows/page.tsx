@@ -3017,10 +3017,10 @@ export default function FlowsPage() {
   // =========================================================================
   if (currentFlow) {
     return (
-      <div className="fixed inset-0 z-40 bg-slate-50 text-slate-900 flex flex-col overflow-hidden font-sans">
+      <div className="fixed inset-0 z-40 bg-[#070A12] text-slate-100 flex flex-col overflow-hidden font-sans select-none">
         
-        {/* BUILDER FIXED TOP BAR (CRISP LIGHT THEME) */}
-        <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between gap-3 shrink-0 z-30 shadow-xs">
+        {/* BUILDER FIXED TOP BAR (TACTICAL DARK OBSIDIAN STUDIO) */}
+        <header className="h-16 bg-[#0B0F19]/95 backdrop-blur-xl border-b border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-3 shrink-0 z-30 shadow-2xl">
           {/* Left: Back button & Flow title inline */}
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -3028,70 +3028,71 @@ export default function FlowsPage() {
                 setSelectedNode(null)
                 setCurrentFlow(null)
               }}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors shrink-0 cursor-pointer"
               title="Return to Automations Suite"
             >
               <ArrowLeft size={18} />
             </button>
 
-            <div className="w-9 h-9 rounded-xl bg-violet-50 text-violet-600 border border-violet-200 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-cyan-950/60 text-cyan-400 border border-cyan-800/60 flex items-center justify-center shrink-0 shadow-inner">
               <Workflow size={18} />
             </div>
 
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 px-2">
+              <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-wider text-slate-400 px-1">
                 <button
                   onClick={() => {
                     setSelectedNode(null)
                     setCurrentFlow(null)
                   }}
-                  className="hover:text-slate-700 transition-colors cursor-pointer"
+                  className="hover:text-cyan-400 transition-colors cursor-pointer uppercase"
                 >
                   Automations
                 </button>
-                <span className="text-slate-300">/</span>
-                <span className="text-slate-500">Flows</span>
-                <span className="text-slate-300">/</span>
-                <span className="text-slate-700 font-bold truncate max-w-[150px]">{currentFlow.name}</span>
+                <span className="text-slate-600">/</span>
+                <span className="text-slate-400 uppercase">Flows</span>
+                <span className="text-slate-600">/</span>
+                <span className="text-cyan-300 font-bold truncate max-w-[150px] font-mono">{currentFlow.name}</span>
               </div>
-              <input
-                type="text"
-                value={currentFlow.name}
-                onChange={(e) => setCurrentFlow({ ...currentFlow, name: e.target.value })}
-                className="bg-transparent hover:bg-slate-100 focus:bg-white text-sm sm:text-base font-black text-slate-900 px-2 py-0.5 rounded-lg border border-transparent focus:border-slate-300 outline-none w-48 sm:w-80 truncate transition-colors"
-                placeholder="Name your flow..."
-              />
-              <div className="flex items-center gap-2 px-2 text-[11px] text-slate-500">
-                <span>{currentFlow.nodes.length} automated steps</span>
-                <span>•</span>
-                <span className="truncate font-medium">{currentFlow.trigger.label || 'Trigger Configured'}</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <input
+                  type="text"
+                  value={currentFlow.name}
+                  onChange={(e) => setCurrentFlow({ ...currentFlow, name: e.target.value })}
+                  className="bg-slate-900/80 hover:bg-slate-900 focus:bg-[#070B14] text-xs sm:text-sm font-bold text-white px-2.5 py-0.5 rounded-lg border border-slate-800 focus:border-cyan-500/80 outline-none w-48 sm:w-72 truncate transition-colors shadow-inner"
+                  placeholder="Name your flow..."
+                />
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-900/60 border border-slate-800 px-2 py-0.5 rounded-md hidden md:inline-flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  {currentFlow.nodes.length} Steps Active
+                </span>
               </div>
             </div>
           </div>
 
           {/* Middle: Studio Mode Tabs (Builder, Analytics, History) */}
-          <div className="hidden lg:flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs font-bold shadow-xs">
+          <div className="hidden lg:flex items-center bg-[#070B14] border border-slate-800/90 rounded-xl p-1 text-xs font-mono font-bold shadow-inner">
             <button
               onClick={() => setStudioTab('builder')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 studioTab === 'builder'
-                  ? 'bg-white text-indigo-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <Workflow size={13} />
-              <span>Canvas Builder</span>
+              <span>Canvas Blueprint</span>
             </button>
             <button
               onClick={() => setStudioTab('analytics')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 studioTab === 'analytics'
-                  ? 'bg-white text-indigo-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <BarChart3 size={13} />
-              <span>Flow Analytics & Funnel</span>
+              <span>Flow Analytics</span>
               {isLiveRunActive && (
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               )}
@@ -3100,47 +3101,47 @@ export default function FlowsPage() {
               onClick={() => setStudioTab('history')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 studioTab === 'history'
-                  ? 'bg-white text-indigo-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <History size={13} />
-              <span>Run History</span>
-              <span className="text-[10px] px-1.5 py-0.5 bg-slate-200/80 text-slate-700 rounded-full font-mono font-bold">
+              <span>Telemetry Logs</span>
+              <span className="text-[10px] px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded-full font-mono font-bold">
                 {flowRunHistory.length}
               </span>
             </button>
           </div>
 
-          {/* Right: Actions (Active Toggle, Zoom, AI Architect, Run on Audience, Test Run, Add Step, Save, Publish) */}
-          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          {/* Right: Actions (Active Toggle, Zoom, AI Architect, Run on Audience, Test Run, Deploy) */}
+          <div className="flex items-center gap-2 shrink-0">
             {/* Active Toggle Button */}
             <button
               onClick={() => setCurrentFlow({ ...currentFlow, isActive: !currentFlow.isActive })}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
                 currentFlow.isActive 
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-xs' 
-                  : 'bg-slate-100 text-slate-500 border-slate-200'
+                  ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/80 shadow-[0_0_12px_rgba(16,185,129,0.2)]' 
+                  : 'bg-slate-900 text-slate-400 border-slate-800'
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${currentFlow.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-              <span className="hidden sm:inline">{currentFlow.isActive ? 'Active & Live' : 'Paused'}</span>
+              <span className={`w-2 h-2 rounded-full ${currentFlow.isActive ? 'bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse' : 'bg-slate-500'}`}></span>
+              <span className="hidden sm:inline">{currentFlow.isActive ? 'LIVE // RUNNING' : 'STANDBY // PAUSED'}</span>
             </button>
 
             {/* Canvas Zoom Controls (Builder tab only) */}
             {studioTab === 'builder' && (
-              <div className="hidden md:flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs">
+              <div className="hidden md:flex items-center bg-slate-900/90 border border-slate-800 rounded-xl p-0.5 text-xs">
                 <button
                   onClick={handleZoomOut}
                   disabled={zoomLevel <= 50}
-                  className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-30 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 transition-colors cursor-pointer"
                   title="Zoom Out"
                 >
-                  <ZoomOut size={14} />
+                  <ZoomOut size={13} />
                 </button>
                 <button
                   onClick={handleResetZoom}
-                  className="px-2 py-1 text-[11px] font-bold text-slate-700 hover:text-slate-900 hover:bg-white rounded-md transition-colors font-mono cursor-pointer"
+                  className="px-2 py-0.5 text-[10px] font-mono text-slate-300 hover:text-white rounded transition-colors cursor-pointer"
                   title="Reset Zoom to 100%"
                 >
                   {zoomLevel}%
@@ -3148,10 +3149,10 @@ export default function FlowsPage() {
                 <button
                   onClick={handleZoomIn}
                   disabled={zoomLevel >= 150}
-                  className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-30 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 transition-colors cursor-pointer"
                   title="Zoom In"
                 >
-                  <ZoomIn size={14} />
+                  <ZoomIn size={13} />
                 </button>
               </div>
             )}
@@ -3159,78 +3160,56 @@ export default function FlowsPage() {
             {/* AI Architect Button */}
             <button
               onClick={() => setIsAiArchitectOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-              title="Generate or adjust flow using DeepSeek v4-flash or Voice"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-[0_0_15px_rgba(99,102,241,0.3)] cursor-pointer active:scale-95"
+              title="Generate or adjust flow using DeepSeek v4.1 Flash AI"
             >
-              <Sparkles size={13} />
+              <Sparkles size={13} className="text-amber-300" />
               <span className="hidden sm:inline">AI Architect</span>
             </button>
 
             {/* Run on Audience Button */}
             <button
               onClick={() => setIsRunAudienceModalOpen(true)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer border ${
                 isLiveRunActive
                   ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-500 ring-2 ring-emerald-400/40 animate-pulse'
-                  : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border-blue-600 shadow-blue-500/20 active:scale-95'
+                  : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700 active:scale-95'
               }`}
-              title="Execute flow manually over custom uploaded CSV, audience segment, or campaign leads"
+              title="Execute flow over custom uploaded CSV or audience group"
             >
-              <Zap size={13} className={isLiveRunActive ? 'text-amber-300 fill-amber-300 animate-spin' : 'text-amber-300 fill-amber-300'} />
-              <span>{isLiveRunActive ? 'Live Run Active' : 'Run on Audience'}</span>
+              <Zap size={13} className="text-amber-400 fill-amber-400" />
+              <span className="hidden sm:inline">{isLiveRunActive ? 'Audience Running' : 'Audience Run'}</span>
             </button>
 
-            {/* Test Run Button */}
+            {/* Test Run Simulator Button */}
             <button
               onClick={handleStartSimulation}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
                 testedBeforePublish
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-400 ring-1 ring-emerald-300'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                  ? 'bg-emerald-950/60 text-emerald-400 border-emerald-700/80 ring-1 ring-emerald-500/50'
+                  : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
               }`}
               title="Test run single lead in interactive phone simulator"
             >
-              <Play size={13} className={testedBeforePublish ? 'text-emerald-600 fill-emerald-600' : 'text-slate-600'} />
-              <span>{testedBeforePublish ? 'Verified' : 'Test Run'}</span>
+              <Play size={13} className={testedBeforePublish ? 'text-emerald-400 fill-emerald-400' : 'text-slate-400'} />
+              <span>{testedBeforePublish ? 'Verified' : 'Simulator'}</span>
             </button>
 
-            {/* Add Step Button */}
-            <button
-              onClick={() => {
-                setInsertAtIndex(null)
-                setIsNodePaletteOpen(true)
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-            >
-              <Plus size={14} />
-              <span className="hidden sm:inline">Add Step</span>
-            </button>
-
-            {/* Save Button */}
-            <button
-              onClick={handleSaveFlow}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-xs disabled:opacity-50 cursor-pointer"
-            >
-              {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-              <span>Save</span>
-            </button>
-
-            {/* Publish Flow Button */}
+            {/* Save / Deploy Flow Button */}
             <button
               onClick={handlePublishFlow}
               disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-black transition-all shadow-sm shadow-emerald-600/20 disabled:opacity-50 cursor-pointer active:scale-95"
-              title="Publish flow and make it active for campaign leads"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white rounded-xl text-xs font-black transition-all shadow-[0_0_18px_rgba(16,185,129,0.3)] disabled:opacity-50 cursor-pointer active:scale-95"
+              title="Deploy flow and make it active for incoming leads"
             >
-              <Zap size={13} />
-              <span>Publish Flow</span>
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+              <span>Deploy Flow</span>
             </button>
           </div>
         </header>
 
         {/* BUILDER CANVAS BODY CONTAINER */}
-        <div className="flex-1 flex overflow-hidden relative bg-slate-50">
+        <div className="flex-1 flex overflow-hidden relative bg-[#080C14]">
           
           {/* === CANVAS BUILDER VIEW (MANYCHAT / CHATBOTX 2D INFINITE GRAPH) === */}
           {studioTab === 'builder' && (
@@ -6752,10 +6731,6 @@ export default function FlowsPage() {
       <SuiteHeader
         activeTab={activeSuiteTab}
         onSelectTab={(tab) => {
-          if (tab === 'flows' && !isSuperAdmin) {
-            setActiveSuiteTab('ai_calling')
-            return
-          }
           setActiveSuiteTab(tab)
           if (tab !== 'flows') {
             setCurrentFlow(null)
@@ -6770,9 +6745,9 @@ export default function FlowsPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
         {/* ========================================================================= */}
-        {/* TAB 1: VISUAL FLOWS DIRECTORY & STUDIO (Super Admin Only)                 */}
+        {/* TAB 1: VISUAL FLOWS DIRECTORY & STUDIO                                    */}
         {/* ========================================================================= */}
-        {activeSuiteTab === 'flows' && isSuperAdmin && (
+        {activeSuiteTab === 'flows' && (
           <>
             {/* TEMPLATE GALLERY */}
         <div className="mb-10">

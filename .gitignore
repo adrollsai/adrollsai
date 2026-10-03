@@ -26,6 +26,7 @@ node_modules/
 # misc
 .DS_Store
 *.pem
+*.csv
 
 # debug
 *.log

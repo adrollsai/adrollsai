@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
   try {
     const state = JSON.parse(stateStr)
-    const { userId, redirectUriOrigin } = state
+    const { userId, redirectUriOrigin, flow, campaignSlug } = state
 
     const clientId = process.env.GOOGLE_CLIENT_ID
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET
@@ -42,8 +42,71 @@ export async function GET(request: Request) {
       return new Response(`Token exchange failed: ${tokenData.error_description || tokenData.error}`, { status: 500 })
     }
 
-    const { refresh_token } = tokenData
+    const { access_token, refresh_token } = tokenData
 
+    // --- GBP Audit OAuth Flow ---
+    if (flow === 'gbp_audit') {
+      let userEmail = ''
+      let userName = ''
+      let businessTitle = ''
+      let businessAddress = ''
+
+      // Fetch user profile info
+      try {
+        const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${access_token}` }
+        })
+        if (userInfoRes.ok) {
+          const userInfo = await userInfoRes.json()
+          userEmail = userInfo.email || ''
+          userName = userInfo.name || ''
+        }
+      } catch (err) {
+        console.warn('[Google GBP Callback] Error fetching userinfo:', err)
+      }
+
+      // Try fetching GBP accounts & locations
+      try {
+        const accountsRes = await fetch('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', {
+          headers: { Authorization: `Bearer ${access_token}` }
+        })
+        if (accountsRes.ok) {
+          const accData = await accountsRes.json()
+          const primaryAccount = accData.accounts?.[0]
+          if (primaryAccount) {
+            const locRes = await fetch(`https://mybusinessbusinessinformation.googleapis.com/v1/${primaryAccount.name}/locations?readMask=name,title,storefrontAddress,primaryPhone,categories`, {
+              headers: { Authorization: `Bearer ${access_token}` }
+            })
+            if (locRes.ok) {
+              const locData = await locRes.json()
+              const primaryLoc = locData.locations?.[0]
+              if (primaryLoc) {
+                businessTitle = primaryLoc.title || ''
+                if (primaryLoc.storefrontAddress?.addressLines) {
+                  businessAddress = primaryLoc.storefrontAddress.addressLines.join(', ')
+                }
+              }
+            }
+          }
+        }
+      } catch (locErr) {
+        console.warn('[Google GBP Callback] Error reading GBP locations:', locErr)
+      }
+
+      const auditParams = new URLSearchParams({
+        connected: 'true',
+        email: userEmail,
+        name: userName,
+        business: businessTitle || userName,
+        address: businessAddress,
+        token: access_token || ''
+      })
+
+      const targetSlug = campaignSlug || 'nobogent'
+      return NextResponse.redirect(`${redirectUriOrigin}/audit/${targetSlug}?${auditParams.toString()}`)
+    }
+
+    // --- Standard Google Calendar Flow ---
     // Save refresh_token to profiles table in Supabase
     // We use service role to bypass RLS since callback is a public route
     const supabaseAdmin = createClient(

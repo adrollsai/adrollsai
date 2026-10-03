@@ -21,6 +21,7 @@ import DownloadLeadsModal from '@/components/DownloadLeadsModal'
 import CsvImportModal from '@/components/CsvImportModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import LeadAdPreviewModal from '@/components/LeadAdPreviewModal'
+import CRMErrorBoundary from '@/components/CRMErrorBoundary'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, extractStagesFromProfile } from '@/utils/pipeline-stages'
 import { parseCustomFields, getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
@@ -307,13 +308,18 @@ export default function CRMPage() {
   const [adPreviewLead, setAdPreviewLead] = useState<any | null>(null)
 
   // --- FILTER STATE ---
-  const [sortOrder, setSortOrder] = useState<'last_attempted' | 'received_newest' | 'received_oldest' | 'crm_newest' | 'score_highest' | 'newest' | 'oldest'>('received_newest')
+  const [sortOrder, setSortOrder] = useState<'last_attempted' | 'received_newest' | 'received_oldest' | 'crm_newest' | 'score_highest' | 'newest' | 'oldest'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('crm_sort_order') || sessionStorage.getItem('crm_sort_order') || 'received_newest') as any
+    }
+    return 'received_newest'
+  })
   const [customStages, setCustomStages] = useState<PipelineStageConfig[]>(DEFAULT_PIPELINE_STAGES)
   
   // 4 Primary Sections: all | fresh | ongoing | not_interested
   const [activeSection, setActiveSectionState] = useState<'all' | 'fresh' | 'ongoing' | 'not_interested'>(() => {
     if (typeof window !== 'undefined') {
-      const saved = sessionStorage.getItem('crm_section')
+      const saved = localStorage.getItem('crm_section') || sessionStorage.getItem('crm_section')
       if (saved && ['all', 'fresh', 'ongoing', 'not_interested'].includes(saved)) {
         return saved as any
       }
@@ -333,15 +339,23 @@ export default function CRMPage() {
     setSelectedSpecificStage('ALL')
     setCurrentPageState(1)
     if (typeof window !== 'undefined') {
-      sessionStorage.setItem('crm_section', section)
-      sessionStorage.setItem('crm_page', '1')
+      try {
+        localStorage.setItem('crm_section', section)
+        sessionStorage.setItem('crm_section', section)
+        sessionStorage.setItem('crm_page', '1')
+      } catch (e) {}
     }
   }
 
   // Legacy activeStage fallback
   const activeStage = activeSection === 'fresh' ? 'New Lead' : activeSection === 'all' ? 'All Leads' : activeSection
 
-  const [selectedSpecificStage, setSelectedSpecificStage] = useState<string>('ALL')
+  const [selectedSpecificStage, setSelectedSpecificStage] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_stage') || sessionStorage.getItem('crm_filter_stage') || 'ALL'
+    }
+    return 'ALL'
+  })
 
   // Stages available for the active section filter
   const availableStagesForSection = useMemo(() => {
@@ -421,12 +435,42 @@ export default function CRMPage() {
     }
   }
 
-  const [selectedDnpFilter, setSelectedDnpFilter] = useState<'ALL' | 'DNP_ONLY' | 'DNP_1' | 'DNP_2' | 'DNP_3PLUS' | 'NO_DNP'>('ALL')
-  const [selectedNextActionFilter, setSelectedNextActionFilter] = useState<'ALL' | 'HAS_ACTION' | 'TODAY' | 'OVERDUE' | 'UPCOMING' | 'NO_ACTION'>('ALL')
-  const [selectedNextActionType, setSelectedNextActionType] = useState<string>('ALL')
-  const [selectedAgentFilter, setSelectedAgentFilter] = useState<string>('ALL')
-  const [selectedDateRange, setSelectedDateRange] = useState<string>('ALL')
-  const [selectedCsvAudience, setSelectedCsvAudience] = useState<string>('')
+  const [selectedDnpFilter, setSelectedDnpFilter] = useState<'ALL' | 'DNP_ONLY' | 'DNP_1' | 'DNP_2' | 'DNP_3PLUS' | 'NO_DNP'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('crm_filter_dnp') || sessionStorage.getItem('crm_filter_dnp') || 'ALL') as any
+    }
+    return 'ALL'
+  })
+  const [selectedNextActionFilter, setSelectedNextActionFilter] = useState<'ALL' | 'HAS_ACTION' | 'TODAY' | 'OVERDUE' | 'UPCOMING' | 'NO_ACTION'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('crm_filter_next_action') || sessionStorage.getItem('crm_filter_next_action') || 'ALL') as any
+    }
+    return 'ALL'
+  })
+  const [selectedNextActionType, setSelectedNextActionType] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_next_action_type') || sessionStorage.getItem('crm_filter_next_action_type') || 'ALL'
+    }
+    return 'ALL'
+  })
+  const [selectedAgentFilter, setSelectedAgentFilter] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_agent') || sessionStorage.getItem('crm_filter_agent') || 'ALL'
+    }
+    return 'ALL'
+  })
+  const [selectedDateRange, setSelectedDateRange] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_date_range') || sessionStorage.getItem('crm_filter_date_range') || 'ALL'
+    }
+    return 'ALL'
+  })
+  const [selectedCsvAudience, setSelectedCsvAudience] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_csv_audience') || sessionStorage.getItem('crm_filter_csv_audience') || ''
+    }
+    return ''
+  })
   const [callFeedbackLead, setCallFeedbackLead] = useState<any>(null)
   const [updateFollowupLead, setUpdateFollowupLead] = useState<any>(null)
   const [historyLead, setHistoryLead] = useState<any>(null)
@@ -581,11 +625,77 @@ export default function CRMPage() {
   }
 
   // CRM Custom Date Filter State
-  const [crmCustomDate, setCrmCustomDate] = useState<string>('')
-  const [crmStartDate, setCrmStartDate] = useState<string>('')
-  const [crmEndDate, setCrmEndDate] = useState<string>('')
+  const [crmCustomDate, setCrmCustomDate] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_custom_date') || ''
+    }
+    return ''
+  })
+  const [crmStartDate, setCrmStartDate] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_start_date') || ''
+    }
+    return ''
+  })
+  const [crmEndDate, setCrmEndDate] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_end_date') || ''
+    }
+    return ''
+  })
   const [isCrmDatePickerOpen, setIsCrmDatePickerOpen] = useState<boolean>(false)
   const [crmDateFilterMode, setCrmDateFilterMode] = useState<'single' | 'range'>('single')
+
+  // Auto-persist active filters to localStorage/sessionStorage so refreshes and re-opens never lose applied filters
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem('crm_filter_agent', selectedAgentFilter)
+      sessionStorage.setItem('crm_filter_agent', selectedAgentFilter)
+
+      localStorage.setItem('crm_filter_stage', selectedSpecificStage)
+      sessionStorage.setItem('crm_filter_stage', selectedSpecificStage)
+
+      localStorage.setItem('crm_filter_date_range', selectedDateRange)
+      sessionStorage.setItem('crm_filter_date_range', selectedDateRange)
+
+      localStorage.setItem('crm_filter_dnp', selectedDnpFilter)
+      sessionStorage.setItem('crm_filter_dnp', selectedDnpFilter)
+
+      localStorage.setItem('crm_filter_next_action', selectedNextActionFilter)
+      sessionStorage.setItem('crm_filter_next_action', selectedNextActionFilter)
+
+      localStorage.setItem('crm_filter_next_action_type', selectedNextActionType)
+      sessionStorage.setItem('crm_filter_next_action_type', selectedNextActionType)
+
+      localStorage.setItem('crm_sort_order', sortOrder)
+      sessionStorage.setItem('crm_sort_order', sortOrder)
+
+      if (crmCustomDate) {
+        localStorage.setItem('crm_filter_custom_date', crmCustomDate)
+      } else {
+        localStorage.removeItem('crm_filter_custom_date')
+      }
+
+      if (crmStartDate && crmEndDate) {
+        localStorage.setItem('crm_filter_start_date', crmStartDate)
+        localStorage.setItem('crm_filter_end_date', crmEndDate)
+      } else {
+        localStorage.removeItem('crm_filter_start_date')
+        localStorage.removeItem('crm_filter_end_date')
+      }
+
+      if (selectedCsvAudience) {
+        localStorage.setItem('crm_filter_csv_audience', selectedCsvAudience)
+      } else {
+        localStorage.removeItem('crm_filter_csv_audience')
+      }
+    } catch (e) {}
+  }, [
+    selectedAgentFilter, selectedSpecificStage, selectedDateRange, selectedDnpFilter,
+    selectedNextActionFilter, selectedNextActionType, sortOrder, crmCustomDate,
+    crmStartDate, crmEndDate, selectedCsvAudience
+  ])
 
   // Selected From Agent Filter State in Bulk Actions Modal
   const [selectedFromOwnerIds, setSelectedFromOwnerIds] = useState<string[]>([])
@@ -1102,7 +1212,7 @@ export default function CRMPage() {
     }
   };
 
-  const handleUpdateFollowupSuccess = (updatedData?: { 
+  const handleUpdateFollowupSuccess = async (updatedData?: { 
     id: string; 
     status?: string; 
     pipeline_stage?: string;
@@ -1123,8 +1233,27 @@ export default function CRMPage() {
         }
         return l
       }))
+
+      // Single-lead background sync: Never refetch the entire 16,000+ lead database on a followup update!
+      try {
+        const { data: freshLead, error: freshErr } = await supabase
+          .from('leads')
+          .select(leadFields)
+          .eq('id', updatedData.id)
+          .single()
+
+        if (!freshErr && freshLead) {
+          let cf = freshLead.custom_fields
+          if (cf && typeof cf === 'string') {
+            try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = {} }
+          }
+          const parsed = { ...freshLead, custom_fields: cf || {} }
+          setLeads(prev => prev.map(l => l.id === parsed.id ? { ...l, ...parsed } : l))
+        }
+      } catch (err) {
+        // Optimistic update is already in place
+      }
     }
-    fetchLeads(true, true).catch(() => {})
   }
 
   const handleAssignProduct = async (leadId: string, propertyId: string | null) => {
@@ -2079,7 +2208,7 @@ END:VCARD\n`
         const cleanSelected = selectedCampaigns.map(c => c.trim().toLowerCase())
         if (l.campaign_id) {
           const camp = campaigns.find(c => c.id === l.campaign_id)
-          if (camp && cleanSelected.includes(camp.name.trim().toLowerCase())) return true
+          if (camp && camp.name && typeof camp.name === 'string' && cleanSelected.includes(camp.name.trim().toLowerCase())) return true
         }
         const leadCamp = getLeadCampaignName(l)
         if (leadCamp && cleanSelected.includes(leadCamp.trim().toLowerCase())) return true
@@ -3215,6 +3344,7 @@ END:VCARD\n`
 
             {renderPagination('top')}
 
+            <CRMErrorBoundary fallbackTitle="Lead View Interruption Prevented">
             {viewMode === 'table' ? (
                 <div className="bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden mb-6">
                     <div className="overflow-x-auto">
@@ -3814,6 +3944,7 @@ END:VCARD\n`
                 })}
             </div>
             )}
+            </CRMErrorBoundary>
 
             {renderPagination('bottom')}
             </>

@@ -73,85 +73,77 @@ export function TriggerNode({ data, id }: { data: any; id: string }) {
       case 'whatsapp_inbound':
         return {
           title: data.title || 'WhatsApp Inbound / Keyword',
-          subtitle: 'Starting Step • Customer Inbound',
-          badge: 'WhatsApp 💬',
+          subtitle: 'INBOUND // CUSTOMER_MESSAGE',
+          badge: 'WHATSAPP',
           icon: MessageSquare,
-          gradient: 'from-emerald-600 via-teal-600 to-emerald-700',
-          borderColor: 'border-emerald-500',
-          desc: data.keywords ? `Fires on keywords: ${data.keywords}` : 'Fires on any incoming customer WhatsApp message'
+          accent: 'from-emerald-500 via-teal-500 to-cyan-500',
+          desc: data.keywords ? `Trigger keywords: [${data.keywords}]` : 'Listens for any incoming customer WhatsApp message'
         }
       case 'ig_comment':
       case 'fb_comment':
         return {
-          title: data.title || 'Ad / Post Comment',
-          subtitle: 'Starting Step • Comment Event',
-          badge: 'Comments 💬',
+          title: data.title || 'Ad / Post Comment Event',
+          subtitle: 'INBOUND // COMMENT_TRIGGER',
+          badge: 'COMMENTS',
           icon: MessageCircle,
-          gradient: 'from-pink-600 via-rose-600 to-purple-700',
-          borderColor: 'border-pink-500',
-          desc: data.keyword ? `Fires on comment keyword: "${data.keyword}"` : 'Fires when prospect comments on your Facebook or Instagram Ad'
+          accent: 'from-pink-500 via-rose-500 to-purple-500',
+          desc: data.keyword ? `Filter keyword: "${data.keyword}"` : 'Fires on prospect comment on Meta Ad or organic post'
         }
       case 'ig_dm':
       case 'fb_dm':
         return {
-          title: data.title || 'Instagram / Messenger DM',
-          subtitle: 'Starting Step • Direct Message',
-          badge: 'Direct Message 📸',
+          title: data.title || 'Direct Message Event',
+          subtitle: 'INBOUND // DIRECT_MESSAGE',
+          badge: 'DIRECT_MSG',
           icon: Send,
-          gradient: 'from-purple-600 via-indigo-600 to-blue-700',
-          borderColor: 'border-purple-500',
-          desc: 'Fires when prospect sends a direct message to your account'
+          accent: 'from-purple-500 via-indigo-500 to-blue-500',
+          desc: 'Fires when prospect sends direct message on IG / FB'
         }
       case 'crm_lead':
         return {
-          title: data.title || 'New CRM Lead / Pipeline',
-          subtitle: 'Starting Step • Lead Created',
-          badge: 'CRM Lead 👥',
+          title: data.title || 'CRM Pipeline Lead Event',
+          subtitle: 'SYSTEM // LEAD_INGESTION',
+          badge: 'CRM_LEAD',
           icon: Users,
-          gradient: 'from-blue-600 via-sky-600 to-indigo-700',
-          borderColor: 'border-blue-500',
-          desc: 'Fires when a new lead enters the CRM or stage is updated'
+          accent: 'from-blue-500 via-cyan-500 to-indigo-500',
+          desc: 'Fires when a new lead enters CRM or stage is updated'
         }
       case 'ai_call':
         return {
-          title: data.title || 'Instant AI Voice Call',
-          subtitle: 'Starting Step • Voice Outbound',
-          badge: 'Gemini Voice 🎙️',
+          title: data.title || 'Instant AI Voice Outbound',
+          subtitle: 'VOICE // OUTBOUND_DISPATCH',
+          badge: 'VOICE_AGENT',
           icon: PhoneCall,
-          gradient: 'from-rose-600 via-pink-600 to-red-700',
-          borderColor: 'border-rose-500',
-          desc: 'Fires automated Gemini Live voice call to the lead'
+          accent: 'from-rose-500 via-pink-500 to-red-500',
+          desc: 'Fires automated Gemini Live voice call to prospect'
         }
       case 'custom_webhook':
         return {
-          title: data.title || 'Custom Webhook / Form',
-          subtitle: 'Starting Step • HTTP Webhook',
-          badge: 'Webhook ⚡',
+          title: data.title || 'Custom Inbound Webhook',
+          subtitle: 'INGEST // HTTP_POST',
+          badge: 'WEBHOOK',
           icon: Globe,
-          gradient: 'from-slate-700 via-indigo-800 to-slate-900',
-          borderColor: 'border-indigo-500',
+          accent: 'from-cyan-500 via-sky-500 to-indigo-500',
           desc: 'Fires on external form submission or incoming webhook POST'
         }
       case 'whatsapp_broadcast':
         return {
-          title: data.title || 'WhatsApp Broadcast Template',
-          subtitle: 'Starting Step • Outbound Broadcast',
-          badge: 'Broadcast 📢',
+          title: data.title || 'WhatsApp Broadcast Engine',
+          subtitle: 'OUTBOUND // BATCH_CAMPAIGN',
+          badge: 'BROADCAST',
           icon: Zap,
-          gradient: 'from-indigo-600 via-indigo-700 to-violet-700',
-          borderColor: 'border-indigo-500',
-          desc: 'Broadcast template with quick-reply buttons'
+          accent: 'from-indigo-500 via-cyan-500 to-emerald-500',
+          desc: 'Broadcast template with quick-reply branch ports'
         }
       case 'meta_ad':
       default:
         return {
-          title: data.title || 'Meta Ad Lead / Click-to-WhatsApp',
-          subtitle: 'Starting Step • Meta Ad Inbound',
-          badge: 'Meta Ads 🎯',
+          title: data.title || 'Meta Click-to-WhatsApp Ad',
+          subtitle: 'INBOUND // META_CTWA',
+          badge: 'META_ADS',
           icon: Zap,
-          gradient: 'from-indigo-600 via-violet-600 to-purple-700',
-          borderColor: 'border-indigo-500',
-          desc: data.campaignName ? `Fires on Ad clicks from: ${data.campaignName}` : 'Fires instantly when a lead clicks your Meta WhatsApp Ad & initiates chat'
+          accent: 'from-cyan-500 via-blue-500 to-indigo-500',
+          desc: data.campaignName ? `Ad Campaign: ${data.campaignName}` : 'Fires instantly when prospect clicks Meta WhatsApp Ad & initiates chat'
         }
     }
   }
@@ -160,112 +152,116 @@ export function TriggerNode({ data, id }: { data: any; id: string }) {
   const IconComp = meta.icon
 
   return (
-    <div className={`w-[330px] bg-white rounded-2xl border-2 ${meta.borderColor} shadow-xl shadow-indigo-500/10 overflow-hidden font-sans transition-all hover:shadow-2xl`}>
+    <div className="w-[340px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-cyan-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
+      {/* Tactical Top Accent Line */}
+      <div className={`h-1 w-full bg-gradient-to-r ${meta.accent}`} />
+
       {/* Header */}
-      <div className={`bg-gradient-to-r ${meta.gradient} px-4 py-3 flex items-center justify-between text-white`}>
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-            <IconComp size={15} className="text-white" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-cyan-400 group-hover:border-cyan-500/50 transition-colors shadow-inner shrink-0">
+            <IconComp size={14} />
           </div>
-          <div>
-            <span className="text-xs font-black tracking-wide uppercase block">{meta.title}</span>
-            <span className="text-[10px] text-white/80 block font-medium">{meta.subtitle}</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-cyan-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[TRIGGER]</span>
+              <span className="text-slate-600">//</span>
+              <span className="text-slate-400">{meta.badge}</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              {meta.title}
+            </span>
           </div>
         </div>
-        <span className="text-[10px] font-black bg-amber-400 text-indigo-950 px-2.5 py-0.5 rounded-full shadow-xs">
-          Trigger
-        </span>
+        <div className="flex items-center gap-1.5 bg-black/60 border border-slate-800 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold text-slate-300 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee] animate-pulse" />
+          <span>PORT 01</span>
+        </div>
       </div>
 
       {/* Body */}
-      <div className="p-4 space-y-3">
-        {/* Trigger Badge & Description */}
-        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Trigger Source:</span>
-            <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black">
-              {meta.badge}
-            </span>
+      <div className="p-3.5 space-y-3 bg-[#070B14]/90 text-xs">
+        {/* Recessed Telemetry Box */}
+        <div className="bg-black/50 border border-slate-850 rounded-xl p-2.5 font-mono text-[11px] space-y-2">
+          <div className="flex items-center justify-between text-[10px] text-slate-400 border-b border-slate-850 pb-1.5">
+            <span className="tracking-wider">SUBSYSTEM</span>
+            <span className="text-cyan-400 font-bold">{meta.subtitle}</span>
           </div>
-          <p className="text-slate-700 font-medium text-[11px] leading-relaxed">
+          <p className="text-slate-300 text-[11px] leading-relaxed font-sans">
             {data.description || meta.desc}
           </p>
         </div>
 
-        {/* If broadcast template, show audience, template & buttons */}
+        {/* If broadcast template, show audience, template & button ports */}
         {triggerType === 'whatsapp_broadcast' && (
-          <>
+          <div className="space-y-2 pt-1">
             {data.audienceGroupName && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px]">
-                <span className="text-emerald-700 font-bold uppercase tracking-wider text-[10px]">Audience:</span>
-                <span className="text-emerald-950 font-black truncate max-w-[170px]">
+              <div className="bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px] font-mono">
+                <span className="text-slate-400 text-[10px]">AUDIENCE:</span>
+                <span className="text-emerald-400 font-bold truncate max-w-[170px]">
                   {data.audienceGroupName} {data.audienceLeadCount ? `(${data.audienceLeadCount})` : ''}
                 </span>
               </div>
             )}
 
-            <div className="bg-indigo-50/80 border border-indigo-200/80 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px]">
-              <span className="text-indigo-600 font-bold uppercase tracking-wider text-[10px]">Template:</span>
-              <span className="text-slate-900 font-black font-mono truncate max-w-[180px]">{data.templateName || 'client_project_announcement'}</span>
+            <div className="bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px] font-mono">
+              <span className="text-slate-400 text-[10px]">TEMPLATE:</span>
+              <span className="text-cyan-300 font-bold truncate max-w-[180px]">
+                {data.templateName || 'client_project_announcement'}
+              </span>
             </div>
 
             {data.lastBroadcastAt && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-1 text-[10px] font-bold text-amber-900 flex items-center justify-between">
-                <span>🚀 Dispatched ({data.lastBroadcastRecipients || 0} leads)</span>
+              <div className="bg-black/60 border border-amber-900/40 rounded-xl px-3 py-1 text-[10px] font-mono font-bold text-amber-300 flex items-center justify-between">
+                <span>DISPATCHED ({data.lastBroadcastRecipients || 0})</span>
                 <span>{new Date(data.lastBroadcastAt).toLocaleDateString()}</span>
               </div>
             )}
 
-            {data.message && (
-              <div className="bg-[#E7F8EE] border border-emerald-200/80 rounded-xl p-2.5 text-[11px] text-slate-700 line-clamp-3">
-                {data.message}
+            {buttons.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+                  <span>BRANCH PORTS</span>
+                  <span className="text-cyan-400">OUTPUTS ➔</span>
+                </div>
+                {buttons.map((btn: any, idx: number) => (
+                  <div
+                    key={btn.id || idx}
+                    className="relative bg-black/60 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/50 rounded-xl px-3 py-2 flex items-center justify-between transition-colors group"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 pr-4">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee] shrink-0" />
+                      <span className="text-xs font-mono font-bold text-slate-200 truncate">{btn.title}</span>
+                    </div>
+
+                    <Handle
+                      type="source"
+                      position={Position.Right}
+                      id={`btn_${btn.id || idx}`}
+                      className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
+                      title={`Connect output for ${btn.title}`}
+                    />
+                  </div>
+                ))}
               </div>
             )}
-
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Button Ports
-                </span>
-                <span className="text-[10px] text-indigo-600 font-semibold">Connect outputs ➔</span>
-              </div>
-              {buttons.map((btn: any, idx: number) => (
-                <div
-                  key={btn.id || idx}
-                  className="relative bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 rounded-xl px-3 py-2 flex items-center justify-between transition-all group"
-                >
-                  <div className="flex items-center gap-2 min-w-0 pr-4">
-                    <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
-                    <span className="text-xs font-bold text-slate-800 truncate">{btn.title}</span>
-                  </div>
-
-                  <Handle
-                    type="source"
-                    position={Position.Right}
-                    id={`btn_${btn.id || idx}`}
-                    className="!w-3.5 !h-3.5 !bg-indigo-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-7px] cursor-crosshair"
-                    title={`Drag connection from ${btn.title}`}
-                  />
-                </div>
-              ))}
-            </div>
-          </>
+          </div>
         )}
 
-        {/* Standard Output Handle for Single-Event Triggers */}
+        {/* Standard Single Output Dock */}
         {triggerType !== 'whatsapp_broadcast' && (
-          <div className="relative pt-2 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Lead Arrived
+          <div className="relative pt-2 border-t border-slate-800/80 flex items-center justify-between">
+            <span className="text-[10px] font-mono font-bold text-cyan-400 tracking-wider flex items-center gap-1.5 uppercase">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee] animate-pulse" />
+              LEAD INGESTED
             </span>
-            <span className="text-[10px] font-bold text-slate-500 pr-2">Connect Step ➔</span>
+            <span className="text-[10px] font-mono text-slate-400 pr-2">DISPATCH ➔</span>
 
             <Handle
               type="source"
               position={Position.Right}
               id="output"
-              className="!w-4 !h-4 !bg-indigo-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-8px] cursor-crosshair"
+              className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
               title="Connect to next step"
             />
           </div>
@@ -275,43 +271,55 @@ export function TriggerNode({ data, id }: { data: any; id: string }) {
   )
 }
 
-// --- B. WHATSAPP MESSAGE NODE (Dedicated Message Step - Clean & Focused) ---
+// --- B. WHATSAPP MESSAGE NODE (Dedicated Message Step) ---
 export function WhatsAppMessageNode({ data, id }: { data: any; id: string }) {
   const buttons = data.buttons || []
 
   return (
-    <div className="w-[330px] bg-white rounded-2xl border-2 border-emerald-500 shadow-xl shadow-emerald-500/15 overflow-hidden font-sans transition-all hover:shadow-2xl">
-      {/* Input Handle on left */}
+    <div className="w-[340px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-emerald-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
+      {/* Input Handle on Left */}
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-emerald-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.5)] hover:!scale-125 transition-transform cursor-crosshair"
       />
 
+      {/* Top Accent Line */}
+      <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500" />
+
       {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-teal-700 px-4 py-3 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-            <MessageSquare size={15} className="text-white fill-white" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-emerald-400 group-hover:border-emerald-500/50 transition-colors shadow-inner shrink-0">
+            <MessageSquare size={14} />
           </div>
-          <div>
-            <span className="text-xs font-black tracking-wide uppercase block">WhatsApp Message</span>
-            <span className="text-[10px] text-teal-200 block font-medium">Free Flow Reply</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-emerald-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[DISPATCH]</span>
+              <span className="text-slate-600">//</span>
+              <span>WHATSAPP_MESSAGE</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              {data.title || 'WhatsApp Message'}
+            </span>
           </div>
         </div>
-        <span className="text-[10px] font-bold bg-white/25 px-2.5 py-0.5 rounded-full">Message</span>
+        <div className="flex items-center gap-1.5 bg-black/60 border border-slate-800 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold text-slate-300 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse" />
+          <span>AUTO_DISPATCH</span>
+        </div>
       </div>
 
       {/* Body */}
-      <div className="p-4 space-y-3">
-        {/* Message Bubble Preview */}
-        <div className="bg-[#E7F8EE] border border-emerald-200/80 rounded-xl p-3 text-xs text-slate-800 leading-relaxed relative">
-          <p className="whitespace-pre-line text-slate-700">
+      <div className="p-3.5 space-y-3 bg-[#070B14]/90 text-xs">
+        {/* Dark WhatsApp Chat Bubble Preview */}
+        <div className="bg-[#041A12]/80 border border-emerald-900/60 rounded-xl p-3 text-xs text-emerald-200/90 leading-relaxed font-sans relative shadow-inner">
+          <p className="whitespace-pre-line text-[11px] text-emerald-100">
             {data.message || 'Thank you for your response! How can our team assist you today?'}
           </p>
-          <div className="text-[9px] text-emerald-700 font-bold text-right mt-1.5 flex items-center justify-end gap-1">
-            <span>Now</span>
+          <div className="text-[9px] font-mono text-emerald-500 font-bold text-right mt-1.5 flex items-center justify-end gap-1">
+            <span>DISPATCHED</span>
             <span>✓✓</span>
           </div>
         </div>
@@ -319,22 +327,22 @@ export function WhatsAppMessageNode({ data, id }: { data: any; id: string }) {
         {/* Buttons List / CTA Button */}
         {buttons.length > 0 && (
           <div className="space-y-1.5 pt-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Interactive Buttons
+            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+              INTERACTIVE BRANCH BUTTONS
             </span>
             {buttons.map((btn: any, idx: number) => (
               <div
                 key={btn.id || idx}
-                className="relative bg-emerald-50/70 border border-emerald-200 rounded-xl px-3 py-2 flex items-center justify-between text-xs font-bold text-emerald-900 shadow-2xs"
+                className="relative bg-black/60 hover:bg-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-xl px-3 py-2 flex items-center justify-between text-xs font-mono font-bold text-slate-200 transition-colors"
               >
-                <span className="truncate">{btn.title}</span>
-                <span className="text-[10px] text-emerald-600 font-mono font-normal">➔ {btn.url ? 'URL Link' : 'Next Step'}</span>
+                <span className="truncate pr-4">{btn.title}</span>
+                <span className="text-[10px] text-emerald-400 font-mono font-normal shrink-0">➔ {btn.url ? 'URL' : 'BRANCH'}</span>
                 
                 <Handle
                   type="source"
                   position={Position.Right}
                   id={`btn_${btn.id || idx}`}
-                  className="!w-3.5 !h-3.5 !bg-emerald-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-7px] cursor-crosshair"
+                  className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.7)] hover:!scale-125 transition-transform cursor-crosshair"
                   title={`Connect ${btn.title}`}
                 />
               </div>
@@ -348,72 +356,78 @@ export function WhatsAppMessageNode({ data, id }: { data: any; id: string }) {
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-emerald-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
         title="Next Step"
       />
     </div>
   )
 }
 
-// --- C. NOTIFY ADMIN / TEAM NODE (Dedicated Internal Notification Action) ---
+// --- C. NOTIFY ADMIN / TEAM NODE ---
 export function NotifyNode({ data, id }: { data: any; id: string }) {
   const channels = data.channels || ['whatsapp', 'push']
   const priority = data.priority || 'high'
 
   return (
-    <div className="w-[310px] bg-white rounded-2xl border-2 border-amber-500 shadow-xl shadow-amber-500/15 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[330px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-amber-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-amber-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)] hover:!scale-125 transition-transform"
       />
 
+      <div className="h-1 w-full bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600" />
+
       {/* Header */}
-      <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-4 py-3 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-            <Bell size={15} className="text-white fill-white" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-amber-400 group-hover:border-amber-500/50 transition-colors shadow-inner shrink-0">
+            <Bell size={14} />
           </div>
-          <div>
-            <span className="text-xs font-black tracking-wide uppercase block">Notify Team / Admin</span>
-            <span className="text-[10px] text-amber-100 block font-medium">Instant Internal Alert</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-amber-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[TELEMETRY]</span>
+              <span className="text-slate-600">//</span>
+              <span>ADMIN_ALERT</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              Notify Team / Admin
+            </span>
           </div>
         </div>
-        <span className="text-[10px] font-black bg-white text-amber-900 px-2 py-0.5 rounded-full shadow-2xs uppercase">
+        <span className="text-[9px] font-mono font-bold bg-amber-950/60 border border-amber-800/80 text-amber-300 px-2 py-0.5 rounded-full uppercase shrink-0">
           {priority}
         </span>
       </div>
 
       {/* Body */}
-      <div className="p-4 space-y-3">
-        {/* Message preview */}
-        <div className="bg-amber-50/70 border border-amber-200/70 rounded-xl p-2.5 text-xs text-amber-950">
-          <p className="font-semibold line-clamp-2">
+      <div className="p-3.5 space-y-3 bg-[#070B14]/90 text-xs">
+        <div className="bg-[#1C1204]/80 border border-amber-900/60 rounded-xl p-2.5 text-xs text-amber-200/90 font-sans shadow-inner">
+          <p className="font-medium text-[11px] line-clamp-2">
             {data.message || '🔥 New lead response received! Immediate follow-up required.'}
           </p>
         </div>
 
-        {/* Enabled Channels */}
         <div className="space-y-1">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-            Delivery Channels
+          <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+            DELIVERY CHANNELS
           </span>
           <div className="flex flex-wrap gap-1.5">
             {channels.map((ch: string, idx: number) => (
               <span
                 key={idx}
-                className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-700 capitalize"
+                className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-[10px] font-mono font-bold text-slate-300 uppercase"
               >
-                {ch === 'push' ? '📲 Push Alert' : ch === 'whatsapp' ? '💬 WhatsApp' : ch === 'bell' ? '🔔 In-App Bell' : ch === 'email' ? '✉️ Email' : ch}
+                {ch === 'push' ? 'Push Alert' : ch === 'whatsapp' ? 'WhatsApp' : ch === 'bell' ? 'In-App Bell' : ch === 'email' ? 'Email' : ch}
               </span>
             ))}
           </div>
         </div>
 
-        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-          <span>Recipient:</span>
-          <span className="font-bold text-slate-800">
+        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+          <span>RECIPIENT:</span>
+          <span className="font-bold text-slate-200">
             {data.recipient === 'assigned' ? 'Assigned Agent' : data.customRecipient ? data.customRecipient : 'All Admins'}
           </span>
         </div>
@@ -423,60 +437,68 @@ export function NotifyNode({ data, id }: { data: any; id: string }) {
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-amber-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
       />
     </div>
   )
 }
 
-// --- D. CRM STAGE UPDATE NODE (Dedicated Pipeline Stage Action) ---
+// --- D. CRM STAGE UPDATE NODE ---
 export function CrmStageNode({ data, id }: { data: any; id: string }) {
   const stage = data.stage || 'Interested'
 
   return (
-    <div className="w-[300px] bg-white rounded-2xl border-2 border-emerald-600 shadow-xl shadow-emerald-600/15 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[320px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-emerald-400/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-emerald-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.5)] hover:!scale-125 transition-transform"
       />
 
+      <div className="h-1 w-full bg-gradient-to-r from-emerald-400 to-teal-500" />
+
       {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 px-4 py-3 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-            <TrendingUp size={15} className="text-white" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-emerald-400 group-hover:border-emerald-400/50 transition-colors shadow-inner shrink-0">
+            <TrendingUp size={14} />
           </div>
-          <div>
-            <span className="text-xs font-black tracking-wide uppercase block">Update CRM Stage</span>
-            <span className="text-[10px] text-emerald-100 block font-medium">Pipeline Progression</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-emerald-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[PIPELINE]</span>
+              <span className="text-slate-600">//</span>
+              <span>STAGE_SYNC</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              Update CRM Stage
+            </span>
           </div>
         </div>
-        <span className="text-[10px] font-black bg-white text-emerald-900 px-2 py-0.5 rounded-full shadow-2xs">
-          Stage
+        <span className="text-[9px] font-mono font-bold bg-emerald-950/60 border border-emerald-800/80 text-emerald-400 px-2 py-0.5 rounded-full shrink-0">
+          PIPELINE
         </span>
       </div>
 
       {/* Body */}
-      <div className="p-4 space-y-3">
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center justify-between">
+      <div className="p-3.5 space-y-3 bg-[#070B14]/90 text-xs">
+        <div className="bg-[#051A18]/80 border border-teal-900/60 rounded-xl p-2.5 flex items-center justify-between shadow-inner">
           <div>
-            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">New Pipeline Stage</span>
-            <span className="text-sm font-black text-emerald-950 block">{stage}</span>
+            <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase tracking-wider block">TARGET PIPELINE STAGE</span>
+            <span className="text-xs font-mono font-bold text-white block mt-0.5">{stage}</span>
           </div>
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
         </div>
 
         {data.assignAgent && (
-          <div className="flex items-center justify-between text-[11px] text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
-            <span>Assign To:</span>
-            <span className="font-bold text-slate-900">{data.assignAgent}</span>
+          <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 bg-black/50 px-2.5 py-1.5 rounded-lg border border-slate-850">
+            <span>ASSIGN TO:</span>
+            <span className="font-bold text-slate-200">{data.assignAgent}</span>
           </div>
         )}
 
         {data.note && (
-          <p className="text-[10px] text-slate-500 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
+          <p className="text-[10px] font-sans text-slate-400 italic bg-black/40 p-2 rounded-lg border border-slate-850">
             "{data.note}"
           </p>
         )}
@@ -486,48 +508,55 @@ export function CrmStageNode({ data, id }: { data: any; id: string }) {
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-emerald-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
       />
     </div>
   )
 }
 
-// --- E. TAG CONTACT NODE (Dedicated Segmentation Action) ---
+// --- E. TAG CONTACT NODE ---
 export function TagNode({ data, id }: { data: any; id: string }) {
   const mode = data.mode || 'add'
   const tags = data.tags || (data.tag ? [data.tag] : ['Interested'])
 
   return (
-    <div className="w-[280px] bg-white rounded-2xl border-2 border-blue-500 shadow-xl shadow-blue-500/15 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[300px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-blue-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-blue-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.5)] hover:!scale-125 transition-transform"
       />
 
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 via-sky-600 to-indigo-600 px-4 py-3 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-            <Tag size={15} className="text-white" />
+      <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-indigo-500" />
+
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-blue-400 group-hover:border-blue-500/50 transition-colors shadow-inner shrink-0">
+            <Tag size={14} />
           </div>
-          <div>
-            <span className="text-xs font-black tracking-wide uppercase block">Tag Contact</span>
-            <span className="text-[10px] text-blue-100 block font-medium">{mode === 'add' ? 'Add Tags' : 'Remove Tags'}</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-blue-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[SEGMENTATION]</span>
+              <span className="text-slate-600">//</span>
+              <span>CONTACT_TAG</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              {mode === 'add' ? 'Attach Tags' : 'Remove Tags'}
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="p-4 space-y-2.5">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-          Tags to {mode === 'add' ? 'Attach' : 'Remove'}
+      <div className="p-3.5 space-y-2.5 bg-[#070B14]/90 text-xs">
+        <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+          TARGET TAGS ({mode.toUpperCase()})
         </span>
         <div className="flex flex-wrap gap-1.5">
           {tags.map((t: string, idx: number) => (
             <span
               key={idx}
-              className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-xs font-bold"
+              className="px-2.5 py-1 rounded-lg bg-blue-950/60 border border-blue-800/80 text-blue-300 font-mono text-[11px] font-bold"
             >
               #{t}
             </span>
@@ -539,13 +568,13 @@ export function TagNode({ data, id }: { data: any; id: string }) {
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-blue-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
       />
     </div>
   )
 }
 
-// --- F. CUSTOM API / WEBHOOK NODE (GET / POST / PUT / DELETE) ---
+// --- F. CUSTOM API / WEBHOOK NODE ---
 export function CustomApiNode({ data, id }: { data: any; id: string }) {
   const method = (data.method || 'POST').toUpperCase()
   const url = data.url || 'https://api.yourcrm.com/v1/leads'
@@ -554,98 +583,89 @@ export function CustomApiNode({ data, id }: { data: any; id: string }) {
   const getMethodBadge = (m: string) => {
     switch (m) {
       case 'GET':
-        return 'bg-emerald-100 text-emerald-800 border-emerald-300'
+        return 'bg-emerald-950/80 text-emerald-400 border-emerald-800'
       case 'POST':
-        return 'bg-indigo-100 text-indigo-800 border-indigo-300'
+        return 'bg-indigo-950/80 text-cyan-300 border-indigo-700'
       case 'PUT':
-        return 'bg-amber-100 text-amber-800 border-amber-300'
+        return 'bg-amber-950/80 text-amber-300 border-amber-800'
       case 'DELETE':
-        return 'bg-rose-100 text-rose-800 border-rose-300'
-      case 'PATCH':
-        return 'bg-purple-100 text-purple-800 border-purple-300'
+        return 'bg-rose-950/80 text-rose-300 border-rose-800'
       default:
-        return 'bg-slate-100 text-slate-800 border-slate-300'
+        return 'bg-slate-900 text-slate-300 border-slate-700'
     }
   }
 
   return (
-    <div className="w-[330px] bg-white rounded-2xl border-2 border-indigo-600 shadow-xl shadow-indigo-600/15 overflow-hidden font-sans transition-all hover:shadow-2xl">
-      {/* Input Handle on left */}
+    <div className="w-[340px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-cyan-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-indigo-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.5)] hover:!scale-125 transition-transform"
       />
 
+      <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-500" />
+
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-700 via-indigo-800 to-violet-800 px-4 py-3 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-            <Globe size={15} className="text-cyan-300" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-cyan-400 group-hover:border-cyan-500/50 transition-colors shadow-inner shrink-0">
+            <Globe size={14} />
           </div>
-          <div>
-            <span className="text-xs font-black tracking-wide uppercase block">Custom API Request</span>
-            <span className="text-[10px] text-indigo-200 block font-medium">HTTP Webhook Integration</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-cyan-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[GATEWAY]</span>
+              <span className="text-slate-600">//</span>
+              <span>HTTP_REST_API</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              Custom API Webhook
+            </span>
           </div>
         </div>
-        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs ${getMethodBadge(method)}`}>
+        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border shadow-2xs ${getMethodBadge(method)}`}>
           {method}
         </span>
       </div>
 
       {/* Body */}
-      <div className="p-4 space-y-3">
-        {/* URL preview */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1">
-          <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-            <span>Endpoint URL</span>
-            <span>{headers.length > 0 ? `${headers.length} header${headers.length > 1 ? 's' : ''}` : 'No auth header'}</span>
+      <div className="p-3.5 space-y-3 bg-[#070B14]/90 text-xs">
+        <div className="bg-black/50 border border-slate-850 rounded-xl p-2.5 space-y-1">
+          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider">
+            <span>ENDPOINT URL</span>
+            <span>{headers.length > 0 ? `${headers.length} HEADER(S)` : 'NO AUTH'}</span>
           </div>
-          <div className="text-xs font-mono font-bold text-slate-800 break-all line-clamp-2 bg-white p-1.5 rounded-lg border border-slate-200/80">
+          <div className="text-xs font-mono font-bold text-cyan-300 break-all line-clamp-2 bg-slate-900/60 p-1.5 rounded-lg border border-slate-800">
             {url}
           </div>
         </div>
 
-        {/* Payload / Query summary */}
-        {['POST', 'PUT', 'PATCH'].includes(method) && (
-          <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl px-3 py-2 flex items-center justify-between text-[11px]">
-            <span className="text-indigo-700 font-bold flex items-center gap-1.5">
-              <Code size={13} className="text-indigo-600" />
-              JSON Payload
-            </span>
-            <span className="text-indigo-900 font-mono text-[10px] font-medium bg-white px-2 py-0.5 rounded-md border border-indigo-200">
-              {data.body ? 'Custom Body configured' : 'Lead JSON payload'}
-            </span>
-          </div>
-        )}
-
         {/* Dual branching output handles */}
-        <div className="space-y-1.5 pt-1 border-t border-slate-100">
-          <div className="flex items-center justify-between bg-emerald-50/80 border border-emerald-200 rounded-xl px-3 py-1.5 text-xs text-emerald-800 font-bold relative">
+        <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+          <div className="flex items-center justify-between bg-emerald-950/30 border border-emerald-900/60 rounded-xl px-3 py-1.5 text-xs text-emerald-300 font-mono font-bold relative">
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 size={13} className="text-emerald-600" />
-              Success (2xx Status)
+              <CheckCircle2 size={13} className="text-emerald-400" />
+              2xx Success
             </span>
             <Handle
               type="source"
               position={Position.Right}
               id="success"
-              className="!w-3.5 !h-3.5 !bg-emerald-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-7px] cursor-crosshair"
+              className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.7)] hover:!scale-125 transition-transform cursor-crosshair"
               title="Connect on 2xx Success"
             />
           </div>
 
-          <div className="flex items-center justify-between bg-rose-50/80 border border-rose-200 rounded-xl px-3 py-1.5 text-xs text-rose-800 font-bold relative">
+          <div className="flex items-center justify-between bg-rose-950/30 border border-rose-900/60 rounded-xl px-3 py-1.5 text-xs text-rose-300 font-mono font-bold relative">
             <span className="flex items-center gap-1.5">
-              <AlertTriangle size={13} className="text-rose-600" />
-              Failure / Error (4xx / 5xx)
+              <AlertTriangle size={13} className="text-rose-400" />
+              4xx / 5xx Fallback
             </span>
             <Handle
               type="source"
               position={Position.Right}
               id="error"
-              className="!w-3.5 !h-3.5 !bg-rose-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-7px] cursor-crosshair"
+              className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.7)] hover:!scale-125 transition-transform cursor-crosshair"
               title="Connect on Failure / Error"
             />
           </div>
@@ -655,37 +675,44 @@ export function CustomApiNode({ data, id }: { data: any; id: string }) {
   )
 }
 
-// --- G. AI VOICE CALL NODE (Automated Outbound Agent Call) ---
+// --- G. AI VOICE CALL NODE ---
 export function AiCallNode({ data, id }: { data: any; id: string }) {
   const voice = data.voice || 'Puck (Gemini 3.1 Flash Live)'
   return (
-    <div className="w-[300px] bg-white rounded-2xl border-2 border-rose-500 shadow-xl shadow-rose-500/15 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[320px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-rose-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-rose-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.5)] hover:!scale-125 transition-transform"
       />
-      <div className="bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 px-4 py-3 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-            <PhoneCall size={15} className="text-white" />
+      <div className="h-1 w-full bg-gradient-to-r from-rose-500 via-pink-500 to-rose-600" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-rose-400 group-hover:border-rose-500/50 transition-colors shadow-inner shrink-0">
+            <PhoneCall size={14} />
           </div>
-          <div>
-            <span className="text-xs font-black tracking-wide uppercase block">AI Voice Call</span>
-            <span className="text-[10px] text-rose-100 block font-medium">Outbound Voice Agent</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-rose-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[VOICE_AGENT]</span>
+              <span className="text-slate-600">//</span>
+              <span>LIVE_OUTBOUND</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              AI Voice Call
+            </span>
           </div>
         </div>
-        <span className="text-[10px] font-black bg-white text-rose-900 px-2 py-0.5 rounded-full shadow-2xs">
-          Voice
+        <span className="text-[9px] font-mono font-bold bg-rose-950/60 border border-rose-800/80 text-rose-300 px-2 py-0.5 rounded-full shrink-0">
+          VOICE
         </span>
       </div>
-      <div className="p-4 space-y-2.5">
-        <div className="bg-rose-50 border border-rose-200 rounded-xl p-2 text-xs">
-          <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider block">Voice Persona:</span>
-          <span className="font-black text-rose-950">{voice}</span>
+      <div className="p-3.5 space-y-2.5 bg-[#070B14]/90 text-xs">
+        <div className="bg-black/50 border border-slate-850 rounded-xl p-2 font-mono text-xs">
+          <span className="text-[9px] font-bold text-rose-400 uppercase tracking-wider block">VOICE PERSONA:</span>
+          <span className="font-bold text-white text-[11px]">{voice}</span>
         </div>
-        <p className="text-xs text-slate-600 line-clamp-2">
+        <p className="text-[11px] text-slate-400 font-sans line-clamp-2">
           {data.script || 'Call lead instantly to introduce property details and offer VIP site visit booking.'}
         </p>
       </div>
@@ -693,7 +720,7 @@ export function AiCallNode({ data, id }: { data: any; id: string }) {
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-rose-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
       />
     </div>
   )
@@ -702,38 +729,45 @@ export function AiCallNode({ data, id }: { data: any; id: string }) {
 // --- H. SEND EMAIL NODE ---
 export function EmailNode({ data, id }: { data: any; id: string }) {
   return (
-    <div className="w-[300px] bg-white rounded-2xl border-2 border-cyan-600 shadow-xl shadow-cyan-600/15 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[320px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-sky-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-cyan-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-sky-400 shadow-[0_0_8px_rgba(14,165,233,0.5)] hover:!scale-125 transition-transform"
       />
-      <div className="bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 px-4 py-3 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-            <Mail size={15} className="text-white" />
+      <div className="h-1 w-full bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-600" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-sky-400 group-hover:border-sky-500/50 transition-colors shadow-inner shrink-0">
+            <Mail size={14} />
           </div>
-          <div>
-            <span className="text-xs font-black tracking-wide uppercase block">Send Email</span>
-            <span className="text-[10px] text-cyan-100 block font-medium">Transactional Email</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-sky-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[DISPATCH]</span>
+              <span className="text-slate-600">//</span>
+              <span>EMAIL_GATEWAY</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              Send Email
+            </span>
           </div>
         </div>
       </div>
-      <div className="p-4 space-y-2.5">
-        <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-2 text-xs">
-          <span className="text-[10px] font-bold text-cyan-700 uppercase tracking-wider block">Subject:</span>
-          <span className="font-bold text-cyan-950 truncate block">{data.subject || 'VIP Brochure & Pricing Sheet for You'}</span>
+      <div className="p-3.5 space-y-2.5 bg-[#070B14]/90 text-xs">
+        <div className="bg-black/50 border border-slate-850 rounded-xl p-2 font-mono text-xs">
+          <span className="text-[9px] font-bold text-sky-400 uppercase tracking-wider block">SUBJECT:</span>
+          <span className="font-bold text-white truncate block text-[11px]">{data.subject || 'VIP Brochure & Pricing Sheet for You'}</span>
         </div>
-        <p className="text-xs text-slate-500 truncate">
-          To: <span className="font-mono text-slate-800">{data.recipient || '{{lead_email}}'}</span>
+        <p className="text-[11px] font-mono text-slate-400 truncate">
+          TO: <span className="text-cyan-300">{data.recipient || '{{lead_email}}'}</span>
         </p>
       </div>
       <Handle
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-cyan-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-sky-400 shadow-[0_0_10px_rgba(14,165,233,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
       />
     </div>
   )
@@ -742,47 +776,49 @@ export function EmailNode({ data, id }: { data: any; id: string }) {
 // --- I. INVENTORY DELIVERY CARD NODE ---
 export function InventoryDeliveryNode({ data, id }: { data: any; id: string }) {
   return (
-    <div className="w-[320px] bg-white rounded-2xl border-2 border-blue-500 shadow-xl shadow-blue-500/10 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[330px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-cyan-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-blue-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.5)] hover:!scale-125 transition-transform"
       />
-
-      <div className="bg-gradient-to-r from-blue-600 to-cyan-600 px-4 py-2.5 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-            <ExternalLink size={14} className="text-white" />
+      <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-teal-500 to-blue-500" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-cyan-400 group-hover:border-cyan-500/50 transition-colors shadow-inner shrink-0">
+            <ExternalLink size={14} />
           </div>
-          <span className="text-xs font-black tracking-wide uppercase">Deliver Inventory</span>
-        </div>
-        <span className="text-[10px] font-bold bg-white/25 px-2 py-0.5 rounded-full">Catalog</span>
-      </div>
-
-      <div className="p-3.5 space-y-2.5">
-        <p className="text-xs text-slate-700 leading-relaxed">
-          {data.message || 'Thank you for your interest! 🌟 Explore our latest verified property inventory and brochures:'}
-        </p>
-
-        <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-2.5 flex items-center justify-between">
           <div className="min-w-0">
-            <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">Destination Link</span>
-            <span className="text-xs font-mono font-bold text-slate-900 block truncate">
+            <div className="text-[9px] font-mono tracking-widest text-cyan-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[CATALOG]</span>
+              <span className="text-slate-600">//</span>
+              <span>INVENTORY_PUSH</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              Deliver Catalog
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="p-3.5 space-y-2.5 bg-[#070B14]/90 text-xs">
+        <p className="text-[11px] text-slate-300 font-sans leading-relaxed">
+          {data.message || 'Thank you for your interest! Explore our latest verified property inventory and brochures:'}
+        </p>
+        <div className="bg-black/50 border border-slate-850 rounded-xl p-2.5 flex items-center justify-between font-mono">
+          <div className="min-w-0">
+            <span className="text-[9px] font-bold text-cyan-400 uppercase tracking-wider block">DESTINATION URL</span>
+            <span className="text-xs font-bold text-white block truncate">
               {data.link || '{{inventory_url}}'}
             </span>
           </div>
-          <span className="text-[11px] font-bold px-2.5 py-1 bg-blue-600 text-white rounded-lg shadow-sm shrink-0">
-            View 🏢
-          </span>
         </div>
       </div>
-
       <Handle
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-blue-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
       />
     </div>
   )
@@ -791,47 +827,52 @@ export function InventoryDeliveryNode({ data, id }: { data: any; id: string }) {
 // --- J. CONDITION / FILTER NODE ---
 export function ConditionNode({ data, id }: { data: any; id: string }) {
   return (
-    <div className="w-[300px] bg-white rounded-2xl border-2 border-amber-500 shadow-xl shadow-amber-500/10 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[320px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-amber-400/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-amber-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)] hover:!scale-125 transition-transform"
       />
-
-      <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-            <Split size={14} className="text-white" />
+      <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-500" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-amber-400 group-hover:border-amber-400/50 transition-colors shadow-inner shrink-0">
+            <Split size={14} />
           </div>
-          <span className="text-xs font-black tracking-wide uppercase">Condition Filter</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-amber-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[ROUTER]</span>
+              <span className="text-slate-600">//</span>
+              <span>BOOLEAN_BRANCH</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              Condition Filter
+            </span>
+          </div>
         </div>
-        <span className="text-[10px] font-bold bg-white/25 px-2 py-0.5 rounded-full">Branching</span>
       </div>
-
-      <div className="p-3.5 space-y-2.5">
-        <p className="text-xs font-bold text-slate-800">{data.title || 'Check Prospect Attribute'}</p>
-        <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-2 text-[11px] text-amber-900 font-medium">
-          If: <span className="font-bold">{data.condition || 'Clicked Interested == True'}</span>
+      <div className="p-3.5 space-y-2.5 bg-[#070B14]/90 text-xs">
+        <div className="bg-black/50 border border-slate-850 rounded-xl p-2 text-[11px] font-mono text-amber-200">
+          IF: <span className="font-bold text-white">{data.condition || 'Clicked Interested == True'}</span>
         </div>
-
         <div className="space-y-1.5 pt-1">
-          <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 text-xs text-emerald-800 font-bold relative">
-            <span>✓ Match (Yes)</span>
+          <div className="flex items-center justify-between bg-emerald-950/30 border border-emerald-900/60 rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono font-bold relative">
+            <span>✓ Match (True)</span>
             <Handle
               type="source"
               position={Position.Right}
               id="true"
-              className="!w-3 !h-3 !bg-emerald-500 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-6px]"
+              className="!w-3 !h-3 !-right-[6px] !rounded-full !bg-[#070B14] !border-2 !border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.7)] hover:!scale-125 transition-transform"
             />
           </div>
-          <div className="flex items-center justify-between bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5 text-xs text-rose-800 font-bold relative">
-            <span>✕ Else (No)</span>
+          <div className="flex items-center justify-between bg-rose-950/30 border border-rose-900/60 rounded-lg px-2.5 py-1.5 text-xs text-rose-300 font-mono font-bold relative">
+            <span>✕ Else (False)</span>
             <Handle
               type="source"
               position={Position.Right}
               id="false"
-              className="!w-3 !h-3 !bg-rose-500 !border-2 !border-white shadow-md hover:!scale-125 transition-transform !right-[-6px]"
+              className="!w-3 !h-3 !-right-[6px] !rounded-full !bg-[#070B14] !border-2 !border-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.7)] hover:!scale-125 transition-transform"
             />
           </div>
         </div>
@@ -843,127 +884,145 @@ export function ConditionNode({ data, id }: { data: any; id: string }) {
 // --- K. SMART DELAY NODE ---
 export function DelayNode({ data, id }: { data: any; id: string }) {
   return (
-    <div className="w-[280px] bg-white rounded-2xl border-2 border-slate-400 shadow-xl shadow-slate-500/10 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[300px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-slate-500 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-slate-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-slate-300 shadow-[0_0_8px_rgba(148,163,184,0.5)] hover:!scale-125 transition-transform"
       />
-
-      <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-4 py-2.5 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-            <Clock size={14} className="text-white" />
+      <div className="h-1 w-full bg-gradient-to-r from-slate-500 to-slate-400" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-slate-300 group-hover:border-slate-500/50 transition-colors shadow-inner shrink-0">
+            <Clock size={14} />
           </div>
-          <span className="text-xs font-black tracking-wide uppercase">Smart Delay</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-slate-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[TIMER]</span>
+              <span className="text-slate-600">//</span>
+              <span>SMART_DELAY</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              Smart Delay
+            </span>
+          </div>
         </div>
-        <span className="text-[10px] font-bold bg-white/25 px-2 py-0.5 rounded-full">Wait</span>
       </div>
-
-      <div className="p-3.5 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 font-black text-sm">
+      <div className="p-3.5 flex items-center gap-3 bg-[#070B14]/90 text-xs">
+        <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-cyan-400 font-mono font-black text-sm shadow-inner">
           {data.duration || '15m'}
         </div>
         <div>
-          <span className="text-xs font-bold text-slate-900 block">Wait {data.durationLabel || '15 Minutes'}</span>
-          <span className="text-[11px] text-slate-500">Then proceed down flow</span>
+          <span className="text-xs font-mono font-bold text-white block">Wait {data.durationLabel || '15 Minutes'}</span>
+          <span className="text-[10px] font-mono text-slate-400">Then proceed down flow</span>
         </div>
       </div>
-
       <Handle
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-slate-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-400 shadow-[0_0_10px_rgba(148,163,184,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
       />
     </div>
   )
 }
 
-// --- L. GEMINI AI AGENT NODE ---
+// --- L. DEEPSEEK / GEMINI AI AGENT NODE ---
 export function AiAgentNode({ data, id }: { data: any; id: string }) {
   return (
-    <div className="w-[300px] bg-white rounded-2xl border-2 border-violet-500 shadow-xl shadow-violet-500/10 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[330px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-violet-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-violet-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-violet-400 shadow-[0_0_8px_rgba(139,92,246,0.5)] hover:!scale-125 transition-transform"
       />
-
-      <div className="bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2.5 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-            <Sparkles size={14} className="text-white" />
+      <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-cyan-500" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-violet-400 group-hover:border-violet-500/50 transition-colors shadow-inner shrink-0">
+            <Sparkles size={14} />
           </div>
-          <span className="text-xs font-black tracking-wide uppercase">Gemini AI Agent</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-violet-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[INTELLIGENCE]</span>
+              <span className="text-slate-600">//</span>
+              <span>DEEPSEEK_FLASH</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              {data.title || 'DeepSeek AI Agent'}
+            </span>
+          </div>
         </div>
-        <span className="text-[10px] font-bold bg-white/25 px-2 py-0.5 rounded-full">AI Bot</span>
       </div>
-
-      <div className="p-3.5 space-y-2">
-        <p className="text-xs font-bold text-slate-900">{data.title || 'Conversational Advisor'}</p>
-        <p className="text-[11px] text-slate-600 bg-violet-50/70 p-2 rounded-xl border border-violet-100">
+      <div className="p-3.5 space-y-2 bg-[#070B14]/90 text-xs">
+        <p className="text-[11px] text-slate-300 font-mono bg-black/50 p-2 rounded-xl border border-slate-850 line-clamp-3">
           {data.prompt || 'Handles prospect queries, qualifies intent, and sends property brochure.'}
         </p>
       </div>
-
       <Handle
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-violet-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-violet-400 shadow-[0_0_10px_rgba(139,92,246,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
       />
     </div>
   )
 }
 
-// --- M. LEGACY ACTION NODE (Multi-task Container preserved for compatibility) ---
+// --- M. LEGACY ACTION NODE ---
 export function ActionNode({ data, id }: { data: any; id: string }) {
   const actions = data.actions || []
 
   return (
-    <div className="w-[300px] bg-white rounded-2xl border-2 border-indigo-500 shadow-xl shadow-indigo-500/10 overflow-hidden font-sans transition-all hover:shadow-2xl">
+    <div className="w-[320px] bg-[#0E1526]/95 backdrop-blur-xl rounded-2xl border border-slate-800 hover:border-indigo-500/60 shadow-[0_16px_36px_rgba(0,0,0,0.6)] transition-all duration-200 group overflow-hidden font-sans">
       <Handle
         type="target"
         position={Position.Left}
         id="input"
-        className="!w-3.5 !h-3.5 !bg-indigo-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform"
+        className="!w-3.5 !h-3.5 !-left-[7px] !rounded-full !bg-[#070B14] !border-2 !border-slate-500 hover:!border-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.5)] hover:!scale-125 transition-transform"
       />
-
-      <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-            <Zap size={14} className="text-amber-300 fill-amber-300" />
+      <div className="h-1 w-full bg-gradient-to-r from-indigo-500 to-violet-500" />
+      <div className="px-4 py-3 bg-[#0B0F19] border-b border-slate-800/80 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center text-indigo-400 group-hover:border-indigo-500/50 transition-colors shadow-inner shrink-0">
+            <Zap size={14} />
           </div>
-          <span className="text-xs font-black tracking-wide uppercase">Actions Container</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-indigo-400 uppercase font-bold flex items-center gap-1.5 truncate">
+              <span>[ACTIONS]</span>
+              <span className="text-slate-600">//</span>
+              <span>BATCH_TASKS</span>
+            </div>
+            <span className="text-xs font-bold text-slate-100 tracking-tight block truncate">
+              Actions Container
+            </span>
+          </div>
         </div>
-        <span className="text-[10px] font-bold bg-white/25 px-2 py-0.5 rounded-full">{actions.length} Tasks</span>
+        <span className="text-[9px] font-mono font-bold bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-full shrink-0">{actions.length} Tasks</span>
       </div>
-
-      <div className="p-3.5 space-y-2">
+      <div className="p-3.5 space-y-2 bg-[#070B14]/90 text-xs">
         {actions.map((act: any, idx: number) => (
           <div
             key={idx}
-            className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+            className="flex items-center gap-2.5 p-2 rounded-xl bg-black/50 border border-slate-850 text-xs font-mono"
           >
-            <div className="w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 bg-indigo-50 text-indigo-600 border-indigo-200">
-              <Zap size={14} />
+            <div className="w-6 h-6 rounded-md border flex items-center justify-center shrink-0 bg-indigo-950/60 text-indigo-400 border-indigo-800">
+              <Zap size={12} />
             </div>
             <div className="min-w-0">
-              <span className="block font-bold text-slate-900 truncate">{act.title}</span>
-              <span className="block text-[10px] text-slate-500 truncate">{act.detail}</span>
+              <span className="block font-bold text-white truncate text-[11px]">{act.title}</span>
+              <span className="block text-[9px] text-slate-400 truncate">{act.detail}</span>
             </div>
           </div>
         ))}
       </div>
-
       <Handle
         type="source"
         position={Position.Right}
         id="output"
-        className="!w-3.5 !h-3.5 !bg-indigo-600 !border-2 !border-white shadow-md hover:!scale-125 transition-transform cursor-crosshair"
+        className="!w-3.5 !h-3.5 !-right-[7px] !rounded-full !bg-[#070B14] !border-2 !border-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.8)] hover:!scale-125 transition-transform cursor-crosshair"
       />
     </div>
   )
@@ -1101,7 +1160,7 @@ export function ManyChatCanvas({
         target: 'node_reply',
         targetHandle: 'input',
         animated: true,
-        style: { stroke: '#6366F1', strokeWidth: 3 }
+        style: { stroke: '#06B6D4', strokeWidth: 2.5 }
       },
       {
         id: 'edge_reply_to_crm',
@@ -1110,7 +1169,7 @@ export function ManyChatCanvas({
         target: 'node_crm_stage',
         targetHandle: 'input',
         animated: true,
-        style: { stroke: '#10B981', strokeWidth: 2.5 }
+        style: { stroke: '#10B981', strokeWidth: 2 }
       },
       {
         id: 'edge_reply_to_notify',
@@ -1119,7 +1178,7 @@ export function ManyChatCanvas({
         target: 'node_notify',
         targetHandle: 'input',
         animated: true,
-        style: { stroke: '#F59E0B', strokeWidth: 2.5 }
+        style: { stroke: '#F59E0B', strokeWidth: 2 }
       },
       {
         id: 'edge_crm_to_api',
@@ -1128,7 +1187,7 @@ export function ManyChatCanvas({
         target: 'node_custom_api',
         targetHandle: 'input',
         animated: true,
-        style: { stroke: '#6366F1', strokeWidth: 2.5 }
+        style: { stroke: '#8B5CF6', strokeWidth: 2 }
       }
     ],
     []
@@ -1287,7 +1346,7 @@ export function ManyChatCanvas({
           {
             ...connection,
             animated: true,
-            style: { stroke: '#6366F1', strokeWidth: 2.5 }
+            style: { stroke: '#06B6D4', strokeWidth: 2.5 }
           },
           eds
         )
@@ -1550,297 +1609,198 @@ export function ManyChatCanvas({
   }
 
   return (
-    <div className="flex flex-col h-full w-full bg-slate-50 relative font-sans select-none">
-      {/* ========================================================================= */}
-      {/* TOP ACTION BAR (ManyChat / ChatbotX style) */}
-      {/* ========================================================================= */}
-      <div className="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center justify-between shadow-xs shrink-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-emerald-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
-            <Bot size={20} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={flowName}
-                onChange={e => onUpdateFlowName(e.target.value)}
-                className="text-sm font-black text-slate-900 bg-transparent hover:bg-slate-100 px-2 py-0.5 rounded-lg border border-transparent hover:border-slate-200 transition-colors focus:bg-white focus:border-indigo-500 focus:outline-none"
-              />
-              <button
-                onClick={onToggleActive}
-                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                    : 'bg-slate-100 text-slate-500 border-slate-300'
-                }`}
-              >
-                {isActive ? '● Active' : '○ Paused'}
-              </button>
-            </div>
-            <p className="text-[10px] text-slate-400 px-2">
-              Modular Visual Flow • Every action is an independent node with dedicated ports
-            </p>
-          </div>
-        </div>
-
-        {/* Action Controls & Node Palette */}
-        <div className="flex items-center gap-2">
-          {/* Node Palette Buttons */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 flex-wrap relative">
-            {/* + Trigger Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setIsTriggerMenuOpen(!isTriggerMenuOpen)}
-                className="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 font-bold text-xs rounded-lg shadow-2xs border border-indigo-200 flex items-center gap-1 cursor-pointer transition-colors"
-                title="Select Trigger Source"
-              >
-                <Zap size={12} className="text-amber-500 fill-amber-500" /> + Trigger
-                <ChevronDown size={11} className="text-indigo-400" />
-              </button>
-
-              {isTriggerMenuOpen && (
-                <div className="absolute top-full left-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-1.5 space-y-1 text-xs">
-                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Select Trigger Type
-                  </div>
-                  <button
-                    onClick={() => {
-                      handleAddNode('triggerNode', 'meta_ad')
-                      setIsTriggerMenuOpen(false)
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-indigo-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
-                  >
-                    <span>🎯</span>
-                    <div>
-                      <div className="text-xs text-indigo-950 font-bold">Meta Ad / Click-to-WhatsApp</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Fires when lead clicks ad</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleAddNode('triggerNode', 'whatsapp_inbound')
-                      setIsTriggerMenuOpen(false)
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-emerald-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
-                  >
-                    <span>💬</span>
-                    <div>
-                      <div className="text-xs text-emerald-950 font-bold">WhatsApp Inbound / Keyword</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Fires on incoming text or keyword</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleAddNode('triggerNode', 'ig_comment')
-                      setIsTriggerMenuOpen(false)
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-pink-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
-                  >
-                    <span>💬</span>
-                    <div>
-                      <div className="text-xs text-pink-950 font-bold">Comment on Ad / Post</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Auto-reply to FB/IG comments</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleAddNode('triggerNode', 'ig_dm')
-                      setIsTriggerMenuOpen(false)
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-purple-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
-                  >
-                    <span>📸</span>
-                    <div>
-                      <div className="text-xs text-purple-950 font-bold">Instagram / Messenger DM</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Fires on direct message</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleAddNode('triggerNode', 'crm_lead')
-                      setIsTriggerMenuOpen(false)
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-blue-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
-                  >
-                    <span>👥</span>
-                    <div>
-                      <div className="text-xs text-blue-950 font-bold">New CRM Lead / Pipeline</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Fires when lead enters CRM</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleAddNode('triggerNode', 'ai_call')
-                      setIsTriggerMenuOpen(false)
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-rose-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
-                  >
-                    <span>🎙️</span>
-                    <div>
-                      <div className="text-xs text-rose-950 font-bold">Instant AI Voice Call</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Fires Gemini Live voice call</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleAddNode('triggerNode', 'custom_webhook')
-                      setIsTriggerMenuOpen(false)
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-slate-100 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
-                  >
-                    <span>⚡</span>
-                    <div>
-                      <div className="text-xs text-slate-950 font-bold">Custom Webhook / Form</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Fires on external HTTP webhook</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleAddNode('triggerNode', 'whatsapp_broadcast')
-                      setIsTriggerMenuOpen(false)
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-amber-50 rounded-lg text-slate-800 font-bold text-left cursor-pointer"
-                  >
-                    <span>📢</span>
-                    <div>
-                      <div className="text-xs text-amber-950 font-bold">WhatsApp Broadcast Template</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Outbound broadcast with buttons</div>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={() => handleAddNode('whatsappMessageNode')}
-              className="px-2.5 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg shadow-2xs border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
-              title="Add WhatsApp Reply Message"
-            >
-              <MessageSquare size={12} className="text-emerald-600" /> + Message
-            </button>
-            <button
-              onClick={() => handleAddNode('crmStageNode')}
-              className="px-2.5 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg shadow-2xs border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
-              title="Add Move CRM Stage Node"
-            >
-              <TrendingUp size={12} className="text-emerald-600" /> + CRM Stage
-            </button>
-            <button
-              onClick={() => handleAddNode('notifyNode')}
-              className="px-2.5 py-1.5 bg-white hover:bg-amber-50 text-amber-700 font-bold text-xs rounded-lg shadow-2xs border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
-              title="Add Notify Admin / Team Node"
-            >
-              <Bell size={12} className="text-amber-600" /> + Notify
-            </button>
-            <button
-              onClick={() => handleAddNode('customApiNode')}
-              className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-xs rounded-lg shadow-xs flex items-center gap-1 cursor-pointer transition-all active:scale-95"
-              title="Add Custom API (HTTP Request / Webhook) Node"
-            >
-              <Globe size={12} className="text-cyan-300" /> + Custom API
-            </button>
-
-            {/* More Actions Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
-                className="px-2.5 py-1.5 bg-white hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <span>More</span>
-                <ChevronDown size={12} />
-              </button>
-
-              {isMoreMenuOpen && (
-                <div className="absolute top-full right-0 mt-1.5 w-52 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 z-30 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
-                  <button
-                    onClick={() => handleAddNode('tagNode')}
-                    className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-800 hover:bg-blue-50 hover:text-blue-700 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <Tag size={13} className="text-blue-600" /> Tag Contact
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('aiCallNode')}
-                    className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-800 hover:bg-rose-50 hover:text-rose-700 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <PhoneCall size={13} className="text-rose-600" /> AI Voice Call
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('emailNode')}
-                    className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-800 hover:bg-cyan-50 hover:text-cyan-700 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <Mail size={13} className="text-cyan-600" /> Send Email
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('inventoryDeliveryNode')}
-                    className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-800 hover:bg-blue-50 hover:text-blue-700 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <ExternalLink size={13} className="text-blue-600" /> Deliver Catalog
-                  </button>
-                  <div className="my-1 border-t border-slate-100" />
-                  <button
-                    onClick={() => handleAddNode('conditionNode')}
-                    className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-800 hover:bg-amber-50 hover:text-amber-700 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <Split size={13} className="text-amber-600" /> Condition / Filter
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('delayNode')}
-                    className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-800 hover:bg-slate-100 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <Clock size={13} className="text-slate-600" /> Smart Delay
-                  </button>
-                  <button
-                    onClick={() => handleAddNode('aiAgentNode')}
-                    className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-800 hover:bg-purple-50 hover:text-purple-700 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <Sparkles size={13} className="text-purple-600" /> Gemini AI Agent
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Reset View */}
-          <button
-            onClick={() => {
-              setNodes(defaultNodes)
-              setEdges(defaultEdges)
-            }}
-            className="p-2 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer"
-            title="Reset to Decoupled Template Recipe"
-          >
-            <RotateCcw size={15} />
-          </button>
-
-          {/* Test with Myself */}
-          {onTestRun && (
-            <button
-              onClick={onTestRun}
-              className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
-              title="Test run this flow on yourself via interactive phone simulator"
-            >
-              <Play size={13} className="text-amber-600 fill-amber-600" />
-              <span>Test with Myself</span>
-            </button>
-          )}
-
-          {/* Save / Publish */}
-          <button
-            onClick={() => onSave(nodes, edges)}
-            disabled={saving}
-            className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-sm shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
-          >
-            <Save size={13} />
-            {saving ? 'Publishing...' : 'Save & Publish Flow'}
-          </button>
-        </div>
-      </div>
-
+    <div className="flex flex-col h-full w-full bg-[#080C14] relative font-sans select-none overflow-hidden">
       {/* ========================================================================= */}
       {/* 2D CANVAS CONTAINER */}
       {/* ========================================================================= */}
       <div className="flex-1 w-full h-full relative overflow-hidden">
+        {/* ======================================================================= */}
+        {/* FLOATING TACTICAL COMMAND DECK (Floating Command Palette Island) */}
+        {/* ======================================================================= */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-[#0F172A]/90 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.7)] px-3 py-1.5 pointer-events-auto">
+          {/* + Trigger Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsTriggerMenuOpen(!isTriggerMenuOpen)}
+              className="px-2.5 py-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 text-cyan-300 font-mono font-bold text-xs rounded-xl border border-cyan-700/60 flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+              title="Add Trigger Event Node"
+            >
+              <Zap size={13} className="text-cyan-400 fill-cyan-400" />
+              <span>+ Trigger</span>
+              <ChevronDown size={11} className="text-cyan-400" />
+            </button>
+
+            {isTriggerMenuOpen && (
+              <div className="absolute top-full left-0 mt-2 w-72 bg-[#0B0F19] border border-slate-800 rounded-2xl shadow-2xl z-50 p-2 space-y-1 font-mono text-xs animate-in fade-in slide-in-from-top-1 duration-150">
+                <div className="px-2.5 py-1 text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-1.5">
+                  SELECT INGESTION TRIGGER
+                </div>
+                {[
+                  { type: 'meta_ad', title: 'Meta Ad / Click-to-WhatsApp', desc: 'Fires on WhatsApp ad click' },
+                  { type: 'whatsapp_inbound', title: 'WhatsApp Keyword / Text', desc: 'Fires on customer text message' },
+                  { type: 'ig_comment', title: 'Comment on Ad / Post', desc: 'Auto-reply to FB/IG comments' },
+                  { type: 'ig_dm', title: 'Instagram / Messenger DM', desc: 'Fires on direct message' },
+                  { type: 'crm_lead', title: 'New CRM Pipeline Lead', desc: 'Fires on lead creation/update' },
+                  { type: 'ai_call', title: 'Instant AI Voice Call', desc: 'Fires automated outbound call' },
+                  { type: 'custom_webhook', title: 'Custom Webhook / Form', desc: 'Fires on HTTP POST payload' },
+                  { type: 'whatsapp_broadcast', title: 'WhatsApp Broadcast Template', desc: 'Outbound campaign with buttons' }
+                ].map(item => (
+                  <button
+                    key={item.type}
+                    onClick={() => {
+                      handleAddNode('triggerNode', item.type)
+                      setIsTriggerMenuOpen(false)
+                    }}
+                    className="w-full text-left p-2 rounded-xl hover:bg-slate-800/80 transition-colors flex flex-col cursor-pointer group"
+                  >
+                    <span className="text-xs font-bold text-white group-hover:text-cyan-300">{item.title}</span>
+                    <span className="text-[10px] text-slate-400">{item.desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Quick Node Buttons */}
+          <button
+            onClick={() => handleAddNode('whatsappMessageNode')}
+            className="px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-emerald-400 font-mono font-bold text-xs rounded-xl border border-slate-800 hover:border-emerald-600/50 flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+            title="Add WhatsApp Reply Message Node"
+          >
+            <MessageSquare size={13} />
+            <span className="hidden sm:inline">+ WhatsApp</span>
+          </button>
+          <button
+            onClick={() => handleAddNode('crmStageNode')}
+            className="px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-teal-400 font-mono font-bold text-xs rounded-xl border border-slate-800 hover:border-teal-600/50 flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+            title="Add CRM Stage Update Node"
+          >
+            <TrendingUp size={13} />
+            <span className="hidden sm:inline">+ Stage</span>
+          </button>
+          <button
+            onClick={() => handleAddNode('notifyNode')}
+            className="px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-amber-400 font-mono font-bold text-xs rounded-xl border border-slate-800 hover:border-amber-600/50 flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+            title="Add Admin Alert Node"
+          >
+            <Bell size={13} />
+            <span className="hidden sm:inline">+ Alert</span>
+          </button>
+          <button
+            onClick={() => handleAddNode('customApiNode')}
+            className="px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-cyan-300 font-mono font-bold text-xs rounded-xl border border-slate-800 hover:border-cyan-600/50 flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+            title="Add Custom API Webhook Node"
+          >
+            <Globe size={13} />
+            <span className="hidden sm:inline">+ API</span>
+          </button>
+
+          {/* More Actions Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
+              className="px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-300 font-mono font-bold text-xs rounded-xl border border-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <span>+ More</span>
+              <ChevronDown size={11} />
+            </button>
+
+            {isMoreMenuOpen && (
+              <div className="absolute top-full right-0 mt-2 w-56 bg-[#0B0F19] border border-slate-800 rounded-2xl shadow-2xl p-1.5 z-30 font-mono text-xs space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                <button
+                  onClick={() => handleAddNode('tagNode')}
+                  className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-blue-400 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Tag size={13} className="text-blue-400" /> Tag Contact
+                </button>
+                <button
+                  onClick={() => handleAddNode('aiCallNode')}
+                  className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-rose-400 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <PhoneCall size={13} className="text-rose-400" /> AI Voice Outbound
+                </button>
+                <button
+                  onClick={() => handleAddNode('emailNode')}
+                  className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-sky-400 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Mail size={13} className="text-sky-400" /> Send Email
+                </button>
+                <button
+                  onClick={() => handleAddNode('inventoryDeliveryNode')}
+                  className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-cyan-400 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <ExternalLink size={13} className="text-cyan-400" /> Deliver Catalog
+                </button>
+                <div className="my-1 border-t border-slate-800" />
+                <button
+                  onClick={() => handleAddNode('conditionNode')}
+                  className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-amber-400 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Split size={13} className="text-amber-400" /> Condition Filter
+                </button>
+                <button
+                  onClick={() => handleAddNode('delayNode')}
+                  className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-slate-300 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Clock size={13} className="text-slate-400" /> Smart Delay
+                </button>
+                <button
+                  onClick={() => handleAddNode('aiAgentNode')}
+                  className="w-full px-2.5 py-1.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800 hover:text-violet-400 rounded-xl flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Sparkles size={13} className="text-violet-400" /> DeepSeek Agent
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="w-[1px] h-6 bg-slate-800 mx-1 hidden sm:block" />
+
+          {/* Engine Telemetry */}
+          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 bg-black/60 border border-slate-800 rounded-xl text-[10px] font-mono text-slate-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse" />
+            <span className="text-slate-300 font-bold">DEEPSEEK v4.1</span>
+            <span className="text-slate-600">//</span>
+            <span className="text-cyan-400 font-bold">24ms</span>
+          </div>
+
+          {/* Reset Template */}
+          <button
+            onClick={() => {
+              setNodes(defaultNodes)
+              setEdges(defaultEdges)
+              toast.info('Canvas reset to multi-branch blueprint recipe')
+            }}
+            className="p-1.5 text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded-xl transition-colors cursor-pointer"
+            title="Reset Blueprint Template"
+          >
+            <RotateCcw size={13} />
+          </button>
+
+          {/* Simulator button */}
+          {onTestRun && (
+            <button
+              onClick={onTestRun}
+              className="px-2.5 py-1.5 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-600/40 font-mono font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+              title="Test run single lead in interactive phone simulator"
+            >
+              <Play size={12} className="fill-amber-400 text-amber-400" />
+              <span>Simulate</span>
+            </button>
+          )}
+
+          {/* Quick Save */}
+          <button
+            onClick={() => onSave(nodes, edges)}
+            disabled={saving}
+            className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-mono font-bold text-xs rounded-xl shadow-[0_0_12px_rgba(16,185,129,0.3)] flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+          >
+            <Save size={12} />
+            <span>{saving ? 'Saving...' : 'Save'}</span>
+          </button>
+        </div>
+
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -1862,82 +1822,118 @@ export function ManyChatCanvas({
             setApiTestResult(null)
           }}
         >
-          <Background color="#CBD5E1" gap={22} size={1.5} variant={BackgroundVariant.Dots} />
-          <Controls position="bottom-left" className="!bg-white !rounded-xl !border !border-slate-200 !shadow-lg" />
+          <Background color="#1E293B" gap={24} size={1.2} variant={BackgroundVariant.Dots} />
+          <Controls position="bottom-left" className="!bg-[#0D1526]/90 !rounded-xl !border !border-slate-800 !text-slate-300 !shadow-2xl backdrop-blur-md" />
           <MiniMap
             position="bottom-right"
-            nodeColor="#6366F1"
-            className="!bg-white !rounded-2xl !border !border-slate-200 !shadow-lg overflow-hidden"
+            nodeColor="#06B6D4"
+            maskColor="rgba(8,12,20,0.85)"
+            className="!bg-[#070A12]/95 !rounded-2xl !border !border-slate-800 !shadow-2xl overflow-hidden"
           />
 
-          {/* Canvas Help Callout */}
-          <Panel position="top-left" className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl p-3 shadow-md max-w-xs">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-800 mb-1">
-              <Sparkles size={14} className="text-amber-500" />
-              <span>Modular Flow Architecture</span>
-            </div>
-            <p className="text-[11px] text-slate-500 leading-snug">
-              Every action (WhatsApp, CRM Stage, Admin Alert, Custom API) is an independent node. Drag connection lines between ports to build your custom logic.
-            </p>
+          {/* Bottom Help Tip */}
+          <Panel position="bottom-center" className="bg-[#0B0F19]/90 backdrop-blur-md border border-slate-800/80 rounded-xl px-3.5 py-1.5 shadow-xl text-center mb-3 pointer-events-none">
+            <span className="text-[10px] font-mono text-slate-400 tracking-wider">
+              TACTICAL WORKFLOW STUDIO // CLICK AND DRAG PORTS TO CONNECT • CLICK NODE TO CONFIGURE
+            </span>
           </Panel>
         </ReactFlow>
 
         {/* ========================================================================= */}
-        {/* NODE INSPECTOR DRAWER (Comprehensive Sidebar Editor) */}
+        {/* NODE INSPECTOR DRAWER (Tactical Engineering Side-Panel) */}
         {/* ========================================================================= */}
         {isInspectorOpen && selectedNode && (
-          <div className="absolute top-4 right-4 w-[450px] max-w-[92vw] bg-white rounded-3xl border border-slate-200 shadow-2xl z-20 overflow-hidden flex flex-col max-h-[calc(100%-32px)] animate-in slide-in-from-right duration-200 font-sans">
+          <div className="absolute top-4 right-4 w-[470px] max-w-[94vw] bg-[#0B0F19]/98 backdrop-blur-2xl rounded-3xl border border-slate-800 shadow-[0_25px_60px_rgba(0,0,0,0.85)] z-30 overflow-hidden flex flex-col max-h-[calc(100%-32px)] animate-in slide-in-from-right duration-200 font-sans">
             {/* Drawer Header */}
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#080C14]">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
-                  <SlidersHorizontal size={16} />
+                <div className="w-8 h-8 rounded-xl bg-cyan-950/60 border border-cyan-800/60 flex items-center justify-center text-cyan-400">
+                  <SlidersHorizontal size={15} />
                 </div>
                 <div>
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                    {selectedNode.type === 'triggerNode'
-                      ? 'WhatsApp Template Configuration'
-                      : selectedNode.type === 'whatsappMessageNode'
-                      ? 'WhatsApp Message Configuration'
-                      : selectedNode.type === 'notifyNode'
-                      ? 'Notify Team / Admin Alert'
-                      : selectedNode.type === 'crmStageNode'
-                      ? 'CRM Stage Update'
-                      : selectedNode.type === 'tagNode'
-                      ? 'Contact Tagging'
-                      : selectedNode.type === 'customApiNode'
-                      ? 'Custom API (HTTP Webhook)'
-                      : selectedNode.type === 'aiCallNode'
-                      ? 'Outbound AI Voice Call'
-                      : selectedNode.type === 'emailNode'
-                      ? 'Email Follow-up'
-                      : selectedNode.type === 'conditionNode'
-                      ? 'Condition Filter'
-                      : selectedNode.type === 'delayNode'
-                      ? 'Smart Delay Configuration'
-                      : selectedNode.type === 'aiAgentNode'
-                      ? 'Gemini AI Agent Configuration'
-                      : 'Configure Node'}
-                  </h3>
-                  <p className="text-[10px] text-slate-500">Configure parameters, endpoints & actions</p>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+                      {selectedNode.type === 'triggerNode'
+                        ? 'Trigger Event Config'
+                        : selectedNode.type === 'whatsappMessageNode'
+                        ? 'WhatsApp Message Config'
+                        : selectedNode.type === 'notifyNode'
+                        ? 'Notify Team Alert'
+                        : selectedNode.type === 'crmStageNode'
+                        ? 'CRM Stage Update'
+                        : selectedNode.type === 'tagNode'
+                        ? 'Contact Tagging'
+                        : selectedNode.type === 'customApiNode'
+                        ? 'HTTP API Gateway'
+                        : selectedNode.type === 'aiCallNode'
+                        ? 'AI Voice Outbound'
+                        : selectedNode.type === 'emailNode'
+                        ? 'Email Follow-up'
+                        : selectedNode.type === 'conditionNode'
+                        ? 'Condition Filter'
+                        : selectedNode.type === 'delayNode'
+                        ? 'Smart Delay Config'
+                        : selectedNode.type === 'aiAgentNode'
+                        ? 'DeepSeek Agent Config'
+                        : 'Configure Step'}
+                    </h3>
+                    <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-slate-400">
+                      ID: {selectedNode.id}
+                    </span>
+                  </div>
+                  <p className="text-[10px] font-mono text-slate-400 mt-0.5">Parameters, Variable Mapping & Live Testing</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsInspectorOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg cursor-pointer"
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
               >
                 ✕
               </button>
             </div>
 
+            {/* Quick Variables Token Toolbar */}
+            <div className="bg-black/40 border-b border-slate-800/80 px-4 py-2.5 space-y-1.5 font-mono">
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                <span className="flex items-center gap-1.5">
+                  <Code size={12} className="text-cyan-400" />
+                  PAYLOAD VARIABLE TOKENS
+                </span>
+                <span className="text-[9px] text-cyan-400">CLICK TO COPY</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  '{{lead_name}}',
+                  '{{lead_phone}}',
+                  '{{lead_email}}',
+                  '{{business_name}}',
+                  '{{inventory_url}}',
+                  '{{project_name}}'
+                ].map(tok => (
+                  <button
+                    key={tok}
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(tok)
+                      toast.success(`Copied ${tok} to clipboard!`)
+                    }}
+                    className="px-2 py-0.5 rounded-md bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-800 hover:border-cyan-500/50 text-[10px] transition-colors cursor-pointer"
+                    title="Click to copy token"
+                  >
+                    {tok}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Drawer Body */}
-            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs text-slate-200">
               
               {/* === 1. IF TRIGGER NODE === */}
               {selectedNode.type === 'triggerNode' && (
-                <div className="space-y-4">
+                <div className="space-y-4 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                       Trigger Event Source
                     </label>
                     <select
@@ -1971,7 +1967,7 @@ export function ManyChatCanvas({
                           handleUpdateNodeData('description', 'Outbound broadcast template with quick reply buttons')
                         }
                       }}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none cursor-pointer"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-cyan-300 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 outline-none cursor-pointer"
                     >
                       <option value="meta_ad">🎯 Meta Ad Lead / Click-to-WhatsApp (Ad Click)</option>
                       <option value="whatsapp_inbound">💬 WhatsApp Inbound / Keyword (User Text)</option>
@@ -1985,21 +1981,21 @@ export function ManyChatCanvas({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                       Step Label / Card Title
                     </label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white placeholder-slate-600 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 outline-none"
                     />
                   </div>
 
                   {/* Context-specific trigger fields */}
                   {(selectedNode.data.triggerType === 'whatsapp_inbound' || selectedNode.data.triggerType === 'ig_comment') && (
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                         Keywords Filter (Optional)
                       </label>
                       <input
@@ -2007,9 +2003,9 @@ export function ManyChatCanvas({
                         value={selectedNode.data.keywords || selectedNode.data.keyword || ''}
                         onChange={e => handleUpdateNodeData('keywords', e.target.value)}
                         placeholder="e.g. INFO, WEBINAR, SITE VISIT, PRICE (Leave blank for ANY message)"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                        className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 outline-none"
                       />
-                      <span className="text-[10px] text-slate-400 mt-1 block">
+                      <span className="text-[10px] text-slate-500 mt-1 block">
                         Comma-separated keywords. If left blank, this flow triggers on any incoming message.
                       </span>
                     </div>
@@ -2017,7 +2013,7 @@ export function ManyChatCanvas({
 
                   {selectedNode.data.triggerType === 'meta_ad' && (
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                         Campaign Filter
                       </label>
                       <input
@@ -2025,9 +2021,9 @@ export function ManyChatCanvas({
                         value={selectedNode.data.campaignName || ''}
                         onChange={e => handleUpdateNodeData('campaignName', e.target.value)}
                         placeholder="All Campaigns (or enter specific Campaign ID / Name)"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                        className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 outline-none"
                       />
-                      <span className="text-[10px] text-slate-400 mt-1 block">
+                      <span className="text-[10px] text-slate-500 mt-1 block">
                         Leave blank to trigger for all active WhatsApp Click-to-Chat campaigns.
                       </span>
                     </div>
@@ -2036,13 +2032,13 @@ export function ManyChatCanvas({
                   {selectedNode.data.triggerType === 'whatsapp_broadcast' && (
                     <>
                       {/* 1. Target Audience Selector (from Audience Maker) */}
-                      <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3.5 space-y-2">
+                      <div className="bg-[#060A14] border border-emerald-900/60 rounded-2xl p-3.5 space-y-2">
                         <div className="flex items-center justify-between">
-                          <label className="block text-[11px] font-bold text-emerald-950">
-                            👥 Target Audience (Audience Maker)
+                          <label className="block text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                            👥 Target Audience Group
                           </label>
                           {selectedNode.data.audienceLeadCount !== undefined && selectedNode.data.audienceLeadCount > 0 && (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-black text-[10px]">
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-700 text-emerald-300 font-mono font-bold text-[10px]">
                               {selectedNode.data.audienceLeadCount} Leads
                             </span>
                           )}
@@ -2057,7 +2053,7 @@ export function ManyChatCanvas({
                             handleUpdateNodeData('audienceLeadCount', foundAud?.leadCount || 0)
                             handleUpdateNodeData('audienceId', foundAud?.id || null)
                           }}
-                          className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:border-emerald-500 outline-none cursor-pointer"
+                          className="w-full bg-[#09101F] border border-emerald-800/80 rounded-xl px-3 py-2 text-xs font-mono text-emerald-200 focus:border-emerald-500 outline-none cursor-pointer"
                         >
                           <option value="">-- Select Target Audience Group --</option>
                           {audiences.map(aud => (
@@ -2066,7 +2062,7 @@ export function ManyChatCanvas({
                             </option>
                           ))}
                         </select>
-                        <p className="text-[10px] text-emerald-700 leading-tight font-medium">
+                        <p className="text-[10px] text-emerald-500/80 leading-tight">
                           Build targeted audiences in <b>Audience Maker</b>, then select them here to trigger this flow.
                         </p>
                       </div>
@@ -2074,11 +2070,11 @@ export function ManyChatCanvas({
                       {/* 2. WhatsApp Template Selector */}
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <label className="block text-[11px] font-bold text-slate-700">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                             WhatsApp Template
                           </label>
                           {templates.length > 0 && (
-                            <span className="text-[10px] text-indigo-600 font-semibold">
+                            <span className="text-[10px] text-cyan-400 font-mono">
                               {templates.length} Approved
                             </span>
                           )}
@@ -2108,7 +2104,7 @@ export function ManyChatCanvas({
                                 }
                               }
                             }}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-700 focus:bg-white focus:border-indigo-500 outline-none cursor-pointer mb-2"
+                            className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-cyan-300 focus:border-cyan-500 outline-none cursor-pointer mb-2"
                           >
                             <option value="">-- Choose Approved Template --</option>
                             {templates.map(t => (
@@ -2124,50 +2120,50 @@ export function ManyChatCanvas({
                           value={selectedNode.data.templateName || ''}
                           onChange={e => handleUpdateNodeData('templateName', e.target.value)}
                           placeholder="e.g. client_project_announcement"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-700 focus:bg-white focus:border-indigo-500 outline-none"
+                          className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-cyan-300 focus:border-cyan-500 outline-none"
                         />
                       </div>
 
-                      {/* 3. Header Media URL (Optional) */}
+                      {/* 3. Header Media URL */}
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          Header Media URL (Optional for Image/Video templates)
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                          Header Media URL (Optional)
                         </label>
                         <input
                           type="text"
                           value={selectedNode.data.headerMediaUrl || ''}
                           onChange={e => handleUpdateNodeData('headerMediaUrl', e.target.value)}
                           placeholder="https://... (Leave blank to use default template media)"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                          className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600 focus:border-cyan-500 outline-none"
                         />
                       </div>
 
                       {/* 4. Template Message Preview */}
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                           Template Message Preview
                         </label>
                         <textarea
                           rows={3}
                           value={selectedNode.data.message || ''}
                           onChange={e => handleUpdateNodeData('message', e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:border-indigo-500 outline-none leading-relaxed"
+                          className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 focus:border-cyan-500 outline-none leading-relaxed"
                         />
                       </div>
 
                       {/* 5. Template Quick Reply Buttons */}
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <label className="block text-[11px] font-bold text-slate-700">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                             Template Quick Reply Buttons
                           </label>
-                          <span className="text-[10px] text-indigo-600 font-semibold">Each button creates an output port</span>
+                          <span className="text-[10px] text-cyan-400 font-mono">Outputs created</span>
                         </div>
 
                         <div className="space-y-2">
                           {(selectedNode.data.buttons || []).map((btn: any, idx: number) => (
-                            <div key={idx} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2">
-                              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0 ml-1" />
+                            <div key={idx} className="flex items-center gap-2 bg-[#060A14] border border-slate-800 rounded-xl p-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 shrink-0 ml-1" />
                               <input
                                 type="text"
                                 value={btn.title}
@@ -2176,14 +2172,14 @@ export function ManyChatCanvas({
                                   updated[idx] = { ...updated[idx], title: e.target.value }
                                   handleUpdateNodeData('buttons', updated)
                                 }}
-                                className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900"
+                                className="flex-1 bg-[#09101F] border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-mono text-white"
                               />
                               <button
                                 onClick={() => {
                                   const updated = (selectedNode.data.buttons || []).filter((_: any, i: number) => i !== idx)
                                   handleUpdateNodeData('buttons', updated)
                                 }}
-                                className="p-1 text-slate-400 hover:text-rose-600 rounded-md"
+                                className="p-1 text-slate-400 hover:text-rose-400 rounded-md cursor-pointer transition-colors"
                               >
                                 ✕
                               </button>
@@ -2199,17 +2195,17 @@ export function ManyChatCanvas({
                             ]
                             handleUpdateNodeData('buttons', updated)
                           }}
-                          className="mt-2 w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl border border-indigo-200 text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                          className="mt-2 w-full py-1.5 bg-slate-900 hover:bg-slate-850 text-cyan-300 font-mono font-bold rounded-xl border border-slate-800 text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
                         >
                           <Plus size={13} /> Add Quick Reply Button
                         </button>
                       </div>
 
                       {/* 6. DIRECT LAUNCH FLOW ON AUDIENCE ACTION */}
-                      <div className="pt-3 border-t border-slate-200 space-y-2">
+                      <div className="pt-3 border-t border-slate-800 space-y-2">
                         {selectedNode.data.lastBroadcastAt && (
-                          <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between">
-                            <span className="font-semibold">✅ Last Campaign:</span>
+                          <div className="p-2.5 bg-emerald-950/40 border border-emerald-800/80 rounded-xl text-xs text-emerald-300 flex items-center justify-between font-mono">
+                            <span className="font-semibold">Last Campaign:</span>
                             <span className="font-bold">
                               {new Date(selectedNode.data.lastBroadcastAt).toLocaleDateString()} ({selectedNode.data.lastBroadcastRecipients || 0} leads)
                             </span>
@@ -2220,16 +2216,16 @@ export function ManyChatCanvas({
                           type="button"
                           disabled={isLaunchingBroadcast || !selectedNode.data.templateName || !selectedNode.data.audienceGroupName}
                           onClick={handleLaunchFlowBroadcast}
-                          className="w-full py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:from-slate-300 disabled:to-slate-400 text-white font-extrabold rounded-xl shadow-lg shadow-emerald-500/20 text-xs flex items-center justify-center gap-2 cursor-pointer transition-all disabled:cursor-not-allowed"
+                          className="w-full py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-slate-800 disabled:to-slate-900 text-white font-mono font-bold rounded-xl shadow-lg shadow-emerald-500/20 text-xs flex items-center justify-center gap-2 cursor-pointer transition-all disabled:cursor-not-allowed"
                         >
                           {isLaunchingBroadcast ? (
                             <>
-                              <Loader2 size={15} className="animate-spin" />
+                              <Loader2 size={14} className="animate-spin" />
                               <span>Dispatching Broadcast to Audience...</span>
                             </>
                           ) : (
                             <>
-                              <Send size={15} />
+                              <Send size={14} />
                               <span>
                                 Launch Flow on {selectedNode.data.audienceGroupName ? `"${selectedNode.data.audienceGroupName}"` : 'Audience'}
                                 {selectedNode.data.audienceLeadCount ? ` (${selectedNode.data.audienceLeadCount} Leads)` : ''}
@@ -2237,8 +2233,8 @@ export function ManyChatCanvas({
                             </>
                           )}
                         </button>
-                        <p className="text-[10px] text-slate-400 text-center leading-tight">
-                          Dispatches the template to the selected audience. Any quick-reply button clicks will trigger this flow.
+                        <p className="text-[10px] font-mono text-slate-500 text-center leading-tight">
+                          Dispatches the template to the selected audience. Any quick-reply button clicks trigger downstream steps.
                         </p>
                       </div>
                     </>
@@ -2248,31 +2244,31 @@ export function ManyChatCanvas({
 
               {/* === 2. IF WHATSAPP MESSAGE NODE (Dedicated Message Step) === */}
               {selectedNode.type === 'whatsappMessageNode' && (
-                <div className="space-y-4">
+                <div className="space-y-4 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Step Title
                     </label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-emerald-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white placeholder-slate-600 focus:border-cyan-500 outline-none"
                     />
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[11px] font-bold text-slate-700">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                         Reply Message Body
                       </label>
-                      <span className="text-[10px] text-slate-400">Click tag to insert:</span>
+                      <span className="text-[10px] text-slate-500">Click tag to insert:</span>
                     </div>
                     <textarea
                       rows={5}
                       value={selectedNode.data.message || ''}
                       onChange={e => handleUpdateNodeData('message', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:border-emerald-500 outline-none leading-relaxed"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 placeholder-slate-600 focus:border-cyan-500 outline-none leading-relaxed"
                     />
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {['{{lead_name}}', '{{inventory_url}}', '{{business_name}}', '{{phone}}'].map(tag => (
@@ -2280,7 +2276,7 @@ export function ManyChatCanvas({
                           key={tag}
                           type="button"
                           onClick={() => handleUpdateNodeData('message', (selectedNode.data.message || '') + ' ' + tag)}
-                          className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md font-mono text-[10px] font-bold border border-emerald-200 cursor-pointer"
+                          className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 text-cyan-300 rounded-md font-mono text-[10px] font-bold border border-slate-800 cursor-pointer transition-colors"
                         >
                           + {tag}
                         </button>
@@ -2290,12 +2286,12 @@ export function ManyChatCanvas({
 
                   {/* Buttons / CTA Links on Message */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                       CTA Buttons & Branch Ports
                     </label>
                     <div className="space-y-2">
                       {(selectedNode.data.buttons || []).map((btn: any, idx: number) => (
-                        <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                        <div key={idx} className="bg-[#060A14] border border-slate-800 rounded-xl p-2.5 space-y-1.5">
                           <div className="flex items-center gap-2">
                             <input
                               type="text"
@@ -2306,14 +2302,14 @@ export function ManyChatCanvas({
                                 updated[idx] = { ...updated[idx], title: e.target.value }
                                 handleUpdateNodeData('buttons', updated)
                               }}
-                              className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900"
+                              className="flex-1 bg-[#09101F] border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-white"
                             />
                             <button
                               onClick={() => {
                                 const updated = (selectedNode.data.buttons || []).filter((_: any, i: number) => i !== idx)
                                 handleUpdateNodeData('buttons', updated)
                               }}
-                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
+                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg cursor-pointer transition-colors"
                             >
                               <Trash2 size={13} />
                             </button>
@@ -2327,7 +2323,7 @@ export function ManyChatCanvas({
                               updated[idx] = { ...updated[idx], url: e.target.value }
                               handleUpdateNodeData('buttons', updated)
                             }}
-                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-700"
+                            className="w-full bg-[#09101F] border border-slate-700 rounded-lg px-2.5 py-1 text-[11px] font-mono text-cyan-300"
                           />
                         </div>
                       ))}
@@ -2336,11 +2332,11 @@ export function ManyChatCanvas({
                       onClick={() => {
                         const updated = [
                           ...(selectedNode.data.buttons || []),
-                          { id: 'btn_' + Date.now(), title: 'View Inventory 🏢', url: '{{inventory_url}}' }
+                          { id: 'btn_' + Date.now(), title: 'View Inventory', url: '{{inventory_url}}' }
                         ]
                         handleUpdateNodeData('buttons', updated)
                       }}
-                      className="mt-2 w-full py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl border border-emerald-200 text-xs flex items-center justify-center gap-1 cursor-pointer"
+                      className="mt-2 w-full py-1.5 bg-slate-900 hover:bg-slate-850 text-cyan-300 font-mono font-bold rounded-xl border border-slate-800 text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
                     >
                       <Plus size={13} /> Add CTA Link Button
                     </button>
@@ -2350,41 +2346,41 @@ export function ManyChatCanvas({
 
               {/* === 3. IF NOTIFY ADMIN NODE === */}
               {selectedNode.type === 'notifyNode' && (
-                <div className="space-y-4">
+                <div className="space-y-4 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Alert Title / Label
                     </label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-amber-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white placeholder-slate-600 focus:border-amber-500 outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Notification Message Body
                     </label>
                     <textarea
                       rows={4}
                       value={selectedNode.data.message || ''}
                       onChange={e => handleUpdateNodeData('message', e.target.value)}
-                      placeholder="e.g. 🔥 HOT LEAD: {{lead_name}} ({{lead_phone}}) replied Interested!"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:border-amber-500 outline-none leading-relaxed"
+                      placeholder="e.g. HOT LEAD: {{lead_name}} ({{lead_phone}}) replied Interested!"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 placeholder-slate-600 focus:border-amber-500 outline-none leading-relaxed"
                     />
                   </div>
 
                   {/* Priority */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                       Alert Urgency & Priority
                     </label>
                     <select
                       value={selectedNode.data.priority || 'high'}
                       onChange={e => handleUpdateNodeData('priority', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 cursor-pointer"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-amber-300 cursor-pointer outline-none"
                     >
                       <option value="urgent">🚨 Urgent (Immediate Alarm & WhatsApp)</option>
                       <option value="high">🔥 High Priority (Push + WhatsApp)</option>
@@ -2394,7 +2390,7 @@ export function ManyChatCanvas({
 
                   {/* Channels selection */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                       Delivery Channels
                     </label>
                     <div className="grid grid-cols-2 gap-2">
@@ -2414,14 +2410,14 @@ export function ManyChatCanvas({
                               const updated = active ? curr.filter((c: string) => c !== ch.id) : [...curr, ch.id]
                               handleUpdateNodeData('channels', updated)
                             }}
-                            className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer transition-colors ${
+                            className={`p-2.5 rounded-xl border text-xs font-mono font-bold flex items-center justify-between cursor-pointer transition-colors ${
                               active
-                                ? 'bg-amber-50 text-amber-900 border-amber-300'
-                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                ? 'bg-amber-950/40 text-amber-300 border-amber-600/80 shadow-xs'
+                                : 'bg-[#060A14] text-slate-400 border-slate-800 hover:border-slate-700'
                             }`}
                           >
                             <span>{ch.label}</span>
-                            {active && <Check size={13} className="text-amber-600" />}
+                            {active && <Check size={13} className="text-amber-400" />}
                           </button>
                         )
                       })}
@@ -2430,13 +2426,13 @@ export function ManyChatCanvas({
 
                   {/* Recipient */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                       Target Recipient
                     </label>
                     <select
                       value={selectedNode.data.recipient || 'all_admins'}
                       onChange={e => handleUpdateNodeData('recipient', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 cursor-pointer"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-200 cursor-pointer outline-none"
                     >
                       <option value="all_admins">All Workspace Admins</option>
                       <option value="assigned">Lead Assigned Agent</option>
@@ -2448,7 +2444,7 @@ export function ManyChatCanvas({
                         value={selectedNode.data.customRecipient || ''}
                         onChange={e => handleUpdateNodeData('customRecipient', e.target.value)}
                         placeholder="e.g. +91 98765 43210 or admin@company.com"
-                        className="w-full mt-2 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
+                        className="w-full mt-2 bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white"
                       />
                     )}
                   </div>
@@ -2457,27 +2453,27 @@ export function ManyChatCanvas({
 
               {/* === 4. IF CRM STAGE UPDATE NODE === */}
               {selectedNode.type === 'crmStageNode' && (
-                <div className="space-y-4">
+                <div className="space-y-4 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Step Title
                     </label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-emerald-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white placeholder-slate-600 focus:border-emerald-500 outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Target Lead Pipeline Stage
                     </label>
                     <select
                       value={selectedNode.data.stage || 'Interested'}
                       onChange={e => handleUpdateNodeData('stage', e.target.value)}
-                      className="w-full bg-emerald-50/50 border border-emerald-300 rounded-xl px-3 py-2.5 text-xs font-black text-emerald-950 cursor-pointer"
+                      className="w-full bg-[#060A14] border border-emerald-800/80 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-emerald-300 cursor-pointer outline-none"
                     >
                       <option value="Interested">Interested 🌟</option>
                       <option value="Site Visit Planned">Site Visit Planned 🏢</option>
@@ -2491,13 +2487,13 @@ export function ManyChatCanvas({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Assign Sales Agent
                     </label>
                     <select
                       value={selectedNode.data.assignAgent || 'Keep Existing'}
                       onChange={e => handleUpdateNodeData('assignAgent', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 cursor-pointer"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-200 cursor-pointer outline-none"
                     >
                       <option value="Keep Existing">Keep Existing Assigned Agent</option>
                       <option value="Round Robin">Auto Round-Robin Distribution</option>
@@ -2507,7 +2503,7 @@ export function ManyChatCanvas({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       CRM Timeline Activity Note
                     </label>
                     <textarea
@@ -2515,7 +2511,7 @@ export function ManyChatCanvas({
                       value={selectedNode.data.note || ''}
                       onChange={e => handleUpdateNodeData('note', e.target.value)}
                       placeholder="e.g. Lead confirmed interest in 3BHK penthouse during WhatsApp flow."
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 placeholder-slate-600"
                     />
                   </div>
                 </div>
@@ -2523,31 +2519,31 @@ export function ManyChatCanvas({
 
               {/* === 5. IF TAG CONTACT NODE === */}
               {selectedNode.type === 'tagNode' && (
-                <div className="space-y-4">
+                <div className="space-y-4 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Step Title
                     </label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-blue-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white placeholder-slate-600 focus:border-blue-500 outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Action Mode
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => handleUpdateNodeData('mode', 'add')}
-                        className={`py-2 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
+                        className={`py-2 rounded-xl border text-xs font-mono font-bold transition-colors cursor-pointer ${
                           (selectedNode.data.mode || 'add') === 'add'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-slate-50 text-slate-600 border-slate-200'
+                            ? 'bg-blue-950/60 text-blue-300 border-blue-500 shadow-xs'
+                            : 'bg-[#060A14] text-slate-400 border-slate-800'
                         }`}
                       >
                         + Add Tags
@@ -2555,10 +2551,10 @@ export function ManyChatCanvas({
                       <button
                         type="button"
                         onClick={() => handleUpdateNodeData('mode', 'remove')}
-                        className={`py-2 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
+                        className={`py-2 rounded-xl border text-xs font-mono font-bold transition-colors cursor-pointer ${
                           selectedNode.data.mode === 'remove'
-                            ? 'bg-rose-600 text-white border-rose-600'
-                            : 'bg-slate-50 text-slate-600 border-slate-200'
+                            ? 'bg-rose-950/60 text-rose-300 border-rose-500 shadow-xs'
+                            : 'bg-[#060A14] text-slate-400 border-slate-800'
                         }`}
                       >
                         - Remove Tags
@@ -2567,7 +2563,7 @@ export function ManyChatCanvas({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Tags (Comma separated)
                     </label>
                     <input
@@ -2578,7 +2574,7 @@ export function ManyChatCanvas({
                         handleUpdateNodeData('tags', arr)
                       }}
                       placeholder="e.g. Interested, Luxury Buyer, Budget 2Cr+"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-600"
                     />
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {['Interested', 'High Budget', 'Site Visit Requested', 'Luxury HNI'].map(suggestion => (
@@ -2591,7 +2587,7 @@ export function ManyChatCanvas({
                               handleUpdateNodeData('tags', [...curr, suggestion])
                             }
                           }}
-                          className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md text-[10px] font-bold border border-blue-200 cursor-pointer"
+                          className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 text-blue-300 rounded-md text-[10px] font-mono font-bold border border-slate-800 cursor-pointer transition-colors"
                         >
                           + {suggestion}
                         </button>
@@ -2603,22 +2599,22 @@ export function ManyChatCanvas({
 
               {/* === 6. IF CUSTOM API NODE (HTTP Webhook Request) === */}
               {selectedNode.type === 'customApiNode' && (
-                <div className="space-y-4">
+                <div className="space-y-4 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Step Title
                     </label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white placeholder-slate-600 focus:border-indigo-500 outline-none"
                     />
                   </div>
 
                   {/* HTTP Method Selection */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                       HTTP Request Method
                     </label>
                     <div className="grid grid-cols-5 gap-1.5">
@@ -2630,18 +2626,18 @@ export function ManyChatCanvas({
                             key={m}
                             type="button"
                             onClick={() => handleUpdateNodeData('method', m)}
-                            className={`py-1.5 rounded-lg border text-xs font-black transition-all cursor-pointer ${
+                            className={`py-1.5 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer ${
                               isActive
                                 ? m === 'GET'
-                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500'
                                   : m === 'POST'
-                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                  ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500'
                                   : m === 'PUT'
-                                  ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                                  ? 'bg-amber-950/80 text-amber-300 border-amber-500'
                                   : m === 'DELETE'
-                                  ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                                  : 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                  ? 'bg-rose-950/80 text-rose-300 border-rose-500'
+                                  : 'bg-purple-950/80 text-purple-300 border-purple-500'
+                                : 'bg-[#060A14] text-slate-400 border-slate-800 hover:border-slate-700'
                             }`}
                           >
                             {m}
@@ -2654,17 +2650,17 @@ export function ManyChatCanvas({
                   {/* Endpoint URL */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[11px] font-bold text-slate-700">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                         Endpoint URL
                       </label>
-                      <span className="text-[10px] text-slate-400">Insert variables:</span>
+                      <span className="text-[10px] text-slate-500">Insert variables:</span>
                     </div>
                     <input
                       type="text"
                       value={selectedNode.data.url || ''}
                       onChange={e => handleUpdateNodeData('url', e.target.value)}
                       placeholder="https://api.yourcrm.com/v1/leads"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-900 focus:bg-white focus:border-indigo-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-indigo-300 placeholder-slate-600 focus:border-indigo-500 outline-none"
                     />
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {['{{lead_phone}}', '{{lead_name}}', '{{lead_email}}', '{{stage}}'].map(tag => (
@@ -2672,7 +2668,7 @@ export function ManyChatCanvas({
                           key={tag}
                           type="button"
                           onClick={() => handleUpdateNodeData('url', (selectedNode.data.url || '') + tag)}
-                          className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md font-mono text-[10px] font-bold border border-indigo-200 cursor-pointer"
+                          className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 text-indigo-300 rounded-md font-mono text-[10px] font-bold border border-slate-800 cursor-pointer"
                         >
                           + {tag}
                         </button>
@@ -2683,7 +2679,7 @@ export function ManyChatCanvas({
                   {/* Headers Editor */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-[11px] font-bold text-slate-700">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                         Headers (Authentication & Metadata)
                       </label>
                       <button
@@ -2695,7 +2691,7 @@ export function ManyChatCanvas({
                           ]
                           handleUpdateNodeData('headers', updated)
                         }}
-                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 cursor-pointer"
+                        className="text-[11px] font-mono font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-0.5 cursor-pointer"
                       >
                         <Plus size={12} /> Add Header
                       </button>
@@ -2713,7 +2709,7 @@ export function ManyChatCanvas({
                               updated[idx] = { ...updated[idx], key: e.target.value }
                               handleUpdateNodeData('headers', updated)
                             }}
-                            className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-800"
+                            className="flex-1 bg-[#060A14] border border-slate-800 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
                           />
                           <input
                             type="text"
@@ -2724,7 +2720,7 @@ export function ManyChatCanvas({
                               updated[idx] = { ...updated[idx], value: e.target.value }
                               handleUpdateNodeData('headers', updated)
                             }}
-                            className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-800"
+                            className="flex-1 bg-[#060A14] border border-slate-800 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
                           />
                           <button
                             type="button"
@@ -2732,7 +2728,7 @@ export function ManyChatCanvas({
                               const updated = (selectedNode.data.headers || []).filter((_: any, i: number) => i !== idx)
                               handleUpdateNodeData('headers', updated)
                             }}
-                            className="p-1 text-rose-500 hover:bg-rose-50 rounded cursor-pointer"
+                            className="p-1 text-slate-400 hover:text-rose-400 rounded cursor-pointer"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -2748,7 +2744,7 @@ export function ManyChatCanvas({
                           const curr = selectedNode.data.headers || []
                           handleUpdateNodeData('headers', [...curr, { key: 'Content-Type', value: 'application/json' }])
                         }}
-                        className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded cursor-pointer"
+                        className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 text-slate-300 text-[10px] font-mono font-bold rounded border border-slate-800 cursor-pointer"
                       >
                         + Content-Type JSON
                       </button>
@@ -2758,7 +2754,7 @@ export function ManyChatCanvas({
                           const curr = selectedNode.data.headers || []
                           handleUpdateNodeData('headers', [...curr, { key: 'Authorization', value: 'Bearer YOUR_TOKEN' }])
                         }}
-                        className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded cursor-pointer"
+                        className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 text-slate-300 text-[10px] font-mono font-bold rounded border border-slate-800 cursor-pointer"
                       >
                         + Bearer Token
                       </button>
@@ -2769,24 +2765,24 @@ export function ManyChatCanvas({
                   {['POST', 'PUT', 'PATCH'].includes((selectedNode.data.method || 'POST').toUpperCase()) && (
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="block text-[11px] font-bold text-slate-700">
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                           JSON Request Body Payload
                         </label>
-                        <span className="text-[10px] text-indigo-600 font-mono">application/json</span>
+                        <span className="text-[10px] text-indigo-400 font-mono">application/json</span>
                       </div>
                       <textarea
                         rows={6}
                         value={selectedNode.data.body || ''}
                         onChange={e => handleUpdateNodeData('body', e.target.value)}
                         placeholder={`{\n  "phone": "{{lead_phone}}",\n  "name": "{{lead_name}}",\n  "stage": "Interested"\n}`}
-                        className="w-full bg-slate-900 text-emerald-400 font-mono border border-slate-800 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
+                        className="w-full bg-[#060A14] text-emerald-400 font-mono border border-slate-800 rounded-xl p-3 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed"
                       />
                     </div>
                   )}
 
                   {/* Response Mapping */}
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <span className="text-[11px] font-bold text-slate-800 block">
+                  <div className="p-3 bg-[#060A14] border border-slate-800 rounded-xl space-y-2">
+                    <span className="text-[10px] font-mono font-bold text-slate-300 uppercase tracking-wider block">
                       Save Response Field to Contact Property
                     </span>
                     <div className="grid grid-cols-2 gap-2">
@@ -2797,7 +2793,7 @@ export function ManyChatCanvas({
                           value={selectedNode.data.responsePath || ''}
                           onChange={e => handleUpdateNodeData('responsePath', e.target.value)}
                           placeholder="e.g. data.id"
-                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-mono"
+                          className="w-full bg-[#09101F] border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-mono text-white"
                         />
                       </div>
                       <div>
@@ -2807,24 +2803,24 @@ export function ManyChatCanvas({
                           value={selectedNode.data.responseVariable || ''}
                           onChange={e => handleUpdateNodeData('responseVariable', e.target.value)}
                           placeholder="e.g. external_lead_id"
-                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-mono"
+                          className="w-full bg-[#09101F] border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-mono text-white"
                         />
                       </div>
                     </div>
                   </div>
 
                   {/* Live Interactive Test Request Runner */}
-                  <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-2xl space-y-2.5">
+                  <div className="p-3.5 bg-[#060A14] border border-indigo-900/60 rounded-2xl space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="text-xs font-bold text-indigo-950 block">Live Endpoint Tester</span>
-                        <span className="text-[10px] text-indigo-700">Dispatch live HTTP request & inspect response</span>
+                        <span className="text-xs font-mono font-bold text-indigo-300 block">Live Endpoint Tester</span>
+                        <span className="text-[10px] font-mono text-slate-400">Dispatch live HTTP request & inspect response</span>
                       </div>
                       <button
                         type="button"
                         onClick={handleRunApiTest}
                         disabled={apiTestLoading}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-mono font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 disabled:opacity-50 transition-all"
                       >
                         {apiTestLoading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
                         <span>{apiTestLoading ? 'Sending...' : 'Test Request'}</span>
@@ -2832,7 +2828,7 @@ export function ManyChatCanvas({
                     </div>
 
                     {apiTestResult && (
-                      <div className="bg-slate-900 rounded-xl p-3 text-xs font-mono space-y-2 text-slate-200 border border-slate-800 animate-in fade-in duration-150">
+                      <div className="bg-[#03060C] rounded-xl p-3 text-xs font-mono space-y-2 text-slate-200 border border-slate-800 animate-in fade-in duration-150">
                         <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-[11px]">
                           <span className="flex items-center gap-1.5">
                             <span
@@ -2857,26 +2853,26 @@ export function ManyChatCanvas({
 
               {/* === 7. IF AI CALL NODE === */}
               {selectedNode.type === 'aiCallNode' && (
-                <div className="space-y-4">
+                <div className="space-y-4 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Step Title
                     </label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-rose-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white placeholder-slate-600 focus:border-rose-500 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Gemini Live Voice Persona
                     </label>
                     <select
                       value={selectedNode.data.voice || 'Puck'}
                       onChange={e => handleUpdateNodeData('voice', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 cursor-pointer"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-rose-300 cursor-pointer outline-none"
                     >
                       <option value="Puck (Gemini 3.1 Flash Live)">Puck — Clear, upbeat & engaging (Recommended for Sales)</option>
                       <option value="Fenrir (Gemini 3.1 Flash Live)">Fenrir — Crisp, focused & persuasive</option>
@@ -2885,14 +2881,14 @@ export function ManyChatCanvas({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Agent Goal & Calling Instructions
                     </label>
                     <textarea
                       rows={5}
                       value={selectedNode.data.script || ''}
                       onChange={e => handleUpdateNodeData('script', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:border-rose-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 placeholder-slate-600 focus:border-rose-500 outline-none"
                     />
                   </div>
                 </div>
@@ -2900,31 +2896,31 @@ export function ManyChatCanvas({
 
               {/* === 8. IF SEND EMAIL NODE === */}
               {selectedNode.type === 'emailNode' && (
-                <div className="space-y-4">
+                <div className="space-y-4 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Step Title
                     </label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-cyan-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white placeholder-slate-600 focus:border-cyan-500 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Email Subject
                     </label>
                     <input
                       type="text"
                       value={selectedNode.data.subject || ''}
                       onChange={e => handleUpdateNodeData('subject', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Recipient Email Address
                     </label>
                     <input
@@ -2937,7 +2933,7 @@ export function ManyChatCanvas({
                         handleUpdateNodeData('customRecipient', val)
                       }}
                       placeholder="e.g. rchopra489@gmail.com or {{lead_email}}"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white focus:border-cyan-500 outline-none"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 focus:border-cyan-500 outline-none"
                     />
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       <button
@@ -2947,7 +2943,7 @@ export function ManyChatCanvas({
                           handleUpdateNodeData('customEmail', 'rchopra489@gmail.com')
                           handleUpdateNodeData('customRecipient', 'rchopra489@gmail.com')
                         }}
-                        className="px-2 py-0.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 rounded-md text-[10px] font-bold border border-cyan-200 cursor-pointer"
+                        className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 text-cyan-300 rounded-md text-[10px] font-mono font-bold border border-slate-800 cursor-pointer"
                       >
                         + rchopra489@gmail.com
                       </button>
@@ -2958,7 +2954,7 @@ export function ManyChatCanvas({
                           handleUpdateNodeData('customEmail', '')
                           handleUpdateNodeData('customRecipient', '')
                         }}
-                        className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold border border-slate-200 cursor-pointer"
+                        className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded-md text-[10px] font-mono font-bold border border-slate-800 cursor-pointer"
                       >
                         + Workspace Owner
                       </button>
@@ -2969,21 +2965,21 @@ export function ManyChatCanvas({
                           handleUpdateNodeData('customEmail', '{{lead_email}}')
                           handleUpdateNodeData('customRecipient', '{{lead_email}}')
                         }}
-                        className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold border border-slate-200 cursor-pointer"
+                        className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded-md text-[10px] font-mono font-bold border border-slate-800 cursor-pointer"
                       >
                         {'+ {{lead_email}}'}
                       </button>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                       Email Body (Text or HTML)
                     </label>
                     <textarea
                       rows={5}
                       value={selectedNode.data.body || ''}
                       onChange={e => handleUpdateNodeData('body', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200"
                     />
                   </div>
                 </div>
@@ -2991,37 +2987,37 @@ export function ManyChatCanvas({
 
               {/* === 9. IF CONDITION NODE === */}
               {selectedNode.type === 'conditionNode' && (
-                <div className="space-y-3">
+                <div className="space-y-3 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Condition Title</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Condition Title</label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-bold"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-2.5 text-xs text-white font-bold"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Rule / Condition</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Rule / Condition Expression</label>
                     <input
                       type="text"
                       value={selectedNode.data.condition || ''}
                       onChange={e => handleUpdateNodeData('condition', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-2.5 text-xs text-cyan-300"
                       placeholder="e.g. Clicked Interested == True"
                     />
                   </div>
-                  <p className="text-[10px] text-slate-500">
-                    Connect the <span className="text-emerald-600 font-bold">Match (Yes)</span> port or <span className="text-rose-600 font-bold">Else (No)</span> port to different action cards.
+                  <p className="text-[10px] font-mono text-slate-500">
+                    Connect the <span className="text-emerald-400 font-bold">Match (Yes)</span> port or <span className="text-rose-400 font-bold">Else (No)</span> port to different action cards.
                   </p>
                 </div>
               )}
 
               {/* === 10. IF DELAY NODE === */}
               {selectedNode.type === 'delayNode' && (
-                <div className="space-y-3">
+                <div className="space-y-3 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Wait Duration</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Wait Duration</label>
                     <select
                       value={selectedNode.data.duration || '15m'}
                       onChange={e => {
@@ -3030,7 +3026,7 @@ export function ManyChatCanvas({
                         handleUpdateNodeData('duration', val)
                         handleUpdateNodeData('durationLabel', label)
                       }}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-bold"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-2.5 text-xs text-cyan-300 font-bold outline-none cursor-pointer"
                     >
                       <option value="5m">5 Minutes</option>
                       <option value="15m">15 Minutes</option>
@@ -3044,23 +3040,23 @@ export function ManyChatCanvas({
 
               {/* === 11. IF AI AGENT NODE === */}
               {selectedNode.type === 'aiAgentNode' && (
-                <div className="space-y-3">
+                <div className="space-y-3 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Agent Role Title</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Agent Role Title</label>
                     <input
                       type="text"
                       value={selectedNode.data.title || ''}
                       onChange={e => handleUpdateNodeData('title', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-bold"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-2.5 text-xs text-white font-bold"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Agent Prompt & Instructions</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">DeepSeek v4.1 Prompt & Instructions</label>
                     <textarea
                       rows={5}
                       value={selectedNode.data.prompt || ''}
                       onChange={e => handleUpdateNodeData('prompt', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200"
                     />
                   </div>
                 </div>
@@ -3068,30 +3064,30 @@ export function ManyChatCanvas({
 
               {/* === 12. IF INVENTORY DELIVERY NODE === */}
               {selectedNode.type === 'inventoryDeliveryNode' && (
-                <div className="space-y-3">
+                <div className="space-y-3 font-mono">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Inventory Message</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Inventory Message</label>
                     <textarea
                       rows={4}
                       value={selectedNode.data.message || ''}
                       onChange={e => handleUpdateNodeData('message', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl p-3 text-xs text-slate-200"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">Catalog URL Tag</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Catalog URL Tag</label>
                     <input
                       type="text"
                       value={selectedNode.data.link || '{{inventory_url}}'}
                       onChange={e => handleUpdateNodeData('link', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono"
+                      className="w-full bg-[#060A14] border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300"
                     />
                   </div>
                 </div>
               )}
 
               {/* Delete Node Button */}
-              <div className="pt-4 border-t border-slate-200">
+              <div className="pt-4 border-t border-slate-800">
                 <button
                   onClick={() => {
                     setNodes(nds => nds.filter(n => n.id !== selectedNodeId))
@@ -3099,9 +3095,10 @@ export function ManyChatCanvas({
                     setIsInspectorOpen(false)
                     setApiTestResult(null)
                   }}
-                  className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full py-2.5 bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 border border-rose-800/60 font-mono font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
                 >
-                  <Trash2 size={14} /> Delete This Node
+                  <Trash2 size={13} />
+                  <span>DELETE STEP NODE [{selectedNode.id}]</span>
                 </button>
               </div>
             </div>
@@ -3111,3 +3108,4 @@ export function ManyChatCanvas({
     </div>
   )
 }
+

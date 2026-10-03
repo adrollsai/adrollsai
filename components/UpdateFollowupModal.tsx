@@ -132,6 +132,7 @@ export default function UpdateFollowupModal({
   const nextActionRef = useRef<HTMLDivElement>(null)
 
   const [loading, setLoading] = useState(false)
+  const isSubmittingRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [localProperties, setLocalProperties] = useState<any[]>(properties)
 
@@ -246,6 +247,8 @@ export default function UpdateFollowupModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
     setLoading(true)
     setError(null)
 
@@ -257,6 +260,7 @@ export default function UpdateFollowupModal({
     if (!isClosedStatus && !isPostponed && !hasNextAction && !noFutureFollowup) {
       setError('Next Action Date & Time is required for active/ongoing leads. Please select a date or choose "No Followup Needed".')
       setLoading(false)
+      isSubmittingRef.current = false
       nextActionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
@@ -430,6 +434,8 @@ export default function UpdateFollowupModal({
         saveSuccess = true
       }
 
+      const existingCustomFields = parseCustomFields(lead.custom_fields)
+
       const updatedPayload = {
         id: lead.id,
         status: payload.leadStatus,
@@ -437,9 +443,9 @@ export default function UpdateFollowupModal({
         next_followup: parsedIsoNextAction,
         notes: (lead.notes || '') + (remarks ? `\n[Followup (${followupType})]: ${remarks}` : ''),
         custom_fields: {
-          ...(typeof lead.custom_fields === 'object' ? lead.custom_fields : {}),
+          ...existingCustomFields,
           last_followup_at: new Date().toISOString(),
-          last_followup_type: followupType,
+          last_followup_type: isDnp ? 'Call (DNP)' : followupType,
           last_call_dnp: isDnp,
           next_action_date: parsedIsoNextAction,
           next_action_type: parsedIsoNextAction ? nextActionType : null,
@@ -455,6 +461,7 @@ export default function UpdateFollowupModal({
       setError(err.message || 'Failed to save followup. Please check your internet connection and try again.')
     } finally {
       setLoading(false)
+      isSubmittingRef.current = false
     }
   }
 
