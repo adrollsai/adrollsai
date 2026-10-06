@@ -203,6 +203,24 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
       const cutoff = cf?.history_visible_from
       const cutoffTime = cutoff ? new Date(cutoff).getTime() : null
 
+      // 1.5. Guarantee AI Voice Call Summary is represented in history if present on lead
+      const hasCallJson = items.some(item => item.description && item.description.startsWith('🎙️ CALL_JSON:'))
+      if (!hasCallJson && (lead.voice_call_summary || lead.summary)) {
+        const sumText = lead.voice_call_summary || lead.summary
+        items.push({
+          id: 'synthetic_voice_call_summary',
+          lead_id: lead.id,
+          action_type: 'AI_VOICE_CALL',
+          actor_name: 'Nobogent AI Voice',
+          description: `🎙️ CALL_JSON:${JSON.stringify({
+            summary: sumText,
+            recording_url: lead.voice_recording_url || null,
+            transcript: lead.voice_call_transcript || []
+          })}`,
+          created_at: lead.voice_call_scheduled_at || lead.last_call_at || lead.created_at || new Date().toISOString()
+        })
+      }
+
       // 2. Ensure imported/existing last remarks are included as distinct timeline cards (only if admin or post-cutoff)
       const lastRemark = (cf?.last_followup_remark || cf?.last_remark || '').trim()
       if (lastRemark) {
@@ -481,6 +499,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   if (raw === 'DNP' || raw === 'CALL_NOT_PICKED') return 'CALL NOT PICKED (DNP)'
                   if (raw === 'TRANSFER') return 'LEAD TRANSFERRED'
                   if (raw === 'CALL' || raw === 'CALL_FEEDBACK') return 'CALL LOG'
+                  if (raw === 'AI_VOICE_CALL' || it.description?.startsWith('🎙️ CALL_JSON:')) return 'AI VOICE CALL'
                   if (raw === 'LEAD_CREATED') return 'LEAD CREATED'
                   if (raw === 'SITE_VISIT') return 'SITE VISIT'
                   if (raw === 'MEETING') return 'MEETING'
@@ -494,6 +513,9 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   if (it.performed_by && it.performed_by !== 'Agent') return it.performed_by
 
                   const desc = it.description || ''
+                  if (desc.startsWith('🎙️ CALL_JSON:')) {
+                    return 'Nobogent AI Voice'
+                  }
                   if (it.action_type === 'REOPENED' || desc.includes('Facebook Ad Submission') || desc.includes('Lead Created from')) {
                     return 'System / Meta Ad'
                   }
@@ -647,13 +669,40 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                           try {
                             const parsed = JSON.parse(cleanedDescription.replace('🎙️ CALL_JSON:', ''))
                             return (
-                              <div className="mt-2 pt-2 border-t border-slate-200/80 space-y-1.5">
-                                <span className="block text-[11px] font-extrabold uppercase text-indigo-600 tracking-wider">
-                                  🎙️ AI Voice Call Summary:
+                              <div className="mt-2 pt-2 border-t border-slate-200/80 space-y-2">
+                                <span className="block text-[11px] font-black uppercase text-indigo-700 tracking-wider flex items-center gap-1.5">
+                                  <span>🎙️</span> AI Voice Call Summary:
                                 </span>
-                                <p className="text-slate-800 text-xs font-semibold bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-200/60">
+                                <div className="text-slate-800 text-xs font-semibold bg-indigo-50/70 p-3 rounded-xl border border-indigo-200/70 shadow-2xs leading-relaxed whitespace-pre-wrap">
                                   {parsed.summary}
-                                </p>
+                                </div>
+                                {parsed.recording_url && (
+                                  <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700">
+                                        <Phone size={13} />
+                                        <span>Call Audio Recording</span>
+                                      </div>
+                                      <a
+                                        href={parsed.recording_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        download
+                                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 hover:underline cursor-pointer"
+                                      >
+                                        <Download size={12} />
+                                        <span>Download MP3</span>
+                                      </a>
+                                    </div>
+                                    <audio
+                                      key={parsed.recording_url}
+                                      controls
+                                      preload="metadata"
+                                      src={parsed.recording_url}
+                                      className="w-full h-8 outline-none"
+                                    />
+                                  </div>
+                                )}
                               </div>
                             )
                           } catch (e) {}

@@ -228,6 +228,9 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
     }
   }
 
+  if (lead.voice_call_summary && typeof lead.voice_call_summary === 'string' && lead.voice_call_summary.trim() && !isGenericDnpText(lead.voice_call_summary)) {
+    return `🎙️ AI Call: ${lead.voice_call_summary.trim()}`;
+  }
   if (lead.summary && typeof lead.summary === 'string' && lead.summary.trim() && !isGenericDnpText(lead.summary)) {
     return lead.summary.trim();
   }

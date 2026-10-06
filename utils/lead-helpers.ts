@@ -103,14 +103,24 @@ export function getLeadReopenCount(lead: any): number {
   if (!lead) return 0;
   const cf = parseCustomFields(lead.custom_fields);
 
-  if (cf.reopened_count !== undefined && cf.reopened_count !== null && Number(cf.reopened_count) > 0) {
-    return Number(cf.reopened_count);
-  }
+  // If unique reopened sources exist, base the reopen count on actual unique sources
   if (Array.isArray(cf.reopened_sources) && cf.reopened_sources.length > 0) {
-    return cf.reopened_sources.length;
+    const uniqueSources = Array.from(new Set(cf.reopened_sources));
+    const rawCount = Number(cf.reopened_count || 0);
+    const allFbIds = Array.isArray(cf.all_facebook_lead_ids) ? cf.all_facebook_lead_ids.length : 0;
+    const maxRealistic = Math.max(uniqueSources.length, allFbIds > 1 ? allFbIds - 1 : 1);
+
+    if (rawCount > 0 && rawCount <= maxRealistic) {
+      return rawCount;
+    }
+    return Math.max(1, uniqueSources.length > 1 ? uniqueSources.length - 1 : 1);
+  }
+
+  if (cf.reopened_count !== undefined && cf.reopened_count !== null && Number(cf.reopened_count) > 0) {
+    return Math.min(Number(cf.reopened_count), 25);
   }
   if (lead.reopened_count !== undefined && lead.reopened_count !== null && Number(lead.reopened_count) > 0) {
-    return Number(lead.reopened_count);
+    return Math.min(Number(lead.reopened_count), 25);
   }
 
   return 0;
@@ -250,6 +260,16 @@ export function getLeadLatestRemark(lead: any, currentRole?: string): { remark: 
     const sum = lead.summary.trim();
     if (!isGenericDnpText(sum)) {
       rawRemark = sum;
+    }
+  }
+
+  // 4. Fallback to AI voice call summary
+  if (!rawRemark && lead.voice_call_summary && typeof lead.voice_call_summary === 'string' && lead.voice_call_summary.trim()) {
+    const vSum = lead.voice_call_summary.trim();
+    if (!isGenericDnpText(vSum)) {
+      rawRemark = `🎙️ AI Call: ${vSum}`;
+      if (cf.last_followup_at) remarkTimeStr = cf.last_followup_at;
+      else if (lead.voice_call_scheduled_at) remarkTimeStr = lead.voice_call_scheduled_at;
     }
   }
 

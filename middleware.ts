@@ -86,6 +86,13 @@ export async function middleware(request: NextRequest) {
   const isDashboardRoute = url.pathname.startsWith('/dashboard');
   const isRootRoute = url.pathname === '/';
 
+  // Normalize /dashboard/whatsapp automation (with spaces or %20) to /dashboard/whatsapp-automation
+  if (url.pathname === '/dashboard/whatsapp automation' || url.pathname === '/dashboard/whatsapp%20automation') {
+    const redirectUrl = new URL('/dashboard/whatsapp-automation', request.url);
+    url.searchParams.forEach((val, key) => redirectUrl.searchParams.set(key, val));
+    return NextResponse.redirect(redirectUrl);
+  }
+
   if (!isDashboardRoute && !isRootRoute) {
     return response;
   }

@@ -13,7 +13,6 @@ import { createCreativeSessionToken } from '@/utils/creative-token'
 import { updateLeadScoreInDB, parseCustomFields } from '@/utils/lead-scoring'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
-import { processLeadEvent } from '@/lib/agent/lead-orchestrator'
 import { processOwnerMessage, transcribeVoiceNote } from '@/lib/agent/owner-orchestrator'
 
 export const dynamic = 'force-dynamic'
@@ -1395,15 +1394,6 @@ export async function POST(request: Request) {
                                          return;
                                      }
 
-                                      // 🚀 Trigger Autonomous Lead Agent & Handshake fulfillment on inbound customer message
-                                    if (latestLead?.id) {
-                                        processLeadEvent({
-                                            eventType: 'MESSAGE_RECEIVED',
-                                            leadId: latestLead.id,
-                                            inboundText: messageText
-                                        }).catch(err => console.error('[AUTONOMOUS AGENT] Error on customer inbound:', err));
-                                    }
-
                                       // 1. Dynamic User-Configured Automation Flows (ChatbotX Engine)
                                       try {
                                           const flowResult = await executeFlowRunner({
@@ -1559,16 +1549,21 @@ export async function POST(request: Request) {
                                           const leadPhone = '+' + cleanFrom;
                                           const targetLeadId = latestLead?.id;
                                           const targetUrl = targetLeadId ? `/dashboard/crm?leadId=${targetLeadId}` : '/dashboard/crm';
+                                          const leadSourceStr = [
+                                              latestLead?.source,
+                                              latestLead?.ad_name ? `(${latestLead.ad_name})` : (latestLead?.form_name ? `(${latestLead.form_name})` : '')
+                                          ].filter(Boolean).join(' ') || 'WhatsApp Inbound';
                                           
                                           sendAdminMultiChannelNotification({
                                               ownerUserId,
-                                              title: `🚨 Call with Expert Requested!`,
-                                              body: `High-intent lead ${leadName} (${leadPhone}) requested to connect with an expert for ${ownerBusinessName || 'your business'}! Please contact them immediately.`,
+                                              title: `🚨 Call with Expert Requested: ${leadName}`,
+                                              body: `High-intent lead ${leadName} (${leadPhone}) requested to connect with an expert for ${ownerBusinessName || 'your business'}!\n\n📢 Source: ${leadSourceStr}\n🔗 CRM Link: https://app.nobogent.com${targetUrl}`,
                                               url: targetUrl,
                                               type: 'connect_expert',
                                               leadPhone,
                                               leadName,
-                                              leadId: targetLeadId
+                                              leadId: targetLeadId,
+                                              leadSource: leadSourceStr
                                           }).catch(err => console.error('[Flow] Multi-channel expert request alert failed:', err));
                                           
                                           return; // Stop processing further automation rules/flows or Gemini
@@ -2292,13 +2287,14 @@ RULES:
                                     matchedFlowName = null;
                                     matchedFlowId = null;
 
-                                    if (!isInstantFormLead && leadCampaignId) {
+                                    if (ownerQualifyingEnabled && !isInstantFormLead && leadCampaignId) {
                                         try {
                                             const { data: matchedFlow } = await supabaseAdmin
                                                 .from('whatsapp_question_flows')
                                                 .select('id, questions, name, is_active')
                                                 .eq('user_id', ownerUserId)
                                                 .eq('linked_campaign_id', leadCampaignId)
+                                                .eq('is_active', true)
                                                 .maybeSingle();
 
                                             if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
@@ -2307,7 +2303,6 @@ RULES:
                                                 matchedFlowName = matchedFlow.name;
                                                 matchedFlowId = matchedFlow.id;
                                                 ownerQualifyingQuestions = matchedFlow.questions;
-                                                ownerQualifyingEnabled = true;
                                             }
                                         } catch (fErr) {
                                             console.warn('[WhatsApp Bot] Failed to fetch campaign question flow:', fErr);
@@ -2316,7 +2311,7 @@ RULES:
 
                                     // Fallback: If no campaign-specific flow matched, check if there is a TRUE default flow (one without a linked campaign)
                                     // IMPORTANT: Only pick flows that are NOT tied to a specific campaign, to avoid showing wrong questions for unrelated leads
-                                    if (!isInstantFormLead && !matchedFlowQuestions) {
+                                    if (ownerQualifyingEnabled && !isInstantFormLead && !matchedFlowQuestions) {
                                         try {
                                             const { data: defaultFlow } = await supabaseAdmin
                                                 .from('whatsapp_question_flows')
@@ -2334,7 +2329,6 @@ RULES:
                                                 matchedFlowName = defaultFlow.name;
                                                 matchedFlowId = defaultFlow.id;
                                                 ownerQualifyingQuestions = defaultFlow.questions;
-                                                ownerQualifyingEnabled = true;
                                             }
                                         } catch (dfErr) {
                                             console.warn('[WhatsApp Bot] Failed to fetch default question flow:', dfErr);
@@ -2373,13 +2367,10 @@ RULES:
                                                         flow_answers: updatedFlowCf
                                                     })
                                                     .eq('id', chat.id)
-                                            ).catch(err => console.error('[WhatsApp Bot] Error updating chat with qualification flow:', err));
+                                             ).catch(err => console.error('[WhatsApp Bot] Error updating chat with qualification flow:', err));
                                         }
                                     }
 
-                                    if (!isInstantFormLead && Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
-                                        ownerQualifyingEnabled = true;
-                                    }
                                     let flowCompletionConfig: {
                                         action?: 'custom_link' | 'custom_message' | 'catalog';
                                         title?: string;
@@ -2389,7 +2380,7 @@ RULES:
                                     } | null = null;
 
                                     const parsedQuestionsList: { index: number; key: string; question: string; type?: 'choice' | 'text'; options: string[] }[] = [];
-                                    if (!isInstantFormLead && Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
+                                    if (ownerQualifyingEnabled && !isInstantFormLead && Array.isArray(ownerQualifyingQuestions) && ownerQualifyingQuestions.length > 0) {
                                         let questionIdxCounter = 0;
                                         ownerQualifyingQuestions.forEach((rawItem: any) => {
                                             let item = rawItem;
@@ -2665,7 +2656,7 @@ RULES:
                                         }
 
                                         // If qualification is not yet completed, gently follow up with the pending qualification question (NON-instant form leads only)
-                                        if (!isInstantFormLead && !currentCustomFields?.qualification_completed) {
+                                        if (ownerQualifyingEnabled && !isInstantFormLead && !currentCustomFields?.qualification_completed) {
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
                                                 await new Promise(r => setTimeout(r, 150));
@@ -2706,11 +2697,12 @@ RULES:
                                             type: 'connect_expert',
                                             leadPhone: '+' + cleanFrom,
                                             leadName,
-                                            leadId: targetLeadId
+                                            leadId: targetLeadId,
+                                            leadSource: campaignContext
                                         }).catch(err => console.error('[WhatsApp Bot] Expert alert failed:', err));
 
                                         // If qualification is not yet completed, ask pending question so expert gets lead context (NON-instant form leads only)
-                                        if (!isInstantFormLead && !currentCustomFields?.qualification_completed) {
+                                        if (ownerQualifyingEnabled && !isInstantFormLead && !currentCustomFields?.qualification_completed) {
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
                                                 await new Promise(r => setTimeout(r, 150));
@@ -2750,7 +2742,7 @@ RULES:
                                         );
 
                                         // If qualification is not yet completed, follow up with pending question (NON-instant form leads only)
-                                        if (!isInstantFormLead && !currentCustomFields?.qualification_completed) {
+                                        if (ownerQualifyingEnabled && !isInstantFormLead && !currentCustomFields?.qualification_completed) {
                                             const pendingQIndex = parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]);
                                             if (pendingQIndex !== -1) {
                                                 await new Promise(r => setTimeout(r, 150));
@@ -2841,7 +2833,7 @@ RULES:
                                         }
 
                                         // Dynamic MCQ button clicks (q_opt_{qIndex}_{optIndex})
-                                        if (buttonReplyId?.startsWith('q_opt_')) {
+                                        if (ownerQualifyingEnabled && buttonReplyId?.startsWith('q_opt_')) {
                                             const parts = buttonReplyId.split('_');
                                             const qIdx = parseInt(parts[2], 10);
                                             const optIdx = parseInt(parts[3], 10);
@@ -2879,12 +2871,12 @@ RULES:
                                         const lastChatTime = chat?.updated_at ? new Date(chat.updated_at).getTime() : 0;
                                         const isStaleSession = lastChatTime > 0 && ((Date.now() - lastChatTime) > 24 * 60 * 60 * 1000);
 
-                                        let activeQIndex = !isInstantFormLead ? parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]) : -1;
+                                        let activeQIndex = (!isInstantFormLead && ownerQualifyingEnabled) ? parsedQuestionsList.findIndex(q => !currentCustomFields[q.key]) : -1;
                                         if (isStaleSession && !currentCustomFields?.qualification_completed && currentCustomFields?.qualification_started) {
                                             console.log(`[WhatsApp Bot] Stale qualification session detected for lead ${cleanFrom}. Bypassing old pending question #${activeQIndex}.`);
                                             activeQIndex = -1;
                                         }
-                                        if (!isInstantFormLead && activeQIndex !== -1 && messageText && messageText.trim().length > 0 && !buttonReplyId) {
+                                        if (ownerQualifyingEnabled && !isInstantFormLead && activeQIndex !== -1 && messageText && messageText.trim().length > 0 && !buttonReplyId) {
                                             const activeQ = parsedQuestionsList[activeQIndex];
                                             const hasAnyAnswer = parsedQuestionsList.some(q => currentCustomFields[q.key]);
 
@@ -2967,7 +2959,7 @@ RULES:
                                         }
 
                                         // Legacy Real Estate Button / Keyword Fallbacks (Only for real estate accounts with properties)
-                                        if (!isPipixelAccount && !isNobogentAccount && hasProperties) {
+                                        if (ownerQualifyingEnabled && !isPipixelAccount && !isNobogentAccount && hasProperties) {
                                             if (buttonReplyId?.startsWith('q_prop_') || /^(residential|commercial|plots|land|flat|apartment|villa)/i.test(messageText.trim())) {
                                                 let selectedType = 'Residential';
                                                 if (buttonReplyId === 'q_prop_commercial' || /commercial/i.test(messageText)) selectedType = 'Commercial';
@@ -3592,10 +3584,10 @@ RULES:
               }
 
               const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
-              const reopenedCount = (existingLead.reopened_count || cf.reopened_count || 0) + 1;
               const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
-              const updatedSources = [...previousSources, currentSourceId];
+              const updatedSources = Array.from(new Set([...previousSources, currentSourceId]));
               const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgen_id)]));
+              const reopenedCount = Math.max(1, updatedSources.length > 1 ? updatedSources.length - 1 : 1);
 
               if (!cf.original_created_at) {
                 cf.original_created_at = existingLead.created_at;
@@ -3603,6 +3595,7 @@ RULES:
 
               cf = {
                 ...cf,
+                ...(customFields || {}),
                 all_facebook_lead_ids: updatedAllIds,
                 is_instant_form: true,
                 qualification_completed: true,
@@ -3619,8 +3612,8 @@ RULES:
               const isDeadOrNew = !currentStageLower || currentStageLower === 'new lead' || currentStageLower === 'fresh' || terminalStages.some(s => currentStageLower.includes(s));
 
               const updatePayloadObj: Record<string, any> = {
-                custom_fields: cf,
-                updated_at: new Date().toISOString()
+                source: 'Facebook Ads',
+                custom_fields: cf
               };
 
               if (isDeadOrNew) {
@@ -3699,6 +3692,30 @@ RULES:
             }
           }
 
+          // Match corresponding active voice campaign for this user
+          let matchedVoiceCampaignId: string | null = null;
+          try {
+            const { data: vCamps } = await supabaseAdmin
+              .from('voice_campaigns')
+              .select('id, audience_filter')
+              .eq('user_id', profile.id)
+              .eq('status', 'active');
+            if (vCamps && vCamps.length > 0) {
+              const matchedVC = vCamps.find((vc: any) => {
+                const mc = vc.audience_filter?.meta_campaigns || [];
+                const mf = vc.audience_filter?.meta_forms || [];
+                return (campaignId && mc.includes(String(campaignId))) ||
+                       (fbLead.form_id && mf.includes(String(fbLead.form_id))) ||
+                       (matchedPropertyId && vc.audience_filter?.property_id === matchedPropertyId);
+              });
+              if (matchedVC) {
+                matchedVoiceCampaignId = matchedVC.id;
+              }
+            }
+          } catch (vcErr) {
+            console.warn('[Facebook Webhook] Error matching voice campaign:', vcErr);
+          }
+
           // Save to DB using Admin Client
           const { data: savedLead, error } = await supabaseAdmin.from('leads').insert({
             user_id: profile.id,
@@ -3716,19 +3733,14 @@ RULES:
             ad_name: adCampaignString,
             assigned_to: assignedAgentId,
             campaign_id: campaignId,
+            voice_campaign_id: matchedVoiceCampaignId,
             property_id: matchedPropertyId || null,
             created_at: fbLead.created_time || new Date().toISOString()
           }).select().single()
 
           if (error) continue;
 
-          // 🚀 Trigger Autonomous Lead Agent for new lead qualification & booking
-          if (savedLead?.id) {
-              processLeadEvent({
-                  eventType: 'LEAD_CREATED',
-                  leadId: savedLead.id
-              }).catch(err => console.error('[AUTONOMOUS AGENT] Error on LEAD_CREATED:', err));
-          }
+
           try {
               const recipientEmails: string[] = [];
               if (profile.email) {
@@ -3845,9 +3857,9 @@ RULES:
 
           // Trigger automated Voice Dialing ONLY if auto_call_new_leads is enabled AND user has a connected voice number
           const biProfile = typeof profile?.business_info === 'string' ? JSON.parse(profile.business_info || '{}') : (profile?.business_info || {});
-          const hasConnectedVoice = !!(biProfile?.claimed_vobiz_number || biProfile?.voice_vobiz_number || (profile?.voice_twilio_number && profile?.voice_twilio_sid));
+          const hasConnectedVoice = !!(biProfile?.claimed_vobiz_number || biProfile?.voice_vobiz_number || (profile?.voice_twilio_number && profile?.voice_twilio_sid) || (profile?.voice_provider === 'vobiz' && profile?.voice_twilio_number));
           if (savedLead && phone && profile.auto_call_new_leads && hasConnectedVoice) {
-              triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true).catch(err => {
+              triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true, matchedVoiceCampaignId || undefined).catch(err => {
                   console.error('[AUTO CALL] Auto voice call trigger failed:', err);
               });
           }

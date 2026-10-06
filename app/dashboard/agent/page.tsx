@@ -1,16 +1,20 @@
 'use client';
 
 import * as React from 'react';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import AgentChat from '@/components/agent/AgentChat';
-import { Bot, ShieldCheck, Loader2 } from 'lucide-react';
+import { Bot, ShieldCheck, Loader2, Building2 } from 'lucide-react';
 
-export default function AgentPage() {
+function AgentPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const impersonateId = searchParams.get('impersonate');
   const supabase = createClient();
+
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
+  const [impersonatedName, setImpersonatedName] = useState<string | null>(null);
 
   useEffect(() => {
     async function checkSuperAdmin() {
@@ -37,10 +41,24 @@ export default function AgentPage() {
       }
 
       setIsAuthorized(true);
+
+      // If impersonating, fetch client name for the top badge
+      if (impersonateId) {
+        const { data: clientProfile } = await supabase
+          .from('profiles')
+          .select('business_name, email')
+          .eq('id', impersonateId)
+          .single();
+        if (clientProfile) {
+          setImpersonatedName(clientProfile.business_name || clientProfile.email);
+        }
+      } else {
+        setImpersonatedName(null);
+      }
     }
 
     checkSuperAdmin();
-  }, [router, supabase]);
+  }, [router, supabase, impersonateId]);
 
   if (isAuthorized === null) {
     return (
@@ -63,9 +81,15 @@ export default function AgentPage() {
               <span className="text-[10px] font-bold uppercase tracking-wider bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-400 px-2 py-0.5 rounded-full">
                 Super Admin Access
               </span>
+              {impersonatedName && (
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-400 px-2 py-0.5 rounded-full flex items-center gap-1 border border-amber-200 dark:border-amber-900">
+                  <Building2 size={10} />
+                  <span>Client: {impersonatedName}</span>
+                </span>
+              )}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Your autonomous AI copilot with CRM, Meta Ads, Crons & Scheduling, Supabase & Vercel control.
+              Autonomous AI business partner • CRM, Meta Ads MCP, Crons & Scheduling, Supabase & Vercel control.
             </p>
           </div>
         </div>
@@ -76,7 +100,21 @@ export default function AgentPage() {
         </div>
       </div>
 
-      <AgentChat />
+      <AgentChat impersonateId={impersonateId} />
     </div>
+  );
+}
+
+export default function AgentPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+          <Loader2 size={24} className="text-blue-600 animate-spin" />
+        </div>
+      }
+    >
+      <AgentPageContent />
+    </Suspense>
   );
 }

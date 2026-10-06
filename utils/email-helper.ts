@@ -707,7 +707,8 @@ export async function sendConnectExpertNotificationEmail(
   businessName: string,
   leadName: string,
   leadPhone: string,
-  bcc?: string | string[]
+  bcc?: string | string[],
+  leadSource?: string
 ) {
   try {
     if (!to) {
@@ -738,6 +739,12 @@ export async function sendConnectExpertNotificationEmail(
                 <td style="padding: 6px 0; font-weight: bold; color: #64748b; font-size: 13px; text-transform: uppercase;">Phone Number:</td>
                 <td style="padding: 6px 0; font-weight: 600; color: #0f172a; font-size: 15px;">
                   <a href="tel:${leadPhone}" style="color: #2563eb; text-decoration: none;">${leadPhone}</a>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; font-weight: bold; color: #64748b; font-size: 13px; text-transform: uppercase;">Lead Source:</td>
+                <td style="padding: 6px 0; font-weight: 600; color: #0f172a; font-size: 15px;">
+                  <span style="background-color: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 4px; font-size: 13px;">${leadSource || 'Direct / WhatsApp'}</span>
                 </td>
               </tr>
             </table>

@@ -562,6 +562,8 @@ wss.on('connection', (wsConnection, req) => {
     const queryCampaignId = urlObj?.searchParams?.get('campaignId') || urlObj?.searchParams?.get('amp;campaignId');
     const queryTelephony = urlObj?.searchParams?.get('telephony') || urlObj?.searchParams?.get('amp;telephony');
     const queryCallUuid = urlObj?.searchParams?.get('callUuid') || urlObj?.searchParams?.get('amp;callUuid') || urlObj?.searchParams?.get('call_uuid');
+    const queryVobizAuthId = urlObj?.searchParams?.get('vobizAuthId') || urlObj?.searchParams?.get('amp;vobizAuthId');
+    const queryVobizAuthToken = urlObj?.searchParams?.get('vobizAuthToken') || urlObj?.searchParams?.get('amp;vobizAuthToken');
 
     // Resolve host from the WebSocket upgrade request headers (needed for Vobiz recording callback URL)
     const wsHost = req.headers['x-forwarded-host'] || req.headers.host || process.env.VOICE_BRIDGE_HOST || 'gemini-voice-bridge-805895515412.us-central1.run.app';
@@ -689,8 +691,8 @@ wss.on('connection', (wsConnection, req) => {
 
                     // Trigger non-blocking background REST recording on active call
                     if (vobizCallId) {
-                        const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
-                        const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+                        const authId = queryVobizAuthId || (profileData?.business_info?.kyc_data?.vobizSubAuthId || profileData?.voice_vobiz_auth_id) || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+                        const authToken = queryVobizAuthToken || (profileData?.business_info?.voice_vobiz_auth_token || profileData?.voice_vobiz_auth_token) || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
                         const statusCallbackUrl = `https://${wsHost}/vobiz-status?leadId=${leadId}`;
                         fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Call/${vobizCallId}/Record/`, {
                             method: 'POST',
@@ -847,6 +849,28 @@ wss.on('connection', (wsConnection, req) => {
                             }
                         } catch (cErr) {
                             console.warn('[BRIDGE] Error loading fallback voice campaign:', cErr);
+                        }
+                    }
+
+                    if (!campaign && lead?.campaign_id) {
+                        try {
+                            const { data: userCamps } = await supabaseAdmin
+                                .from('voice_campaigns')
+                                .select('*')
+                                .eq('user_id', effectiveProfileId)
+                                .eq('status', 'active');
+                            if (userCamps && userCamps.length > 0) {
+                                campaign = userCamps.find(c => {
+                                    const mc = c.audience_filter?.meta_campaigns || [];
+                                    const mf = c.audience_filter?.meta_forms || [];
+                                    return mc.includes(String(lead.campaign_id)) || (lead.form_id && mf.includes(String(lead.form_id)));
+                                }) || null;
+                                if (campaign) {
+                                    console.log(`[BRIDGE] Loaded active voice campaign "${campaign.name}" via lead.campaign_id / form_id`);
+                                }
+                            }
+                        } catch (mcErr) {
+                            console.warn('[BRIDGE] Error matching fallback voice campaign via campaign_id:', mcErr);
                         }
                     }
                     resolvedQuestions = flaggedRes?.data || [];
@@ -1144,7 +1168,7 @@ During the call, your objective is strictly to:
 2. Collect answers to the following qualification questions conversationally:
 ${formattedQuestionsList}
 3. Answer any questions the lead has about our company, projects, and active commercial property inventory.
-4. Assist the lead in scheduling / booking an in-person site visit or meeting slot.
+4. Assist the lead in scheduling / booking an appointment with a team member so they can guide them further.
 
 Guidelines:
 - DO NOT read questions mechanically like a survey. Ask them conversationally and naturally.
@@ -1195,8 +1219,8 @@ MANDATORY LANGUAGE & CONVERSATIONAL RULES:
    - If the prospect says they are busy WITHOUT specifying a time: ask politely: "Koi baat nahi sir, kis time call back karna theek rahega?" (NEVER assume 6 PM).
 4. NO AGGRESSIVE APPOINTMENT PUSHING:
    - NEVER jump straight to asking for a site visit or appointment.
-   - Only suggest a site visit or meeting AFTER the prospect has had their questions answered and has confirmed clear, positive interest.
-   - If they are not ready or say no to a visit, respect it immediately and never push again on that call.
+   - Only suggest an appointment with a team member AFTER the prospect has had their questions answered and has confirmed clear, positive interest so our team can guide them further.
+   - If they are not ready or say no to an appointment, respect it immediately and never push again on that call.
 5. WHATSAPP INQUIRIES:
    - Do NOT proactively deflect the live call to WhatsApp in the first turn.
    - HOWEVER, if the prospect explicitly asks to send details or brochure on WhatsApp (e.g. "WhatsApp par bhej do"), say politely: "Ji bilkul sir, main WhatsApp par details aur brochure share karwa deti hoon. Aap review kar lijiye. Thank you, have a great day!" and trigger "end_call".
@@ -2100,8 +2124,8 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                 // Step 2: If no recording URL yet AND this is a Vobiz call, actively fetch from Vobiz Recording API
                 if (!freshRecordingUrl && isVobiz && vobizCallId) {
                     console.log(`[BRIDGE] No recording URL found yet for Vobiz call ${vobizCallId}. Actively fetching from Vobiz Recording API...`);
-                    const recAuthId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
-                    const recAuthToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+                    const recAuthId = queryVobizAuthId || (profileData?.business_info?.kyc_data?.vobizSubAuthId || profileData?.voice_vobiz_auth_id) || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+                    const recAuthToken = queryVobizAuthToken || (profileData?.business_info?.voice_vobiz_auth_token || profileData?.voice_vobiz_auth_token) || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
 
                     for (let recAttempt = 1; recAttempt <= 3; recAttempt++) {
                         try {
@@ -2189,6 +2213,13 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                     voice_call_transcript: mergedTurns
                 };
 
+                if (summary && String(summary).trim().length > 0) {
+                    updatePayload.summary = summary;
+                    const dateStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    const callNote = `[🎙️ AI Voice Call - ${dateStr}]: ${summary}`;
+                    updatePayload.notes = lead?.notes ? `${callNote}\n\n${lead.notes}` : callNote;
+                }
+
                 // Attach recording URL to lead if available
                 if (freshRecordingUrl) {
                     updatePayload.voice_recording_url = freshRecordingUrl;
@@ -2201,6 +2232,12 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                     try { currentCf = JSON.parse(currentCf); } catch (e) { currentCf = {}; }
                 }
                 const mergedCf = { ...currentCf };
+
+                if (summary && String(summary).trim().length > 0) {
+                    mergedCf.last_followup_remark = summary;
+                    mergedCf.last_followup_at = new Date().toISOString();
+                    mergedCf.last_followup_type = 'AI Voice Call';
+                }
 
                 if (extractedAnswers && typeof extractedAnswers === 'object') {
                     // Copy raw key-values

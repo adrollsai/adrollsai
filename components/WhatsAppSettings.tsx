@@ -1252,24 +1252,24 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                   {/* Websites */}
                   <div>
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-1 ml-0.5">Websites</label>
-                    {waProfile.websites.map((web: string, idx: number) => (
+                    {(waProfile?.websites || ['']).map((web: string, idx: number) => (
                       <div key={idx} className="flex gap-1.5 items-center mb-1">
                         <input 
                           type="text" 
                           value={web} 
                           onChange={(e) => {
-                            const newWebs = [...waProfile.websites]
+                            const newWebs = [...(waProfile?.websites || [''])]
                             newWebs[idx] = e.target.value
                             setWaProfile({ ...waProfile, websites: newWebs })
                           }}
                           placeholder="e.g. https://www.mybusiness.com"
                           className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-900 bg-slate-50/20 font-medium"
                         />
-                        {waProfile.websites.length > 1 && (
+                        {(waProfile?.websites || []).length > 1 && (
                           <button 
                             type="button" 
                             onClick={() => {
-                              const newWebs = waProfile.websites.filter((_: any, i: number) => i !== idx)
+                              const newWebs = (waProfile?.websites || []).filter((_: any, i: number) => i !== idx)
                               setWaProfile({ ...waProfile, websites: newWebs })
                             }}
                             className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
@@ -1279,10 +1279,10 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                         )}
                       </div>
                     ))}
-                    {waProfile.websites.length < 2 && (
+                    {(waProfile?.websites || []).length < 2 && (
                       <button 
                         type="button" 
-                        onClick={() => setWaProfile({ ...waProfile, websites: [...waProfile.websites, ''] })}
+                        onClick={() => setWaProfile({ ...waProfile, websites: [...(waProfile?.websites || []), ''] })}
                         className="mt-1 flex items-center gap-1 text-[9px] font-black text-slate-600 hover:text-slate-950 uppercase tracking-wider cursor-pointer"
                       >
                         <Plus size={10} /> Add Website
@@ -1705,7 +1705,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               ) : (
                 <div className="space-y-4">
                   {flows.map(flow => {
-                    const IconComponent = iconMap[flow.icon_name] || MessageCircle
+                    const IconComponent = (flow.icon_name && iconMap[flow.icon_name]) ? iconMap[flow.icon_name] : MessageCircle
                     return (
                       <div 
                         key={flow.id} 
@@ -3207,22 +3207,23 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
 
 // Timing delay input sub-component
 interface DelayInputProps {
-  initialDelay: number
+  initialDelay: number | null | undefined
   onSave: (newDelay: number) => void
 }
 
 function DelayInput({ initialDelay, onSave }: DelayInputProps) {
-  const [val, setVal] = useState(initialDelay.toString())
+  const safeDelay = initialDelay ?? 0
+  const [val, setVal] = useState(safeDelay.toString())
 
   useEffect(() => {
-    setVal(initialDelay.toString())
+    setVal((initialDelay ?? 0).toString())
   }, [initialDelay])
 
   const handleBlur = () => {
     const parsed = parseInt(val)
     if (isNaN(parsed) || parsed < 0) {
-      setVal(initialDelay.toString())
-    } else if (parsed !== initialDelay) {
+      setVal((initialDelay ?? 0).toString())
+    } else if (parsed !== (initialDelay ?? 0)) {
       onSave(parsed)
     }
   }

@@ -1,44 +1,25 @@
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
+dotenv.config();
 
-async function checkVobiz() {
-    const authId = 'MA_HOSGFZ86';
-    const authToken = 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+async function main() {
+    const subAuthId = 'SA_9EVCEZKC';
+    const subAuthToken = 'ob4evRjgH4uuqMwKZXo2TqBM13hi2YSEPHMthrMJrKimzLjdirAv00g8xox7rzCv';
 
-    console.log('Querying Vobiz Recordings list...');
-    try {
-        const res = await fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Recording/?limit=20`, {
-            headers: {
-                'X-Auth-ID': authId,
-                'X-Auth-Token': authToken
-            }
-        });
-        console.log('Vobiz Recordings response status:', res.status);
-        const data = await res.json();
-        console.log('Recordings count:', data.objects?.length || data.recordings?.length || 0);
-        console.log(JSON.stringify(data, null, 2).slice(0, 2000));
-    } catch (e: any) {
-        console.error('Vobiz recordings error:', e.message);
-    }
-
-    console.log('\nQuerying Vobiz Calls list...');
-    try {
-        const res = await fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Call/?limit=20`, {
-            headers: {
-                'X-Auth-ID': authId,
-                'X-Auth-Token': authToken
-            }
-        });
-        console.log('Vobiz Calls response status:', res.status);
-        const data = await res.json();
-        console.log('Calls count:', data.objects?.length || data.calls?.length || 0);
-        const calls = data.objects || data.calls || [];
-        for (const c of calls.slice(0, 10)) {
-            console.log(`Call: To: ${c.to}, From: ${c.from}, UUID: ${c.call_uuid || c.uuid}, Status: ${c.call_status || c.status}, Rec: ${c.recording_url || c.record_url || 'NONE'}`);
+    console.log('--- Checking Sub-Account (SA_9EVCEZKC) Recordings ---');
+    const subRes = await fetch(`https://api.vobiz.ai/api/v1/Account/${subAuthId}/Recording/?limit=10`, {
+        headers: { 'X-Auth-ID': subAuthId, 'X-Auth-Token': subAuthToken }
+    });
+    console.log('Sub-account status:', subRes.status);
+    const subData = await subRes.json().catch(() => ({}));
+    console.log('Sub-account recordings count:', subData?.objects?.length);
+    if (subData?.objects?.length > 0) {
+        for (const obj of subData.objects) {
+            console.log(`- Call: ${obj.call_uuid}, URL: ${obj.recording_url}, duration: ${obj.recording_duration_ms}ms, time: ${obj.add_time}`);
         }
-    } catch (e: any) {
-        console.error('Vobiz calls error:', e.message);
+    } else {
+        console.log('No recordings found on sub-account:', subData);
     }
 }
 
-checkVobiz().catch(console.error);
+main().catch(console.error);

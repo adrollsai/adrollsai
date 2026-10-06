@@ -50,19 +50,48 @@ async function handleStatusCallback(req: Request) {
         const rawDuration = body.Duration || body.call_duration || body.duration || 0
         const callDuration = parseInt(rawDuration, 10) || 0
         const callUuid = body.CallUUID || body.call_uuid || body.api_id || searchParams.get('callUuid') || searchParams.get('call_uuid') || ''
-        let recordingUrl = body.RecordingUrl || body.recording_url || body.RecordUrl || body.record_url || body.recording_url_mp3 || body.RecordingURL || body.recordingUrl || body.url || ''
+        let recordingUrl = body.RecordFile || body.RecordUrl || body.record_url || body.RecordingUrl || body.recording_url || body.recording_url_mp3 || body.RecordingURL || body.recordingUrl || body.url || ''
 
         if (!recordingUrl) {
-            recordingUrl = searchParams.get('RecordingUrl') || searchParams.get('recording_url') || searchParams.get('RecordUrl') || searchParams.get('record_url') || ''
+            recordingUrl = searchParams.get('RecordFile') || searchParams.get('RecordingUrl') || searchParams.get('recording_url') || searchParams.get('RecordUrl') || searchParams.get('record_url') || ''
         }
 
-        if (!recordingUrl && callUuid && ['completed', 'hangup', 'stopped', 'recording'].includes(callStatus)) {
-            // Actively fetch recording from Vobiz Recording API with retries (Vobiz needs time to process audio)
+        // Fetch lead and account profile to resolve correct Vobiz sub-account credentials
+        let lead: any = null
+        let authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+        let authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+
+        if (leadId) {
+            const { data: leadData } = await supabaseAdmin
+                .from('leads')
+                .select('id, user_id, name, phone, voice_call_status, voice_recording_url, custom_fields')
+                .eq('id', leadId)
+                .single()
+            lead = leadData
+
+            if (lead?.user_id) {
+                try {
+                    const { data: prof } = await supabaseAdmin
+                        .from('profiles')
+                        .select('business_info')
+                        .eq('id', lead.user_id)
+                        .maybeSingle()
+                    const bi = typeof prof?.business_info === 'string' ? JSON.parse(prof.business_info) : (prof?.business_info || {})
+                    authId = bi?.voice_vobiz_auth_id || bi?.kyc_data?.vobizSubAuthId || authId
+                    authToken = bi?.voice_vobiz_auth_token || authToken
+                } catch (profErr) {
+                    console.warn('[VOBIZ STATUS] Error loading profile for auth credentials:', profErr)
+                }
+            }
+        }
+
+        if (!recordingUrl && callUuid && ['completed', 'hangup', 'stopped', 'recording', 'recordstop'].includes(callStatus)) {
+            // Actively fetch recording from Vobiz Recording API with retries using correct sub-account credentials
             for (let recAttempt = 1; recAttempt <= 3; recAttempt++) {
                 try {
                     const waitMs = recAttempt === 1 ? 3000 : 5000
                     await new Promise(r => setTimeout(r, waitMs))
-                    const fetchedRec = await fetchVobizCallRecording(callUuid)
+                    const fetchedRec = await fetchVobizCallRecording(callUuid, { authId, authToken })
                     if (fetchedRec) {
                         recordingUrl = fetchedRec
                         console.log(`[VOBIZ STATUS] Found recording URL on attempt ${recAttempt}: ${recordingUrl}`)
@@ -78,13 +107,6 @@ async function handleStatusCallback(req: Request) {
         console.log(`[VOBIZ STATUS] Received status for lead ${leadId}: status=${callStatus}, duration=${callDuration}s, uuid=${callUuid}, recording=${recordingUrl}`)
 
         if (leadId) {
-            // Fetch lead details
-            const { data: lead } = await supabaseAdmin
-                .from('leads')
-                .select('id, user_id, name, phone, voice_call_status, voice_recording_url, custom_fields')
-                .eq('id', leadId)
-                .single()
-
             // Map Vobiz status to our internal CRM status
             let updatedStatus: string | null = null
             if (['in-progress', 'answered'].includes(callStatus)) {
@@ -106,8 +128,7 @@ async function handleStatusCallback(req: Request) {
             let publicRecordingUrl = recordingUrl
             if (recordingUrl) {
                 try {
-                    const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
-                    const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+                    console.log(`[VOBIZ STATUS] Downloading audio from ${recordingUrl} with auth ${authId}...`)
                     const recFetchRes = await fetch(recordingUrl, {
                         headers: {
                             'X-Auth-ID': authId,

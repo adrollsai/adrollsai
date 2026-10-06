@@ -262,6 +262,7 @@ export async function sendAdminMultiChannelNotification({
   leadPhone,
   leadName,
   leadId,
+  leadSource,
   emailSubject,
   emailHtml,
   skipEmail = false,
@@ -276,6 +277,7 @@ export async function sendAdminMultiChannelNotification({
   leadPhone?: string;
   leadName?: string;
   leadId?: string;
+  leadSource?: string;
   emailSubject?: string;
   emailHtml?: string;
   skipEmail?: boolean;
@@ -307,6 +309,33 @@ export async function sendAdminMultiChannelNotification({
       targetLeadPhone = 'N/A';
     }
 
+    // Resolve lead source if not explicitly provided
+    let resolvedLeadSource = (leadSource || '').trim();
+    if (!resolvedLeadSource && leadId) {
+      try {
+        const { data: dbLead } = await getSupabaseAdmin()
+          .from('leads')
+          .select('source, ad_name, form_name, campaign_id')
+          .eq('id', leadId)
+          .maybeSingle();
+        if (dbLead) {
+          const parts = [
+            dbLead.source,
+            dbLead.ad_name ? `(${dbLead.ad_name})` : (dbLead.form_name ? `(${dbLead.form_name})` : '')
+          ].filter(Boolean);
+          resolvedLeadSource = parts.join(' ').trim();
+        }
+      } catch (lErr) {
+        // fallback
+      }
+    }
+
+    // Ensure notification body contains lead source if available and not yet mentioned
+    let enrichedBody = body;
+    if (resolvedLeadSource && !/source:/i.test(enrichedBody)) {
+      enrichedBody = `${enrichedBody}\n\n📢 Lead Source: ${resolvedLeadSource}`;
+    }
+
     // Fetch owner profile
     const { data: ownerProfile } = await getSupabaseAdmin()
       .from('profiles')
@@ -336,7 +365,7 @@ export async function sendAdminMultiChannelNotification({
         await getSupabaseAdmin().from('notifications').insert({
           user_id: ownerUserId,
           title,
-          message: body,
+          message: enrichedBody,
           type: type || 'meeting_booked',
           action_link: leadPageUrl,
           is_read: false,
@@ -347,7 +376,7 @@ export async function sendAdminMultiChannelNotification({
       }
 
       try {
-        await sendPushNotification(ownerUserId, title, body, leadPageUrl, type);
+        await sendPushNotification(ownerUserId, title, enrichedBody, leadPageUrl, type);
       } catch (err: any) {
         console.error(`[MULTI-CHANNEL PUSH ERROR]`, err.message);
       }
@@ -386,9 +415,10 @@ export async function sendAdminMultiChannelNotification({
             if (isExpertAlert || isInterestedAlert) {
               // Approved Utility template guarantees delivery 24/7 even outside the 24-hour customer window
               // Parameter 1: Name + Details + Direct CRM Link (no newlines permitted in template variables)
+              const sourceSnippet = resolvedLeadSource ? ` (Source: ${resolvedLeadSource})` : '';
               const leadSummary = isInterestedAlert
-                ? `🔥 Interested: ${leadName || 'Prospect'} | CRM: ${leadPageUrl}`
-                : `☎️ Expert Call: ${leadName || 'Prospect'} | CRM: ${leadPageUrl}`;
+                ? `🔥 Interested: ${leadName || 'Prospect'}${sourceSnippet} | CRM: ${leadPageUrl}`
+                : `☎️ Expert Call: ${leadName || 'Prospect'}${sourceSnippet} | CRM: ${leadPageUrl}`;
               payload = {
                 messaging_product: 'whatsapp',
                 to: cleanPhone,
@@ -409,6 +439,8 @@ export async function sendAdminMultiChannelNotification({
               };
             } else if (isBookingAlert) {
               // Template for actual appointment bookings
+              const bookingSourceSnippet = resolvedLeadSource ? ` (Source: ${resolvedLeadSource})` : '';
+              const bookingLeadLabel = `${leadName || title || 'Lead Request'}${bookingSourceSnippet}`;
               payload = {
                 messaging_product: 'whatsapp',
                 to: cleanPhone,
@@ -420,7 +452,7 @@ export async function sendAdminMultiChannelNotification({
                     {
                       type: 'body',
                       parameters: [
-                        { type: 'text', text: leadName || title || 'Lead Request' },
+                        { type: 'text', text: bookingLeadLabel },
                         { type: 'text', text: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) },
                         { type: 'text', text: ownerProfile.business_name || 'Nobogent' },
                         { type: 'text', text: targetLeadPhone },
@@ -453,7 +485,7 @@ export async function sendAdminMultiChannelNotification({
                 recipient_type: 'individual',
                 to: cleanPhone,
                 type: 'text',
-                text: { body: `${title}\n\n${body}\n\n🔗 View Lead & History in CRM:\n${leadPageUrl}` }
+                text: { body: `${title}\n\n${enrichedBody}\n\n🔗 View Lead & History in CRM:\n${leadPageUrl}` }
               };
               waRes = await fetch(metaUrl, {
                 method: 'POST',
@@ -496,7 +528,7 @@ export async function sendAdminMultiChannelNotification({
                   <h2 style="color: #0f172a; margin: 0; font-size: 22px; font-weight: bold; border-bottom: 2px solid #2563eb; padding-bottom: 10px;">${title}</h2>
                 </div>
                 <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-                  <p style="font-size: 14px; color: #334155; line-height: 1.7; margin: 0; white-space: pre-wrap;">${body}</p>
+                  <p style="font-size: 14px; color: #334155; line-height: 1.7; margin: 0; white-space: pre-wrap;">${enrichedBody}</p>
                 </div>
                 <div style="margin-top: 24px; text-align: center;">
                   <a href="${leadPageUrl}" style="background-color: #2563eb; color: #ffffff; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 2px 4px rgba(37,99,235,0.2);">View Full Remarks & History in CRM</a>

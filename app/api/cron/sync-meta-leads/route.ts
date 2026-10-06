@@ -507,10 +507,10 @@ async function handleSync(request: Request) {
                   }
 
                   const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
-                  const reopenedCount = (existingLead.reopened_count || cf.reopened_count || 0) + 1;
                   const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
-                  const updatedSources = [...previousSources, currentSourceId];
+                  const updatedSources = Array.from(new Set([...previousSources, currentSourceId]));
                   const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgenId)]));
+                  const reopenedCount = Math.max(1, updatedSources.length > 1 ? updatedSources.length - 1 : 1);
 
                   if (!cf.original_created_at) {
                     cf.original_created_at = existingLead.created_at;
@@ -518,6 +518,7 @@ async function handleSync(request: Request) {
 
                   cf = {
                     ...cf,
+                    ...customFields,
                     all_facebook_lead_ids: updatedAllIds,
                     is_instant_form: true,
                     qualification_completed: true,
@@ -537,8 +538,8 @@ async function handleSync(request: Request) {
                   const isDeadOrNew = !currentStageLower || currentStageLower === 'new lead' || currentStageLower === 'fresh' || terminalStages.some(s => currentStageLower.includes(s));
 
                   const updateLeadData: Record<string, any> = {
-                    custom_fields: cf,
-                    updated_at: new Date().toISOString()
+                    source: 'Facebook Ads',
+                    custom_fields: cf
                   };
 
                   if (isDeadOrNew) {
@@ -607,6 +608,30 @@ async function handleSync(request: Request) {
                 }
               }
 
+              // Match corresponding active voice campaign for this user
+              let matchedVoiceCampaignId: string | null = null;
+              try {
+                const { data: vCamps } = await supabaseAdmin
+                  .from('voice_campaigns')
+                  .select('id, audience_filter')
+                  .eq('user_id', profile.id)
+                  .eq('status', 'active');
+                if (vCamps && vCamps.length > 0) {
+                  const matchedVC = vCamps.find((vc: any) => {
+                    const mc = vc.audience_filter?.meta_campaigns || [];
+                    const mf = vc.audience_filter?.meta_forms || [];
+                    return (campaignId && mc.includes(String(campaignId))) ||
+                           (formId && mf.includes(String(formId))) ||
+                           (matchedPropertyId && vc.audience_filter?.property_id === matchedPropertyId);
+                  });
+                  if (matchedVC) {
+                    matchedVoiceCampaignId = matchedVC.id;
+                  }
+                }
+              } catch (vcErr) {
+                console.warn('[Meta Leads Sync] Error matching voice campaign:', vcErr);
+              }
+
               // Insert New Lead
               const { data: savedLead, error: insertErr } = await supabaseAdmin.from('leads').insert({
                 user_id: profile.id,
@@ -624,6 +649,7 @@ async function handleSync(request: Request) {
                 ad_name: adCampaignString,
                 assigned_to: assignedAgentId,
                 campaign_id: campaignId,
+                voice_campaign_id: matchedVoiceCampaignId,
                 property_id: matchedPropertyId || null,
                 created_at: fbLead.created_time || new Date().toISOString()
               }).select().single();
@@ -689,7 +715,7 @@ async function handleSync(request: Request) {
 
               // Auto-calling if enabled (non-blocking)
               if (savedLead && phone && profile.auto_call_new_leads) {
-                triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true).catch(() => {});
+                triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true, matchedVoiceCampaignId || undefined).catch(() => {});
               }
             }
           }

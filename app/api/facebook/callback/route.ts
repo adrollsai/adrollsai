@@ -16,15 +16,19 @@ export async function GET(req: Request) {
     
     let impersonateId = null;
     let exactRedirectUri: string | null = null;
+    let stateUserId: string | null = null;
+    let stateReturnOrigin: string | null = null;
     if (stateParam) {
         try {
             const decoded = JSON.parse(decodeURIComponent(stateParam));
             impersonateId = decoded.impersonateId || null;
             exactRedirectUri = decoded.redirectUri || null;
+            stateUserId = decoded.userId || null;
+            stateReturnOrigin = decoded.returnOrigin || null;
         } catch(e) {}
     }
 
-    logDebug('GET callback request received', { code: code ? `${code.substring(0, 10)}...` : null, stateParam, exactRedirectUri, reqUrl: req.url });
+    logDebug('GET callback request received', { code: code ? `${code.substring(0, 10)}...` : null, stateParam, exactRedirectUri, stateUserId, stateReturnOrigin, reqUrl: req.url });
 
     const supabase = await createClient();
 
@@ -45,7 +49,8 @@ export async function GET(req: Request) {
         ? currentOrigin
         : (process.env.NEXT_PUBLIC_APP_URL || currentOrigin);
 
-    const redirectBackBase = `${baseUrl}/dashboard/profile${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
+    const effectiveReturnOrigin = stateReturnOrigin || baseUrl;
+    const redirectBackBase = `${effectiveReturnOrigin}/dashboard/profile${impersonateId ? `?impersonate=${impersonateId}` : ''}`;
 
     const sendResponse = (success: boolean, message: string, redirectUrl: string) => {
         logDebug('GET sendResponse', { success, message, redirectUrl });
@@ -101,18 +106,19 @@ export async function GET(req: Request) {
         logDebug('GET Meta Graph API token exchange result', { status: tokenRes.status, tokenData });
 
         if (tokenData && tokenData.access_token) {
-            // 2. Get Current User
+            // 2. Get Current User (from cookie session or signed OAuth state)
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) throw new Error("Not authenticated");
+            const authenticatedUserId = user?.id || stateUserId;
+            if (!authenticatedUserId) throw new Error("Not authenticated");
 
             // 3. Resolve Target (Impersonation check)
-            let targetUserId = user.id;
+            let targetUserId = authenticatedUserId;
             if (impersonateId) {
                 // Verify Agency/Admin permission for this target
-                const { data: ownProfile } = await supabase.from('profiles').select('role, agency_id').eq('id', user.id).single();
+                const { data: ownProfile } = await supabase.from('profiles').select('role, agency_id').eq('id', authenticatedUserId).single();
                 if (['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {
                     if (ownProfile?.role !== 'super_admin') {
-                        const { data: subAccount } = await supabase.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', ownProfile?.agency_id || user.id).single();
+                        const { data: subAccount } = await supabase.from('profiles').select('id').eq('id', impersonateId).eq('agency_id', ownProfile?.agency_id || authenticatedUserId).single();
                         if (subAccount) targetUserId = impersonateId;
                     } else {
                         targetUserId = impersonateId;
@@ -120,8 +126,13 @@ export async function GET(req: Request) {
                 }
             }
 
-            // 4. Save Token to Profile
-            const { error: updateError } = await supabase.from('profiles').update({
+            // 4. Save Token to Profile (Use admin client if cross-domain callback has no local cookies)
+            const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+            const dbClient = (!user && stateUserId && serviceKey)
+                ? (await import('@supabase/supabase-js')).createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey)
+                : supabase;
+
+            const { error: updateError } = await dbClient.from('profiles').update({
                 facebook_token: tokenData.access_token
             }).eq('id', targetUserId);
 
@@ -133,7 +144,7 @@ export async function GET(req: Request) {
         throw new Error(tokenData?.error?.message || "Failed to get token from Facebook");
     } catch (err: any) {
         console.error("[FB CALLBACK] Error:", err.message);
-        return sendResponse(false, err.message || 'Failed to connect Facebook account.', `${baseUrl}/dashboard/profile?error=${encodeURIComponent(err.message)}`);
+        return sendResponse(false, err.message || 'Failed to connect Facebook account.', `${effectiveReturnOrigin}/dashboard/profile?error=${encodeURIComponent(err.message)}`);
     }
 }
 

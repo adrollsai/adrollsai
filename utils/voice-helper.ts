@@ -656,12 +656,22 @@ export async function bookAppointment(
         try {
             const { sendAdminMultiChannelNotification } = await import('./notification-helper')
             const formattedSlotDate = new Date(formattedSlot).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' })
+            const leadSourceStr = [
+                lead.source,
+                lead.ad_name ? `(${lead.ad_name})` : (lead.form_name ? `(${lead.form_name})` : (lead.campaign_name ? `(${lead.campaign_name})` : ''))
+            ].filter(Boolean).join(' ') || 'Direct / Platform';
+
+            const bookingTitle = hangoutLink ? '📅 Appointment Booked!' : '🎙️ Meeting Booked!';
             await sendAdminMultiChannelNotification({
                 ownerUserId: lead.user_id,
-                title: '🎙️ Meeting Booked via AI Call!',
-                body: `AI Voice Agent successfully booked a meeting with ${lead.name} (${lead.phone || 'No Phone'}) for ${formattedSlotDate}.${hangoutLink ? `\nMeet Link: ${hangoutLink}` : ''}`,
+                title: bookingTitle,
+                body: `New appointment scheduled with ${lead.name} (${lead.phone || 'No Phone'}) for ${formattedSlotDate}!\n\n📢 Lead Source: ${leadSourceStr}${hangoutLink ? `\n🔗 Google Meet: ${hangoutLink}` : ''}\n\nPlease check your CRM for complete details.`,
                 url: `/dashboard/crm/${leadId}`,
-                type: 'meeting_booked'
+                type: 'meeting_booked',
+                leadPhone: lead.phone,
+                leadName: lead.name,
+                leadId,
+                leadSource: leadSourceStr
             })
         } catch (notifErr: any) {
             console.error('[VOICE HELPER] Failed to send multi-channel admin alert:', notifErr)

@@ -16,14 +16,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid actionId or decision' }, { status: 400 });
     }
 
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, email')
+      .eq('id', user.id)
+      .single();
+
+    const isSuperAdmin =
+      profile?.role === 'super_admin' ||
+      profile?.email === 'rchopra489@gmail.com' ||
+      user.email === 'rchopra489@gmail.com';
+
     // Find the pending action event
-    const { data: event, error: findError } = await supabase
+    let query = supabase
       .from('agent_events')
       .select('*')
-      .eq('user_id', user.id)
       .eq('event_type', 'PENDING_ACTION_APPROVAL')
-      .eq('payload->>actionId', actionId)
-      .maybeSingle();
+      .eq('payload->>actionId', actionId);
+
+    if (!isSuperAdmin) {
+      query = query.eq('user_id', user.id);
+    }
+
+    const { data: event, error: findError } = await query.maybeSingle();
 
     if (findError || !event) {
       return NextResponse.json({ error: 'Action not found or already processed' }, { status: 404 });

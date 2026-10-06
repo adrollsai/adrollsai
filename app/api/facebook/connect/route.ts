@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
 import fs from 'fs';
 
 function logDebug(msg: string, data?: any) {
@@ -48,8 +49,23 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const impersonateId = searchParams.get('impersonate');
     
-    // Pass impersonateId AND exact redirectUri in state so callback knows which profile to update and has identical redirect_uri
-    const stateObj = { impersonateId: impersonateId || null, redirectUri };
+    // Capture user session on current domain to preserve in OAuth state across agency domains
+    let currentUserId: string | null = null;
+    try {
+        const supabase = await createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        currentUserId = user?.id || null;
+    } catch (authErr) {
+        console.warn('[CONNECT] Could not get user from session:', authErr);
+    }
+
+    // Pass userId, impersonateId, returnOrigin, AND exact redirectUri in state
+    const stateObj = { 
+        userId: currentUserId,
+        impersonateId: impersonateId || null, 
+        redirectUri,
+        returnOrigin: currentOrigin 
+    };
     const state = encodeURIComponent(JSON.stringify(stateObj));
 
     const userAgent = req.headers.get('user-agent') || '';

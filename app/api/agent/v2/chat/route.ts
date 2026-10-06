@@ -31,7 +31,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Forbidden: Nobo is restricted to Super Admin only' }, { status: 403 });
     }
 
-    const { messages } = await req.json();
+    const url = new URL(req.url);
+    const body = await req.json();
+    const { messages, impersonateId: bodyImpersonateId } = body;
+    const requestedImpersonateId = url.searchParams.get('impersonate') || bodyImpersonateId;
+
+    let targetUserId = user.id;
+
+    if (requestedImpersonateId && requestedImpersonateId !== user.id) {
+      if (isSuperAdmin) {
+        targetUserId = requestedImpersonateId;
+      } else if (['agency', 'admin', 'agent'].includes(profile?.role || '')) {
+        const { data: subAccount } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', requestedImpersonateId)
+          .eq('agency_id', profile?.agency_id || user.id)
+          .single();
+
+        if (subAccount) {
+          targetUserId = requestedImpersonateId;
+        } else {
+          return NextResponse.json({ error: 'Unauthorized client impersonation' }, { status: 403 });
+        }
+      } else {
+        return NextResponse.json({ error: 'Unauthorized client impersonation' }, { status: 403 });
+      }
+    }
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
@@ -42,7 +68,7 @@ export async function POST(req: Request) {
       (Array.isArray(m.parts) && m.parts.some((p: any) => p.type === 'image' || p.image))
     );
 
-    const { systemPrompt, tools } = await createAgentContext(supabase, user.id);
+    const { systemPrompt, tools, targetProfile } = await createAgentContext(supabase, targetUserId, user.id);
     const model = getAgentModel({ hasVision });
 
     const modelMessages = await (async () => {

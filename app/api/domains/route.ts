@@ -4,6 +4,67 @@ import { createClient } from '@supabase/supabase-js';
 const VERCEL_API_TOKEN = process.env.VERCEL_API_TOKEN || process.env.VERCEL_TOKEN;
 const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID;
 const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+const SUPABASE_MANAGEMENT_TOKEN = process.env.SUPABASE_MANAGEMENT_TOKEN || process.env.SUPABASE_ACCESS_TOKEN;
+
+// Helper to keep Supabase Auth uri_allow_list in sync with whitelabel domains
+async function syncSupabaseAuthRedirect(domain: string, action: 'add' | 'remove') {
+  if (!SUPABASE_MANAGEMENT_TOKEN) {
+    console.warn('[Domain Sync] SUPABASE_MANAGEMENT_TOKEN not configured; skipping auth redirect sync.');
+    return;
+  }
+
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
+    if (!projectRef) return;
+
+    const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/config/auth`, {
+      headers: {
+        Authorization: `Bearer ${SUPABASE_MANAGEMENT_TOKEN}`,
+      },
+    });
+
+    if (!res.ok) {
+      console.warn('[Domain Sync] Failed to fetch current auth config:', await res.text());
+      return;
+    }
+
+    const config = await res.json();
+    const currentList: string[] = (config.uri_allow_list || '')
+      .split(',')
+      .map((u: string) => u.trim())
+      .filter(Boolean);
+
+    const patterns = [`https://${domain}/**`, `https://*.${domain}/**`];
+
+    let updatedList: string[];
+    if (action === 'add') {
+      const set = new Set([...currentList, ...patterns]);
+      updatedList = Array.from(set);
+    } else {
+      updatedList = currentList.filter(u => !patterns.includes(u));
+    }
+
+    const patchRes = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/config/auth`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${SUPABASE_MANAGEMENT_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        uri_allow_list: updatedList.join(','),
+      }),
+    });
+
+    if (!patchRes.ok) {
+      console.warn('[Domain Sync] Failed to update uri_allow_list:', await patchRes.text());
+    } else {
+      console.log(`[Domain Sync] Successfully ${action === 'add' ? 'added' : 'removed'} ${domain} in Supabase uri_allow_list`);
+    }
+  } catch (err) {
+    console.error('[Domain Sync] Error syncing domain with Supabase Auth:', err);
+  }
+}
 
 // Use Service Role Key to bypass RLS for administrative domain changes
 const supabaseAdmin = createClient(
@@ -68,6 +129,7 @@ export async function POST(req: Request) {
       updates.whitelabel_domain = cleanDomain;
       updates.whitelabel_verify_token = null;
       updates.whitelabel_verify_status = 'verified';
+      await syncSupabaseAuthRedirect(cleanDomain, 'add');
     } else {
       updates.custom_domain = cleanDomain;
       updates.domain_verify_token = null;
@@ -125,6 +187,8 @@ export async function DELETE(req: Request) {
       updates.whitelabel_domain = null;
       updates.whitelabel_verify_token = null;
       updates.whitelabel_verify_status = null;
+      const cleanDelDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim().toLowerCase();
+      await syncSupabaseAuthRedirect(cleanDelDomain, 'remove');
     } else {
       updates.custom_domain = null;
       updates.domain_verify_token = null;

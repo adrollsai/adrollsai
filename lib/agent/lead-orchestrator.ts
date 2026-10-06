@@ -42,6 +42,10 @@ export interface OrchestrationEvent {
  * The core brain that evaluates a lead, decides the next best action, and executes it.
  */
 export async function processLeadEvent(event: OrchestrationEvent): Promise<{ success: boolean; actionTaken?: string; error?: string }> {
+    // Autonomous lead evaluation agent is strictly disabled to eliminate background AI token spend.
+    // AI is exclusively reserved for telephony voice calls and post-call transcript summarization.
+    return { success: true, actionTaken: 'autonomous_agent_disabled' };
+
     const { leadId, eventType, inboundText } = event;
 
     // 1. Acquire Concurrency Lock (prevents race conditions from parallel webhooks)

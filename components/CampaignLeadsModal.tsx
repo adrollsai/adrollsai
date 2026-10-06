@@ -182,12 +182,11 @@ export default function CampaignLeadsModal({
         .select('id, name, phone, email, status, pipeline_stage, assigned_to, created_at, notes, campaign_id, form_name, ad_name, custom_fields, user_id', { count: 'exact' })
         .order('created_at', { ascending: false })
 
-      if (campaign.id && campaign.name) {
-        query = query.or(`campaign_id.eq.${campaign.id},form_name.ilike.%${campaign.name}%,ad_name.ilike.%${campaign.name}%`)
-      } else if (campaign.id) {
+      if (campaign.id) {
         query = query.eq('campaign_id', campaign.id)
       } else if (campaign.name) {
-        query = query.or(`form_name.ilike.%${campaign.name}%,ad_name.ilike.%${campaign.name}%`)
+        const safeName = campaign.name.replace(/[,&%]/g, ' ').replace(/\s+/g, ' ').trim()
+        query = query.or(`form_name.ilike.%${safeName}%,ad_name.ilike.%${safeName}%`)
       }
 
       // Range for pagination
@@ -206,10 +205,11 @@ export default function CampaignLeadsModal({
       let finalCount = count || 0
 
       if (isInitial && finalData.length === 0 && campaign.name) {
+        const safeName = campaign.name.replace(/[,&%]/g, ' ').replace(/\s+/g, ' ').trim()
         const { data: fallbackData, count: fallbackCount } = await supabase
           .from('leads')
           .select('id, name, phone, email, status, pipeline_stage, assigned_to, created_at, notes, campaign_id, form_name, ad_name, custom_fields, user_id', { count: 'exact' })
-          .ilike('notes', `%${campaign.name}%`)
+          .or(`form_name.ilike.%${safeName}%,ad_name.ilike.%${safeName}%,notes.ilike.%${safeName}%`)
           .range(from, to)
           .order('created_at', { ascending: false })
 

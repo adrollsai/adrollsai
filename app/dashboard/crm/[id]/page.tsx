@@ -107,10 +107,28 @@ export default function LeadProfilePage() {
     const [savingQuestionKey, setSavingQuestionKey] = useState<string | null>(null)
 
     const visibleLeadHistory = useMemo(() => {
+        let base = [...leadHistory]
+        const hasCallJson = base.some((item: any) => item.description && item.description.startsWith('🎙️ CALL_JSON:'))
+        if (!hasCallJson && (lead?.voice_call_summary || lead?.summary)) {
+            const sumText = lead.voice_call_summary || lead.summary
+            base.unshift({
+                id: `synthetic_voice_call_${lead.id}`,
+                lead_id: lead.id,
+                action_type: 'REMARK',
+                actor_name: 'Nobogent AI Voice',
+                created_at: lead.voice_call_scheduled_at || lead.created_at || new Date().toISOString(),
+                description: `🎙️ CALL_JSON:${JSON.stringify({
+                    summary: sumText,
+                    recording_url: lead.voice_recording_url || null,
+                    transcript: lead.voice_call_transcript || []
+                })}`
+            })
+        }
+
         const cutoff = lead?.custom_fields?.history_visible_from
         if (cutoff && (currentUserRole === 'agent' || isTeamMember)) {
             const cutoffDate = new Date(cutoff)
-            return leadHistory.filter(item => {
+            return base.filter(item => {
                 const isSystem = item.action_type === 'REOPENED' || 
                                  item.action_type === 'LEAD_CREATED' || 
                                  item.action_type === 'SYSTEM' || 
@@ -119,8 +137,8 @@ export default function LeadProfilePage() {
                 return new Date(item.created_at) >= cutoffDate
             })
         }
-        return leadHistory
-    }, [leadHistory, lead?.custom_fields?.history_visible_from, currentUserRole, isTeamMember])
+        return base
+    }, [leadHistory, lead?.custom_fields?.history_visible_from, lead?.voice_call_summary, lead?.summary, lead?.voice_recording_url, lead?.voice_call_transcript, currentUserRole, isTeamMember])
     const [remarkInput, setRemarkInput] = useState('')
     const [reminderDate, setReminderDate] = useState('')
     const [pixels, setPixels] = useState<any[]>([])
@@ -1813,6 +1831,30 @@ END:VCARD`
                                         </div>
                                     );
                                 })()}
+
+                                {effectiveSummary && (
+                                    <div className="mt-3 bg-linear-to-r from-purple-50/90 via-indigo-50/60 to-blue-50/40 p-3.5 rounded-xl border border-indigo-200/90 shadow-2xs space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span>🎙️</span> AI Voice Call Summary
+                                            </span>
+                                            {effectiveRecordingUrl && (
+                                                <a
+                                                    href={effectiveRecordingUrl}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 underline"
+                                                >
+                                                    Listen Recording
+                                                </a>
+                                            )}
+                                        </div>
+                                        <p className="text-xs font-semibold text-slate-800 leading-relaxed whitespace-pre-wrap">
+                                            {effectiveSummary}
+                                        </p>
+                                    </div>
+                                )}
+
                                 <div className="mt-2">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5 ml-1">Static Notes</label>
                                     <textarea
@@ -2309,6 +2351,13 @@ END:VCARD`
                                         'last_reopened_at',
                                         'last_reopened_source',
                                         'reopened_count',
+                                        'reopened_sources',
+                                        'all_facebook_lead_ids',
+                                        'last_followup_remark',
+                                        'last_followup_at',
+                                        'last_followup_type',
+                                        'allow_after_hours',
+                                        'calling_enabled',
                                         'form_answers',
                                         'history_visible_from',
                                         'whatsapp_number',
@@ -2345,23 +2394,29 @@ END:VCARD`
 
                                             {entries.length > 0 ? (
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                    {entries.map(([key, value]) => (
-                                                        <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-start group">
-                                                            <div className="min-w-0 flex-1">
-                                                                <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{key.replace(/_/g, ' ')}</span>
-                                                                <span className="text-xs font-bold text-slate-700 break-words whitespace-normal">
-                                                                    {typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)}
-                                                                </span>
+                                                    {entries.map(([key, value]) => {
+                                                        const cleanKey = key.replace(/_+/g, ' ').trim();
+                                                        const cleanVal = typeof value === 'object' && value !== null 
+                                                            ? JSON.stringify(value) 
+                                                            : String(value).replace(/^_+|_+$/g, '').replace(/_+/g, ' ').trim();
+                                                        return (
+                                                            <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-start group">
+                                                                <div className="min-w-0 flex-1">
+                                                                    <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">{cleanKey}</span>
+                                                                    <span className="text-xs font-bold text-slate-700 break-words whitespace-normal capitalize">
+                                                                        {cleanVal}
+                                                                    </span>
+                                                                </div>
+                                                                <button 
+                                                                    onClick={() => handleDeleteCustomField(key)}
+                                                                    className="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2"
+                                                                    title="Delete custom field"
+                                                                >
+                                                                    <X size={14} />
+                                                                </button>
                                                             </div>
-                                                            <button 
-                                                                onClick={() => handleDeleteCustomField(key)}
-                                                                className="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2"
-                                                                title="Delete custom field"
-                                                            >
-                                                                <X size={14} />
-                                                            </button>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             ) : !origin && (
                                                 <div className="text-center py-6 text-xs text-slate-400 font-medium">

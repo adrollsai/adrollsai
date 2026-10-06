@@ -149,17 +149,28 @@ async function handleRequest(req: Request) {
             appUrl = 'https://app.nobogent.com'
         }
 
+        let authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+        let authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+
+        try {
+            const { data: prof } = await supabaseAdmin
+                .from('profiles')
+                .select('business_info')
+                .eq('id', effectiveProfileId)
+                .maybeSingle();
+            const bi = typeof prof?.business_info === 'string' ? JSON.parse(prof.business_info) : (prof?.business_info || {});
+            authId = bi?.voice_vobiz_auth_id || bi?.kyc_data?.vobizSubAuthId || authId;
+            authToken = bi?.voice_vobiz_auth_token || authToken;
+        } catch (pErr) {}
+
         const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'
         const statusCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}`
-        const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&profileId=${effectiveProfileId}${effectiveCampaignId ? `&campaignId=${effectiveCampaignId}` : ''}&telephony=vobiz${isInbound ? '&inbound=true' : ''}${callUuid ? `&callUuid=${callUuid}` : ''}`
+        const recordCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}&event=recording`
+        const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&profileId=${effectiveProfileId}${effectiveCampaignId ? `&campaignId=${effectiveCampaignId}` : ''}&telephony=vobiz${isInbound ? '&inbound=true' : ''}${callUuid ? `&callUuid=${callUuid}` : ''}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
 
-        // Trigger non-blocking call recording on active call via Vobiz REST API
+        // Trigger non-blocking call recording on active call via Vobiz REST API (dual-layer recording guarantee)
         if (callUuid) {
-            const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
-            const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
-            const recordCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}&event=recording`
-
-            console.log(`[VOBIZ XML] Triggering background REST recording for active call ${callUuid} (lead ${leadId})...`)
+            console.log(`[VOBIZ XML] Triggering background REST recording for active call ${callUuid} (auth: ${authId}, lead ${leadId})...`);
             fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`, {
                 method: 'POST',
                 headers: {
@@ -174,16 +185,17 @@ async function handleRequest(req: Request) {
                     callback_method: 'POST'
                 })
             }).then(async r => {
-                const d = await r.json().catch(() => ({}))
-                console.log(`[VOBIZ XML] Vobiz REST Record API response for ${callUuid}: status=${r.status}`, d)
-            }).catch(e => console.warn(`[VOBIZ XML] Vobiz REST Record trigger warning for ${callUuid}:`, e.message))
+                const d = await r.json().catch(() => ({}));
+                console.log(`[VOBIZ XML] Vobiz REST Record API response for ${callUuid}: status=${r.status}`, d);
+            }).catch(e => console.warn(`[VOBIZ XML] Vobiz REST Record trigger warning for ${callUuid}:`, e.message));
         }
 
         const escapedWsUrl = wsStreamUrl.replace(/&/g, '&amp;')
 
-        // Generate valid Vobiz XML with bidirectional Linear PCM 16kHz stream
+        // Generate valid Vobiz XML with Record element and bidirectional Linear PCM 16kHz stream
         const vobizXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+    <Record recordSession="true" redirect="false" callbackUrl="${recordCallbackUrl}" fileFormat="mp3" playBeep="false" />
     <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusCallbackUrl}">${escapedWsUrl}</Stream>
 </Response>`
 

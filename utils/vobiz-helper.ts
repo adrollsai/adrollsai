@@ -296,10 +296,22 @@ export async function triggerVobizOutboundCall(
 /**
  * Fetches the recording URL for a specific Vobiz call UUID from the Recording API.
  */
-export async function fetchVobizCallRecording(callUuid: string): Promise<string | null> {
+export async function fetchVobizCallRecording(
+    callUuid: string,
+    credentialsOrAuthId?: { authId?: string; authToken?: string } | string,
+    rawAuthToken?: string
+): Promise<string | null> {
     if (!callUuid) return null
-    const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
-    const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+    let authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+    let authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+
+    if (typeof credentialsOrAuthId === 'string') {
+        authId = credentialsOrAuthId || authId
+        authToken = rawAuthToken || authToken
+    } else if (credentialsOrAuthId && typeof credentialsOrAuthId === 'object') {
+        authId = credentialsOrAuthId.authId || authId
+        authToken = credentialsOrAuthId.authToken || authToken
+    }
 
     try {
         const url = `https://api.vobiz.ai/api/v1/Account/${authId}/Recording/?call_uuid=${callUuid}&limit=1`

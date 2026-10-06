@@ -631,9 +631,16 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                 updateData.voice_call_id = conversationId
                 updateData.voice_call_summary = summary
                 updateData.voice_call_transcript = transcript
+                if (summary) {
+                    updateData.summary = summary
+                    customFields.last_followup_remark = summary
+                    customFields.last_followup_at = new Date().toISOString()
+                    customFields.last_followup_type = 'AI Voice Call'
+                    updateData.custom_fields = customFields
+                }
 
                 // Prepend call summary to notes
-                const dateStr = new Date().toLocaleDateString()
+                const dateStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                 let updatedNotes = `[🎙️ Voice Call - ${dateStr}]: ${summary}`
                 if (lead.notes) {
                     updatedNotes += `\n\n${lead.notes}`
