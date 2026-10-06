@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
   PhoneCall,
   Phone,
@@ -15,22 +15,17 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Bot,
   User,
   Volume2,
   FileText,
-  ChevronRight,
   ExternalLink,
   History,
-  PhoneOff,
-  Flame,
-  Award,
   RefreshCw,
   Info
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { toast } from 'sonner'
-import { DEMO_VOICE_OPTIONS, DEMO_PROMPT_TEMPLATES, DemoPromptTemplate } from '@/utils/demo-prompts'
+import { DEMO_VOICE_OPTIONS, DEMO_PROMPT_TEMPLATES } from '@/utils/demo-prompts'
 
 export default function AiCallDemoPage() {
   const supabase = createClient()
@@ -235,26 +230,26 @@ export default function AiCallDemoPage() {
 
   if (checkingAuth) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white">
-        <Loader2 className="w-10 h-10 animate-spin text-purple-400 mb-4" />
-        <p className="text-sm font-medium text-slate-400">Verifying Super Admin Authorization...</p>
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center text-slate-800">
+        <Loader2 className="w-10 h-10 animate-spin text-purple-600 mb-4" />
+        <p className="text-sm font-semibold text-slate-500">Verifying Super Admin Authorization...</p>
       </div>
     )
   }
 
   if (!isSuperAdmin) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center">
-        <div className="w-16 h-16 bg-red-500/20 text-red-400 rounded-3xl flex items-center justify-center mb-5 border border-red-500/30">
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-slate-900 text-center">
+        <div className="w-16 h-16 bg-red-100 text-red-600 rounded-3xl flex items-center justify-center mb-5 border border-red-200 shadow-sm">
           <AlertCircle size={32} />
         </div>
-        <h1 className="text-2xl font-black mb-2">Super Admin Access Required</h1>
-        <p className="text-slate-400 max-w-md text-sm leading-relaxed mb-6">
+        <h1 className="text-2xl font-black mb-2 text-slate-900">Super Admin Access Required</h1>
+        <p className="text-slate-500 max-w-md text-sm leading-relaxed mb-6">
           This AI Call Demo test module is strictly reserved for Nobogent Super Admins to conduct live demonstrations for prospects.
         </p>
         <a
           href="/dashboard/profile"
-          className="bg-white/10 hover:bg-white/20 text-white font-bold px-6 py-2.5 rounded-2xl text-xs transition-colors"
+          className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-6 py-3 rounded-2xl text-xs transition-colors shadow-sm"
         >
           Return to Profile
         </a>
@@ -265,24 +260,24 @@ export default function AiCallDemoPage() {
   const selectedTpl = DEMO_PROMPT_TEMPLATES.find(t => t.id === selectedTemplateId) || DEMO_PROMPT_TEMPLATES[0]
 
   return (
-    <div className="min-h-screen bg-[#090D16] text-slate-100 font-sans pb-24 selection:bg-purple-500 selection:text-white">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans pb-28 selection:bg-purple-100 selection:text-purple-900">
       {/* Top Navigation Bar */}
-      <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-slate-200/80 bg-white/80 backdrop-blur-xl sticky top-0 z-50 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 p-0.5 shadow-lg shadow-purple-500/20">
-              <div className="w-full h-full bg-[#090D16] rounded-[14px] flex items-center justify-center text-purple-400">
-                <PhoneCall size={24} className="animate-pulse" />
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 p-0.5 shadow-md shadow-purple-500/20">
+              <div className="w-full h-full bg-white rounded-[14px] flex items-center justify-center text-purple-600">
+                <PhoneCall size={22} className="animate-pulse" />
               </div>
             </div>
             <div>
               <div className="flex items-center gap-2.5">
-                <h1 className="text-lg sm:text-xl font-black text-white tracking-tight">AI Call Demo Studio</h1>
-                <span className="bg-purple-500/10 text-purple-400 border border-purple-500/30 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">
-                  Super Admin Exclusive
+                <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">AI Call Demo Studio</h1>
+                <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Super Admin
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-medium">
+              <p className="text-xs text-slate-500 font-medium">
                 Live interactive prospect calling engine powered by Gemini 3.1 Flash Live & Vobiz
               </p>
             </div>
@@ -290,18 +285,18 @@ export default function AiCallDemoPage() {
 
           {/* Caller Line & Protected Credits Badge */}
           <div className="hidden md:flex items-center gap-3">
-            <div className="bg-slate-800/60 border border-slate-700/60 px-4 py-2 rounded-2xl flex items-center gap-3 shadow-inner">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+            <div className="bg-slate-50 border border-slate-200 px-4 py-2 rounded-2xl flex items-center gap-3 shadow-sm">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
               <div className="text-left">
                 <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Caller Line (Outbound DID)</div>
-                <div className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
-                  <Phone size={11} className="text-purple-400" />
-                  Bioque Estates: <span className="text-purple-300 font-black">{callerNumber}</span>
+                <div className="text-xs font-mono font-bold text-slate-800 flex items-center gap-1.5">
+                  <Phone size={11} className="text-purple-600" />
+                  Bioque Estates: <span className="text-purple-700 font-black">{callerNumber}</span>
                 </div>
               </div>
             </div>
 
-            <div className="bg-emerald-950/40 border border-emerald-500/30 px-3.5 py-2 rounded-2xl flex items-center gap-2 text-emerald-400 text-xs font-bold">
+            <div className="bg-emerald-50 border border-emerald-200 px-3.5 py-2 rounded-2xl flex items-center gap-2 text-emerald-700 text-xs font-bold shadow-sm">
               <ShieldCheck size={16} />
               <span>0 Credits Deducted</span>
             </div>
@@ -313,27 +308,27 @@ export default function AiCallDemoPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
         
         {/* Banner Alert: Zero Credits Protection */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-purple-900/40 via-indigo-950/30 to-slate-900/40 border border-purple-500/20 p-5 sm:p-6 backdrop-blur-md">
+        <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-purple-50 via-indigo-50/60 to-white border border-purple-200/80 p-6 sm:p-7 shadow-sm">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="bg-purple-500/20 text-purple-400 p-3 rounded-2xl border border-purple-500/30 flex-shrink-0">
+              <div className="bg-gradient-to-tr from-purple-600 to-indigo-600 text-white p-3.5 rounded-2xl shadow-md shadow-purple-500/20 flex-shrink-0">
                 <Sparkles size={24} />
               </div>
               <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   Prospect Live Testing Sandbox
-                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-black px-2 py-0.5 rounded-full uppercase">
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-200 font-black px-2.5 py-0.5 rounded-full uppercase">
                     Zero Bioque Billing
                   </span>
                 </h2>
-                <p className="text-xs text-slate-300 font-normal mt-0.5 max-w-3xl leading-relaxed">
-                  Calls originate from Bioque Estates' verified virtual number (<strong className="text-white">{callerNumber}</strong>) with full bidirectional audio streaming, instant appointment booking, and automated summaries. Credit deduction is safely bypassed for all demo runs.
+                <p className="text-xs text-slate-600 font-normal mt-1 max-w-3xl leading-relaxed">
+                  Calls originate from Bioque Estates' verified virtual number (<strong className="text-slate-900">{callerNumber}</strong>) with full bidirectional audio streaming, instant appointment booking, and automated summaries. Credit deduction is safely bypassed for all demo runs.
                 </p>
               </div>
             </div>
-            <div className="text-xs text-slate-400 flex items-center gap-2 flex-shrink-0">
-              <div className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span>Admin: <strong className="text-white">{adminEmail}</strong></span>
+            <div className="text-xs text-slate-500 flex items-center gap-2 flex-shrink-0 bg-white/80 px-3.5 py-1.5 rounded-xl border border-slate-200">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Admin: <strong className="text-slate-800">{adminEmail}</strong></span>
             </div>
           </div>
         </div>
@@ -345,17 +340,17 @@ export default function AiCallDemoPage() {
           <div className="lg:col-span-7 space-y-6">
             
             {/* Step 1: Prospect Contact Info */}
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 backdrop-blur-md shadow-xl space-y-5">
-              <div className="flex items-center gap-2.5 pb-3 border-b border-slate-800">
-                <div className="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-black text-xs">
+            <div className="bg-white border border-slate-200/80 rounded-[2rem] p-6 sm:p-7 shadow-sm space-y-5">
+              <div className="flex items-center gap-2.5 pb-3.5 border-b border-slate-100">
+                <div className="w-7 h-7 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black text-xs">
                   1
                 </div>
-                <h3 className="font-bold text-sm sm:text-base text-white">Prospect Destination & Identity</h3>
+                <h3 className="font-bold text-base text-slate-900">Prospect Destination & Identity</h3>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">
                     Prospect Phone Number *
                   </label>
                   <div className="relative">
@@ -364,17 +359,17 @@ export default function AiCallDemoPage() {
                       value={prospectPhone}
                       onChange={(e) => setProspectPhone(e.target.value)}
                       placeholder="+91 98765 43210"
-                      className="w-full bg-slate-950/80 border border-slate-700/80 focus:border-purple-500 rounded-2xl py-3 px-4 text-sm font-mono text-white placeholder-slate-500 outline-none transition-all shadow-inner"
+                      className="w-full bg-slate-50 border border-slate-200 focus:border-purple-600 focus:bg-white rounded-2xl py-3 px-4 text-sm font-mono text-slate-900 placeholder-slate-400 outline-none transition-all shadow-sm"
                     />
-                    <Phone className="absolute right-3.5 top-3.5 text-slate-500 pointer-events-none" size={16} />
+                    <Phone className="absolute right-3.5 top-3.5 text-slate-400 pointer-events-none" size={16} />
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-1 block">
+                  <span className="text-[10px] text-slate-500 mt-1 block">
                     Enter the phone number of the prospect you are demonstrating to.
                   </span>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">
                     Prospect Name
                   </label>
                   <input
@@ -382,15 +377,15 @@ export default function AiCallDemoPage() {
                     value={prospectName}
                     onChange={(e) => setProspectName(e.target.value)}
                     placeholder="e.g. Rohan Sharma"
-                    className="w-full bg-slate-950/80 border border-slate-700/80 focus:border-purple-500 rounded-2xl py-3 px-4 text-sm font-semibold text-white placeholder-slate-500 outline-none transition-all shadow-inner"
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-purple-600 focus:bg-white rounded-2xl py-3 px-4 text-sm font-semibold text-slate-900 placeholder-slate-400 outline-none transition-all shadow-sm"
                   />
-                  <span className="text-[10px] text-slate-400 mt-1 block">
+                  <span className="text-[10px] text-slate-500 mt-1 block">
                     AI will greet them warmly by this name.
                   </span>
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">
                     Demo Business / Client Brand Name
                   </label>
                   <input
@@ -398,9 +393,9 @@ export default function AiCallDemoPage() {
                     value={businessName}
                     onChange={(e) => setBusinessName(e.target.value)}
                     placeholder="e.g. Bioque Estates International"
-                    className="w-full bg-slate-950/80 border border-slate-700/80 focus:border-purple-500 rounded-2xl py-3 px-4 text-sm font-semibold text-white placeholder-slate-500 outline-none transition-all shadow-inner"
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-purple-600 focus:bg-white rounded-2xl py-3 px-4 text-sm font-semibold text-slate-900 placeholder-slate-400 outline-none transition-all shadow-sm"
                   />
-                  <span className="text-[10px] text-slate-400 mt-1 block">
+                  <span className="text-[10px] text-slate-500 mt-1 block">
                     Company name the AI represents during the call.
                   </span>
                 </div>
@@ -408,18 +403,18 @@ export default function AiCallDemoPage() {
             </div>
 
             {/* Step 2: Voice Model Selection */}
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 backdrop-blur-md shadow-xl space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="bg-white border border-slate-200/80 rounded-[2rem] p-6 sm:p-7 shadow-sm space-y-4">
+              <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-black text-xs">
+                  <div className="w-7 h-7 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black text-xs">
                     2
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm sm:text-base text-white">Voice Selection</h3>
-                    <p className="text-[11px] text-slate-400 font-medium">Default: Aoede (warm natural Indian consultative female voice)</p>
+                    <h3 className="font-bold text-base text-slate-900">Voice Selection</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Default: Aoede (warm natural Indian consultative female voice)</p>
                   </div>
                 </div>
-                <span className="text-xs font-mono font-bold text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded-xl border border-purple-500/20">
+                <span className="text-xs font-mono font-bold text-purple-700 bg-purple-50 px-3 py-1 rounded-xl border border-purple-200">
                   {selectedVoice} Active
                 </span>
               </div>
@@ -434,30 +429,30 @@ export default function AiCallDemoPage() {
                       onClick={() => setSelectedVoice(voice.id)}
                       className={`text-left p-3.5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-gradient-to-br from-purple-900/50 to-indigo-900/40 border-purple-500 text-white shadow-lg shadow-purple-500/10 ring-1 ring-purple-500/50'
-                          : 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700 text-slate-300 hover:text-white'
+                          ? 'bg-purple-50/70 border-purple-500 text-purple-950 shadow-md shadow-purple-500/10 ring-2 ring-purple-500/20'
+                          : 'bg-slate-50/60 hover:bg-slate-100/70 border-slate-200/80 text-slate-700'
                       }`}
                     >
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-black flex items-center gap-1.5">
-                            <Volume2 size={15} className={isSelected ? 'text-purple-400' : 'text-slate-500'} />
+                          <span className="text-sm font-black flex items-center gap-1.5 text-slate-900">
+                            <Volume2 size={15} className={isSelected ? 'text-purple-600' : 'text-slate-400'} />
                             {voice.name}
                           </span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider bg-slate-800 text-slate-400">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider bg-white border border-slate-200 text-slate-600">
                             {voice.gender}
                           </span>
                         </div>
-                        <div className="text-[10px] text-purple-300 font-bold">
+                        <div className="text-[10px] text-purple-700 font-bold">
                           {voice.badge}
                         </div>
-                        <p className="text-[11px] text-slate-400 leading-snug line-clamp-2 mt-1">
+                        <p className="text-[11px] text-slate-500 leading-snug line-clamp-2 mt-1">
                           {voice.description}
                         </p>
                       </div>
 
                       {isSelected && (
-                        <div className="mt-2.5 flex items-center gap-1 text-[10px] text-purple-300 font-bold">
+                        <div className="mt-2.5 flex items-center gap-1 text-[10px] text-purple-700 font-bold">
                           <CheckCircle2 size={12} /> Selected
                         </div>
                       )}
@@ -468,15 +463,15 @@ export default function AiCallDemoPage() {
             </div>
 
             {/* Step 3: Industry Prompt Templates */}
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 backdrop-blur-md shadow-xl space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="bg-white border border-slate-200/80 rounded-[2rem] p-6 sm:p-7 shadow-sm space-y-4">
+              <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-black text-xs">
+                  <div className="w-7 h-7 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black text-xs">
                     3
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm sm:text-base text-white">Select Industry Demo Prompt</h3>
-                    <p className="text-[11px] text-slate-400 font-medium">Default: Real Estate Luxury Advisory (Bioque Estates Style)</p>
+                    <h3 className="font-bold text-base text-slate-900">Select Industry Demo Prompt</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Default: Real Estate Luxury Advisory (Bioque Estates Style)</p>
                   </div>
                 </div>
               </div>
@@ -492,8 +487,8 @@ export default function AiCallDemoPage() {
                       onClick={() => handleTemplateChange(tpl.id)}
                       className={`text-left p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-600/30'
-                          : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700 text-slate-300 hover:text-white'
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-600/25 ring-2 ring-purple-600/20'
+                          : 'bg-slate-50/70 hover:bg-slate-100 border-slate-200/80 text-slate-700'
                       }`}
                     >
                       <div className="space-y-1">
@@ -513,15 +508,15 @@ export default function AiCallDemoPage() {
               <div className="pt-2 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
-                    <span className="font-black text-slate-300 uppercase tracking-wider text-[10px]">Active Prompt System Instruction</span>
-                    <span className="bg-purple-500/20 text-purple-300 text-[9px] font-bold px-2 py-0.5 rounded-full border border-purple-500/30">
+                    <span className="font-black text-slate-700 uppercase tracking-wider text-[10px]">Active Prompt System Instruction</span>
+                    <span className="bg-purple-50 text-purple-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-purple-200">
                       Hinglish Default • Multilingual Ready
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={handleResetPrompt}
-                    className="text-slate-400 hover:text-purple-300 flex items-center gap-1 text-[11px] font-bold transition-colors cursor-pointer"
+                    className="text-slate-500 hover:text-purple-700 flex items-center gap-1 text-[11px] font-bold transition-colors cursor-pointer"
                   >
                     <RotateCcw size={12} /> Reset to Default
                   </button>
@@ -532,12 +527,12 @@ export default function AiCallDemoPage() {
                     rows={12}
                     value={customPrompt}
                     onChange={(e) => setCustomPrompt(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-2xl p-4 text-xs font-mono text-slate-200 leading-relaxed outline-none transition-all shadow-inner resize-y"
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-purple-600 focus:bg-white rounded-2xl p-4 text-xs font-mono text-slate-800 leading-relaxed outline-none transition-all shadow-inner resize-y"
                     placeholder="Enter system prompt instruction for the AI voice assistant..."
                   />
                 </div>
-                <div className="flex items-center justify-between text-[11px] text-slate-400">
-                  <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span className="flex items-center gap-1.5 text-emerald-600 font-semibold">
                     <CheckCircle2 size={13} /> Appointment Booking & Hangup tools automatically configured
                   </span>
                   <span>{customPrompt.length} chars</span>
@@ -550,7 +545,7 @@ export default function AiCallDemoPage() {
                   type="button"
                   onClick={handleStartDemoCall}
                   disabled={isCalling}
-                  className="w-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-black py-4 px-6 rounded-2xl text-base shadow-xl shadow-purple-600/30 flex items-center justify-center gap-3 transition-all cursor-pointer group hover:scale-[1.01]"
+                  className="w-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white font-black py-4 px-6 rounded-2xl text-base shadow-lg shadow-purple-600/25 flex items-center justify-center gap-3 transition-all cursor-pointer group hover:scale-[1.01]"
                 >
                   {isCalling ? (
                     <>
@@ -564,8 +559,8 @@ export default function AiCallDemoPage() {
                     </>
                   )}
                 </button>
-                <div className="text-center mt-2 text-[11px] text-slate-400">
-                  Dialing from <strong className="text-white">{callerNumber}</strong> with <strong>Zero Credit Cost</strong>
+                <div className="text-center mt-2 text-[11px] text-slate-500">
+                  Dialing from <strong className="text-slate-800">{callerNumber}</strong> with <strong className="text-emerald-700">Zero Credit Cost</strong>
                 </div>
               </div>
             </div>
@@ -576,42 +571,42 @@ export default function AiCallDemoPage() {
           <div className="lg:col-span-5 space-y-6">
             
             {/* Live Call Status Card */}
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 backdrop-blur-md shadow-xl space-y-5">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="bg-white border border-slate-200/80 rounded-[2rem] p-6 sm:p-7 shadow-sm space-y-5">
+              <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
                     <Mic size={18} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-white">Live Call Monitor</h3>
-                    <p className="text-[11px] text-slate-400 font-medium">Real-time telemetry & audio streaming</p>
+                    <h3 className="font-bold text-sm text-slate-900">Live Call Monitor</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">Real-time telemetry & audio streaming</p>
                   </div>
                 </div>
 
                 {/* Status Indicator Pill */}
                 <div>
                   {activeCallStatus === 'calling' && (
-                    <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1.5 animate-pulse">
-                      <span className="w-2 h-2 rounded-full bg-amber-400" /> Ringing...
+                    <span className="bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1.5 animate-pulse">
+                      <span className="w-2 h-2 rounded-full bg-amber-500" /> Ringing...
                     </span>
                   )}
                   {activeCallStatus === 'in-progress' && (
-                    <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1.5 animate-pulse">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" /> Connected / Speaking
+                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1.5 animate-pulse">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" /> Connected / Speaking
                     </span>
                   )}
                   {activeCallStatus === 'completed' && (
-                    <span className="bg-blue-500/10 text-blue-400 border border-blue-500/30 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1.5">
+                    <span className="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1.5">
                       <CheckCircle2 size={13} /> Call Completed
                     </span>
                   )}
                   {activeCallStatus === 'failed' && (
-                    <span className="bg-red-500/10 text-red-400 border border-red-500/30 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1.5">
+                    <span className="bg-red-50 text-red-700 border border-red-200 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1.5">
                       <AlertCircle size={13} /> Call Failed
                     </span>
                   )}
                   {activeCallStatus === 'idle' && (
-                    <span className="bg-slate-800 text-slate-400 text-xs font-bold px-3 py-1 rounded-xl">
+                    <span className="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-xl">
                       Ready to Dial
                     </span>
                   )}
@@ -622,23 +617,23 @@ export default function AiCallDemoPage() {
               {activeCallLead ? (
                 <div className="space-y-4">
                   {/* Prospect Header */}
-                  <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-2.5">
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <User size={15} className="text-purple-400" />
-                        <span className="text-sm font-bold text-white">{activeCallLead.name}</span>
+                        <User size={15} className="text-purple-600" />
+                        <span className="text-sm font-bold text-slate-900">{activeCallLead.name}</span>
                       </div>
-                      <span className="text-xs font-mono font-bold text-purple-300">{activeCallLead.phone}</span>
+                      <span className="text-xs font-mono font-bold text-purple-700">{activeCallLead.phone}</span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/60 text-[11px]">
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200 text-[11px]">
                       <div>
                         <span className="text-slate-500 block">Voice Engine:</span>
-                        <span className="font-bold text-slate-300">{activeCallLead.custom_fields?.demo_voice_name || selectedVoice}</span>
+                        <span className="font-bold text-slate-800">{activeCallLead.custom_fields?.demo_voice_name || selectedVoice}</span>
                       </div>
                       <div>
                         <span className="text-slate-500 block">Template:</span>
-                        <span className="font-bold text-slate-300 truncate block">
+                        <span className="font-bold text-slate-800 truncate block">
                           {activeCallLead.custom_fields?.demo_template_title || selectedTpl.title}
                         </span>
                       </div>
@@ -646,11 +641,11 @@ export default function AiCallDemoPage() {
 
                     {/* Duration & Billing */}
                     {activeCallLead.voice_duration_seconds !== undefined && activeCallLead.voice_duration_seconds !== null && (
-                      <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-xs">
-                        <span className="text-slate-400 flex items-center gap-1">
-                          <Clock size={13} /> Duration: <strong className="text-white">{activeCallLead.voice_duration_seconds}s</strong>
+                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <Clock size={13} /> Duration: <strong className="text-slate-800">{activeCallLead.voice_duration_seconds}s</strong>
                         </span>
-                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                        <span className="text-emerald-700 font-bold flex items-center gap-1">
                           <ShieldCheck size={13} /> 0 Credits (Demo Free)
                         </span>
                       </div>
@@ -659,15 +654,15 @@ export default function AiCallDemoPage() {
 
                   {/* Appointment Booking Banner if booked during demo */}
                   {(activeCallLead.status === 'Booked' || activeCallLead.pipeline_stage === 'Appointment Scheduled' || activeCallLead.custom_fields?.appointment_time) && (
-                    <div className="bg-gradient-to-r from-emerald-950/60 to-emerald-900/40 border border-emerald-500/40 p-4 rounded-2xl space-y-1.5 animate-in fade-in">
-                      <div className="flex items-center gap-2 text-emerald-400 font-black text-xs uppercase tracking-wider">
+                    <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl space-y-1.5 animate-in fade-in">
+                      <div className="flex items-center gap-2 text-emerald-800 font-black text-xs uppercase tracking-wider">
                         <Calendar size={15} /> Appointment Booked Successfully!
                       </div>
-                      <p className="text-xs text-white font-medium">
+                      <p className="text-xs text-slate-800 font-medium">
                         Slot: {activeCallLead.custom_fields?.appointment_time || activeCallLead.appointment_time || 'Confirmed during live demo'}
                       </p>
                       {activeCallLead.custom_fields?.appointment_notes && (
-                        <p className="text-[11px] text-emerald-200">
+                        <p className="text-[11px] text-emerald-800">
                           Notes: {activeCallLead.custom_fields?.appointment_notes}
                         </p>
                       )}
@@ -676,16 +671,16 @@ export default function AiCallDemoPage() {
 
                   {/* Audio Recording Player */}
                   {activeCallLead.voice_recording_url && (
-                    <div className="bg-slate-950/80 p-4 rounded-2xl border border-purple-500/30 space-y-2">
+                    <div className="bg-purple-50/50 p-4 rounded-2xl border border-purple-200 space-y-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-purple-300 flex items-center gap-1.5">
+                        <span className="font-bold text-purple-900 flex items-center gap-1.5">
                           <Volume2 size={14} /> Full Call Recording
                         </span>
                         <a
                           href={activeCallLead.voice_recording_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-purple-400 hover:text-purple-300 flex items-center gap-1 text-[11px] font-bold"
+                          className="text-purple-700 hover:text-purple-800 flex items-center gap-1 text-[11px] font-bold"
                         >
                           <ExternalLink size={11} /> Open
                         </a>
@@ -700,11 +695,11 @@ export default function AiCallDemoPage() {
 
                   {/* AI Generated Call Summary */}
                   {activeCallLead.voice_call_summary && (
-                    <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-2">
-                      <span className="text-[10px] uppercase tracking-wider font-black text-purple-400 flex items-center gap-1.5">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                      <span className="text-[10px] uppercase tracking-wider font-black text-purple-700 flex items-center gap-1.5">
                         <Sparkles size={12} /> AI Summary & Sentiment
                       </span>
-                      <p className="text-xs text-slate-300 leading-relaxed font-normal whitespace-pre-line">
+                      <p className="text-xs text-slate-700 leading-relaxed font-normal whitespace-pre-line">
                         {activeCallLead.voice_call_summary}
                       </p>
                     </div>
@@ -712,23 +707,23 @@ export default function AiCallDemoPage() {
 
                   {/* Full Call Transcript Viewer */}
                   {activeCallLead.voice_transcript && (
-                    <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-2 max-h-72 overflow-y-auto">
-                      <span className="text-[10px] uppercase tracking-wider font-black text-slate-400 flex items-center gap-1.5">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 max-h-72 overflow-y-auto">
+                      <span className="text-[10px] uppercase tracking-wider font-black text-slate-500 flex items-center gap-1.5">
                         <FileText size={12} /> Conversation Transcript
                       </span>
-                      <div className="text-xs text-slate-300 whitespace-pre-wrap font-mono leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-900">
+                      <div className="text-xs text-slate-800 whitespace-pre-wrap font-mono leading-relaxed bg-white p-3 rounded-xl border border-slate-200">
                         {activeCallLead.voice_transcript}
                       </div>
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="py-12 px-4 text-center space-y-3 bg-slate-950/40 rounded-2xl border border-slate-800/40">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-800/60 text-slate-500 mx-auto flex items-center justify-center">
+                <div className="py-12 px-4 text-center space-y-3 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <div className="w-12 h-12 rounded-2xl bg-white text-slate-400 mx-auto flex items-center justify-center border border-slate-200 shadow-sm">
                     <Phone size={20} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-slate-300">No Demo Call In Progress</h4>
+                    <h4 className="text-xs font-bold text-slate-800">No Demo Call In Progress</h4>
                     <p className="text-[11px] text-slate-500 max-w-xs mx-auto mt-1">
                       Fill out the prospect's phone number on the left and click "Launch Live AI Call Demo Now" to start testing.
                     </p>
@@ -738,26 +733,26 @@ export default function AiCallDemoPage() {
             </div>
 
             {/* Feature Checklist for Prospects */}
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-5 backdrop-blur-md shadow-xl space-y-3 text-xs">
+            <div className="bg-white border border-slate-200/80 rounded-[2rem] p-6 shadow-sm space-y-3 text-xs">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block font-bold">
                 Prospect Live Demo Checklist
               </span>
-              <ul className="space-y-2 text-slate-300">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0" />
-                  <span><strong>Hinglish by default:</strong> Speaks natural Indian conversational Hindi + English.</span>
+              <ul className="space-y-2.5 text-slate-600">
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 size={15} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-slate-900">Hinglish by default:</strong> Speaks natural Indian conversational Hindi + English.</span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0" />
-                  <span><strong>Multilingual Switch:</strong> Reply in English, Punjabi, or regional language to test live adaptation.</span>
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 size={15} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-slate-900">Multilingual Switch:</strong> Reply in English, Punjabi, or regional language to test live adaptation.</span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0" />
-                  <span><strong>Live Interruption:</strong> Speak while the AI is talking to demonstrate instant zero-latency pause.</span>
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 size={15} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-slate-900">Live Interruption:</strong> Speak while the AI is talking to demonstrate instant zero-latency pause.</span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0" />
-                  <span><strong>Appointment Booking:</strong> Say "Book a meeting tomorrow at 4 PM" to trigger automatic scheduling.</span>
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 size={15} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <span><strong className="text-slate-900">Appointment Booking:</strong> Say "Book a meeting tomorrow at 4 PM" to trigger automatic scheduling.</span>
                 </li>
               </ul>
             </div>
@@ -767,24 +762,24 @@ export default function AiCallDemoPage() {
         </div>
 
         {/* Bottom Section: Past Demo Calls Log Table */}
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 backdrop-blur-md shadow-xl space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="bg-white border border-slate-200/80 rounded-[2rem] p-6 sm:p-7 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+              <div className="w-7 h-7 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
                 <History size={16} />
               </div>
               <div>
-                <h3 className="font-bold text-sm sm:text-base text-white">Recent Super Admin Demo Calls</h3>
-                <p className="text-[11px] text-slate-400 font-medium">History of prospect demo calls triggered from this studio</p>
+                <h3 className="font-bold text-base text-slate-900">Recent Super Admin Demo Calls</h3>
+                <p className="text-[11px] text-slate-500 font-medium">History of prospect demo calls triggered from this studio</p>
               </div>
             </div>
             <button
               type="button"
               onClick={fetchRecentDemos}
               disabled={loadingRecent}
-              className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+              className="text-slate-600 hover:text-slate-900 p-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold"
             >
-              <RefreshCw size={14} className={loadingRecent ? 'animate-spin' : ''} /> Refresh
+              <RefreshCw size={14} className={loadingRecent ? 'animate-spin text-purple-600' : ''} /> Refresh
             </button>
           </div>
 
@@ -792,7 +787,7 @@ export default function AiCallDemoPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-800 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400">
                     <th className="py-3 px-3">Prospect</th>
                     <th className="py-3 px-3">Industry / Template</th>
                     <th className="py-3 px-3">Voice</th>
@@ -802,44 +797,44 @@ export default function AiCallDemoPage() {
                     <th className="py-3 px-3 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y divide-slate-100">
                   {recentDemoCalls.map((lead) => {
                     const isSelected = activeLeadId === lead.id
                     return (
                       <tr
                         key={lead.id}
-                        className={`hover:bg-slate-800/40 transition-colors ${
-                          isSelected ? 'bg-purple-900/20' : ''
+                        className={`hover:bg-slate-50/80 transition-colors ${
+                          isSelected ? 'bg-purple-50/60' : ''
                         }`}
                       >
                         <td className="py-3.5 px-3">
-                          <div className="font-bold text-white">{lead.name || 'Prospect'}</div>
-                          <div className="font-mono text-[11px] text-slate-400">{lead.phone}</div>
+                          <div className="font-bold text-slate-900">{lead.name || 'Prospect'}</div>
+                          <div className="font-mono text-[11px] text-slate-500">{lead.phone}</div>
                         </td>
                         <td className="py-3.5 px-3">
-                          <span className="font-semibold text-slate-300">
+                          <span className="font-semibold text-slate-700">
                             {lead.custom_fields?.demo_template_title || lead.source || 'AI Call Demo'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-3 font-mono text-purple-300">
+                        <td className="py-3.5 px-3 font-mono text-purple-700 font-semibold">
                           {lead.custom_fields?.demo_voice_name || 'Aoede'}
                         </td>
                         <td className="py-3.5 px-3">
                           <span
                             className={`text-[10px] font-bold px-2.5 py-1 rounded-xl uppercase tracking-wider ${
                               lead.voice_call_status === 'completed'
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : lead.voice_call_status === 'calling'
-                                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                 : lead.voice_call_status === 'failed'
-                                ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                                : 'bg-slate-800 text-slate-300'
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'bg-slate-100 text-slate-600'
                             }`}
                           >
                             {lead.voice_call_status || 'Pending'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-3 font-mono text-slate-400">
+                        <td className="py-3.5 px-3 font-mono text-slate-600">
                           {lead.voice_duration_seconds ? `${lead.voice_duration_seconds}s` : '—'}
                         </td>
                         <td className="py-3.5 px-3">
@@ -848,12 +843,12 @@ export default function AiCallDemoPage() {
                               href={lead.voice_recording_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-purple-400 hover:text-purple-300 font-bold"
+                              className="inline-flex items-center gap-1 text-purple-700 hover:text-purple-800 font-bold"
                             >
                               <Play size={12} /> Play Audio
                             </a>
                           ) : (
-                            <span className="text-slate-600">—</span>
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
                         <td className="py-3.5 px-3 text-right">
@@ -865,7 +860,7 @@ export default function AiCallDemoPage() {
                               setActiveCallStatus(lead.voice_call_status || 'completed')
                               window.scrollTo({ top: 300, behavior: 'smooth' })
                             }}
-                            className="bg-slate-800 hover:bg-purple-600 text-white font-bold px-3 py-1.5 rounded-xl text-[11px] transition-all cursor-pointer"
+                            className="bg-slate-100 hover:bg-purple-600 hover:text-white text-slate-800 font-bold px-3 py-1.5 rounded-xl text-[11px] transition-all cursor-pointer"
                           >
                             Inspect Details
                           </button>
@@ -877,7 +872,7 @@ export default function AiCallDemoPage() {
               </table>
             </div>
           ) : (
-            <div className="py-8 text-center text-slate-500 text-xs">
+            <div className="py-8 text-center text-slate-400 text-xs">
               No previous demo calls found. Launch your first demo call above!
             </div>
           )}

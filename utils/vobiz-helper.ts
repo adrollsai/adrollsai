@@ -282,6 +282,17 @@ export async function triggerVobizOutboundCall(
         const callUuid = data.request_uuid || data.call_uuid || data.api_id
         console.log(`[VOBIZ HELPER] Outbound call created successfully! UUID: ${callUuid}`)
 
+        if (callUuid) {
+            try {
+                await supabaseAdmin
+                    .from('leads')
+                    .update({ voice_call_id: callUuid })
+                    .eq('id', leadId)
+            } catch (uErr) {
+                console.warn('[VOBIZ HELPER] Could not update lead voice_call_id:', uErr)
+            }
+        }
+
         return {
             success: true,
             callUuid,
