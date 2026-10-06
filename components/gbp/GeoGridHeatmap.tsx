@@ -72,10 +72,11 @@ export default function GeoGridHeatmap({
         attributionControl: false
       })
 
-      // Elegant modern tile layer (CartoDB Positron / OSM)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      // Clean, reliable OpenStreetMap layer (no watermark, zero API key required)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        subdomains: 'abcd'
+        subdomains: 'abc',
+        attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map)
 
       const layerGroup = L.layerGroup().addTo(map)

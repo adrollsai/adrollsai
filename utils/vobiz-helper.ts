@@ -12,6 +12,8 @@ export interface VobizCallParams {
     campaignId?: string
     fromPhone?: string
     allowAfterHours?: boolean
+    skipCreditCheck?: boolean
+    voiceName?: string
 }
 
 export interface VobizCallResult {
@@ -143,24 +145,26 @@ export async function triggerVobizOutboundCall(
     }
 
     // 4. Nobo Credits balance check (needs at least 40 credits for 1 minute call)
-    const hasCredits = await hasEnoughCredits(supabaseAdmin, profileId, 40)
-    if (!hasCredits) {
-        console.warn(`[VOBIZ HELPER] Outbound call aborted for lead ${leadId}: Insufficient credits for user ${profileId}`)
-        await supabaseAdmin
-            .from('leads')
-            .update({ voice_call_status: 'failed' })
-            .eq('id', leadId)
+    if (!params.skipCreditCheck) {
+        const hasCredits = await hasEnoughCredits(supabaseAdmin, profileId, 40)
+        if (!hasCredits) {
+            console.warn(`[VOBIZ HELPER] Outbound call aborted for lead ${leadId}: Insufficient credits for user ${profileId}`)
+            await supabaseAdmin
+                .from('leads')
+                .update({ voice_call_status: 'failed' })
+                .eq('id', leadId)
 
-        try {
-            await supabaseAdmin.from('lead_history').insert({
-                lead_id: leadId,
-                action_type: 'REMARK',
-                description: `❌ Outbound call aborted: Insufficient Nobo Credits balance. Please recharge AI credits to make calls.`
-            })
-        } catch (hErr) {
-            console.error('[VOBIZ HELPER] Error writing history entry:', hErr)
+            try {
+                await supabaseAdmin.from('lead_history').insert({
+                    lead_id: leadId,
+                    action_type: 'REMARK',
+                    description: `❌ Outbound call aborted: Insufficient Nobo Credits balance. Please recharge AI credits to make calls.`
+                })
+            } catch (hErr) {
+                console.error('[VOBIZ HELPER] Error writing history entry:', hErr)
+            }
+            return { success: false, error: 'Insufficient credits. Please recharge your AI credits.' }
         }
-        return { success: false, error: 'Insufficient credits. Please recharge your AI credits.' }
     }
 
     // 5. Auth Credentials & Caller ID
@@ -234,7 +238,7 @@ export async function triggerVobizOutboundCall(
         console.warn('[VOBIZ HELPER] Failed to update lead status:', dbErr)
     }
 
-    const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${leadId}&profileId=${profileId}${campaignId ? `&campaignId=${campaignId}` : ''}`
+    const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${leadId}&profileId=${profileId}${campaignId ? `&campaignId=${campaignId}` : ''}${params.voiceName ? `&voiceName=${encodeURIComponent(params.voiceName)}` : ''}`
     const hangupUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}`
 
     const requestPayload = {

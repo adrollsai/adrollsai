@@ -28,6 +28,7 @@ import {
   BarChart3,
   Mic,
   Phone,
+  PhoneCall,
   Info,
   Sparkles,
   Eye,
@@ -4047,6 +4048,38 @@ export default function ProfilePage() {
                   </div>
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>
+              </div>
+            )}
+
+            {/* AI CALL DEMO STUDIO LINK - Super Admin Exclusive (Opens in new page) */}
+            {authRole === 'super_admin' && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-purple-200/80 overflow-hidden transition-all hover:shadow-md hover:border-purple-300">
+                <a 
+                  href={`/dashboard/ai-call-demo${impersonateId ? `?impersonate=${impersonateId}` : ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full p-6 sm:p-7 flex items-center justify-between hover:bg-purple-50/30 transition-all group block"
+                >
+                  <div className="flex items-center gap-4 text-left">
+                    <div className="bg-gradient-to-tr from-purple-600 to-indigo-600 text-white p-3.5 rounded-2xl group-hover:scale-105 transition-transform shadow-md shadow-purple-500/20">
+                      <PhoneCall size={22} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                        AI Call Demo
+                        <span className="bg-purple-50 text-purple-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Super Admin</span>
+                        <span className="bg-emerald-50 text-emerald-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Zero Credits</span>
+                      </h4>
+                      <p className="text-xs text-slate-500 font-medium mt-1">
+                        Live AI calling studio for prospects using Bioque Estates virtual line, Aoede voice & industry prompt templates
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-purple-600 font-bold text-xs">
+                    <span>Open Studio</span>
+                    <ExternalLink size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </a>
               </div>
             )}
 

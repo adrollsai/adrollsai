@@ -199,10 +199,16 @@ async function handleStatusCallback(req: Request) {
                     if (typeof cf === 'string') {
                         try { cf = JSON.parse(cf) } catch (e) { cf = {} }
                     }
-                    const isTestCall = cf.skip_credit_deduction || cf.is_test_call || lead.phone === '+918288835235'
+                    const isTestCall = cf.skip_credit_deduction === true || 
+                                       cf.is_test_call === true || 
+                                       cf.is_demo_call === true || 
+                                       cf.demo_call === true || 
+                                       lead.source === 'AI Call Demo' || 
+                                       lead.phone === '+918288835235' || 
+                                       (lead.user_id === '68b55a31-a16d-454d-a20f-11adabf590b0' && (cf.is_demo_call || cf.is_test_call || cf.demo || lead.source === 'AI Call Demo'))
 
                     if (isTestCall) {
-                        console.log(`[VOBIZ STATUS] 🧪 Test call detected for lead ${lead.id} (${lead.phone}). Skipping credit deduction.`)
+                        console.log(`[VOBIZ STATUS] 🧪 Test/Demo call detected for lead ${lead.id} (${lead.phone}). Skipping credit deduction — 0 credits charged to Bioque Estates.`)
                     } else if (callDuration > 0 && updatedStatus === 'completed') {
                         // Connected call: 5 credits per minute (rounded up to nearest minute)
                         const billableMinutes = Math.ceil(callDuration / 60)

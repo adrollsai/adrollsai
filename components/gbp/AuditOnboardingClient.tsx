@@ -22,6 +22,7 @@ import {
   X
 } from 'lucide-react'
 import { GBPAuditCampaign } from '@/utils/gbp-audit-storage'
+import { extractCityFromAddress, cleanBusinessCategory } from '@/utils/gbp-address-parser'
 import { toast } from 'sonner'
 
 interface AuditOnboardingClientProps {
@@ -32,12 +33,14 @@ interface PlaceResult {
   placeId: string
   name: string
   address: string
-  latitude: number
-  longitude: number
-  rating: number
-  reviewsCount: number
+  latitude: number | null
+  longitude: number | null
+  rating: number | null
+  reviewsCount: number | null
   category: string
-  photosCount: number
+  photosCount: number | null
+  phone?: string
+  website?: string
 }
 
 export default function AuditOnboardingClient({ campaign }: AuditOnboardingClientProps) {
@@ -53,15 +56,16 @@ export default function AuditOnboardingClient({ campaign }: AuditOnboardingClien
   // Custom business input fallback
   const [businessName, setBusinessName] = useState('')
   const [businessAddress, setBusinessAddress] = useState('')
-  const [primaryCategory, setPrimaryCategory] = useState('Real Estate Agency')
+  const [primaryCategory, setPrimaryCategory] = useState('Local Business')
 
   // Target Keywords
   const [keywords, setKeywords] = useState<string[]>([
-    'real estate agent near me',
-    'best property dealer',
-    'commercial property'
+    'business near me',
+    'best rated service',
+    'top company'
   ])
   const [newKeyword, setNewKeyword] = useState('')
+  const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false)
 
   // Contact Info
   const [leadName, setLeadName] = useState('')
@@ -71,6 +75,8 @@ export default function AuditOnboardingClient({ campaign }: AuditOnboardingClien
   // Progress scanning state
   const [isScanning, setIsScanning] = useState(false)
   const [scanStepIndex, setScanStepIndex] = useState(0)
+  const [googleConnectedUser, setGoogleConnectedUser] = useState<{ email: string; name: string } | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   const scanSteps = [
     'Verifying Google Business Profile attributes & completeness...',
@@ -79,33 +85,102 @@ export default function AuditOnboardingClient({ campaign }: AuditOnboardingClien
     'Generating Gemini AI competitive gap analysis & revenue model...'
   ]
 
-  // Handle Google OAuth return callback
+  const loadIntelligentKeywords = async (cat: string, addr: string, busName: string) => {
+    setIsGeneratingKeywords(true)
+    try {
+      const cleanCat = cleanBusinessCategory(cat, busName)
+      const city = extractCityFromAddress(addr) || ''
+      const res = await fetch(`/api/gbp/places/search?mode=keywords&category=${encodeURIComponent(cleanCat)}&city=${encodeURIComponent(city)}&business=${encodeURIComponent(busName)}`)
+      const data = await res.json()
+      if (data.keywords && data.keywords.length > 0) {
+        setKeywords(data.keywords)
+      }
+    } catch (err) {
+      console.warn('[Keywords] Auto-suggest error:', err)
+    } finally {
+      setIsGeneratingKeywords(false)
+    }
+  }
+
+  // Handle Google OAuth return callback with real Google data
   useEffect(() => {
     const connected = searchParams.get('connected')
     const email = searchParams.get('email')
     const name = searchParams.get('name')
     const business = searchParams.get('business')
     const address = searchParams.get('address')
+    const placeId = searchParams.get('placeId')
+    const lat = searchParams.get('lat')
+    const lng = searchParams.get('lng')
+    const rating = searchParams.get('rating')
+    const reviewsCount = searchParams.get('reviewsCount')
+    const photosCount = searchParams.get('photosCount')
+    const category = searchParams.get('category')
+    const phone = searchParams.get('phone')
+    const website = searchParams.get('website')
+    const hasGbp = searchParams.get('hasGbp')
 
     if (connected === 'true') {
       if (email) setLeadEmail(email)
       if (name) setLeadName(name)
-      if (business) {
-        setBusinessName(business)
-        setSelectedPlace({
-          placeId: 'google_oauth_connected',
-          name: business,
-          address: address || 'Connected via Google Account',
-          latitude: 30.7046,
-          longitude: 76.7179,
-          rating: 4.3,
-          reviewsCount: 18,
-          category: 'Real Estate Agency',
-          photosCount: 8
-        })
-        setStep(2)
-        toast.success('Successfully connected with Google!')
+      if (phone) setLeadPhone(phone)
+      if (email || name) setGoogleConnectedUser({ email: email || '', name: name || '' })
+
+      const resolvedName = business || name || email?.split('@')[0] || ''
+      const hasResolvedPlace = Boolean(placeId || address || (hasGbp === 'true' && resolvedName))
+
+      // Case A: Google account has no managed business location and auto-search couldn't find a direct place
+      if (!hasResolvedPlace) {
+        toast.info(`Google Account Connected (${email || name})! Please confirm your business name.`)
+        if (resolvedName) {
+          setSearchQuery(resolvedName)
+        }
+        setTimeout(() => {
+          searchInputRef.current?.focus()
+        }, 500)
+        return
       }
+
+      // Case B: Business location was resolved directly or via Places API
+      const cat = cleanBusinessCategory(category || 'Local Business', resolvedName)
+      const city = extractCityFromAddress(address || '') || 'local area'
+      setBusinessName(resolvedName)
+      setBusinessAddress(address || '')
+      setPrimaryCategory(cat)
+
+      const parsedLat = lat ? parseFloat(lat) : null
+      const parsedLng = lng ? parseFloat(lng) : null
+      const parsedRating = rating ? parseFloat(rating) : null
+      const parsedReviews = reviewsCount ? parseInt(reviewsCount, 10) : null
+      const parsedPhotos = photosCount ? parseInt(photosCount, 10) : null
+
+      setSelectedPlace({
+        placeId: placeId || 'google_oauth_connected',
+        name: resolvedName,
+        address: address || '',
+        latitude: parsedLat,
+        longitude: parsedLng,
+        rating: parsedRating,
+        reviewsCount: parsedReviews,
+        category: cat,
+        photosCount: parsedPhotos,
+        phone: phone || '',
+        website: website || ''
+      })
+
+      // Tailor keywords according to real category & city
+      const lowerCat = cat.toLowerCase()
+      setKeywords([
+        `${lowerCat} near me`,
+        `best ${lowerCat} in ${city}`,
+        `top rated ${lowerCat}`
+      ])
+
+      // Fetch AI-enhanced intelligent keywords
+      loadIntelligentKeywords(cat, address || '', resolvedName)
+
+      setStep(2)
+      toast.success(`Google Account Connected: ${resolvedName}!`)
     }
   }, [searchParams])
 
@@ -135,19 +210,23 @@ export default function AuditOnboardingClient({ campaign }: AuditOnboardingClien
   }, [searchQuery])
 
   const handleSelectPlace = (place: PlaceResult) => {
+    const cat = cleanBusinessCategory(place.category, place.name)
+    const city = extractCityFromAddress(place.address) || 'local area'
     setSelectedPlace(place)
     setBusinessName(place.name)
     setBusinessAddress(place.address)
-    setPrimaryCategory(place.category)
+    setPrimaryCategory(cat)
 
     // Suggest customized keywords based on category and city
-    const city = place.address.split(',')[1]?.trim() || place.address.split(',')[0]?.trim() || 'local area'
-    const cat = place.category.toLowerCase()
+    const lowerCat = cat.toLowerCase()
     setKeywords([
-      `${cat} near me`,
-      `best ${cat} in ${city}`,
-      `top rated ${cat}`
+      `${lowerCat} near me`,
+      `best ${lowerCat} in ${city}`,
+      `top rated ${lowerCat}`
     ])
+
+    // Fetch AI-enhanced intelligent keywords in the background
+    loadIntelligentKeywords(cat, place.address, place.name)
 
     setStep(2)
   }
@@ -198,16 +277,20 @@ export default function AuditOnboardingClient({ campaign }: AuditOnboardingClien
           businessName,
           address: businessAddress || selectedPlace?.address || 'Local Region',
           placeId: selectedPlace?.placeId,
-          latitude: selectedPlace?.latitude || 30.7046,
-          longitude: selectedPlace?.longitude || 76.7179,
-          rating: selectedPlace?.rating || 4.1,
-          reviewsCount: selectedPlace?.reviewsCount || 14,
-          photosCount: selectedPlace?.photosCount || 6,
+          latitude: selectedPlace?.latitude ?? null,
+          longitude: selectedPlace?.longitude ?? null,
+          rating: selectedPlace?.rating ?? null,
+          reviewsCount: selectedPlace?.reviewsCount ?? null,
+          photosCount: selectedPlace?.photosCount ?? null,
+          phone: selectedPlace?.phone || leadPhone,
+          website: selectedPlace?.website,
           primaryCategory,
           targetKeywords: keywords,
           leadName,
-          leadEmail,
+          leadEmail: leadEmail || googleConnectedUser?.email,
           leadPhone,
+          isOwnerVerified: Boolean(googleConnectedUser?.email),
+          googleEmail: googleConnectedUser?.email || '',
           campaignSlug: campaign.slug,
           currency: campaign.target_industry === 'US' ? 'USD' : 'INR'
         })
@@ -408,16 +491,35 @@ export default function AuditOnboardingClient({ campaign }: AuditOnboardingClien
                     </span>
                   </div>
 
+                  {/* Connected Google Account Notice if no GBP listing was auto-returned */}
+                  {googleConnectedUser && (
+                    <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-3 animate-in fade-in">
+                      <div className="w-8 h-8 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-black shrink-0 mt-0.5">
+                        <Check size={16} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black uppercase text-emerald-400">Google Account Connected</span>
+                          <span className="text-xs text-slate-300 font-bold">({googleConnectedUser.email})</span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                          Signed in as <strong>{googleConnectedUser.name}</strong>. Google did not detect an active Business Profile managed under this email. <strong>Search your business name below</strong> to link it and generate your verified audit:
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Autocomplete Search Bar */}
                   <div className="relative">
                     <div className="relative">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input
+                        ref={searchInputRef}
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="e.g. Joy Grand Mohali, DLF Cyber City, Sunrise Clinic..."
-                        className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-white/5 border border-white/15 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm font-medium transition-colors"
+                        placeholder="Type your business name (e.g. Adrolls AI, DLF Cyber City, Starbucks)..."
+                        className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-white/5 border border-white/15 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm font-medium transition-colors ring-2 ring-blue-500/30"
                       />
                       {isSearching && (
                         <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-blue-400" size={18} />
@@ -472,9 +574,9 @@ export default function AuditOnboardingClient({ campaign }: AuditOnboardingClien
                   </div>
 
                   {/* Selected Business Card */}
-                  <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-between">
+                  <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black">
+                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shrink-0">
                         <Building size={20} />
                       </div>
                       <div>
@@ -482,16 +584,43 @@ export default function AuditOnboardingClient({ campaign }: AuditOnboardingClien
                         <p className="text-xs text-slate-300">{businessAddress}</p>
                       </div>
                     </div>
-                    <span className="px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-black uppercase">
-                      {primaryCategory}
-                    </span>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase">Niche:</span>
+                      <input
+                        type="text"
+                        value={primaryCategory}
+                        onChange={(e) => setPrimaryCategory(e.target.value)}
+                        placeholder="Business Category..."
+                        className="px-3 py-1.5 rounded-xl bg-white/10 border border-white/20 text-blue-300 text-xs font-bold focus:outline-none focus:border-blue-400 min-w-[200px]"
+                      />
+                    </div>
                   </div>
 
                   {/* Keyword Pills */}
                   <div className="space-y-3">
-                    <label className="text-xs font-bold text-slate-300 block uppercase tracking-wider">
-                      Geo-Grid Target Keywords ({keywords.length}/6)
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-300 block uppercase tracking-wider">
+                        Geo-Grid Target Keywords ({keywords.length}/6)
+                      </label>
+                      <button
+                        type="button"
+                        disabled={isGeneratingKeywords}
+                        onClick={() => loadIntelligentKeywords(primaryCategory, businessAddress, businessName)}
+                        className="text-[11px] text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        {isGeneratingKeywords ? (
+                          <>
+                            <Loader2 size={12} className="animate-spin" />
+                            <span>Analyzing Keywords...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={12} />
+                            <span>Regenerate with AI</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
 
                     <div className="flex flex-wrap gap-2">
                       {keywords.map((kw, i) => (
@@ -518,7 +647,7 @@ export default function AuditOnboardingClient({ campaign }: AuditOnboardingClien
                         value={newKeyword}
                         onChange={(e) => setNewKeyword(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddKeyword())}
-                        placeholder="Add custom keyword (e.g. luxury apartments mohali)..."
+                        placeholder="Add custom keyword (e.g. emergency dentist, top coffee shop, criminal lawyer)..."
                         className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-white placeholder-slate-500 text-xs font-medium focus:outline-none focus:border-blue-500"
                       />
                       <button

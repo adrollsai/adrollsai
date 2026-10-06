@@ -46,12 +46,19 @@ export async function POST(req: Request) {
     // 2. Fetch Lead Details for logging description
     const { data: lead } = await supabaseAdmin
       .from('leads')
-      .select('name, phone')
+      .select('name, phone, source, custom_fields')
       .eq('id', leadId)
       .single()
 
     const leadName = lead?.name || 'Lead'
     const leadPhone = lead?.phone || ''
+    const cf = typeof lead?.custom_fields === 'string' ? JSON.parse(lead.custom_fields || '{}') : (lead?.custom_fields || {})
+    const isTestCall = cf.skip_credit_deduction || cf.is_demo_call || cf.is_test_call || lead?.source === 'AI Call Demo' || userId === '68b55a31-a16d-454d-a20f-11adabf590b0' && cf.is_demo_call
+
+    if (isTestCall) {
+      console.log(`[BILL-CALL] 🧪 Demo/Test call detected for lead ${leadId}. Skipping credit deduction.`)
+      return NextResponse.json({ success: true, skipped: true, reason: 'Demo test call' })
+    }
 
     // 3. Query Twilio API for the call price
     let actualPriceUsd = 0

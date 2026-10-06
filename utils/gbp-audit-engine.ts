@@ -1,5 +1,6 @@
 import { generateAIAuditInsights, fetchLiveGroundedCompetitors } from './gbp-ai-auditor'
 import { GBPAuditReport } from './gbp-audit-storage'
+import { extractCityFromAddress, cleanBusinessCategory } from './gbp-address-parser'
 
 export interface RunAuditInput {
   businessName: string
@@ -21,6 +22,8 @@ export interface RunAuditInput {
   leadName?: string
   leadEmail?: string
   leadPhone?: string
+  isOwnerVerified?: boolean
+  googleEmail?: string
   agencyUserId?: string
   campaignSlug?: string
   currency?: string
@@ -47,7 +50,7 @@ export function generateGeoGrid(
   gridSize = 7,
   baseScore = 55,
   keyword = 'Primary Keyword',
-  topCompetitors: string[] = ['Prime City Properties', 'Apex Realty Hub', 'Elite Landmark Ventures']
+  topCompetitors: string[] = ['Top Local Competitor', 'Leading Area Business', 'Market Leader']
 ) {
   const pins: Array<{
     id: string
@@ -134,13 +137,77 @@ export function generateGeoGrid(
 }
 
 export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport> {
-  const centerLat = input.latitude || 30.7046 // Default Mohali / Chandigarh or fallback
-  const centerLng = input.longitude || 76.7179
+  let centerLat = input.latitude ?? null
+  let centerLng = input.longitude ?? null
+  let rating = typeof input.rating === 'number' ? input.rating : null
+  let reviewsCount = typeof input.reviewsCount === 'number' ? input.reviewsCount : null
+  let photosCount = typeof input.photosCount === 'number' ? input.photosCount : null
+  let primaryCategory = input.primaryCategory || 'Local Business'
+  let website = input.website || ''
+  let phone = input.phone || ''
 
-  const rating = input.rating || 4.1
-  const reviewsCount = input.reviewsCount ?? 14
-  const photosCount = input.photosCount ?? 6
-  const primaryCategory = input.primaryCategory || 'Real Estate Agency'
+  // Enrich with Google Places API (New) if key is available and any fields are missing
+  const placesApiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY
+  if (placesApiKey && (!centerLat || !centerLng || rating === null || reviewsCount === null)) {
+    try {
+      if (input.placeId && !input.placeId.startsWith('osm_') && !input.placeId.startsWith('demo_') && !input.placeId.startsWith('google_oauth_')) {
+        const placeRes = await fetch(`https://places.googleapis.com/v1/places/${input.placeId}`, {
+          headers: {
+            'X-Goog-Api-Key': placesApiKey,
+            'X-Goog-FieldMask': 'id,displayName,formattedAddress,location,rating,userRatingCount,primaryTypeDisplayName,photos,websiteUri,internationalPhoneNumber'
+          }
+        })
+        if (placeRes.ok) {
+          const p = await placeRes.json()
+          if (p.location?.latitude && p.location?.longitude) {
+            centerLat = p.location.latitude
+            centerLng = p.location.longitude
+          }
+          if (typeof p.rating === 'number') rating = p.rating
+          if (typeof p.userRatingCount === 'number') reviewsCount = p.userRatingCount
+          if (Array.isArray(p.photos)) photosCount = p.photos.length
+          if (p.primaryTypeDisplayName?.text && primaryCategory === 'Local Business') primaryCategory = p.primaryTypeDisplayName.text
+          if (p.websiteUri && !website) website = p.websiteUri
+          if (p.internationalPhoneNumber && !phone) phone = p.internationalPhoneNumber
+        }
+      } else if (input.businessName) {
+        const searchRes = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': placesApiKey,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.photos,places.internationalPhoneNumber,places.websiteUri'
+          },
+          body: JSON.stringify({ textQuery: `${input.businessName} ${input.address}`.trim() })
+        })
+        if (searchRes.ok) {
+          const sData = await searchRes.json()
+          const p = sData.places?.[0]
+          if (p) {
+            if (p.location?.latitude && p.location?.longitude && (!centerLat || !centerLng)) {
+              centerLat = p.location.latitude
+              centerLng = p.location.longitude
+            }
+            if (typeof p.rating === 'number' && rating === null) rating = p.rating
+            if (typeof p.userRatingCount === 'number' && reviewsCount === null) reviewsCount = p.userRatingCount
+            if (Array.isArray(p.photos) && photosCount === null) photosCount = p.photos.length
+            if (p.primaryTypeDisplayName?.text && primaryCategory === 'Local Business') primaryCategory = p.primaryTypeDisplayName.text
+            if (p.websiteUri && !website) website = p.websiteUri
+            if (p.internationalPhoneNumber && !phone) phone = p.internationalPhoneNumber
+          }
+        }
+      }
+    } catch (gErr) {
+      console.warn('[GBP Audit Engine] Error enriching from Google Places API:', gErr)
+    }
+  }
+
+  // Ensure resolved values are clean numbers
+  const safeCenterLat = centerLat ?? 28.6139
+  const safeCenterLng = centerLng ?? 77.2090
+  const safeRating = rating ?? 0
+  const safeReviewsCount = reviewsCount ?? 0
+  const safePhotosCount = photosCount ?? 0
   const secondaryCategories = input.secondaryCategories || []
   const currency = input.currency || 'INR'
 
@@ -171,35 +238,37 @@ export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport>
 
   // Fallback to high-verisimilitude local competitors if live search fails
   if (competitors.length === 0) {
+    const city = extractCityFromAddress(input.address) || 'Local Area'
+    const cleanCat = cleanBusinessCategory(primaryCategory, input.businessName)
     competitors = [
       {
-        name: `${input.address.split(',')[0] || 'City'} Prime Properties & Estates`,
+        name: `${city} Premier ${cleanCat}`,
         rating: 4.8,
-        reviewsCount: Math.max(85, reviewsCount * 5),
+        reviewsCount: Math.max(85, safeReviewsCount * 3),
         rank: 1,
         distanceKm: 0.9,
-        photoUrl: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=300&auto=format&fit=crop&q=80',
-        address: `Sector 70, ${input.address.split(',')[0] || 'Downtown'}`,
-        advantage: '120+ 5-star reviews and weekly photo updates'
+        photoUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=300&auto=format&fit=crop&q=80',
+        address: `${city} Central Area`,
+        advantage: 'High review velocity and 100% profile completeness'
       },
       {
-        name: `Apex Landmark Realty Hub`,
+        name: `Apex ${cleanCat} Hub`,
         rating: 4.7,
-        reviewsCount: Math.max(54, reviewsCount * 3),
+        reviewsCount: Math.max(54, safeReviewsCount * 2),
         rank: 2,
         distanceKm: 1.4,
-        photoUrl: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=300&auto=format&fit=crop&q=80',
-        address: `Phase 7, Industrial Area`,
+        photoUrl: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=300&auto=format&fit=crop&q=80',
+        address: `${city} Commercial District`,
         advantage: 'Optimized secondary categories & instant booking button'
       },
       {
-        name: `Elite Square Consultants`,
+        name: `Elite ${cleanCat} Group`,
         rating: 4.6,
-        reviewsCount: Math.max(42, reviewsCount * 2),
+        reviewsCount: Math.max(42, Math.round(safeReviewsCount * 1.5)),
         rank: 3,
         distanceKm: 2.1,
-        photoUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=300&auto=format&fit=crop&q=80',
-        address: `Airport Road, Sector 82`,
+        photoUrl: 'https://images.unsplash.com/photo-1497215728101-856f4ea42174?w=300&auto=format&fit=crop&q=80',
+        address: `${city} Business District`,
         advantage: 'Keyword-optimized business description and high CTR'
       }
     ]
@@ -232,7 +301,7 @@ export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport>
     description: secondaryCategories.length > 0
       ? `You have ${secondaryCategories.length} secondary categories added.`
       : 'No secondary categories configured. You are missing out on 60%+ of related discovery searches.',
-    recommendation: 'Add 3 to 5 relevant secondary categories (e.g., Commercial Real Estate, Real Estate Consultant, Appraiser).',
+    recommendation: `Add 3 to 5 relevant secondary categories related to "${primaryCategory}" to capture adjacent discovery searches.`,
     details: 'Secondary categories allow your business to appear for adjacent intent searches.'
   })
 
@@ -290,25 +359,25 @@ export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport>
   })
 
   // 7. Photos & Media Volume
-  const hasEnoughPhotos = photosCount >= 20
+  const hasEnoughPhotos = safePhotosCount >= 20
   checklistItems.push({
     id: 'photos_media',
     title: 'Photos Volume & Recency',
-    status: hasEnoughPhotos ? 'pass' : photosCount >= 8 ? 'warning' : 'fail',
-    score: hasEnoughPhotos ? 10 : photosCount >= 8 ? 6 : 2,
-    description: `Currently ${photosCount} photos detected. Competitors in your tier average 45+ images.`,
+    status: hasEnoughPhotos ? 'pass' : safePhotosCount >= 8 ? 'warning' : 'fail',
+    score: hasEnoughPhotos ? 10 : safePhotosCount >= 8 ? 6 : 2,
+    description: `Currently ${safePhotosCount} photos detected. Competitors in your tier average 45+ images.`,
     recommendation: 'Upload at least 3-5 geotagged high-resolution photos each week showing your office, projects, and team.',
     details: 'Google data shows businesses with 100+ photos receive 520% more calls and 1,065% more website clicks.'
   })
 
   // 8. Google Reviews & Response Rate
-  const hasGoodReviews = reviewsCount >= 30 && rating >= 4.5
+  const hasGoodReviews = safeReviewsCount >= 30 && safeRating >= 4.5
   checklistItems.push({
     id: 'reviews_reputation',
     title: 'Review Count & 100% Response Rate',
-    status: hasGoodReviews ? 'pass' : reviewsCount >= 10 ? 'warning' : 'fail',
-    score: hasGoodReviews ? 10 : reviewsCount >= 10 ? 5 : 2,
-    description: `${reviewsCount} reviews with an average of ${rating}★. Several reviews remain unanswered.`,
+    status: hasGoodReviews ? 'pass' : safeReviewsCount >= 10 ? 'warning' : 'fail',
+    score: hasGoodReviews ? 10 : safeReviewsCount >= 10 ? 5 : 2,
+    description: `${safeReviewsCount} reviews with an average of ${safeRating}★. Several reviews remain unanswered.`,
     recommendation: 'Implement an automated review generation campaign and reply to 100% of reviews with keyword-rich answers.',
     details: 'Review velocity and keyword presence inside review texts are top 3 Google 3-Pack factors.'
   })
@@ -340,8 +409,8 @@ export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport>
 
   // Calculate Overall Score (0 - 100)
   const totalChecklistScore = checklistItems.reduce((acc, item) => acc + item.score, 0)
-  const reviewBonus = Math.min(10, Math.floor(reviewsCount / 5))
-  const ratingBonus = rating >= 4.5 ? 5 : 0
+  const reviewBonus = Math.min(10, Math.floor(safeReviewsCount / 5))
+  const ratingBonus = safeRating >= 4.5 ? 5 : 0
   const overallScore = Math.min(94, Math.max(32, totalChecklistScore - 15 + reviewBonus + ratingBonus))
 
   let scoreGrade = 'Needs Improvement'
@@ -350,7 +419,6 @@ export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport>
   else if (overallScore < 45) scoreGrade = 'Critical'
 
   // Estimated Monthly Revenue Loss Calculation
-  // Real Estate: avg 25-45 lost calls/leads * ₹1,500 - ₹5,000 value per high intent lead
   const estimatedMonthlyLoss = currency === 'USD'
     ? Math.round((100 - overallScore) * 22) + 400
     : Math.round(((100 - overallScore) * 450) + 15000)
@@ -365,8 +433,8 @@ export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport>
     // Keyword score modifier
     const kwBaseScore = Math.max(25, overallScore - (idx * 6))
     const grid = generateGeoGrid(
-      centerLat,
-      centerLng,
+      safeCenterLat,
+      safeCenterLng,
       5, // 5km radius
       7, // 7x7 = 49 pins
       kwBaseScore,
@@ -389,10 +457,10 @@ export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport>
     businessName: input.businessName,
     category: primaryCategory,
     address: input.address,
-    phone: input.phone,
-    website: input.website,
-    rating,
-    reviewsCount,
+    phone: phone || input.phone,
+    website: website || input.website,
+    rating: safeRating,
+    reviewsCount: safeReviewsCount,
     keywords,
     competitors,
     currency
@@ -451,14 +519,14 @@ export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport>
     business_name: input.businessName,
     place_id: input.placeId,
     address: input.address,
-    phone: input.phone,
-    website: input.website,
+    phone: phone || input.phone,
+    website: website || input.website,
     primary_category: primaryCategory,
     secondary_categories: secondaryCategories,
-    latitude: centerLat,
-    longitude: centerLng,
-    rating,
-    reviews_count: reviewsCount,
+    latitude: safeCenterLat,
+    longitude: safeCenterLng,
+    rating: safeRating,
+    reviews_count: safeReviewsCount,
     lead_name: input.leadName,
     lead_email: input.leadEmail,
     lead_phone: input.leadPhone,
@@ -472,6 +540,8 @@ export async function runGBPAudit(input: RunAuditInput): Promise<GBPAuditReport>
     action_plan: actionPlan,
     target_keywords: targetKeywordsData,
     heatmaps,
+    is_owner_verified: Boolean(input.isOwnerVerified),
+    owner_email: input.googleEmail || input.leadEmail,
     share_token: shareToken,
     status: 'completed',
     created_at: new Date().toISOString()

@@ -163,10 +163,24 @@ async function handleRequest(req: Request) {
             authToken = bi?.voice_vobiz_auth_token || authToken;
         } catch (pErr) {}
 
+        let voiceName = searchParams.get('voiceName') || 'Aoede'
+        if (effectiveCampaignId) {
+            try {
+                const { data: camp } = await supabaseAdmin
+                    .from('voice_campaigns')
+                    .select('audience_filter')
+                    .eq('id', effectiveCampaignId)
+                    .maybeSingle()
+                if (camp?.audience_filter?.voice_name) {
+                    voiceName = camp.audience_filter.voice_name
+                }
+            } catch (cErr) {}
+        }
+
         const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'
         const statusCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}`
         const recordCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}&event=recording`
-        const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&profileId=${effectiveProfileId}${effectiveCampaignId ? `&campaignId=${effectiveCampaignId}` : ''}&telephony=vobiz${isInbound ? '&inbound=true' : ''}${callUuid ? `&callUuid=${callUuid}` : ''}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
+        const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&profileId=${effectiveProfileId}${effectiveCampaignId ? `&campaignId=${effectiveCampaignId}` : ''}&telephony=vobiz${isInbound ? '&inbound=true' : ''}${callUuid ? `&callUuid=${callUuid}` : ''}&voiceName=${encodeURIComponent(voiceName)}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
 
         // Trigger non-blocking call recording on active call via Vobiz REST API (dual-layer recording guarantee)
         if (callUuid) {

@@ -2,36 +2,75 @@ import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
+  const mode = searchParams.get('mode')
+  if (mode === 'keywords') {
+    const category = searchParams.get('category') || 'Local Business'
+    const city = searchParams.get('city') || ''
+    const business = searchParams.get('business') || ''
+    try {
+      const { fetchIntelligentKeywords } = await import('@/utils/gbp-ai-auditor')
+      const keywords = await fetchIntelligentKeywords(category, city, business)
+      return NextResponse.json({ success: true, keywords })
+    } catch (err: any) {
+      console.warn('[Keywords suggest error]:', err)
+      return NextResponse.json({
+        success: true,
+        keywords: [
+          `${category.toLowerCase()} near me`,
+          city ? `best ${category.toLowerCase()} in ${city}` : `best ${category.toLowerCase()}`,
+          `top rated ${category.toLowerCase()}`
+        ]
+      })
+    }
+  }
+
   const query = searchParams.get('q')?.trim() || ''
 
   if (!query || query.length < 2) {
     return NextResponse.json({ results: [] })
   }
 
+  const googleApiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY
+
   try {
-    // 1. If Google Places API key is configured, search Google Places
-    const googleApiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY
+    // 1. Google Places API (New) - High accuracy live Google Maps search
     if (googleApiKey) {
-      const placesUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${googleApiKey}`
-      const res = await fetch(placesUrl)
-      const data = await res.json()
-      if (data.results && data.results.length > 0) {
-        const formatted = data.results.slice(0, 8).map((p: any) => ({
-          placeId: p.place_id,
-          name: p.name,
-          address: p.formatted_address,
-          latitude: p.geometry?.location?.lat,
-          longitude: p.geometry?.location?.lng,
-          rating: p.rating || 4.2,
-          reviewsCount: p.user_ratings_total || 12,
-          category: (p.types && p.types[0]?.replace(/_/g, ' ')) || 'Local Business',
-          photosCount: p.photos?.length ? p.photos.length * 3 : 8
-        }))
-        return NextResponse.json({ results: formatted })
+      const placesUrl = 'https://places.googleapis.com/v1/places:searchText'
+      const res = await fetch(placesUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': googleApiKey,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.photos,places.internationalPhoneNumber,places.websiteUri'
+        },
+        body: JSON.stringify({ textQuery: query })
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (data.places && data.places.length > 0) {
+          const formatted = data.places.slice(0, 8).map((p: any) => ({
+            placeId: p.id,
+            name: p.displayName?.text || query,
+            address: p.formattedAddress || '',
+            latitude: p.location?.latitude || null,
+            longitude: p.location?.longitude || null,
+            rating: typeof p.rating === 'number' ? p.rating : null,
+            reviewsCount: typeof p.userRatingCount === 'number' ? p.userRatingCount : 0,
+            category: p.primaryTypeDisplayName?.text || 'Local Business',
+            photosCount: Array.isArray(p.photos) ? p.photos.length : 0,
+            phone: p.internationalPhoneNumber || '',
+            website: p.websiteUri || ''
+          }))
+          return NextResponse.json({ results: formatted, source: 'google_places_api_new' })
+        }
+      } else {
+        const errText = await res.text()
+        console.warn('[Places API New] Error response:', res.status, errText)
       }
     }
 
-    // 2. OpenStreetMap Nominatim for free worldwide search with coordinates
+    // 2. OpenStreetMap Nominatim fallback ONLY if Google API key is absent or fails
     const nominatimUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=6`
     const res = await fetch(nominatimUrl, {
       headers: {
@@ -48,43 +87,20 @@ export async function GET(request: Request) {
           address: item.display_name,
           latitude: parseFloat(item.lat),
           longitude: parseFloat(item.lon),
-          rating: parseFloat((4.0 + ((idx % 8) * 0.1)).toFixed(1)),
-          reviewsCount: 8 + (idx * 9),
+          rating: null,
+          reviewsCount: null,
           category: item.type?.replace(/_/g, ' ') || 'Commercial Business',
-          photosCount: 6 + (idx * 2)
+          photosCount: null,
+          phone: '',
+          website: ''
         }))
-        return NextResponse.json({ results: formatted })
+        return NextResponse.json({ results: formatted, source: 'osm' })
       }
     }
   } catch (err) {
     console.warn('[GBP Places Search] Error searching places:', err)
   }
 
-  // 3. Fallback smart synthetic results for instant demo experience
-  const fallbackResults = [
-    {
-      placeId: 'demo_1',
-      name: query,
-      address: `${query}, Sector 82, Mohali, Punjab 160055, India`,
-      latitude: 30.7046,
-      longitude: 76.7179,
-      rating: 4.1,
-      reviewsCount: 16,
-      category: 'Real Estate Agency',
-      photosCount: 7
-    },
-    {
-      placeId: 'demo_2',
-      name: `${query} Branch`,
-      address: `${query}, Connaught Place, New Delhi 110001, India`,
-      latitude: 28.6315,
-      longitude: 77.2167,
-      rating: 4.4,
-      reviewsCount: 38,
-      category: 'Professional Services',
-      photosCount: 14
-    }
-  ]
-
-  return NextResponse.json({ results: fallbackResults })
+  return NextResponse.json({ results: [] })
 }
+

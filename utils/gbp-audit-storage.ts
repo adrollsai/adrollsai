@@ -114,6 +114,8 @@ export interface GBPAuditReport {
   google_refresh_token?: string
   google_account_id?: string
   google_location_id?: string
+  is_owner_verified?: boolean
+  owner_email?: string
   share_token: string
   status?: string
   created_at?: string
