@@ -16,7 +16,10 @@ export async function GET(request: Request) {
 
     const clientId = process.env.GOOGLE_CLIENT_ID
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${redirectUriOrigin}/api/auth/google/callback`
+    const isLocal = redirectUriOrigin && (redirectUriOrigin.includes('localhost') || redirectUriOrigin.includes('127.0.0.1'))
+    const redirectUri = isLocal
+      ? `${redirectUriOrigin}/api/auth/google/callback`
+      : (process.env.GOOGLE_REDIRECT_URI || 'https://app.nobogent.com/api/auth/google/callback')
 
     if (!clientId || !clientSecret) {
       return new Response("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is not configured.", { status: 500 })
@@ -220,7 +223,8 @@ export async function GET(request: Request) {
       })
 
       const targetSlug = campaignSlug || 'nobogent'
-      return NextResponse.redirect(`${redirectUriOrigin}/audit/${targetSlug}?${auditParams.toString()}`)
+      const returnOrigin = redirectUriOrigin || 'https://app.nobogent.com'
+      return NextResponse.redirect(`${returnOrigin}/audit/${targetSlug}?${auditParams.toString()}`)
     }
 
     // --- Standard Google Calendar Flow ---
@@ -249,7 +253,8 @@ export async function GET(request: Request) {
     console.log(`[Google OAuth Callback] Successfully linked calendar for User ID: ${userId}`)
 
     // Redirect user back to dashboard profile Connection Settings page
-    return NextResponse.redirect(`${redirectUriOrigin}/dashboard/profile`)
+    const returnOrigin = redirectUriOrigin || 'https://app.nobogent.com'
+    return NextResponse.redirect(`${returnOrigin}/dashboard/profile`)
 
   } catch (err: any) {
     console.error("[Google OAuth Callback] Fatal Error:", err)

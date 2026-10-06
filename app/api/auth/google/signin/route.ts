@@ -13,7 +13,11 @@ export async function GET(request: Request) {
     return new Response("GOOGLE_CLIENT_ID environment variable is not configured.", { status: 500 })
   }
 
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${new URL(request.url).origin}/api/auth/google/callback`
+  const origin = new URL(request.url).origin
+  const isLocal = origin.includes('localhost') || origin.includes('127.0.0.1')
+  const redirectUri = isLocal
+    ? `${origin}/api/auth/google/callback`
+    : (process.env.GOOGLE_REDIRECT_URI || 'https://app.nobogent.com/api/auth/google/callback')
 
   const scopes = [
     'https://www.googleapis.com/auth/calendar.events',

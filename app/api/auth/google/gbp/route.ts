@@ -11,7 +11,10 @@ export async function GET(request: Request) {
   }
 
   // Use the standard authorized redirect URI
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${origin}/api/auth/google/callback`
+  const isLocal = origin.includes('localhost') || origin.includes('127.0.0.1')
+  const redirectUri = isLocal
+    ? `${origin}/api/auth/google/callback`
+    : (process.env.GOOGLE_REDIRECT_URI || 'https://app.nobogent.com/api/auth/google/callback')
 
   const scopes = [
     'https://www.googleapis.com/auth/business.manage',
