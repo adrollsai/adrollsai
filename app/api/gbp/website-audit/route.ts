@@ -16,9 +16,9 @@ export async function POST(req: NextRequest) {
     const targetUserId = impersonateId || session.user.id
 
     const body = await req.json()
-    const profile = await getGBPOptimizationProfile(targetUserId)
+    const profile = (await getGBPOptimizationProfile(targetUserId)) || ({} as any)
 
-    const rawUrl = body.url || profile.website_url
+    const rawUrl = body.url || profile.website_url || profile.custom_domain
     if (!rawUrl) {
       return NextResponse.json({ error: 'Please enter a valid website URL to scan' }, { status: 400 })
     }

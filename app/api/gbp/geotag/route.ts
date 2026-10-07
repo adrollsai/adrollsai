@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     const lngNum = Number(longitude)
 
     // Pull profile if businessName or keywords not provided
-    const profile = await getGBPOptimizationProfile(targetUserId)
+    const profile = (await getGBPOptimizationProfile(targetUserId)) || ({} as any)
     const businessName = inputBusinessName || profile.business_name || 'Verified Local Business'
     const keywordsArr = Array.isArray(inputKeywords)
       ? inputKeywords

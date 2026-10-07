@@ -373,6 +373,8 @@ export async function getGBPOptimizationData(userId: string): Promise<GBPOptimiz
   return null
 }
 
+export const getGBPOptimizationProfile = getGBPOptimizationData
+
 export async function saveGBPOptimizationData(userId: string, data: GBPOptimizationData): Promise<void> {
   const supabase = getSupabaseAdmin()
 
