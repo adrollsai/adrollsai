@@ -21,6 +21,10 @@ export async function GET(request: Request, { params }: RouteProps) {
         }
         const slug = resolvedParams.slug
 
+        if (slug === 'review') {
+            return NextResponse.redirect(new URL(`/review/${encodeURIComponent(identifier)}`, request.url))
+        }
+
         console.log(`[Shared Route GET] Starting diagnostics... identifier="${identifier}", slug="${slug}"`)
 
         // 1. Resolve business profile

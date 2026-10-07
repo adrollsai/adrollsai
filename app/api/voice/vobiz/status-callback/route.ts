@@ -193,6 +193,20 @@ async function handleStatusCallback(req: Request) {
                     }
                 }
 
+                // If call was unanswered / failed / busy, trigger Missed Call Text Back with booking link
+                if (['no_answer', 'failed', 'busy'].includes(updatedStatus || '') && lead?.user_id && lead?.phone) {
+                    import('@/utils/missed-call-textback').then(({ triggerMissedCallTextBack }) => {
+                        triggerMissedCallTextBack({
+                            supabaseAdmin,
+                            leadId: lead.id,
+                            profileId: lead.user_id,
+                            callerPhone: lead.phone,
+                            callerName: lead.name,
+                            reason: `Vobiz Call (${updatedStatus})`
+                        }).catch(e => console.warn('[VOBIZ STATUS] Missed call textback error:', e))
+                    }).catch(() => {})
+                }
+
                 // If call finished (completed, failed, or no_answer)
                 if (['completed', 'no_answer', 'failed'].includes(updatedStatus || '') && lead) {
                     let cf: any = lead.custom_fields || {}

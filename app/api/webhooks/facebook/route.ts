@@ -1506,6 +1506,23 @@ export async function POST(request: Request) {
                                       const isConnectExpertClick = buttonReplyId === 'connect_expert' || buttonReplyId === 'get_nobogent_system' || /connect with expert|connect expert|speak with expert|talk to expert|call expert|get nobogent system|nobogent system/i.test(messageText);
                                       if (isConnectExpertClick) {
                                           console.log(`[Flow] Lead ${cleanFrom} clicked Connect with Expert! Sending alert to admin.`);
+
+                                          // Tag lead with connect_expert_clicked in CRM
+                                          if (latestLead?.id) {
+                                              try {
+                                                  let existingCf: any = latestLead.custom_fields || {}
+                                                  if (typeof existingCf === 'string') {
+                                                      try { existingCf = JSON.parse(existingCf) } catch(e) { existingCf = {} }
+                                                  }
+                                                  const updatedCf = { ...existingCf, connect_expert_clicked: true, requested_callback: true }
+                                                  await supabaseAdmin
+                                                      .from('leads')
+                                                      .update({ custom_fields: updatedCf })
+                                                      .eq('id', latestLead.id);
+                                              } catch (cfErr) {
+                                                  console.warn('[Flow] Failed to tag connect_expert_clicked on lead:', cfErr);
+                                              }
+                                          }
                                           
                                           // 1. Reply to lead on WhatsApp
                                           const leadReplyText = isInternalNobogentAccount

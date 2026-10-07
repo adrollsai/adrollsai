@@ -161,7 +161,11 @@ export async function GET(req: Request) {
             kycData,
             credits: profile?.credits || 0,
             hasClaimedVobizNumber: !!vobizNumber,
-            claimedNumbers: Array.from(claimedNumbersSet)
+            claimedNumbers: Array.from(claimedNumbersSet),
+            missed_call_textback_enabled: (profile as any)?.missed_call_textback_enabled ?? biKyc?.missed_call_textback_enabled ?? false,
+            missed_call_platform: (profile as any)?.missed_call_platform || biKyc?.missed_call_platform || 'twilio',
+            missed_call_flow_type: (profile as any)?.missed_call_flow_type || biKyc?.missed_call_flow_type || 'booking_link',
+            missed_call_custom_template: (profile as any)?.missed_call_custom_template || biKyc?.missed_call_custom_template || ''
         })
     } catch (e: any) {
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
@@ -197,7 +201,11 @@ export async function POST(req: Request) {
             voice_name,
             voice_twilio_sid,
             voice_twilio_token,
-            voice_twilio_number
+            voice_twilio_number,
+            missed_call_textback_enabled,
+            missed_call_platform,
+            missed_call_flow_type,
+            missed_call_custom_template
         } = body
 
         // Fetch current profile to merge business_info safely
@@ -216,7 +224,6 @@ export async function POST(req: Request) {
                     bi = currentProfile.business_info
                 }
             } catch (e) {
-                // If business_info was a plain markdown string, preserve it
                 bi = { _raw_text: currentProfile.business_info }
             }
         }
@@ -226,10 +233,21 @@ export async function POST(req: Request) {
             bi.voice_telephony_provider = telephonyProvider
         }
 
+        // Store missed call settings in business_info JSON as well
+        if (missed_call_textback_enabled !== undefined) bi.missed_call_textback_enabled = !!missed_call_textback_enabled
+        if (missed_call_platform !== undefined) bi.missed_call_platform = missed_call_platform
+        if (missed_call_flow_type !== undefined) bi.missed_call_flow_type = missed_call_flow_type
+        if (missed_call_custom_template !== undefined) bi.missed_call_custom_template = missed_call_custom_template
+
         const updatePayload: any = {
             auto_call_new_leads: !!auto_call_new_leads,
             business_info: JSON.stringify(bi)
         }
+
+        if (missed_call_textback_enabled !== undefined) updatePayload.missed_call_textback_enabled = !!missed_call_textback_enabled
+        if (missed_call_platform !== undefined) updatePayload.missed_call_platform = missed_call_platform
+        if (missed_call_flow_type !== undefined) updatePayload.missed_call_flow_type = missed_call_flow_type
+        if (missed_call_custom_template !== undefined) updatePayload.missed_call_custom_template = missed_call_custom_template
 
         if (voice_provider) updatePayload.voice_provider = voice_provider
         if (voice_name) updatePayload.voice_name = voice_name

@@ -93,12 +93,25 @@ export async function POST(req: Request) {
         if (isMachine) {
             console.log(`[TWIML BRIDGE] Answering machine/voicemail detected: ${answeredBy} for lead ${leadId}. Hanging up.`);
             
-            // Get current retry count
+            // Get current retry count and lead contact details
             const { data: leadData } = await supabaseAdmin
                 .from('leads')
-                .select('voice_call_retry_count, notes')
+                .select('voice_call_retry_count, notes, phone, name')
                 .eq('id', leadId)
                 .single();
+
+            if (profileId && leadData?.phone) {
+                import('@/utils/missed-call-textback').then(({ triggerMissedCallTextBack }) => {
+                    triggerMissedCallTextBack({
+                        supabaseAdmin,
+                        leadId,
+                        profileId,
+                        callerPhone: leadData.phone,
+                        callerName: leadData.name,
+                        reason: `Voicemail/Machine (${answeredBy})`
+                    }).catch(e => console.warn('[TWIML BRIDGE] Missed call textback error:', e))
+                }).catch(() => {})
+            }
 
             const currentRetries = leadData?.voice_call_retry_count || 0;
             if (currentRetries < 3) {

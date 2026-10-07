@@ -1005,6 +1005,21 @@ export default function AnalyticsPage() {
       return (Date.now() - d.getTime()) <= 86400000
     })
 
+    // "Connect with Expert" high-intent leads calculation
+    const connectExpertLeadsList = filteredLeads.filter(l => {
+      let cf = l.custom_fields
+      if (typeof cf === 'string') {
+        try { cf = JSON.parse(cf) } catch (e) {}
+      }
+      if (cf?.connect_expert_clicked === true || cf?.talk_to_expert_clicked === true || cf?.requested_callback === true || cf?.hand_raise === true) return true
+      const notes = (l.notes || '').toLowerCase()
+      if (notes.includes('connect with expert') || notes.includes('call with expert') || notes.includes('talk to an expert') || notes.includes('connect_expert') || notes.includes('talk_expert')) return true
+      const src = (l.source || '').toLowerCase()
+      if (src.includes('expert') || src.includes('connect with expert')) return true
+      return false
+    })
+    const connectExpertCount = connectExpertLeadsList.length
+
     // Duplicate phone check
     const phoneMap: Record<string, any[]> = {}
     filteredLeads.forEach(l => {
@@ -1031,6 +1046,8 @@ export default function AnalyticsPage() {
       unassignedCount: unassignedLeadsList.length,
       duplicateCount: duplicateLeadsList.length,
       followUpCount: followUpLeadsList.length,
+      connectExpertCount,
+      connectExpertLeadsList,
       reopenedLeadsList,
       unassignedLeadsList,
       duplicateLeadsList,
@@ -2147,7 +2164,7 @@ export default function AnalyticsPage() {
             <div className="space-y-6 animate-in fade-in duration-200">
               
               {/* TOP INTERACTIVE KPI CARDS */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 sm:gap-4">
                 
                 {/* Total Leads */}
                 <div 
@@ -2162,6 +2179,24 @@ export default function AnalyticsPage() {
                     </div>
                   </div>
                   <span className="text-[10px] font-bold text-blue-600 flex items-center gap-1">Click to view list &rarr;</span>
+                </div>
+
+                {/* Connect with Expert */}
+                <div 
+                  onClick={() => openLeadsDrilldown('Connect with Expert Requests', `High-intent leads that requested to connect with an expert (${stats.connectExpertCount})`, stats.connectExpertLeadsList)}
+                  className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1 cursor-pointer hover:border-emerald-500 hover:shadow-md transition-all group"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Connect Expert</span>
+                    <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[8px] font-black uppercase">Hot</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-black text-emerald-600 group-hover:text-emerald-700">{stats.connectExpertCount}</span>
+                    <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 group-hover:scale-110 transition-transform">
+                      <Sparkles size={16} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">Click to view list &rarr;</span>
                 </div>
 
                 {/* Reopened */}

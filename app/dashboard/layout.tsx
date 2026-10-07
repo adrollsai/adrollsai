@@ -43,6 +43,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const supabase = createClient()
   const [isAuthorized, setIsAuthorized] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(true)
+  const [subscriptionExpiredAlert, setSubscriptionExpiredAlert] = useState(false)
+  const [dismissExpiredAlert, setDismissExpiredAlert] = useState(false)
 
   useEffect(() => {
     const enforcePaywall = async () => {
@@ -99,12 +101,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const userEmail = userProfile?.email?.toLowerCase() || ''
       const isWhitelisted = whitelistedEmails.includes(userEmail) || (parentEmail && whitelistedEmails.includes(parentEmail))
 
-      // Dynamic chronological check
-      if (subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date() && !isWhitelisted) {
+      // Check if validity has expired
+      const isExpiredChronologically = !!(subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date())
+      if (isExpiredChronologically || subscriptionStatus === 'expired') {
+        setSubscriptionExpiredAlert(true)
+      }
+
+      // Dynamic chronological check (non-whitelisted users get set to expired)
+      if (isExpiredChronologically && !isWhitelisted) {
           subscriptionStatus = 'expired'
       }
 
-      const isPaid = subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro' || subscriptionStatus === 'enterprise'
+      const isPaid = isWhitelisted || subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro' || subscriptionStatus === 'enterprise'
       const isBillingPage = pathname === '/dashboard/billing'
       const isProfilePage = pathname === '/dashboard/profile'
       const isOnboardingPage = pathname === '/dashboard/onboarding'
@@ -229,6 +237,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Global Plan and Add-on limit checks */}
         <QuotaManager />
+
+        {/* Subscription Expired Alert Banner (Non-blocking for whitelisted clients) */}
+        {subscriptionExpiredAlert && !dismissExpiredAlert && pathname !== '/dashboard/billing' && (
+          <div className="bg-gradient-to-r from-amber-50 via-amber-100/50 to-orange-50 border-b border-amber-200 px-4 py-2.5 text-center flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs animate-in slide-in-from-top duration-300">
+            <div className="flex items-center gap-2 text-xs font-semibold text-amber-900 mx-auto sm:mx-0">
+              <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+              <span>
+                <strong>Plan Validity Expired:</strong> Your monthly plan validity has ended. Your account access remains active, but please recharge to keep automated services running smoothly.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 mx-auto sm:mx-0">
+              <button 
+                onClick={() => router.push('/dashboard/billing')}
+                className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all active:scale-95 shadow-sm cursor-pointer whitespace-nowrap"
+              >
+                Recharge Now
+              </button>
+              <button
+                onClick={() => setDismissExpiredAlert(true)}
+                className="text-amber-700 hover:text-amber-900 px-2 py-0.5 rounded text-xs font-bold cursor-pointer transition-colors"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         {!acceptedTerms && pathname !== '/dashboard/profile' && (
           <div className="bg-red-50 border-b border-red-100 px-4 py-3 text-center flex flex-col sm:flex-row items-center justify-center gap-3 shadow-sm animate-in slide-in-from-top duration-300">

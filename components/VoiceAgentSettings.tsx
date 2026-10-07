@@ -85,6 +85,12 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
     voice_name: 'Aoede'
   })
 
+  // Missed Call Text Back States
+  const [missedCallEnabled, setMissedCallEnabled] = useState(false)
+  const [missedCallPlatform, setMissedCallPlatform] = useState<'whatsapp' | 'twilio'>('whatsapp')
+  const [missedCallFlowType, setMissedCallFlowType] = useState<'booking_link' | 'whatsapp_interactive' | 'custom_message'>('booking_link')
+  const [missedCallTemplate, setMissedCallTemplate] = useState('')
+
   // KYC States
   const [kycStatus, setKycStatus] = useState<'not_submitted' | 'pending' | 'verified' | 'rejected'>('not_submitted')
   const [kycType, setKycType] = useState<'individual' | 'business'>('individual')
@@ -498,6 +504,18 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
         if (resData.claimedNumbers) {
           setClaimedNumbers(resData.claimedNumbers)
         }
+        if (resData.missed_call_textback_enabled !== undefined) {
+          setMissedCallEnabled(!!resData.missed_call_textback_enabled)
+        }
+        if (resData.missed_call_platform) {
+          setMissedCallPlatform(resData.missed_call_platform)
+        }
+        if (resData.missed_call_flow_type) {
+          setMissedCallFlowType(resData.missed_call_flow_type)
+        }
+        if (resData.missed_call_custom_template !== undefined) {
+          setMissedCallTemplate(resData.missed_call_custom_template || '')
+        }
       }
     } catch (err: any) {
       console.error('[VOICE SETTINGS] Fetch Error:', err)
@@ -780,7 +798,11 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
           voice_name: settings.voice_name,
           voice_twilio_sid: settings.voice_twilio_sid,
           voice_twilio_token: settings.voice_twilio_token,
-          voice_twilio_number: settings.voice_twilio_number
+          voice_twilio_number: settings.voice_twilio_number,
+          missed_call_textback_enabled: missedCallEnabled,
+          missed_call_platform: missedCallPlatform,
+          missed_call_flow_type: missedCallFlowType,
+          missed_call_custom_template: missedCallTemplate
         })
       })
       const data = await res.json()
@@ -1615,6 +1637,182 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Missed Call Text Back & Instant Booking Flow */}
+                <div className="space-y-4 border border-slate-200 bg-white p-5 rounded-3xl shadow-xs">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
+                        <MessageCircle size={18} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">Missed Call Text Back Engine</h4>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                          Instantly send a booking follow-up whenever an inbound call is unanswered or busy
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMissedCallEnabled(!missedCallEnabled)}
+                      className="text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {missedCallEnabled ? (
+                        <ToggleRight className="w-10 h-10 text-emerald-600 cursor-pointer" />
+                      ) : (
+                        <ToggleLeft className="w-10 h-10 text-slate-300 cursor-pointer" />
+                      )}
+                    </button>
+                  </div>
+
+                  {missedCallEnabled && (
+                    <div className="space-y-4 pt-1 animate-in fade-in duration-200">
+                      {/* Platform Selection: WhatsApp vs Twilio SMS */}
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-2">
+                          Delivery Platform
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setMissedCallPlatform('whatsapp')}
+                            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
+                              missedCallPlatform === 'whatsapp'
+                                ? 'bg-emerald-50/60 border-emerald-300 ring-2 ring-emerald-500/20'
+                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            <span className="p-2 bg-emerald-600 text-white rounded-xl shrink-0 mt-0.5">
+                              <MessageCircle size={14} />
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-black text-slate-900">WhatsApp Business API</span>
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-full">98% Open Rate</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-0.5 font-medium leading-normal">
+                                Sends formatted WhatsApp message with instant calendar booking button.
+                              </p>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setMissedCallPlatform('twilio')}
+                            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
+                              missedCallPlatform === 'twilio'
+                                ? 'bg-indigo-50/60 border-indigo-300 ring-2 ring-indigo-500/20'
+                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            <span className="p-2 bg-indigo-600 text-white rounded-xl shrink-0 mt-0.5">
+                              <Phone size={14} />
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-black text-slate-900">Twilio Direct SMS</span>
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded-full">Universal Carrier</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-0.5 font-medium leading-normal">
+                                Standard carrier SMS text message sent to caller's mobile device.
+                              </p>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Appointment Booking Flow Selection */}
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-2">
+                          Appointment Booking Flow Type
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => setMissedCallFlowType('booking_link')}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              missedCallFlowType === 'booking_link'
+                                ? 'bg-blue-50 border-blue-300 text-blue-900'
+                                : 'bg-slate-50 border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            <span className="text-xs font-extrabold block">Direct Booking Link</span>
+                            <span className="text-[10px] text-slate-500 block mt-0.5 font-medium">Includes caller's unique calendar appointment link</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setMissedCallFlowType('whatsapp_interactive')}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              missedCallFlowType === 'whatsapp_interactive'
+                                ? 'bg-blue-50 border-blue-300 text-blue-900'
+                                : 'bg-slate-50 border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            <span className="text-xs font-extrabold block">Interactive Button Flow</span>
+                            <span className="text-[10px] text-slate-500 block mt-0.5 font-medium">WhatsApp CTA button triggers automated appointment bot</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setMissedCallFlowType('custom_message')}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              missedCallFlowType === 'custom_message'
+                                ? 'bg-blue-50 border-blue-300 text-blue-900'
+                                : 'bg-slate-50 border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            <span className="text-xs font-extrabold block">Custom Template</span>
+                            <span className="text-[10px] text-slate-500 block mt-0.5 font-medium">Write custom message with dynamic placeholders</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Custom Template Textarea (if custom_message is active) */}
+                      {missedCallFlowType === 'custom_message' && (
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-400 uppercase block">Custom Text Template</label>
+                          <textarea
+                            rows={3}
+                            value={missedCallTemplate}
+                            onChange={(e) => setMissedCallTemplate(e.target.value)}
+                            placeholder="Hi {{caller_name}}, sorry we missed your call to {{business_name}}! Book a quick time with us here: {{booking_link}}"
+                            className="w-full bg-slate-50 focus:bg-white border border-slate-200 p-3 rounded-xl text-xs font-medium outline-none focus:border-indigo-400"
+                          />
+                          <div className="flex flex-wrap items-center gap-1.5 text-[9px] text-slate-400">
+                            <span>Available tags:</span>
+                            <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 font-mono">{"{{business_name}}"}</span>
+                            <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 font-mono">{"{{caller_name}}"}</span>
+                            <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 font-mono">{"{{booking_link}}"}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Live Message Preview */}
+                      <div className="bg-slate-100/70 p-3.5 rounded-2xl border border-slate-200/60">
+                        <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">
+                          Caller Live Preview ({missedCallPlatform === 'whatsapp' ? 'WhatsApp' : 'SMS'})
+                        </span>
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs text-xs text-slate-700 leading-relaxed font-medium">
+                          {missedCallFlowType === 'custom_message' && missedCallTemplate
+                            ? missedCallTemplate
+                                .replace('{{business_name}}', 'Our Office')
+                                .replace('{{caller_name}}', 'there')
+                                .replace('{{booking_link}}', 'https://app.nobogent.com/book/...')
+                            : "Hi there! Sorry we missed your call. We'd love to connect with you. Please tap below to pick a convenient time for a quick callback or appointment: https://app.nobogent.com/book/..."
+                          }
+                          {missedCallPlatform === 'whatsapp' && (
+                            <div className="mt-2.5 pt-2 border-t border-slate-100 flex justify-center">
+                              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg">
+                                📅 Book Appointment Now
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-4">

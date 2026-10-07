@@ -89,9 +89,23 @@ export async function POST(req: Request) {
         if (dbStatus === 'failed') {
             const { data: leadData } = await supabaseAdmin
                 .from('leads')
-                .select('voice_call_retry_count, notes, user_id')
+                .select('voice_call_retry_count, notes, user_id, phone, name')
                 .eq('id', leadId)
                 .single()
+
+            // Trigger Missed Call Text Back (SMS/WhatsApp with booking flow)
+            if (leadData?.user_id && leadData?.phone) {
+                import('@/utils/missed-call-textback').then(({ triggerMissedCallTextBack }) => {
+                    triggerMissedCallTextBack({
+                        supabaseAdmin,
+                        leadId,
+                        profileId: leadData.user_id,
+                        callerPhone: leadData.phone,
+                        callerName: leadData.name,
+                        reason: callStatus || 'Unanswered/Busy'
+                    }).catch(e => console.warn('[TWILIO STATUS CALLBACK] Missed call textback error:', e))
+                }).catch(() => {})
+            }
 
             const currentRetries = leadData?.voice_call_retry_count || 0
             if (currentRetries < 3) {
