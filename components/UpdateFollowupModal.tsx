@@ -63,6 +63,11 @@ export function formatFriendlyDateWithDay(dateStr?: string | null): string | nul
   }
 }
 
+export const formatLocalIso = (d: Date): string => {
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 interface UpdateFollowupModalProps {
   isOpen: boolean
   onClose: () => void
@@ -185,11 +190,10 @@ export default function UpdateFollowupModal({
   }, [isOpen, properties])
 
   const getTomorrowDefaultIso = (baseDate = new Date()) => {
-    const pad = (n: number) => n.toString().padStart(2, '0')
     const tomorrow = new Date(baseDate)
     tomorrow.setDate(tomorrow.getDate() + 1)
     tomorrow.setHours(11, 0, 0, 0)
-    return `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T${pad(tomorrow.getHours())}:${pad(tomorrow.getMinutes())}`
+    return formatLocalIso(tomorrow)
   }
 
   useEffect(() => {
@@ -218,11 +222,6 @@ export default function UpdateFollowupModal({
 
       // Default dates
       const now = new Date()
-      const formatLocalIso = (d: Date) => {
-        const pad = (n: number) => n.toString().padStart(2, '0')
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-      }
-      
       setFollowupDate(formatLocalIso(now))
       
       // Intelligent Next Action Date: Preserve existing action date if available, or default to tomorrow 11 AM!
@@ -759,10 +758,36 @@ export default function UpdateFollowupModal({
                         type="button"
                         onClick={() => {
                           const t = new Date()
+                          t.setHours(t.getHours() + 2)
+                          setNextActionDate(formatLocalIso(t))
+                          setNoFutureFollowup(false)
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors cursor-pointer"
+                        title="Set reminder for 2 hours from now"
+                      >
+                        +2 Hours
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = new Date()
+                          t.setHours(t.getHours() + 6)
+                          setNextActionDate(formatLocalIso(t))
+                          setNoFutureFollowup(false)
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors cursor-pointer"
+                        title="Set reminder for 6 hours from now"
+                      >
+                        +6 Hours
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = new Date()
                           t.setDate(t.getDate() + 1)
                           t.setHours(11, 0, 0, 0)
-                          const pad = (n: number) => n.toString().padStart(2, '0')
-                          setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                          setNextActionDate(formatLocalIso(t))
+                          setNoFutureFollowup(false)
                         }}
                         className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
                       >
@@ -774,8 +799,8 @@ export default function UpdateFollowupModal({
                           const t = new Date()
                           t.setDate(t.getDate() + 2)
                           t.setHours(11, 0, 0, 0)
-                          const pad = (n: number) => n.toString().padStart(2, '0')
-                          setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                          setNextActionDate(formatLocalIso(t))
+                          setNoFutureFollowup(false)
                         }}
                         className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
                       >
@@ -787,8 +812,8 @@ export default function UpdateFollowupModal({
                           const t = new Date()
                           t.setDate(t.getDate() + 7)
                           t.setHours(11, 0, 0, 0)
-                          const pad = (n: number) => n.toString().padStart(2, '0')
-                          setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                          setNextActionDate(formatLocalIso(t))
+                          setNoFutureFollowup(false)
                         }}
                         className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
                       >
@@ -800,8 +825,8 @@ export default function UpdateFollowupModal({
                           const t = new Date()
                           t.setMonth(t.getMonth() + 1)
                           t.setHours(11, 0, 0, 0)
-                          const pad = (n: number) => n.toString().padStart(2, '0')
-                          setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                          setNextActionDate(formatLocalIso(t))
+                          setNoFutureFollowup(false)
                         }}
                         className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors cursor-pointer"
                         title="Set followup for 1 month later"
@@ -814,8 +839,8 @@ export default function UpdateFollowupModal({
                           const t = new Date()
                           t.setMonth(t.getMonth() + 2)
                           t.setHours(11, 0, 0, 0)
-                          const pad = (n: number) => n.toString().padStart(2, '0')
-                          setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                          setNextActionDate(formatLocalIso(t))
+                          setNoFutureFollowup(false)
                         }}
                         className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors cursor-pointer"
                         title="Set followup for 2 months later"
@@ -828,8 +853,8 @@ export default function UpdateFollowupModal({
                           const t = new Date()
                           t.setMonth(t.getMonth() + 3)
                           t.setHours(11, 0, 0, 0)
-                          const pad = (n: number) => n.toString().padStart(2, '0')
-                          setNextActionDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`)
+                          setNextActionDate(formatLocalIso(t))
+                          setNoFutureFollowup(false)
                         }}
                         className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors cursor-pointer"
                         title="Set followup for 3 months later"

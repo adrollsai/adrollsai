@@ -319,6 +319,7 @@ export async function POST(
 
         const leadNotes = `[Opening Remarks]: Integrated from Housing.com\n${projectName ? `Project: ${projectName}\n` : ''}${city ? `Location: ${city}\n` : ''}${propertyType ? `Type: ${propertyType}\n` : ''}${budget ? `Budget: ${budget}\n` : ''}${message ? `Query: ${message}\n` : ''}`
 
+        const sourceDetail = projectName || message || (propertyType ? `${propertyType}${city ? ` - ${city}` : ''}` : '') || 'Housing.com Enquiry'
         let savedLeadId: string | null = null;
         let actionMessage = '';
 
@@ -335,6 +336,9 @@ export async function POST(
                 custom_fields: updatedCustomFields,
                 updated_at: new Date().toISOString()
             }
+            if (!existingLeadToReopen.ad_name) {
+                updateData.ad_name = sourceDetail
+            }
             if (assignedAgentId) {
                 updateData.assigned_to = assignedAgentId
             }
@@ -345,7 +349,7 @@ export async function POST(
                 lead_id: existingLeadToReopen.id,
                 user_id: assignedAgentId || profile.id,
                 action_type: 'REOPENED',
-                description: `Lead re-enquired via Housing.com. Reset to New Lead.`
+                description: `Lead re-enquired via Housing.com.\nSource Details: ${sourceDetail}\nReset to New Lead.`
             })
 
             actionMessage = 'Existing lead reopened into Fresh pipeline from Housing.com.'
@@ -357,6 +361,7 @@ export async function POST(
                 phone: phone || null,
                 email: email || null,
                 source: 'Housing.com',
+                ad_name: sourceDetail,
                 pipeline_stage: 'New Lead',
                 status: 'New Lead',
                 notes: leadNotes,
@@ -383,7 +388,7 @@ export async function POST(
                     lead_id: savedLeadId,
                     user_id: assignedAgentId || profile.id,
                     action_type: 'CREATED',
-                    description: `Lead created from Housing.com integration.`
+                    description: `Lead created from Housing.com integration.\nSource Details: ${sourceDetail}`
                 })
             }
 

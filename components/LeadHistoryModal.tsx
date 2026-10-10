@@ -279,7 +279,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
         item.action_type === 'LEAD_CREATED' || 
         item.action_type === 'LEAD_IMPORT' || 
         item.id === 'foundational_lead_created' ||
-        (item.description && item.description.includes('Lead Created from'))
+        (item.description && item.description.toLowerCase().includes('lead created from'))
       )
 
       if (!hasCreationEvent) {
@@ -288,7 +288,42 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
         creationDesc += `Contact no : ${lead.phone || 'N/A'}\n`
         if (lead.email) creationDesc += `Email : ${lead.email}\n`
         creationDesc += `Lead Source : ${lead.source || 'Facebook'}\n`
-        creationDesc += `Source Details : ${lead.ad_name || lead.form_name || lead.campaign_name || 'Meta Ad'}\n`
+
+        const sourceLower = (lead.source || '').toLowerCase()
+        const isHousing = sourceLower.includes('housing')
+        const is99Acres = sourceLower.includes('99acres')
+        const isMagicbricks = sourceLower.includes('magicbricks')
+
+        let resolvedSourceDetails = lead.ad_name || lead.form_name || lead.campaign_name || ''
+        let resolvedActor = 'System / Meta Ad'
+
+        if (isHousing) {
+          resolvedActor = 'System / Housing.com'
+          if (!resolvedSourceDetails) {
+            resolvedSourceDetails = cf?.project_name || cf?.message || (cf?.property_type ? `${cf.property_type}${cf.city ? ` - ${cf.city}` : ''}` : '') || 'Housing.com Enquiry'
+          }
+        } else if (is99Acres) {
+          resolvedActor = 'System / 99acres'
+          if (!resolvedSourceDetails) {
+            resolvedSourceDetails = cf?.project_name || '99acres Enquiry'
+          }
+        } else if (isMagicbricks) {
+          resolvedActor = 'System / Magicbricks'
+          if (!resolvedSourceDetails) {
+            resolvedSourceDetails = cf?.project_name || 'Magicbricks Enquiry'
+          }
+        } else if (lead.source && !['facebook', 'meta', 'instagram'].includes(sourceLower)) {
+          resolvedActor = `System / ${lead.source}`
+          if (!resolvedSourceDetails) {
+            resolvedSourceDetails = lead.source
+          }
+        }
+
+        if (!resolvedSourceDetails) {
+          resolvedSourceDetails = 'Meta Ad'
+        }
+
+        creationDesc += `Source Details : ${resolvedSourceDetails}\n`
         creationDesc += `Stage : ${(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'New Lead')}`
         
         if (cf?.opening_comments) {
@@ -301,7 +336,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
           action_type: 'LEAD_CREATED',
           description: creationDesc,
           details: null,
-          actor_name: 'System / Meta Ad',
+          actor_name: resolvedActor,
           user_id: lead.assigned_to || lead.user_id,
           created_at: lead.created_at || new Date().toISOString()
         })
@@ -460,7 +495,27 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   <div><strong>Contact no :</strong> {lead.phone || 'N/A'}</div>
                   {lead.email && <div><strong>Email :</strong> {lead.email}</div>}
                   <div><strong>Lead Source :</strong> {lead.source || 'Facebook'}</div>
-                  <div><strong>Source Details :</strong> {lead.ad_name || lead.form_name || lead.campaign_name || 'Meta Ad'}</div>
+                  <div><strong>Source Details :</strong> {(() => {
+                    const sourceLower = (lead.source || '').toLowerCase()
+                    const isHousing = sourceLower.includes('housing')
+                    const is99Acres = sourceLower.includes('99acres')
+                    const isMagicbricks = sourceLower.includes('magicbricks')
+
+                    let cf: any = lead.custom_fields
+                    if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) { cf = null } }
+
+                    let resolvedSourceDetails = lead.ad_name || lead.form_name || lead.campaign_name || ''
+                    if (isHousing) {
+                      return resolvedSourceDetails || cf?.project_name || cf?.message || (cf?.property_type ? `${cf.property_type}${cf.city ? ` - ${cf.city}` : ''}` : '') || 'Housing.com Enquiry'
+                    } else if (is99Acres) {
+                      return resolvedSourceDetails || cf?.project_name || '99acres Enquiry'
+                    } else if (isMagicbricks) {
+                      return resolvedSourceDetails || cf?.project_name || 'Magicbricks Enquiry'
+                    } else if (lead.source && !['facebook', 'meta', 'instagram'].includes(sourceLower)) {
+                      return resolvedSourceDetails || lead.source
+                    }
+                    return resolvedSourceDetails || 'Meta Ad'
+                  })()}</div>
                   <div><strong>Stage :</strong> {(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'New Lead')}</div>
                   {(() => {
                     let cf: any = lead.custom_fields
@@ -516,7 +571,14 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   if (desc.startsWith('🎙️ CALL_JSON:')) {
                     return 'Nobogent AI Voice'
                   }
-                  if (it.action_type === 'REOPENED' || desc.includes('Facebook Ad Submission') || desc.includes('Lead Created from')) {
+                  if (it.action_type === 'REOPENED' || desc.includes('Facebook Ad Submission') || desc.toLowerCase().includes('lead created from')) {
+                    const sourceLower = (lead.source || '').toLowerCase()
+                    if (sourceLower.includes('housing')) return 'System / Housing.com'
+                    if (sourceLower.includes('99acres')) return 'System / 99acres'
+                    if (sourceLower.includes('magicbricks')) return 'System / Magicbricks'
+                    if (lead.source && !['facebook', 'meta', 'instagram'].includes(sourceLower)) {
+                      return `System / ${lead.source}`
+                    }
                     return 'System / Meta Ad'
                   }
                   if (desc.includes('WhatsApp welcome') || desc.includes('Video Welcome') || desc.includes('Instant WhatsApp')) {

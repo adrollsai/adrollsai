@@ -6,6 +6,7 @@ import {
   AlertCircle, MessageSquare, ThumbsUp, XCircle, Calendar, Loader2 
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatLocalIso } from '@/components/UpdateFollowupModal'
 
 interface CallFeedbackModalProps {
   isOpen: boolean
@@ -213,6 +214,56 @@ export default function CallFeedbackModal({
                 onChange={(e) => setFollowupDate(e.target.value)}
                 className="w-full bg-white dark:bg-slate-800 border border-amber-500/30 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500/30"
               />
+              <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = new Date()
+                    t.setHours(t.getHours() + 2)
+                    setFollowupDate(formatLocalIso(t))
+                  }}
+                  className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-100/70 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300/60 dark:border-amber-700 transition-colors cursor-pointer"
+                  title="Set reminder for 2 hours from now"
+                >
+                  +2 Hours
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = new Date()
+                    t.setHours(t.getHours() + 6)
+                    setFollowupDate(formatLocalIso(t))
+                  }}
+                  className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-100/70 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300/60 dark:border-amber-700 transition-colors cursor-pointer"
+                  title="Set reminder for 6 hours from now"
+                >
+                  +6 Hours
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = new Date()
+                    t.setDate(t.getDate() + 1)
+                    t.setHours(11, 0, 0, 0)
+                    setFollowupDate(formatLocalIso(t))
+                  }}
+                  className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                >
+                  Tomorrow 11 AM
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = new Date()
+                    t.setDate(t.getDate() + 2)
+                    t.setHours(11, 0, 0, 0)
+                    setFollowupDate(formatLocalIso(t))
+                  }}
+                  className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                >
+                  +2 Days
+                </button>
+              </div>
             </div>
           )}
 
