@@ -66,7 +66,8 @@ export async function hasEnoughCredits(
       'rajivkumaraggarwal81@gmail.com',
       'gnrhomes97@gmail.com',
       'alpinenesthomes01@gmail.com',
-      'pawan@pipixel.io'
+      'pawan@pipixel.io',
+      'umangassociates5@gmail.com'
     ]
     const isClientWhitelisted = whitelistedClients.includes(profile.email || '')
     const isSubscriptionActive = ['active', 'trialing', 'pro', 'growth', 'enterprise'].includes(subscriptionStatus) || isClientWhitelisted
