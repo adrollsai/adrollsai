@@ -1,5 +1,3 @@
-// public/custom-sw.js
-
 // 1. Force Immediate Activation (The "Greedy" Fix)
 self.addEventListener('install', (event) => {
   // This tells the browser to throw out the old SW and use this one NOW
@@ -7,8 +5,29 @@ self.addEventListener('install', (event) => {
 })
 
 self.addEventListener('activate', (event) => {
-  // This tells the SW to control the page immediately, not wait for reload
-  event.waitUntil(clients.claim()) 
+  // Clear stale Next.js chunk caches so PWAs immediately load the latest deployed code
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (
+            cacheName.includes('next-static-js') ||
+            cacheName.includes('pages-rsc') ||
+            cacheName.includes('next-data')
+          ) {
+            console.log('[SW] Clearing stale Next.js cache:', cacheName)
+            return caches.delete(cacheName)
+          }
+        })
+      )
+    }).then(() => clients.claim())
+  )
+})
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
 })
 
 // 2. Handle Push Event

@@ -1323,7 +1323,7 @@ export default function AnalyticsPage() {
 
         if (!nextActionDateStr) return
 
-        const rawActType = (cf?.next_action_type || l.next_action_type || '').trim().toLowerCase()
+        const rawActType = String(cf?.next_action_type || l.next_action_type || '').trim().toLowerCase()
         let actTypeKey = 'Call'
         if (rawActType === 'revisit' || rawActType.includes('revisit')) actTypeKey = 'Revisit'
         else if (rawActType.includes('closing')) actTypeKey = 'Closing Meeting'
@@ -2470,6 +2470,7 @@ export default function AnalyticsPage() {
               </div>
 
               {/* Employee Cards Grid (Matching Screenshot from Previous CRM) */}
+              <CRMErrorBoundary fallbackTitle="Action Manager Interruption Prevented">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {actionManagerMatrix.rows.map(row => (
                   <div key={row.rep.id} className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
@@ -2564,6 +2565,7 @@ export default function AnalyticsPage() {
                   </div>
                 ))}
               </div>
+              </CRMErrorBoundary>
 
             </div>
           )}
@@ -3761,21 +3763,21 @@ export default function AnalyticsPage() {
               const filtered = drilldownModal.leads.filter(l => {
                 // 1. Stage filter
                 if (drilldownStageFilter !== 'all') {
-                  const st = (l.pipeline_stage || l.status || 'New Lead').toLowerCase()
-                  if (st !== drilldownStageFilter.toLowerCase()) return false
+                  const st = String(l.pipeline_stage || l.status || 'New Lead').toLowerCase()
+                  if (st !== String(drilldownStageFilter).toLowerCase()) return false
                 }
 
                 // 2. Search query filter
                 if (drilldownModal.searchFilter.trim()) {
                   const q = drilldownModal.searchFilter.toLowerCase().trim()
-                  const nameMatch = (l.name || '').toLowerCase().includes(q)
-                  const phoneMatch = (l.phone || '').includes(q)
-                  const emailMatch = (l.email || '').toLowerCase().includes(q)
-                  const stageMatch = (l.pipeline_stage || '').toLowerCase().includes(q)
-                  const statusMatch = (l.status || '').toLowerCase().includes(q)
-                  const notesMatch = (l.notes || '').toLowerCase().includes(q)
-                  const campMatch = (l.campaign_name || l.ad_name || '').toLowerCase().includes(q)
-                  const formMatch = (l.form_name || l.source || '').toLowerCase().includes(q)
+                  const nameMatch = String(l.name || '').toLowerCase().includes(q)
+                  const phoneMatch = String(l.phone || '').includes(q)
+                  const emailMatch = String(l.email || '').toLowerCase().includes(q)
+                  const stageMatch = String(l.pipeline_stage || '').toLowerCase().includes(q)
+                  const statusMatch = String(l.status || '').toLowerCase().includes(q)
+                  const notesMatch = String(l.notes || '').toLowerCase().includes(q)
+                  const campMatch = String(l.campaign_name || l.ad_name || '').toLowerCase().includes(q)
+                  const formMatch = String(l.form_name || l.source || '').toLowerCase().includes(q)
                   if (!nameMatch && !phoneMatch && !emailMatch && !stageMatch && !statusMatch && !notesMatch && !campMatch && !formMatch) {
                     return false
                   }
@@ -3928,7 +3930,7 @@ export default function AnalyticsPage() {
                 }
 
                 if (drilldownNextActionType !== 'ALL') {
-                  const rawActType = (cf?.next_action_type || l.next_action_type || l.last_followup_type || 'Call').trim().toLowerCase()
+                  const rawActType = String(cf?.next_action_type || l.next_action_type || l.last_followup_type || 'Call').trim().toLowerCase()
                   let actType = 'Call'
                   if (rawActType === 'revisit' || rawActType.includes('revisit')) actType = 'Revisit'
                   else if (rawActType.includes('closing')) actType = 'Closing Meeting'
@@ -3939,20 +3941,20 @@ export default function AnalyticsPage() {
                   else if (rawActType.includes('call')) actType = 'Call'
                   else actType = 'Call'
 
-                  if (actType.toLowerCase() !== drilldownNextActionType.toLowerCase()) return false
+                  if (actType.toLowerCase() !== String(drilldownNextActionType).toLowerCase()) return false
                 }
 
                 // 8. Campaign Filter
                 if (drilldownCampaign) {
-                  const campTarget = drilldownCampaign.toLowerCase().trim()
-                  const campName = resolveLeadCampaign(l).toLowerCase().trim()
+                  const campTarget = String(drilldownCampaign).toLowerCase().trim()
+                  const campName = String(resolveLeadCampaign(l) || '').toLowerCase().trim()
                   if (campName !== campTarget && !campName.includes(campTarget)) return false
                 }
 
                 // 9. Lead Form / Source Filter
                 if (drilldownForm) {
-                  const formTarget = drilldownForm.toLowerCase().trim()
-                  const formName = resolveLeadFormOrSource(l).toLowerCase().trim()
+                  const formTarget = String(drilldownForm).toLowerCase().trim()
+                  const formName = String(resolveLeadFormOrSource(l) || '').toLowerCase().trim()
                   if (formName !== formTarget && !formName.includes(formTarget)) return false
                 }
 
@@ -4554,175 +4556,180 @@ export default function AnalyticsPage() {
         lead={followupLead}
         onClose={() => setFollowupLead(null)}
         onSuccess={(updatedFields) => {
-          if (followupLead) {
-            const updatedId = followupLead.id
-            if (updatedFields) {
-              const existingCf = parseCustomFields(followupLead.custom_fields)
-              const updatedCf = parseCustomFields(updatedFields.custom_fields)
-              const mergedUpdatedLead = { 
-                ...followupLead, 
-                ...updatedFields, 
-                custom_fields: { 
-                  ...existingCf, 
-                  ...updatedCf 
-                } 
-              }
+          try {
+            if (followupLead) {
+              const updatedId = followupLead.id
+              if (updatedFields) {
+                const existingCf = parseCustomFields(followupLead.custom_fields)
+                const updatedCf = parseCustomFields(updatedFields.custom_fields)
+                const mergedUpdatedLead = { 
+                  ...followupLead, 
+                  ...updatedFields, 
+                  custom_fields: { 
+                    ...existingCf, 
+                    ...updatedCf 
+                  } 
+                }
 
-              // 1. Update master leads list
-              setLeads(prev => prev.map((l: any) => l.id === updatedId ? mergedUpdatedLead : l))
+                // 1. Update master leads list
+                setLeads(prev => prev.map((l: any) => l.id === updatedId ? mergedUpdatedLead : l))
 
-              // 2. Dynamically evaluate if the lead still belongs in the open drilldown modal
-              let newTotalPages = 1
-              setDrilldownModal(prev => {
-                if (!prev || !prev.isOpen) return prev
+                // 2. Dynamically evaluate if the lead still belongs in the open drilldown modal
+                let newTotalPages = 1
+                setDrilldownModal(prev => {
+                  if (!prev || !prev.isOpen) return prev
 
-                // Helper to check if updated lead still satisfies the drilldown bucket
-                const shouldLeadStay = (l: any, title?: string, subtitle?: string): boolean => {
-                  const tLower = ((title || '') + ' ' + (subtitle || '')).toLowerCase()
+                  // Helper to check if updated lead still satisfies the drilldown bucket
+                  const shouldLeadStay = (l: any, title?: string, subtitle?: string): boolean => {
+                    const tLower = (String(title || '') + ' ' + String(subtitle || '')).toLowerCase()
 
-                  let cf: any = parseCustomFields(l.custom_fields)
+                    let cf: any = parseCustomFields(l.custom_fields)
 
-                  const stageLower = (l.pipeline_stage || l.status || '').trim().toLowerCase()
-                  const isLostOrWon = ['won', 'closed', 'dealer', 'lost/ni', 'lost', 'plan postponed', 'already purchased', 'different requirement', 'unqualified'].includes(stageLower) ||
-                    stageLower.includes('not interested') || stageLower.includes('lost') || stageLower.includes('junk') || stageLower.includes('dealer')
+                    const stageLower = String(l.pipeline_stage || l.status || '').trim().toLowerCase()
+                    const isLostOrWon = ['won', 'closed', 'dealer', 'lost/ni', 'lost', 'plan postponed', 'already purchased', 'different requirement', 'unqualified'].includes(stageLower) ||
+                      stageLower.includes('not interested') || stageLower.includes('lost') || stageLower.includes('junk') || stageLower.includes('dealer')
 
-                  // In Action Manager (Today, Pending, Scheduled), Lost or Won leads must not remain
-                  if (isLostOrWon && (tLower.includes('today') || tLower.includes('pending') || tLower.includes('schedule') || tLower.includes('action manager'))) {
-                    return false
-                  }
+                    // In Action Manager (Today, Pending, Scheduled), Lost or Won leads must not remain
+                    if (isLostOrWon && (tLower.includes('today') || tLower.includes('pending') || tLower.includes('schedule') || tLower.includes('action manager'))) {
+                      return false
+                    }
 
-                  // In Fresh Leads drilldown modal: If lead was assigned a next action OR has non-fresh stage, IT MUST NEVER STAY!
-                  if (tLower.includes('fresh')) {
-                    const hasNext = Boolean(l.next_followup || cf?.next_action_date || l.next_action_date)
-                    if (hasNext) return false
-                    const st = (l.pipeline_stage || l.status || '').trim()
-                    if (st && !isFreshStageName(st)) return false
-                    if (categorizeLeadStage(l, configuredStages) !== 'fresh') return false
+                    // In Fresh Leads drilldown modal: If lead was assigned a next action OR has non-fresh stage, IT MUST NEVER STAY!
+                    if (tLower.includes('fresh')) {
+                      const hasNext = Boolean(l.next_followup || cf?.next_action_date || l.next_action_date)
+                      if (hasNext) return false
+                      const st = String(l.pipeline_stage || l.status || '').trim()
+                      if (st && !isFreshStageName(st)) return false
+                      if (categorizeLeadStage(l, configuredStages) !== 'fresh') return false
+                      return true
+                    }
+
+                    let todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
+                    if (profile?.timezone) {
+                      try {
+                        todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: profile.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+                      } catch (e) {}
+                    }
+
+                    const getLocalDateStr = (dateVal: any): string | null => {
+                      if (!dateVal) return null
+                      let d: Date | null = null
+                      if (typeof dateVal === 'string' && dateVal.includes('-') && dateVal.split('-')[0].length === 2) {
+                        const parts = dateVal.split(' ')
+                        const dateParts = parts[0].split('-')
+                        d = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}T${parts[1] || '00:00'}:00`)
+                      } else {
+                        d = new Date(dateVal)
+                      }
+                      if (!d || isNaN(d.getTime())) return null
+                      if (profile?.timezone) {
+                        try {
+                          return new Intl.DateTimeFormat('en-CA', { timeZone: profile.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+                        } catch (e) {}
+                      }
+                      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                    }
+
+                    const nextActionDateStr = getLocalDateStr(l.next_followup || cf?.next_action_date || l.booked_time)
+
+                    // 1. TODAY ACTIONS: must have next action date strictly equal to today
+                    if (tLower.includes('today')) {
+                      if (!nextActionDateStr || nextActionDateStr !== todayStr) {
+                        return false
+                      }
+                    }
+
+                    // 2. PENDING ACTIONS: must have overdue next action date in the past
+                    if (tLower.includes('pending')) {
+                      if (!nextActionDateStr || nextActionDateStr >= todayStr) {
+                        return false
+                      }
+                    }
+
+                    // 3. SCHEDULED ACTIONS: must have future next action date
+                    if (tLower.includes('schedule') && (tLower.includes('action') || tLower.includes('scheduled'))) {
+                      if (!nextActionDateStr || nextActionDateStr <= todayStr) {
+                        return false
+                      }
+                    }
+
+                    // 4. ACTION TYPE SPECIFICITY (e.g. Today Call vs Today Visit)
+                    const rawActType = String(cf?.next_action_type || l.next_action_type || '').trim().toLowerCase()
+                    let actTypeKey = 'Call'
+                    if (rawActType === 'revisit' || rawActType.includes('revisit')) actTypeKey = 'Revisit'
+                    else if (rawActType.includes('closing')) actTypeKey = 'Closing Meeting'
+                    else if (rawActType.includes('home')) actTypeKey = 'Home Meeting'
+                    else if (rawActType === 'visit' || rawActType === 'site visit') actTypeKey = 'Visit'
+                    else actTypeKey = 'Call'
+
+                    if (tLower.includes('today call') || tLower.includes('pending call') || tLower.includes('scheduled call')) {
+                      if (actTypeKey !== 'Call') return false
+                    } else if (tLower.includes('today visit') || tLower.includes('pending visit') || tLower.includes('scheduled visit')) {
+                      if (actTypeKey !== 'Visit') return false
+                    } else if (tLower.includes('today revisit') || tLower.includes('pending revisit') || tLower.includes('scheduled revisit')) {
+                      if (actTypeKey !== 'Revisit') return false
+                    } else if (tLower.includes('today closing meeting') || tLower.includes('pending closing meeting') || tLower.includes('scheduled closing meeting')) {
+                      if (actTypeKey !== 'Closing Meeting') return false
+                    } else if (tLower.includes('today home meeting') || tLower.includes('pending home meeting') || tLower.includes('scheduled home meeting')) {
+                      if (actTypeKey !== 'Home Meeting') return false
+                    }
+
+                    // 5. STAGE SPECIFIC DRILLDOWNS
+                    if (tLower.includes('visit planned') && !tLower.includes('matrix')) {
+                      if (l.pipeline_stage !== 'Visit Planned') return false
+                    } else if (tLower.includes('visit done')) {
+                      if (l.pipeline_stage !== 'Visit Done') return false
+                    } else if (tLower.includes('meeting planned')) {
+                      if (l.pipeline_stage !== 'Meeting Planned') return false
+                    } else if (tLower.includes('meeting done')) {
+                      if (l.pipeline_stage !== 'Meeting Done') return false
+                    }
+
                     return true
                   }
 
-                  let todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
-                  if (profile?.timezone) {
-                    try {
-                      todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: profile.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
-                    } catch (e) {}
-                  }
+                  const stillBelongs = shouldLeadStay(mergedUpdatedLead, prev.title, prev.subtitle)
 
-                  const getLocalDateStr = (dateVal: any): string | null => {
-                    if (!dateVal) return null
-                    let d: Date | null = null
-                    if (typeof dateVal === 'string' && dateVal.includes('-') && dateVal.split('-')[0].length === 2) {
-                      const parts = dateVal.split(' ')
-                      const dateParts = parts[0].split('-')
-                      d = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}T${parts[1] || '00:00'}:00`)
-                    } else {
-                      d = new Date(dateVal)
-                    }
-                    if (!d || isNaN(d.getTime())) return null
-                    if (profile?.timezone) {
-                      try {
-                        return new Intl.DateTimeFormat('en-CA', { timeZone: profile.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
-                      } catch (e) {}
-                    }
-                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-                  }
-
-                  const nextActionDateStr = getLocalDateStr(l.next_followup || cf?.next_action_date || l.booked_time)
-
-                  // 1. TODAY ACTIONS: must have next action date strictly equal to today
-                  if (tLower.includes('today')) {
-                    if (!nextActionDateStr || nextActionDateStr !== todayStr) {
-                      return false
-                    }
-                  }
-
-                  // 2. PENDING ACTIONS: must have overdue next action date in the past
-                  if (tLower.includes('pending')) {
-                    if (!nextActionDateStr || nextActionDateStr >= todayStr) {
-                      return false
-                    }
-                  }
-
-                  // 3. SCHEDULED ACTIONS: must have future next action date
-                  if (tLower.includes('schedule') && (tLower.includes('action') || tLower.includes('scheduled'))) {
-                    if (!nextActionDateStr || nextActionDateStr <= todayStr) {
-                      return false
-                    }
-                  }
-
-                  // 4. ACTION TYPE SPECIFICITY (e.g. Today Call vs Today Visit)
-                  const rawActType = (cf?.next_action_type || l.next_action_type || '').trim().toLowerCase()
-                  let actTypeKey = 'Call'
-                  if (rawActType === 'revisit' || rawActType.includes('revisit')) actTypeKey = 'Revisit'
-                  else if (rawActType.includes('closing')) actTypeKey = 'Closing Meeting'
-                  else if (rawActType.includes('home')) actTypeKey = 'Home Meeting'
-                  else if (rawActType === 'visit' || rawActType === 'site visit') actTypeKey = 'Visit'
-                  else actTypeKey = 'Call'
-
-                  if (tLower.includes('today call') || tLower.includes('pending call') || tLower.includes('scheduled call')) {
-                    if (actTypeKey !== 'Call') return false
-                  } else if (tLower.includes('today visit') || tLower.includes('pending visit') || tLower.includes('scheduled visit')) {
-                    if (actTypeKey !== 'Visit') return false
-                  } else if (tLower.includes('today revisit') || tLower.includes('pending revisit') || tLower.includes('scheduled revisit')) {
-                    if (actTypeKey !== 'Revisit') return false
-                  } else if (tLower.includes('today closing meeting') || tLower.includes('pending closing meeting') || tLower.includes('scheduled closing meeting')) {
-                    if (actTypeKey !== 'Closing Meeting') return false
-                  } else if (tLower.includes('today home meeting') || tLower.includes('pending home meeting') || tLower.includes('scheduled home meeting')) {
-                    if (actTypeKey !== 'Home Meeting') return false
-                  }
-
-                  // 5. STAGE SPECIFIC DRILLDOWNS
-                  if (tLower.includes('visit planned') && !tLower.includes('matrix')) {
-                    if (l.pipeline_stage !== 'Visit Planned') return false
-                  } else if (tLower.includes('visit done')) {
-                    if (l.pipeline_stage !== 'Visit Done') return false
-                  } else if (tLower.includes('meeting planned')) {
-                    if (l.pipeline_stage !== 'Meeting Planned') return false
-                  } else if (tLower.includes('meeting done')) {
-                    if (l.pipeline_stage !== 'Meeting Done') return false
-                  }
-
-                  return true
-                }
-
-                const stillBelongs = shouldLeadStay(mergedUpdatedLead, prev.title, prev.subtitle)
-
-                let nextLeads: any[] = []
-                if (stillBelongs) {
-                  // Lead still satisfies current drilldown: update in place
-                  nextLeads = (prev.leads || []).map((l: any) => l.id === updatedId ? mergedUpdatedLead : l)
-                  toast.success('Follow-up updated successfully')
-                } else {
-                  // Lead was rescheduled (e.g. from Today to future date) or moved out: remove immediately!
-                  nextLeads = (prev.leads || []).filter((l: any) => l.id !== updatedId)
-
-                  const tLower = ((prev.title || '') + ' ' + (prev.subtitle || '')).toLowerCase()
-                  if (tLower.includes('today')) {
-                    toast.success('Follow-up updated: Lead moved from Today Actions to Scheduled Actions')
-                  } else if (tLower.includes('pending')) {
-                    toast.success('Pending follow-up completed: Lead moved to Scheduled Actions')
-                  } else if (tLower.includes('fresh')) {
-                    toast.success('Follow-up updated: Lead moved out of Fresh Leads')
+                  let nextLeads: any[] = []
+                  if (stillBelongs) {
+                    // Lead still satisfies current drilldown: update in place
+                    nextLeads = (prev.leads || []).map((l: any) => l.id === updatedId ? mergedUpdatedLead : l)
+                    toast.success('Follow-up updated successfully')
                   } else {
-                    toast.success('Lead updated and moved out of this view')
+                    // Lead was rescheduled (e.g. from Today to future date) or moved out: remove immediately!
+                    nextLeads = (prev.leads || []).filter((l: any) => l.id !== updatedId)
+
+                    const tLower = (String(prev.title || '') + ' ' + String(prev.subtitle || '')).toLowerCase()
+                    if (tLower.includes('today')) {
+                      toast.success('Follow-up updated: Lead moved from Today Actions to Scheduled Actions')
+                    } else if (tLower.includes('pending')) {
+                      toast.success('Pending follow-up completed: Lead moved to Scheduled Actions')
+                    } else if (tLower.includes('fresh')) {
+                      toast.success('Follow-up updated: Lead moved out of Fresh Leads')
+                    } else {
+                      toast.success('Lead updated and moved out of this view')
+                    }
                   }
-                }
 
-                newTotalPages = Math.ceil(nextLeads.length / drilldownPageSize) || 1
+                  newTotalPages = Math.ceil(nextLeads.length / drilldownPageSize) || 1
 
-                return {
-                  ...prev,
-                  leads: nextLeads
-                }
-              })
+                  return {
+                    ...prev,
+                    leads: nextLeads
+                  }
+                })
 
-              // Safely update drilldown page outside setDrilldownModal
-              setDrilldownPage(prevPage => Math.max(1, Math.min(prevPage, newTotalPages)))
-            } else {
-              fetchAnalytics(false)
+                // Safely update drilldown page outside setDrilldownModal
+                setDrilldownPage(prevPage => Math.max(1, Math.min(prevPage, newTotalPages)))
+              } else {
+                fetchAnalytics(false)
+              }
             }
+          } catch (err) {
+            console.error('Error handling followup onSuccess:', err)
+          } finally {
+            setFollowupLead(null)
           }
-          setFollowupLead(null)
         }}
       />
 

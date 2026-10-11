@@ -172,7 +172,28 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
           scope: '/',
           updateViaCache: 'none',
         })
+      } else {
+        // Proactively check for newer deploys so PWAs never run stale JS bundles
+        registration.update().catch(() => {})
       }
+
+      // If a service worker is already waiting, tell it to take over immediately
+      if (registration?.waiting) {
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+      }
+
+      // Listen for newly installed workers
+      registration?.addEventListener('updatefound', () => {
+        const newWorker = registration.installing
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('[PushManager] Updated Service Worker installed, activating...')
+              newWorker.postMessage({ type: 'SKIP_WAITING' })
+            }
+          })
+        }
+      })
       
       const readyReg = await Promise.race([
         navigator.serviceWorker.ready,

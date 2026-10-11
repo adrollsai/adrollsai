@@ -2196,35 +2196,35 @@ END:VCARD\n`
         if (selectedNextActionFilter === 'NO_ACTION' && hasDate) return false
 
         if (selectedNextActionType !== 'ALL') {
-          const actionType = l.next_action_type || cf?.next_action_type || l.last_followup_type || 'Call'
-          if (actionType.toLowerCase() !== selectedNextActionType.toLowerCase()) return false
+          const actionType = String(l.next_action_type || cf?.next_action_type || l.last_followup_type || 'Call')
+          if (actionType.toLowerCase() !== String(selectedNextActionType).toLowerCase()) return false
         }
 
         return true
       })()
 
       const matchSearch = !searchQuery || 
-                          l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          l.phone?.includes(searchQuery) || 
-                          l.email?.toLowerCase().includes(searchQuery.toLowerCase())
+                          String(l.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          String(l.phone || '').includes(searchQuery) || 
+                          String(l.email || '').toLowerCase().includes(searchQuery.toLowerCase())
       const matchCampaign = selectedCampaigns.length === 0 || (() => {
-        const cleanSelected = selectedCampaigns.map(c => c.trim().toLowerCase())
+        const cleanSelected = selectedCampaigns.map(c => String(c).trim().toLowerCase())
         if (l.campaign_id) {
           const camp = campaigns.find(c => c.id === l.campaign_id)
           if (camp && camp.name && typeof camp.name === 'string' && cleanSelected.includes(camp.name.trim().toLowerCase())) return true
         }
         const leadCamp = getLeadCampaignName(l)
-        if (leadCamp && cleanSelected.includes(leadCamp.trim().toLowerCase())) return true
-        const adName = l.ad_name?.trim().toLowerCase()
-        const campName = l.campaign_name?.trim().toLowerCase()
+        if (leadCamp && cleanSelected.includes(String(leadCamp).trim().toLowerCase())) return true
+        const adName = String(l.ad_name || '').trim().toLowerCase()
+        const campName = String(l.campaign_name || '').trim().toLowerCase()
         return (adName && cleanSelected.includes(adName)) || 
                (campName && cleanSelected.includes(campName))
       })()
       const matchForm = selectedForm === '' || 
-                        l.form_name?.trim() === selectedForm.trim() || 
-                        l.source?.trim() === selectedForm.trim()
+                        String(l.form_name || '').trim() === selectedForm.trim() || 
+                        String(l.source || '').trim() === selectedForm.trim()
       const matchCsvAudience = selectedCsvAudience === '' || 
-                               l.csv_audience?.trim() === selectedCsvAudience.trim()
+                               String(l.csv_audience || '').trim() === selectedCsvAudience.trim()
       
       return matchAgent && matchDate && matchDnp && matchNextAction && matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
