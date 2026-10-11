@@ -4591,6 +4591,16 @@ export default function AnalyticsPage() {
                     return false
                   }
 
+                  // In Fresh Leads drilldown modal: If lead was assigned a next action OR has non-fresh stage, IT MUST NEVER STAY!
+                  if (tLower.includes('fresh')) {
+                    const hasNext = Boolean(l.next_followup || cf?.next_action_date || l.next_action_date)
+                    if (hasNext) return false
+                    const st = (l.pipeline_stage || l.status || '').trim()
+                    if (st && !isFreshStageName(st)) return false
+                    if (categorizeLeadStage(l, configuredStages) !== 'fresh') return false
+                    return true
+                  }
+
                   let todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
                   if (profile?.timezone) {
                     try {
@@ -4691,6 +4701,8 @@ export default function AnalyticsPage() {
                     toast.success('Follow-up updated: Lead moved from Today Actions to Scheduled Actions')
                   } else if (tLower.includes('pending')) {
                     toast.success('Pending follow-up completed: Lead moved to Scheduled Actions')
+                  } else if (tLower.includes('fresh')) {
+                    toast.success('Follow-up updated: Lead moved out of Fresh Leads')
                   } else {
                     toast.success('Lead updated and moved out of this view')
                   }

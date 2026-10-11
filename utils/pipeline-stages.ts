@@ -253,13 +253,11 @@ export function categorizeLeadStage(
       try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = null }
     }
 
-    // Check if the lead has active work/remarks/followups
-    hasWorkedActivity = Boolean(
+    // Check if the lead has an assigned next action / reminder
+    const hasNextAction = Boolean(
       rawStageOrLead.next_followup ||
       cf?.next_action_date ||
-      cf?.last_remark ||
-      cf?.last_followup_at ||
-      (cf?.followup_count && Number(cf.followup_count) > 0)
+      rawStageOrLead.next_action_date
     )
 
     const cfStage = (cf?.pipeline_stage || cf?.status || cf?.lead_status || cf?.client_status || '').trim()
@@ -267,8 +265,8 @@ export function categorizeLeadStage(
 
     if (isTopLevelFresh && cfStage && !isFreshStageName(cfStage)) {
       stageStr = cfStage
-    } else if (isTopLevelFresh && hasWorkedActivity) {
-      // Worked-on lead with remarks or scheduled next action must never stay in Fresh!
+    } else if (isTopLevelFresh && hasNextAction) {
+      // Any lead with a scheduled next action assigned must NEVER stay in Fresh!
       stageStr = cfStage || 'Contacted'
     } else if (!stageStr && cf) {
       stageStr = (cf.pipeline_stage || cf.status || cf.lead_status || cf.client_status || '').trim()
@@ -277,7 +275,16 @@ export function categorizeLeadStage(
     stageStr = rawStageOrLead.trim()
   }
 
-  if (!stageStr) return hasWorkedActivity ? 'ongoing' : 'fresh'
+  let hasNextAction = false
+  if (typeof rawStageOrLead === 'object' && rawStageOrLead !== null) {
+    hasNextAction = Boolean(
+      rawStageOrLead.next_followup ||
+      cf?.next_action_date ||
+      rawStageOrLead.next_action_date
+    )
+  }
+
+  if (!stageStr) return hasNextAction ? 'ongoing' : 'fresh'
   const normalized = stageStr.toLowerCase()
 
   // 1. Check for Trash
@@ -285,9 +292,9 @@ export function categorizeLeadStage(
     return 'trash'
   }
 
-  // 2. Fresh stages (New Lead, Fresh, New, Unprocessed, Uncontacted) - ONLY if lead has no worked activity!
+  // 2. Fresh stages (New Lead, Fresh, New, Unprocessed, Uncontacted) - ONLY if lead has NO next action!
   if (isFreshStageName(normalized)) {
-    if (hasWorkedActivity) {
+    if (hasNextAction) {
       return 'ongoing'
     }
     return 'fresh'
