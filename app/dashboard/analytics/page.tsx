@@ -52,8 +52,9 @@ import {
 import LeadHistoryModal from '@/components/LeadHistoryModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
+import CRMErrorBoundary from '@/components/CRMErrorBoundary'
 import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES } from '@/utils/pipeline-stages'
-import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
+import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark, isLeadLastStatusDnp, getLeadNextActionRemark, parseCustomFields } from '@/utils/lead-helpers'
 
 // Render simple markdown headers, bolding, and lists into JSX
 function MarkdownRenderer({ text }: { text: string }) {
@@ -273,6 +274,15 @@ export default function AnalyticsPage() {
   const [drilldownPage, setDrilldownPage] = useState<number>(1)
   const [drilldownPageSize, setDrilldownPageSize] = useState<number>(25)
   const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string } | null>(null)
+
+  // Auto-clamp drilldown page if total count changes
+  useEffect(() => {
+    if (!drilldownModal.isOpen) return
+    const maxP = Math.max(1, Math.ceil((drilldownModal.leads?.length || 0) / drilldownPageSize))
+    if (drilldownPage > maxP) {
+      setDrilldownPage(maxP)
+    }
+  }, [drilldownModal.isOpen, drilldownModal.leads?.length, drilldownPageSize, drilldownPage])
 
   // Advanced Drilldown Filters (Matching CRM Filters)
   const [drilldownShowFilters, setDrilldownShowFilters] = useState(false)
@@ -3746,6 +3756,7 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Modal Leads List */}
+            <CRMErrorBoundary fallbackTitle="Lead Drilldown Interruption Prevented">
             {(() => {
               const filtered = drilldownModal.leads.filter(l => {
                 // 1. Stage filter
@@ -3837,25 +3848,32 @@ export default function AnalyticsPage() {
                 }
 
                 // 5. Custom Date / Range Filter
-                if (drilldownCustomDate) {
+                if (drilldownCustomDate && typeof drilldownCustomDate === 'string' && drilldownCustomDate.includes('-')) {
                   const targetDates = getLeadDatesForBasis(l, drilldownDateBasis)
                   if (targetDates.length === 0) return false
-                  const [tY, tM, tD] = drilldownCustomDate.split('-').map(Number)
-                  const matchesCustom = targetDates.some(leadDate => 
-                    leadDate.getFullYear() === tY &&
-                    (leadDate.getMonth() + 1) === tM &&
-                    leadDate.getDate() === tD
-                  )
-                  if (!matchesCustom) return false
-                } else if (drilldownStartDate && drilldownEndDate) {
+                  const dateParts = drilldownCustomDate.split('-').map(Number)
+                  if (dateParts.length === 3 && !dateParts.some(isNaN)) {
+                    const [tY, tM, tD] = dateParts
+                    const matchesCustom = targetDates.some(leadDate => 
+                      leadDate.getFullYear() === tY &&
+                      (leadDate.getMonth() + 1) === tM &&
+                      leadDate.getDate() === tD
+                    )
+                    if (!matchesCustom) return false
+                  }
+                } else if (drilldownStartDate && drilldownEndDate && typeof drilldownStartDate === 'string' && typeof drilldownEndDate === 'string' && drilldownStartDate.includes('-') && drilldownEndDate.includes('-')) {
                   const targetDates = getLeadDatesForBasis(l, drilldownDateBasis)
                   if (targetDates.length === 0) return false
-                  const [sY, sM, sD] = drilldownStartDate.split('-').map(Number)
-                  const [eY, eM, eD] = drilldownEndDate.split('-').map(Number)
-                  const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
-                  const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
-                  const matchesRange = targetDates.some(leadDate => leadDate >= start && leadDate <= end)
-                  if (!matchesRange) return false
+                  const sParts = drilldownStartDate.split('-').map(Number)
+                  const eParts = drilldownEndDate.split('-').map(Number)
+                  if (sParts.length === 3 && eParts.length === 3 && !sParts.some(isNaN) && !eParts.some(isNaN)) {
+                    const [sY, sM, sD] = sParts
+                    const [eY, eM, eD] = eParts
+                    const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
+                    const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
+                    const matchesRange = targetDates.some(leadDate => leadDate >= start && leadDate <= end)
+                    if (!matchesRange) return false
+                  }
                 }
 
                 // 6. DNP Filter
@@ -4515,6 +4533,7 @@ export default function AnalyticsPage() {
                 </>
               )
             })()}
+            </CRMErrorBoundary>
 
           </div>
         </div>
@@ -4538,12 +4557,14 @@ export default function AnalyticsPage() {
           if (followupLead) {
             const updatedId = followupLead.id
             if (updatedFields) {
+              const existingCf = parseCustomFields(followupLead.custom_fields)
+              const updatedCf = parseCustomFields(updatedFields.custom_fields)
               const mergedUpdatedLead = { 
                 ...followupLead, 
                 ...updatedFields, 
                 custom_fields: { 
-                  ...(typeof followupLead.custom_fields === 'object' ? followupLead.custom_fields : {}), 
-                  ...(updatedFields.custom_fields || {}) 
+                  ...existingCf, 
+                  ...updatedCf 
                 } 
               }
 
@@ -4551,15 +4572,15 @@ export default function AnalyticsPage() {
               setLeads(prev => prev.map((l: any) => l.id === updatedId ? mergedUpdatedLead : l))
 
               // 2. Dynamically evaluate if the lead still belongs in the open drilldown modal
+              let newTotalPages = 1
               setDrilldownModal(prev => {
-                // Helper to check if updated lead still satisfies the drilldown bucket
-                const shouldLeadStay = (l: any, title: string, subtitle: string): boolean => {
-                  const tLower = (title + ' ' + subtitle).toLowerCase()
+                if (!prev || !prev.isOpen) return prev
 
-                  let cf: any = l.custom_fields
-                  if (typeof cf === 'string') {
-                    try { cf = JSON.parse(cf) } catch (e) {}
-                  }
+                // Helper to check if updated lead still satisfies the drilldown bucket
+                const shouldLeadStay = (l: any, title?: string, subtitle?: string): boolean => {
+                  const tLower = ((title || '') + ' ' + (subtitle || '')).toLowerCase()
+
+                  let cf: any = parseCustomFields(l.custom_fields)
 
                   const stageLower = (l.pipeline_stage || l.status || '').trim().toLowerCase()
                   const isLostOrWon = ['won', 'closed', 'dealer', 'lost/ni', 'lost', 'plan postponed', 'already purchased', 'different requirement', 'unqualified'].includes(stageLower) ||
@@ -4659,13 +4680,13 @@ export default function AnalyticsPage() {
                 let nextLeads: any[] = []
                 if (stillBelongs) {
                   // Lead still satisfies current drilldown: update in place
-                  nextLeads = prev.leads.map((l: any) => l.id === updatedId ? mergedUpdatedLead : l)
+                  nextLeads = (prev.leads || []).map((l: any) => l.id === updatedId ? mergedUpdatedLead : l)
                   toast.success('Follow-up updated successfully')
                 } else {
                   // Lead was rescheduled (e.g. from Today to future date) or moved out: remove immediately!
-                  nextLeads = prev.leads.filter((l: any) => l.id !== updatedId)
+                  nextLeads = (prev.leads || []).filter((l: any) => l.id !== updatedId)
 
-                  const tLower = (prev.title + ' ' + prev.subtitle).toLowerCase()
+                  const tLower = ((prev.title || '') + ' ' + (prev.subtitle || '')).toLowerCase()
                   if (tLower.includes('today')) {
                     toast.success('Follow-up updated: Lead moved from Today Actions to Scheduled Actions')
                   } else if (tLower.includes('pending')) {
@@ -4675,14 +4696,16 @@ export default function AnalyticsPage() {
                   }
                 }
 
-                const newTotalPages = Math.ceil(nextLeads.length / drilldownPageSize) || 1
-                setDrilldownPage(prevPage => Math.max(1, Math.min(prevPage, newTotalPages)))
+                newTotalPages = Math.ceil(nextLeads.length / drilldownPageSize) || 1
 
                 return {
                   ...prev,
                   leads: nextLeads
                 }
               })
+
+              // Safely update drilldown page outside setDrilldownModal
+              setDrilldownPage(prevPage => Math.max(1, Math.min(prevPage, newTotalPages)))
             } else {
               fetchAnalytics(false)
             }

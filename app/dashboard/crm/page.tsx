@@ -2366,6 +2366,14 @@ END:VCARD\n`
 
   const totalFilteredCount = filteredLeads.length
   const totalPages = Math.max(1, Math.ceil(totalFilteredCount / leadsPerPage))
+
+  // Auto-clamp currentPage if filtered leads count decreases
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages)
+    }
+  }, [currentPage, totalPages])
+
   const currentLeads = useMemo(() => {
     const start = (currentPage - 1) * leadsPerPage
     return filteredLeads.slice(start, start + leadsPerPage)

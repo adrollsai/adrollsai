@@ -218,6 +218,20 @@ export const DEFAULT_PIPELINE_STAGES: PipelineStageConfig[] = UNIVERSAL_STAGES
 
 export const STANDARD_STAGE_NAMES = DEFAULT_PIPELINE_STAGES.map(s => s.name)
 
+export function isFreshStageName(stage?: string | null): boolean {
+  if (!stage) return false
+  const norm = stage.toLowerCase().trim()
+  return (
+    norm === 'new' ||
+    norm === 'new lead' ||
+    norm === 'new inquiry' ||
+    norm === 'unprocessed' ||
+    norm === 'uncontacted' ||
+    norm === 'fresh' ||
+    norm === 'new_lead'
+  )
+}
+
 /**
  * Categorize any raw lead stage/status or lead record into one of the 4 main buckets:
  * 'fresh' | 'ongoing' | 'not_interested' | 'trash'
@@ -230,6 +244,7 @@ export function categorizeLeadStage(
 
   let stageStr = ''
   let cf: any = null
+  let hasWorkedActivity = false
 
   if (typeof rawStageOrLead === 'object' && rawStageOrLead !== null) {
     stageStr = (rawStageOrLead.pipeline_stage || rawStageOrLead.status || '').trim()
@@ -237,14 +252,32 @@ export function categorizeLeadStage(
     if (typeof cf === 'string') {
       try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = null }
     }
-    if (!stageStr && cf) {
+
+    // Check if the lead has active work/remarks/followups
+    hasWorkedActivity = Boolean(
+      rawStageOrLead.next_followup ||
+      cf?.next_action_date ||
+      cf?.last_remark ||
+      cf?.last_followup_at ||
+      (cf?.followup_count && Number(cf.followup_count) > 0)
+    )
+
+    const cfStage = (cf?.pipeline_stage || cf?.status || cf?.lead_status || cf?.client_status || '').trim()
+    const isTopLevelFresh = !stageStr || isFreshStageName(stageStr)
+
+    if (isTopLevelFresh && cfStage && !isFreshStageName(cfStage)) {
+      stageStr = cfStage
+    } else if (isTopLevelFresh && hasWorkedActivity) {
+      // Worked-on lead with remarks or scheduled next action must never stay in Fresh!
+      stageStr = cfStage || 'Contacted'
+    } else if (!stageStr && cf) {
       stageStr = (cf.pipeline_stage || cf.status || cf.lead_status || cf.client_status || '').trim()
     }
   } else if (typeof rawStageOrLead === 'string') {
     stageStr = rawStageOrLead.trim()
   }
 
-  if (!stageStr) return 'fresh'
+  if (!stageStr) return hasWorkedActivity ? 'ongoing' : 'fresh'
   const normalized = stageStr.toLowerCase()
 
   // 1. Check for Trash
@@ -252,19 +285,11 @@ export function categorizeLeadStage(
     return 'trash'
   }
 
-  // 2. Fresh stages (New Lead, Fresh, New, Unprocessed, Uncontacted) - always in Fresh section!
-  // Reopened leads get to the Fresh section with all their history and next actions intact.
-  const isFreshStageName = (
-    normalized === 'new' ||
-    normalized === 'new lead' ||
-    normalized === 'new inquiry' ||
-    normalized === 'unprocessed' ||
-    normalized === 'uncontacted' ||
-    normalized === 'fresh' ||
-    normalized === 'new_lead'
-  )
-
-  if (isFreshStageName) {
+  // 2. Fresh stages (New Lead, Fresh, New, Unprocessed, Uncontacted) - ONLY if lead has no worked activity!
+  if (isFreshStageName(normalized)) {
+    if (hasWorkedActivity) {
+      return 'ongoing'
+    }
     return 'fresh'
   }
 
