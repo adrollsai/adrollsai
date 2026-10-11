@@ -772,9 +772,12 @@ export default function AdsPage() {
       const maxFormTime = getMaxCreatedAt(cachedForms);
       const maxAssetTime = getMaxCreatedAt(cachedAssets as any[]);
 
+      const isClientAccount = targetProfile?.role === 'client' || profile?.role === 'client';
       const effectiveUserIds: string[] = [targetUserId];
-      if (targetProfile?.parent_id) effectiveUserIds.push(targetProfile.parent_id);
-      if (targetProfile?.agency_id) effectiveUserIds.push(targetProfile.agency_id);
+      if (!isClientAccount) {
+        if (targetProfile?.parent_id) effectiveUserIds.push(targetProfile.parent_id);
+        if (targetProfile?.agency_id) effectiveUserIds.push(targetProfile.agency_id);
+      }
 
       let pageQuery = supabase.from('landing_pages').select('*').in('user_id', effectiveUserIds);
       let formQuery = supabase.from('qualification_forms').select('*').in('user_id', effectiveUserIds);

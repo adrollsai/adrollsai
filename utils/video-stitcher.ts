@@ -14,6 +14,7 @@ export interface StitchTaskContext {
     asset_id: string;
     user_id: string;
     prompts?: string[];
+    aspect_ratio?: string;
 }
 
 export interface StitchSibling {
@@ -179,6 +180,32 @@ async function probeClipDuration(clipPath: string, ffprobeExec: string, isAudio 
 }
 
 /**
+ * Checks whether a video clip has an active audio stream.
+ */
+async function clipHasAudio(clipPath: string, ffprobeExec: string): Promise<boolean> {
+    if (ffprobeExec && (ffprobeExec === 'ffprobe' || fs.existsSync(ffprobeExec))) {
+        try {
+            const probeResult = await new Promise<string>((resolve) => {
+                exec(`"${ffprobeExec}" -v error -select_streams a:0 -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 "${clipPath}"`, (err, stdout) => {
+                    resolve(stdout?.trim() || '');
+                });
+            });
+            if (probeResult.includes('audio')) return true;
+        } catch (_) {}
+    }
+    try {
+        const ffmpegExec = getFfmpegPath();
+        const probeResult = await new Promise<string>((resolve) => {
+            exec(`"${ffmpegExec}" -i "${clipPath}"`, (_, __, stderr) => {
+                resolve(stderr || '');
+            });
+        });
+        if (/Stream #.*Audio:/.test(probeResult)) return true;
+    } catch (_) {}
+    return false;
+}
+
+/**
  * Performs fast direct FFmpeg stitching locally or inside the serverless execution environment.
  * Applies smooth cinematic xfade transitions between multi-clip scenes,
  * replaces clip audio with the voiceover stream (-map [v] -map N:a:0) and uploads to R2.
@@ -232,14 +259,22 @@ export async function stitchClipsLocally(
         // Check if multi-clip transition is possible
         let stitchCompleted = false;
 
-        // Probe audio duration if voiceover is present
+        // Probe audio duration if voiceover is present, or check if raw clips have native audio
         let audioDuration = 0;
+        let hasClipAudio = false;
         if (localAudioPath) {
             try {
                 audioDuration = await probeClipDuration(localAudioPath, ffprobeExec, true);
                 console.log(`[Local Stitch] Probed voiceover audio duration: ${audioDuration.toFixed(2)}s`);
             } catch (audErr) {
                 console.warn(`[Local Stitch] Failed to probe audio duration:`, audErr);
+            }
+        } else if (localClipPaths.length > 0) {
+            try {
+                hasClipAudio = await clipHasAudio(localClipPaths[0], ffprobeExec);
+                console.log(`[Local Stitch] Detected native clip audio: ${hasClipAudio}`);
+            } catch (audProbeErr) {
+                console.warn(`[Local Stitch] Failed to probe clip audio:`, audProbeErr);
             }
         }
 
@@ -301,7 +336,19 @@ export async function stitchClipsLocally(
                 console.log(`[Local Stitch] Estimated video duration after xfade: ${totalVideoDuration.toFixed(2)}s`);
 
                 let finalVideoStream = '[v_trans]';
-                let finalAudioStream = `${localClipPaths.length}:a:0`;
+                let finalAudioStream = localAudioPath ? `${localClipPaths.length}:a:0` : '';
+
+                // If no voiceover MP3 is provided, but clips have native audio (e.g. presenter speaking),
+                // crossfade audio across all clips so narration/speech is preserved!
+                if (!localAudioPath && hasClipAudio) {
+                    let currentAudioStream = '[0:a]';
+                    for (let i = 1; i < localClipPaths.length; i++) {
+                        const nextAudioStream = i === localClipPaths.length - 1 ? '[a_trans]' : `[a${i}]`;
+                        filterParts.push(`${currentAudioStream}[${i}:a]acrossfade=d=${transitionDuration}:c1=tri:c2=tri${nextAudioStream}`);
+                        currentAudioStream = nextAudioStream;
+                    }
+                    finalAudioStream = currentAudioStream;
+                }
 
                 if (audioDuration > rawTotalVideoDuration) {
                     // Voiceover exceeds video: pad last video frame so narration completes without cutoff
@@ -332,6 +379,8 @@ export async function stitchClipsLocally(
 
                 const xfadeCmd = localAudioPath
                     ? `"${ffmpegExec}" -nostdin -y ${inputsStr} -i "${localAudioPath}" -filter_complex "${filterComplex}" -map "${finalVideoStream}" -map "${finalAudioStream}" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`
+                    : hasClipAudio
+                    ? `"${ffmpegExec}" -nostdin -y ${inputsStr} -filter_complex "${filterComplex}" -map "${finalVideoStream}" -map "${finalAudioStream}" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`
                     : `"${ffmpegExec}" -nostdin -y ${inputsStr} -filter_complex "${filterComplex}" -map "${finalVideoStream}" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
 
                 console.log(`[Local Stitch] Executing FFmpeg xfade transition command: ${xfadeCmd}`);
@@ -390,12 +439,15 @@ export async function stitchClipsLocally(
                 }
             } else {
                 if (filter9x16) {
-                    ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -filter_complex "[0:v]${filter9x16}[v]" -map "[v]" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
+                    if (hasClipAudio) {
+                        ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -filter_complex "[0:v]${filter9x16}[v]" -map "[v]" -map 0:a? -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+                    } else {
+                        ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -filter_complex "[0:v]${filter9x16}[v]" -map "[v]" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags +faststart "${outputPath}"`;
+                    }
                 } else {
                     ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -c copy -movflags +faststart "${outputPath}"`;
                 }
             }
-
             console.log(`[Local Stitch] Executing direct stream concat FFmpeg command: ${ffmpegCmd}`);
             await new Promise<void>((resolve, reject) => {
                 exec(ffmpegCmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr, stdout, stderr) => {

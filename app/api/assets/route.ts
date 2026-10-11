@@ -60,12 +60,27 @@ export async function GET(request: Request) {
             }
         }
 
+        const { data: targetProfile } = await supabaseAdmin.from('profiles').select('parent_id, agency_id, role').eq('id', targetUserId).single();
+        
+        // Strict Data Isolation:
+        // A client account (or anyone viewing/impersonating a client) MUST ONLY ever see their own assets!
+        // Never leak agency or super admin assets to client accounts.
+        const isClientAccount = targetProfile?.role === 'client' || currentProfile?.role === 'client';
+        const effectiveUserIds: string[] = isClientAccount
+            ? [targetUserId]
+            : Array.from(new Set([
+                targetUserId,
+                ...(targetProfile?.parent_id ? [targetProfile.parent_id] : []),
+                ...(targetProfile?.agency_id ? [targetProfile.agency_id] : [])
+            ]));
+
         const singleAssetId = url.searchParams.get('id');
         if (singleAssetId) {
             const { data: singleAsset, error: singleError } = await supabaseAdmin
                 .from('assets')
                 .select('*')
                 .eq('id', singleAssetId)
+                .in('user_id', effectiveUserIds)
                 .single();
 
             if (singleError || !singleAsset) {
@@ -82,13 +97,6 @@ export async function GET(request: Request) {
                 since = parts.slice(0, -1).join(' ') + '+' + lastPart;
             }
         }
-
-        const { data: targetProfile } = await supabaseAdmin.from('profiles').select('parent_id, agency_id').eq('id', targetUserId).single();
-        const effectiveUserIds: string[] = Array.from(new Set([
-            targetUserId,
-            ...(targetProfile?.parent_id ? [targetProfile.parent_id] : []),
-            ...(targetProfile?.agency_id ? [targetProfile.agency_id] : [])
-        ]));
 
         let query = supabaseAdmin
             .from('assets')
@@ -249,5 +257,63 @@ export async function GET(request: Request) {
                 'Cache-Control': 'no-store, no-cache, must-revalidate'
             }
         });
+    }
+}
+
+export async function DELETE(request: Request) {
+    try {
+        let user: any = null;
+        const mockUserHeader = request.headers.get('X-Mock-User');
+        if (mockUserHeader && !process.env.VERCEL) {
+            user = { id: mockUserHeader };
+        } else {
+            const clientSupabase = await createClient();
+            const { data: { user: authUser } } = await clientSupabase.auth.getUser();
+            user = authUser;
+        }
+
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const url = new URL(request.url);
+        const assetId = url.searchParams.get('id');
+        if (!assetId) {
+            return NextResponse.json({ error: 'Missing asset id' }, { status: 400 });
+        }
+
+        const { data: currentProfile } = await supabaseAdmin.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single();
+        const { data: targetAsset } = await supabaseAdmin.from('assets').select('*').eq('id', assetId).single();
+
+        if (!targetAsset) {
+            return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+        }
+
+        // Strict Delete Authorization:
+        // Owner, super_admin, or agency managing this client
+        const isOwner = targetAsset.user_id === user.id;
+        const isSuperAdmin = currentProfile?.role === 'super_admin';
+        let isAgencyManagingUser = false;
+        if (currentProfile?.role === 'agency') {
+            const { data: clientCheck } = await supabaseAdmin
+                .from('profiles')
+                .select('id')
+                .eq('id', targetAsset.user_id)
+                .eq('agency_id', user.id)
+                .single();
+            isAgencyManagingUser = !!clientCheck;
+        }
+
+        if (!isOwner && !isSuperAdmin && !isAgencyManagingUser) {
+            return NextResponse.json({ error: 'Forbidden: You do not have permission to delete this asset' }, { status: 403 });
+        }
+
+        const { error: delError } = await supabaseAdmin.from('assets').delete().eq('id', assetId);
+        if (delError) throw delError;
+
+        return NextResponse.json({ success: true });
+    } catch (err: any) {
+        console.error("DELETE Assets error:", err);
+        return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
     }
 }

@@ -124,6 +124,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return
       }
 
+      // Restrict GBP Suite & GBP Audit strictly to super_admin
+      if ((pathname.startsWith('/dashboard/gbp')) && userProfile?.role !== 'super_admin' && userEmail !== 'rchopra489@gmail.com') {
+        router.push('/dashboard')
+        return
+      }
+
       // Enforce client_features access controls for client accounts
       if (userProfile?.role === 'client' && Array.isArray(userProfile?.client_features)) {
         const allowed = userProfile.client_features

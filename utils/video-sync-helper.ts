@@ -309,6 +309,8 @@ export async function syncVideoTasksForUser(
 
                                 const ffmpegBinary = getFfmpegPath();
                                 const ffprobeBinary = getFfprobePath();
+                                let audDur = 0;
+                                let vidDur = 0;
                                 try {
                                     const audOut = await new Promise<string>((res) => exec(`"${ffprobeBinary}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`, (_, out) => res(out || '')));
                                     audDur = parseFloat(audOut.trim()) || 0;

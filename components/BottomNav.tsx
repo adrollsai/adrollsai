@@ -145,8 +145,8 @@ export default function BottomNav() {
       return ['super_admin', 'agency'].includes(role)
     }
 
-    // Restrict GBP Audit strictly to Nobogent super admin account
-    if (item.name === 'GBP Audit') {
+    // Restrict GBP Suite and GBP Audit strictly to Nobogent super admin account
+    if (item.name === 'GBP Suite' || item.name === 'GBP Audit') {
       return role === 'super_admin' || userEmail === 'rchopra489@gmail.com';
     }
 
@@ -156,7 +156,7 @@ export default function BottomNav() {
     }
 
     if (role === 'agent') {
-      return ['Analytics', 'Catalog', 'Inventory', 'CRM', 'Assets', 'Profile', 'WhatsApp', 'GBP Suite'].includes(item.name)
+      return ['Analytics', 'Catalog', 'Inventory', 'CRM', 'Assets', 'Profile', 'WhatsApp'].includes(item.name)
     }
 
     if (role === 'client' && Array.isArray(clientFeatures)) {
