@@ -229,8 +229,25 @@ export default function AnalyticsPage() {
   const [sortField, setSortField] = useState<string>('total')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  // Sub-Tab Navigation
-  const [activeTab, setActiveTab] = useState<'analytics' | 'action_mgr' | 'report' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>('analytics')
+  // Sub-Tab Navigation (persisted in sessionStorage)
+  const [activeTab, setActiveTabState] = useState<'analytics' | 'action_mgr' | 'report' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem('analytics_active_tab')
+        if (saved && ['analytics', 'action_mgr', 'report', 'lead_mgr', 'dnp_mgr', 'team_mgr', 'leaderboard'].includes(saved)) {
+          return saved as any
+        }
+      } catch (e) {}
+    }
+    return 'analytics'
+  })
+
+  const setActiveTab = (tab: 'analytics' | 'action_mgr' | 'report' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard') => {
+    setActiveTabState(tab)
+    if (typeof window !== 'undefined') {
+      try { sessionStorage.setItem('analytics_active_tab', tab) } catch (e) {}
+    }
+  }
   const [showPending, setShowPending] = useState(true)
   const [showSchedule, setShowSchedule] = useState(true)
   const [showToday, setShowToday] = useState(true)
@@ -640,7 +657,8 @@ export default function AnalyticsPage() {
           
           const historyTotal = historyCount || 0
           if (historyTotal > 0) {
-            const historyPages = Math.min(Math.ceil(historyTotal / 1000), 50)
+            // Cap history fetch to most recent 2,000 records to prevent memory crashes on mobile
+            const historyPages = Math.min(Math.ceil(historyTotal / 1000), 2)
             const historyPromises = Array.from({ length: historyPages }, (_, i) => {
               return supabase.from('lead_history')
                 .select('id, lead_id, user_id, action_type, description, created_at')
@@ -1870,7 +1888,61 @@ export default function AnalyticsPage() {
       leads: leadList,
       searchFilter: ''
     })
+    try {
+      sessionStorage.setItem('analytics_drilldown_modal', JSON.stringify({
+        isOpen: true,
+        title,
+        subtitle
+      }))
+    } catch (e) {}
   }
+
+  // Auto-restore drilldown modal if page was refreshed or memory-discarded by mobile OS
+  const hasRestoredModalRef = useRef(false)
+  useEffect(() => {
+    if (hasRestoredModalRef.current || drilldownModal.isOpen || leads.length === 0) return
+    try {
+      const saved = sessionStorage.getItem('analytics_drilldown_modal')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed && parsed.isOpen && parsed.title) {
+          hasRestoredModalRef.current = true
+          for (const row of actionManagerMatrix.rows) {
+            if (parsed.title.includes(row.rep.name)) {
+              if (parsed.title.includes('All Pending Actions')) {
+                openLeadsDrilldown(parsed.title, parsed.subtitle, row.totalLeads.pending)
+                return
+              }
+              if (parsed.title.includes('All Today Actions')) {
+                openLeadsDrilldown(parsed.title, parsed.subtitle, row.totalLeads.today)
+                return
+              }
+              if (parsed.title.includes('All Scheduled Actions')) {
+                openLeadsDrilldown(parsed.title, parsed.subtitle, row.totalLeads.schedule)
+                return
+              }
+              for (const t of actionManagerMatrix.actionTypes) {
+                if (parsed.title.includes(t.label)) {
+                  if (parsed.title.includes('Pending')) {
+                    openLeadsDrilldown(parsed.title, parsed.subtitle, row.typeLeads[t.key].pending)
+                    return
+                  }
+                  if (parsed.title.includes('Today')) {
+                    openLeadsDrilldown(parsed.title, parsed.subtitle, row.typeLeads[t.key].today)
+                    return
+                  }
+                  if (parsed.title.includes('Scheduled')) {
+                    openLeadsDrilldown(parsed.title, parsed.subtitle, row.typeLeads[t.key].schedule)
+                    return
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }, [leads.length, actionManagerMatrix, drilldownModal.isOpen])
 
   // Handle Header Table Sorting Toggle
   const handleSort = (field: string) => {
@@ -3161,6 +3233,7 @@ export default function AnalyticsPage() {
                   onClick={() => {
                     setDrilldownIsFullScreen(false)
                     setDrilldownModal(prev => ({ ...prev, isOpen: false }))
+                    try { sessionStorage.removeItem('analytics_drilldown_modal') } catch (e) {}
                   }}
                   className="p-2 rounded-xl bg-slate-200/60 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
                   title="Close"
@@ -4525,6 +4598,7 @@ export default function AnalyticsPage() {
                         onClick={() => {
                           setDrilldownIsFullScreen(false)
                           setDrilldownModal(prev => ({ ...prev, isOpen: false }))
+                          try { sessionStorage.removeItem('analytics_drilldown_modal') } catch (e) {}
                         }}
                         className="ml-3 px-4 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800 cursor-pointer"
                       >

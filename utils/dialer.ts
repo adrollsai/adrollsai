@@ -54,45 +54,34 @@ export function openPhoneDialer(phoneRaw: string | null | undefined): void {
 }
 
 function dispatchPwaDial(telUri: string): void {
-  // Method 1: Invisible detached iframe.
-  // In Chrome PWA (standalone WebAPK) and mobile browsers, setting an iframe's src
-  // to a tel: URL triggers the OS dialer without ANY top-level navigation.
-  // The main window's URL and history remain completely untouched.
+  // Clean up any legacy iframe dispatcher that may be lingering in DOM
   try {
-    let iframe = document.getElementById('nobogent-tel-dispatcher') as HTMLIFrameElement | null
-    if (!iframe) {
-      iframe = document.createElement('iframe')
-      iframe.id = 'nobogent-tel-dispatcher'
-      iframe.style.position = 'fixed'
-      iframe.style.top = '-9999px'
-      iframe.style.left = '-9999px'
-      iframe.style.width = '1px'
-      iframe.style.height = '1px'
-      iframe.style.opacity = '0'
-      iframe.style.pointerEvents = 'none'
-      iframe.style.border = 'none'
-      document.body.appendChild(iframe)
+    const oldIframe = document.getElementById('nobogent-tel-dispatcher')
+    if (oldIframe && oldIframe.parentNode) {
+      oldIframe.parentNode.removeChild(oldIframe)
     }
-    iframe.src = telUri
-    return
   } catch (e) {}
 
-  // Method 2: Temporary hidden anchor with target="_blank"
+  // Safe transient anchor dispatch:
+  // Dispatches directly to Android/iOS native dialer Intent without:
+  // 1. Modifying page history
+  // 2. Hanging in the DOM
+  // 3. Triggering Chromium iframe navigation cancellation/reload loops
   try {
     const a = document.createElement('a')
     a.href = telUri
-    a.target = '_blank'
     a.rel = 'noopener noreferrer'
     a.style.display = 'none'
     document.body.appendChild(a)
     a.click()
     setTimeout(() => {
-      try { document.body.removeChild(a) } catch (e) {}
-    }, 1000)
+      try {
+        if (a.parentNode) a.parentNode.removeChild(a)
+      } catch (e) {}
+    }, 150)
   } catch (e) {
-    // Method 3: window.open with _blank as last resort (never _self)
     try {
-      window.open(telUri, '_blank')
+      window.location.href = telUri
     } catch (e2) {}
   }
 }
