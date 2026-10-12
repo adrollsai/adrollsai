@@ -858,8 +858,8 @@ export default function ProfilePage() {
       // Resolve Target User ID
       let tUserId = user.id
 
-      // 1. Staff (Admin/Agent) automatically see their Agency's profile
-      if (['admin', 'agent'].includes(currentAuthRole) && (authProfile?.agency_id || authProfile?.parent_id)) {
+      // 1. Staff (Agent only) automatically see their Agency's/Parent's profile
+      if (currentAuthRole === 'agent' && (authProfile?.agency_id || authProfile?.parent_id)) {
           tUserId = (authProfile?.agency_id || authProfile?.parent_id) as string
       }
       
@@ -3828,8 +3828,8 @@ export default function ProfilePage() {
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>
 
-                {/* Team Management - Only for Admins / Super Admins / Agencies */}
-                {['super_admin', 'agency', 'admin'].includes(authRole || role) && (
+                {/* Team Management - Only for Admins / Super Admins / Agencies / Clients */}
+                {['super_admin', 'agency', 'admin', 'client'].includes(authRole || role) && (
                   <button 
                     onClick={() => router.push(`/dashboard/team${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
                     className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-slate-50 transition-colors border-b border-slate-100"

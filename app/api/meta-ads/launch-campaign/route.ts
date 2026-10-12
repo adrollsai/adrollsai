@@ -90,6 +90,11 @@ export async function POST(request: Request) {
         data.campaign_name = formData.get('campaign_name')?.toString() || formData.get('campaignName')?.toString();
         data.adset_name = formData.get('adset_name')?.toString() || formData.get('adsetName')?.toString();
 
+        data.detailedTargeting = formData.get('detailedTargeting')?.toString();
+        data.leadFormConfig = formData.get('leadFormConfig')?.toString();
+        data.existingLeadFormId = formData.get('existingLeadFormId')?.toString();
+        data.droppedPins = formData.get('droppedPins')?.toString();
+
         const ageMinVal = formData.get('ageMin');
         if (ageMinVal) data.ageMin = parseInt(ageMinVal.toString());
         const ageMaxVal = formData.get('ageMax');
@@ -345,7 +350,20 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         campaign_name: data.campaign_name || null,
         adset_name: data.adset_name || null,
         targetUserId,
-        selected_page_token: targetProfile?.selected_page_token || null
+        selected_page_token: targetProfile?.selected_page_token || null,
+        interests: (() => {
+            if (!data.detailedTargeting) return [];
+            try { return typeof data.detailedTargeting === 'string' ? JSON.parse(data.detailedTargeting) : data.detailedTargeting; } catch (e) { return []; }
+        })(),
+        leadFormConfig: (() => {
+            if (!data.leadFormConfig) return null;
+            try { return typeof data.leadFormConfig === 'string' ? JSON.parse(data.leadFormConfig) : data.leadFormConfig; } catch (e) { return null; }
+        })(),
+        existingLeadFormId: data.existingLeadFormId || null,
+        droppedPins: (() => {
+            if (!data.droppedPins) return [];
+            try { return typeof data.droppedPins === 'string' ? JSON.parse(data.droppedPins) : data.droppedPins; } catch (e) { return []; }
+        })()
     };
 
     let jobId = null;

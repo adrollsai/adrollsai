@@ -1055,12 +1055,28 @@ export async function sendCAPIEvent(
  */
 export async function fetchFacebookPixels(accessToken: string, adAccountId: string): Promise<any[]> {
     try {
-        const response = await fetch(`${FACEBOOK_GRAPH_URL}/${adAccountId}/adspixels?fields=name,id&access_token=${accessToken}`);
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
-        return data.data || [];
+        const [pixelsRes, datasetsRes] = await Promise.all([
+            fetch(`${FACEBOOK_GRAPH_URL}/${adAccountId}/adspixels?fields=name,id&access_token=${accessToken}`).catch(() => null),
+            fetch(`${FACEBOOK_GRAPH_URL}/${adAccountId}/datasets?fields=name,id&access_token=${accessToken}`).catch(() => null)
+        ]);
+
+        const pixelsData = pixelsRes ? await pixelsRes.json().catch(() => ({})) : {};
+        const datasetsData = datasetsRes ? await datasetsRes.json().catch(() => ({})) : {};
+
+        const pixelsList = (pixelsData?.data || []).map((p: any) => ({ ...p, type: 'pixel' }));
+        const datasetsList = (datasetsData?.data || []).map((d: any) => ({ ...d, type: 'dataset' }));
+
+        const combined = [...pixelsList, ...datasetsList];
+        // Deduplicate by ID
+        const uniqueMap = new Map();
+        for (const item of combined) {
+            if (item && item.id && !uniqueMap.has(item.id)) {
+                uniqueMap.set(item.id, item);
+            }
+        }
+        return Array.from(uniqueMap.values());
     } catch (e: any) {
-        throw new Error(`Failed to fetch Pixels: ${e.message}`);
+        throw new Error(`Failed to fetch Pixels / Datasets: ${e.message}`);
     }
 }
 

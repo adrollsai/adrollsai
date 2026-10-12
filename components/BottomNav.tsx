@@ -152,7 +152,7 @@ export default function BottomNav() {
 
     // Team visibility
     if (item.name === 'Team') {
-      return ['super_admin', 'agency', 'admin'].includes(role)
+      return ['super_admin', 'agency', 'admin', 'client'].includes(role)
     }
 
     if (role === 'agent') {

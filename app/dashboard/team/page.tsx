@@ -86,8 +86,11 @@ export default function TeamPage() {
       // 1. Get current/impersonated user profile
       const { data: authProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', session.user.id).single()
       
-      // If user is Admin/Agent, default to their agency/parent
-      const targetId = impersonateId || authProfile?.agency_id || authProfile?.parent_id || session.user.id
+      // If user is Agent, default to their agency/parent. Workspace owners (admin/client/agency) own their own team.
+      let targetId = impersonateId || session.user.id
+      if (!impersonateId && authProfile?.role === 'agent') {
+        targetId = authProfile?.parent_id || authProfile?.agency_id || session.user.id
+      }
       
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', targetId).single()
       setCurrentUser(profile)

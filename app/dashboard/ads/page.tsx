@@ -13,6 +13,9 @@ import { uploadToR2 } from '@/utils/upload-helper'
 import { getVideoPosterUrl } from '@/utils/get-video-poster'
 import ProductSearchableSelect from '@/components/ProductSearchableSelect'
 import { getPropertyTags } from '@/utils/property-tags'
+import MapLocationPicker, { DroppedPin } from '@/components/ads/MapLocationPicker'
+import DetailedTargetingSelector, { MetaInterest } from '@/components/ads/DetailedTargetingSelector'
+import InstantFormCustomizer, { InstantFormConfig } from '@/components/ads/InstantFormCustomizer'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string; configurations?: any; tags?: string[]; images?: string[]; address?: string; name?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string; metadata?: any }
@@ -171,6 +174,29 @@ export default function AdsPage() {
   const [locationSearchText, setLocationSearchText] = useState('')
   const [locationResults, setLocationResults] = useState<LocationOption[]>([])
   const [isSearchingLocation, setIsSearchingLocation] = useState(false)
+  const [locationTab, setLocationTab] = useState<'city' | 'map'>('city')
+  const [droppedPins, setDroppedPins] = useState<DroppedPin[]>([])
+
+  // Detailed Targeting & Instant Form Customizer states
+  const [selectedInterests, setSelectedInterests] = useState<MetaInterest[]>([])
+  const [isLoadingPageLeadForms, setIsLoadingPageLeadForms] = useState(false)
+  const [leadFormConfig, setLeadFormConfig] = useState<InstantFormConfig>({
+    mode: 'new',
+    formType: 'HIGHER_INTENT',
+    name: '',
+    headline: 'Get Pricing, Floor Plans & Exclusive Offers',
+    greetingText: 'Please verify your details below to receive the complete pricing sheet and direct developer brochure.',
+    includeCity: true,
+    questions: [],
+    privacyPolicyUrl: 'https://adrolls.in/privacy',
+    privacyPolicyLinkText: 'Privacy Policy',
+    completionTitle: "Thank you! You're all set.",
+    completionBody: "Our property specialist will share the floor plans & brochure on WhatsApp shortly.",
+    completionButtonText: "Visit Website",
+    completionAction: 'website'
+  })
+  const [pageLeadForms, setPageLeadForms] = useState<{ id: string; name: string; status: string }[]>([])
+  const [selectedExistingLeadFormId, setSelectedExistingLeadFormId] = useState<string>('')
 
   const [statsModal, setStatsModal] = useState<{ isOpen: boolean, campaign: Campaign | null, insights: any, loading: boolean }>({ isOpen: false, campaign: null, insights: null, loading: false })
   const [analysisModal, setAnalysisModal] = useState<{
@@ -414,6 +440,26 @@ export default function AdsPage() {
       setSelectedCustomAudienceIds([])
     }
   }, [isModalOpen, selectedAdAccountId])
+
+  useEffect(() => {
+    if (isModalOpen && campaignType === 'instant_form') {
+      const fetchPageForms = async () => {
+        try {
+          setIsLoadingPageLeadForms(true);
+          const res = await fetch(`/api/meta-ads/page-lead-forms${adForm.pageId ? `?pageId=${adForm.pageId}` : ''}${impersonateId ? `${adForm.pageId ? '&' : '?'}impersonate=${impersonateId}` : ''}`);
+          const data = await res.json();
+          if (data.forms) {
+            setPageLeadForms(data.forms);
+          }
+        } catch (e) {
+          console.error("Failed to fetch page lead forms", e);
+        } finally {
+          setIsLoadingPageLeadForms(false);
+        }
+      };
+      fetchPageForms();
+    }
+  }, [isModalOpen, campaignType, adForm.pageId, impersonateId]);
 
   const [adForm, setAdForm] = useState({
     metaLocations: [] as { location: LocationOption, radius: number }[],
@@ -1882,7 +1928,8 @@ export default function AdsPage() {
         }
     }
     
-    if (adForm.metaLocations.length === 0 || adForm.dailyBudgetINR < 100) { alert("Set valid location and budget."); return }
+    const hasValidLocations = adForm.metaLocations.length > 0 || droppedPins.length > 0;
+    if (!hasValidLocations || adForm.dailyBudgetINR < 100) { alert("Please set a valid location (select cities or drop a pin on the map) and minimum budget."); return }
     if (campaignType === 'whatsapp_chat' && !selectedWhatsAppNumber) {
         alert("Please select a connected WhatsApp number for the campaign.");
         return;
@@ -2022,8 +2069,22 @@ export default function AdsPage() {
       formPayload.append('adCopy', JSON.stringify(adCopies[0] || generateAdCopy(activeProducts[0] || null, targetProfile?.business_name, targetProfile?.contact_number)));
       formPayload.append('adCopies', JSON.stringify(adCopies));
 
-      if (pixelId) {
-          formPayload.append('pixelId', pixelId);
+      if (droppedPins.length > 0) {
+          formPayload.append('droppedPins', JSON.stringify(droppedPins));
+      }
+      if (selectedInterests.length > 0) {
+          formPayload.append('detailedTargeting', JSON.stringify(selectedInterests));
+      }
+      if (campaignType === 'instant_form') {
+          formPayload.append('leadFormConfig', JSON.stringify(leadFormConfig));
+          if (leadFormConfig.mode === 'existing' && leadFormConfig.existingFormId) {
+              formPayload.append('existingLeadFormId', leadFormConfig.existingFormId);
+          }
+      }
+
+      const activePixel = pixelId || targetProfile?.pixel_id || (pixels.length > 0 ? pixels[0].id : null);
+      if (activePixel) {
+          formPayload.append('pixelId', activePixel);
       }
 
       // Append all selected product IDs
@@ -5907,52 +5968,7 @@ export default function AdsPage() {
                                       ℹ️ Attached Qualification Form: <strong>{attachedFormName}</strong>
                                   </div>
                               )}
-                              <div>
-                                  <div className="flex justify-between items-center mb-1.5">
-                                      <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase tracking-wider">Select Meta Pixel</label>
-                                      {selectedAdAccountId && !isLoadingPixels && (
-                                          <button 
-                                              type="button"
-                                              onClick={handleCreatePixel}
-                                              disabled={isCreatingPixel}
-                                              className="text-[10px] font-extrabold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none mr-2 uppercase tracking-wider"
-                                          >
-                                              {isCreatingPixel ? (
-                                                  <>
-                                                      <Loader2 size={10} className="animate-spin text-blue-500" /> Generating...
-                                                  </>
-                                              ) : (
-                                                  <>
-                                                      <PlusCircle size={11} className="text-blue-500" /> Auto-Create Pixel
-                                                  </>
-                                              )}
-                                          </button>
-                                      )}
-                                  </div>
-                                  {isLoadingPixels ? (
-                                      <div className="flex items-center gap-2 py-3 px-4 bg-slate-50 rounded-2xl border border-slate-200/60">
-                                          <Loader2 size={16} className="animate-spin text-blue-500" />
-                                          <span className="text-xs text-slate-500 font-medium">Loading pixels from Meta...</span>
-                                      </div>
-                                  ) : (
-                                      <select 
-                                          value={pixelId || ''} 
-                                          onChange={(e) => setPixelId(e.target.value || null)}
-                                          className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 px-4 rounded-2xl text-slate-800 text-sm font-medium outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
-                                      >
-                                          <option value="">-- Choose a Pixel --</option>
-                                          {pixels.map(p => (
-                                              <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
-                                          ))}
-                                      </select>
-                                  )}
-                              </div>
-                              {!pixelId && (
-                                  <div className="bg-red-50 border border-red-100 p-4 rounded-2xl text-xs text-red-800 font-semibold leading-relaxed">
-                                      ⚠️ Warning: You do not have a Meta Pixel linked to your account. Launching a Website Conversion campaign requires a Pixel. Please connect a Pixel in your Profile settings first, or switch to an Instant Form campaign.
-                                  </div>
-                              )}
-                          </div>
+                                                        </div>
                       )}
 
                       <div>
@@ -5966,52 +5982,200 @@ export default function AdsPage() {
                           />
                       </div>
 
-                      <div className="relative">
-                          <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Target Locations</label>
-                          {adForm.metaLocations.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mb-3">
-                                  {adForm.metaLocations.map((loc, idx) => (
-                                      <div key={idx} className="bg-blue-50/50 py-2 px-3 rounded-xl border border-blue-200 flex items-center flex-wrap gap-2">
-                                          <div className="text-xs font-bold text-blue-900 flex items-center gap-1">
-                                              <MapPin size={12}/> {loc.location.name}
-                                          </div>
-                                          {loc.location.type === 'city' && (
-                                              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-0.5 ml-1">
-                                                  <span className="text-[9px] text-slate-400 font-bold">Radius:</span>
-                                                  <input 
-                                                      type="number" 
-                                                      min={17} 
-                                                      max={80} 
-                                                      value={loc.radius} 
-                                                      onChange={(e) => {
-                                                          const val = Math.min(80, Math.max(17, parseInt(e.target.value) || 17));
-                                                          setAdForm(prev => ({
-                                                              ...prev,
-                                                              metaLocations: prev.metaLocations.map((item, i) => i === idx ? { ...item, radius: val } : item)
-                                                          }));
-                                                      }}
-                                                      className="w-10 text-center font-bold text-xs text-blue-600 bg-transparent outline-none border-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                  />
-                                                  <span className="text-[9px] text-slate-400 font-bold">km</span>
-                                              </div>
-                                          )}
-                                          <button 
-                                              onClick={() => setAdForm(prev => ({ ...prev, metaLocations: prev.metaLocations.filter((_, i) => i !== idx) }))} 
-                                              className="bg-white p-1 rounded-full shadow-sm text-slate-400 hover:text-red-500 transition-colors"
-                                          >
-                                              <X size={12} />
-                                          </button>
-                                      </div>
+                      {/* Universal Meta Dataset / Pixel Connection & Optimization */}
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+                          <div className="flex justify-between items-start">
+                              <div>
+                                  <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                                      <Zap size={14} className="text-blue-600" /> Meta Dataset / Pixel (Optimization)
+                                  </label>
+                                  <p className="text-[11px] text-slate-500 mt-0.5">
+                                      Connect a Meta Dataset or Pixel to connect conversion tracking and power Meta's algorithmic optimization.
+                                  </p>
+                              </div>
+                              {selectedAdAccountId && !isLoadingPixels && (
+                                  <button 
+                                      type="button"
+                                      onClick={handleCreatePixel}
+                                      disabled={isCreatingPixel}
+                                      className="text-[10px] font-extrabold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none uppercase tracking-wider shrink-0 ml-2"
+                                  >
+                                      {isCreatingPixel ? (
+                                          <>
+                                              <Loader2 size={10} className="animate-spin text-blue-500" /> Generating...
+                                          </>
+                                      ) : (
+                                          <>
+                                              <PlusCircle size={11} className="text-blue-500" /> Auto-Create
+                                          </>
+                                      )}
+                                  </button>
+                              )}
+                          </div>
+                          {isLoadingPixels ? (
+                              <div className="flex items-center gap-2 py-3 px-4 bg-white rounded-xl border border-slate-200/60">
+                                  <Loader2 size={16} className="animate-spin text-blue-500" />
+                                  <span className="text-xs text-slate-500 font-medium">Loading Datasets & Pixels from Meta...</span>
+                              </div>
+                          ) : (
+                              <select 
+                                  value={pixelId || ''} 
+                                  onChange={(e) => setPixelId(e.target.value || null)}
+                                  className="w-full bg-white hover:bg-slate-100/50 py-3.5 px-4 rounded-xl text-slate-800 text-sm font-medium outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200/60 transition-all cursor-pointer"
+                              >
+                                  <option value="">-- Choose a Meta Dataset / Pixel --</option>
+                                  {pixels.map(p => (
+                                      <option key={p.id} value={p.id}>
+                                          {p.name} {p.is_dataset ? '📊 (Dataset)' : '🎯 (Pixel)'} ({p.id})
+                                      </option>
                                   ))}
+                              </select>
+                          )}
+                          {campaignType === 'website_conversion' && !pixelId && (
+                              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-800 font-semibold leading-relaxed">
+                                  ⚠️ Warning: A Meta Dataset/Pixel is required for Website Conversion campaigns.
                               </div>
                           )}
-                          <div className="relative">
-                            <input type="text" value={locationSearchText} onChange={(e) => setLocationSearchText(e.target.value)} className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 pl-11 pr-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" placeholder="Search city..." />
-                            <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                            {isSearchingLocation && <Loader2 size={16} className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />}
-                          </div>
-                          {locationResults.length > 0 && (<div className="absolute z-20 w-full bg-white mt-2 rounded-2xl shadow-xl border border-slate-100 max-h-56 overflow-y-auto custom-scrollbar">{locationResults.map(loc => (<div key={loc.key} onClick={() => { let currentList = adForm.metaLocations; if (loc.key === '1021145') { currentList = currentList.filter(l => l.location.key !== '1726'); } else if (loc.key === '1726') { currentList = currentList.filter(l => l.location.key !== '1021145'); } if (!currentList.find(l => l.location.key === loc.key)) { setAdForm(prev => ({ ...prev, metaLocations: [...currentList, { location: loc, radius: 20 }] })); } setLocationSearchText(''); setLocationResults([]); }} className="p-4 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors"><div className="text-sm font-bold text-slate-800">{loc.name}</div><div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">{loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})</div></div>))}</div>)}
+                          {pixelId && (
+                              <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl text-xs text-emerald-800 font-medium flex items-center gap-2">
+                                  <CheckCircle size={15} className="text-emerald-600 shrink-0" />
+                                  <span>
+                                      Connected to Ads: Meta tracking specs will attribute conversions to <strong>{pixels.find(p => p.id === pixelId)?.name || pixelId}</strong>.
+                                  </span>
+                              </div>
+                          )}
                       </div>
+
+                      {/* Target Locations (Cities & Interactive Map Pin Drop) */}
+                      <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                  <MapPin size={14} className="text-blue-600" /> Target Locations
+                                  {(adForm.metaLocations.length > 0 || droppedPins.length > 0) && (
+                                      <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                          {adForm.metaLocations.length + droppedPins.length} active
+                                      </span>
+                                  )}
+                              </label>
+                              <div className="flex bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
+                                  <button
+                                      type="button"
+                                      onClick={() => setLocationTab('city')}
+                                      className={`px-3 py-1 rounded-lg transition-all ${
+                                          locationTab === 'city'
+                                              ? 'bg-white text-blue-600 shadow-sm'
+                                              : 'text-slate-500 hover:text-slate-700'
+                                      }`}
+                                  >
+                                      Search Cities
+                                  </button>
+                                  <button
+                                      type="button"
+                                      onClick={() => setLocationTab('map')}
+                                      className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 ${
+                                          locationTab === 'map'
+                                              ? 'bg-white text-blue-600 shadow-sm'
+                                              : 'text-slate-500 hover:text-slate-700'
+                                      }`}
+                                  >
+                                      <span>🗺️ Drop Pin on Map</span>
+                                      {droppedPins.length > 0 && (
+                                          <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                                      )}
+                                  </button>
+                              </div>
+                          </div>
+
+                          {locationTab === 'city' ? (
+                              <div className="relative">
+                                  {adForm.metaLocations.length > 0 && (
+                                      <div className="flex flex-wrap gap-2 mb-3">
+                                          {adForm.metaLocations.map((loc, idx) => (
+                                              <div key={idx} className="bg-blue-50/50 py-2 px-3 rounded-xl border border-blue-200 flex items-center flex-wrap gap-2">
+                                                  <div className="text-xs font-bold text-blue-900 flex items-center gap-1">
+                                                      <MapPin size={12}/> {loc.location.name}
+                                                  </div>
+                                                  {loc.location.type === 'city' && (
+                                                      <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-0.5 ml-1">
+                                                          <span className="text-[9px] text-slate-400 font-bold">Radius:</span>
+                                                          <input 
+                                                              type="number" 
+                                                              min={17} 
+                                                              max={80} 
+                                                              value={loc.radius} 
+                                                              onChange={(e) => {
+                                                                  const val = Math.min(80, Math.max(17, parseInt(e.target.value) || 17));
+                                                                  setAdForm(prev => ({
+                                                                      ...prev,
+                                                                      metaLocations: prev.metaLocations.map((item, i) => i === idx ? { ...item, radius: val } : item)
+                                                                  }));
+                                                              }} 
+                                                              className="w-10 text-center font-bold text-xs text-blue-600 bg-transparent outline-none border-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                          />
+                                                          <span className="text-[9px] text-slate-400 font-bold">km</span>
+                                                      </div>
+                                                  )}
+                                                  <button 
+                                                      type="button"
+                                                      onClick={() => setAdForm(prev => ({ ...prev, metaLocations: prev.metaLocations.filter((_, i) => i !== idx) }))} 
+                                                      className="bg-white p-1 rounded-full shadow-sm text-slate-400 hover:text-red-500 transition-colors"
+                                                  >
+                                                      <X size={12} />
+                                                  </button>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  )}
+                                  <div className="relative">
+                                      <input 
+                                          type="text" 
+                                          value={locationSearchText} 
+                                          onChange={(e) => setLocationSearchText(e.target.value)} 
+                                          className="w-full bg-slate-50 hover:bg-slate-100/50 py-3.5 pl-11 pr-5 rounded-2xl text-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/20 outline-none border border-slate-200/60 focus:border-blue-400 transition-all" 
+                                          placeholder="Search city..." 
+                                      />
+                                      <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                      {isSearchingLocation && <Loader2 size={16} className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />}
+                                  </div>
+                                  {locationResults.length > 0 && (
+                                      <div className="absolute z-20 w-full bg-white mt-2 rounded-2xl shadow-xl border border-slate-100 max-h-56 overflow-y-auto custom-scrollbar">
+                                          {locationResults.map(loc => (
+                                              <div 
+                                                  key={loc.key} 
+                                                  onClick={() => { 
+                                                      let currentList = adForm.metaLocations; 
+                                                      if (loc.key === '1021145') { currentList = currentList.filter(l => l.location.key !== '1726'); } 
+                                                      else if (loc.key === '1726') { currentList = currentList.filter(l => l.location.key !== '1021145'); } 
+                                                      if (!currentList.find(l => l.location.key === loc.key)) { 
+                                                          setAdForm(prev => ({ ...prev, metaLocations: [...currentList, { location: loc, radius: 20 }] })); 
+                                                      } 
+                                                      setLocationSearchText(''); 
+                                                      setLocationResults([]); 
+                                                  }} 
+                                                  className="p-4 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors"
+                                              >
+                                                  <div className="text-sm font-bold text-slate-800">{loc.name}</div>
+                                                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-1">
+                                                      {loc.region ? `${loc.region}, ` : ''}{loc.country_code} ({loc.type})
+                                                  </div>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  )}
+                              </div>
+                          ) : (
+                              <MapLocationPicker
+                                  pins={droppedPins}
+                                  onPinsChange={setDroppedPins}
+                              />
+                          )}
+                      </div>
+
+                      {/* Detailed Targeting */}
+                      <DetailedTargetingSelector
+                          selectedInterests={selectedInterests}
+                          onInterestsChange={setSelectedInterests}
+                      />
 
                       {/* Run as Remarketing Campaign Toggle */}
                       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-2xl border border-blue-100 flex items-center justify-between mt-4">
@@ -6135,17 +6299,22 @@ export default function AdsPage() {
               </div>
  
               {campaignType === 'instant_form' && (
-                  <div>
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4 border-b border-slate-100 pb-2"><Settings2 size={16} /> Lead Form Questions</label>
-                      {formQuestions.length > 0 && (<div className="flex flex-col gap-3 mb-4">{formQuestions.map((q, idx) => (<div key={idx} className="bg-slate-50 border border-slate-200/60 rounded-[1.25rem] p-4 flex justify-between items-center group shadow-sm"><div><div className="text-sm font-bold text-slate-800 leading-tight mb-1">{q.label}</div><div className="flex flex-wrap gap-1.5 mt-1"><span className="text-[9px] bg-blue-100 text-blue-600 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">{q.type === 'MULTIPLE_CHOICE' ? `Multiple Choice` : 'Short Answer'}</span>{q.type === 'MULTIPLE_CHOICE' && q.options?.map((opt, oIdx) => (<span key={oIdx} className="text-[9px] bg-slate-100 text-slate-500 font-medium px-2 py-0.5 rounded-full">{opt}</span>))}</div></div><div className="flex gap-2"><button onClick={() => { setEditingIdx(idx); setNewQuestion(q); setIsAddingQuestion(true); }} className="bg-white p-2 rounded-full text-slate-400 hover:text-blue-500 shadow-sm border border-slate-100 transition-colors"><Settings2 size={14}/></button><button onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== idx))} className="bg-white p-2 rounded-full text-slate-400 hover:text-red-500 shadow-sm border border-slate-100 transition-colors"><X size={14}/></button></div></div>))}</div>)}
-                      {(!isAddingQuestion && editingIdx === null) ? (<div className="flex flex-wrap gap-2"><button onClick={() => handleAddPresetQuestion('budget')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Budget</button><button onClick={() => handleAddPresetQuestion('type')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Property Type</button><button onClick={() => handleAddPresetQuestion('timeline')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Timeline</button><button onClick={() => handleAddPresetQuestion('visit')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Visit Time</button><button onClick={() => setIsAddingQuestion(true)} className="text-xs font-bold bg-slate-100 text-slate-600 px-4 py-2.5 rounded-full hover:bg-slate-200 transition-colors flex items-center gap-1"><PlusCircle size={14}/> Custom</button></div>) : (
-                          <div className="bg-slate-50/80 p-5 rounded-[1.5rem] border border-slate-200 space-y-4 shadow-inner">
-                              <div><input type="text" value={newQuestion.label} onChange={e => setNewQuestion({...newQuestion, label: e.target.value})} className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all" placeholder="Question Text..." /></div>
-                              <div><select value={newQuestion.type} onChange={e => setNewQuestion({...newQuestion, type: e.target.value as any})} className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all cursor-pointer"><option value="SHORT_ANSWER">Short Answer (Text)</option><option value="MULTIPLE_CHOICE">Multiple Choice</option></select></div>
-                              {newQuestion.type === 'MULTIPLE_CHOICE' && (<div className="space-y-3"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Configure Options</label>{(newQuestion.options || []).map((opt, oIdx) => (<div key={oIdx} className="flex gap-2 items-center"><input type="text" value={opt} onChange={e => { const updated = [...(newQuestion.options || [])]; updated[oIdx] = e.target.value; setNewQuestion({...newQuestion, options: updated}); }} className="flex-1 bg-white py-3 px-4 rounded-xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all" placeholder={`Option ${oIdx + 1}`} /><button onClick={() => { const updated = (newQuestion.options || []).filter((_, i) => i !== oIdx); setNewQuestion({...newQuestion, options: updated}); }} className="p-3 text-slate-400 hover:text-red-500 transition-colors"><X size={16} /></button></div>))}<button onClick={() => setNewQuestion({...newQuestion, options: [...(newQuestion.options || []), '']})} className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"><PlusCircle size={14} /> Add Another Option</button></div>)}
-                              <div className="flex gap-3 pt-2"><button onClick={() => { setIsAddingQuestion(false); setEditingIdx(null); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); }} className="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors">Cancel</button><button onClick={() => { if(newQuestion.label){ if (editingIdx !== null) { const updated = [...formQuestions]; updated[editingIdx] = newQuestion; setFormQuestions(updated); } else { setFormQuestions(prev => [...prev, newQuestion]); } setIsAddingQuestion(false); setEditingIdx(null); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); } }} className="flex-1 bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors shadow-sm">{editingIdx !== null ? 'Update Question' : 'Save Question'}</button></div>
-                          </div>
-                      )}
+                  <div className="mt-4">
+                      <InstantFormCustomizer
+                          config={leadFormConfig}
+                          onChange={setLeadFormConfig}
+                          availableForms={pageLeadForms}
+                          isLoadingForms={isLoadingPageLeadForms}
+                          selectedExistingFormId={selectedExistingLeadFormId}
+                          onSelectExistingFormId={(id) => {
+                              setSelectedExistingLeadFormId(id);
+                              setLeadFormConfig(prev => ({
+                                  ...prev,
+                                  existingFormId: id,
+                                  mode: id ? 'existing' : 'new'
+                              }));
+                          }}
+                      />
                   </div>
               )}
 
@@ -6159,7 +6328,7 @@ export default function AdsPage() {
                 disabled={
                     isSubmitting || 
                     checkingSanity ||
-                    adForm.metaLocations.length === 0 || 
+                    (adForm.metaLocations.length === 0 && droppedPins.length === 0) || 
                     selectedCreatives.length === 0 || 
                     !accountStatus ||
                     (accountStatus && !accountStatus.error && (

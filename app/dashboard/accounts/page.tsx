@@ -30,7 +30,8 @@ const AVAILABLE_MODULES = [
   { id: 'crm', label: 'CRM & Pipeline Leads', description: 'Track leads, move stages, manage notes, and followups.' },
   { id: 'whatsapp', label: 'WhatsApp Automation', description: 'Automated welcome drips, templates, and messaging.' },
   { id: 'voice_agent', label: 'AI Voice Calling', description: 'Autonomous outbound AI phone calls and appointment setting.' },
-  { id: 'flows', label: 'Lead Qualification Flows', description: 'Interactive qualification flows and chatbot trees.' }
+  { id: 'flows', label: 'Lead Qualification Flows', description: 'Interactive qualification flows and chatbot trees.' },
+  { id: 'team', label: 'Team Management', description: 'Add and manage team members, sales agents, and lead assignments.' }
 ]
 
 export default function AccountsPage() {
@@ -218,7 +219,7 @@ export default function AccountsPage() {
     if (Array.isArray(existing) && existing.length > 0) {
       setClientFeatures(existing)
     } else {
-      setClientFeatures(['analytics', 'inventory', 'creation', 'ads', 'crm', 'whatsapp', 'voice_agent', 'flows'])
+      setClientFeatures(['analytics', 'inventory', 'creation', 'ads', 'crm', 'whatsapp', 'voice_agent', 'flows', 'team'])
     }
     setFeatureModalOpen(true)
   }

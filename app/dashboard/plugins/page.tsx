@@ -93,7 +93,7 @@ export default function PluginsPage() {
 
         // Resolve target user
         let tUserId = user.id
-        if (['admin', 'agent'].includes(currentRole) && (authProfile?.agency_id || authProfile?.parent_id)) {
+        if (currentRole === 'agent' && (authProfile?.agency_id || authProfile?.parent_id)) {
           tUserId = (authProfile?.agency_id || authProfile?.parent_id) as string
         }
         if (impersonateId && ['super_admin', 'agency', 'admin', 'agent'].includes(currentRole)) {

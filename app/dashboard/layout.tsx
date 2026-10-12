@@ -161,6 +161,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           router.push('/dashboard')
           return
         }
+        if (pathname.startsWith('/dashboard/team') && !allowed.includes('team')) {
+          router.push('/dashboard')
+          return
+        }
       }
 
       // Check if they are an existing client who already has properties or assets

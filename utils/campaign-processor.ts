@@ -529,7 +529,8 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         }
 
         // --- Step 4: Create or Resolve Lead Form ---
-        let leadFormId = payload.leadFormId || payload.lead_form_id || payload.formId || null;
+        // --- Step 4: Create or Resolve Lead Form ---
+        let leadFormId = payload.existingLeadFormId || payload.leadFormId || payload.lead_form_id || payload.formId || null;
         const requiresLeadForm = !isWebsiteCampaign && campaignType !== 'whatsapp_chat';
         if (requiresLeadForm && !leadFormId) {
             logToFile("--- RESOLVING / CREATING LEAD FORM ---");
@@ -566,79 +567,129 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             // Otherwise, ALWAYS create a new instant lead form matching the user's campaign configuration & custom questions!
             if (!leadFormId) {
                 logToFile("Creating new instant lead form on Meta Page...");
+                const formConfig = payload.leadFormConfig || null;
+
                 let metaCustomQuestions: any[] = [];
                 let hasCustomQuestions = false;
-                if (customQuestionsStr && customQuestionsStr !== "[]") {
-                    try {
-                        const parsedQuestions = JSON.parse(customQuestionsStr);
-                        if (Array.isArray(parsedQuestions) && parsedQuestions.length > 0) {
-                            hasCustomQuestions = true;
-                            metaCustomQuestions = parsedQuestions.map((q: any) => {
-                                const label = q.label.trim();
-                                const lowerLabel = label.toLowerCase();
-                                
-                                if (q.type !== 'MULTIPLE_CHOICE') {
-                                    if (lowerLabel.includes('company') || lowerLabel.includes('business name')) return { type: 'COMPANY_NAME', key: 'company_name' };
-                                    if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) return { type: 'JOB_TITLE', key: 'job_title' };
-                                    if (lowerLabel.includes('city')) return { type: 'CITY', key: 'city' };
-                                    if (lowerLabel.includes('state')) return { type: 'STATE', key: 'state' };
-                                }
 
-                                const metaQ: any = { type: 'CUSTOM', label: label.substring(0, 200) };
-                                if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-                                    const validOptions = q.options
-                                        .filter((o: string) => o.trim() !== '')
-                                        .map((opt: string) => ({ value: opt.trim(), key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50) }));
-                                    if (validOptions.length > 0) metaQ.options = validOptions;
-                                }
-                                return metaQ;
-                            });
-
-                            const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
-                            metaCustomQuestions = metaCustomQuestions.filter((q: any) => {
-                                if (q.type === 'CUSTOM') return true;
-                                if (seenTypes.has(q.type)) return false;
-                                seenTypes.add(q.type);
-                                return true;
-                            });
+                // Merge questions from formConfig.questions or legacy customQuestionsStr
+                const rawQuestions = (formConfig?.questions && Array.isArray(formConfig.questions))
+                    ? formConfig.questions
+                    : (() => {
+                        if (customQuestionsStr && customQuestionsStr !== "[]") {
+                            try { return JSON.parse(customQuestionsStr); } catch (e) { return []; }
                         }
-                    } catch (e) {
-                        logToFile("Failed to parse custom questions", e);
-                    }
+                        return [];
+                    })();
+
+                if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
+                    hasCustomQuestions = true;
+                    metaCustomQuestions = rawQuestions.map((q: any) => {
+                        const label = (q.label || '').trim();
+                        const lowerLabel = label.toLowerCase();
+                        
+                        if (q.type !== 'MULTIPLE_CHOICE') {
+                            if (lowerLabel.includes('company') || lowerLabel.includes('business name')) return { type: 'COMPANY_NAME', key: 'company_name' };
+                            if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) return { type: 'JOB_TITLE', key: 'job_title' };
+                            if (lowerLabel.includes('city')) return { type: 'CITY', key: 'city' };
+                            if (lowerLabel.includes('state')) return { type: 'STATE', key: 'state' };
+                        }
+
+                        const metaQ: any = { type: 'CUSTOM', label: label.substring(0, 200) };
+                        if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
+                            const validOptions = q.options
+                                .filter((o: string) => o && o.trim() !== '')
+                                .map((opt: string) => ({ value: opt.trim(), key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50) }));
+                            if (validOptions.length > 0) metaQ.options = validOptions;
+                        }
+                        return metaQ;
+                    });
+
+                    const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
+                    metaCustomQuestions = metaCustomQuestions.filter((q: any) => {
+                        if (q.type === 'CUSTOM') return true;
+                        if (seenTypes.has(q.type)) return false;
+                        seenTypes.add(q.type);
+                        return true;
+                    });
+                }
+
+                // Add City if requested
+                const standardQuestions: any[] = [
+                    { type: "FULL_NAME", key: "full_name" },
+                    { type: "PHONE", key: "phone_number" },
+                    { type: "EMAIL", key: "email" }
+                ];
+                if (formConfig?.includeCity) {
+                    standardQuestions.push({ type: "CITY", key: "city" });
                 }
 
                 const finalFollowUpUrl = linkUrl || "https://adrolls.in";
                 const questionLabels = metaCustomQuestions.map((q: any) => q.label || q.type).filter(Boolean).map((label: string) => label.replace(/[?:]/g, '').trim()).join(', ');
-                const formName = `Form - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+                const defaultFormName = `Form - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+                const formName = formConfig?.name || defaultFormName;
+
+                // Meta official documentation: is_continued_flow = true enforces HIGHER INTENT review step
+                const isHighIntent = formConfig ? formConfig.formType !== 'MORE_VOLUME' : true;
 
                 const leadFormPayload: any = {
                     name: formName,
+                    is_continued_flow: isHighIntent,
                     follow_up_action_url: finalFollowUpUrl,
-                    question_page_custom_headline: `Get Pricing & Details`,
-                    question_page_custom_text: "Confirm details to view pricing.",
+                    question_page_custom_headline: formConfig?.headline || `Get Pricing & Details`,
+                    question_page_custom_text: formConfig?.greetingText || "Confirm details to view pricing.",
                     privacy_policy: {
-                        url: (privacyPolicyUrl && !privacyPolicyUrl.includes('localhost')) ? privacyPolicyUrl : "https://adrolls.in/privacy",
-                        link_text: "Privacy Policy"
+                        url: (formConfig?.privacyPolicyUrl || privacyPolicyUrl) && !(formConfig?.privacyPolicyUrl || privacyPolicyUrl).includes('localhost') 
+                            ? (formConfig?.privacyPolicyUrl || privacyPolicyUrl) 
+                            : "https://adrolls.in/privacy",
+                        link_text: formConfig?.privacyPolicyLinkText || "Privacy Policy"
                     },
                     questions: [
-                        { type: "FULL_NAME", key: "full_name" },
-                        { type: "EMAIL", key: "email" },
-                        { type: "PHONE", key: "phone_number" },
+                        ...standardQuestions,
                         ...metaCustomQuestions
                     ],
+                    thank_you_page: {
+                        title: formConfig?.completionTitle || "Thank you! You're all set.",
+                        body: formConfig?.completionBody || "Our representative will contact you shortly with the brochure.",
+                        button_text: formConfig?.completionButtonText || (formConfig?.completionAction === 'whatsapp' ? "Chat on WhatsApp" : "Visit Website"),
+                        button_type: "VIEW_WEBSITE",
+                        website_url: finalFollowUpUrl
+                    },
                     access_token: tokenForLeadForm
                 };
 
-                const formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+                logToFile(`[Processor] Submitting Lead Form to Meta. High Intent: ${isHighIntent}`);
+                let formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json; charset=utf-8' },
                     body: JSON.stringify(leadFormPayload)
                 });
-                const formCreateData = await formCreateRes.json();
+                let formCreateData = await formCreateRes.json();
+
+                // If Meta rejected optional thank_you_page block, retry with simplified payload
+                if (!formCreateRes.ok && formCreateData.error) {
+                    logToFile("Lead Form creation initial attempt returned error, trying standard payload:", formCreateData.error);
+                    const simplifiedPayload = {
+                        name: formName,
+                        is_continued_flow: isHighIntent,
+                        follow_up_action_url: finalFollowUpUrl,
+                        question_page_custom_headline: formConfig?.headline || `Get Pricing & Details`,
+                        question_page_custom_text: formConfig?.greetingText || "Confirm details to view pricing.",
+                        privacy_policy: leadFormPayload.privacy_policy,
+                        questions: leadFormPayload.questions,
+                        access_token: tokenForLeadForm
+                    };
+                    formCreateRes = await fetch(`${FB_MARKETING_URL}/${pageId}/leadgen_forms`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                        body: JSON.stringify(simplifiedPayload)
+                    });
+                    formCreateData = await formCreateRes.json();
+                }
 
                 if (formCreateRes.ok && formCreateData.id) {
                     leadFormId = formCreateData.id;
-                    logToFile(`Lead Form Created: ${leadFormId}`);
+                    logToFile(`Lead Form Created: ${leadFormId} (High Intent: ${isHighIntent})`);
                 } else {
                     logToFile("Lead Form Creation Failed:", formCreateData);
                     // If user had specified custom questions, don't silently pick a random old form with wrong questions
@@ -750,7 +801,22 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     };
                     locationsArray.forEach((locData: any) => {
                         const loc = locData.location || locData;
-                        if (loc && loc.key) {
+                        if (loc && (loc.type === 'custom_location' || locData.latitude || loc.latitude)) {
+                            const lat = Number(locData.latitude || loc.latitude);
+                            const lng = Number(locData.longitude || loc.longitude);
+                            const rad = Math.max(1, Math.min(80, Number(locData.radius || loc.radius || 15)));
+                            if (!isNaN(lat) && !isNaN(lng)) {
+                                if (!targetingConfig.geo_locations.custom_locations) {
+                                    targetingConfig.geo_locations.custom_locations = [];
+                                }
+                                targetingConfig.geo_locations.custom_locations.push({
+                                    latitude: lat,
+                                    longitude: lng,
+                                    radius: rad,
+                                    distance_unit: 'kilometer'
+                                });
+                            }
+                        } else if (loc && loc.key) {
                             const rad = locData.radius || loc.radius || 25;
                             const finalRadius = Math.max(17, Math.min(80, rad));
                             if (loc.type === 'city') targetingConfig.geo_locations.cities.push({ key: loc.key, radius: finalRadius, distance_unit: 'kilometer' });
@@ -760,18 +826,66 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                         }
                     });
 
-                    const hasGranular = targetingConfig.geo_locations.cities.length > 0 || targetingConfig.geo_locations.regions.length > 0 || targetingConfig.geo_locations.zips.length > 0;
+                    // Add pins from payload.droppedPins if provided
+                    if (Array.isArray(payload.droppedPins) && payload.droppedPins.length > 0) {
+                        if (!targetingConfig.geo_locations.custom_locations) {
+                            targetingConfig.geo_locations.custom_locations = [];
+                        }
+                        payload.droppedPins.forEach((pin: any) => {
+                            const lat = Number(pin.latitude || pin.lat);
+                            const lng = Number(pin.longitude || pin.lng);
+                            const rad = Math.max(1, Math.min(80, Number(pin.radius || 15)));
+                            if (!isNaN(lat) && !isNaN(lng)) {
+                                targetingConfig.geo_locations.custom_locations.push({
+                                    latitude: lat,
+                                    longitude: lng,
+                                    radius: rad,
+                                    distance_unit: 'kilometer'
+                                });
+                            }
+                        });
+                    }
+
+                    const hasGranular = (targetingConfig.geo_locations.cities && targetingConfig.geo_locations.cities.length > 0) || 
+                                        (targetingConfig.geo_locations.regions && targetingConfig.geo_locations.regions.length > 0) || 
+                                        (targetingConfig.geo_locations.zips && targetingConfig.geo_locations.zips.length > 0) ||
+                                        (targetingConfig.geo_locations.custom_locations && targetingConfig.geo_locations.custom_locations.length > 0);
                     if (hasGranular) delete targetingConfig.geo_locations.countries;
                     else if (targetingConfig.geo_locations.countries.length === 0) targetingConfig.geo_locations.countries.push('IN');
 
                     if (targetingConfig.geo_locations.cities.length === 0) delete targetingConfig.geo_locations.cities;
                     if (targetingConfig.geo_locations.regions.length === 0) delete targetingConfig.geo_locations.regions;
                     if (targetingConfig.geo_locations.zips.length === 0) delete targetingConfig.geo_locations.zips;
+                    if (targetingConfig.geo_locations.custom_locations && targetingConfig.geo_locations.custom_locations.length === 0) delete targetingConfig.geo_locations.custom_locations;
                     parsedLocations = true;
                 }
             } catch (e) {
                 logToFile("Failed to parse locations JSON", e);
             }
+        }
+
+        // Also check if standalone payload.droppedPins provided without metaLocations
+        if (!parsedLocations && Array.isArray(payload.droppedPins) && payload.droppedPins.length > 0) {
+            targetingConfig = {
+                geo_locations: {
+                    custom_locations: [],
+                    location_types: ['home']
+                }
+            };
+            payload.droppedPins.forEach((pin: any) => {
+                const lat = Number(pin.latitude || pin.lat);
+                const lng = Number(pin.longitude || pin.lng);
+                const rad = Math.max(1, Math.min(80, Number(pin.radius || 15)));
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    targetingConfig.geo_locations.custom_locations.push({
+                        latitude: lat,
+                        longitude: lng,
+                        radius: rad,
+                        distance_unit: 'kilometer'
+                    });
+                }
+            });
+            parsedLocations = true;
         }
 
         // If not structured JSON, support plain text locations e.g. "Pune", "Delhi NCR", "Chandigarh, Mohali & Panchkula"
@@ -854,6 +968,20 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         targetingConfig.targeting_automation = { advantage_audience: 0 };
         targetingConfig.device_platforms = ['mobile', 'desktop'];
         targetingConfig.publisher_platforms = ['facebook', 'instagram'];
+
+        // --- Meta Official Detailed Targeting (flexible_spec) ---
+        const interestsList = payload.interests || payload.detailedTargeting || [];
+        if (Array.isArray(interestsList) && interestsList.length > 0) {
+            targetingConfig.flexible_spec = [
+                {
+                    interests: interestsList.map((item: any) => ({
+                        id: String(item.id),
+                        name: item.name || ''
+                    }))
+                }
+            ];
+            logToFile(`[Processor] Attached Detailed Targeting flexible_spec: ${interestsList.length} interests`, targetingConfig.flexible_spec);
+        }
 
         // --- Step 7: Create Ad Set ---
         logToFile("--- CREATING AD SET ---");
@@ -1006,13 +1134,24 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 }
             } catch (e) { /* ignore */ }
 
-            const adPayload = {
+            const adPayload: any = {
                 name: defaultAdName,
                 adset_id: adSetId,
                 creative: { creative_id: creativeData.id },
                 status: 'ACTIVE',
                 access_token: facebookToken,
             };
+
+            // Meta Official Ad Tracking Specs: Connects Dataset / Pixel to the ad for conversion tracking and algorithm optimization
+            if (finalPixelId) {
+                adPayload.tracking_specs = [
+                    {
+                        "action.type": ["offsite_conversion"],
+                        "fb_pixel": [String(finalPixelId)]
+                    }
+                ];
+                logToFile(`[Processor] Attached tracking_specs for Dataset/Pixel: ${finalPixelId}`);
+            }
 
             let adRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/ads`, {
                 method: 'POST',

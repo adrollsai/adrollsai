@@ -77,7 +77,7 @@ export default function CustomAudiencesPage() {
       const { data: authProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
       let targetUserId = user.id
 
-      if (['admin', 'agent'].includes(authProfile?.role || '') && (authProfile?.agency_id || authProfile?.parent_id)) {
+      if (authProfile?.role === 'agent' && (authProfile?.agency_id || authProfile?.parent_id)) {
         targetUserId = (authProfile?.agency_id || authProfile?.parent_id) as string
       }
 
