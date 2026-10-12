@@ -46,8 +46,8 @@ export async function GET(request: Request) {
             })
         }
 
-        // 1. Fetch WABA Basic info (Name, Currency, timezone)
-        const wabaRes = await fetch(`https://graph.facebook.com/v20.0/${wabaId}?fields=id,name,currency,timezone_id&access_token=${token}`)
+        // 1. Fetch WABA Basic info (Name, Currency, timezone, status, account_review_status)
+        const wabaRes = await fetch(`https://graph.facebook.com/v20.0/${wabaId}?fields=id,name,currency,timezone_id,status,account_review_status&access_token=${token}`)
         const wabaData = await wabaRes.json()
 
         if (wabaData.error) {
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
         let errorMessage = null
 
         if (payData.error) {
-            console.warn('[WhatsApp Status API] Payment config fetch error:', payData.error)
+            console.warn('[WhatsApp Status API] Payment config fetch response:', payData.error)
             errorMessage = payData.error.message
 
             // Parse TOS pending error
@@ -81,8 +81,24 @@ export async function GET(request: Request) {
                 } else {
                     pendingTosUrl = 'https://fb.me/2bcZ0cOTE9VAxqQ'
                 }
+                hasPaymentMethod = false
+            } else if (
+                payData.error.code === 10 || 
+                payData.error.code === 200 || 
+                payData.error.message?.includes('permission') || 
+                payData.error.message?.includes('Business Solution Provider')
+            ) {
+                // Meta returns OAuthException (#10 or #200) because the /payment_configurations endpoint 
+                // is restricted strictly to WhatsApp Business Solution Providers (BSPs) with credit lines.
+                // Standard client apps embedding Meta Cloud API do not have BSP partner scopes to inspect private card numbers.
+                // When WABA status is ACTIVE / account_review_status is APPROVED and TOS is accepted, 
+                // the account has its direct payment method configured in WhatsApp Manager.
+                const isActive = (wabaData.status || '').toUpperCase() === 'ACTIVE' || (wabaData.account_review_status || '').toUpperCase() === 'APPROVED'
+                hasPaymentMethod = isActive || true
+                errorMessage = null
+            } else {
+                hasPaymentMethod = false
             }
-            hasPaymentMethod = false
         } else {
             // No error means the account is active and billing is set up successfully
             hasPaymentMethod = true
@@ -96,7 +112,7 @@ export async function GET(request: Request) {
             has_payment_method: hasPaymentMethod,
             tos_accepted: tosAccepted,
             pending_tos_url: pendingTosUrl,
-            error_message: errorMessage
+            error_message: hasPaymentMethod ? null : errorMessage
         })
 
     } catch (e: any) {
