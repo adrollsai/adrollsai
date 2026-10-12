@@ -13,7 +13,9 @@ import { uploadToR2 } from '@/utils/upload-helper'
 import { getVideoPosterUrl } from '@/utils/get-video-poster'
 import ProductSearchableSelect from '@/components/ProductSearchableSelect'
 import { getPropertyTags } from '@/utils/property-tags'
-import MapLocationPicker, { DroppedPin } from '@/components/ads/MapLocationPicker'
+import type { DroppedPin } from '@/components/ads/MapLocationPicker'
+import dynamic from 'next/dynamic'
+const MapLocationPicker = dynamic(() => import('@/components/ads/MapLocationPicker'), { ssr: false })
 import DetailedTargetingSelector, { MetaInterest } from '@/components/ads/DetailedTargetingSelector'
 import InstantFormCustomizer, { InstantFormConfig } from '@/components/ads/InstantFormCustomizer'
 
@@ -409,6 +411,19 @@ export default function AdsPage() {
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [newQuestion, setNewQuestion] = useState<CustomQuestion>({ label: '', type: 'SHORT_ANSWER', options: [''] })
 
+  const [adForm, setAdForm] = useState({
+    metaLocations: [] as { location: LocationOption, radius: number }[],
+    gender: 'All',
+    ageMin: 18,
+    ageMax: 65,
+    dailyBudgetINR: 500,
+    pageId: '', 
+    linkUrl: 'https://adrolls.in', 
+    optimizeForConversions: false,
+    customInstructions: '',
+    campaignName: '',
+  })
+
   // Meta Custom Audience States
   const [customAudiences, setCustomAudiences] = useState<any[]>([])
   const [isLoadingCustomAudiences, setIsLoadingCustomAudiences] = useState(false)
@@ -461,18 +476,6 @@ export default function AdsPage() {
     }
   }, [isModalOpen, campaignType, adForm.pageId, impersonateId]);
 
-  const [adForm, setAdForm] = useState({
-    metaLocations: [] as { location: LocationOption, radius: number }[],
-    gender: 'All',
-    ageMin: 18,
-    ageMax: 65,
-    dailyBudgetINR: 500,
-    pageId: '', 
-    linkUrl: 'https://adrolls.in', 
-    optimizeForConversions: false,
-    customInstructions: '',
-    campaignName: '',
-  })
 
   // Mandatory Product Selection for Campaign Launch
   const [selectedProduct, setSelectedProduct] = useState<Property | null>(null)

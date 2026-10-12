@@ -56,6 +56,26 @@ export async function POST(req: Request) {
       try { cf = JSON.parse(cf) } catch (e) {}
     }
 
+    // CRITICAL: NEVER push demo calls or test calls initiated from rchopra489 or any admin test to client admins!
+    const isDemoOrTestCall = 
+      cf.is_demo_call === true ||
+      cf.is_test_call === true ||
+      cf.skip_credit_deduction === true ||
+      !!cf.triggered_by_admin ||
+      lead.source === 'AI Call Demo' ||
+      lead.source === 'Test Call' ||
+      lead.source === 'Internal Demo';
+
+    if (isDemoOrTestCall) {
+      console.log(`[POST-CALL NOTIFY] Suppressed client admin notification for demo/test call (lead: ${leadId}, triggered_by: ${cf.triggered_by_admin || 'admin'})`);
+      return NextResponse.json({
+        success: true,
+        action: 'demo_call_suppressed',
+        message: 'Client admin notification suppressed for demo/test call',
+        leadId
+      });
+    }
+
     const budgetVal = extractedBudget || lead.budget || cf.budget || 'Not specified'
 
     // Dynamically resolve voice campaign name if available

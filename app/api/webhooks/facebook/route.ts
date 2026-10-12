@@ -1183,7 +1183,7 @@ export async function POST(request: Request) {
                                             console.log(`[Flow] Created new CRM lead for incoming WhatsApp contact: ${defaultLeadName} (${formattedPhone}), Source: ${newLeadPayload.source}, Campaign: ${campaignName || campaignId || 'N/A'}, Assigned: ${assignedAgentId || 'Owner'}`);
                                             
                                             if (assignedAgentId && assignedAgentId !== ownerUserId) {
-                                                sendAdminMultiChannelNotification({
+                                                await sendAdminMultiChannelNotification({
                                                     ownerUserId: assignedAgentId,
                                                     title: "🎯 WhatsApp Lead Assigned to You!",
                                                     body: `Lead: ${defaultLeadName}\nPhone: ${formattedPhone}\nSource: ${adCampaignString || newLeadPayload.source}`,
@@ -1249,7 +1249,7 @@ export async function POST(request: Request) {
                                         }
 
                                         if (updatePayload.assigned_to && assignedAgentId && assignedAgentId !== ownerUserId) {
-                                            sendAdminMultiChannelNotification({
+                                            await sendAdminMultiChannelNotification({
                                                 ownerUserId: assignedAgentId,
                                                 title: "🎯 WhatsApp Lead Assigned to You!",
                                                 body: `Lead: ${latestLead.name || defaultLeadName}\nPhone: ${formattedPhone}\nSource: ${adCampaignString || 'WhatsApp Inbound'}`,
@@ -1488,7 +1488,7 @@ export async function POST(request: Request) {
                                            const targetLeadId = latestLead?.id;
                                            const targetUrl = targetLeadId ? `/dashboard/crm?leadId=${targetLeadId}` : '/dashboard/crm';
 
-                                           sendAdminMultiChannelNotification({
+                                           await sendAdminMultiChannelNotification({
                                                ownerUserId,
                                                title: '🔥 Lead Clicked Interested on Nobogent Offer!',
                                                body: `Prospect ${leadName} (${leadPhone}) clicked "Interested" on your Nobogent broadcast! Follow up now.`,
@@ -1571,7 +1571,7 @@ export async function POST(request: Request) {
                                               latestLead?.ad_name ? `(${latestLead.ad_name})` : (latestLead?.form_name ? `(${latestLead.form_name})` : '')
                                           ].filter(Boolean).join(' ') || 'WhatsApp Inbound';
                                           
-                                          sendAdminMultiChannelNotification({
+                                          await sendAdminMultiChannelNotification({
                                               ownerUserId,
                                               title: `🚨 Call with Expert Requested: ${leadName}`,
                                               body: `High-intent lead ${leadName} (${leadPhone}) requested to connect with an expert for ${ownerBusinessName || 'your business'}!\n\n📢 Source: ${leadSourceStr}\n🔗 CRM Link: https://app.nobogent.com${targetUrl}`,
@@ -2589,7 +2589,7 @@ RULES:
                                         const targetUrl = targetLeadId ? `/dashboard/crm/${targetLeadId}` : '/dashboard/crm';
                                         const campaignContext = latestLead?.ad_name || latestLead?.source || 'WhatsApp Broadcast / Inbound';
 
-                                        sendAdminMultiChannelNotification({
+                                        await sendAdminMultiChannelNotification({
                                             ownerUserId,
                                             title: `🔥 Lead Clicked Interested on WhatsApp: ${notifyLeadName}`,
                                             body: `Prospect ${notifyLeadName} (+${cleanFrom}) clicked "Interested" on WhatsApp!\n\n📢 Source / Campaign: ${campaignContext}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
@@ -2624,7 +2624,7 @@ RULES:
                                         const targetLeadId = latestLead?.id;
                                         const targetUrl = targetLeadId ? `/dashboard/crm/${targetLeadId}` : '/dashboard/crm';
 
-                                        sendAdminMultiChannelNotification({
+                                        await sendAdminMultiChannelNotification({
                                             ownerUserId,
                                             title: `🔥 PiPixel Free Trial Claimed: ${notifyLeadName}`,
                                             body: `Prospect ${notifyLeadName} (+${cleanFrom}) clicked "Claim Free Trial" on WhatsApp!\n\n🔗 CRM Link: https://app.nobogent.com${targetUrl}`,
@@ -2706,7 +2706,7 @@ RULES:
                                         const campaignContext = latestLead?.ad_name || latestLead?.source || 'WhatsApp Inbound';
                                         const expertAlertTitle = isPipixelAccount ? `🚨 Call with PiPixel Specialist Requested: ${leadName}` : `🚨 Call with Expert Requested: ${leadName}`;
                                         
-                                        sendAdminMultiChannelNotification({
+                                        await sendAdminMultiChannelNotification({
                                             ownerUserId,
                                             title: expertAlertTitle,
                                             body: `High-intent lead ${leadName} (+${cleanFrom}) clicked "Talk to an expert" on WhatsApp!\n\n📢 Source / Campaign: ${campaignContext}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
@@ -3685,7 +3685,7 @@ RULES:
 
               // Multi-channel notifications for reopened lead
               const cleanSource = (adCampaignString || 'Meta Ads').split(' / ')[0];
-              sendAdminMultiChannelNotification({
+              await sendAdminMultiChannelNotification({
                 ownerUserId: profile.id,
                 title: "🔄 Reopened Facebook Lead!",
                 body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
@@ -3695,7 +3695,7 @@ RULES:
 
               const notifAgent = assignedAgentId || existingLead.assigned_to;
               if (notifAgent && notifAgent !== profile.id) {
-                sendAdminMultiChannelNotification({
+                await sendAdminMultiChannelNotification({
                   ownerUserId: notifAgent,
                   title: "🔄 Reopened Lead Assigned to You!",
                   body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,

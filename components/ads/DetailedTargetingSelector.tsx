@@ -13,7 +13,8 @@ export interface MetaInterest {
 
 interface DetailedTargetingSelectorProps {
   selectedInterests: MetaInterest[]
-  onChange: (interests: MetaInterest[]) => void
+  onChange?: (interests: MetaInterest[]) => void
+  onInterestsChange?: (interests: MetaInterest[]) => void
   impersonateId?: string | null
 }
 
@@ -41,8 +42,13 @@ function formatAudience(lower?: number, upper?: number): string {
 export default function DetailedTargetingSelector({
   selectedInterests,
   onChange,
+  onInterestsChange,
   impersonateId
 }: DetailedTargetingSelectorProps) {
+  const triggerChange = (newInterests: MetaInterest[]) => {
+    if (onChange) onChange(newInterests)
+    if (onInterestsChange) onInterestsChange(newInterests)
+  }
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<MetaInterest[]>([])
@@ -95,14 +101,14 @@ export default function DetailedTargetingSelector({
 
   const handleSelectInterest = (interest: MetaInterest) => {
     if (!selectedInterests.some(i => i.id === interest.id)) {
-      onChange([...selectedInterests, interest])
+      triggerChange([...selectedInterests, interest])
     }
     setQuery('')
     setIsOpen(false)
   }
 
   const handleRemoveInterest = (id: string) => {
-    onChange(selectedInterests.filter(i => i.id !== id))
+    triggerChange(selectedInterests.filter(i => i.id !== id))
   }
 
   return (

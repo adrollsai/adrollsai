@@ -654,6 +654,22 @@ export async function bookAppointment(
 
         // Trigger multi-channel alert to admin (Push, Free-form WhatsApp, Email)
         try {
+            let leadCf = lead.custom_fields || {};
+            if (typeof leadCf === 'string') {
+                try { leadCf = JSON.parse(leadCf); } catch (e) {}
+            }
+            const isDemo = 
+                leadCf.is_demo_call === true ||
+                leadCf.is_test_call === true ||
+                leadCf.skip_credit_deduction === true ||
+                !!leadCf.triggered_by_admin ||
+                lead.source === 'AI Call Demo' ||
+                lead.source === 'Test Call';
+
+            if (isDemo) {
+                console.log(`[VOICE HELPER] Suppressed admin booking alert for demo call lead ${leadId}`);
+                return { success: true, meetLink: hangoutLink || undefined };
+            }
             const { sendAdminMultiChannelNotification } = await import('./notification-helper')
             const formattedSlotDate = new Date(formattedSlot).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' })
             const leadSourceStr = [
