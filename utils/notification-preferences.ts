@@ -191,6 +191,7 @@ export function mapEventTypeToKey(type: string = '', title: string = ''): Notifi
     t.includes('escalat') ||
     t.includes('hot_lead') ||
     t.includes('interested') ||
+    t.includes('lead_interest') ||
     /expert|callback|urgent|hot lead|interested/i.test(s)
   ) {
     return 'expert_escalation'

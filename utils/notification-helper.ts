@@ -463,45 +463,46 @@ export async function sendAdminMultiChannelNotification({
                 }
               };
             } else {
-              // Not a booking, expert, or interested alert (e.g. new_lead event) — skip WhatsApp template to prevent bogus booking notifications
+              // Not a booking, expert, or interested alert (e.g. new_lead event) — skip WhatsApp template
               console.log(`[MULTI-CHANNEL WA SKIP] Event "${type}" is not a booking or expert alert. Skipping WhatsApp admin alert.`);
-              return;
             }
 
-            let waRes = await fetch(metaUrl, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(payload)
-            });
-            let waData = await waRes.json();
-
-            if (!waRes.ok && payload.type === 'template') {
-              console.warn(`[MULTI-CHANNEL WA TEMPLATE FALLBACK] Template failed (${waData.error?.message}), falling back to text:`, waData);
-              const textPayload = {
-                messaging_product: 'whatsapp',
-                recipient_type: 'individual',
-                to: cleanPhone,
-                type: 'text',
-                text: { body: `${title}\n\n${enrichedBody}\n\n🔗 View Lead & History in CRM:\n${leadPageUrl}` }
-              };
-              waRes = await fetch(metaUrl, {
+            if (payload) {
+              let waRes = await fetch(metaUrl, {
                 method: 'POST',
                 headers: {
                   'Authorization': `Bearer ${token}`,
                   'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(textPayload)
+                body: JSON.stringify(payload)
               });
-              waData = await waRes.json();
-            }
+              let waData = await waRes.json();
 
-            if (!waRes.ok) {
-              console.error(`[MULTI-CHANNEL WA ERROR] to ${cleanPhone}:`, waData);
-            } else {
-              console.log(`[MULTI-CHANNEL WA SUCCESS] WhatsApp message delivered to admin: ${cleanPhone}`);
+              if (!waRes.ok && payload.type === 'template') {
+                console.warn(`[MULTI-CHANNEL WA TEMPLATE FALLBACK] Template failed (${waData.error?.message}), falling back to text:`, waData);
+                const textPayload = {
+                  messaging_product: 'whatsapp',
+                  recipient_type: 'individual',
+                  to: cleanPhone,
+                  type: 'text',
+                  text: { body: `${title}\n\n${enrichedBody}\n\n🔗 View Lead & History in CRM:\n${leadPageUrl}` }
+                };
+                waRes = await fetch(metaUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(textPayload)
+                });
+                waData = await waRes.json();
+              }
+
+              if (!waRes.ok) {
+                console.error(`[MULTI-CHANNEL WA ERROR] to ${cleanPhone}:`, waData);
+              } else {
+                console.log(`[MULTI-CHANNEL WA SUCCESS] WhatsApp message delivered to admin: ${cleanPhone}`);
+              }
             }
           } else {
             console.warn(`[MULTI-CHANNEL WA SKIP] Missing WABA token or phoneId for ${cleanPhone}`);
@@ -516,12 +517,39 @@ export async function sendAdminMultiChannelNotification({
     if (!emailEnabled) {
       console.log(`[MULTI-CHANNEL EMAIL SKIP] Email notification disabled for user ${ownerUserId} under category "${categoryKey}".`);
     } else {
-      const { sendGenericEmail, resolveNotificationRecipients } = await import('@/utils/email-helper');
+      const { sendGenericEmail, sendConnectExpertNotificationEmail, sendLeadNotificationEmail, resolveNotificationRecipients } = await import('@/utils/email-helper');
       const { toEmail, bccEmail } = resolveNotificationRecipients(ownerProfile);
 
       if (toEmail) {
         try {
           const subject = emailSubject || title;
+          const isExpertAlert = type === 'connect_expert' || /expert|callback|connect/i.test(type || '') || /expert|callback|connect/i.test(title || '');
+          const isInterestedAlert = type === 'lead_interested' || type === 'lead_interest' || type === 'hot_lead' || /interested|hot lead/i.test(type || '') || /interested|hot lead/i.test(title || '');
+
+          if (isExpertAlert && !emailHtml) {
+            await sendConnectExpertNotificationEmail(
+              toEmail,
+              ownerProfile.business_name || 'Nobogent CRM',
+              leadName || 'Prospect',
+              targetLeadPhone,
+              bccEmail,
+              resolvedLeadSource
+            );
+            console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Expert callback alert email sent to: ${toEmail}`);
+          } else if (isInterestedAlert && !emailHtml) {
+            await sendLeadNotificationEmail({
+              to: toEmail,
+              subject,
+              leadName: leadName || 'Prospect',
+              leadPhone: targetLeadPhone,
+              businessName: ownerProfile.business_name || 'Nobogent CRM',
+              buttonClicked: 'Interested',
+              crmUrl: leadPageUrl,
+              chatUrl: leadPageUrl,
+              bcc: bccEmail
+            });
+            console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Interested lead notification email sent to: ${toEmail}`);
+          } else {
             const defaultHtml = `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                 <div style="text-align: center; margin-bottom: 20px;">
@@ -542,11 +570,12 @@ export async function sendAdminMultiChannelNotification({
             `;
             await sendGenericEmail(toEmail, subject, emailHtml || defaultHtml, bccEmail);
             console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Priority notification email sent to: ${toEmail} (BCC: ${bccEmail || 'none'})`);
-          } catch (emailErr: any) {
-            console.error(`[MULTI-CHANNEL EMAIL ERROR]`, emailErr.message);
           }
+        } catch (emailErr: any) {
+          console.error(`[MULTI-CHANNEL EMAIL ERROR]`, emailErr.message);
         }
       }
+    }
     } catch (err: any) {
     console.error(`[MULTI-CHANNEL NOTIFICATION FATAL ERROR]`, err.message);
   }

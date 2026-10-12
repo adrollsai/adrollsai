@@ -2562,11 +2562,32 @@ RULES:
                                         return;
                                     }
 
-                                        // 2.5 Check for "Interested" button click or text from Broadcast / Campaign templates
-                                    const isInterestedClick = buttonReplyId === 'interested' || buttonReplyId === 'interested_btn' || /^(interested|i am interested|im interested|yes interested)[!.]*$/i.test(messageText.trim());
+                                    // 2.5 Check for "Interested" button click or text from Broadcast / Campaign templates
+                                    const isInterestedClick = 
+                                        buttonReplyId === 'interested' || 
+                                        buttonReplyId === 'interested_btn' || 
+                                        (buttonReplyId && /interested/i.test(buttonReplyId)) ||
+                                        (buttonReplyTitle && /interested/i.test(buttonReplyTitle)) ||
+                                        /^(interested|i am interested|im interested|yes interested|yes, interested|yes i am interested)[!.]*$/i.test((messageText || '').trim()) ||
+                                        /\b(interested in|i'm interested|im interested|show details|send details)\b/i.test((messageText || '').trim());
+
                                     if (isInterestedClick) {
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "Interested!".`);
-                                        await syncFieldsAndScore({ interested_clicked: true });
+                                        await syncFieldsAndScore({ interested_clicked: true, last_button_clicked: buttonReplyTitle || 'Interested' });
+
+                                        // Update lead stage in CRM to Interested
+                                        if (latestLead?.id) {
+                                            try {
+                                                const existingTags = Array.isArray((latestLead as any).tags) ? (latestLead as any).tags : [];
+                                                const newTags = Array.from(new Set([...existingTags, 'Clicked Interested']));
+                                                await supabaseAdmin
+                                                    .from('leads')
+                                                    .update({ pipeline_stage: 'Interested', tags: newTags })
+                                                    .eq('id', latestLead.id);
+                                            } catch (leadStageErr) {
+                                                console.warn('[WhatsApp Bot] Failed to update lead stage to Interested:', leadStageErr);
+                                            }
+                                        }
                                         
                                         const validName = latestLead?.name && !/^(interested|valued lead|valued customer|lead|prospect)$/i.test(latestLead.name.trim())
                                             ? latestLead.name.trim()
@@ -2587,17 +2608,18 @@ RULES:
                                         const notifyLeadName = validName || latestLead?.name || chat.recipient_name || 'Prospect';
                                         const targetLeadId = latestLead?.id;
                                         const targetUrl = targetLeadId ? `/dashboard/crm/${targetLeadId}` : '/dashboard/crm';
-                                        const campaignContext = latestLead?.ad_name || latestLead?.source || 'WhatsApp Broadcast / Inbound';
+                                        const campaignContext = latestLead?.ad_name || latestLead?.source || 'WhatsApp Broadcast / Campaign';
 
                                         await sendAdminMultiChannelNotification({
                                             ownerUserId,
-                                            title: `🔥 Lead Clicked Interested on WhatsApp: ${notifyLeadName}`,
-                                            body: `Prospect ${notifyLeadName} (+${cleanFrom}) clicked "Interested" on WhatsApp!\n\n📢 Source / Campaign: ${campaignContext}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
+                                            title: `🔥 Lead Clicked "Interested" on WhatsApp: ${notifyLeadName}`,
+                                            body: `Prospect ${notifyLeadName} (+${cleanFrom}) clicked "Interested" on your WhatsApp campaign!\n\n📢 Source / Campaign: ${campaignContext}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
                                             url: targetUrl,
                                             type: 'lead_interested',
                                             leadPhone: '+' + cleanFrom,
                                             leadName: notifyLeadName,
-                                            leadId: targetLeadId
+                                            leadId: targetLeadId,
+                                            leadSource: campaignContext
                                         }).catch(err => console.error('[WhatsApp Bot] Interested notification failed:', err));
 
                                         await new Promise(r => setTimeout(r, 150));
