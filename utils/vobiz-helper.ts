@@ -89,7 +89,8 @@ export async function triggerVobizOutboundCall(
         'khushiramrealtor@gmail.com',
         'rajivkumaraggarwal81@gmail.com',
         'gnrhomes97@gmail.com',
-        'alpinenesthomes01@gmail.com'
+        'alpinenesthomes01@gmail.com',
+        'umangassociates5@gmail.com'
     ]
     const isWhitelisted = whitelistedEmails.includes(userEmail)
 

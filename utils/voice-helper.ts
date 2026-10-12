@@ -101,7 +101,8 @@ export async function triggerOutboundCall(
             'khushiramrealtor@gmail.com',
             'rajivkumaraggarwal81@gmail.com',
             'gnrhomes97@gmail.com',
-            'alpinenesthomes01@gmail.com'
+            'alpinenesthomes01@gmail.com',
+            'umangassociates5@gmail.com'
         ]
         const isWhitelisted = whitelistedEmails.includes(userEmail)
 
@@ -250,7 +251,8 @@ export async function triggerOutboundCall(
                 profileId: effectiveProfileId,
                 toPhone: lead.phone,
                 fromPhone: vobizNumber!,
-                campaignId
+                campaignId,
+                voiceName: profile?.voice_name || 'Fenrir'
             })
             if (vobizRes.success || vobizRes.scheduled) {
                 return {

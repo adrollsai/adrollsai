@@ -155,7 +155,7 @@ async function handleRequest(req: Request) {
         try {
             const { data: prof } = await supabaseAdmin
                 .from('profiles')
-                .select('business_info')
+                .select('business_info, voice_name')
                 .eq('id', effectiveProfileId)
                 .maybeSingle();
             const bi = typeof prof?.business_info === 'string' ? JSON.parse(prof.business_info) : (prof?.business_info || {});
@@ -163,7 +163,7 @@ async function handleRequest(req: Request) {
             authToken = bi?.voice_vobiz_auth_token || authToken;
         } catch (pErr) {}
 
-        let voiceName = searchParams.get('voiceName') || 'Aoede'
+        let voiceName = searchParams.get('voiceName') || prof?.voice_name || 'Fenrir'
         if (effectiveCampaignId) {
             try {
                 const { data: camp } = await supabaseAdmin
