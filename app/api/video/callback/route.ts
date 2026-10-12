@@ -440,7 +440,7 @@ export async function POST(request: Request) {
                     os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
                 );
                 
-                const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
+                const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "${outputPath}"`;
                 console.log(`[Video Callback] Running FFmpeg faststart command: ${cmd}`);
                 
                 await new Promise<void>((resolvePromise, rejectPromise) => {

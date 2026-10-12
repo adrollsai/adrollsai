@@ -244,7 +244,7 @@ export async function syncVideoTasksForUser(
                                 fs.writeFileSync(localPath, buffer);
 
                                 const ffmpegBinary = getFfmpegPath();
-                                const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -c copy -movflags +faststart "${outputPath}"`;
+                                const cmd = `"${ffmpegBinary}" -nostdin -y -loglevel error -i "${localPath}" -map 0:v:0 -map 0:a? -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "${outputPath}"`;
                                 
                                 await new Promise<void>((resolvePromise, rejectPromise) => {
                                     exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (execErr) => {
