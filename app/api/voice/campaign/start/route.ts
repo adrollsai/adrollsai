@@ -45,17 +45,21 @@ export async function POST(req: Request) {
         }
 
         // Validate user profile has an assigned outbound phone number
-        const { data: userProfile } = await supabaseAdmin
+        const { data: userProfile, error: profileErr } = await supabaseAdmin
             .from('profiles')
-            .select('email, voice_vobiz_number, voice_twilio_number, business_info')
+            .select('email, voice_twilio_number, voice_provider, business_info')
             .eq('id', targetId)
             .single()
 
+        if (profileErr) {
+            console.error('[CAMPAIGN START] Error fetching user profile:', profileErr)
+        }
+
         const bi = typeof userProfile?.business_info === 'string' ? JSON.parse(userProfile.business_info) : (userProfile?.business_info || {})
         const hasAssignedNumber = !!(
-            userProfile?.voice_vobiz_number ||
             bi?.claimed_vobiz_number ||
             bi?.voice_vobiz_number ||
+            (userProfile?.voice_twilio_number && userProfile.voice_twilio_number.startsWith('+91')) ||
             userProfile?.voice_twilio_number
         )
 
