@@ -111,7 +111,10 @@ export async function transcribeVideoWithGemini(
     let uploadedFileName = '';
 
     try {
-        const targetUrl = fallbackAudioUrl || videoUrl;
+        const validAudioUrl = (typeof fallbackAudioUrl === 'string' && fallbackAudioUrl !== 'native' && fallbackAudioUrl !== 'none' && (fallbackAudioUrl.startsWith('http://') || fallbackAudioUrl.startsWith('https://')))
+            ? fallbackAudioUrl
+            : null;
+        const targetUrl = validAudioUrl || videoUrl;
         console.log(`[Gemini Audio] Starting transcription (language: ${targetLanguage}, target: ${targetUrl})`);
 
         // 1. Check if URL points directly to an audio file

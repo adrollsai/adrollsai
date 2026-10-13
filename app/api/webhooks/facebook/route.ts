@@ -342,7 +342,7 @@ export async function POST(request: Request) {
                                                 .maybeSingle();
 
                                             const errReason = firstErr.code === 131049 
-                                                ? 'Meta marketing frequency limit reached for recipient'
+                                                ? 'Meta Marketing Frequency Cap Reached: Meta temporarily blocked promotional templates for this recipient because they received too many marketing messages recently across WhatsApp.'
                                                 : (firstErr.message || firstErr.title || 'Delivery failed');
 
                                             // Update broadcast recipient status cleanly in DB without corrupting chat bubble text
@@ -356,7 +356,7 @@ export async function POST(request: Request) {
                                                 await supabaseAdmin.from('lead_history').insert({
                                                     lead_id: chat.lead_id,
                                                     action_type: 'WHATSAPP_CHAT',
-                                                    description: `⚠️ WhatsApp Delivery Failed: Error ${firstErr.code} - ${firstErr.title || firstErr.message || 'Delivery error'}`
+                                                    description: `⚠️ WhatsApp Delivery Failed: Error ${firstErr.code} - ${errReason}`
                                                 });
                                             }
                                         }
@@ -1121,26 +1121,96 @@ export async function POST(request: Request) {
 
 
 
+                                    // Helper to parse instant form pre-filled messages from Meta Ads
+                                    const parseInstantFormPrefill = (text: string) => {
+                                        if (!text) return { isInstantFormPrefill: false, extractedPhone: null as string | null, extractedName: null as string | null, fields: {} as Record<string, string> };
+                                        const hasFormMarker = /filled\s+(?:in|out)\s+your\s+form/i.test(text) || /(?:job\s*title|how\s*soon\s*can\s*you\s*come|site\s*visit)\s*[:=]/i.test(text);
+                                        if (!hasFormMarker) return { isInstantFormPrefill: false, extractedPhone: null as string | null, extractedName: null as string | null, fields: {} as Record<string, string> };
+
+                                        const lines = text.split(/\r?\n/);
+                                        const fields: Record<string, string> = {};
+                                        let extractedPhone: string | null = null;
+                                        let extractedName: string | null = null;
+
+                                        for (const rawLine of lines) {
+                                            const line = rawLine.trim();
+                                            if (!line) continue;
+                                            const colonIdx = line.indexOf(':');
+                                            if (colonIdx > 0) {
+                                                const rawKey = line.slice(0, colonIdx).trim();
+                                                const val = line.slice(colonIdx + 1).trim();
+                                                if (!rawKey || !val) continue;
+
+                                                const lowerKey = rawKey.toLowerCase();
+                                                if (lowerKey.includes('phone')) {
+                                                    const digits = val.replace(/\D/g, '');
+                                                    if (digits.length >= 10) {
+                                                        extractedPhone = digits;
+                                                    }
+                                                } else if (lowerKey.includes('full name') || lowerKey === 'name') {
+                                                    extractedName = val;
+                                                }
+
+                                                const cleanKey = rawKey.toLowerCase().replace(/[^a-z0-9_?@.]/g, '_').replace(/_+/g, '_');
+                                                fields[cleanKey] = val;
+                                            }
+                                        }
+
+                                        return {
+                                            isInstantFormPrefill: true,
+                                            extractedPhone,
+                                            extractedName,
+                                            fields
+                                        };
+                                    };
+
+                                    const prefillData = parseInstantFormPrefill(messageText);
+
                                     let { data: latestLead } = await supabaseAdmin
                                         .from('leads')
-                                        .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
+                                        .select('id, name, phone, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
                                         .eq('user_id', ownerUserId)
                                         .ilike('phone', `%${cleanFrom.slice(-10)}%`)
                                         .order('created_at', { ascending: false, nullsFirst: false })
                                         .limit(1)
                                         .maybeSingle();
 
+                                    // If lead wasn't found by sender's WhatsApp phone number, check by form phone number
+                                    if (!latestLead && prefillData.extractedPhone) {
+                                        const { data: leadByPrefillPhone } = await supabaseAdmin
+                                            .from('leads')
+                                            .select('id, name, phone, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
+                                            .eq('user_id', ownerUserId)
+                                            .ilike('phone', `%${prefillData.extractedPhone.slice(-10)}%`)
+                                            .order('created_at', { ascending: false, nullsFirst: false })
+                                            .limit(1)
+                                            .maybeSingle();
+
+                                        if (leadByPrefillPhone) {
+                                            latestLead = leadByPrefillPhone;
+                                            console.log(`[Flow] Matched existing lead by prefilled form phone: ${latestLead.name} (${latestLead.phone}), WhatsApp sender: ${cleanFrom}`);
+                                        }
+                                    }
+
                                     const formattedPhone = cleanFrom.startsWith('+') ? cleanFrom : `+${cleanFrom}`;
-                                    const defaultLeadName = (waProfileName && waProfileName.trim()) ? waProfileName.trim() : formattedPhone;
+                                    const defaultLeadName = prefillData.extractedName || ((waProfileName && waProfileName.trim()) ? waProfileName.trim() : formattedPhone);
 
                                     const isFromAd = !!(inboundReferral || campaignId || (adId && String(adId).length > 3));
 
                                     if (!latestLead) {
+                                        const leadSource = prefillData.isInstantFormPrefill
+                                            ? 'Facebook Ads'
+                                            : (isFromAd ? 'Facebook Ads (WhatsApp)' : 'WhatsApp Inbound');
+
+                                        const targetPhone = prefillData.extractedPhone
+                                            ? (prefillData.extractedPhone.startsWith('+') ? prefillData.extractedPhone : `+${prefillData.extractedPhone}`)
+                                            : formattedPhone;
+
                                         const newLeadPayload: any = {
                                             user_id: ownerUserId,
                                             name: defaultLeadName,
-                                            phone: formattedPhone,
-                                            source: isFromAd ? 'Facebook Ads (WhatsApp)' : 'WhatsApp Inbound',
+                                            phone: targetPhone,
+                                            source: leadSource,
                                             pipeline_stage: 'New',
                                             status: 'New',
                                             ad_name: adCampaignString || (isFromAd ? 'WhatsApp Ad' : null),
@@ -1149,19 +1219,17 @@ export async function POST(request: Request) {
                                             created_at: new Date().toISOString()
                                         };
 
+                                        const initialCustomFields: any = {};
                                         if (isFromAd) {
-                                            newLeadPayload.custom_fields = {
-                                                meta_ad_origin: {
-                                                    ad_id: adId,
-                                                    ad_name: adNameStr,
-                                                    campaign_id: campaignId,
-                                                    campaign_name: campaignName,
-                                                    headline: adHeadline,
-                                                    body: adBody,
-                                                    source_url: adSourceUrl
-                                                }
+                                            initialCustomFields.meta_ad_origin = {
+                                                ad_id: adId,
+                                                ad_name: adNameStr,
+                                                campaign_id: campaignId,
+                                                campaign_name: campaignName,
+                                                headline: adHeadline,
+                                                body: adBody,
+                                                source_url: adSourceUrl
                                             };
-                                            // Schedule automated AI voice call ONLY if user has auto_call_new_leads enabled and has a connected voice number
                                             if (ownerAutoCallNewLeads && ownerHasVoiceNumber) {
                                                 newLeadPayload.voice_call_scheduled_at = new Date(Date.now() + 15 * 60 * 1000).toISOString();
                                                 newLeadPayload.voice_call_status = 'pending_qualification';
@@ -1172,6 +1240,19 @@ export async function POST(request: Request) {
                                             newLeadPayload.voice_campaign_id = isUuid(campaignId) ? campaignId : null;
                                         }
 
+                                        if (prefillData.isInstantFormPrefill) {
+                                            initialCustomFields.is_instant_form = true;
+                                            initialCustomFields.qualification_completed = true;
+                                            Object.assign(initialCustomFields, prefillData.fields);
+                                            if (prefillData.extractedPhone && cleanFrom.slice(-10) !== prefillData.extractedPhone.slice(-10)) {
+                                                initialCustomFields.whatsapp_phone = formattedPhone;
+                                            }
+                                        }
+
+                                        if (Object.keys(initialCustomFields).length > 0) {
+                                            newLeadPayload.custom_fields = initialCustomFields;
+                                        }
+
                                         const { data: createdLead, error: createLeadErr } = await supabaseAdmin
                                             .from('leads')
                                             .insert(newLeadPayload)
@@ -1180,13 +1261,13 @@ export async function POST(request: Request) {
 
                                         if (createdLead) {
                                             latestLead = createdLead;
-                                            console.log(`[Flow] Created new CRM lead for incoming WhatsApp contact: ${defaultLeadName} (${formattedPhone}), Source: ${newLeadPayload.source}, Campaign: ${campaignName || campaignId || 'N/A'}, Assigned: ${assignedAgentId || 'Owner'}`);
+                                            console.log(`[Flow] Created new CRM lead for incoming WhatsApp contact: ${defaultLeadName} (${targetPhone}), Source: ${newLeadPayload.source}, Campaign: ${campaignName || campaignId || 'N/A'}, Assigned: ${assignedAgentId || 'Owner'}`);
                                             
                                             if (assignedAgentId && assignedAgentId !== ownerUserId) {
                                                 await sendAdminMultiChannelNotification({
                                                     ownerUserId: assignedAgentId,
                                                     title: "🎯 WhatsApp Lead Assigned to You!",
-                                                    body: `Lead: ${defaultLeadName}\nPhone: ${formattedPhone}\nSource: ${adCampaignString || newLeadPayload.source}`,
+                                                    body: `Lead: ${defaultLeadName}\nPhone: ${targetPhone}\nSource: ${adCampaignString || newLeadPayload.source}`,
                                                     url: `/dashboard/crm/${createdLead.id}`,
                                                     type: 'new_lead'
                                                 }).catch(err => console.error('[Notification] Error notifying assigned agent:', err));
@@ -1195,15 +1276,17 @@ export async function POST(request: Request) {
                                             console.error('[Flow] Error creating CRM lead for WhatsApp contact:', createLeadErr);
                                         }
                                     } else {
-                                        // Existing lead: update assignment & if arrived from ad and not yet qualified, schedule drop-off call
-                                        const existingCf = parseCustomFields(latestLead.custom_fields);
+                                        // Existing lead: update assignment & preserve source
+                                        const existingCf = parseCustomFields(latestLead.custom_fields) || {};
                                         const updatePayload: Record<string, any> = {};
 
                                         if (!latestLead.assigned_to && assignedAgentId) {
                                             updatePayload.assigned_to = assignedAgentId;
                                             latestLead.assigned_to = assignedAgentId;
                                         }
-                                        if (isFromAd) {
+
+                                        // Only set source to 'Facebook Ads (WhatsApp)' if not already Facebook Ads and not from instant form
+                                        if (isFromAd && !prefillData.isInstantFormPrefill) {
                                             if (!latestLead.source || latestLead.source === 'WhatsApp Inbound') {
                                                 updatePayload.source = 'Facebook Ads (WhatsApp)';
                                                 latestLead.source = 'Facebook Ads (WhatsApp)';
@@ -1217,19 +1300,49 @@ export async function POST(request: Request) {
                                                 latestLead.campaign_id = campaignId;
                                             }
                                             if (!existingCf?.meta_ad_origin && (adId || campaignId || campaignName)) {
-                                                updatePayload.custom_fields = {
-                                                    ...(existingCf || {}),
-                                                    meta_ad_origin: {
-                                                        ad_id: adId,
-                                                        ad_name: adNameStr,
-                                                        campaign_id: campaignId,
-                                                        campaign_name: campaignName,
-                                                        headline: adHeadline,
-                                                        body: adBody,
-                                                        source_url: adSourceUrl
-                                                    }
+                                                existingCf.meta_ad_origin = {
+                                                    ad_id: adId,
+                                                    ad_name: adNameStr,
+                                                    campaign_id: campaignId,
+                                                    campaign_name: campaignName,
+                                                    headline: adHeadline,
+                                                    body: adBody,
+                                                    source_url: adSourceUrl
                                                 };
+                                                updatePayload.custom_fields = existingCf;
                                             }
+                                        }
+
+                                        // If user reached out via WhatsApp after instant form, merge prefill answers and log history
+                                        if (prefillData.isInstantFormPrefill) {
+                                            let cfModified = false;
+                                            for (const [k, v] of Object.entries(prefillData.fields)) {
+                                                if (!existingCf[k]) {
+                                                    existingCf[k] = v;
+                                                    cfModified = true;
+                                                }
+                                            }
+                                            if (!existingCf.qualification_completed && Object.keys(prefillData.fields).length >= 2) {
+                                                existingCf.qualification_completed = true;
+                                                cfModified = true;
+                                            }
+                                            if (cleanFrom.slice(-10) !== latestLead.phone?.replace(/\D/g, '').slice(-10)) {
+                                                if (!existingCf.whatsapp_phone) {
+                                                    existingCf.whatsapp_phone = formattedPhone;
+                                                    cfModified = true;
+                                                }
+                                            }
+                                            if (cfModified) {
+                                                updatePayload.custom_fields = existingCf;
+                                                latestLead.custom_fields = existingCf;
+                                            }
+
+                                            // Log lead reached out on WhatsApp
+                                            await supabaseAdmin.from('lead_history').insert({
+                                                lead_id: latestLead.id,
+                                                action_type: 'WHATSAPP_CHAT',
+                                                description: `💬 Lead reached out via WhatsApp after submitting Instant Form${cleanFrom.slice(-10) !== latestLead.phone?.replace(/\D/g, '').slice(-10) ? ` (WhatsApp phone: ${formattedPhone})` : ''}`
+                                            });
                                         }
 
                                         if (isFromAd && !existingCf?.qualification_completed && (!latestLead.voice_call_status || latestLead.voice_call_status === 'pending_qualification' || latestLead.voice_call_status === 'not_called')) {

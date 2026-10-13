@@ -29,10 +29,13 @@ export async function POST(request: Request) {
         const currentMetadata = assetId 
             ? ((await supabaseAdmin.from('assets').select('metadata').eq('id', assetId).single()).data?.metadata || {})
             : {};
-        const audioUrl = currentMetadata?.audioUrl || null;
+        const rawAudioUrl = currentMetadata?.audioUrl;
+        const audioUrl = (typeof rawAudioUrl === 'string' && rawAudioUrl !== 'native' && rawAudioUrl !== 'none' && (rawAudioUrl.startsWith('http://') || rawAudioUrl.startsWith('https://')))
+            ? rawAudioUrl
+            : null;
 
         // 1. Get Word-Level Transcript using Gemini 3.8 Flash in selected language (audio-first)
-        console.log(`[Captions API] Transcribing audio with Gemini 3.8 Flash (language: ${language}, audioUrl: ${audioUrl || 'none'})...`);
+        console.log(`[Captions API] Transcribing audio with Gemini 3.8 Flash (language: ${language}, audioUrl: ${audioUrl || 'none (extracting from video)'})...`);
         const rawTranscript = await transcribeVideoWithGemini(videoUrl, audioUrl, language);
 
         // 2. Optimize for Viral Retention & Visual Effects in target language
