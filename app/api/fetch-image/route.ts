@@ -24,6 +24,11 @@ export async function GET(request: Request) {
       }
     }
 
+    // Direct redirect for R2 video streams to Cloudflare edge CDN (prevents Vercel serverless buffering bottlenecks)
+    if (imageUrl.includes('.r2.dev/') && imageUrl.match(/\.(mp4|webm)(\?|$)/i) && !triggerDownload) {
+      return NextResponse.redirect(urlWithoutAdrolls, 307);
+    }
+
     const candidateUrls = Array.from(new Set([imageUrl, urlWithoutAdrolls, urlWithAdrolls]));
 
     const range = request.headers.get('range');

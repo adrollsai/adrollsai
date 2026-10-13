@@ -4,8 +4,7 @@ export function fixR2Url(url: string): string {
     if (clean.includes('.r2.dev/adrolls-storage/')) {
         clean = clean.replace('.r2.dev/adrolls-storage/', '.r2.dev/');
     }
-    if (clean.startsWith('/api/fetch-image')) return clean;
-    return `/api/fetch-image?url=${encodeURIComponent(clean)}`;
+    return clean;
 }
 
 export function getVideoPosterUrl(asset: { id?: string; url?: string; metadata?: any } | null | undefined): string {

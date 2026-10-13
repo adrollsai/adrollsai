@@ -743,10 +743,13 @@ export default function AssetsPage() {
         const sharePromise = async () => {
             setIsDownloading(true);
             try {
-                // 1. Fetch the image file
-                const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}`;
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error("Failed to fetch image for sharing.");
+                // 1. Fetch the image file directly from CDN edge
+                const cleanUrl = fixR2Url(selectedAsset.url);
+                let response = await fetch(cleanUrl).catch(() => null);
+                if (!response || !response.ok) {
+                    response = await fetch(`/api/fetch-image?url=${encodeURIComponent(cleanUrl)}`);
+                }
+                if (!response || !response.ok) throw new Error("Failed to fetch image for sharing.");
 
                 const blob = await response.blob();
                 const mimeType = blob.type || 'image/jpeg';
@@ -801,11 +804,14 @@ export default function AssetsPage() {
         })
     }
 
-    // Helper: Fix R2 URL structure and route through fetch-image proxy for fallback & video MIME resolution
+    // Helper: Clean R2 URL structure (strip redundant adrolls-storage prefix)
     const fixR2Url = (url: string) => {
         if (!url) return ''
-        if (url.startsWith('/api/fetch-image')) return url
-        return `/api/fetch-image?url=${encodeURIComponent(url)}`
+        let clean = url
+        if (clean.includes('.r2.dev/adrolls-storage/')) {
+            clean = clean.replace('.r2.dev/adrolls-storage/', '.r2.dev/')
+        }
+        return clean
     }
 
     // 5. Handle Universal Post
@@ -880,35 +886,23 @@ export default function AssetsPage() {
         const urlPart = selectedAsset.url.split('?')[0];
         const ext = urlPart.split('.').pop() || (selectedAsset.type === 'video' ? 'mp4' : 'png');
         const fileName = `adrolls-asset-${Date.now()}.${ext}`;
+        const cleanUrl = fixR2Url(selectedAsset.url);
 
-        if (!isMobile) {
-            // Desktop/Standard: Use direct attachment streaming link click
-            // This preserves user gesture 100%, downloads instantly, and prevents opening a new page/tab!
-            const downloadUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}&download=true&name=${encodeURIComponent(fileName)}`;
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = downloadUrl;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            return;
-        }
-
-        // Mobile path: Keep Share API logic (which requires local file blob)
         const downloadPromise = async () => {
             setIsDownloading(true);
             try {
-                // Fetch the file through our proxy to handle CORS
-                const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(selectedAsset.url)}`;
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error("Failed to fetch asset file.");
+                // Fetch directly from CDN edge (R2 supports CORS and global edge streaming)
+                let response = await fetch(cleanUrl).catch(() => null);
+                if (!response || !response.ok) {
+                    response = await fetch(`/api/fetch-image?url=${encodeURIComponent(cleanUrl)}`);
+                }
+                if (!response || !response.ok) throw new Error("Failed to fetch asset file.");
 
                 const blob = await response.blob();
                 const mimeType = blob.type || (selectedAsset.type === 'video' ? 'video/mp4' : 'image/png');
                 const file = new File([blob], fileName, { type: mimeType });
 
-                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                     try {
                         console.log("📱 Mobile detected, using Share API...");
                         await navigator.share({
@@ -919,7 +913,6 @@ export default function AssetsPage() {
                         return "Share menu opened!";
                     } catch (shareError: any) {
                         if (shareError.name === 'NotAllowedError' || shareError.name === 'AbortError') {
-                            console.warn("Share failed or was blocked, falling back to direct download...");
                             triggerBlobDownload(blob, fileName);
                             return "Download started!";
                         }
@@ -973,9 +966,12 @@ export default function AssetsPage() {
     const handleDirectSingleDownload = async (asset: Asset) => {
         try {
             toast.loading("Preparing download...", { id: 'download-single' });
-            const proxyUrl = `/api/fetch-image?url=${encodeURIComponent(asset.url)}`;
-            const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error("Fetch failed");
+            const cleanUrl = fixR2Url(asset.url);
+            let response = await fetch(cleanUrl).catch(() => null);
+            if (!response || !response.ok) {
+                response = await fetch(`/api/fetch-image?url=${encodeURIComponent(cleanUrl)}`);
+            }
+            if (!response || !response.ok) throw new Error("Fetch failed");
             const blob = await response.blob();
             const mimeType = blob.type || (asset.type === 'video' ? 'video/mp4' : 'image/png');
             const ext = mimeType.split('/')[1] || (asset.type === 'video' ? 'mp4' : 'png');
