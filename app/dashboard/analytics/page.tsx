@@ -229,11 +229,16 @@ export default function AnalyticsPage() {
   const [sortField, setSortField] = useState<string>('total')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  // Sub-Tab Navigation (persisted in sessionStorage)
+  // Sub-Tab Navigation (persisted in localStorage + URL)
   const [activeTab, setActiveTabState] = useState<'analytics' | 'action_mgr' | 'report' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = sessionStorage.getItem('analytics_active_tab')
+        const urlParams = new URLSearchParams(window.location.search)
+        const tabParam = urlParams.get('tab')
+        if (tabParam && ['analytics', 'action_mgr', 'report', 'lead_mgr', 'dnp_mgr', 'team_mgr', 'leaderboard'].includes(tabParam)) {
+          return tabParam as any
+        }
+        const saved = localStorage.getItem('analytics_active_tab') || sessionStorage.getItem('analytics_active_tab')
         if (saved && ['analytics', 'action_mgr', 'report', 'lead_mgr', 'dnp_mgr', 'team_mgr', 'leaderboard'].includes(saved)) {
           return saved as any
         }
@@ -245,9 +250,28 @@ export default function AnalyticsPage() {
   const setActiveTab = (tab: 'analytics' | 'action_mgr' | 'report' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard') => {
     setActiveTabState(tab)
     if (typeof window !== 'undefined') {
-      try { sessionStorage.setItem('analytics_active_tab', tab) } catch (e) {}
+      try {
+        localStorage.setItem('analytics_active_tab', tab)
+        sessionStorage.setItem('analytics_active_tab', tab)
+        const url = new URL(window.location.href)
+        url.searchParams.set('tab', tab)
+        window.history.replaceState({}, '', url.toString())
+      } catch (e) {}
     }
   }
+
+  // Keep URL query parameter in sync with activeTab
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href)
+        if (url.searchParams.get('tab') !== activeTab) {
+          url.searchParams.set('tab', activeTab)
+          window.history.replaceState({}, '', url.toString())
+        }
+      } catch (e) {}
+    }
+  }, [activeTab])
   const [showPending, setShowPending] = useState(true)
   const [showSchedule, setShowSchedule] = useState(true)
   const [showToday, setShowToday] = useState(true)
@@ -1842,7 +1866,13 @@ export default function AnalyticsPage() {
   }, [leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId, history, isLeadAssignedToRep, dateCutoffs])
 
   // Open interactive drilldown drawer for leads
-  const openLeadsDrilldown = (title: string, subtitle: string, leadList: any[], defaultSort?: string) => {
+  const openLeadsDrilldown = (
+    title: string, 
+    subtitle: string, 
+    leadList: any[], 
+    defaultSort?: string,
+    meta?: { repId?: string; repName?: string; actionKey?: string; actionLabel?: string; bucketType?: string }
+  ) => {
     const isDesktop = typeof window !== 'undefined' ? window.innerWidth >= 768 : true
     setDrilldownViewMode(isDesktop ? 'list' : 'card')
     if (defaultSort) {
@@ -1889,11 +1919,19 @@ export default function AnalyticsPage() {
       searchFilter: ''
     })
     try {
-      sessionStorage.setItem('analytics_drilldown_modal', JSON.stringify({
+      const savedModal = {
         isOpen: true,
         title,
-        subtitle
-      }))
+        subtitle,
+        repId: meta?.repId,
+        repName: meta?.repName,
+        actionKey: meta?.actionKey,
+        actionLabel: meta?.actionLabel,
+        bucketType: meta?.bucketType,
+        timestamp: Date.now()
+      }
+      localStorage.setItem('analytics_drilldown_modal', JSON.stringify(savedModal))
+      sessionStorage.setItem('analytics_drilldown_modal', JSON.stringify(savedModal))
     } catch (e) {}
   }
 
@@ -1902,47 +1940,79 @@ export default function AnalyticsPage() {
   useEffect(() => {
     if (hasRestoredModalRef.current || drilldownModal.isOpen || leads.length === 0) return
     try {
-      const saved = sessionStorage.getItem('analytics_drilldown_modal')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (parsed && parsed.isOpen && parsed.title) {
-          hasRestoredModalRef.current = true
-          for (const row of actionManagerMatrix.rows) {
-            if (parsed.title.includes(row.rep.name)) {
-              if (parsed.title.includes('All Pending Actions')) {
-                openLeadsDrilldown(parsed.title, parsed.subtitle, row.totalLeads.pending)
-                return
+      const saved = localStorage.getItem('analytics_drilldown_modal') || sessionStorage.getItem('analytics_drilldown_modal')
+      if (!saved) return
+      const parsed = JSON.parse(saved)
+      if (!parsed || !parsed.isOpen || !parsed.title) return
+
+      // Do not restore stale modal older than 4 hours
+      if (parsed.timestamp && (Date.now() - parsed.timestamp > 4 * 60 * 60 * 1000)) {
+        localStorage.removeItem('analytics_drilldown_modal')
+        sessionStorage.removeItem('analytics_drilldown_modal')
+        return
+      }
+
+      // If actionManagerMatrix rows are not ready yet, keep waiting
+      if (!actionManagerMatrix.rows || actionManagerMatrix.rows.length === 0) {
+        return
+      }
+
+      let matched = false
+      for (const row of actionManagerMatrix.rows) {
+        const matchesRep = (parsed.repId && row.rep.id === parsed.repId) ||
+                           (parsed.repName && row.rep.name.toLowerCase() === parsed.repName.toLowerCase()) ||
+                           parsed.title.includes(row.rep.name)
+
+        if (matchesRep) {
+          if (parsed.bucketType === 'all_pending' || parsed.title.includes('All Pending Actions')) {
+            openLeadsDrilldown(parsed.title, parsed.subtitle, row.totalLeads.pending, undefined, parsed)
+            matched = true
+            break
+          }
+          if (parsed.bucketType === 'all_today' || parsed.title.includes('All Today Actions')) {
+            openLeadsDrilldown(parsed.title, parsed.subtitle, row.totalLeads.today, undefined, parsed)
+            matched = true
+            break
+          }
+          if (parsed.bucketType === 'all_schedule' || parsed.title.includes('All Scheduled Actions')) {
+            openLeadsDrilldown(parsed.title, parsed.subtitle, row.totalLeads.schedule, undefined, parsed)
+            matched = true
+            break
+          }
+          for (const t of actionManagerMatrix.actionTypes) {
+            const matchesType = (parsed.actionKey && t.key === parsed.actionKey) ||
+                                (parsed.actionLabel && t.label === parsed.actionLabel) ||
+                                parsed.title.includes(t.label)
+            if (matchesType) {
+              if (parsed.bucketType === 'pending' || parsed.title.includes('Pending')) {
+                openLeadsDrilldown(parsed.title, parsed.subtitle, row.typeLeads[t.key].pending, undefined, parsed)
+                matched = true
+                break
               }
-              if (parsed.title.includes('All Today Actions')) {
-                openLeadsDrilldown(parsed.title, parsed.subtitle, row.totalLeads.today)
-                return
+              if (parsed.bucketType === 'today' || parsed.title.includes('Today')) {
+                openLeadsDrilldown(parsed.title, parsed.subtitle, row.typeLeads[t.key].today, undefined, parsed)
+                matched = true
+                break
               }
-              if (parsed.title.includes('All Scheduled Actions')) {
-                openLeadsDrilldown(parsed.title, parsed.subtitle, row.totalLeads.schedule)
-                return
-              }
-              for (const t of actionManagerMatrix.actionTypes) {
-                if (parsed.title.includes(t.label)) {
-                  if (parsed.title.includes('Pending')) {
-                    openLeadsDrilldown(parsed.title, parsed.subtitle, row.typeLeads[t.key].pending)
-                    return
-                  }
-                  if (parsed.title.includes('Today')) {
-                    openLeadsDrilldown(parsed.title, parsed.subtitle, row.typeLeads[t.key].today)
-                    return
-                  }
-                  if (parsed.title.includes('Scheduled')) {
-                    openLeadsDrilldown(parsed.title, parsed.subtitle, row.typeLeads[t.key].schedule)
-                    return
-                  }
-                }
+              if (parsed.bucketType === 'schedule' || parsed.title.includes('Scheduled')) {
+                openLeadsDrilldown(parsed.title, parsed.subtitle, row.typeLeads[t.key].schedule, undefined, parsed)
+                matched = true
+                break
               }
             }
           }
+          if (matched) break
         }
       }
+
+      if (matched) {
+        hasRestoredModalRef.current = true
+      } else if (team && team.length > 0) {
+        // Only mark done if team has finished loading completely and no match was found
+        hasRestoredModalRef.current = true
+      }
     } catch (e) {}
-  }, [leads.length, actionManagerMatrix, drilldownModal.isOpen])
+  }, [leads.length, actionManagerMatrix, drilldownModal.isOpen, team])
 
   // Handle Header Table Sorting Toggle
   const handleSort = (field: string) => {
@@ -2574,7 +2644,13 @@ export default function AnalyticsPage() {
                               <div className="col-span-3 grid grid-cols-3 text-center text-xs font-black">
                                 {showPending && (
                                   <span 
-                                    onClick={() => c.pending > 0 && openLeadsDrilldown(`${row.rep.name} - Pending ${t.label}`, `Pending ${t.label} Actions (${c.pending})`, leadsGroup.pending)} 
+                                    onClick={() => c.pending > 0 && openLeadsDrilldown(
+                                      `${row.rep.name} - Pending ${t.label}`, 
+                                      `Pending ${t.label} Actions (${c.pending})`, 
+                                      leadsGroup.pending, 
+                                      undefined, 
+                                      { repId: row.rep.id, repName: row.rep.name, actionKey: t.key, actionLabel: t.label, bucketType: 'pending' }
+                                    )} 
                                     className={`py-1 rounded-md transition-all ${c.pending > 0 ? 'text-amber-600 font-extrabold cursor-pointer hover:bg-amber-100 hover:scale-110' : 'text-slate-300 font-normal'}`}
                                   >
                                     {c.pending}
@@ -2582,7 +2658,13 @@ export default function AnalyticsPage() {
                                 )}
                                 {showSchedule && (
                                   <span 
-                                    onClick={() => c.schedule > 0 && openLeadsDrilldown(`${row.rep.name} - Scheduled ${t.label}`, `Scheduled ${t.label} Actions (${c.schedule})`, leadsGroup.schedule)} 
+                                    onClick={() => c.schedule > 0 && openLeadsDrilldown(
+                                      `${row.rep.name} - Scheduled ${t.label}`, 
+                                      `Scheduled ${t.label} Actions (${c.schedule})`, 
+                                      leadsGroup.schedule, 
+                                      undefined, 
+                                      { repId: row.rep.id, repName: row.rep.name, actionKey: t.key, actionLabel: t.label, bucketType: 'schedule' }
+                                    )} 
                                     className={`py-1 rounded-md transition-all ${c.schedule > 0 ? 'text-purple-600 font-extrabold cursor-pointer hover:bg-purple-100 hover:scale-110' : 'text-slate-300 font-normal'}`}
                                   >
                                     {c.schedule}
@@ -2590,7 +2672,13 @@ export default function AnalyticsPage() {
                                 )}
                                 {showToday && (
                                   <span 
-                                    onClick={() => c.today > 0 && openLeadsDrilldown(`${row.rep.name} - Today ${t.label}`, `Today's ${t.label} Actions (${c.today})`, leadsGroup.today)} 
+                                    onClick={() => c.today > 0 && openLeadsDrilldown(
+                                      `${row.rep.name} - Today ${t.label}`, 
+                                      `Today's ${t.label} Actions (${c.today})`, 
+                                      leadsGroup.today, 
+                                      undefined, 
+                                      { repId: row.rep.id, repName: row.rep.name, actionKey: t.key, actionLabel: t.label, bucketType: 'today' }
+                                    )} 
                                     className={`py-1 rounded-md transition-all ${c.today > 0 ? 'text-emerald-600 font-extrabold cursor-pointer hover:bg-emerald-100 hover:scale-110' : 'text-slate-300 font-normal'}`}
                                   >
                                     {c.today}
@@ -2609,7 +2697,13 @@ export default function AnalyticsPage() {
                       <div className="col-span-3 grid grid-cols-3 text-center text-sm font-black">
                         {showPending && (
                           <span 
-                            onClick={() => row.totals.pending > 0 && openLeadsDrilldown(`${row.rep.name} - All Pending Actions`, `Total ${row.totals.pending} Pending Actions`, row.totalLeads.pending)}
+                            onClick={() => row.totals.pending > 0 && openLeadsDrilldown(
+                              `${row.rep.name} - All Pending Actions`, 
+                              `Total ${row.totals.pending} Pending Actions`, 
+                              row.totalLeads.pending, 
+                              undefined, 
+                              { repId: row.rep.id, repName: row.rep.name, bucketType: 'all_pending' }
+                            )}
                             className={`py-0.5 rounded-md ${row.totals.pending > 0 ? 'text-amber-600 cursor-pointer hover:bg-amber-100' : 'text-slate-400'}`}
                           >
                             {row.totals.pending}
@@ -2617,7 +2711,13 @@ export default function AnalyticsPage() {
                         )}
                         {showSchedule && (
                           <span 
-                            onClick={() => row.totals.schedule > 0 && openLeadsDrilldown(`${row.rep.name} - All Scheduled Actions`, `Total ${row.totals.schedule} Scheduled Actions`, row.totalLeads.schedule)}
+                            onClick={() => row.totals.schedule > 0 && openLeadsDrilldown(
+                              `${row.rep.name} - All Scheduled Actions`, 
+                              `Total ${row.totals.schedule} Scheduled Actions`, 
+                              row.totalLeads.schedule, 
+                              undefined, 
+                              { repId: row.rep.id, repName: row.rep.name, bucketType: 'all_schedule' }
+                            )}
                             className={`py-0.5 rounded-md ${row.totals.schedule > 0 ? 'text-purple-600 cursor-pointer hover:bg-purple-100' : 'text-slate-400'}`}
                           >
                             {row.totals.schedule}
@@ -2625,7 +2725,13 @@ export default function AnalyticsPage() {
                         )}
                         {showToday && (
                           <span 
-                            onClick={() => row.totals.today > 0 && openLeadsDrilldown(`${row.rep.name} - All Today Actions`, `Total ${row.totals.today} Today Actions`, row.totalLeads.today)}
+                            onClick={() => row.totals.today > 0 && openLeadsDrilldown(
+                              `${row.rep.name} - All Today Actions`, 
+                              `Total ${row.totals.today} Today Actions`, 
+                              row.totalLeads.today, 
+                              undefined, 
+                              { repId: row.rep.id, repName: row.rep.name, bucketType: 'all_today' }
+                            )}
                             className={`py-0.5 rounded-md ${row.totals.today > 0 ? 'text-emerald-600 cursor-pointer hover:bg-emerald-100' : 'text-slate-400'}`}
                           >
                             {row.totals.today}
@@ -3233,7 +3339,10 @@ export default function AnalyticsPage() {
                   onClick={() => {
                     setDrilldownIsFullScreen(false)
                     setDrilldownModal(prev => ({ ...prev, isOpen: false }))
-                    try { sessionStorage.removeItem('analytics_drilldown_modal') } catch (e) {}
+                    try {
+                      localStorage.removeItem('analytics_drilldown_modal')
+                      sessionStorage.removeItem('analytics_drilldown_modal')
+                    } catch (e) {}
                   }}
                   className="p-2 rounded-xl bg-slate-200/60 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
                   title="Close"
@@ -4598,7 +4707,10 @@ export default function AnalyticsPage() {
                         onClick={() => {
                           setDrilldownIsFullScreen(false)
                           setDrilldownModal(prev => ({ ...prev, isOpen: false }))
-                          try { sessionStorage.removeItem('analytics_drilldown_modal') } catch (e) {}
+                          try {
+                            localStorage.removeItem('analytics_drilldown_modal')
+                            sessionStorage.removeItem('analytics_drilldown_modal')
+                          } catch (e) {}
                         }}
                         className="ml-3 px-4 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-slate-800 cursor-pointer"
                       >

@@ -63,13 +63,12 @@ function dispatchPwaDial(telUri: string): void {
   } catch (e) {}
 
   // Safe transient anchor dispatch:
-  // Dispatches directly to Android/iOS native dialer Intent without:
-  // 1. Modifying page history
-  // 2. Hanging in the DOM
-  // 3. Triggering Chromium iframe navigation cancellation/reload loops
+  // Must use target="_blank" so Chromium treats it as an auxiliary external intent
+  // instead of a top-level page navigation that gets aborted and reloaded when resuming.
   try {
     const a = document.createElement('a')
     a.href = telUri
+    a.target = '_blank'
     a.rel = 'noopener noreferrer'
     a.style.display = 'none'
     document.body.appendChild(a)
@@ -78,10 +77,10 @@ function dispatchPwaDial(telUri: string): void {
       try {
         if (a.parentNode) a.parentNode.removeChild(a)
       } catch (e) {}
-    }, 150)
+    }, 300)
   } catch (e) {
     try {
-      window.location.href = telUri
+      window.open(telUri, '_blank')
     } catch (e2) {}
   }
 }
