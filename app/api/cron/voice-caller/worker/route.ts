@@ -68,11 +68,13 @@ export async function POST(request: Request) {
 
     if (!result.success) {
       console.error(`[Voice Caller Worker] Call failed to initiate for lead ${lead.id}:`, result.error)
-      // Mark call as failed in DB
-      await supabaseAdmin
-        .from('leads')
-        .update({ voice_call_status: 'failed' })
-        .eq('id', lead.id)
+      // Mark call as failed in DB only if it wasn't intentionally skipped for international
+      if (!result.error?.startsWith('NON_INDIAN_NUMBER')) {
+        await supabaseAdmin
+          .from('leads')
+          .update({ voice_call_status: 'failed' })
+          .eq('id', lead.id)
+      }
       
       return NextResponse.json({ error: result.error || 'Outbound call failed to initiate' }, { status: 500 })
     }

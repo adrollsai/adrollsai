@@ -3,6 +3,8 @@ import { sendCAPIEvent } from '@/utils/external-apis'
 import { sendBookingConfirmationEmail } from '@/utils/email-helper'
 import { hasEnoughCredits } from '@/utils/credits'
 import { triggerVobizOutboundCall } from '@/utils/vobiz-helper'
+import { isIndianPhoneNumber } from '@/utils/phone-validation'
+export { isIndianPhoneNumber }
 
 /**
  * Warms up the Cloud Run Voice Bridge container & pre-warms Gemini session context before Twilio dials.
@@ -73,6 +75,30 @@ export async function triggerOutboundCall(
 
         if (leadResult.error || !lead || !lead.phone) {
             return { success: false, error: 'Lead not found or has no phone number.' }
+        }
+
+        // Restrict AI calls to Indian phone numbers (+91)
+        if (!isIndianPhoneNumber(lead.phone)) {
+            console.warn(`[VOICE HELPER] Outbound AI call blocked for lead ${lead.id} (${lead.phone}): Non-Indian phone number. AI calls are restricted to Indian (+91) numbers.`)
+            await supabaseAdmin
+                .from('leads')
+                .update({ voice_call_status: 'skipped_international' })
+                .eq('id', lead.id)
+
+            try {
+                await supabaseAdmin.from('lead_history').insert({
+                    lead_id: lead.id,
+                    action_type: 'REMARK',
+                    description: `🚫 Outbound AI call skipped: Phone number (${lead.phone}) is non-Indian. AI calling is restricted to Indian (+91) numbers.`
+                })
+            } catch (hErr) {
+                console.error('[VOICE HELPER] Error recording non-Indian history entry:', hErr)
+            }
+
+            return {
+                success: false,
+                error: `NON_INDIAN_NUMBER: AI voice calling is restricted to Indian (+91) numbers. Lead phone ${lead.phone} is non-Indian.`
+            }
         }
 
         const effectiveProfileId = lead.user_id || profileId

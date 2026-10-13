@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { triggerWelcomeDrip, sendInstantFormCatalogMessage } from '@/utils/whatsapp/drips'
 import { triggerOutboundCall } from '@/utils/voice-helper'
+import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { ensureMetaPageSubscribed, ensureWabaSubscribed } from '@/utils/meta-subscription'
 
@@ -715,7 +716,23 @@ async function handleSync(request: Request) {
 
               // Auto-calling if enabled (non-blocking)
               if (savedLead && phone && profile.auto_call_new_leads) {
-                triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true, matchedVoiceCampaignId || undefined).catch(() => {});
+                if (isIndianPhoneNumber(phone)) {
+                  triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true, matchedVoiceCampaignId || undefined).catch(() => {});
+                } else {
+                  console.log(`[SYNC META LEADS] Skipping auto AI call for lead ${savedLead.id} (${phone}): Non-Indian phone number.`);
+                  supabaseAdmin
+                    .from('leads')
+                    .update({ voice_call_status: 'skipped_international' })
+                    .eq('id', savedLead.id)
+                    .then(() => {});
+                  supabaseAdmin.from('lead_history').insert({
+                    lead_id: savedLead.id,
+                    user_id: profile.id,
+                    action_type: 'REMARK',
+                    performed_by: 'System / Meta Sync',
+                    description: `🚫 Auto AI call skipped: Lead phone number (${phone}) is non-Indian. AI voice calling is restricted to Indian (+91) numbers.`
+                  }).catch(() => {});
+                }
               }
             }
           }

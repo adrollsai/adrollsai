@@ -4,6 +4,7 @@ import { sendPushNotification } from '@/utils/notification-helper'
 import { sendCAPIEvent } from '@/utils/external-apis'
 import { triggerWelcomeDrip } from '@/utils/whatsapp/drips'
 import { triggerOutboundCall } from '@/utils/voice-helper'
+import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 
 async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
@@ -286,7 +287,15 @@ export async function POST(request: Request) {
                     .single()
                 
                 if (profile?.auto_call_new_leads) {
-                    await triggerOutboundCall(supabaseAdmin, newLead.id, user_id, true)
+                    if (isIndianPhoneNumber(newLead.phone)) {
+                        await triggerOutboundCall(supabaseAdmin, newLead.id, user_id, true)
+                    } else {
+                        console.log(`[LANDER AUTO CALL] Skipping auto AI call for lead ${newLead.id} (${newLead.phone}): Non-Indian phone number.`)
+                        await supabaseAdmin
+                            .from('leads')
+                            .update({ voice_call_status: 'skipped_international' })
+                            .eq('id', newLead.id)
+                    }
                 }
             } catch (err: any) {
                 console.error('[AUTO CALL] Auto voice call trigger failed:', err.message || err)

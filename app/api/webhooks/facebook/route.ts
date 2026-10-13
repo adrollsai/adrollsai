@@ -12,6 +12,7 @@ import { deductCreditsByCost, calculateLLMCost } from '@/utils/credits'
 import { createCreativeSessionToken } from '@/utils/creative-token'
 import { updateLeadScoreInDB, parseCustomFields } from '@/utils/lead-scoring'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
+import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
 import { processOwnerMessage, transcribeVoiceNote } from '@/lib/agent/owner-orchestrator'
 
@@ -4011,9 +4012,24 @@ RULES:
           const biProfile = typeof profile?.business_info === 'string' ? JSON.parse(profile.business_info || '{}') : (profile?.business_info || {});
           const hasConnectedVoice = !!(biProfile?.claimed_vobiz_number || biProfile?.voice_vobiz_number || (profile?.voice_twilio_number && profile?.voice_twilio_sid) || (profile?.voice_provider === 'vobiz' && profile?.voice_twilio_number));
           if (savedLead && phone && profile.auto_call_new_leads && hasConnectedVoice) {
-              await triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true, matchedVoiceCampaignId || undefined).catch(err => {
-                  console.error('[AUTO CALL] Auto voice call trigger failed:', err);
-              });
+              if (isIndianPhoneNumber(phone)) {
+                  await triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true, matchedVoiceCampaignId || undefined).catch(err => {
+                      console.error('[AUTO CALL] Auto voice call trigger failed:', err);
+                  });
+              } else {
+                  console.log(`[AUTO CALL] Skipping auto AI call for lead ${savedLead.id} (${phone}): Non-Indian phone number.`);
+                  await supabaseAdmin
+                      .from('leads')
+                      .update({ voice_call_status: 'skipped_international' })
+                      .eq('id', savedLead.id);
+                  await supabaseAdmin.from('lead_history').insert({
+                      lead_id: savedLead.id,
+                      user_id: profile.id,
+                      action_type: 'REMARK',
+                      performed_by: 'System / Facebook',
+                      description: `🚫 Auto AI call skipped: Lead phone number (${phone}) is non-Indian. AI voice calling is restricted to Indian (+91) numbers.`
+                  }).catch(() => {});
+              }
           }
           } finally {
             if (leadgen_id) {

@@ -2,6 +2,7 @@ import { warmupVoiceBridge } from '@/utils/voice-helper'
 import { hasEnoughCredits } from '@/utils/credits'
 import { VOBIZ_NUMBER_CATALOG, VobizAvailableNumber } from '@/utils/vobiz-catalog'
 import { computeValidCallingSlot } from '@/utils/calling-window'
+import { isIndianPhoneNumber } from '@/utils/phone-validation'
 
 export { VOBIZ_NUMBER_CATALOG, type VobizAvailableNumber }
 
@@ -35,6 +36,29 @@ export async function triggerVobizOutboundCall(
     params: VobizCallParams
 ): Promise<VobizCallResult> {
     const { leadId, profileId, toPhone, campaignId, fromPhone, allowAfterHours } = params
+
+    // 0a. Restrict calls strictly to Indian numbers (+91)
+    if (!isIndianPhoneNumber(toPhone)) {
+        console.warn(`[VOBIZ HELPER] Call to ${toPhone} BLOCKED: Non-Indian phone number. Vobiz only supports Indian (+91) destinations.`)
+        if (leadId) {
+            await supabaseAdmin
+                .from('leads')
+                .update({ voice_call_status: 'skipped_international' })
+                .eq('id', leadId)
+
+            try {
+                await supabaseAdmin.from('lead_history').insert({
+                    lead_id: leadId,
+                    action_type: 'REMARK',
+                    description: `🚫 Outbound AI call blocked: Non-Indian phone number (${toPhone}). Telephony only supports Indian (+91) numbers.`
+                })
+            } catch (hErr) {}
+        }
+        return {
+            success: false,
+            error: 'NON_INDIAN_NUMBER: Telephony provider only supports Indian (+91) phone numbers.'
+        }
+    }
 
     // 0. Strict Calling Hours Gatekeeper: 9:00 AM - 7:00 PM IST (09:00 - 19:00)
     // Under NO circumstances may outbound calls dial between 7:00 PM and 9:00 AM IST.
