@@ -1,4 +1,4 @@
-import { AbsoluteFill, OffthreadVideo, Audio, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
+import { AbsoluteFill, OffthreadVideo, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
 import React from 'react';
 import { loadFont as loadMontserrat } from "@remotion/google-fonts/Montserrat";
 import { loadFont as loadOutfit } from "@remotion/google-fonts/Outfit";
@@ -49,6 +49,7 @@ interface CaptionsCompositionProps {
     effects?: Effect[];
     theme: Theme;
     profile?: any;
+    isPlayer?: boolean;
 }
 
 export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
@@ -57,7 +58,8 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
     captions,
     effects = [],
     theme,
-    profile = {}
+    profile = {},
+    isPlayer = false,
 }) => {
     const frame = useCurrentFrame();
     const { fps, durationInFrames } = useVideoConfig();
@@ -121,12 +123,21 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                 position: 'absolute',
                 inset: 0,
             }}>
-                <OffthreadVideo 
-                    src={videoUrl} 
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                    crossOrigin="anonymous" 
-                    volume={audioUrl ? 0.1 : 1.0}
-                />
+                {isPlayer ? (
+                    <Video 
+                        src={videoUrl} 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                        crossOrigin="anonymous" 
+                        volume={audioUrl ? 0.1 : 1.0}
+                    />
+                ) : (
+                    <OffthreadVideo 
+                        src={videoUrl} 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                        crossOrigin="anonymous" 
+                        volume={audioUrl ? 0.1 : 1.0}
+                    />
+                )}
             </div>
 
             {/* Glowing Neon Vignette Border */}

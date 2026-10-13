@@ -79,6 +79,9 @@ export default function VideoEditorPage() {
     const getBrowserMediaUrl = (url: string) => {
         const clean = fixR2Url(url)
         if (!clean) return ''
+        if (clean.includes('.r2.dev/')) {
+            return clean
+        }
         return `/api/fetch-image?url=${encodeURIComponent(clean)}`
     }
 
@@ -370,7 +373,8 @@ export default function VideoEditorPage() {
                             captions: captions,
                             effects: effects,
                             theme: themeConfig,
-                            profile: profile
+                            profile: profile,
+                            isPlayer: true
                         }}
                     />
                 </div>
