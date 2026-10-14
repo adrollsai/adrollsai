@@ -15,6 +15,7 @@ import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
 import { openPhoneDialer } from '@/utils/dialer'
 import { categorizeLeadStage } from '@/utils/pipeline-stages'
+import CRMErrorBoundary from '@/components/CRMErrorBoundary'
 
 const STAGES = [
   'New Lead',
@@ -1343,6 +1344,7 @@ END:VCARD`
     if (!lead) return <div className="p-10 text-center text-slate-500">Lead not found.</div>
 
     return (
+        <CRMErrorBoundary fallbackTitle="Lead Detail Interruption Prevented">
         <div className="max-w-7xl mx-auto min-h-screen bg-[#F8FAFC] flex flex-col pb-safe pb-32">
             {/* Header */}
             <div className="p-5 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sticky top-0 z-10">
@@ -1457,6 +1459,13 @@ END:VCARD`
                             {(() => {
                                 const cf = parseCustomFields(lead.custom_fields);
                                 const actionDateStr = lead.next_followup || cf.next_action_date || lead.next_action_date;
+                                let formattedNext = '';
+                                if (actionDateStr) {
+                                    const d = new Date(actionDateStr);
+                                    if (!isNaN(d.getTime())) {
+                                        formattedNext = `Next: ${d.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}`;
+                                    }
+                                }
                                 return (
                                     <button
                                         onClick={() => setIsUpdateFollowupOpen(true)}
@@ -1464,7 +1473,7 @@ END:VCARD`
                                         title="Schedule Next Followup / Reminder"
                                     >
                                         <Clock size={12} />
-                                        <span>{actionDateStr ? `Next: ${new Date(actionDateStr).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}` : 'Set Followup / Reminder'}</span>
+                                        <span>{formattedNext || 'Set Followup / Reminder'}</span>
                                     </button>
                                 );
                             })()}
@@ -1474,14 +1483,23 @@ END:VCARD`
                                     <PhoneOff size={10} /> DNP x{lead.dnp_count || lead.custom_fields?.dnp_count}
                                 </span>
                             )}
-                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-md shrink-0">
-                                📅 Created: {new Date(lead.facebook_created_at || lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
-                            </span>
-                            {lead.booked_time && (
-                                <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 shadow-sm shrink-0">
-                                    📆 Booked: {new Date(lead.booked_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                            )}
+                            {(() => {
+                                const d = new Date(lead.facebook_created_at || lead.created_at);
+                                return !isNaN(d.getTime()) ? (
+                                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-md shrink-0">
+                                        📅 Created: {d.toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
+                                    </span>
+                                ) : null;
+                            })()}
+                            {(() => {
+                                if (!lead.booked_time) return null;
+                                const d = new Date(lead.booked_time);
+                                return !isNaN(d.getTime()) ? (
+                                    <span className="text-[10px] font-black bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1 shadow-sm shrink-0">
+                                        📆 Booked: {d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                ) : null;
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -1908,7 +1926,10 @@ END:VCARD`
                                     <div>
                                         <span className="block text-xs font-medium text-slate-500">Scheduled Time</span>
                                         <span className="text-base font-extrabold text-slate-800">
-                                            {new Date(lead.booked_time).toLocaleString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                            {(() => {
+                                                const d = new Date(lead.booked_time);
+                                                return !isNaN(d.getTime()) ? d.toLocaleString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+                                            })()}
                                         </span>
                                         {lead.meet_link && (
                                             <div className="mt-2 flex flex-col gap-0.5">
@@ -2577,7 +2598,10 @@ END:VCARD`
                                                     <div>
                                                         <span className="block text-[9px] font-bold text-amber-800 uppercase tracking-wider mb-1">Scheduled Callback</span>
                                                         <span className="font-extrabold text-amber-950 block">
-                                                            {new Date(lead.voice_call_scheduled_at).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                                            {(() => {
+                                                                const d = new Date(lead.voice_call_scheduled_at);
+                                                                return !isNaN(d.getTime()) ? d.toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '';
+                                                            })()}
                                                         </span>
                                                     </div>
                                                     <div className="flex gap-2 mt-1.5">
@@ -2789,7 +2813,12 @@ END:VCARD`
                                                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.612.638l4.685-1.322A11.944 11.944 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.16 0-4.163-.67-5.813-1.813l-.406-.264-2.809.793.828-2.652-.287-.44A9.96 9.96 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
                                                                         WhatsApp Chat
                                                                     </div>
-                                                                    <time className="text-[10px] font-bold text-emerald-500 bg-white px-1.5 py-0.5 rounded-md border border-emerald-100 shrink-0">{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
+                                                                    <time className="text-[10px] font-bold text-emerald-500 bg-white px-1.5 py-0.5 rounded-md border border-emerald-100 shrink-0">
+                                                                        {(() => {
+                                                                            const d = new Date(item.created_at);
+                                                                            return !isNaN(d.getTime()) ? d.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }) : '';
+                                                                        })()}
+                                                                    </time>
                                                                 </div>
                                                                 <div className="space-y-2">
                                                                     {/* User message bubble */}
@@ -2805,14 +2834,17 @@ END:VCARD`
                                                                         </div>
                                                                     </div>
                                                                     {/* Booking badge */}
-                                                                    {parsed.booking_time && (
-                                                                        <div className="flex items-center gap-1.5 bg-emerald-600/10 border border-emerald-200 rounded-xl px-3 py-1.5 mt-1 w-fit">
-                                                                            <Clock size={12} className="text-emerald-600" />
-                                                                            <span className="text-[10px] font-extrabold text-emerald-700">
-                                                                                📅 Booked: {new Date(parsed.booking_time).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
-                                                                            </span>
-                                                                        </div>
-                                                                    )}
+                                                                    {parsed.booking_time && (() => {
+                                                                        const d = new Date(parsed.booking_time);
+                                                                        return !isNaN(d.getTime()) ? (
+                                                                            <div className="flex items-center gap-1.5 bg-emerald-600/10 border border-emerald-200 rounded-xl px-3 py-1.5 mt-1 w-fit">
+                                                                                <Clock size={12} className="text-emerald-600" />
+                                                                                <span className="text-[10px] font-extrabold text-emerald-700">
+                                                                                    📅 Booked: {d.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+                                                                                </span>
+                                                                            </div>
+                                                                        ) : null;
+                                                                    })()}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -2856,7 +2888,10 @@ END:VCARD`
                                                                         <span className="font-mono bg-emerald-100 text-emerald-950 px-2 py-0.5 rounded-md text-[10px] font-black break-all">{parsed.template_name}</span>
                                                                     </div>
                                                                     <time className="text-[9.5px] font-bold text-emerald-600 bg-white px-1.5 py-0.5 rounded-md border border-emerald-100 shrink-0">
-                                                                        {new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+                                                                        {(() => {
+                                                                            const d = new Date(item.created_at);
+                                                                            return !isNaN(d.getTime()) ? d.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }) : '';
+                                                                        })()}
                                                                     </time>
                                                                 </div>
 
@@ -2912,11 +2947,12 @@ END:VCARD`
                                                                                    item.action_type === 'AUTO_ASSIGNED' || 
                                                                                    item.action_type === 'SYSTEM';
 
-                                                            const actorName = byMatch 
+                                                            const rawActor = byMatch 
                                                                 ? byMatch[1].trim() 
                                                                 : isAiAutomation 
                                                                     ? 'AI Assistant' 
                                                                     : (item.actor_name || (lead as any)?.assigned_agent_name || (lead?.assigned_to ? 'Assigned Agent' : 'System'));
+                                                            const actorName = String(rawActor || 'System');
 
                                                             const displayAction = item.action_type === 'STATUS_CHANGE'
                                                                 ? 'Stage Update'
@@ -2938,13 +2974,16 @@ END:VCARD`
                                                                                 ? 'bg-purple-100 text-purple-800 border-purple-300' 
                                                                                 : 'bg-amber-100 text-amber-800 border-amber-300'
                                                                         }`}>
-                                                                            {actorName === 'AI Assistant' || actorName === 'Nobogent AI' ? '🤖' : (actorName[0] || 'A').toUpperCase()}
+                                                                            {actorName === 'AI Assistant' || actorName === 'Nobogent AI' ? '🤖' : (actorName.charAt(0) || 'A').toUpperCase()}
                                                                         </div>
                                                                         <span className="font-bold text-xs text-slate-800 truncate">{actorName}</span>
                                                                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700">{displayAction}</span>
                                                                     </div>
                                                                     <time className="text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded-md border border-slate-100 shrink-0">
-                                                                        {new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                        {(() => {
+                                                                            const d = new Date(item.created_at);
+                                                                            return !isNaN(d.getTime()) ? d.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                                                                        })()}
                                                                     </time>
                                                                 </div>
                                                             )
@@ -3121,7 +3160,10 @@ END:VCARD`
                                                         </p>
                                                         <div className={`flex items-center gap-1 text-[9.5px] font-bold ${isInbound ? 'text-slate-400' : 'text-emerald-700 justify-end'}`}>
                                                             <span>
-                                                                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                {(() => {
+                                                                    const d = new Date(msg.created_at);
+                                                                    return !isNaN(d.getTime()) ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                                                                })()}
                                                             </span>
                                                             {!isInbound && <span>✓✓</span>}
                                                         </div>
@@ -3429,7 +3471,12 @@ END:VCARD`
                                     return (
                                         <div key={item.id} className="bg-slate-50 p-4.5 rounded-2xl border border-slate-200/60 flex flex-col gap-3">
                                             <div className="flex justify-between items-center">
-                                                <time className="text-[10px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md border border-slate-150">{new Date(item.created_at || Date.now()).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</time>
+                                                <time className="text-[10px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md border border-slate-150">
+                                                    {(() => {
+                                                        const d = new Date(item.created_at || Date.now());
+                                                        return !isNaN(d.getTime()) ? d.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }) : '';
+                                                    })()}
+                                                </time>
                                                 <button 
                                                     onClick={() => {
                                                         setSelectedHistoryCall(parsed)
@@ -3537,5 +3584,6 @@ END:VCARD`
             />
         </div>
         </div>
+        </CRMErrorBoundary>
     )
 }

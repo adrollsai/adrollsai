@@ -434,26 +434,35 @@ export default function UpdateFollowupModal({
       }
 
       const existingCustomFields = parseCustomFields(lead.custom_fields)
+      const safeNextActionDate = (parsedIsoNextAction && !isNaN(new Date(parsedIsoNextAction).getTime())) ? parsedIsoNextAction : null
 
       const updatedPayload = {
         id: lead.id,
         status: payload.leadStatus,
         pipeline_stage: payload.pipelineStage,
-        next_followup: parsedIsoNextAction,
+        next_followup: safeNextActionDate,
         notes: (lead.notes || '') + (remarks ? `\n[Followup (${followupType})]: ${remarks}` : ''),
         custom_fields: {
           ...existingCustomFields,
           last_followup_at: new Date().toISOString(),
           last_followup_type: isDnp ? 'Call (DNP)' : followupType,
           last_call_dnp: isDnp,
-          next_action_date: parsedIsoNextAction,
-          next_action_type: parsedIsoNextAction ? nextActionType : null,
+          next_action_date: safeNextActionDate,
+          next_action_type: safeNextActionDate ? nextActionType : null,
           next_action_remark: nextRemarks || null,
-          last_remark: remarks || null
+          next_remarks: nextRemarks || null,
+          last_remark: remarks || null,
+          last_followup_remark: remarks || null
         }
       }
 
-      if (onSuccess) onSuccess(updatedPayload)
+      if (onSuccess) {
+        try {
+          onSuccess(updatedPayload)
+        } catch (onSuccessErr) {
+          console.error('[UpdateFollowupModal] Error in onSuccess callback:', onSuccessErr)
+        }
+      }
       onClose()
     } catch (err: any) {
       console.error('[UpdateFollowupModal] Save error:', err)

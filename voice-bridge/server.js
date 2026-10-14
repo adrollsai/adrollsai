@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const ws = require('ws');
@@ -92,6 +93,334 @@ app.get('/health', (req, res) => {
 });
 
 // Vobiz Answer XML endpoint (Returns Stream XML directly to Vobiz)
+
+async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName = 'Aoede') {
+    const campaignPromise = campaignId
+        ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
+        : Promise.resolve({ data: null });
+
+    const [profileRes, leadRes, propsRes, campaignRes, flaggedRes] = await Promise.all([
+        supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
+        supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
+        supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5),
+        campaignPromise,
+        supabaseAdmin.from('flagged_questions').select('*').eq('lead_id', leadId).eq('resolved', true).not('answer', 'is', null)
+    ]);
+
+    let lead = leadRes?.data || null;
+    const effectiveProfileId = (lead && lead.user_id) ? lead.user_id : profileId;
+    let profile = profileRes?.data || null;
+    let props = propsRes?.data || null;
+
+    if (effectiveProfileId && (effectiveProfileId !== profileId || !profile)) {
+        const [ownerProfileRes, ownerPropsRes] = await Promise.all([
+            supabaseAdmin.from('profiles').select('*').eq('id', effectiveProfileId).maybeSingle(),
+            supabaseAdmin.from('properties').select('*').eq('user_id', effectiveProfileId).limit(5)
+        ]);
+        profile = ownerProfileRes?.data || profile;
+        props = ownerPropsRes?.data || props;
+    }
+
+    let campaign = campaignRes ? campaignRes.data : null;
+    if (!campaign && lead?.voice_campaign_id) {
+        try {
+            const { data: fallbackCamp } = await supabaseAdmin
+                .from('voice_campaigns')
+                .select('*')
+                .eq('id', lead.voice_campaign_id)
+                .maybeSingle();
+            if (fallbackCamp) campaign = fallbackCamp;
+        } catch (cErr) {}
+    }
+
+    const resolvedQuestions = flaggedRes?.data || [];
+    let resolvedQuestionsInstruction = '';
+    if (resolvedQuestions.length > 0) {
+        const list = resolvedQuestions.filter(q => q && q.resolution).map(q => `• Question: "${q.question}" -> Verified Answer: "${q.resolution}"`).join('\n');
+        if (list) {
+            resolvedQuestionsInstruction = `--- VERIFIED ANSWERS TO PREVIOUSLY ASKED QUESTIONS ---\n${list}\n`;
+        }
+    }
+
+    let leadPhone = lead?.phone || null;
+    let leadName = lead?.name || 'there';
+    let companyName = profile?.business_name || 'Bioque Estates';
+    let targetProduct = null;
+
+    // Check WhatsApp history
+    let whatsappHistory = '';
+    try {
+        const { data: waChat } = await supabaseAdmin
+            .from('whatsapp_chats')
+            .select('id')
+            .eq('lead_id', leadId)
+            .maybeSingle();
+        if (waChat) {
+            const { data: waMsgs } = await supabaseAdmin
+                .from('whatsapp_messages')
+                .select('direction, message_text, created_at')
+                .eq('chat_id', waChat.id)
+                .order('created_at', { ascending: false })
+                .limit(10);
+            if (waMsgs && waMsgs.length > 0) {
+                whatsappHistory = waMsgs
+                    .reverse()
+                    .map(m => `${m.direction === 'inbound' ? 'Lead' : 'Agent'}: ${m.message_text}`)
+                    .join('\n');
+            }
+        }
+    } catch (waErr) {}
+
+    // Check Previous Call summaries
+    let previousCallsHistory = '';
+    try {
+        const { data: callLogs } = await supabaseAdmin
+            .from('lead_history')
+            .select('description, created_at')
+            .eq('lead_id', leadId)
+            .eq('action_type', 'REMARK')
+            .order('created_at', { ascending: false })
+            .limit(5);
+        if (callLogs && callLogs.length > 0) {
+            const parsedCalls = [];
+            for (const log of callLogs) {
+                if (log.description && log.description.startsWith('🎙️ CALL_JSON:')) {
+                    try {
+                        const rawJson = log.description.replace('🎙️ CALL_JSON:', '').trim();
+                        const parsed = JSON.parse(rawJson);
+                        const dateStr = new Date(log.created_at).toLocaleDateString();
+                        if (parsed.summary) parsedCalls.push(`- Call on ${dateStr}: ${parsed.summary}`);
+                    } catch (e) {}
+                }
+            }
+            if (parsedCalls.length > 0) previousCallsHistory = parsedCalls.join('\n');
+        }
+    } catch (chErr) {}
+    if (!previousCallsHistory && lead?.voice_call_summary) {
+        previousCallsHistory = `- Last Call Summary: ${lead.voice_call_summary}`;
+    }
+
+    const isFirstCall = !previousCallsHistory && !whatsappHistory;
+
+    // Meta ad origin
+    let adProductName = '';
+    if (lead?.custom_fields) {
+        try {
+            const customObj = typeof lead.custom_fields === 'string' ? JSON.parse(lead.custom_fields) : lead.custom_fields;
+            const origin = customObj?.meta_ad_origin || customObj;
+            if (origin?.product_name) adProductName = origin.product_name;
+        } catch (e) {}
+    }
+
+    targetProduct = adProductName || (campaign?.target_product) || 'OMAXE AMRITSAR Residential Plots';
+
+    // Build Hinglish system instruction
+    const isQualifyingEnabled = profile?.qualifying_enabled !== false;
+    let activeQualifyingQuestions = profile?.qualifying_questions || [];
+    if (Array.isArray(campaign?.audience_filter?.qualifying_questions) && campaign.audience_filter.qualifying_questions.length > 0) {
+        activeQualifyingQuestions = campaign.audience_filter.qualifying_questions;
+    }
+
+    const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
+    const isFemale = vLower.includes('aoede') || vLower.includes('kore') || vLower.includes('female');
+    const genderGrammarInstruction = isFemale
+        ? `GENDER IDENTITY (FEMALE): You are a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon", "Call kar RAHI thi", "Samajh RAHI hoon"). NEVER use masculine endings.`
+        : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHA hoon", "Main aapki help kar SAKTA hoon", "Call kar RAHA tha", "Samajh RAHA hoon").`;
+
+    const backchannelAck = isFemale
+        ? `"Haan ji", "Ahan", "Hmm", "Ji bilkul", "Achha", "Samajh rahi hoon"`
+        : `"Haan ji", "Ahan", "Hmm", "Ji bilkul", "Achha", "Samajh raha hoon"`;
+
+    const campaignGuidance = (campaign?.custom_prompt || campaign?.prompt)
+        ? `\n--- CAMPAIGN SPECIFIC GUIDELINES ---\n${campaign.custom_prompt || campaign.prompt}\n`
+        : '';
+
+    const systemInstruction = `
+You are an expert, professional outbound AI sales representative calling from "${companyName}".
+You are speaking directly over the phone with ${leadName}.
+Language requirement: YOU MUST SPEAK EXCLUSIVELY IN NATURAL, FLUENT HINGLISH (conversational mix of Hindi and English, written in Latin script).
+Tone: Warm, attentive, extremely natural, friendly, conversational.
+
+${genderGrammarInstruction}
+
+KEY OBJECTIVE:
+Your goal is to have a polite, consultative conversation about ${targetProduct}, understand their requirements, answer their questions, and book an appointment slot.
+
+CRITICAL CONVERSATIONAL STYLE (BE LESS TALKATIVE, LISTEN MORE):
+1. BE LESS TALKATIVE, LISTEN MUCH MORE: Never give long speeches, lectures, or sales pitches. Speak in short, crisp turns (under 10-15 words, maximum 1 short sentence per turn). Give the caller the maximum space to speak. You are here to LISTEN.
+2. ONE QUESTION AT A TIME: Ask at most one quick question at a time, then stop talking immediately and listen to the customer.
+3. NATURAL ACTIVE LISTENING & HUMAN SOUNDS (HMMS, AHAN, HAAN JI):
+   - When listening and acknowledging the caller, use natural human conversational fillers like ${backchannelAck}.
+   - Frequently begin turns with natural conversational nods such as "Hmm...", "Ahan...", "Haan ji...", "Achha...", or "Ji bilkul..." to sound completely human, attentive, and engaged on the call.
+   - If the customer explains something, acknowledge with a gentle verbal nod (e.g., "Hmm, bilkul...", "Ahan, samajh gayi", "Haan ji") before giving a brief answer.
+4. CLEAN NATURAL HINGLISH: Speak in clean, natural Hinglish sentences. Do not use pure formal Hindi or stiff robotic English.
+5. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately, acknowledge what they said with "Haan ji" or "Ahan", and address their point directly and concisely.
+6. BROCHURE & PRICING: If the customer asks for brochure or pricing, use the 'send_whatsapp_info' tool to dispatch it to their WhatsApp.
+7. APPOINTMENTS: If the customer is interested in scheduling a visit or call with a team member, use the 'book_appointment_slot' tool.
+8. ENDING CALL: When the conversation naturally finishes or the customer says bye / is busy, politely say goodbye and trigger the 'end_call' tool.
+${campaignGuidance}
+${resolvedQuestionsInstruction}
+`.trim();
+
+    const setupPayload = {
+        setup: {
+            model: "models/gemini-3.1-flash-live-preview",
+            generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: {
+                            voiceName: voiceName || 'Aoede'
+                        }
+                    }
+                }
+            },
+            systemInstruction: {
+                parts: [{ text: systemInstruction }]
+            },
+            tools: [
+                {
+                    functionDeclarations: [
+                        {
+                            name: "end_call",
+                            description: "Ends the phone call when the conversation is finished, meeting is booked, or client wishes to hang up."
+                        },
+                        {
+                            name: "search_properties",
+                            description: "Searches available property inventory by location, bedrooms (BHK), budget, or property type.",
+                            parameters: {
+                                type: "OBJECT",
+                                properties: {
+                                    query: { type: "STRING", description: "Search keyword or project name" },
+                                    bhk: { type: "STRING", description: "Number of bedrooms (e.g. 2BHK, 3BHK, Plots)" }
+                                }
+                            }
+                        },
+                        {
+                            name: "send_whatsapp_info",
+                            description: "Sends requested brochures, floor plans, or pricing details to the customer's WhatsApp in real time.",
+                            parameters: {
+                                type: "OBJECT",
+                                properties: {
+                                    details_type: { type: "STRING", description: "brochure, floor_plan, or pricing" }
+                                }
+                            }
+                        },
+                        {
+                            name: "get_available_slots",
+                            description: "Retrieves upcoming open appointment or site visit slots from the CRM."
+                        },
+                        {
+                            name: "book_appointment_slot",
+                            description: "Confirms and books a site visit or appointment slot for the customer.",
+                            parameters: {
+                                type: "OBJECT",
+                                properties: {
+                                    slot_time: { type: "STRING", description: "Agreed date & time (e.g. Tomorrow 4:00 PM)" },
+                                    notes: { type: "STRING", description: "Customer preferences or notes" }
+                                },
+                                required: ["slot_time"]
+                            }
+                        }
+                    ]
+                }
+            ],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {}
+        }
+    };
+
+    return {
+        profile,
+        lead,
+        campaign,
+        companyName,
+        targetProduct,
+        leadName,
+        leadPhone,
+        voiceName,
+        activeQuestionsList: activeQualifyingQuestions,
+        systemInstruction,
+        setupPayload,
+        geminiApiKey: profile?.gemini_api_key || defaultApiKey
+    };
+}
+
+async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Aoede') {
+    if (!leadId || !profileId) return null;
+    const existing = prewarmedPool.get(leadId);
+    if (existing && !existing.used && (Date.now() - existing.createdAt < 60000)) {
+        return existing;
+    }
+
+    console.log(`[PREWARM] Starting background pre-warm for lead ${leadId}...`);
+    const configPromise = buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName);
+    const defaultKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
+    const tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${defaultKey}`);
+
+    const poolEntry = {
+        leadId,
+        profileId,
+        campaignId,
+        voiceName,
+        tempSocket,
+        configPromise,
+        configData: null,
+        setupComplete: false,
+        used: false,
+        createdAt: Date.now()
+    };
+    prewarmedPool.set(leadId, poolEntry);
+
+    setTimeout(() => {
+        const cur = prewarmedPool.get(leadId);
+        if (cur && cur.createdAt === poolEntry.createdAt && !cur.used) {
+            console.log(`[PREWARM] Cleaning up expired prewarm for lead ${leadId}`);
+            if (cur.tempSocket && cur.tempSocket.readyState === ws.OPEN) {
+                cur.tempSocket.close();
+            }
+            prewarmedPool.delete(leadId);
+        }
+    }, 60000);
+
+    const sendSetup = async () => {
+        try {
+            const config = await configPromise;
+            poolEntry.configData = config;
+            if (tempSocket.readyState === ws.OPEN) {
+                console.log(`[PREWARM] Gemini Socket opened. Sending setup payload for lead ${leadId}...`);
+                tempSocket.send(JSON.stringify(config.setupPayload));
+            }
+        } catch (e) {
+            console.error(`[PREWARM] Error sending setup payload:`, e);
+        }
+    };
+
+    if (tempSocket.readyState === ws.OPEN) {
+        sendSetup();
+    } else {
+        tempSocket.once('open', sendSetup);
+    }
+
+    const onPrewarmMsg = (data) => {
+        try {
+            const msg = JSON.parse(data.toString());
+            if (msg.setupComplete) {
+                console.log(`[PREWARM] Gemini setupComplete received in advance for lead ${leadId}! Session is HOT.`);
+                poolEntry.setupComplete = true;
+            }
+        } catch (e) {}
+    };
+    tempSocket.on('message', onPrewarmMsg);
+
+    tempSocket.once('error', (err) => {
+        console.error(`[PREWARM] Error on prewarmed socket for lead ${leadId}:`, err);
+    });
+
+    return poolEntry;
+}
+
+
 app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
@@ -109,6 +438,11 @@ app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
     <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000" statusCallbackUrl="${statusUrl}">${escapedWsUrl}</Stream>
 </Response>`;
 
+    // Auto-prewarm if not already prewarmed
+    if (leadId && profileId && !prewarmedPool.has(leadId)) {
+        console.log(`[BRIDGE VOBIZ-XML] Auto-prewarming session for lead ${leadId}...`);
+        prewarmSession(leadId, profileId, campaignId, req.query.voiceName || 'Aoede');
+    }
     console.log(`[BRIDGE VOBIZ-XML] Served Voice XML to Vobiz for lead ${leadId}:\n${xml}`);
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.send(xml);
@@ -213,55 +547,13 @@ app.all(['/vobiz-status', '/api/voice/vobiz/status-callback'], async (req, res) 
 
 app.post('/prewarm', async (req, res) => {
     try {
-        const { leadId, profileId, campaignId } = req.body;
+        const { leadId, profileId, campaignId, voiceName } = req.body;
         if (!leadId || !profileId) {
             return res.status(400).json({ error: 'Missing leadId or profileId in prewarm request.' });
         }
-        console.log(`[PREWARM] Pre-warming session for lead: ${leadId}, profile: ${profileId}`);
-
-        if (prewarmedPool.has(leadId)) {
-            return res.json({ status: 'already_prewarmed', leadId });
-        }
-
-        const campaignPromise = campaignId
-            ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
-            : Promise.resolve({ data: null });
-
-        const dbPromise = Promise.all([
-            supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
-            supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
-            supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5),
-            campaignPromise,
-            supabaseAdmin.from('flagged_questions').select('*').eq('lead_id', leadId).eq('resolved', true).not('answer', 'is', null)
-        ]);
-
-        const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-        const tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
-
-        const prewarmedEntry = {
-            leadId,
-            profileId,
-            campaignId,
-            dbPromise,
-            tempSocket,
-            used: false,
-            createdAt: Date.now()
-        };
-
-        prewarmedPool.set(leadId, prewarmedEntry);
-
-        setTimeout(() => {
-            const entry = prewarmedPool.get(leadId);
-            if (entry && entry.createdAt === prewarmedEntry.createdAt && !entry.used) {
-                console.log(`[PREWARM] Cleaning up expired unused prewarmed session for lead ${leadId}`);
-                if (entry.tempSocket && entry.tempSocket.readyState === ws.OPEN) {
-                    entry.tempSocket.close();
-                }
-                prewarmedPool.delete(leadId);
-            }
-        }, 45000);
-
-        res.json({ status: 'prewarmed', leadId });
+        console.log(`[PREWARM] Prewarm request for lead: ${leadId}, profile: ${profileId}`);
+        prewarmSession(leadId, profileId, campaignId, voiceName || 'Aoede');
+        res.json({ status: 'prewarming_started', leadId });
     } catch (err) {
         console.error('[PREWARM] Error in prewarm handler:', err);
         res.status(500).json({ error: err.message });
@@ -347,118 +639,102 @@ function downsample24To8(inputInt16) {
     return output;
 }
 
-// Phone Ringback Tone Synthesizer (400Hz + 450Hz dual tone, 8kHz mu-law)
-function generateRingbackToneBuffer(durationSec = 6.0) {
-    const sampleRate = 8000;
-    const totalSamples = Math.floor(sampleRate * durationSec);
-    const muLawBuffer = Buffer.alloc(totalSamples);
-    const f1 = 400;
-    const f2 = 450;
-    const gain = 0.22; // Comfortable soft ringing volume
+function downsample24To16(pcm24) {
+    const numSamples = Math.floor(pcm24.length * 2 / 3);
+    const out = new Int16Array(numSamples);
+    for (let i = 0; i < numSamples; i++) {
+        const srcIdx = (i * 3) / 2;
+        const idxLow = Math.floor(srcIdx);
+        const idxHigh = Math.min(pcm24.length - 1, idxLow + 1);
+        const frac = srcIdx - idxLow;
+        out[i] = Math.round(pcm24[idxLow] * (1 - frac) + pcm24[idxHigh] * frac);
+    }
+    return out;
+}
 
-    for (let i = 0; i < totalSamples; i++) {
-        const timeSec = i / sampleRate;
-        const cycleTime = timeSec % 3.2; // 1.2s tone, 2.0s pause ring cycle
+// Pre-load and prepare neural voice & call center ambience assets
+const AUDIO_ASSETS = {};
+const assetsDir = path.join(__dirname, 'audio-assets');
 
-        let pcmSample = 0;
-        if (cycleTime < 1.2) {
-            const s1 = Math.sin(2 * Math.PI * f1 * timeSec);
-            const s2 = Math.sin(2 * Math.PI * f2 * timeSec);
-            let env = 1.0;
-            if (cycleTime < 0.05) env = cycleTime / 0.05;
-            else if (cycleTime > 1.15) env = (1.2 - cycleTime) / 0.05;
-
-            pcmSample = Math.round((s1 + s2) * 0.5 * gain * env * 32767);
+function loadPcmAsset(key, filename) {
+    try {
+        const fullPath = path.join(assetsDir, filename);
+        if (!fs.existsSync(fullPath)) {
+            console.warn(`[AUDIO ASSETS] Warning: file ${filename} not found at ${fullPath}`);
+            return null;
         }
-        muLawBuffer[i] = encodeMuLaw(pcmSample);
-    }
-    return muLawBuffer;
-}
-
-const GLOBAL_RINGBACK_BUFFER = generateRingbackToneBuffer(6.0);
-
-// Realistic Vocal Backchannel Synthesizers ("ahaan", "hmm", "haan ji")
-function generateAhaanBackchannelBuffer() {
-    const sampleRate = 8000;
-    const durationSec = 0.42; // 420ms "ahaan..."
-    const totalSamples = Math.floor(sampleRate * durationSec);
-    const muLawBuffer = Buffer.alloc(totalSamples);
-    const gain = 0.28; // Comfortable vocal volume
-
-    for (let i = 0; i < totalSamples; i++) {
-        const t = i / sampleRate;
-        const freq = t < 0.2 ? (220 + (40 * (t / 0.2))) : (260 - (50 * ((t - 0.2) / 0.22)));
-        const env = Math.sin(Math.PI * (t / durationSec));
-        const s1 = Math.sin(2 * Math.PI * freq * t);
-        const s2 = 0.35 * Math.sin(2 * Math.PI * (freq * 2) * t);
-        const pcmSample = Math.round((s1 + s2) * 0.5 * gain * env * 32767);
-        muLawBuffer[i] = encodeMuLaw(pcmSample);
-    }
-    return muLawBuffer;
-}
-
-function generateHmmBackchannelBuffer() {
-    const sampleRate = 8000;
-    const durationSec = 0.35;
-    const totalSamples = Math.floor(sampleRate * durationSec);
-    const muLawBuffer = Buffer.alloc(totalSamples);
-    const gain = 0.28;
-
-    for (let i = 0; i < totalSamples; i++) {
-        const t = i / sampleRate;
-        const freq = 210 - (40 * (t / durationSec));
-        const env = Math.sin(Math.PI * (t / durationSec));
-        const s1 = Math.sin(2 * Math.PI * freq * t);
-        const s2 = 0.3 * Math.sin(2 * Math.PI * (freq * 2) * t);
-        const pcmSample = Math.round((s1 + s2) * 0.5 * gain * env * 32767);
-        muLawBuffer[i] = encodeMuLaw(pcmSample);
-    }
-    return muLawBuffer;
-}
-
-function generateHaanBackchannelBuffer() {
-    const sampleRate = 8000;
-    const durationSec = 0.30; // 300ms "haan"
-    const totalSamples = Math.floor(sampleRate * durationSec);
-    const muLawBuffer = Buffer.alloc(totalSamples);
-    const gain = 0.28;
-
-    for (let i = 0; i < totalSamples; i++) {
-        const t = i / sampleRate;
-        const freq = 250 - (30 * (t / durationSec));
-        const env = Math.sin(Math.PI * (t / durationSec));
-        const s1 = Math.sin(2 * Math.PI * freq * t);
-        const s2 = 0.4 * Math.sin(2 * Math.PI * (freq * 2) * t);
-        const pcmSample = Math.round((s1 + s2) * 0.5 * gain * env * 32767);
-        muLawBuffer[i] = encodeMuLaw(pcmSample);
-    }
-    return muLawBuffer;
-}
-
-const GLOBAL_AHAAN_BUFFER = generateAhaanBackchannelBuffer();
-const GLOBAL_HMM_BUFFER = generateHmmBackchannelBuffer();
-const GLOBAL_HAAN_BUFFER = generateHaanBackchannelBuffer();
-const GLOBAL_BACKCHANNEL_POOL = [GLOBAL_AHAAN_BUFFER, GLOBAL_HMM_BUFFER, GLOBAL_HAAN_BUFFER];
-
-// Twilio Media Stream Packet Streamer (Streams mu-law buffers in strict 160-byte 20ms frames to prevent Twilio frame drops)
-function playBackchannelToTwilio(muLawBuffer, wsConn, streamSid) {
-    if (!wsConn || wsConn.readyState !== ws.OPEN || !streamSid) return;
-    const chunkSize = 160; // 20ms mu-law chunk size required by Twilio
-    let offset = 0;
-    const interval = setInterval(() => {
-        if (offset >= muLawBuffer.length || wsConn.readyState !== ws.OPEN) {
-            clearInterval(interval);
-            return;
+        const raw24 = fs.readFileSync(fullPath);
+        const pcm24 = new Int16Array(raw24.buffer, raw24.byteOffset, Math.floor(raw24.length / 2));
+        
+        // Downsample to 16k
+        const pcm16 = downsample24To16(pcm24);
+        const pcm16Buf = Buffer.from(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
+        
+        // Downsample to 8k mu-law
+        const pcm8 = downsample24To8(pcm24);
+        const muLawBuf = Buffer.alloc(pcm8.length);
+        for (let i = 0; i < pcm8.length; i++) {
+            muLawBuf[i] = encodeMuLaw(pcm8[i]);
         }
-        const chunk = muLawBuffer.subarray(offset, offset + chunkSize);
-        offset += chunkSize;
+        
+        AUDIO_ASSETS[key] = {
+            raw24,
+            pcm24,
+            base64Pcm24: raw24.toString('base64'),
+            pcm16Buf,
+            base64Pcm16: pcm16Buf.toString('base64'),
+            muLawBuf
+        };
+        console.log(`[AUDIO ASSETS] Loaded asset '${key}' (${raw24.length} bytes 24kHz PCM).`);
+    } catch (e) {
+        console.error(`[AUDIO ASSETS] Failed to load ${filename}:`, e.message);
+    }
+}
+
+loadPcmAsset('hello_female', 'hello_female_24k.pcm');
+loadPcmAsset('hello_male', 'hello_male_24k.pcm');
+loadPcmAsset('filler_check_details', 'filler_check_details_24k.pcm');
+loadPcmAsset('filler_check_slots', 'filler_check_slots_24k.pcm');
+loadPcmAsset('backchannel_hmm', 'backchannel_hmm_24k.pcm');
+loadPcmAsset('backchannel_haan', 'backchannel_haan_24k.pcm');
+loadPcmAsset('ambience', 'call_center_ambience_24k.pcm');
+
+// Universal Low-Latency Audio Streamer (Vobiz 24kHz / 16kHz PCM & Twilio 8kHz mu-law)
+function playClipToCaller(wsConn, clipKey, isVobiz = true, streamId = null) {
+    const asset = AUDIO_ASSETS[clipKey];
+    if (!asset || !wsConn || wsConn.readyState !== ws.OPEN || !streamId) return;
+    
+    if (isVobiz) {
+        // Send directly in 24kHz linear PCM to Vobiz
         wsConn.send(JSON.stringify({
-            event: 'media',
-            streamSid: streamSid,
-            media: { payload: chunk.toString('base64') }
+            event: 'playAudio',
+            streamId: streamId,
+            media: {
+                contentType: 'audio/x-l16',
+                sampleRate: 24000,
+                payload: asset.base64Pcm24
+            }
         }));
-    }, 20);
+    } else {
+        // Stream mu-law to Twilio in strict 20ms chunks (160 bytes)
+        const chunkSize = 160;
+        let offset = 0;
+        const interval = setInterval(() => {
+            if (offset >= asset.muLawBuf.length || wsConn.readyState !== ws.OPEN) {
+                clearInterval(interval);
+                return;
+            }
+            const chunk = asset.muLawBuf.subarray(offset, offset + chunkSize);
+            offset += chunkSize;
+            wsConn.send(JSON.stringify({
+                event: 'media',
+                streamSid: streamId,
+                media: { payload: chunk.toString('base64') }
+            }));
+        }, 20);
+    }
 }
+
 
 // Audio Signal Processing & Noise-Suppressed Stream Processor
 function calculateRMS(pcm16Array) {
@@ -471,19 +747,19 @@ function calculateRMS(pcm16Array) {
 
 class NoiseSuppressedAudioProcessor {
     constructor(options = {}) {
-        this.noiseThreshold = options.noiseThreshold || 360; // RMS noise floor threshold for caller
-        this.bargeInThreshold = options.bargeInThreshold || 1850; // RMS needed for barge-in during AI playback
+        // Barge-in: RMS threshold for caller voice to be considered "speaking" during AI output
+        // Telephony lines typically have RMS 50-200 for line noise, 400+ for speech
+        this.bargeInThreshold = options.bargeInThreshold || 500;
+        this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 3; // 3 frames * 20ms = 60ms of sustained speech
         this.isAiSpeaking = false;
         this.aiSpeakingTimeout = null;
-        this.userSpeechDurationMs = 0;
-        this.lastBackchannelTime = 0;
-        this.sustainedBargeInFrames = 0; // Number of consecutive frames exceeding bargeInThreshold
-        this.silentFramesCount = 0; // Trailing silence frame counter
+        this.sustainedBargeInFrames = 0;
+        this.bargeInTriggered = false; // Set true when barge-in fires, reset when AI starts speaking again
     }
 
     markAiSpeaking(durationMs = 1200) {
         this.isAiSpeaking = true;
-        this.userSpeechDurationMs = 0;
+        this.bargeInTriggered = false;
         this.sustainedBargeInFrames = 0;
         if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
         this.aiSpeakingTimeout = setTimeout(() => {
@@ -492,63 +768,48 @@ class NoiseSuppressedAudioProcessor {
         }, durationMs);
     }
 
+    clearAiSpeaking() {
+        this.isAiSpeaking = false;
+        this.sustainedBargeInFrames = 0;
+        if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
+    }
+
+    /**
+     * CRITICAL DESIGN: We ALWAYS forward the caller's real audio to Gemini.
+     * Gemini Live API requires continuous audio input to keep its session alive.
+     * Sending zero-filled silence causes Gemini to think the user left and drop the connection.
+     * 
+     * The processor only DETECTS barge-in events — it does NOT gate audio.
+     * Barge-in detection is used to send 'clearAudio' to Vobiz to stop AI playback.
+     */
     processFrame(pcm16Chunk) {
         const rms = calculateRMS(pcm16Chunk);
-        let shouldBackchannel = false;
 
-        // If AI is currently outputting voice to caller, filter out passive murmurs ("hmm", "haan", "huhn"),
-        // ambient line static, and speakerphone echo. Only allow deliberate, sustained barge-in (>280ms loud speech).
-        if (this.isAiSpeaking) {
-            this.userSpeechDurationMs = 0;
+        // Always forward real audio to Gemini — never send zeroes
+        const result = { pcmOutput: pcm16Chunk, rms, isVoice: rms >= 300, bargeIn: false };
+
+        // Check for barge-in during AI speech
+        if (this.isAiSpeaking && !this.bargeInTriggered) {
             if (rms >= this.bargeInThreshold) {
                 this.sustainedBargeInFrames++;
-                // 14 frames * 20ms = 280ms of sustained loud speech needed to interrupt
-                if (this.sustainedBargeInFrames >= 14) {
+                if (this.sustainedBargeInFrames >= this.sustainedBargeInNeeded) {
+                    // Caller is deliberately speaking over the AI
+                    console.log(`[AUDIO PROCESSOR] Barge-in detected! RMS: ${Math.round(rms)}, sustained ${this.sustainedBargeInFrames} frames`);
+                    this.bargeInTriggered = true;
                     this.isAiSpeaking = false;
                     this.sustainedBargeInFrames = 0;
                     if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
-                    console.log(`[AUDIO PROCESSOR] True human barge-in detected (RMS: ${Math.round(rms)}). Unmuting caller to Gemini.`);
-                    return { pcmOutput: pcm16Chunk, rms, isVoice: true, shouldBackchannel: false };
+                    result.bargeIn = true;
                 }
             } else {
-                this.sustainedBargeInFrames = 0;
+                // Reset sustained counter if a quiet frame breaks the streak
+                this.sustainedBargeInFrames = Math.max(0, this.sustainedBargeInFrames - 1);
             }
-
-            // Suppress completely during AI speech when not barging in (saves Gemini live audio tokens)
-            return { pcmOutput: null, rms, isVoice: false, shouldBackchannel: false };
         }
 
-        // AI is listening (not speaking)
-        this.sustainedBargeInFrames = 0;
-
-        if (rms < this.noiseThreshold) {
-            this.userSpeechDurationMs = 0;
-            this.silentFramesCount = (this.silentFramesCount || 0) + 1;
-            // Send up to 15 frames (300ms) of trailing zero silence so Gemini detects clean end-of-turn
-            if (this.silentFramesCount <= 15) {
-                return { pcmOutput: new Int16Array(pcm16Chunk.length).fill(0), rms, isVoice: false, shouldBackchannel: false };
-            }
-            // After 300ms of silence, drop packets completely to slash ~40% Gemini audio token consumption
-            return { pcmOutput: null, rms, isVoice: false, shouldBackchannel: false };
-        } else {
-            // Active human voice detected! Pass clean audio frame
-            this.silentFramesCount = 0;
-            this.userSpeechDurationMs += 20; // 20ms frame
-            const now = Date.now();
-            if (this.userSpeechDurationMs >= 1000 && (now - this.lastBackchannelTime > 2800)) {
-                this.lastBackchannelTime = now;
-                this.userSpeechDurationMs = 0;
-                shouldBackchannel = true;
-            }
-            return { pcmOutput: pcm16Chunk, rms, isVoice: true, shouldBackchannel };
-        }
+        return result;
     }
 }
-
-
-
-
-
 
 // WSS Handlers
 wss.on('connection', (wsConnection, req) => {
@@ -590,14 +851,16 @@ wss.on('connection', (wsConnection, req) => {
     let activeQuestionsList = [];
     let leadPhone = null;
     let leadName = 'there';
-
+    let companyName = 'Bioque Estates';
+    let targetProduct = null;
+    let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
     let greetingPlayed = false;
     let voiceName = 'Aoede';
 
     const audioProcessor = new NoiseSuppressedAudioProcessor();
-    let ringbackInterval = null;
-    let ringbackOffset = 0;
+    let ambienceOffset = 0;
+    let ambienceInterval = null;
     let geminiGreetingStarted = false;
     let wrapUpTimer = null;
     let maxDurationTimer = null;
@@ -610,7 +873,6 @@ wss.on('connection', (wsConnection, req) => {
         if (!isAlive) {
             console.log('[BRIDGE] WS connection timed out. Closing...');
             clearInterval(pingInterval);
-            if (ringbackInterval) clearInterval(ringbackInterval);
             wsConnection.terminate();
             if (geminiSocket && geminiSocket.readyState === ws.OPEN) {
                 geminiSocket.close();
@@ -662,7 +924,7 @@ wss.on('connection', (wsConnection, req) => {
             audioBufferList.push(pcm16);
             audioBufferSamples += pcm16.length;
 
-            if (audioBufferSamples >= 1280) {
+            if (audioBufferSamples >= 640) {
                 flushAudioBufferToGemini();
             }
         } catch (err) {
@@ -727,674 +989,83 @@ wss.on('connection', (wsConnection, req) => {
                     return;
                 }
 
-                // Start instant phone ringback tone stream to caller while Gemini WS setup takes place
-                if (!ringbackInterval) {
-                    console.log('[BRIDGE] Playing instant phone ringback tone while connecting to Gemini...');
-                    ringbackInterval = setInterval(() => {
-                        if (wsConnection.readyState === ws.OPEN && (twilioStreamSid || vobizStreamId) && !geminiGreetingStarted) {
-                            const chunk = GLOBAL_RINGBACK_BUFFER.subarray(ringbackOffset, ringbackOffset + 160);
-                            ringbackOffset += 160;
-                            if (ringbackOffset >= GLOBAL_RINGBACK_BUFFER.length) ringbackOffset = 0;
-                            if (isVobiz && vobizStreamId) {
-                                wsConnection.send(JSON.stringify({
-                                    event: 'playAudio',
-                                    streamId: vobizStreamId,
-                                    media: {
-                                        contentType: 'audio/x-mulaw',
-                                        sampleRate: 8000,
-                                        payload: chunk.toString('base64')
-                                    }
-                                }));
-                            } else if (twilioStreamSid) {
-                                wsConnection.send(JSON.stringify({
-                                    event: 'media',
-                                    streamSid: twilioStreamSid,
-                                    media: { payload: chunk.toString('base64') }
-                                }));
-                            }
-                        } else if (geminiGreetingStarted && ringbackInterval) {
-                            clearInterval(ringbackInterval);
-                            ringbackInterval = null;
-                        }
-                    }, 20);
-                }
+                // Play instant crisp 0.6s "Hello?" pickup greeting immediately upon answer (<10ms)
+                const initialVoice = (voiceName === 'Fenrir' || voiceName === 'Charon') ? 'hello_male' : 'hello_female';
+                console.log(`[BRIDGE] Instantly streaming '${initialVoice}' (0.6s) audio to caller upon connect...`);
+                playClipToCaller(wsConnection, initialVoice, isVobiz, vobizStreamId || twilioStreamSid);
+                greetingPlayed = true;
 
-                // 1. Fetch details from Supabase and connect to Gemini in parallel
-                let systemInstruction = 'You are a helpful representative. Focus on booking an appointment.';
-                let greetingMessage = 'Hi, kaise ho aap?';
-
-                // Clear old voice call fields immediately to prevent status callback race conditions
-                try {
-                    await supabaseAdmin
-                        .from('leads')
-                        .update({
-                            voice_call_summary: null,
-                            voice_call_transcript: null,
-                            voice_recording_url: null,
-                            voice_call_status: 'calling'
-                        })
-                        .eq('id', leadId);
-                    console.log(`[BRIDGE] Cleared stale voice call fields for lead ${leadId}`);
-                } catch (dbClearErr) {
-                    console.error('[BRIDGE] Failed to clear stale voice call fields:', dbClearErr);
-                }
-
-                let dbPromise;
-                let tempSocket;
-
+                // 1. Retrieve pre-warmed session or initialize Gemini Live session on-demand
+                let sessionConfig;
+                let greetingTurnSent = false;
                 const prewarmed = prewarmedPool.get(leadId);
-                if (prewarmed && !prewarmed.used) {
-                    console.log(`[BRIDGE] Found PRE-WARMED session for lead ${leadId}! Reusing pre-fetched socket & DB context...`);
+                if (prewarmed && !prewarmed.used && prewarmed.tempSocket && prewarmed.tempSocket.readyState === ws.OPEN) {
+                    console.log(`[BRIDGE] Found HOT PRE-WARMED session for lead ${leadId}! setupComplete=${prewarmed.setupComplete}`);
                     prewarmed.used = true;
                     prewarmedPool.delete(leadId);
-                    dbPromise = prewarmed.dbPromise;
-                    tempSocket = prewarmed.tempSocket;
+                    geminiSocket = prewarmed.tempSocket;
+                    geminiSocket.removeAllListeners('message');
+                    geminiSocket.removeAllListeners('error');
+                    geminiSocket.removeAllListeners('close');
+                    sessionConfig = prewarmed.configData || (await prewarmed.configPromise);
                 } else {
-                    const campaignPromise = campaignId
-                        ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
-                        : Promise.resolve({ data: null });
-
-                    dbPromise = Promise.all([
-                        supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
-                        supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
-                        supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5),
-                        campaignPromise,
-                        supabaseAdmin.from('flagged_questions').select('*').eq('lead_id', leadId).eq('resolved', true).not('answer', 'is', null)
-                    ]);
-
-                    console.log('[BRIDGE] Connecting to Gemini Live WebSocket concurrently...');
-                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${defaultApiKey || ''}`);
-                }
-
-
-                let props = null;
-                let resolvedQuestions = [];
-
-                try {
-                    const [profileRes, leadRes, propsRes, campaignRes, flaggedRes] = await dbPromise;
-                    lead = leadRes.data;
-                    const effectiveProfileId = (lead && lead.user_id) ? lead.user_id : profileId;
-
-                    if (effectiveProfileId && (effectiveProfileId !== profileId || !profileRes.data)) {
-                        const { data: ownerProfile } = await supabaseAdmin
-                            .from('profiles')
-                            .select('*')
-                            .eq('id', effectiveProfileId)
-                            .maybeSingle();
-                        profile = ownerProfile || profileRes.data;
-
-                        const { data: ownerProps } = await supabaseAdmin
-                            .from('properties')
-                            .select('*')
-                            .eq('user_id', effectiveProfileId)
-                            .limit(5);
-                        props = ownerProps || propsRes.data;
-                    } else {
-                        profile = profileRes.data;
-                        props = propsRes.data;
-                    }
-
-                    profileData = profile;
-                    campaign = campaignRes ? campaignRes.data : null;
-                    if (!campaign && lead?.voice_campaign_id) {
-                        try {
-                            const { data: fallbackCamp } = await supabaseAdmin
-                                .from('voice_campaigns')
-                                .select('*')
-                                .eq('id', lead.voice_campaign_id)
-                                .maybeSingle();
-                            if (fallbackCamp) {
-                                campaign = fallbackCamp;
-                                console.log(`[BRIDGE] Loaded fallback campaign "${campaign.name}" from lead.voice_campaign_id`);
-                            }
-                        } catch (cErr) {
-                            console.warn('[BRIDGE] Error loading fallback voice campaign:', cErr);
-                        }
-                    }
-
-                    if (!campaign && lead?.campaign_id) {
-                        try {
-                            const { data: userCamps } = await supabaseAdmin
-                                .from('voice_campaigns')
-                                .select('*')
-                                .eq('user_id', effectiveProfileId)
-                                .eq('status', 'active');
-                            if (userCamps && userCamps.length > 0) {
-                                campaign = userCamps.find(c => {
-                                    const mc = c.audience_filter?.meta_campaigns || [];
-                                    const mf = c.audience_filter?.meta_forms || [];
-                                    return mc.includes(String(lead.campaign_id)) || (lead.form_id && mf.includes(String(lead.form_id)));
-                                }) || null;
-                                if (campaign) {
-                                    console.log(`[BRIDGE] Loaded active voice campaign "${campaign.name}" via lead.campaign_id / form_id`);
-                                }
-                            }
-                        } catch (mcErr) {
-                            console.warn('[BRIDGE] Error matching fallback voice campaign via campaign_id:', mcErr);
-                        }
-                    }
-                    resolvedQuestions = flaggedRes?.data || [];
-                    let resolvedQuestionsInstruction = '';
-                    if (resolvedQuestions && resolvedQuestions.length > 0) {
-                        const list = resolvedQuestions.filter(q => q && q.resolution).map(q => `• Question: "${q.question}" -> Verified Answer: "${q.resolution}"`).join('\n');
-                        if (list) {
-                            resolvedQuestionsInstruction = `--- VERIFIED ANSWERS TO PREVIOUSLY ASKED QUESTIONS ---\n${list}\n`;
-                        }
-                    }
-
-                    if (lead) {
-                        leadPhone = lead.phone;
-                        leadName = lead.name || 'there';
-                        
-                        // Build Product Context
-                        let productContext = '';
-                        let interestedPropertyTitle = null;
-                        if (lead.property_id) {
-                            const { data: prop } = await supabaseAdmin
-                                .from('properties')
-                                .select('*')
-                                .eq('id', lead.property_id)
-                                .maybeSingle();
-                            if (prop) {
-                                interestedPropertyTitle = prop.title || null;
-                                productContext = `<interested_property>
-  <title>${prop.title || 'N/A'}</title>
-  <type>${prop.property_type || 'N/A'}</type>
-  <price>${prop.price || 'N/A'}</price>
-  <description>${prop.description || 'N/A'}</description>
-</interested_property>`;
-                            }
-                        }
-
-                        // Build Catalog Context with complete property details, internal tags & location
-                        let catalogContext = '';
-                        if (props && props.length > 0) {
-                            catalogContext = props.map((p) => {
-                                let tagList = [];
-                                if (p.title) tagList.push(p.title);
-                                if (p.configurations) {
-                                    try {
-                                        const parsed = typeof p.configurations === 'string' ? JSON.parse(p.configurations) : p.configurations;
-                                        if (Array.isArray(parsed.tags)) tagList.push(...parsed.tags);
-                                        if (Array.isArray(parsed.internal_tags)) tagList.push(...parsed.internal_tags);
-                                        if (parsed.project_name) tagList.push(parsed.project_name);
-                                        if (parsed.brand_name) tagList.push(parsed.brand_name);
-                                        if (parsed.keywords) tagList.push(parsed.keywords);
-                                    } catch (e) {}
-                                }
-                                const cleanTags = Array.from(new Set(tagList.filter(Boolean))).join(', ');
-
-                                return `<property>
-  <id>${p.id}</id>
-  <title>${p.title || 'N/A'}</title>
-  <project_name_tags>${cleanTags || 'N/A'}</project_name_tags>
-  <type>${p.property_type || 'N/A'}</type>
-  <price>${p.price || 'N/A'}</price>
-  <location_address>${p.address || p.location || 'N/A'}</location_address>
-  <description>${p.description || 'N/A'}</description>
-  ${p.rera_number ? `<rera_number>${p.rera_number}</rera_number>` : ''}
-</property>`;
-                            }).join('\n');
-                        }
-
-                        // Fetch WhatsApp history for conversational context
-                        let whatsappHistory = '';
-                        try {
-                            const { data: waChat } = await supabaseAdmin
-                                .from('whatsapp_chats')
-                                .select('id')
-                                .eq('lead_id', leadId)
-                                .maybeSingle();
-                            if (waChat) {
-                                const { data: waMsgs } = await supabaseAdmin
-                                    .from('whatsapp_messages')
-                                    .select('direction, message_text, created_at')
-                                    .eq('chat_id', waChat.id)
-                                    .order('created_at', { ascending: false })
-                                    .limit(10);
-                                if (waMsgs && waMsgs.length > 0) {
-                                    whatsappHistory = waMsgs
-                                        .reverse()
-                                        .map(m => `${m.direction === 'inbound' ? 'Lead' : 'Agent'}: ${m.message_text}`)
-                                        .join('\n');
-                                }
-                            }
-                        } catch (waErr) {
-                            console.error('[BRIDGE] WhatsApp history fetch error:', waErr);
-                        }
-
-                        // Fetch previous call summaries from lead_history
-                        let previousCallsHistory = '';
-                        try {
-                            const { data: callLogs } = await supabaseAdmin
-                                .from('lead_history')
-                                .select('description, created_at')
-                                .eq('lead_id', leadId)
-                                .eq('action_type', 'REMARK')
-                                .order('created_at', { ascending: false })
-                                .limit(5);
-                            if (callLogs && callLogs.length > 0) {
-                                const parsedCalls = [];
-                                for (const log of callLogs) {
-                                    if (log.description && log.description.startsWith('🎙️ CALL_JSON:')) {
-                                        try {
-                                            const rawJson = log.description.replace('🎙️ CALL_JSON:', '').trim();
-                                            const parsed = JSON.parse(rawJson);
-                                            const dateStr = new Date(log.created_at).toLocaleDateString();
-                                            if (parsed.summary) parsedCalls.push(`- Call on ${dateStr}: ${parsed.summary}`);
-                                        } catch (e) { /* skip malformed */ }
-                                    }
-                                }
-                                if (parsedCalls.length > 0) previousCallsHistory = parsedCalls.join('\n');
-                            }
-                        } catch (chErr) {
-                            console.error('[BRIDGE] Call history fetch error:', chErr);
-                        }
-                        if (!previousCallsHistory && lead.voice_call_summary) {
-                            previousCallsHistory = `- Last Call Summary: ${lead.voice_call_summary}`;
-                        }
-
-                        const companyName = profile?.business_name || 'our company';
-                        const firstName = leadName.split(' ')[0] || 'there';
-                        const isFirstCall = !previousCallsHistory && !whatsappHistory;
-
-                        // Parse Meta Ad Origin / Specific Product Attribution
-                        let adName = lead.ad_name || '';
-                        let adHeadline = '';
-                        let adProductName = '';
-                        let adCampaignName = '';
-                        let adBody = '';
-
-                        if (lead.custom_fields) {
-                            try {
-                                const customObj = typeof lead.custom_fields === 'string' ? JSON.parse(lead.custom_fields) : lead.custom_fields;
-                                const origin = customObj?.meta_ad_origin || customObj;
-                                if (origin) {
-                                    if (!adName && origin.ad_name) adName = origin.ad_name;
-                                    if (origin.headline) adHeadline = origin.headline;
-                                    if (origin.product_name) adProductName = origin.product_name;
-                                    if (origin.campaign_name) adCampaignName = origin.campaign_name;
-                                    if (origin.body) adBody = origin.body;
-                                }
-                            } catch (e) {
-                                console.warn('[BRIDGE] Could not parse custom_fields for ad origin:', e);
-                            }
-                        }
-
-                        const cleanTargetProductName = (rawName) => {
-                            if (!rawName || typeof rawName !== 'string') return null;
-                            let clean = rawName.trim();
-                            const lower = clean.toLowerCase();
-                            if (lower.includes('ai optimized') || lower.includes('ad video') || lower.includes('form the') || lower.includes('name, email') || lower.includes('what is your budget') || /\b\d{8,}\b/.test(clean)) {
-                                clean = clean.replace(/AI\s*optimized\s*ad\s*video\s*\d*/gi, '');
-                                clean = clean.replace(/form\s+the\s+.*/gi, '');
-                                clean = clean.replace(/Name,\s*Email,\s*Phone.*/gi, '');
-                                clean = clean.replace(/What\s+is\s+your\s+budget.*/gi, '');
-                                clean = clean.replace(/\b\d{8,}\b/g, '');
-                                clean = clean.replace(/[-_]+/g, ' ');
-                                clean = clean.trim();
-                            }
-                            if (!clean || clean.length < 3 || /^(ad|video|campaign|lead|form|test|creative|offer|project)$/i.test(clean)) {
-                                return null;
-                            }
-                            return clean;
-                        };
-
-                        const rawTargetProduct = adProductName || interestedPropertyTitle || adHeadline || adName || null;
-                        const isInbound = urlObj?.searchParams?.get('inbound') === 'true' || (lead?.source || '').toLowerCase().includes('inbound') || queryTelephony === 'inbound';
-                        const targetProduct = cleanTargetProductName(rawTargetProduct);
-
-                        // Build proactive context instruction for the agent's second turn (after greeting response)
-                        let sourceInstructions = "";
-                        let contextInstruction = "";
-                        const cleanSource = (lead?.source || '').toLowerCase();
-                        const isFromAd = cleanSource.includes('facebook') || cleanSource.includes('fb') || cleanSource.includes('instagram') || cleanSource.includes('ad') || cleanSource.includes('meta');
-
-                        if (isInbound) {
-                            sourceInstructions = `\nThis is an INBOUND call from a customer calling ${companyName}.`;
-                            contextInstruction = `   The caller has dialed in to ${companyName}. Greet them politely, introduce yourself from ${companyName}, and ask how you can assist them today. Answer all their questions about ${companyName}, features, pricing, products, or services based on the Business Context provided below.`;
-                        } else if (lead?.notes) {
-                            sourceInstructions = isFirstCall ? `\nThis is your FIRST call to this lead.` : `\nThis is a DIRECT custom call to this lead.`;
-                            contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. State clearly and naturally that you are calling regarding their specific inquiry/note: "${lead.notes}". Explain the features, capabilities, and solutions clearly and warmly based on what they asked for and the business info provided below. DO NOT talk about unrelated topics like real estate/properties unless their note or inquiry explicitly asks for it!`;
-                        } else if (isFirstCall) {
-                            sourceInstructions = `\nThis is your FIRST call to this lead.`;
-                            if (isFromAd && targetProduct) {
-                                contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, explicitly reference the SPECIFIC project/product they showed interest in ("${targetProduct}"). Say something like: "Aapne ${companyName} ki ad dekhi thi ${targetProduct} ke regarding, main usi ke regarding complete details share karne ke liye call kar rahi hoon." If asked "kiske regarding call hai?", answer directly: "Ye call ${companyName} ke ${targetProduct} ke regarding hai."`;
-                            } else if (isFromAd) {
-                                contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, say: "Aapne hamaari ad dekhi hogi ${companyName} ki, ussi ke regarding call kar rahi hoon."`;
-                            } else if (targetProduct) {
-                                contextInstruction = `   After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. Say something like: "Main ${companyName} se ${targetProduct} ke regarding call kar rahi hoon, aapki requirement/inquiry ke regarding." Then naturally ask how you can assist them.`;
-                            } else {
-                                contextInstruction = `   After the lead responds to your greeting, introduce yourself from ${companyName}. ${profile?.business_info ? `Briefly mention what the business deals in based on this info: "${profile.business_info.substring(0, 200).replace(/"/g, "'")}"` : ''} Say something like: "Main ${companyName} se baat kar rahi hoon, aapki requirement/inquiry ke regarding call kar rahi hoon." Then naturally ask how you can help them.`;
-                            }
-                        } else {
-                            sourceInstructions = `\nThis is a FOLLOW-UP call. The lead has been contacted before.`;
-                            if (previousCallsHistory) {
-                                contextInstruction = `   After the lead responds to your greeting, reference the previous conversation to establish recognition. Say something like: "Humne pichli baar baat ki thi..." and briefly mention what was discussed based on the Previous Call History provided below. Keep it natural and brief so the prospect remembers. Then ask about their availability.`;
-                            } else if (whatsappHistory) {
-                                contextInstruction = `   After the lead responds to your greeting, reference the WhatsApp conversation to establish recognition. Say something like: "Aapki WhatsApp par humse baat hui thi, ussi ke regarding follow-up call kar rahi hoon." Briefly reference what was discussed. Then ask about their availability.`;
-                            } else {
-                                contextInstruction = `   After the lead responds to your greeting, say: "Humne pichli baar baat ki thi ${companyName} ke regarding, ussi ke follow-up mein call kar rahi hoon." Then naturally ask about their availability.`;
-                            }
-                        }
-
-                        // Check for campaign-specific or active question flows
-                        const isQualifyingEnabled = profile?.qualifying_enabled !== false;
-                        let activeQualifyingQuestions = [];
-                        if (isQualifyingEnabled) {
-                            activeQualifyingQuestions = profile?.qualifying_questions || [];
-                            if (Array.isArray(campaign?.audience_filter?.qualifying_questions) && campaign.audience_filter.qualifying_questions.length > 0) {
-                                activeQualifyingQuestions = campaign.audience_filter.qualifying_questions;
-                                console.log(`[BRIDGE] Using campaign audience_filter qualifying questions (${activeQualifyingQuestions.length}) for lead ${leadId}`);
-                            } else {
-                                const targetLeadCampId = lead?.campaign_id || lead?.voice_campaign_id || campaignId;
-                                try {
-                                    if (targetLeadCampId) {
-                                        const { data: matchedFlow } = await supabaseAdmin
-                                            .from('whatsapp_question_flows')
-                                            .select('questions, name')
-                                            .eq('user_id', effectiveProfileId)
-                                            .eq('linked_campaign_id', targetLeadCampId)
-                                            .maybeSingle();
-
-                                        if (matchedFlow && Array.isArray(matchedFlow.questions) && matchedFlow.questions.length > 0) {
-                                            console.log(`[BRIDGE] Using campaign question flow "${matchedFlow.name}" for lead ${leadId}`);
-                                            activeQualifyingQuestions = matchedFlow.questions;
-                                        }
-                                    }
-                                } catch (fErr) {
-                                    console.warn('[BRIDGE] Error fetching campaign flow:', fErr);
-                                }
-                            }
-                        }
-
-                        // Determine voice gender from voiceName / profile
-                        const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
-                        const isFemale = vLower.includes('aoede') || vLower.includes('kore') || vLower.includes('female') || vLower.includes('sarah') || vLower.includes('priya') || vLower.includes('aarti') || vLower.includes('jessica');
-
-                        const genderGrammarInstruction = isFemale
-                            ? `GENDER IDENTITY (FEMALE): You are a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon", "Main check kar KE BATA DETI hoon", "Call kar RAHI thi"). NEVER use masculine endings like "raha hoon", "sakta hoon", or "karta hoon".`
-                            : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHA hoon", "Main aapki help kar SAKTA hoon", "Main check kar KE BATA DETA hoon", "Call kar RAHA tha").`;
-
-
-                        let parsedQuestions = [];
-                        if (isQualifyingEnabled && Array.isArray(activeQualifyingQuestions) && activeQualifyingQuestions.length > 0) {
-                            parsedQuestions = activeQualifyingQuestions.map((item) => {
-                                if (typeof item === 'string') {
-                                    try {
-                                        const parsedObj = JSON.parse(item);
-                                        if (parsedObj && typeof parsedObj === 'object') {
-                                            return {
-                                                question: parsedObj.question || parsedObj.text || '',
-                                                options: Array.isArray(parsedObj.options) ? parsedObj.options : []
-                                            };
-                                        }
-                                    } catch {}
-                                    const match = item.match(/\(([^)]+)\)/);
-                                    const qText = item.replace(/\s*\([^)]+\)/, '').trim();
-                                    const options = match ? match[1].split(',').map(s => s.trim()).filter(Boolean) : [];
-                                    return { question: qText || item, options };
-                                }
-                                if (typeof item === 'object' && item !== null) {
-                                    return {
-                                        question: item.question || item.text || '',
-                                        options: Array.isArray(item.options) ? item.options : []
-                                    };
-                                }
-                                return { question: String(item), options: [] };
-                            }).filter(q => q.question.trim().length > 0);
-                        }
-
-                        // ONLY fallback to default property qualification questions if qualifying is actually ENABLED AND no specific lead note exists
-                        if (isQualifyingEnabled && parsedQuestions.length === 0 && !lead?.notes) {
-                            parsedQuestions = [
-                                { question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
-                                { question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
-                                { question: 'What is your purchase timeline?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
-                            ];
-                        }
-
-                        activeQuestionsList = parsedQuestions;
-
-                        const formattedQuestionsList = parsedQuestions.map((q, i) => {
-                            const optStr = q.options.length > 0 ? ` (Options: ${q.options.join(', ')})` : '';
-                            return `   ${i + 1}. "${q.question}"${optStr}`;
-                        }).join('\n');
-
-                        const qualifyingInstruction = parsedQuestions.length > 0 ? `
-NATURAL CONVERSATIONAL QUALIFICATION & INVENTORY VALUE PITCH:
-During the call, your objective is strictly to:
-1. Note the lead's requirement so our sales team can curate the exact property options matching their preference.
-2. Collect answers to the following qualification questions conversationally:
-${formattedQuestionsList}
-3. Answer any questions the lead has about our company, projects, and active commercial property inventory.
-4. Assist the lead in scheduling / booking an appointment with a team member so they can guide them further.
-
-Guidelines:
-- DO NOT read questions mechanically like a survey. Ask them conversationally and naturally.
-- Politely clarify any missing qualification details in friendly conversational Hinglish.
-- If an answer is already known in 'Attributed Details' or 'CRM Notes', do not re-ask.
-- Do NOT proactively push WhatsApp on turn 1, but if the customer asks for details on WhatsApp, agree politely and end the call.
-`.trim() : `
-CONVERSATIONAL CONSULTATION & DIRECT ASSISTANCE:
-During the call, your objective is strictly to:
-1. Warmly address the lead's specific requirement, topic, or question.
-2. Answer any questions the lead has about ${companyName}, services, capabilities, or solutions based on the business info.
-3. Assist the lead in scheduling / booking an appointment or consultation slot.
-- Qualification questions are DISABLED on this account. Do NOT ask survey/qualification questions or interrogate the customer. Keep the conversation 100% natural, helpful, and directly aligned with their inquiry.
-`.trim();
-
-                        let greetingName = (firstName && firstName !== 'there' && firstName !== 'Lead') ? firstName : '';
-                        if (campaign?.audience_filter?.greeting) {
-                            let cleanG = campaign.audience_filter.greeting;
-                            if (greetingName) {
-                                cleanG = cleanG.replace(/{name}/gi, greetingName).replace(/{firstName}/gi, greetingName);
-                            } else {
-                                cleanG = cleanG.replace(/{name}\s*(ji)?/gi, '').replace(/{firstName}\s*(ji)?/gi, '').replace(/\s+/g, ' ').trim();
-                            }
-                            greetingMessage = cleanG;
-                        } else if (greetingName) {
-                            greetingMessage = `Hi ${greetingName} ji, kaise hain aap?`;
-                        } else {
-                            greetingMessage = `Hi ji, kaise ho aap?`;
-                        }
-
-                        const languageDirective = `
-MANDATORY LANGUAGE & CONVERSATIONAL RULES:
-1. NATURAL CONVERSATIONAL TONE & BREVITY:
-   - Speak in warm, polite, native conversational Hindi / Hinglish.
-   - Speak like a real, helpful human consultant, NOT a robotic telemarketer.
-   - STRICT LENGTH LIMIT: Keep EVERY single turn short, punchy, and UNDER 15-20 WORDS. NEVER deliver long monologues or paragraphs!
-   - Give the prospect room to speak and breathe. Always pause and listen actively.
-2. ACTIVE LISTENING & RESPECTING PROSPECT REQUESTS:
-   - If the prospect asks a question ("Kahan pe hai?", "Price kya hai?", "Details?"), you MUST answer their question directly, clearly, and concisely FIRST.
-   - NEVER deflect to booking an appointment or site visit when answering an informational question!
-   - If the prospect asks what they want to know, answer politely and suggest options (e.g. "Main aapko location aur pricing bata sakti hoon, ya aapka koi specific sawal hai?").
-3. STRICT CALLBACK TIME COMPLIANCE:
-   - If the prospect asks to be called back at a specific time or day (e.g. "kal 12 baje ke baad", "after 3 PM", "tomorrow morning", "next week"):
-     * CAREFULLY LISTEN to their exact requested time.
-     * NEVER override their requested time with an arbitrary default like "shaam ko 6 baje" or "kal subah"!
-     * Confirm their EXACT requested time back to them (e.g. "Bilkul sir, main kal dopahar 12 baje ke baad call back karungi. Thank you so much!").
-     * Say a warm goodbye and trigger your "end_call" function tool immediately.
-   - If the prospect says they are busy WITHOUT specifying a time: ask politely: "Koi baat nahi sir, kis time call back karna theek rahega?" (NEVER assume 6 PM).
-4. NO AGGRESSIVE APPOINTMENT PUSHING:
-   - NEVER jump straight to asking for a site visit or appointment.
-   - Only suggest an appointment with a team member AFTER the prospect has had their questions answered and has confirmed clear, positive interest so our team can guide them further.
-   - If they are not ready or say no to an appointment, respect it immediately and never push again on that call.
-5. WHATSAPP INQUIRIES:
-   - Do NOT proactively deflect the live call to WhatsApp in the first turn.
-   - HOWEVER, if the prospect explicitly asks to send details or brochure on WhatsApp (e.g. "WhatsApp par bhej do"), say politely: "Ji bilkul sir, main WhatsApp par details aur brochure share karwa deti hoon. Aap review kar lijiye. Thank you, have a great day!" and trigger "end_call".
-6. MULTILINGUAL ADAPTATION: If the lead speaks in Punjabi, English, Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, etc., immediately switch and converse fluently in their requested language.
-7. CALL CONCLUSION & HANGUP:
-   - Whenever you or the prospect conclude the call, say goodbye, or say "Thank you" / "Have a great day" / "Alvida" / "Shukriya", you MUST simultaneously trigger your "end_call" function tool in that same turn.
-`.trim();
-
-                        if (campaign && campaign.custom_prompt) {
-                            const renderedCustomPrompt = campaign.custom_prompt
-                                .replace(/{name}/gi, greetingName)
-                                .replace(/{firstName}/gi, greetingName);
-
-                            systemInstruction = `
-${languageDirective}
-${genderGrammarInstruction}
-
-=== CAMPAIGN SPECIFIC INSTRUCTIONS & FLOW ===
-${renderedCustomPrompt}
-
-${qualifyingInstruction}
-${resolvedQuestionsInstruction}
-
---- LEAD & BUSINESS CONTEXT ---
-Business Name: ${companyName}
-Business Info: ${profile?.business_info || 'N/A'}
-Lead Name: ${leadName}
-Lead Phone: ${leadPhone || 'N/A'}
-Notes/Requirement: ${lead?.notes || 'None'}
-${productContext ? `--- LEAD INTEREST ---\n${productContext}\n` : ''}
-${catalogContext ? `--- CATALOG / OFFERINGS ---\n${catalogContext}\n` : ''}
-${previousCallsHistory ? `--- PREVIOUS CALL HISTORY ---\n${previousCallsHistory}\n` : ''}
-${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : ''}
-`.trim();
-                        } else {
-                            systemInstruction = `
-You are a professional, helpful AI representative calling on behalf of "${companyName}".
-Your primary objective is to qualify the lead, ${leadName}, answer their questions based on the business info below, and schedule a consultation or site visit slot.
-
-${genderGrammarInstruction}
-${qualifyingInstruction}
-
-CONVERSATION FLOW:
-1. Your opening greeting is: "${greetingMessage}".
-2. Once the lead responds to your greeting, your NEXT response must establish context:
-"${contextInstruction}"
-3. Proceed with natural conversational qualification and guide them to schedule a consultation/appointment with ${companyName}.
-
-CRITICAL RULES (NATURAL HELPFUL AGENT & CLOSED-WORLD GROUNDING):
-1. STRICT CLOSED-WORLD ASSUMPTION: You must ONLY speak about the facts explicitly provided in the business profile info, catalog, and lead details.
-2. NO HALLUCINATIONS: Do NOT assume, extrapolate, guess, or invent any information if not explicitly written in the context below.
-3. Be polite, friendly, warm, and concise. Keep EVERY response under 15-20 words.
-4. LANGUAGE STYLE: Speak in a natural, friendly mix of Hindi and English (Hinglish).
-5. MULTILINGUAL ADAPTATION: If the lead asks to speak in Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, Hindi, English, or any other regional language, you MUST IMMEDIATELY switch and converse fluently in their requested language.
-6. ENDING THE CALL: Once the call objective is met or the lead wants to end, say a brief polite goodbye and trigger your "end_call" tool to hang up the call immediately.
-7. APPLE LIVE VOICEMAIL & CALL SCREENING PROTOCOL: If you detect that an automated screening robot is speaking, state your name and wait silently.
-8. VOICEMAIL DETECTION: If you hear an automated machine prompt to leave a message, trigger "end_call" to hang up.
-9. NATURAL BACKCHANNELING: You MUST naturally use short Hinglish backchannels such as "Hmm", "Haan", "Ahaan", "Ji" to acknowledge the lead while listening.
-10. ACTIVE LISTENING & RESPECT: Answer the customer's questions directly first before any follow-up. If the customer requests details on WhatsApp, politely agree and end the call. Never override a callback time requested by the prospect.
-
-${sourceInstructions}
-${resolvedQuestionsInstruction}
-
---- BUSINESS CONTEXT ---
-Business Name: ${companyName}
-Business Info: ${profile?.business_info || 'N/A'}
-Lead Name: ${leadName}
-Lead Phone: ${leadPhone || 'N/A'}
-Notes/Requirement: ${lead?.notes || 'None'}
-${productContext ? `--- LEAD INTEREST ---\n${productContext}\n` : ''}
-${catalogContext ? `--- CATALOG / OFFERINGS ---\n${catalogContext}\n` : ''}
-${previousCallsHistory ? `--- PREVIOUS CALL HISTORY ---\n${previousCallsHistory}\n` : ''}
-${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : ''}
-`.trim();
-                        }
-                    }
-                } catch (dbErr) {
-                    console.error('[BRIDGE] DB context fetch error:', dbErr);
-                }
-
-                // Check if custom key needs reconnection
-                const customApiKey = profile?.gemini_api_key;
-                if (customApiKey && customApiKey !== defaultApiKey) {
-                    console.log('[BRIDGE] Custom API Key found in profile. Reconnecting with tenant key...');
-                    tempSocket.close();
-                    tempSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${customApiKey}`);
-                }
-                geminiSocket = tempSocket;
-                geminiApiKey = customApiKey || defaultApiKey;
-
-                // Wait for socket to open if it hasn't already
-                if (geminiSocket.readyState !== ws.OPEN) {
+                    console.log(`[BRIDGE] No pre-warmed session found for lead ${leadId}. Initializing on-demand...`);
+                    sessionConfig = await buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName);
+                    const keyToUse = sessionConfig.geminiApiKey || defaultApiKey;
+                    geminiSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${keyToUse}`);
                     await new Promise((resolve) => {
-                        geminiSocket.once('open', resolve);
+                        if (geminiSocket.readyState === ws.OPEN) resolve();
+                        else geminiSocket.once('open', resolve);
                     });
+                    console.log('[BRIDGE] Gemini Socket opened on-demand. Sending setup config...');
+                    geminiSocket.send(JSON.stringify(sessionConfig.setupPayload));
                 }
 
-                console.log('[BRIDGE] Gemini Socket opened. Sending setup config...');
-                
-                const setupPayload = {
-                    setup: {
-                        model: "models/gemini-3.1-flash-live-preview",
-                        generationConfig: {
-                            responseModalities: ["AUDIO"],
-                            speechConfig: {
-                                voiceConfig: {
-                                    prebuiltVoiceConfig: {
-                                        voiceName: voiceName
-                                    }
+                profile = sessionConfig.profile;
+                profileData = profile;
+                lead = sessionConfig.lead;
+                campaign = sessionConfig.campaign;
+                companyName = sessionConfig.companyName;
+                targetProduct = sessionConfig.targetProduct;
+                leadName = sessionConfig.leadName;
+                leadPhone = sessionConfig.leadPhone;
+                activeQuestionsList = sessionConfig.activeQuestionsList;
+                geminiApiKey = sessionConfig.geminiApiKey;
+                const setupPayload = sessionConfig.setupPayload;
+
+                const sendInitialGreeting = () => {
+                    if (greetingTurnSent) return;
+                    greetingTurnSent = true;
+                    geminiReady = true;
+
+                    const safeCompanyName = companyName || profile?.business_name || 'Bioque Estates';
+                    const safeProduct = targetProduct || 'OMAXE AMRITSAR Residential Plots';
+                    const safeName = (leadName && leadName !== 'there') ? leadName.split(' ')[0] : '';
+                    const nameGreeting = safeName ? `Hi ${safeName} ji` : `Hi ji`;
+                    const openGreeting = `Haan ji, ${nameGreeting}, kaise hain aap? Main ${safeCompanyName} se bol rahi hoon, aapne ${safeProduct} ke regarding inquiry ki thi. Kya aapke paas do minute hain?`;
+
+                    const textPrompt = `The call has just connected and "Hello?" was already spoken to the caller upon pickup. Speak EXACTLY this greeting message now in natural, fluent Hinglish and nothing else: "${openGreeting}"`;
+
+                    const initialTurn = {
+                        clientContent: {
+                            turns: [
+                                {
+                                    role: "user",
+                                    parts: [{ text: textPrompt }]
                                 }
-                            }
-                        },
-                        systemInstruction: {
-                            parts: [{ text: systemInstruction }]
-                        },
-                        tools: [
-                            {
-                                functionDeclarations: [
-                                    {
-                                        name: "end_call",
-                                        description: "Ends the phone call when the conversation is finished, meeting is booked, or client wishes to hang up."
-                                    },
-                                    {
-                                        name: "send_whatsapp_info",
-                                        description: "Sends requested brochures, floor plans, or pricing details to the customer's WhatsApp in real time while on the call.",
-                                        parameters: {
-                                            type: "OBJECT",
-                                            properties: {
-                                                details_type: {
-                                                    type: "STRING",
-                                                    description: "Type of details requested: brochure, floor_plan, payment_plan, or pricing"
-                                                }
-                                            }
-                                        }
-                                    },
-                                    {
-                                        name: "get_available_slots",
-                                        description: "Retrieves upcoming open appointment or site visit slots from the CRM.",
-                                        parameters: {
-                                            type: "OBJECT",
-                                            properties: {
-                                                day: {
-                                                    type: "STRING",
-                                                    description: "Optional day preference: today, tomorrow, this_weekend"
-                                                }
-                                            }
-                                        }
-                                    },
-                                    {
-                                        name: "book_appointment_slot",
-                                        description: "Confirms and books a site visit or appointment slot for the customer in the CRM.",
-                                        parameters: {
-                                            type: "OBJECT",
-                                            properties: {
-                                                slot_time: {
-                                                    type: "STRING",
-                                                    description: "The agreed appointment date & time (e.g. Tomorrow 4:00 PM)"
-                                                },
-                                                notes: {
-                                                    type: "STRING",
-                                                    description: "Any customer preferences, unit requirements, or notes"
-                                                }
-                                            },
-                                            required: ["slot_time"]
-                                        }
-                                    }
-                                ]
-                            }
-                        ],
-                        inputAudioTranscription: {},
-                        outputAudioTranscription: {}
-                    }
+                            ],
+                            turnComplete: true
+                        }
+                    };
+                    console.log('[BRIDGE] Sending initial greeting turn to Gemini:', JSON.stringify(initialTurn));
+                    geminiSocket.send(JSON.stringify(initialTurn));
+                    console.log('[BRIDGE] geminiReady set to true. Waiting for Gemini audio response...');
                 };
-                geminiSocket.send(JSON.stringify(setupPayload));
+
+                if (prewarmed && prewarmed.setupComplete) {
+                    console.log('[BRIDGE] Session already has setupComplete! Dispatching greeting turn immediately (<200ms)...');
+                    sendInitialGreeting();
+                }
 
                 let isCallHangingUp = false;
                 const triggerCallHangup = async (reason = 'tool_call') => {
@@ -1475,7 +1146,8 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                           }
                                           // Handle user interruption (barge-in)
                          if (serverMsg.serverContent?.interrupted) {
-                             console.log('[BRIDGE] Gemini detected user interruption. Clearing audio buffer...');
+                              console.log('[BRIDGE] Gemini confirmed user interruption. Clearing AI playback...');
+                              audioProcessor.clearAiSpeaking();
                              if (wsConnection.readyState === ws.OPEN) {
                                  if (isVobiz && vobizStreamId) {
                                      wsConnection.send(JSON.stringify({
@@ -1493,39 +1165,16 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                          
                          // Handle setup complete before sending greeting
                           if (serverMsg.setupComplete) {
-                             console.log('[BRIDGE] Gemini Setup Complete received. Injecting greeting turn...');
-                             
-                             const textPrompt = greetingPlayed
-                                 ? `The call has connected. We have already played the initial welcome greeting to the user: "${greetingMessage}". Do NOT repeat this greeting. Please wait silently for the user to respond first, and then reply naturally in Hinglish.`
-                                 : `The call has just connected. Speak EXACTLY this greeting message now and nothing else: "${greetingMessage}"`;
-
-                             const initialTurn = {
-                                 clientContent: {
-                                     turns: [
-                                         {
-                                             role: "user",
-                                             parts: [{ text: textPrompt }]
-                                         }
-                                     ],
-                                     turnComplete: true
-                                 }
-                             };
-                             console.log('[BRIDGE] Sending to Gemini:', JSON.stringify(initialTurn));
-                             geminiSocket.send(JSON.stringify(initialTurn));
-                             geminiReady = true;
-                            console.log('[BRIDGE] geminiReady set to true. Waiting for Gemini audio response...');
-                            return;
-                        }
+                              console.log('[BRIDGE] Gemini Setup Complete received. Injecting greeting turn...');
+                              sendInitialGreeting();
+                              return;
+                          }
 
                         // 1. Handle audio chunks from Gemini output (24kHz PCM)
                         if (serverMsg.serverContent?.modelTurn?.parts) {
                             if (!geminiGreetingStarted) {
                                 geminiGreetingStarted = true;
-                                if (ringbackInterval) {
-                                    clearInterval(ringbackInterval);
-                                    ringbackInterval = null;
-                                    console.log('[BRIDGE] Gemini AI audio output started. Ringback tone stopped.');
-                                }
+                                console.log('[BRIDGE] Gemini AI audio output started.');
 
                                 // Start Smart Call Duration Guardrails (prevents runaway telephony & Gemini costs)
                                 if (!wrapUpTimer) {
@@ -1569,29 +1218,28 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                 }
                                 
                                 if (part.inlineData && part.inlineData.data) {
-                                    const base64PCM = part.inlineData.data;
-                                    const chunkDurationMs = Math.round((Buffer.byteLength(base64PCM, 'base64') / 2) / 24);
+                                    const rawPcmBytes = Buffer.from(part.inlineData.data, 'base64');
+                                    let pcm24 = new Int16Array(rawPcmBytes.buffer, rawPcmBytes.byteOffset, Math.floor(rawPcmBytes.length / 2));
+
+                                    // Pure, crystal-clear 24kHz studio PCM - zero noise on voice
+
+                                    const chunkDurationMs = Math.round(pcm24.length / 24);
                                     audioProcessor.markAiSpeaking(Math.max(1200, chunkDurationMs + 800));
 
                                     if (isVobiz && wsConnection.readyState === ws.OPEN && vobizStreamId) {
-                                        // Direct high-quality 24kHz Linear PCM to Vobiz!
+                                        // Direct high-quality 24kHz Linear PCM to Vobiz with ambient office tone!
+                                        const mixedBuf = Buffer.from(pcm24.buffer, pcm24.byteOffset, pcm24.byteLength);
                                         wsConnection.send(JSON.stringify({
                                             event: 'playAudio',
                                             streamId: vobizStreamId,
                                             media: {
                                                 contentType: 'audio/x-l16',
                                                 sampleRate: 24000,
-                                                payload: base64PCM
+                                                payload: mixedBuf.toString('base64')
                                             }
                                         }));
                                     } else if (wsConnection.readyState === ws.OPEN && twilioStreamSid) {
                                         // Downsample to 8kHz mu-law for Twilio
-                                        const pcm24Bytes = Buffer.from(base64PCM, 'base64');
-                                        const pcm24 = new Int16Array(pcm24Bytes.length / 2);
-                                        for (let i = 0; i < pcm24.length; i++) {
-                                            pcm24[i] = pcm24Bytes.readInt16LE(i * 2);
-                                        }
-
                                         const pcm8 = downsample24To8(pcm24);
                                         const muLawBytes = Buffer.alloc(pcm8.length);
                                         for (let i = 0; i < pcm8.length; i++) {
@@ -1716,8 +1364,61 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                                             }]
                                         }
                                     }));
+                                } else if (call.name === 'search_properties') {
+                                    console.log(`[BRIDGE] Gemini triggered live tool: search_properties for lead ${leadId}`, call.args);
+                                    // 1. Play natural verbal filler immediately so the customer doesn't experience dead silence!
+                                    playClipToCaller(wsConnection, 'filler_check_details', isVobiz, vobizStreamId || twilioStreamSid);
+
+                                    // 2. Query Supabase in parallel
+                                    let propertiesList = [];
+                                    try {
+                                        const queryTerm = (call.args?.query || call.args?.location || call.args?.bhk || '').trim();
+                                        let q = supabaseAdmin
+                                            .from('properties')
+                                            .select('id, title, property_type, price, location, address, configurations, description')
+                                            .eq('user_id', effectiveProfileId);
+
+                                        if (queryTerm) {
+                                            q = q.or(`title.ilike.%${queryTerm}%,location.ilike.%${queryTerm}%,address.ilike.%${queryTerm}%,description.ilike.%${queryTerm}%`);
+                                        }
+                                        const { data: matched } = await q.limit(3);
+                                        if (matched && matched.length > 0) {
+                                            propertiesList = matched.map(p => ({
+                                                title: p.title,
+                                                type: p.property_type,
+                                                price: p.price,
+                                                location: p.address || p.location,
+                                                description: p.description?.slice(0, 150)
+                                            }));
+                                        } else {
+                                            const { data: general } = await supabaseAdmin
+                                                .from('properties')
+                                                .select('title, property_type, price, location, address, description')
+                                                .eq('user_id', effectiveProfileId)
+                                                .limit(2);
+                                            propertiesList = general || [];
+                                        }
+                                    } catch (sErr) {
+                                        console.error('[BRIDGE] search_properties DB error:', sErr);
+                                    }
+
+                                    geminiSocket.send(JSON.stringify({
+                                        toolResponse: {
+                                            functionResponses: [{
+                                                name: "search_properties",
+                                                id: call.id,
+                                                response: {
+                                                    success: true,
+                                                    matching_properties: propertiesList
+                                                }
+                                            }]
+                                        }
+                                    }));
                                 } else if (call.name === 'get_available_slots') {
                                     console.log(`[BRIDGE] Gemini triggered live tool: get_available_slots for lead ${leadId}`);
+                                    // Play natural verbal filler while resolving slots
+                                    playClipToCaller(wsConnection, 'filler_check_slots', isVobiz, vobizStreamId || twilioStreamSid);
+
                                     geminiSocket.send(JSON.stringify({
                                         toolResponse: {
                                             functionResponses: [{
@@ -1780,20 +1481,25 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                     console.error('[BRIDGE] Gemini Socket Error:', err);
                 });
 
-                geminiSocket.on('close', async (code, reason) => {
+                                    geminiSocket.on('close', async (code, reason) => {
                     const reasonStr = reason ? reason.toString() : '';
                     console.log(`[BRIDGE] Gemini Socket closed. Code: ${code}, Reason: ${reasonStr}`);
-                    if (code === 1011 || reasonStr.includes('prepayment credits') || reasonStr.includes('billing')) {
+                    if (reasonStr.includes('prepayment credits') || reasonStr.includes('billing')) {
                         console.error('[BRIDGE] CRITICAL: Google AI Studio prepayment credits are depleted for Gemini Live API!');
+                    }
+                    if (code === 1011 && wsConnection.readyState === ws.OPEN && !isCallHangingUp) {
+                        console.warn('[BRIDGE] Transient 1011 received from Gemini Live. Reconnecting socket to keep call alive...');
                         try {
-                            if (leadId) {
-                                await supabaseAdmin.from('lead_history').insert({
-                                    lead_id: leadId,
-                                    action_type: 'REMARK',
-                                    description: `⚠️ AI Voice Call Error: Google AI Studio prepayment credits are depleted for the configured Gemini API key. Please recharge credits on Google AI Studio to resume Gemini Live voice calls.`
-                                });
-                            }
-                        } catch (e) {}
+                            const newSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey || defaultApiKey || ''}`);
+                            newSocket.once('open', () => {
+                                console.log('[BRIDGE] Gemini Socket reconnected successfully!');
+                                newSocket.send(JSON.stringify(setupPayload));
+                                geminiSocket = newSocket;
+                            });
+                        } catch (recErr) {
+                            console.error('[BRIDGE] Reconnect failed:', recErr);
+                        }
+                        return;
                     }
                     if (wsConnection.readyState === ws.OPEN) {
                         wsConnection.close();
@@ -1819,12 +1525,25 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
                         pcm16 = upsample8To16(pcm8);
                     }
 
-                    // Process incoming caller frame through speech gating to eliminate
-                    // false interruptions from "hmm", "haan", line hiss, and speaker acoustic feedback.
-                    // If caller is silent or AI is speaking, procRes.pcmOutput is null, saving ~40% Gemini tokens.
+                    // ALWAYS forward real caller audio to Gemini — it needs continuous input
+                    // to keep its session alive. The processor only detects barge-in events.
                     const procRes = audioProcessor.processFrame(pcm16);
-                    if (procRes.pcmOutput) {
-                        sendPcmChunkToGemini(procRes.pcmOutput);
+                    sendPcmChunkToGemini(procRes.pcmOutput);
+
+                    // If barge-in detected, send clearAudio to stop AI playback on the caller's end
+                    if (procRes.bargeIn && wsConnection.readyState === ws.OPEN) {
+                        console.log('[BRIDGE] Barge-in! Clearing AI audio playback to caller...');
+                        if (isVobiz && vobizStreamId) {
+                            wsConnection.send(JSON.stringify({
+                                event: 'clearAudio',
+                                streamId: vobizStreamId
+                            }));
+                        } else if (twilioStreamSid) {
+                            wsConnection.send(JSON.stringify({
+                                event: 'clear',
+                                streamSid: twilioStreamSid
+                            }));
+                        }
                     }
                 }
             }
@@ -1832,23 +1551,16 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP HISTORY ---\n${whatsappHistory}\n` : 
 
             if (data.event === 'stop') {
                 console.log(`[BRIDGE] Telephony stream stopped (${isVobiz ? 'Vobiz' : 'Twilio'}).`);
-                if (ringbackInterval) {
-                    clearInterval(ringbackInterval);
-                    ringbackInterval = null;
-                }
                 wsConnection.close();
             }
         } catch (err) {
-            console.error('[BRIDGE] Error processing Twilio stream packet:', err);
+            console.error('[BRIDGE] Error processing stream packet:', err);
         }
     });
 
      wsConnection.on('close', async (code, reason) => {
+        if (ambienceInterval) { clearInterval(ambienceInterval); ambienceInterval = null; }
         clearInterval(pingInterval);
-        if (ringbackInterval) {
-            clearInterval(ringbackInterval);
-            ringbackInterval = null;
-        }
         if (wrapUpTimer) {
             clearTimeout(wrapUpTimer);
             wrapUpTimer = null;

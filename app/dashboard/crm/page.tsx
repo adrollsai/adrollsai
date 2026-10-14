@@ -257,9 +257,10 @@ function getLeadLastAttemptDate(lead: any): Date | null {
   return null;
 }
 
-function formatIsoDatesInText(text: string): string {
+function formatIsoDatesInText(text: any): string {
   if (!text) return '';
-  return text.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, (match) => {
+  const safeStr = typeof text === 'string' ? text : String(text);
+  return safeStr.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, (match) => {
     try {
       const d = new Date(match);
       if (!isNaN(d.getTime())) {
@@ -2470,6 +2471,7 @@ END:VCARD\n`
   }
 
   return (
+    <CRMErrorBoundary fallbackTitle="CRM Pipeline Interruption Prevented">
     <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16 relative">
       
       {/* FIXED REFRESH BUTTON */}
@@ -3469,11 +3471,13 @@ END:VCARD\n`
                                                     const cf = parseCustomFields(lead.custom_fields);
                                                     const rawNextDate = lead.next_followup || cf.next_action_date;
                                                     if (!rawNextDate) return null;
+                                                    const parsedDate = new Date(rawNextDate);
+                                                    if (isNaN(parsedDate.getTime())) return null;
                                                     const nextActionRemark = getLeadNextActionRemark(lead);
                                                     return (
                                                         <div className="mt-1.5 flex flex-col gap-1">
                                                             <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded flex items-center gap-1 w-fit whitespace-nowrap">
-                                                                ⏰ {cf.next_action_type || 'Followup'}: {new Date(rawNextDate).toLocaleDateString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                                                ⏰ {cf.next_action_type || 'Followup'}: {parsedDate.toLocaleDateString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
                                                             </span>
                                                             {nextActionRemark && (
                                                                 <div className="bg-indigo-50/90 border border-indigo-200/90 px-2 py-0.5 rounded-lg text-[10px] text-indigo-950 font-semibold leading-tight max-w-[190px] shadow-2xs" title={nextActionRemark}>
@@ -3556,7 +3560,10 @@ END:VCARD\n`
                                             </td>
                                             <td className="p-4 whitespace-nowrap">
                                                 <span className="text-xs text-slate-500 font-bold block">
-                                                    {new Date(lead.facebook_created_at || lead.created_at).toLocaleDateString([], {day: '2-digit', month: 'short', year: 'numeric'})}
+                                                    {(() => {
+                                                        const d = new Date(lead.facebook_created_at || lead.created_at);
+                                                        return !isNaN(d.getTime()) ? d.toLocaleDateString([], {day: '2-digit', month: 'short', year: 'numeric'}) : '';
+                                                    })()}
                                                 </span>
                                             </td>
                                             <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
@@ -3851,11 +3858,13 @@ END:VCARD\n`
                                     const cf = parseCustomFields(lead.custom_fields);
                                     const rawNextDate = lead.next_followup || cf.next_action_date;
                                     if (!rawNextDate) return null;
+                                    const parsedDate = new Date(rawNextDate);
+                                    if (isNaN(parsedDate.getTime())) return null;
                                     const nextActionRemark = getLeadNextActionRemark(lead);
                                     return (
                                         <div className="flex flex-col gap-1 mt-1 max-w-full">
                                             <span className="text-xs font-black bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-200/80 flex items-center gap-1.5 shadow-sm shrink-0">
-                                                ⏰ Next Action: {cf.next_action_type || 'Followup'} on {new Date(rawNextDate).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
+                                                ⏰ Next Action: {cf.next_action_type || 'Followup'} on {parsedDate.toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}
                                             </span>
                                             {nextActionRemark && (
                                                 <div className="text-[11px] font-semibold text-indigo-950 bg-indigo-50/80 border border-indigo-200/80 px-2.5 py-1 rounded-lg flex items-start gap-1.5 leading-snug shadow-2xs">
@@ -3868,7 +3877,10 @@ END:VCARD\n`
                                 })()}
                             </div>
                             <span className="text-[11px] font-bold text-slate-400 shrink-0">
-                                {new Date(lead.facebook_created_at || lead.created_at).toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'})}
+                                {(() => {
+                                    const d = new Date(lead.facebook_created_at || lead.created_at);
+                                    return !isNaN(d.getTime()) ? d.toLocaleString([], {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute:'2-digit'}) : '';
+                                })()}
                             </span>
                         </div>
 
@@ -5030,5 +5042,6 @@ END:VCARD\n`
         />
         </div>
       </div>
+    </CRMErrorBoundary>
     )
   }
