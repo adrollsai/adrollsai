@@ -152,12 +152,14 @@ async function handleRequest(req: Request) {
         let authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
         let authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
 
+        let prof: any = null;
         try {
-            const { data: prof } = await supabaseAdmin
+            const { data: fetchedProf } = await supabaseAdmin
                 .from('profiles')
                 .select('business_info, voice_name')
                 .eq('id', effectiveProfileId)
                 .maybeSingle();
+            prof = fetchedProf;
             const bi = typeof prof?.business_info === 'string' ? JSON.parse(prof.business_info) : (prof?.business_info || {});
             authId = bi?.voice_vobiz_auth_id || bi?.kyc_data?.vobizSubAuthId || authId;
             authToken = bi?.voice_vobiz_auth_token || authToken;
