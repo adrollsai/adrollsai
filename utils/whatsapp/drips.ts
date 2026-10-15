@@ -331,45 +331,46 @@ export async function sendInstantFormCatalogMessage(
 
         // 1. Fallback: auto_lead_welcome (Utility category, guaranteed delivery, no survey questions)
         if (!messageSent) {
-        try {
-            const welcomePayload = {
-                messaging_product: 'whatsapp',
-                to: cleanPhone,
-                type: 'template',
-                template: {
-                    name: 'auto_lead_welcome',
-                    language: { code: 'en_US' },
-                    components: [
-                        {
-                            type: 'body',
-                            parameters: [
-                                { type: 'text', text: leadName || 'Valued Client' },
-                                { type: 'text', text: companyName },
-                                { type: 'text', text: campaignName || 'our premium properties' }
-                            ]
-                        }
-                    ]
-                }
-            };
+            try {
+                const welcomePayload = {
+                    messaging_product: 'whatsapp',
+                    to: cleanPhone,
+                    type: 'template',
+                    template: {
+                        name: 'auto_lead_welcome',
+                        language: { code: 'en_US' },
+                        components: [
+                            {
+                                type: 'body',
+                                parameters: [
+                                    { type: 'text', text: leadName || 'Valued Client' },
+                                    { type: 'text', text: companyName },
+                                    { type: 'text', text: campaignName || 'our premium properties' }
+                                ]
+                            }
+                        ]
+                    }
+                };
 
-            const autoRes = await fetch(metaUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(welcomePayload)
-            });
-            const autoData = await autoRes.json();
-            if (autoRes.ok && autoData.messages?.[0]?.id) {
-                messageSent = true;
-                sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for reaching out to ${companyName}. We have received your inquiry regarding ${campaignName || 'our premium properties'} and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!`;
-                console.log(`[INSTANT CATALOG WA] Sent 'auto_lead_welcome' to ${cleanPhone}: ${autoData.messages[0].id}`);
-            } else {
-                console.warn('[INSTANT CATALOG WA] auto_lead_welcome failed, trying instant_lead_catalog_welcome fallback:', autoData);
+                const autoRes = await fetch(metaUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(welcomePayload)
+                });
+                const autoData = await autoRes.json();
+                if (autoRes.ok && autoData.messages?.[0]?.id) {
+                    messageSent = true;
+                    sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for reaching out to ${companyName}. We have received your inquiry regarding ${campaignName || 'our premium properties'} and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!`;
+                    console.log(`[INSTANT CATALOG WA] Sent 'auto_lead_welcome' to ${cleanPhone}: ${autoData.messages[0].id}`);
+                } else {
+                    console.warn('[INSTANT CATALOG WA] auto_lead_welcome failed, trying instant_lead_catalog_welcome fallback:', autoData);
+                }
+            } catch (autoErr) {
+                console.warn('[INSTANT CATALOG WA] auto_lead_welcome exception:', autoErr);
             }
-        } catch (autoErr) {
-            console.warn('[INSTANT CATALOG WA] auto_lead_welcome exception:', autoErr);
         }
 
         // 2. Fallback: instant_lead_catalog_welcome (Direct catalog link button)
