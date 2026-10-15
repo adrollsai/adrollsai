@@ -148,11 +148,19 @@ export default function VideoEditorPage() {
                 setProfile(profileData)
             }
 
-            // 3. Load Video Duration dynamically in browser
-            if (assetData.url) {
+            // 3. Load Video Duration dynamically (checking metadata first for instant load)
+            const metaDur = assetData.metadata?.duration || assetData.metadata?.videoDuration
+            if (metaDur && typeof metaDur === 'number' && metaDur > 0) {
+                console.log(`[Video Editor] Using stored video duration from metadata: ${metaDur}s`)
+                const calculatedFrames = Math.ceil(metaDur * 30) + 120
+                setDurationInFrames(calculatedFrames)
+                setVideoReady(true)
+            } else if (assetData.url) {
                 const proxyUrl = getBrowserMediaUrl(assetData.url)
                 const video = document.createElement('video')
                 video.preload = 'metadata'
+                video.muted = true
+                video.playsInline = true
 
                 let readyTriggered = false
                 const handleDuration = () => {
@@ -170,11 +178,17 @@ export default function VideoEditorPage() {
                 video.onloadedmetadata = handleDuration
                 video.onloadeddata = handleDuration
                 video.oncanplay = handleDuration
+                video.onerror = () => {
+                    if (!readyTriggered) {
+                        readyTriggered = true
+                        setVideoReady(true)
+                    }
+                }
                 
-                // Use proxy URL to avoid CORS blocks on cross-origin duration probing
                 video.src = proxyUrl
+                video.load()
 
-                // Fallback timeout after 5s so editor never gets stuck
+                // Fallback timeout after 3s so editor never gets stuck
                 setTimeout(() => {
                     if (!readyTriggered) {
                         if (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 0) {
@@ -184,7 +198,7 @@ export default function VideoEditorPage() {
                             setVideoReady(true)
                         }
                     }
-                }, 5000)
+                }, 3000)
             } else {
                 setVideoReady(true)
             }

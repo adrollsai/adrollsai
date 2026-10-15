@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag, Building, ChevronLeft, ChevronRight, Upload, Download } from 'lucide-react'
+import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag, Building, ChevronLeft, ChevronRight, Upload, Download, SlidersHorizontal, Clock, Ratio, Check } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
@@ -77,6 +77,13 @@ export default function ProductsPage() {
   // Deletion State
   const [propertyToDelete, setPropertyToDelete] = useState<Property | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Auto-Gen Settings Modal State
+  const [autoGenModalProp, setAutoGenModalProp] = useState<Property | null>(null)
+  const [autoGenDimensions, setAutoGenDimensions] = useState<'3:4' | '1:1' | '9:16' | '16:9'>('3:4')
+  const [autoGenCustomPrompt, setAutoGenCustomPrompt] = useState('')
+  const [autoGenTimeOfDay, setAutoGenTimeOfDay] = useState('09:00')
+  const [isSavingAutoGen, setIsSavingAutoGen] = useState(false)
 
   // Filter State
   const [searchQuery, setSearchQuery] = useState('')
@@ -557,30 +564,86 @@ export default function ProductsPage() {
     }
   }
 
-  const handleToggleAutoGenerate = async (e: React.MouseEvent, propId: string, currentStatus: boolean) => {
-    e.stopPropagation()
-    setIsTogglingId(propId)
-    const newStatus = !currentStatus
+  const openAutoGenModal = (prop: Property) => {
+    setAutoGenModalProp(prop)
+    const cfg = parsePropertyConfigurations(prop.configurations)
+    const s = cfg?.auto_gen_settings || {}
+    const validDims = ['3:4', '1:1', '9:16', '16:9']
+    setAutoGenDimensions(validDims.includes(s.dimensions) ? s.dimensions : '3:4')
+    setAutoGenTimeOfDay(s.time_of_day || '09:00')
+    setAutoGenCustomPrompt(s.custom_prompt || '')
+  }
 
+  const handleSaveAutoGenSettings = async () => {
+    if (!autoGenModalProp) return
+    setIsSavingAutoGen(true)
     try {
       const apiRes = await fetch('/api/inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'toggle-auto-generate',
-          propertyId: propId,
-          autoGenerate: newStatus
+          propertyId: autoGenModalProp.id,
+          autoGenerate: true,
+          settings: {
+            dimensions: autoGenDimensions,
+            time_of_day: autoGenTimeOfDay,
+            custom_prompt: autoGenCustomPrompt
+          }
+        })
+      })
+
+      const apiData = await apiRes.json()
+      if (!apiRes.ok) throw new Error(apiData.error || 'Failed to update auto-generation settings')
+
+      const updatedProp = apiData.property
+      const updated = properties.map(p => p.id === autoGenModalProp.id ? { ...p, ...updatedProp, auto_generate: true } : p)
+      setProperties(updated)
+      
+      const { data: { user } } = await supabase.auth.getUser()
+      setLocalCache(`properties_cache_${ownerId || user?.id}`, updated)
+
+      toast.success("Daily Auto-Gen Activated! ✨", {
+        description: `Scheduled daily at ${autoGenTimeOfDay} (${autoGenDimensions}).`
+      })
+      setAutoGenModalProp(null)
+    } catch (error: any) {
+      toast.error("Failed to save settings: " + error.message)
+    } finally {
+      setIsSavingAutoGen(false)
+    }
+  }
+
+  const handleToggleAutoGenerate = async (e: React.MouseEvent, prop: Property) => {
+    e.stopPropagation()
+    if (!prop.auto_generate) {
+      // User is toggling it ON -> open modal with settings & defaults
+      openAutoGenModal(prop)
+      return
+    }
+
+    // User is toggling it OFF -> disable immediately
+    setIsTogglingId(prop.id)
+    try {
+      const apiRes = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'toggle-auto-generate',
+          propertyId: prop.id,
+          autoGenerate: false
         })
       })
 
       const apiData = await apiRes.json()
       if (!apiRes.ok) throw new Error(apiData.error || 'Failed to update auto-generation status')
       
-      const updated = properties.map(p => p.id === propId ? { ...p, auto_generate: newStatus } : p)
+      const updated = properties.map(p => p.id === prop.id ? { ...p, auto_generate: false } : p)
       setProperties(updated)
       
       const { data: { user } } = await supabase.auth.getUser()
       setLocalCache(`properties_cache_${ownerId || user?.id}`, updated)
+      toast.info("Auto-Gen Deactivated", { description: `Daily creative generation stopped for ${prop.title}` })
     } catch (error: any) {
       toast.error("Failed to update auto-generation status: " + error.message)
     } finally {
@@ -924,12 +987,33 @@ export default function ProductsPage() {
                 {isAdminLike && (
                   <div className="mt-4 pt-4 border-t border-slate-100 space-y-2.5">
                     <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
-                        <Sparkles size={14} className={prop.auto_generate ? "text-amber-500" : "text-slate-400"} />
-                        Auto-Gen Daily
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
+                          <Sparkles size={14} className={prop.auto_generate ? "text-amber-500 fill-amber-500/20" : "text-slate-400"} />
+                          Auto-Gen Daily
+                        </span>
+                        {prop.auto_generate && (() => {
+                          const cfg = parsePropertyConfigurations(prop.configurations);
+                          const s = cfg?.auto_gen_settings;
+                          const dim = s?.dimensions || '3:4';
+                          const time = s?.time_of_day || '09:00';
+                          return (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); openAutoGenModal(prop); }}
+                              title="Edit Auto-Gen Settings (Dimensions, Time, Prompt)"
+                              className="inline-flex items-center gap-1 text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200/80 px-2 py-0.5 rounded-full hover:bg-amber-100 transition-colors"
+                            >
+                              <span>{dim}</span>
+                              <span className="text-amber-400">•</span>
+                              <span>{time}</span>
+                              <SlidersHorizontal size={9} className="ml-0.5 text-amber-600" />
+                            </button>
+                          );
+                        })()}
+                      </div>
                       <button
-                        onClick={(e) => handleToggleAutoGenerate(e, prop.id, !!prop.auto_generate)}
+                        onClick={(e) => handleToggleAutoGenerate(e, prop)}
                         disabled={isTogglingId === prop.id}
                         className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${prop.auto_generate ? 'bg-blue-600' : 'bg-slate-300'} ${isTogglingId === prop.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
@@ -1595,6 +1679,170 @@ export default function ProductsPage() {
                    )}
                </div>
            </div>
+        </div>
+      )}
+
+      {/* AUTO-GEN SETTINGS MODAL */}
+      {autoGenModalProp && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-100 flex flex-col space-y-5 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                  <Sparkles size={24} className="text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-900 leading-snug">Daily Auto-Gen Settings</h3>
+                  <p className="text-xs font-semibold text-slate-500 truncate max-w-[280px] sm:max-w-xs">{autoGenModalProp.title}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAutoGenModalProp(null)}
+                className="bg-slate-100 hover:bg-slate-200 p-2 rounded-full text-slate-500 transition-colors shrink-0"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200/60 leading-relaxed">
+              Nobogent AI will automatically generate a fresh, branded marketing poster for this product every day using your configured specifications.
+            </p>
+
+            {/* Dimension / Aspect Ratio Options */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Ratio size={14} className="text-blue-500" />
+                Dimensions / Aspect Ratio
+              </label>
+              <div className="grid grid-cols-2 gap-2.5">
+                {[
+                  { id: '3:4', label: '3:4 Portrait', desc: 'Feed & WhatsApp', default: true },
+                  { id: '1:1', label: '1:1 Square', desc: 'Instagram Feed' },
+                  { id: '9:16', label: '9:16 Story', desc: 'Reels & Status' },
+                  { id: '16:9', label: '16:9 Landscape', desc: 'Banner & Web' },
+                ].map((dim) => {
+                  const isSelected = autoGenDimensions === dim.id;
+                  return (
+                    <button
+                      key={dim.id}
+                      type="button"
+                      onClick={() => setAutoGenDimensions(dim.id as any)}
+                      className={`relative flex flex-col items-start p-3 rounded-2xl border text-left transition-all ${
+                        isSelected 
+                          ? 'border-blue-600 bg-blue-50/70 shadow-sm ring-2 ring-blue-500/20' 
+                          : 'border-slate-200 hover:border-slate-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full mb-1">
+                        <span className={`text-xs font-extrabold ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
+                          {dim.label}
+                        </span>
+                        {dim.default && (
+                          <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700">
+                            Default
+                          </span>
+                        )}
+                        {isSelected && !dim.default && (
+                          <Check size={14} className="text-blue-600 shrink-0" />
+                        )}
+                      </div>
+                      <span className="text-[11px] text-slate-500 font-medium">{dim.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Time of Day */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Clock size={14} className="text-blue-500" />
+                Time of Day (IST)
+              </label>
+              <div className="grid grid-cols-4 gap-2 mb-2.5">
+                {[
+                  { time: '09:00', label: '9:00 AM', desc: 'Morning', default: true },
+                  { time: '13:00', label: '1:00 PM', desc: 'Afternoon' },
+                  { time: '18:00', label: '6:00 PM', desc: 'Evening' },
+                  { time: '21:00', label: '9:00 PM', desc: 'Night' },
+                ].map((preset) => {
+                  const isSelected = autoGenTimeOfDay === preset.time;
+                  return (
+                    <button
+                      key={preset.time}
+                      type="button"
+                      onClick={() => setAutoGenTimeOfDay(preset.time)}
+                      className={`py-2 px-1 rounded-xl text-center border transition-all ${
+                        isSelected 
+                          ? 'border-blue-600 bg-blue-50/70 text-blue-700 font-bold ring-2 ring-blue-500/20' 
+                          : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 font-semibold'
+                      }`}
+                    >
+                      <div className="text-[11px] leading-tight">{preset.label}</div>
+                      <div className="text-[9px] text-slate-500 font-medium">{preset.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 font-medium">Or custom time:</span>
+                <input
+                  type="time"
+                  value={autoGenTimeOfDay}
+                  onChange={(e) => setAutoGenTimeOfDay(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Custom Creative Guidance / Prompt */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <SlidersHorizontal size={14} className="text-blue-500" />
+                Custom Creative Direction / Prompt (Optional)
+              </label>
+              <textarea
+                value={autoGenCustomPrompt}
+                onChange={(e) => setAutoGenCustomPrompt(e.target.value)}
+                rows={3}
+                placeholder="e.g. Highlight sunset balcony views, emphasize luxury amenities, mention 'Ready to Move In'..."
+                className="w-full bg-slate-50 hover:bg-slate-100/50 border border-slate-200 py-2.5 px-3.5 rounded-xl text-xs font-medium focus:ring-4 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all resize-none text-slate-800 placeholder:text-slate-400"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">Leave empty to use automatic optimal AI creative styling.</p>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setAutoGenModalProp(null)}
+                disabled={isSavingAutoGen}
+                className="flex-1 py-3 px-4 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAutoGenSettings}
+                disabled={isSavingAutoGen}
+                className="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isSavingAutoGen ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={16} className="text-amber-300" />
+                    <span>Save & Turn On</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

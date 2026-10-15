@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { createKieTask, generateKieChat } from '@/utils/external-apis';
+import { createKieTask, generateKieChat, queryKieTask } from '@/utils/external-apis';
 import { sendPushNotification } from '@/utils/notification-helper';
 import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-master';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
@@ -28,7 +28,9 @@ export async function POST(request: Request) {
   try {
     // 1. Security check (QStash forwards the authorization header)
     const authHeader = request.headers.get('authorization');
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+    const cronSecret = process.env.CRON_SECRET ? process.env.CRON_SECRET.trim() : '';
+    if (cronSecret && token !== cronSecret) {
       console.warn('[Auto-Generate Worker] Unauthorized worker execution attempt.');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -90,6 +92,27 @@ export async function POST(request: Request) {
     const allInputImages = [...propImages];
     if (logoUrl) allInputImages.push(logoUrl);
 
+    // Parse auto-generate settings from property configurations
+    let autoGenSettings: any = {};
+    if (prop.configurations) {
+      if (typeof prop.configurations === 'object') {
+        autoGenSettings = prop.configurations.auto_gen_settings || {};
+      } else {
+        try {
+          const parsed = JSON.parse(prop.configurations);
+          autoGenSettings = parsed.auto_gen_settings || {};
+        } catch (e) {}
+      }
+    }
+
+    // Supported Kie dimensions for gpt-image-2-5-flare: '3:4', '1:1', '9:16', '16:9' (Default: 3:4)
+    let effectiveAspectRatio = autoGenSettings.dimensions || '3:4';
+    if (!['3:4', '1:1', '9:16', '16:9'].includes(effectiveAspectRatio)) {
+      effectiveAspectRatio = '3:4';
+    }
+
+    const productCustomPrompt = (autoGenSettings.custom_prompt || '').trim();
+
     // C. Generate custom, high-converting image prompt using Gemini
     const systemVisualRules = buildImageSystemPrompt(industry || 'general', false);
 
@@ -101,7 +124,9 @@ PRODUCT DESCRIPTION: "${prop.description || ''}"
 BUSINESS NAME: "${businessName || ''}"
 CONTACT DETAILS: "${contactNumber || ''}"
 INDUSTRY/VERTICAL: "${industry || 'general'}"
-CUSTOM USER INSTRUCTIONS: "${profile.custom_prompt || ''}"
+PRODUCT SPECIFIC CREATIVE INSTRUCTIONS: "${productCustomPrompt || 'None'}"
+GLOBAL USER INSTRUCTIONS: "${profile.custom_prompt || ''}"
+TARGET ASPECT RATIO: "${effectiveAspectRatio}"
 
 ### VISUAL DESIGN SYSTEM RULES (MANDATORY)
 The image prompt you generate must instruct the image model to follow these guidelines:
@@ -112,6 +137,7 @@ ${systemVisualRules}
 - Show happy, attractive, photorealistic humans (e.g. a family, a professional, or a couple) interacting naturally with the product in the scene (e.g., enjoying the living room, standing in front of the villa, working at the desk). The people should have true-to-life skin detailing, real pores, natural expressions, and look completely authentic.
 - The ethnicity of the humans must match the business origin (e.g., South Asian/Indian ethnicity if the business context or product is based in India, Caucasian/Western otherwise).
 - Create a complete, premium ad design layout: Include a clean, professional logo/monogram watermark of the brand in one corner. Overlay the product name and a short hook/benefit headline in an elegant, minimal geometric font. Print the business name "${businessName}" and contact info "${contactNumber}" in a tiny, clean info line at the bottom margin.
+${productCustomPrompt ? `- Incorporate this specific product direction: "${productCustomPrompt}"` : ''}
 
 Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that describes this complete visual scene, composition, lighting, and design layout. Do NOT write any markdown, intro, or explanation. Output ONLY the raw prompt text itself.`;
 
@@ -126,10 +152,11 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       // Fallback if Gemini fails
       finalImagePrompt = [
         `Make a premium, high-converting static meta ad for ${prop.title || ''}.`,
+        productCustomPrompt ? `Special instructions: ${productCustomPrompt}` : '',
         `The primary focus must be the product/property itself. Include attractive photorealistic humans (matching origin ethnicity) interacting with the product naturally (e.g. enjoying the room).`,
         `Integrate a small branding logo watermark in a corner and contact info "${contactNumber || ''}" at the bottom.`,
         `Product details: ${prop.title || ''} - ${prop.description || ''}`
-      ].join("\n");
+      ].filter(Boolean).join("\n");
     }
 
     const selectedModel = allInputImages.length > 0 ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
@@ -138,7 +165,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       "model": selectedModel,
       "input": {
         "prompt": finalImagePrompt,
-        "aspect_ratio": "4:5",
+        "aspect_ratio": effectiveAspectRatio,
         "resolution": "1K"
       }
     };
@@ -175,50 +202,48 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       ]);
       kieResult = taskRes;
       generatedCaption = chatRes;
+
+      if (!kieResult || kieResult.error || !kieResult.taskId) {
+        throw new Error(kieResult?.error || 'Primary Kie task creation failed');
+      }
     } catch (err: any) {
-      console.error("[Auto-Generate Worker] Task submission or caption generation failed, falling back:", err);
-      kieResult = await createKieTask(payload);
-      generatedCaption = `Check out ${prop.title}! Contact us at ${contactNumber || 'our office'} for more details.`;
+      console.warn("[Auto-Generate Worker] Primary task or caption failed, falling back to text-to-image:", err);
+      // Fallback: If image-to-image failed (e.g. input_urls inaccessible or bad), fall back to text-to-image
+      const fallbackPayload = {
+        model: "gpt-image-2-5-flare-text-to-image",
+        input: {
+          prompt: finalImagePrompt,
+          aspect_ratio: effectiveAspectRatio,
+          resolution: "1K",
+          output_format: "png"
+        }
+      };
+      kieResult = await createKieTask(fallbackPayload);
+      if (!generatedCaption) {
+        generatedCaption = `Check out ${prop.title}! Contact us at ${contactNumber || 'our office'} for more details.`;
+      }
     }
 
     if (!kieResult || kieResult.error || !kieResult.taskId) {
       throw new Error(`Kie AI Task failed: ${kieResult?.error || 'Unknown error'}`);
     }
 
-    // E. Poll the status API
+    // E. Poll the status using queryKieTask directly
     let finalImageUrl = '';
     const taskId = kieResult.taskId;
     let attempts = 0;
-    const host = new URL(request.url).host;
-    const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');
-    const baseUrl = isLocal ? 'http://127.0.0.1:3000' : new URL(request.url).origin;
 
-    while (attempts < 30) {
+    while (attempts < 35) {
       attempts++;
-      await new Promise(res => setTimeout(res, 4000)); 
+      await new Promise(res => setTimeout(res, 5000)); 
       
-      const checkResponse = await fetch(`${baseUrl}/api/check-status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId })
-      });
-      const checkData = await checkResponse.json();
+      const statusRes = await queryKieTask(taskId);
 
-      if (checkData.data && checkData.data.state === 'success') {
-        if (checkData.data.resultJson) {
-          try {
-            const resultObj = JSON.parse(checkData.data.resultJson);
-            if (resultObj.resultUrls?.[0]) {
-              finalImageUrl = resultObj.resultUrls[0];
-              break;
-            }
-          } catch(e) {}
-        } else if (checkData.data.resultUrl) {
-          finalImageUrl = checkData.data.resultUrl;
-          break;
-        }
-      } else if (checkData.data && (checkData.data.state === 'failed' || checkData.data.state === 'fail')) {
-        throw new Error('Image generation task failed internally');
+      if (statusRes.state === 'success' && statusRes.resultUrl) {
+        finalImageUrl = statusRes.resultUrl;
+        break;
+      } else if (statusRes.state === 'fail') {
+        throw new Error(statusRes.error || 'Image generation task failed internally');
       }
     }
 
@@ -268,6 +293,13 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
         type: 'image',
         status: 'Draft',
         caption: generatedCaption,
+        kie_task_id: taskId,
+        metadata: {
+          auto_generated: true,
+          dimensions: effectiveAspectRatio,
+          time_of_day: autoGenSettings.time_of_day || '09:00',
+          custom_prompt: productCustomPrompt || undefined
+        },
         created_at: new Date().toISOString()
       });
 

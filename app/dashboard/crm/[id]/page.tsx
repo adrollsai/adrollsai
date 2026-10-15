@@ -80,7 +80,7 @@ function cleanTranscript(transcript: any[]) {
     return merged
 }
 
-export default function LeadProfilePage() {
+function LeadProfilePageContent() {
     const { id } = useParams()
     const router = useRouter()
     const searchParams = useSearchParams()
@@ -129,14 +129,17 @@ export default function LeadProfilePage() {
         const cutoff = lead?.custom_fields?.history_visible_from
         if (cutoff && (currentUserRole === 'agent' || isTeamMember)) {
             const cutoffDate = new Date(cutoff)
-            return base.filter(item => {
-                const isSystem = item.action_type === 'REOPENED' || 
-                                 item.action_type === 'LEAD_CREATED' || 
-                                 item.action_type === 'SYSTEM' || 
-                                 (item.description && (item.description.includes('Lead Source :') || item.description.includes('Facebook Ad Submission') || item.description.includes('Source Details :')))
-                if (isSystem) return true
-                return new Date(item.created_at) >= cutoffDate
-            })
+            if (!isNaN(cutoffDate.getTime())) {
+                return base.filter(item => {
+                    const isSystem = item.action_type === 'REOPENED' || 
+                                     item.action_type === 'LEAD_CREATED' || 
+                                     item.action_type === 'SYSTEM' || 
+                                     (item.description && (item.description.includes('Lead Source :') || item.description.includes('Facebook Ad Submission') || item.description.includes('Source Details :')))
+                    if (isSystem) return true
+                    const itemDate = item.created_at ? new Date(item.created_at) : null
+                    return itemDate && !isNaN(itemDate.getTime()) ? itemDate >= cutoffDate : true
+                })
+            }
         }
         return base
     }, [leadHistory, lead?.custom_fields?.history_visible_from, lead?.voice_call_summary, lead?.summary, lead?.voice_recording_url, lead?.voice_call_transcript, currentUserRole, isTeamMember])
@@ -603,12 +606,14 @@ export default function LeadProfilePage() {
                 let parsedCustomFields = data.custom_fields
                 if (parsedCustomFields && typeof parsedCustomFields === 'string') {
                     try {
-                        parsedCustomFields = JSON.parse(parsedCustomFields)
+                        while (typeof parsedCustomFields === 'string') {
+                            parsedCustomFields = JSON.parse(parsedCustomFields)
+                        }
                     } catch (e) {
                         parsedCustomFields = {}
                     }
                 }
-                data.custom_fields = parsedCustomFields
+                data.custom_fields = parsedCustomFields || {}
                 setLead(data)
 
                 // Dynamically resolve updated Campaign Name
@@ -1344,7 +1349,6 @@ END:VCARD`
     if (!lead) return <div className="p-10 text-center text-slate-500">Lead not found.</div>
 
     return (
-        <CRMErrorBoundary fallbackTitle="Lead Detail Interruption Prevented">
         <div className="max-w-7xl mx-auto min-h-screen bg-[#F8FAFC] flex flex-col pb-safe pb-32">
             {/* Header */}
             <div className="p-5 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sticky top-0 z-10">
@@ -3579,11 +3583,24 @@ END:VCARD`
                 isOpen={isUpdateFollowupOpen}
                 lead={lead}
                 onClose={() => setIsUpdateFollowupOpen(false)}
-                onSuccess={() => { fetchLeadData(); fetchLeadHistory(); }}
+                onSuccess={() => {
+                    setIsUpdateFollowupOpen(false)
+                    setTimeout(() => {
+                        fetchLeadData()
+                        fetchLeadHistory()
+                    }, 30)
+                }}
                 properties={properties}
             />
         </div>
         </div>
+    )
+}
+
+export default function LeadProfilePage() {
+    return (
+        <CRMErrorBoundary fallbackTitle="Lead Detail Workspace">
+            <LeadProfilePageContent />
         </CRMErrorBoundary>
     )
 }

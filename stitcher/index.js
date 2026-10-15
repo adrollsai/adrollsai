@@ -191,10 +191,15 @@ app.post('/stitch', async (req, res) => {
         // Run system FFmpeg cleanly
         const outputPath = path.join(tempDir, 'stitched.mp4');
         let cmd;
-        if (localAudioPath && audioDuration > totalVideoDuration && totalVideoDuration > 0) {
-            const padDuration = (audioDuration - totalVideoDuration) + 0.35;
-            console.log(`[Stitcher] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalVideoDuration.toFixed(2)}s). Extending with tpad clone by ${padDuration.toFixed(2)}s...`);
-            cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v]" -map "[v]" -map 1:a:0 -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -ar 48000 -ac 2 -movflags +faststart "${outputPath}"`;
+        if (localAudioPath && audioDuration >= totalVideoDuration - 0.5 && totalVideoDuration > 0) {
+            const targetAud = Math.max(5.0, totalVideoDuration - 2.0);
+            const speed = Math.min(1.4, Math.max(1.02, audioDuration / targetAud));
+            console.log(`[Stitcher] Audio (${audioDuration.toFixed(2)}s) reaches/exceeds video (${totalVideoDuration.toFixed(2)}s). Adjusting audio tempo by ${speed.toFixed(3)}x using atempo (no frozen frames)...`);
+            cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[1:a]atempo=${speed.toFixed(3)}[a]" -map 0:v:0 -map "[a]" -c:v copy -c:a aac -ar 48000 -ac 2 -movflags +faststart "${outputPath}"`;
+        } else if (localAudioPath && audioDuration > 5.0 && totalVideoDuration > audioDuration + 1.0) {
+            const targetDur = audioDuration + 0.8;
+            const fadeStart = Math.max(0, targetDur - 0.5);
+            cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "[0:v]trim=0:${targetDur.toFixed(2)},setpts=PTS-STARTPTS,fade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[v];[1:a]atrim=0:${targetDur.toFixed(2)},asetpts=PTS-STARTPTS,afade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[a]" -map "[v]" -map "[a]" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -ar 48000 -ac 2 -movflags +faststart "${outputPath}"`;
         } else if (localAudioPath) {
             cmd = `ffmpeg -nostdin -y -loglevel error -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -ar 48000 -ac 2 -movflags +faststart "${outputPath}"`;
         } else {

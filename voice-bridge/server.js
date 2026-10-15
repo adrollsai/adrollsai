@@ -755,12 +755,22 @@ class NoiseSuppressedAudioProcessor {
         this.aiSpeakingTimeout = null;
         this.sustainedBargeInFrames = 0;
         this.bargeInTriggered = false; // Set true when barge-in fires, reset when AI starts speaking again
+
+        // Concurrent Backchanneling (saying "hmm", "ahan" while caller is speaking)
+        this.voiceThreshold = options.voiceThreshold || 250;
+        this.callerSpeechStartTime = 0;
+        this.callerSilenceStartTime = 0;
+        this.lastBackchannelTime = 0;
+        this.backchannelTriggerDurationMs = options.backchannelTriggerDurationMs || 1800; // Trigger after ~1.8s continuous caller speech
+        this.backchannelCooldownMs = options.backchannelCooldownMs || 4500; // 4.5s cooldown
     }
 
     markAiSpeaking(durationMs = 1200) {
         this.isAiSpeaking = true;
         this.bargeInTriggered = false;
         this.sustainedBargeInFrames = 0;
+        this.callerSpeechStartTime = 0;
+        this.callerSilenceStartTime = 0;
         if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
         this.aiSpeakingTimeout = setTimeout(() => {
             this.isAiSpeaking = false;
@@ -771,6 +781,8 @@ class NoiseSuppressedAudioProcessor {
     clearAiSpeaking() {
         this.isAiSpeaking = false;
         this.sustainedBargeInFrames = 0;
+        this.callerSpeechStartTime = 0;
+        this.callerSilenceStartTime = 0;
         if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
     }
 
@@ -779,14 +791,23 @@ class NoiseSuppressedAudioProcessor {
      * Gemini Live API requires continuous audio input to keep its session alive.
      * Sending zero-filled silence causes Gemini to think the user left and drop the connection.
      * 
-     * The processor only DETECTS barge-in events — it does NOT gate audio.
-     * Barge-in detection is used to send 'clearAudio' to Vobiz to stop AI playback.
+     * The processor only DETECTS barge-in and concurrent backchannel events — it does NOT gate audio.
      */
     processFrame(pcm16Chunk) {
         const rms = calculateRMS(pcm16Chunk);
+        const isVoice = rms >= this.voiceThreshold;
+        const now = Date.now();
 
         // Always forward real audio to Gemini — never send zeroes
-        const result = { pcmOutput: pcm16Chunk, rms, isVoice: rms >= 300, bargeIn: false };
+        const result = {
+            pcmOutput: pcm16Chunk,
+            rms,
+            isVoice,
+            bargeIn: false,
+            triggerBackchannel: false,
+            backchannelClip: null,
+            speechDurationMs: 0
+        };
 
         // Check for barge-in during AI speech
         if (this.isAiSpeaking && !this.bargeInTriggered) {
@@ -804,6 +825,37 @@ class NoiseSuppressedAudioProcessor {
             } else {
                 // Reset sustained counter if a quiet frame breaks the streak
                 this.sustainedBargeInFrames = Math.max(0, this.sustainedBargeInFrames - 1);
+            }
+        }
+
+        // Concurrent Backchanneling: Detect when caller is speaking continuously (while AI is silent & listening)
+        if (!this.isAiSpeaking) {
+            if (isVoice) {
+                this.callerSilenceStartTime = 0;
+                if (!this.callerSpeechStartTime) {
+                    this.callerSpeechStartTime = now;
+                } else {
+                    const speechDuration = now - this.callerSpeechStartTime;
+                    result.speechDurationMs = speechDuration;
+
+                    if (speechDuration >= this.backchannelTriggerDurationMs &&
+                        (now - this.lastBackchannelTime) >= this.backchannelCooldownMs) {
+                        result.triggerBackchannel = true;
+                        result.backchannelClip = Math.random() < 0.5 ? 'backchannel_hmm' : 'backchannel_haan';
+                        this.lastBackchannelTime = now;
+                    }
+                }
+            } else {
+                // Short pauses / breaths
+                if (this.callerSpeechStartTime) {
+                    if (!this.callerSilenceStartTime) {
+                        this.callerSilenceStartTime = now;
+                    } else if (now - this.callerSilenceStartTime > 600) {
+                        // Caller finished turn / paused for > 450ms
+                        this.callerSpeechStartTime = 0;
+                        this.callerSilenceStartTime = 0;
+                    }
+                }
             }
         }
 
@@ -859,6 +911,7 @@ wss.on('connection', (wsConnection, req) => {
     let voiceName = 'Aoede';
 
     const audioProcessor = new NoiseSuppressedAudioProcessor();
+    let isCallHangingUp = false;
     let ambienceOffset = 0;
     let ambienceInterval = null;
     let geminiGreetingStarted = false;
@@ -1067,7 +1120,7 @@ wss.on('connection', (wsConnection, req) => {
                     sendInitialGreeting();
                 }
 
-                let isCallHangingUp = false;
+                isCallHangingUp = false;
                 const triggerCallHangup = async (reason = 'tool_call') => {
                     if (isCallHangingUp) return;
                     isCallHangingUp = true;
@@ -1526,7 +1579,7 @@ wss.on('connection', (wsConnection, req) => {
                     }
 
                     // ALWAYS forward real caller audio to Gemini — it needs continuous input
-                    // to keep its session alive. The processor only detects barge-in events.
+                    // to keep its session alive. The processor detects barge-in and backchannel events.
                     const procRes = audioProcessor.processFrame(pcm16);
                     sendPcmChunkToGemini(procRes.pcmOutput);
 
@@ -1544,6 +1597,13 @@ wss.on('connection', (wsConnection, req) => {
                                 streamSid: twilioStreamSid
                             }));
                         }
+                    }
+
+                    // Concurrent Backchanneling: Play natural "hmm" or "ahan" while caller is actively talking
+                    if (procRes.triggerBackchannel && geminiGreetingStarted && !isCallHangingUp && wsConnection.readyState === ws.OPEN) {
+                        const clip = procRes.backchannelClip || 'backchannel_hmm';
+                        console.log(`[BRIDGE] Concurrent backchannel triggered: '${clip}' (caller speech duration: ${procRes.speechDurationMs}ms)`);
+                        playClipToCaller(wsConnection, clip, isVobiz, vobizStreamId || twilioStreamSid);
                     }
                 }
             }

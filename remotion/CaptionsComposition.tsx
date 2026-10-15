@@ -5,11 +5,31 @@ import { loadFont as loadOutfit } from "@remotion/google-fonts/Outfit";
 import { loadFont as loadRoboto } from "@remotion/google-fonts/Roboto";
 import { loadFont as loadInter } from "@remotion/google-fonts/Inter";
 
-// Load Google Fonts for viral and professional captions
+// Load Indic & regional scripts to completely eliminate tofu boxes (▯▯▯) during Remotion Lambda rendering
+import { loadFont as loadAnekKannada } from "@remotion/google-fonts/AnekKannada";
+import { loadFont as loadNotoSansKannada } from "@remotion/google-fonts/NotoSansKannada";
+import { loadFont as loadNotoSansDevanagari } from "@remotion/google-fonts/NotoSansDevanagari";
+import { loadFont as loadNotoSansGurmukhi } from "@remotion/google-fonts/NotoSansGurmukhi";
+import { loadFont as loadNotoSansTelugu } from "@remotion/google-fonts/NotoSansTelugu";
+import { loadFont as loadNotoSansTamil } from "@remotion/google-fonts/NotoSansTamil";
+import { loadFont as loadNotoSansMalayalam } from "@remotion/google-fonts/NotoSansMalayalam";
+import { loadFont as loadNotoSansBengali } from "@remotion/google-fonts/NotoSansBengali";
+import { loadFont as loadNotoSansGujarati } from "@remotion/google-fonts/NotoSansGujarati";
+
+// Load Google Fonts for viral and professional captions across all languages
 loadMontserrat();
 loadOutfit();
 loadRoboto();
 loadInter();
+loadAnekKannada();
+loadNotoSansKannada();
+loadNotoSansDevanagari();
+loadNotoSansGurmukhi();
+loadNotoSansTelugu();
+loadNotoSansTamil();
+loadNotoSansMalayalam();
+loadNotoSansBengali();
+loadNotoSansGujarati();
 
 export type Caption = {
     text: string;
@@ -127,7 +147,6 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                     <Video 
                         src={videoUrl} 
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                        crossOrigin="anonymous" 
                         volume={audioUrl ? 0.1 : 1.0}
                     />
                 ) : (
@@ -326,6 +345,14 @@ const AnimatedCaption: React.FC<{
         };
     }
 
+    // Detect if caption contains Kannada, Devanagari, or other non-Latin characters
+    const hasNonLatin = /[^\u0000-\u007F]/.test(caption.text || '');
+
+    // Comprehensive font stack ensuring Indic languages never render tofu blocks (▯▯▯)
+    const fontStack = hasNonLatin
+        ? `"Anek Kannada", "Noto Sans Kannada", "Noto Sans Devanagari", "Noto Sans Gurmukhi", "Noto Sans Telugu", "Noto Sans Tamil", "Noto Sans Malayalam", "Noto Sans Bengali", "Noto Sans Gujarati", "${theme.fontFamily || 'Montserrat'}", "Outfit", "Inter", sans-serif`
+        : `"${theme.fontFamily || 'Montserrat'}", "Anek Kannada", "Noto Sans Kannada", "Noto Sans Devanagari", "Noto Sans Gurmukhi", "Noto Sans Telugu", "Noto Sans Tamil", "Outfit", "Inter", "Arial Black", sans-serif`;
+
     return (
         <div style={{
             transform: `scale(${animScale}) translate(${animTranslateX}px, ${animTranslateY}px)`,
@@ -338,12 +365,12 @@ const AnimatedCaption: React.FC<{
         }}>
             <div style={{
                 fontSize: theme.fontSize || 96,
-                fontFamily: `"${theme.fontFamily || 'Montserrat'}", "Outfit", "Inter", "Arial Black", sans-serif`,
+                fontFamily: fontStack,
                 fontWeight: 900,
-                textTransform: (theme.textTransform || 'uppercase') as any,
+                textTransform: hasNonLatin ? 'none' : ((theme.textTransform || 'uppercase') as any),
                 padding: '0 16px',
-                lineHeight: 1.05,
-                letterSpacing: '-0.02em',
+                lineHeight: hasNonLatin ? 1.25 : 1.05,
+                letterSpacing: hasNonLatin ? 'normal' : '-0.02em',
                 WebkitTextStroke: hasStroke ? `${strokeWidth}px ${strokeColor}` : 'none',
                 paintOrder: 'stroke fill',
                 stroke: hasStroke ? strokeColor : undefined,
@@ -476,7 +503,7 @@ const RemotionOutro: React.FC<{
             alignItems: 'center',
             justifyContent: 'center',
             color: '#0F172A', // Dark high-contrast slate text
-            fontFamily: 'Outfit, sans-serif',
+            fontFamily: '"Outfit", "Anek Kannada", "Noto Sans Kannada", "Noto Sans Devanagari", "Noto Sans Gurmukhi", sans-serif',
             padding: '80px 60px',
             opacity,
             overflow: 'hidden',

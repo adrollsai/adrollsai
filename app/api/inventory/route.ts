@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { action, propertyId, targetUserId, propertyData, autoGenerate } = body
+    const { action, propertyId, targetUserId, propertyData, autoGenerate, settings } = body
 
     if (!action) {
       return NextResponse.json({ error: 'Missing action' }, { status: 400 })
@@ -178,9 +178,54 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Missing autoGenerate status' }, { status: 400 })
       }
 
+      // Fetch current property to merge configurations
+      const { data: currentProp, error: fetchErr } = await supabaseAdmin
+        .from('properties')
+        .select('configurations')
+        .eq('id', propertyId)
+        .single()
+
+      if (fetchErr || !currentProp) {
+        return NextResponse.json({ error: 'Property not found' }, { status: 404 })
+      }
+
+      let parsedConfig: Record<string, any> = {}
+      if (currentProp.configurations) {
+        if (typeof currentProp.configurations === 'object') {
+          parsedConfig = { ...currentProp.configurations }
+        } else {
+          try {
+            parsedConfig = JSON.parse(currentProp.configurations)
+          } catch (e) {
+            parsedConfig = {}
+          }
+        }
+      }
+
+      // Merge auto_gen_settings if provided or default if turning ON
+      if (settings && typeof settings === 'object') {
+        parsedConfig.auto_gen_settings = {
+          ...(parsedConfig.auto_gen_settings || {}),
+          dimensions: settings.dimensions || '3:4',
+          time_of_day: settings.time_of_day || '09:00',
+          custom_prompt: typeof settings.custom_prompt === 'string' ? settings.custom_prompt.trim() : '',
+          updated_at: new Date().toISOString()
+        }
+      } else if (autoGenerate && !parsedConfig.auto_gen_settings) {
+        parsedConfig.auto_gen_settings = {
+          dimensions: '3:4',
+          time_of_day: '09:00',
+          custom_prompt: '',
+          updated_at: new Date().toISOString()
+        }
+      }
+
       const { data, error } = await supabaseAdmin
         .from('properties')
-        .update({ auto_generate: autoGenerate })
+        .update({ 
+          auto_generate: autoGenerate,
+          configurations: JSON.stringify(parsedConfig)
+        })
         .eq('id', propertyId)
         .select()
         .single()

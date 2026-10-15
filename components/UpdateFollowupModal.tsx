@@ -463,7 +463,15 @@ export default function UpdateFollowupModal({
           console.error('[UpdateFollowupModal] Error in onSuccess callback:', onSuccessErr)
         }
       }
-      onClose()
+
+      // Safe asynchronous dismissal to ensure parent render loop has scheduled before modal DOM teardown
+      setTimeout(() => {
+        try {
+          onClose()
+        } catch (closeErr) {
+          console.error('[UpdateFollowupModal] Error in onClose callback:', closeErr)
+        }
+      }, 0)
     } catch (err: any) {
       console.error('[UpdateFollowupModal] Save error:', err)
       setError(err.message || 'Failed to save followup. Please check your internet connection and try again.')

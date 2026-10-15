@@ -587,7 +587,7 @@ async function getSuperAdminSelectedLLM(): Promise<string> {
 
 export async function callDeepSeekWithUsage(
     prompt: string,
-    options?: { system?: string; maxTokens?: number; temperature?: number; model?: string }
+    options?: { system?: string; maxTokens?: number; temperature?: number; model?: string; timeoutMs?: number }
 ): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {
     const rawApiKey = process.env.DEEPSEEK_API_KEY || '';
     const apiKey = rawApiKey.replace(/^["']|["']$/g, '').trim();
@@ -602,39 +602,47 @@ export async function callDeepSeekWithUsage(
     messages.push({ role: "user", content: prompt });
 
     const modelName = options?.model || "deepseek-chat";
+    const timeoutMs = options?.timeoutMs || 8000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch("https://api.deepseek.com/chat/completions", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-            model: modelName,
-            messages,
-            max_tokens: options?.maxTokens || 8192,
-            temperature: options?.temperature ?? 0.35,
-            stream: false
-        })
-    });
+    try {
+        const response = await fetch("https://api.deepseek.com/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: modelName,
+                messages,
+                max_tokens: options?.maxTokens || 8192,
+                temperature: options?.temperature ?? 0.35,
+                stream: false
+            }),
+            signal: controller.signal
+        });
 
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`DeepSeek API error: ${response.statusText} - ${errText}`);
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`DeepSeek API error: ${response.statusText} - ${errText}`);
+        }
+
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content || "";
+        const usage = data.usage || {};
+        const promptTokens = usage.prompt_tokens || 0;
+        const completionTokens = usage.completion_tokens || 0;
+
+        return {
+            text,
+            promptTokens,
+            completionTokens,
+            modelName
+        };
+    } finally {
+        clearTimeout(timeoutId);
     }
-
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || "";
-    const usage = data.usage || {};
-    const promptTokens = usage.prompt_tokens || 0;
-    const completionTokens = usage.completion_tokens || 0;
-
-    return {
-        text,
-        promptTokens,
-        completionTokens,
-        modelName
-    };
 }
 
 export async function callDeepSeekVisionWithUsage(prompt: string, imageUrls: string[]): Promise<{ text: string; promptTokens: number; completionTokens: number; modelName: string }> {

@@ -7,6 +7,8 @@ import { google } from '@ai-sdk/google';
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
 import { buildImageSystemPrompt, buildReferenceCreativePreamble, buildImageDisambiguationPreamble, detectIndustry, getRandomVisualArchetype, getRandomHumanPersona } from '@/utils/image-prompt-master';
 
+export const maxDuration = 120; // Allow 2 minutes for AI prompt synthesis & image task dispatch
+
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -417,10 +419,10 @@ ${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific prod
 6. AUTHENTIC HUMAN PERSONA: ${activePersona.promptDirective} Regional ethnicity must match the business location. Real skin pores and candid expressions of joy, strictly no plastic AI faces.
 7. OUTPUT FORMAT: Output ONLY a single cohesive, highly detailed, descriptive paragraph containing the exact scene description, layouts, styling, text overlays, and details for the image model. Do NOT include any intro, conversational text, or markdown code blocks.`;
 
-        // Primary: DeepSeek v4-flash for Master Designer prompt synthesis
+        // Primary: DeepSeek v4-flash for Master Designer prompt synthesis (with 7s timeout fallback)
         try {
           logToFile("Calling DeepSeek v4-flash Master Designer to compose optimized image generation prompt...");
-          const dsResult = await callDeepSeekWithUsage(designComposerPrompt);
+          const dsResult = await callDeepSeekWithUsage(designComposerPrompt, { timeoutMs: 7000 });
           if (dsResult.text && dsResult.text.trim()) {
             designerPrompt = dsResult.text.trim();
             logToFile(`Master Designer prompt composed via DeepSeek v4-flash: ${designerPrompt.slice(0, 100)}...`);
@@ -677,7 +679,7 @@ RULES:
 
     try {
         logToFile("Generating high-converting Meta ad caption via DeepSeek v4-flash...");
-        const dsCaption = await callDeepSeekWithUsage(captionPrompt);
+        const dsCaption = await callDeepSeekWithUsage(captionPrompt, { timeoutMs: 5000 });
         if (dsCaption.text && dsCaption.text.trim()) {
             finalCaption = dsCaption.text.trim();
             logToFile("Caption generated successfully via DeepSeek v4-flash.");

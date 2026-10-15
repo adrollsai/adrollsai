@@ -394,9 +394,18 @@ Amenities/Features: ${property.amenities || "N/A"}
             .join('\n');
 
         const numClips = Math.ceil(duration / 15);
+        // The voiceover MUST finish comfortably before the video ends (aiming for 82-88% of video duration)
+        // Natural speech tempo for TTS models is ~1.8 to 2.0 words per second.
+        const targetAudioDurationSec = Math.round(duration * 0.85); // e.g. ~38s for 45s video, ~25s for 30s video, ~12s for 15s video
+        const targetWordCountMin = Math.round(duration * 1.60); // e.g. 72 words for 45s, 48 words for 30s, 24 words for 15s
+        const targetWordCountMax = Math.round(duration * 1.75); // e.g. 79 words for 45s, 52 words for 30s, 26 words for 15s
+
+        const wordsPerSceneMin = Math.max(18, Math.floor(targetWordCountMin / numClips)); // e.g. ~24 words per 15s scene
+        const wordsPerSceneMax = Math.max(22, Math.ceil(targetWordCountMax / numClips));  // e.g. ~26 words per 15s scene
+
         let scenesSchema = "";
         for (let i = 1; i <= numClips; i++) {
-            const dialogueExample = `Plain text of the ${langLabel} speech for Scene ${i} (spoken naturally across 13-14 seconds, strictly 34 to 38 words)`;
+            const dialogueExample = `Plain text of the ${langLabel} speech for Scene ${i} (spoken naturally in ~11-12 seconds, strictly ${wordsPerSceneMin} to ${wordsPerSceneMax} words)`;
             scenesSchema += `    {
       "dialogue": "${dialogueExample}",
       "visuals": "Highly detailed visual instructions describing Scene ${i} (15s). Detail the outfit and location of the presenter altered and customized based on the project theme. Describe property/product B-rolls cuts showcasing key features (using matching reference image details) with the presenter temporarily off-screen."
@@ -429,13 +438,11 @@ Amenities/Features: ${property.amenities || "N/A"}
 
         const isAvatarPresenter = presenterType === 'avatar' || (presenterType === 'video' && videoModel !== 'grok');
 
-        const targetWordCountMin = (videoModel === 'grok' && !isAvatarPresenter) ? Math.round(duration * 2.3) : (numClips * 34);
-        const targetWordCountMax = (videoModel === 'grok' && !isAvatarPresenter) ? Math.round(duration * 2.55) : (numClips * 38);
-        const targetAudioDurationSec = Math.round(duration * 0.94);
-
         const wordCountRule = (videoModel === 'grok' && !isAvatarPresenter)
-            ? `11. GROK BACKGROUND VOICEOVER WORD COUNT & PACING RULE: The full dialogue narration script MUST be written as a continuous, high-converting, energetic, and punchy background voiceover copy containing STRICTLY between ${targetWordCountMin} and ${targetWordCountMax} words total. This exact word count ensures that the voiceover spans approximately ${targetAudioDurationSec} seconds of the total ${duration}-second video duration, leaving a natural 2-3 second breathing room at the end for the CTA outro and preventing any silence or voiceover cutoffs during video stitching. Do NOT write fluff, fillers, or disconnected sentences. Write tight, fast-flowing, punchy sentences weaving in specific, concrete product facts, features, pricing, location, and key selling points.`
-            : `11. CONTINUOUS DIALOGUE & NO SILENT TAIL END RULE: Keep the dialogue for EACH 15-second scene strictly between 34 and 38 words (total ${targetWordCountMin} to ${targetWordCountMax} words across all ${numClips} scenes). This ensures the spoken voiceover flows naturally across ~13-14 seconds of each 15-second scene, leaving 1-2 seconds of natural breathing room for transitions and preventing the voiceover from spilling past the video duration or stopping early with awkward silence. NEVER finish speech early (under 32 words), and NEVER exceed 40 words per scene.`;
+            ? `11. GROK BACKGROUND VOICEOVER WORD COUNT & PACING RULE (MANDATORY DURATION LIMIT): The full dialogue narration script MUST be written as a continuous, high-converting, energetic background voiceover copy containing STRICTLY between ${targetWordCountMin} and ${targetWordCountMax} words total across the entire script (approximately ${wordsPerSceneMin} to ${wordsPerSceneMax} words per 15s scene).
+CRITICAL: The voiceover MUST finish at approximately ${targetAudioDurationSec} seconds, which is strictly LESS than the total ${duration}-second video duration. This guarantees the voiceover finishes cleanly before the video ends, leaving a 4-6 second buffer at the end for the CTA outro and preventing any silence, voiceover cutoffs, or frozen frames during video stitching. Do NOT write fluff, fillers, or disconnected sentences. NEVER exceed ${targetWordCountMax} words!`
+            : `11. SCENE DIALOGUE WORD COUNT & PACING RULE (MANDATORY DURATION LIMIT): Keep the dialogue for EACH 15-second scene strictly between ${wordsPerSceneMin} and ${wordsPerSceneMax} words (total ${targetWordCountMin} to ${targetWordCountMax} words across all ${numClips} scenes).
+CRITICAL: The spoken voiceover MUST flow naturally across ~11-12 seconds of each 15-second scene, leaving 3-4 seconds of natural breathing room at the end of the video. The voiceover MUST be strictly LESS than the video duration. NEVER exceed ${wordsPerSceneMax} words per scene (and NEVER exceed ${targetWordCountMax} words total).`;
 
         const speakerLayoutRule = isAvatarPresenter
             ? `3. Speaker Character & Scenes Layout: Presenter/Avatar (${characterDescription || "a charismatic, professional UGC presenter"}) speaks directly and continuously with engaging hand gestures, natural facial micro-expressions, and authentic conversational cadence. The visuals dynamically showcase product features and B-rolls seamlessly while the presenter's speech continues without interruption.`

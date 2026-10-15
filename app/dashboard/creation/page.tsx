@@ -1442,7 +1442,7 @@ export default function CreationPage() {
   const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
   const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null
 
-  const startResponse = await fetch(`/api/chat${window.location.search}`, {
+  const startResponse = await authFetch(`/api/chat${window.location.search}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -1462,10 +1462,16 @@ export default function CreationPage() {
     })
   })
       
-      setChatAttachments([]) // Clear attachments after sending
+  setChatAttachments([]) // Clear attachments after sending
       
-      const startData = await startResponse.json()
-      if (startData.error) throw new Error(startData.error)
+  let startData: any = {}
+  const responseText = await startResponse.text()
+  try {
+    startData = JSON.parse(responseText)
+  } catch (parseErr) {
+    throw new Error(responseText.startsWith('<') || responseText.includes('An error') ? "The AI design engine encountered a momentary gateway delay. Please retry." : (responseText || "Failed to start generation"));
+  }
+  if (!startResponse.ok || startData.error) throw new Error(startData.error || `Server error (${startResponse.status})`)
 
       const generatedCaption = startData.caption || ''
       setCurrentStep('Generating Visuals (Safe to background or lock phone)...')

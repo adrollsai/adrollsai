@@ -271,7 +271,7 @@ function formatIsoDatesInText(text: any): string {
   });
 }
 
-export default function CRMPage() {
+function CRMPageContent() {
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -1233,6 +1233,10 @@ export default function CRMPage() {
           const merged = { ...l, ...updatedData }
           if (updatedData.status) merged.pipeline_stage = updatedData.status
           if (updatedData.pipeline_stage) merged.status = updatedData.pipeline_stage
+          merged.custom_fields = parseCustomFields(merged.custom_fields)
+          if (!merged.next_followup || isNaN(new Date(merged.next_followup).getTime())) {
+            merged.next_followup = null
+          }
           return merged
         }
         return l
@@ -1252,6 +1256,9 @@ export default function CRMPage() {
             try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = {} }
           }
           const parsed = { ...freshLead, custom_fields: cf || {} }
+          if (!parsed.next_followup || isNaN(new Date(parsed.next_followup).getTime())) {
+            parsed.next_followup = null
+          }
           setLeads(prev => prev.map(l => l.id === parsed.id ? { ...l, ...parsed } : l))
         }
       } catch (err) {
@@ -1470,7 +1477,10 @@ export default function CRMPage() {
                     parsedCustomFields = {};
                 }
             }
-            updatedLead.custom_fields = parsedCustomFields;
+            updatedLead.custom_fields = parsedCustomFields || {};
+            if (!updatedLead.next_followup || isNaN(new Date(updatedLead.next_followup).getTime())) {
+                updatedLead.next_followup = null;
+            }
 
             setLeads(prev => {
                 const index = prev.findIndex(l => l.id === updatedLead.id)
@@ -2471,7 +2481,6 @@ END:VCARD\n`
   }
 
   return (
-    <CRMErrorBoundary fallbackTitle="CRM Pipeline Interruption Prevented">
     <div className="min-h-screen bg-[#F8FAFC] pb-32 pt-16 relative">
       
       {/* FIXED REFRESH BUTTON */}
@@ -4405,8 +4414,10 @@ END:VCARD\n`
           lead={updateFollowupLead}
           onClose={() => setUpdateFollowupLead(null)}
           onSuccess={(updatedFields) => {
-            handleUpdateFollowupSuccess(updatedFields);
             setUpdateFollowupLead(null);
+            setTimeout(() => {
+              handleUpdateFollowupSuccess(updatedFields);
+            }, 30);
           }}
           properties={properties}
           teamMembers={team}
@@ -5042,6 +5053,13 @@ END:VCARD\n`
         />
         </div>
       </div>
-    </CRMErrorBoundary>
     )
   }
+
+export default function CRMPage() {
+  return (
+    <CRMErrorBoundary fallbackTitle="CRM Pipeline Workspace">
+      <CRMPageContent />
+    </CRMErrorBoundary>
+  )
+}

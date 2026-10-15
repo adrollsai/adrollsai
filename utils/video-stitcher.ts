@@ -350,12 +350,14 @@ export async function stitchClipsLocally(
                     finalAudioStream = currentAudioStream;
                 }
 
-                if (audioDuration > rawTotalVideoDuration) {
-                    // Voiceover exceeds video: pad last video frame so narration completes without cutoff
-                    const padDuration = (audioDuration - rawTotalVideoDuration) + 0.35;
-                    console.log(`[Local Stitch] Audio (${audioDuration.toFixed(2)}s) exceeds video (${rawTotalVideoDuration.toFixed(2)}s). Extending last video frame by ${padDuration.toFixed(2)}s using tpad...`);
-                    filterParts.push(`[v_trans]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v_padded]`);
-                    finalVideoStream = '[v_padded]';
+                if (audioDuration >= rawTotalVideoDuration - 0.5) {
+                    // Voiceover meets or exceeds video duration:
+                    // NEVER freeze the last video frame! Instead, slightly accelerate audio tempo so narration ends cleanly 2.0s before video ends.
+                    const targetAudioDur = Math.max(5.0, rawTotalVideoDuration - 2.0);
+                    const speedFactor = Math.min(1.4, Math.max(1.02, audioDuration / targetAudioDur));
+                    console.log(`[Local Stitch] Audio (${audioDuration.toFixed(2)}s) reaches or exceeds video (${rawTotalVideoDuration.toFixed(2)}s). Adjusting audio tempo by ${speedFactor.toFixed(3)}x using atempo so voiceover finishes naturally at ${targetAudioDur.toFixed(2)}s with zero paused frames...`);
+                    filterParts.push(`[${localClipPaths.length}:a:0]atempo=${speedFactor.toFixed(3)}[a_tempo]`);
+                    finalAudioStream = '[a_tempo]';
                 } else if (shouldTrimToAudio) {
                     // Voiceover ended early: trim cleanly to targetTotalDuration with smooth 0.5s fade out
                     const fadeStart = Math.max(0, targetTotalDuration - 0.5);
@@ -417,11 +419,13 @@ export async function stitchClipsLocally(
             const is9x16 = videoTask.aspect_ratio === '9:16' || !videoTask.aspect_ratio;
             const filter9x16 = is9x16 ? 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280' : '';
 
-            if (localAudioPath && audioDuration > totalFallbackDuration && totalFallbackDuration > 0) {
-                const padDuration = (audioDuration - totalFallbackDuration) + 0.35;
-                console.log(`[Local Stitch Fallback] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalFallbackDuration.toFixed(2)}s). Extending with tpad clone by ${padDuration.toFixed(2)}s...`);
-                const vf = filter9x16 ? `[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)},${filter9x16}[v]` : `[0:v]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(2)}[v]`;
-                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "${vf}" -map "[v]" -map 1:a:0 -c:v libx264 -preset veryfast -crf 23 -maxrate 2500k -bufsize 5000k -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "${outputPath}"`;
+            if (localAudioPath && audioDuration >= totalFallbackDuration - 0.5 && totalFallbackDuration > 0) {
+                const targetAud = Math.max(5.0, totalFallbackDuration - 2.0);
+                const speed = Math.min(1.4, Math.max(1.02, audioDuration / targetAud));
+                console.log(`[Local Stitch Fallback] Audio (${audioDuration.toFixed(2)}s) exceeds video (${totalFallbackDuration.toFixed(2)}s). Adjusting audio tempo by ${speed.toFixed(3)}x with atempo filter (no frozen frames)...`);
+                const vf = filter9x16 ? `[0:v]${filter9x16}[v];[1:a]atempo=${speed.toFixed(3)}[a]` : `[1:a]atempo=${speed.toFixed(3)}[a]`;
+                const vMap = filter9x16 ? `[v]` : `0:v:0`;
+                ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "${vf}" -map "${vMap}" -map "[a]" -c:v libx264 -preset veryfast -crf 23 -maxrate 2500k -bufsize 5000k -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "${outputPath}"`;
             } else if (localAudioPath && audioDuration > 5.0 && totalFallbackDuration > audioDuration + 1.0) {
                 const targetDur = audioDuration + 0.8;
                 const fadeStart = Math.max(0, targetDur - 0.5);
