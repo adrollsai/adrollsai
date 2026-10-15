@@ -202,17 +202,34 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
 
     const isFirstCall = !previousCallsHistory && !whatsappHistory;
 
-    // Meta ad origin
+    // Meta ad origin & Facebook instant form questions
     let adProductName = '';
+    let formQuestionsSummary = '';
+    let formAdCampaignName = '';
     if (lead?.custom_fields) {
         try {
             const customObj = typeof lead.custom_fields === 'string' ? JSON.parse(lead.custom_fields) : lead.custom_fields;
             const origin = customObj?.meta_ad_origin || customObj;
             if (origin?.product_name) adProductName = origin.product_name;
+            if (origin?.campaign_name) formAdCampaignName = origin.campaign_name;
+            else if (origin?.ad_name) formAdCampaignName = origin.ad_name;
+
+            const ignoreKeys = ['meta_ad_origin', 'is_instant_form', 'qualification_completed', 'all_facebook_lead_ids', 'last_followup_at', 'last_followup_type', 'last_followup_remark', 'last_remark', 'followup_count', 'next_action_date', 'next_action_type', 'next_action_remark', 'next_remarks', 'client_status', 'last_call_dnp', 'pipeline_stage', 'status'];
+            const qPairs = [];
+            for (const [k, v] of Object.entries(customObj)) {
+                if (!ignoreKeys.includes(k) && v && typeof v === 'string') {
+                    const cleanQ = k.replace(/_/g, ' ').replace(/\?+/g, '?').trim();
+                    const cleanA = v.replace(/_/g, ' ').trim();
+                    qPairs.push(`• Question in Facebook Form: "${cleanQ}" -> Prospect Answered: "${cleanA}"`);
+                }
+            }
+            if (qPairs.length > 0) {
+                formQuestionsSummary = `--- QUESTIONS & ANSWERS SUBMITTED BY PROSPECT IN FACEBOOK INSTANT FORM ---\n${qPairs.join('\n')}\n`;
+            }
         } catch (e) {}
     }
 
-    targetProduct = adProductName || (campaign?.target_product) || 'OMAXE AMRITSAR Residential Plots';
+    targetProduct = adProductName || formAdCampaignName || (campaign?.target_product) || 'our prime properties';
 
     // Build Hinglish system instruction
     const isQualifyingEnabled = profile?.qualifying_enabled !== false;
@@ -236,28 +253,34 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         : '';
 
     const systemInstruction = `
-You are an expert, professional outbound AI sales representative calling from "${companyName}".
+You are an expert, professional outbound AI relationship representative calling on behalf of "${companyName}".
 You are speaking directly over the phone with ${leadName}.
-Language requirement: YOU MUST SPEAK EXCLUSIVELY IN NATURAL, FLUENT HINGLISH (conversational mix of Hindi and English, written in Latin script).
-Tone: Warm, attentive, extremely natural, friendly, conversational.
+
+LANGUAGE REQUIREMENT:
+- DEFAULT TO NATURAL, FLUENT HINGLISH (conversational mix of Hindi and English, written in Latin script).
+- MULTILINGUAL ADAPTATION: If the caller speaks in Punjabi, English, Hindi, or another regional language, IMMEDIATELY switch to their language and converse comfortably, fluently, and naturally!
 
 ${genderGrammarInstruction}
 
-KEY OBJECTIVE:
-Your goal is to have a polite, consultative conversation about ${targetProduct}, understand their requirements, answer their questions, and book an appointment slot.
+KEY OBJECTIVE & CALL FLOW:
+1. REMIND PROSPECT: Remind ${leadName} that they recently filled an inquiry form on Facebook regarding ${targetProduct}.
+2. QUALIFY & CONFIRM: Confirm the key preferences & answers they submitted in the Facebook ad form.
+3. CONNECT WITH RELATIONSHIP MANAGER: Explain that our senior Relationship Manager will guide them further with exact layouts, pricing options, and unit availability.
+4. BOOK MEETING: Ask for their convenient day and time (e.g., tomorrow 11:00 AM) and trigger the 'book_appointment_slot' tool to confirm the meeting with the Relationship Manager!
 
 CRITICAL CONVERSATIONAL STYLE (BE LESS TALKATIVE, LISTEN MORE):
 1. BE LESS TALKATIVE, LISTEN MUCH MORE: Never give long speeches, lectures, or sales pitches. Speak in short, crisp turns (under 10-15 words, maximum 1 short sentence per turn). Give the caller the maximum space to speak. You are here to LISTEN.
 2. ONE QUESTION AT A TIME: Ask at most one quick question at a time, then stop talking immediately and listen to the customer.
-3. NATURAL ACTIVE LISTENING & HUMAN SOUNDS (HMMS, AHAN, HAAN JI):
+3. NATURAL ACTIVE LISTENING & HUMAN SOUNDS:
    - When listening and acknowledging the caller, use natural human conversational fillers like ${backchannelAck}.
    - Frequently begin turns with natural conversational nods such as "Hmm...", "Ahan...", "Haan ji...", "Achha...", or "Ji bilkul..." to sound completely human, attentive, and engaged on the call.
-   - If the customer explains something, acknowledge with a gentle verbal nod (e.g., "Hmm, bilkul...", "Ahan, samajh gayi", "Haan ji") before giving a brief answer.
-4. CLEAN NATURAL HINGLISH: Speak in clean, natural Hinglish sentences. Do not use pure formal Hindi or stiff robotic English.
-5. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately, acknowledge what they said with "Haan ji" or "Ahan", and address their point directly and concisely.
-6. BROCHURE & PRICING: If the customer asks for brochure or pricing, use the 'send_whatsapp_info' tool to dispatch it to their WhatsApp.
-7. APPOINTMENTS: If the customer is interested in scheduling a visit or call with a team member, use the 'book_appointment_slot' tool.
-8. ENDING CALL: When the conversation naturally finishes or the customer says bye / is busy, politely say goodbye and trigger the 'end_call' tool.
+   - If the customer explains something, acknowledge with a gentle verbal nod before giving a brief answer.
+4. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately, acknowledge what they said with "Haan ji" or "Ahan", and address their point directly and concisely.
+5. BROCHURE & PRICING: If the customer asks for brochure or pricing, use the 'send_whatsapp_info' tool to dispatch it to their WhatsApp.
+6. APPOINTMENTS: When the customer agrees to connect or gives a preferred time with the Relationship Manager, trigger the 'book_appointment_slot' tool.
+7. ENDING CALL: When the conversation naturally finishes or the customer says bye / is busy, politely say goodbye and trigger the 'end_call' tool.
+
+${formQuestionsSummary}
 ${campaignGuidance}
 ${resolvedQuestionsInstruction}
 `.trim();
@@ -429,7 +452,8 @@ app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
     const profileId = req.query.profileId || req.body?.profileId || '';
     const campaignId = req.query.campaignId || req.body?.campaignId || '';
 
-    const wsUrl = `${wsProtocol}://${host}/gemini-live-stream?leadId=${leadId}&profileId=${profileId}&campaignId=${campaignId}&telephony=vobiz`;
+    const reqVoiceName = req.query.voiceName || req.body?.voiceName || '';
+    const wsUrl = `${wsProtocol}://${host}/gemini-live-stream?leadId=${leadId}&profileId=${profileId}&campaignId=${campaignId}&telephony=vobiz${reqVoiceName ? `&voiceName=${encodeURIComponent(reqVoiceName)}` : ''}`;
     const escapedWsUrl = wsUrl.replace(/&/g, '&amp;');
     const statusUrl = `${protocol}://${host}/vobiz-status?leadId=${leadId}`;
 
@@ -703,8 +727,21 @@ loadPcmAsset('ambience', 'call_center_ambience_24k.pcm');
 function playClipToCaller(wsConn, clipKey, isVobiz = true, streamId = null) {
     const asset = AUDIO_ASSETS[clipKey];
     if (!asset || !wsConn || wsConn.readyState !== ws.OPEN || !streamId) return;
-    
-    if (isVobiz) {
+
+    // Mix subtle ambience into clip so pickup greeting has authentic office background
+    let payload24 = asset.base64Pcm24;
+    const ambAsset = AUDIO_ASSETS['ambience'];
+    if (ambAsset && ambAsset.pcm24 && asset.pcm24) {
+        const mixed = new Int16Array(asset.pcm24.length);
+        const amb = ambAsset.pcm24;
+        const ambVol = 0.06;
+        for (let i = 0; i < asset.pcm24.length; i++) {
+            const a = amb[i % amb.length];
+            mixed[i] = Math.max(-32768, Math.min(32767, asset.pcm24[i] + Math.round(a * ambVol)));
+        }
+        payload24 = Buffer.from(mixed.buffer, mixed.byteOffset, mixed.byteLength).toString('base64');
+    }
+if (isVobiz) {
         // Send directly in 24kHz linear PCM to Vobiz
         wsConn.send(JSON.stringify({
             event: 'playAudio',
@@ -712,7 +749,7 @@ function playClipToCaller(wsConn, clipKey, isVobiz = true, streamId = null) {
             media: {
                 contentType: 'audio/x-l16',
                 sampleRate: 24000,
-                payload: asset.base64Pcm24
+                payload: payload24
             }
         }));
     } else {
@@ -737,6 +774,11 @@ function playClipToCaller(wsConn, clipKey, isVobiz = true, streamId = null) {
 
 
 // Audio Signal Processing & Noise-Suppressed Stream Processor
+function isMaleVoice(vName, gender) {
+    const str = `${vName || ''} ${gender || ''}`.toLowerCase();
+    return str.includes('male') || str.includes('fenrir') || str.includes('puck') || str.includes('charon') || str.includes('orus') || str.includes('zephyr') || str.includes('alcor') || str.includes('umbriel') || str.includes('guy');
+}
+
 function calculateRMS(pcm16Array) {
     let sumSquare = 0;
     for (let i = 0; i < pcm16Array.length; i++) {
@@ -756,13 +798,7 @@ class NoiseSuppressedAudioProcessor {
         this.sustainedBargeInFrames = 0;
         this.bargeInTriggered = false; // Set true when barge-in fires, reset when AI starts speaking again
 
-        // Concurrent Backchanneling (saying "hmm", "ahan" while caller is speaking)
-        this.voiceThreshold = options.voiceThreshold || 250;
-        this.callerSpeechStartTime = 0;
-        this.callerSilenceStartTime = 0;
-        this.lastBackchannelTime = 0;
-        this.backchannelTriggerDurationMs = options.backchannelTriggerDurationMs || 1800; // Trigger after ~1.8s continuous caller speech
-        this.backchannelCooldownMs = options.backchannelCooldownMs || 4500; // 4.5s cooldown
+        // Clean audio processor: ALWAYS forwards audio, detects user barge-in over AI speech
     }
 
     markAiSpeaking(durationMs = 1200) {
@@ -799,15 +835,7 @@ class NoiseSuppressedAudioProcessor {
         const now = Date.now();
 
         // Always forward real audio to Gemini — never send zeroes
-        const result = {
-            pcmOutput: pcm16Chunk,
-            rms,
-            isVoice,
-            bargeIn: false,
-            triggerBackchannel: false,
-            backchannelClip: null,
-            speechDurationMs: 0
-        };
+        const result = { pcmOutput: pcm16Chunk, rms, isVoice: rms >= 300, bargeIn: false };
 
         // Check for barge-in during AI speech
         if (this.isAiSpeaking && !this.bargeInTriggered) {
@@ -828,37 +856,6 @@ class NoiseSuppressedAudioProcessor {
             }
         }
 
-        // Concurrent Backchanneling: Detect when caller is speaking continuously (while AI is silent & listening)
-        if (!this.isAiSpeaking) {
-            if (isVoice) {
-                this.callerSilenceStartTime = 0;
-                if (!this.callerSpeechStartTime) {
-                    this.callerSpeechStartTime = now;
-                } else {
-                    const speechDuration = now - this.callerSpeechStartTime;
-                    result.speechDurationMs = speechDuration;
-
-                    if (speechDuration >= this.backchannelTriggerDurationMs &&
-                        (now - this.lastBackchannelTime) >= this.backchannelCooldownMs) {
-                        result.triggerBackchannel = true;
-                        result.backchannelClip = Math.random() < 0.5 ? 'backchannel_hmm' : 'backchannel_haan';
-                        this.lastBackchannelTime = now;
-                    }
-                }
-            } else {
-                // Short pauses / breaths
-                if (this.callerSpeechStartTime) {
-                    if (!this.callerSilenceStartTime) {
-                        this.callerSilenceStartTime = now;
-                    } else if (now - this.callerSilenceStartTime > 600) {
-                        // Caller finished turn / paused for > 450ms
-                        this.callerSpeechStartTime = 0;
-                        this.callerSilenceStartTime = 0;
-                    }
-                }
-            }
-        }
-
         return result;
     }
 }
@@ -874,6 +871,7 @@ wss.on('connection', (wsConnection, req) => {
     const queryProfileId = urlObj?.searchParams?.get('profileId') || urlObj?.searchParams?.get('amp;profileId');
     const queryCampaignId = urlObj?.searchParams?.get('campaignId') || urlObj?.searchParams?.get('amp;campaignId');
     const queryTelephony = urlObj?.searchParams?.get('telephony') || urlObj?.searchParams?.get('amp;telephony');
+    const queryVoiceName = urlObj?.searchParams?.get('voiceName') || urlObj?.searchParams?.get('amp;voiceName');
     const queryCallUuid = urlObj?.searchParams?.get('callUuid') || urlObj?.searchParams?.get('amp;callUuid') || urlObj?.searchParams?.get('call_uuid');
     const queryVobizAuthId = urlObj?.searchParams?.get('vobizAuthId') || urlObj?.searchParams?.get('amp;vobizAuthId');
     const queryVobizAuthToken = urlObj?.searchParams?.get('vobizAuthToken') || urlObj?.searchParams?.get('amp;vobizAuthToken');
@@ -908,7 +906,7 @@ wss.on('connection', (wsConnection, req) => {
     let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
     let greetingPlayed = false;
-    let voiceName = 'Aoede';
+    let voiceName = queryVoiceName || 'Aoede';
 
     const audioProcessor = new NoiseSuppressedAudioProcessor();
     let isCallHangingUp = false;
@@ -1001,7 +999,7 @@ wss.on('connection', (wsConnection, req) => {
                     profileId = data.customParameters?.profileId || data.start?.customParameters?.profileId || queryProfileId;
                     var campaignId = data.customParameters?.campaignId || data.start?.customParameters?.campaignId || queryCampaignId;
                     greetingPlayed = (data.customParameters?.greetingPlayed || data.start?.customParameters?.greetingPlayed) === 'true';
-                    voiceName = data.customParameters?.voiceName || data.start?.customParameters?.voiceName || 'Aoede';
+                    voiceName = queryVoiceName || data.customParameters?.voiceName || data.start?.customParameters?.voiceName || voiceName || 'Aoede';
                     console.log(`[BRIDGE] Vobiz stream started. StreamId: ${vobizStreamId}, CallId: ${vobizCallId}, Format: ${vobizContentType}, leadId: ${leadId}, profileId: ${profileId}`);
 
                     // Trigger non-blocking background REST recording on active call
@@ -1043,7 +1041,9 @@ wss.on('connection', (wsConnection, req) => {
                 }
 
                 // Play instant crisp 0.6s "Hello?" pickup greeting immediately upon answer (<10ms)
-                const initialVoice = (voiceName === 'Fenrir' || voiceName === 'Charon') ? 'hello_male' : 'hello_female';
+                const isMale = isMaleVoice(voiceName, data.customParameters?.voice_gender || data.start?.customParameters?.voice_gender || profileData?.voice_gender || profile?.voice_gender);
+                const initialVoice = isMale ? 'hello_male' : 'hello_female';
+                console.log(`[BRIDGE] Selected initial pickup greeting '${initialVoice}' for voice '${voiceName}' (isMale: ${isMale})`);
                 console.log(`[BRIDGE] Instantly streaming '${initialVoice}' (0.6s) audio to caller upon connect...`);
                 playClipToCaller(wsConnection, initialVoice, isVobiz, vobizStreamId || twilioStreamSid);
                 greetingPlayed = true;
@@ -1095,7 +1095,8 @@ wss.on('connection', (wsConnection, req) => {
                     const safeProduct = targetProduct || 'OMAXE AMRITSAR Residential Plots';
                     const safeName = (leadName && leadName !== 'there') ? leadName.split(' ')[0] : '';
                     const nameGreeting = safeName ? `Hi ${safeName} ji` : `Hi ji`;
-                    const openGreeting = `Haan ji, ${nameGreeting}, kaise hain aap? Main ${safeCompanyName} se bol rahi hoon, aapne ${safeProduct} ke regarding inquiry ki thi. Kya aapke paas do minute hain?`;
+                    const bolRaha = isMaleVoice(voiceName, profile?.voice_gender) ? 'bol raha hoon' : 'bol rahi hoon';
+                    const openGreeting = `Haan ji, ${nameGreeting}, kaise hain aap? Main ${safeCompanyName} se ${bolRaha}, aapne Facebook par ${safeProduct} ke regarding inquiry form fill kiya tha. Kya do minute baat ho sakti hai?`;
 
                     const textPrompt = `The call has just connected and "Hello?" was already spoken to the caller upon pickup. Speak EXACTLY this greeting message now in natural, fluent Hinglish and nothing else: "${openGreeting}"`;
 
@@ -1280,7 +1281,7 @@ wss.on('connection', (wsConnection, req) => {
                                     audioProcessor.markAiSpeaking(Math.max(1200, chunkDurationMs + 800));
 
                                     if (isVobiz && wsConnection.readyState === ws.OPEN && vobizStreamId) {
-                                        // Direct high-quality 24kHz Linear PCM to Vobiz with ambient office tone!
+                                        // Pure, crystal-clear 24kHz studio PCM - clean voice without ambient noise
                                         const mixedBuf = Buffer.from(pcm24.buffer, pcm24.byteOffset, pcm24.byteLength);
                                         wsConnection.send(JSON.stringify({
                                             event: 'playAudio',
@@ -1599,12 +1600,7 @@ wss.on('connection', (wsConnection, req) => {
                         }
                     }
 
-                    // Concurrent Backchanneling: Play natural "hmm" or "ahan" while caller is actively talking
-                    if (procRes.triggerBackchannel && geminiGreetingStarted && !isCallHangingUp && wsConnection.readyState === ws.OPEN) {
-                        const clip = procRes.backchannelClip || 'backchannel_hmm';
-                        console.log(`[BRIDGE] Concurrent backchannel triggered: '${clip}' (caller speech duration: ${procRes.speechDurationMs}ms)`);
-                        playClipToCaller(wsConnection, clip, isVobiz, vobizStreamId || twilioStreamSid);
-                    }
+                    // Bridge-level injected backchannels removed — Gemini prompt handles natural Hinglish conversational nods organically
                 }
             }
 
