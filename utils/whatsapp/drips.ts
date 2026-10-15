@@ -288,7 +288,49 @@ export async function sendInstantFormCatalogMessage(
         let messageSent = false;
         let sentMessageText = '';
 
-        // 1. Primary: auto_lead_welcome (Utility category, guaranteed delivery, no survey questions)
+        // 0. Primary: 3-button welcome options template (View Properties | Connect with Expert | Book an appointment)
+        try {
+            const welcomeOptionsPayload = {
+                messaging_product: 'whatsapp',
+                to: cleanPhone,
+                type: 'template',
+                template: {
+                    name: 'lead_welcome_options',
+                    language: { code: 'en_US' },
+                    components: [
+                        {
+                            type: 'body',
+                            parameters: [
+                                { type: 'text', text: (leadName && leadName !== 'there') ? leadName.split(' ')[0] : 'there' },
+                                { type: 'text', text: companyName }
+                            ]
+                        }
+                    ]
+                }
+            };
+
+            const optRes = await fetch(metaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(welcomeOptionsPayload)
+            });
+            const optData = await optRes.json();
+            if (optRes.ok && optData.messages?.[0]?.id) {
+                messageSent = true;
+                sentMessageText = `Hi ${(leadName && leadName !== 'there') ? leadName.split(' ')[0] : 'there'}! 👋 Welcome to ${companyName}. Thank you for connecting with us regarding our properties and projects. [Buttons: View Properties | Connect with Expert | Book an appointment]`;
+                console.log(`[INSTANT CATALOG WA] Sent 3-button 'lead_welcome_options' to ${cleanPhone}: ${optData.messages[0].id}`);
+            } else {
+                console.log('[INSTANT CATALOG WA] lead_welcome_options not yet approved/ready on this WABA, falling back to clean welcome:', optData?.error?.message || optData);
+            }
+        } catch (sErr) {
+            console.warn('[INSTANT CATALOG WA] lead_welcome_options exception:', sErr);
+        }
+
+        // 1. Fallback: auto_lead_welcome (Utility category, guaranteed delivery, no survey questions)
+        if (!messageSent) {
         try {
             const welcomePayload = {
                 messaging_product: 'whatsapp',
