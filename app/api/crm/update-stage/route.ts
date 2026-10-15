@@ -167,9 +167,194 @@ export async function POST(request: Request) {
         }
     }
 
+    // 3. Trigger Automated WhatsApp Stage Message for Umang Associates
+    const UMANG_USER_ID = 'b685d287-7d54-4c9c-ae03-a46bb96ebdde';
+    const isUmangAccount = checkLead.user_id === UMANG_USER_ID;
+
+    if (isUmangAccount && lead.phone) {
+        dispatchUmangStageWhatsApp(supabaseAdmin, lead, newStage).catch(err => {
+            console.error('[UMANG WA STAGE TRIGGER] Non-blocking dispatch error:', err);
+        });
+    }
+
     return NextResponse.json({ success: true })
 
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+}
+
+// Background handler for Umang Associates Stage Change WhatsApp Messaging
+async function dispatchUmangStageWhatsApp(supabaseAdmin: any, lead: any, newStage: string) {
+    const stageLower = (newStage || '').toLowerCase().trim();
+
+    // Map stages to respective template names
+    let stageKey = '';
+    let targetTemplateName = '';
+
+    if (stageLower.includes('planned') || stageLower === 'visit planned' || stageLower === 'appointment booked') {
+        stageKey = 'visit_planned';
+        targetTemplateName = 'umang_stage_visit_planned';
+    } else if (stageLower.includes('visit done') || stageLower === 'visited' || stageLower === 'visit done' || stageLower === 'appointment done') {
+        stageKey = 'visit_done';
+        targetTemplateName = 'umang_stage_visit_done';
+    } else if (stageLower === 'closed' || stageLower === 'deal/token' || stageLower === 'won') {
+        stageKey = 'deal_closed';
+        targetTemplateName = 'umang_stage_deal_closed';
+    }
+
+    if (!stageKey) {
+        console.log(`[UMANG WA STAGE] Stage "${newStage}" does not have an automated stage message configured. Skipping.`);
+        return;
+    }
+
+    // Anti-duplicate check: Do not re-send the same stage message to this lead
+    let cf = lead.custom_fields || {};
+    if (typeof cf === 'string') {
+        try { cf = JSON.parse(cf); } catch (e) { cf = {}; }
+    }
+    const stageWaLog = cf.stage_wa_sent || {};
+    if (stageWaLog[stageKey]) {
+        console.log(`[UMANG WA STAGE] Stage message "${stageKey}" already sent to lead ${lead.id} on ${stageWaLog[stageKey]}. Skipping.`);
+        return;
+    }
+
+    // Fetch Umang Associates WhatsApp credentials
+    const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, business_name')
+        .eq('id', 'b685d287-7d54-4c9c-ae03-a46bb96ebdde')
+        .single();
+
+    const token = profile?.whatsapp_access_token || profile?.facebook_token;
+    const phoneId = profile?.whatsapp_phone_number_id || '1465196976677120';
+    const wabaId = profile?.whatsapp_waba_id || '1603442687285990';
+
+    if (!token || !phoneId) {
+        console.warn('[UMANG WA STAGE] WhatsApp token or phone ID missing.');
+        return;
+    }
+
+    let cleanPhone = (lead.phone || '').replace(/\D/g, '');
+    if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+    if (!cleanPhone) return;
+
+    // Resolve Lead first name - strictly single variable {{1}}
+    let leadFirstName = 'there';
+    if (lead.name) {
+        const cleanName = lead.name.replace(/[^\w\s]/gi, '').trim();
+        if (cleanName && !/^(lead|prospect|valued customer)$/i.test(cleanName)) {
+            leadFirstName = cleanName.split(' ')[0] || 'there';
+        }
+    }
+
+    // Verify template existence on Meta or fall back to approved interactive template
+    let effectiveTemplate = targetTemplateName;
+    try {
+        const checkRes = await fetch(`https://graph.facebook.com/v20.0/${wabaId}/message_templates?name=${targetTemplateName}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const checkData = await checkRes.json();
+        const found = (checkData.data || []).find((t: any) => t.name === targetTemplateName && t.status === 'APPROVED');
+        if (!found) {
+            console.log(`[UMANG WA STAGE] Target template ${targetTemplateName} not yet approved on Meta. Using approved fallback template: real_estate_tailored_inventory`);
+            effectiveTemplate = 'real_estate_tailored_inventory';
+        }
+    } catch (e) {
+        effectiveTemplate = 'real_estate_tailored_inventory';
+    }
+
+    // Construct Meta Message Payload
+    const templatePayload: any = {
+        name: effectiveTemplate,
+        language: { code: 'en_US' }
+    };
+
+    // Only supply body component if the template has {{1}} variable
+    if (effectiveTemplate !== 'real_estate_tailored_inventory') {
+        templatePayload.components = [
+            {
+                type: 'body',
+                parameters: [
+                    { type: 'text', text: leadFirstName }
+                ]
+            }
+        ];
+    }
+
+    const messagePayload = {
+        messaging_product: 'whatsapp',
+        to: cleanPhone,
+        type: 'template',
+        template: templatePayload
+    };
+
+    console.log(`[UMANG WA STAGE] Dispatching "${effectiveTemplate}" to ${cleanPhone} for stage "${newStage}"...`);
+
+    const metaRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(messagePayload)
+    });
+
+    const metaData = await metaRes.json();
+    console.log(`[UMANG WA STAGE] Meta response status: ${metaRes.status}`, metaData);
+
+    if (metaRes.ok && metaData.messages) {
+        // Record anti-duplicate flag
+        stageWaLog[stageKey] = new Date().toISOString();
+        cf.stage_wa_sent = stageWaLog;
+        await supabaseAdmin
+            .from('leads')
+            .update({ custom_fields: cf })
+            .eq('id', lead.id);
+
+        // Record in whatsapp_messages & whatsapp_chats
+        try {
+            let { data: chat } = await supabaseAdmin
+                .from('whatsapp_chats')
+                .select('id')
+                .eq('user_id', 'b685d287-7d54-4c9c-ae03-a46bb96ebdde')
+                .eq('recipient_phone', cleanPhone)
+                .maybeSingle();
+
+            if (!chat) {
+                const { data: newChat } = await supabaseAdmin
+                    .from('whatsapp_chats')
+                    .insert({
+                        user_id: 'b685d287-7d54-4c9c-ae03-a46bb96ebdde',
+                        recipient_phone: cleanPhone,
+                        recipient_name: lead.name || 'Valued Lead',
+                        last_message_text: `Stage Update (${newStage}): Sent ${effectiveTemplate}`,
+                        last_message_time: new Date().toISOString()
+                    })
+                    .select('id')
+                    .single();
+                chat = newChat;
+            } else {
+                await supabaseAdmin
+                    .from('whatsapp_chats')
+                    .update({
+                        last_message_text: `Stage Update (${newStage}): Sent ${effectiveTemplate}`,
+                        last_message_time: new Date().toISOString()
+                    })
+                    .eq('id', chat.id);
+            }
+
+            if (chat) {
+                await supabaseAdmin
+                    .from('whatsapp_messages')
+                    .insert({
+                        chat_id: chat.id,
+                        direction: 'outbound',
+                        message_text: `[Automated Stage Notification: ${newStage}] Template: ${effectiveTemplate}`
+                    });
+            }
+        } catch (logErr) {
+            console.warn('[UMANG WA STAGE] Chat logging notice:', logErr);
+        }
+    }
 }

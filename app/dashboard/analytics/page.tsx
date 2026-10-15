@@ -296,12 +296,14 @@ export default function AnalyticsPage() {
     subtitle: string;
     leads: any[];
     searchFilter: string;
+    meta?: any;
   }>({
     isOpen: false,
     title: '',
     subtitle: '',
     leads: [],
-    searchFilter: ''
+    searchFilter: '',
+    meta: undefined
   })
   const [drilldownViewMode, setDrilldownViewMode] = useState<'list' | 'card'>(() => {
     if (typeof window !== 'undefined') {
@@ -634,7 +636,7 @@ export default function AnalyticsPage() {
 
       let allLeads = Array.from(seenLeadMap.values())
       setLeads(allLeads)
-      if (!forceRefresh) {
+      if (totalCount <= 1000 && !forceRefresh) {
         setLoading(false)
       }
 
@@ -663,6 +665,7 @@ export default function AnalyticsPage() {
         setLeads(allLeads)
         setTotalServerCount(allLeads.length > totalCount ? allLeads.length : totalCount)
       }
+      setLoading(false)
 
       // Step 3: Fetch team profiles + lead_history in background
       ;(async () => {
@@ -1916,7 +1919,8 @@ export default function AnalyticsPage() {
       title,
       subtitle,
       leads: leadList,
-      searchFilter: ''
+      searchFilter: '',
+      meta
     })
     try {
       const savedModal = {
@@ -2013,6 +2017,62 @@ export default function AnalyticsPage() {
       }
     } catch (e) {}
   }, [leads.length, actionManagerMatrix, drilldownModal.isOpen, team])
+
+  // Synchronize open drilldown modal leads whenever actionManagerMatrix updates (e.g. background lead pages finish loading)
+  useEffect(() => {
+    if (!drilldownModal.isOpen || !drilldownModal.meta) return
+    const meta = drilldownModal.meta
+    if (!actionManagerMatrix.rows || actionManagerMatrix.rows.length === 0) return
+
+    for (const row of actionManagerMatrix.rows) {
+      const matchesRep = (meta.repId && row.rep.id === meta.repId) ||
+                         (meta.repName && row.rep.name.toLowerCase() === meta.repName.toLowerCase())
+      if (!matchesRep) continue
+
+      let updatedList: any[] | null = null
+      let updatedSubtitle = drilldownModal.subtitle
+
+      if (meta.bucketType === 'all_pending') {
+        updatedList = row.totalLeads.pending
+        updatedSubtitle = `Total ${row.totals.pending} Pending Actions`
+      } else if (meta.bucketType === 'all_today') {
+        updatedList = row.totalLeads.today
+        updatedSubtitle = `Total ${row.totals.today} Today Actions`
+      } else if (meta.bucketType === 'all_schedule') {
+        updatedList = row.totalLeads.schedule
+        updatedSubtitle = `Total ${row.totals.schedule} Scheduled Actions`
+      } else if (meta.actionKey && row.typeLeads[meta.actionKey]) {
+        if (meta.bucketType === 'pending') {
+          updatedList = row.typeLeads[meta.actionKey].pending
+          updatedSubtitle = `Pending ${meta.actionLabel || meta.actionKey} Actions (${row.counts[meta.actionKey]?.pending || 0})`
+        } else if (meta.bucketType === 'today') {
+          updatedList = row.typeLeads[meta.actionKey].today
+          updatedSubtitle = `Today's ${meta.actionLabel || meta.actionKey} Actions (${row.counts[meta.actionKey]?.today || 0})`
+        } else if (meta.bucketType === 'schedule') {
+          updatedList = row.typeLeads[meta.actionKey].schedule
+          updatedSubtitle = `Scheduled ${meta.actionLabel || meta.actionKey} Actions (${row.counts[meta.actionKey]?.schedule || 0})`
+        }
+      }
+
+      if (updatedList) {
+        setDrilldownModal(prev => {
+          if (!prev.isOpen) return prev
+          // Compare IDs to see if there is any difference
+          const currentIds = (prev.leads || []).map((l: any) => l.id).sort().join(',')
+          const nextIds = updatedList!.map((l: any) => l.id).sort().join(',')
+          if (currentIds === nextIds && prev.subtitle === updatedSubtitle) {
+            return prev
+          }
+          return {
+            ...prev,
+            leads: updatedList!,
+            subtitle: updatedSubtitle
+          }
+        })
+      }
+      break
+    }
+  }, [actionManagerMatrix, drilldownModal.isOpen, drilldownModal.meta])
 
   // Handle Header Table Sorting Toggle
   const handleSort = (field: string) => {
@@ -4207,9 +4267,20 @@ export default function AnalyticsPage() {
                   <div className="px-4 sm:px-6 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-600 shrink-0">
                     <div>
                       {totalFilteredCount > 0 ? (
-                        <span>Showing <strong className="text-slate-900">{startIndex + 1}–{endIndex}</strong> of <strong className="text-blue-600">{totalFilteredCount.toLocaleString()}</strong> leads</span>
+                        <span>Showing <strong className="text-slate-900">{startIndex + 1}–{endIndex}</strong> of <strong className="text-blue-600">{totalFilteredCount.toLocaleString()}</strong> leads
+                          {drilldownStageFilter !== 'all' && (
+                            <span className="ml-2 inline-flex items-center text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-bold">
+                              Stage: {drilldownStageFilter} 
+                              <button onClick={() => setDrilldownStageFilter('all')} className="ml-1.5 underline text-blue-600 hover:text-blue-800 cursor-pointer">Show All {drilldownModal.leads.length}</button>
+                            </span>
+                          )}
+                        </span>
                       ) : (
-                        <span>0 leads found</span>
+                        <span>0 leads found
+                          {drilldownStageFilter !== 'all' && (
+                            <button onClick={() => setDrilldownStageFilter('all')} className="ml-2 text-blue-600 underline font-bold cursor-pointer">Clear stage filter (Show All {drilldownModal.leads.length})</button>
+                          )}
+                        </span>
                       )}
                     </div>
                     {totalPages > 1 && (

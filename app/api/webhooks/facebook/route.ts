@@ -183,7 +183,7 @@ Return ONLY a valid JSON object without markdown formatting:
                         'Authorization': `Bearer ${dsKey}`
                     },
                     body: JSON.stringify({
-                        model: 'deepseek-chat',
+                        model: 'deepseek-flash',
                         messages: [{ role: 'user', content: prompt }],
                         temperature: 0.1
                     })
@@ -755,7 +755,7 @@ export async function POST(request: Request) {
                                     }
                                     
                                     let botResponseText = "Hello! I received your message, but I encountered an error while processing your request. Please try again.";
-                                    let ownerUsage = { promptTokens: 500, completionTokens: 250, modelName: "deepseek-chat" };
+                                    let ownerUsage = { promptTokens: 500, completionTokens: 250, modelName: "deepseek-flash" };
 
                                     try {
                                         console.log(`🤖 [Owner Orchestrator] Executing processOwnerMessage for owner: ${matchedProfile.business_name} (${matchedProfile.id})`);

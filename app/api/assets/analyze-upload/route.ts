@@ -3,6 +3,8 @@ import { createClient } from '@/utils/supabase/server';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 
+import sharp from 'sharp';
+
 export const maxDuration = 300; // Allow 5 minutes for video analysis
 export const runtime = 'nodejs';
 
@@ -46,8 +48,14 @@ RULES:
         // For static images, use DeepSeek Flash Vision (deepseek-flash)
         if (!isVideo && deepSeekKey) {
             try {
-                console.log(`[Analyze Upload] Analyzing uploaded image with DeepSeek Flash Vision (deepseek-flash)...`);
-                const mediaDataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+                let mediaDataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+                try {
+                    const compressed = await sharp(buffer)
+                        .resize({ width: 768, height: 768, fit: 'inside', withoutEnlargement: true })
+                        .jpeg({ quality: 80 })
+                        .toBuffer();
+                    mediaDataUrl = `data:image/jpeg;base64,${compressed.toString('base64')}`;
+                } catch {}
                 const dsRes = await fetch("https://api.deepseek.com/chat/completions", {
                     method: "POST",
                     headers: {

@@ -26,7 +26,7 @@ export async function generateContentWithFallback(
                     "Authorization": `Bearer ${deepSeekKey}`
                 },
                 body: JSON.stringify({
-                    model: "deepseek-chat",
+                    model: "deepseek-flash",
                     messages: [{ role: "user", content: contents }],
                     stream: false
                 })

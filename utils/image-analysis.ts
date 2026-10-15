@@ -2,6 +2,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import crypto from 'crypto';
 import { SupabaseClient } from '@supabase/supabase-js';
 
+import sharp from 'sharp';
+
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY!);
 
 /**
@@ -33,8 +35,16 @@ export async function analyzeImageWithDeepSeek(imageUrl: string, customPrompt?: 
                     const res = await fetch(imageUrl);
                     if (res.ok) {
                         const buffer = Buffer.from(await res.arrayBuffer());
-                        const mimeType = res.headers.get('content-type') || 'image/jpeg';
-                        imageSourceUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+                        try {
+                            const compressed = await sharp(buffer)
+                                .resize({ width: 768, height: 768, fit: 'inside', withoutEnlargement: true })
+                                .jpeg({ quality: 80 })
+                                .toBuffer();
+                            imageSourceUrl = `data:image/jpeg;base64,${compressed.toString('base64')}`;
+                        } catch {
+                            const mimeType = res.headers.get('content-type') || 'image/jpeg';
+                            imageSourceUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+                        }
                     }
                 } catch (fetchErr: any) {
                     console.warn(`[Image Analysis] Failed to pre-fetch image buffer, using raw URL: ${fetchErr?.message}`);

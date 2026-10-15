@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import { extractJsonFromText } from '@/utils/json-parser';
+import sharp from 'sharp';
 
 export const maxDuration = 300; // Allow 5 minutes for video analysis
 export const runtime = 'nodejs';
@@ -203,7 +204,16 @@ You must generate exactly three pieces of copy:
 Output ONLY a JSON object:
 {"headline": "...", "primary_text": "...", "social_post_description": "..."}`;
 
-        const mediaDataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+        let mediaDataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+        if (!isVideo) {
+            try {
+                const compressed = await sharp(buffer)
+                    .resize({ width: 768, height: 768, fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: 80 })
+                    .toBuffer();
+                mediaDataUrl = `data:image/jpeg;base64,${compressed.toString('base64')}`;
+            } catch {}
+        }
 
         let text = "";
         const isVideo = type === 'video' || mimeType.startsWith('video');

@@ -1789,7 +1789,7 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                                     'Authorization': `Bearer ${dsKey}`
                                 },
                                 body: JSON.stringify({
-                                    model: 'deepseek-chat',
+                                    model: 'deepseek-flash',
                                     messages: [
                                         {
                                             role: 'system',

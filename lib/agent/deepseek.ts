@@ -37,8 +37,7 @@ export function getAgentModel(options: { preferReasoning?: boolean; hasVision?: 
 
   const provider = getDeepseekProvider();
   if (provider) {
-    const modelName = preferReasoning ? 'deepseek-reasoner' : 'deepseek-chat';
-    return provider.chat(modelName);
+    return provider.chat('deepseek-flash');
   }
 
   // Fallback to Google Gemini

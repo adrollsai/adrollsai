@@ -581,7 +581,7 @@ CRITICAL RULES:
         try {
             console.log(`[Lander API] Calling DeepSeek V4.1 Flash for job ${job.id} / page ${pageRecord.id} in mode: ${mode}...`)
             let aiRawResult = ""
-            let usedModel = "deepseek-chat"
+            let usedModel = "deepseek-flash"
             let promptTokens = 0
             let completionTokens = 0
 
@@ -590,7 +590,7 @@ CRITICAL RULES:
                     system: "You are a world-class front-end developer, Astro JS architect, and direct-response marketing expert specializing in high-converting landing pages and websites.",
                     maxTokens: 8192,
                     temperature: 0.35,
-                    model: "deepseek-chat"
+                    model: "deepseek-flash"
                 })
                 aiRawResult = dsRes.text
                 usedModel = dsRes.modelName
@@ -625,7 +625,7 @@ Output ONLY raw HTML continuing from the cutoff. Do NOT repeat previous text. Do
                             system: "You are a master front-end developer specializing in complete, high-converting landing pages.",
                             maxTokens: 4096,
                             temperature: 0.35,
-                            model: "deepseek-chat"
+                            model: "deepseek-flash"
                         })
 
                         if (contRes.text) {

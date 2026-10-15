@@ -601,7 +601,7 @@ export async function callDeepSeekWithUsage(
     }
     messages.push({ role: "user", content: prompt });
 
-    const modelName = options?.model || "deepseek-chat";
+    const modelName = options?.model || "deepseek-flash";
     const timeoutMs = options?.timeoutMs || 8000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);

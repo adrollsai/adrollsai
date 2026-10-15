@@ -25,7 +25,7 @@ function getLLMModel() {
             apiKey: cleanKey,
             ...({ compatibility: 'compatible' } as any)
         });
-        return deepseek.chat('deepseek-chat'); // DeepSeek v4.1-Flash via /chat/completions
+        return deepseek.chat('deepseek-flash');
     }
     console.warn('[ORCHESTRATOR] DEEPSEEK_API_KEY not found in environment, falling back to Gemini 2.5 Flash');
     return google('gemini-2.5-flash');

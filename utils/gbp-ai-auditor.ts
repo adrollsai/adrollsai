@@ -132,7 +132,7 @@ Return ONLY a valid JSON object with key "competitors" containing an array of 3 
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
+          model: 'deepseek-flash',
           response_format: { type: 'json_object' },
           messages: [
             {
@@ -246,7 +246,7 @@ CRITICAL RULES:
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
+          model: 'deepseek-flash',
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: 'You are an expert Google Maps Local SEO keyword researcher. Output valid JSON only.' },
@@ -362,7 +362,7 @@ Please return a valid JSON object matching this structure exactly:
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'deepseek-chat', // DeepSeek v4.1 Flash
+          model: 'deepseek-flash',
           response_format: { type: 'json_object' },
           messages: [
             {
