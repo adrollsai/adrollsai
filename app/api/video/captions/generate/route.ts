@@ -9,7 +9,7 @@ const supabaseAdmin = createAdminClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export const maxDuration = 60; // Allow 60s for audio transcription and caption styling on Vercel
+export const maxDuration = 300; // Allow 300s (5 mins) for audio transcription and caption styling on Vercel
 
 export async function POST(request: Request) {
     try {

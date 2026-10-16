@@ -53,7 +53,7 @@ import LeadHistoryModal from '@/components/LeadHistoryModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import CRMErrorBoundary from '@/components/CRMErrorBoundary'
-import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES } from '@/utils/pipeline-stages'
+import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES, isFreshStageName } from '@/utils/pipeline-stages'
 import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark, isLeadLastStatusDnp, getLeadNextActionRemark, parseCustomFields } from '@/utils/lead-helpers'
 
 // Render simple markdown headers, bolding, and lists into JSX
@@ -526,6 +526,7 @@ export default function AnalyticsPage() {
     if (!drilldownModal.isOpen || !drilldownModal.leads) return []
     const map = new Map<string, number>()
     drilldownModal.leads.forEach(l => {
+      if (!l) return
       const st = l.pipeline_stage || l.status || 'New Lead'
       map.set(st, (map.get(st) || 0) + 1)
     })
@@ -2058,8 +2059,8 @@ export default function AnalyticsPage() {
         setDrilldownModal(prev => {
           if (!prev.isOpen) return prev
           // Compare IDs to see if there is any difference
-          const currentIds = (prev.leads || []).map((l: any) => l.id).sort().join(',')
-          const nextIds = updatedList!.map((l: any) => l.id).sort().join(',')
+          const currentIds = (prev.leads || []).map((l: any) => l?.id || '').filter(Boolean).sort().join(',')
+          const nextIds = (updatedList || []).map((l: any) => l?.id || '').filter(Boolean).sort().join(',')
           if (currentIds === nextIds && prev.subtitle === updatedSubtitle) {
             return prev
           }
@@ -4002,7 +4003,8 @@ export default function AnalyticsPage() {
             {/* Modal Leads List */}
             <CRMErrorBoundary fallbackTitle="Lead Drilldown Interruption Prevented">
             {(() => {
-              const filtered = drilldownModal.leads.filter(l => {
+              const filtered = (drilldownModal.leads || []).filter(l => {
+                if (!l) return false
                 // 1. Stage filter
                 if (drilldownStageFilter !== 'all') {
                   const st = String(l.pipeline_stage || l.status || 'New Lead').toLowerCase()
@@ -4833,116 +4835,123 @@ export default function AnalyticsPage() {
 
                 // 2. Dynamically evaluate if the lead still belongs in the open drilldown modal
                 let newTotalPages = 1
+                let toastMsg = 'Follow-up updated successfully'
+
                 setDrilldownModal(prev => {
                   if (!prev || !prev.isOpen) return prev
 
                   // Helper to check if updated lead still satisfies the drilldown bucket
                   const shouldLeadStay = (l: any, title?: string, subtitle?: string): boolean => {
-                    const tLower = (String(title || '') + ' ' + String(subtitle || '')).toLowerCase()
+                    try {
+                      if (!l) return false
+                      const tLower = (String(title || '') + ' ' + String(subtitle || '')).toLowerCase()
+                      let cf: any = parseCustomFields(l.custom_fields)
 
-                    let cf: any = parseCustomFields(l.custom_fields)
+                      const stageLower = String(l.pipeline_stage || l.status || '').trim().toLowerCase()
+                      const isLostOrWon = ['won', 'closed', 'dealer', 'lost/ni', 'lost', 'plan postponed', 'already purchased', 'different requirement', 'unqualified'].includes(stageLower) ||
+                        stageLower.includes('not interested') || stageLower.includes('lost') || stageLower.includes('junk') || stageLower.includes('dealer')
 
-                    const stageLower = String(l.pipeline_stage || l.status || '').trim().toLowerCase()
-                    const isLostOrWon = ['won', 'closed', 'dealer', 'lost/ni', 'lost', 'plan postponed', 'already purchased', 'different requirement', 'unqualified'].includes(stageLower) ||
-                      stageLower.includes('not interested') || stageLower.includes('lost') || stageLower.includes('junk') || stageLower.includes('dealer')
-
-                    // In Action Manager (Today, Pending, Scheduled), Lost or Won leads must not remain
-                    if (isLostOrWon && (tLower.includes('today') || tLower.includes('pending') || tLower.includes('schedule') || tLower.includes('action manager'))) {
-                      return false
-                    }
-
-                    // In Fresh Leads drilldown modal: If lead was assigned a next action OR has non-fresh stage, IT MUST NEVER STAY!
-                    if (tLower.includes('fresh')) {
-                      const hasNext = Boolean(l.next_followup || cf?.next_action_date || l.next_action_date)
-                      if (hasNext) return false
-                      const st = String(l.pipeline_stage || l.status || '').trim()
-                      if (st && !isFreshStageName(st)) return false
-                      if (categorizeLeadStage(l, configuredStages) !== 'fresh') return false
-                      return true
-                    }
-
-                    let todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
-                    if (profile?.timezone) {
-                      try {
-                        todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: profile.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
-                      } catch (e) {}
-                    }
-
-                    const getLocalDateStr = (dateVal: any): string | null => {
-                      if (!dateVal) return null
-                      let d: Date | null = null
-                      if (typeof dateVal === 'string' && dateVal.includes('-') && dateVal.split('-')[0].length === 2) {
-                        const parts = dateVal.split(' ')
-                        const dateParts = parts[0].split('-')
-                        d = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}T${parts[1] || '00:00'}:00`)
-                      } else {
-                        d = new Date(dateVal)
+                      // In Action Manager (Today, Pending, Scheduled), Lost or Won leads must not remain
+                      if (isLostOrWon && (tLower.includes('today') || tLower.includes('pending') || tLower.includes('schedule') || tLower.includes('action manager'))) {
+                        return false
                       }
-                      if (!d || isNaN(d.getTime())) return null
+
+                      // In Fresh Leads drilldown modal: If lead was assigned a next action OR has non-fresh stage, IT MUST NEVER STAY!
+                      if (tLower.includes('fresh')) {
+                        const hasNext = Boolean(l.next_followup || cf?.next_action_date || l.next_action_date)
+                        if (hasNext) return false
+                        const st = String(l.pipeline_stage || l.status || '').trim()
+                        if (st && typeof isFreshStageName === 'function' && !isFreshStageName(st)) return false
+                        if (categorizeLeadStage(l, configuredStages) !== 'fresh') return false
+                        return true
+                      }
+
+                      let todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`
                       if (profile?.timezone) {
                         try {
-                          return new Intl.DateTimeFormat('en-CA', { timeZone: profile.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+                          todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: profile.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
                         } catch (e) {}
                       }
-                      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-                    }
 
-                    const nextActionDateStr = getLocalDateStr(l.next_followup || cf?.next_action_date || l.booked_time)
-
-                    // 1. TODAY ACTIONS: must have next action date strictly equal to today
-                    if (tLower.includes('today')) {
-                      if (!nextActionDateStr || nextActionDateStr !== todayStr) {
-                        return false
+                      const getLocalDateStr = (dateVal: any): string | null => {
+                        if (!dateVal) return null
+                        let d: Date | null = null
+                        if (typeof dateVal === 'string' && dateVal.includes('-') && dateVal.split('-')[0].length === 2) {
+                          const parts = dateVal.split(' ')
+                          const dateParts = parts[0].split('-')
+                          d = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}T${parts[1] || '00:00'}:00`)
+                        } else {
+                          d = new Date(dateVal)
+                        }
+                        if (!d || isNaN(d.getTime())) return null
+                        if (profile?.timezone) {
+                          try {
+                            return new Intl.DateTimeFormat('en-CA', { timeZone: profile.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+                          } catch (e) {}
+                        }
+                        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
                       }
-                    }
 
-                    // 2. PENDING ACTIONS: must have overdue next action date in the past
-                    if (tLower.includes('pending')) {
-                      if (!nextActionDateStr || nextActionDateStr >= todayStr) {
-                        return false
+                      const nextActionDateStr = getLocalDateStr(l.next_followup || cf?.next_action_date || l.booked_time)
+
+                      // 1. TODAY ACTIONS: must have next action date strictly equal to today
+                      if (tLower.includes('today')) {
+                        if (!nextActionDateStr || nextActionDateStr !== todayStr) {
+                          return false
+                        }
                       }
-                    }
 
-                    // 3. SCHEDULED ACTIONS: must have future next action date
-                    if (tLower.includes('schedule') && (tLower.includes('action') || tLower.includes('scheduled'))) {
-                      if (!nextActionDateStr || nextActionDateStr <= todayStr) {
-                        return false
+                      // 2. PENDING ACTIONS: must have overdue next action date in the past
+                      if (tLower.includes('pending')) {
+                        if (!nextActionDateStr || nextActionDateStr >= todayStr) {
+                          return false
+                        }
                       }
+
+                      // 3. SCHEDULED ACTIONS: must have future next action date
+                      if (tLower.includes('schedule') && (tLower.includes('action') || tLower.includes('scheduled'))) {
+                        if (!nextActionDateStr || nextActionDateStr <= todayStr) {
+                          return false
+                        }
+                      }
+
+                      // 4. ACTION TYPE SPECIFICITY (e.g. Today Call vs Today Visit)
+                      const rawActType = String(cf?.next_action_type || l.next_action_type || '').trim().toLowerCase()
+                      let actTypeKey = 'Call'
+                      if (rawActType === 'revisit' || rawActType.includes('revisit')) actTypeKey = 'Revisit'
+                      else if (rawActType.includes('closing')) actTypeKey = 'Closing Meeting'
+                      else if (rawActType.includes('home')) actTypeKey = 'Home Meeting'
+                      else if (rawActType === 'visit' || rawActType === 'site visit') actTypeKey = 'Visit'
+                      else actTypeKey = 'Call'
+
+                      if (tLower.includes('today call') || tLower.includes('pending call') || tLower.includes('scheduled call')) {
+                        if (actTypeKey !== 'Call') return false
+                      } else if (tLower.includes('today visit') || tLower.includes('pending visit') || tLower.includes('scheduled visit')) {
+                        if (actTypeKey !== 'Visit') return false
+                      } else if (tLower.includes('today revisit') || tLower.includes('pending revisit') || tLower.includes('scheduled revisit')) {
+                        if (actTypeKey !== 'Revisit') return false
+                      } else if (tLower.includes('today closing meeting') || tLower.includes('pending closing meeting') || tLower.includes('scheduled closing meeting')) {
+                        if (actTypeKey !== 'Closing Meeting') return false
+                      } else if (tLower.includes('today home meeting') || tLower.includes('pending home meeting') || tLower.includes('scheduled home meeting')) {
+                        if (actTypeKey !== 'Home Meeting') return false
+                      }
+
+                      // 5. STAGE SPECIFIC DRILLDOWNS
+                      if (tLower.includes('visit planned') && !tLower.includes('matrix')) {
+                        if (l.pipeline_stage !== 'Visit Planned') return false
+                      } else if (tLower.includes('visit done')) {
+                        if (l.pipeline_stage !== 'Visit Done') return false
+                      } else if (tLower.includes('meeting planned')) {
+                        if (l.pipeline_stage !== 'Meeting Planned') return false
+                      } else if (tLower.includes('meeting done')) {
+                        if (l.pipeline_stage !== 'Meeting Done') return false
+                      }
+
+                      return true
+                    } catch (checkErr) {
+                      console.warn('[shouldLeadStay] Error checking lead stay:', checkErr)
+                      return false
                     }
-
-                    // 4. ACTION TYPE SPECIFICITY (e.g. Today Call vs Today Visit)
-                    const rawActType = String(cf?.next_action_type || l.next_action_type || '').trim().toLowerCase()
-                    let actTypeKey = 'Call'
-                    if (rawActType === 'revisit' || rawActType.includes('revisit')) actTypeKey = 'Revisit'
-                    else if (rawActType.includes('closing')) actTypeKey = 'Closing Meeting'
-                    else if (rawActType.includes('home')) actTypeKey = 'Home Meeting'
-                    else if (rawActType === 'visit' || rawActType === 'site visit') actTypeKey = 'Visit'
-                    else actTypeKey = 'Call'
-
-                    if (tLower.includes('today call') || tLower.includes('pending call') || tLower.includes('scheduled call')) {
-                      if (actTypeKey !== 'Call') return false
-                    } else if (tLower.includes('today visit') || tLower.includes('pending visit') || tLower.includes('scheduled visit')) {
-                      if (actTypeKey !== 'Visit') return false
-                    } else if (tLower.includes('today revisit') || tLower.includes('pending revisit') || tLower.includes('scheduled revisit')) {
-                      if (actTypeKey !== 'Revisit') return false
-                    } else if (tLower.includes('today closing meeting') || tLower.includes('pending closing meeting') || tLower.includes('scheduled closing meeting')) {
-                      if (actTypeKey !== 'Closing Meeting') return false
-                    } else if (tLower.includes('today home meeting') || tLower.includes('pending home meeting') || tLower.includes('scheduled home meeting')) {
-                      if (actTypeKey !== 'Home Meeting') return false
-                    }
-
-                    // 5. STAGE SPECIFIC DRILLDOWNS
-                    if (tLower.includes('visit planned') && !tLower.includes('matrix')) {
-                      if (l.pipeline_stage !== 'Visit Planned') return false
-                    } else if (tLower.includes('visit done')) {
-                      if (l.pipeline_stage !== 'Visit Done') return false
-                    } else if (tLower.includes('meeting planned')) {
-                      if (l.pipeline_stage !== 'Meeting Planned') return false
-                    } else if (tLower.includes('meeting done')) {
-                      if (l.pipeline_stage !== 'Meeting Done') return false
-                    }
-
-                    return true
                   }
 
                   const stillBelongs = shouldLeadStay(mergedUpdatedLead, prev.title, prev.subtitle)
@@ -4950,21 +4959,21 @@ export default function AnalyticsPage() {
                   let nextLeads: any[] = []
                   if (stillBelongs) {
                     // Lead still satisfies current drilldown: update in place
-                    nextLeads = (prev.leads || []).map((l: any) => l.id === updatedId ? mergedUpdatedLead : l)
-                    toast.success('Follow-up updated successfully')
+                    nextLeads = (prev.leads || []).map((l: any) => l?.id === updatedId ? mergedUpdatedLead : l)
+                    toastMsg = 'Follow-up updated successfully'
                   } else {
                     // Lead was rescheduled (e.g. from Today to future date) or moved out: remove immediately!
-                    nextLeads = (prev.leads || []).filter((l: any) => l.id !== updatedId)
+                    nextLeads = (prev.leads || []).filter((l: any) => l?.id !== updatedId)
 
                     const tLower = (String(prev.title || '') + ' ' + String(prev.subtitle || '')).toLowerCase()
                     if (tLower.includes('today')) {
-                      toast.success('Follow-up updated: Lead moved from Today Actions to Scheduled Actions')
+                      toastMsg = 'Follow-up updated: Lead moved from Today Actions to Scheduled Actions'
                     } else if (tLower.includes('pending')) {
-                      toast.success('Pending follow-up completed: Lead moved to Scheduled Actions')
+                      toastMsg = 'Pending follow-up completed: Lead moved to Scheduled Actions'
                     } else if (tLower.includes('fresh')) {
-                      toast.success('Follow-up updated: Lead moved out of Fresh Leads')
+                      toastMsg = 'Follow-up updated: Lead moved out of Fresh Leads'
                     } else {
-                      toast.success('Lead updated and moved out of this view')
+                      toastMsg = 'Lead updated and moved out of this view'
                     }
                   }
 
@@ -4975,6 +4984,13 @@ export default function AnalyticsPage() {
                     leads: nextLeads
                   }
                 })
+
+                // Safely update toast outside the setState updater function to prevent React concurrent rendering violations
+                setTimeout(() => {
+                  try {
+                    toast.success(toastMsg)
+                  } catch (e) {}
+                }, 0)
 
                 // Safely update drilldown page outside setDrilldownModal
                 setDrilldownPage(prevPage => Math.max(1, Math.min(prevPage, newTotalPages)))

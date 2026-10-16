@@ -14,9 +14,10 @@ export async function generateContentWithFallback(
     initialDelay = 2000,
     generationConfig?: any
 ) {
-    // For pure text-related AI tasks, use DeepSeek v4-flash
+    // For pure text-related AI tasks without Gemini-specific schema enforcement, use DeepSeek v4-flash
     const deepSeekKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.replace(/^["']|["']$/g, '').trim() : '';
-    if (typeof contents === 'string' && deepSeekKey) {
+    const hasGeminiSchema = !!(generationConfig?.responseSchema || generationConfig?.responseMimeType);
+    if (typeof contents === 'string' && deepSeekKey && !hasGeminiSchema) {
         try {
             console.log(`[Text AI Router] Routing text generation to DeepSeek v4-flash`);
             const dsRes = await fetch("https://api.deepseek.com/v1/chat/completions", {

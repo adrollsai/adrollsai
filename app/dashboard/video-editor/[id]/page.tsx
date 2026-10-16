@@ -223,14 +223,25 @@ export default function VideoEditorPage() {
                     language: activeLang
                 })
             })
-            const data = await res.json()
+            
+            let data: any = null
+            const rawText = await res.text()
+            try {
+                data = JSON.parse(rawText)
+            } catch {
+                if (res.status === 504) {
+                    throw new Error("Server timed out while transcribing audio. Please retry in a moment.")
+                }
+                throw new Error(rawText.slice(0, 120) || `Server error (${res.status})`)
+            }
+
             if (data.success && data.captions) {
                 setCaptions(data.captions)
                 setEffects(data.effects || [])
                 const langObj = CAPTION_LANGUAGES.find(l => l.value === activeLang)
                 toast.success(`Captions synchronized in ${langObj ? langObj.label.split(' ')[0] : activeLang}!`)
             } else {
-                throw new Error(data.error)
+                throw new Error(data.error || `Caption generation failed (${res.status})`)
             }
         } catch (e: any) {
             toast.error("Generation failed: " + e.message)
