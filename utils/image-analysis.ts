@@ -136,7 +136,7 @@ export async function analyzeImageWithGeminiRaw(imageUrl: string, customPrompt?:
  * Analyze a single image: Primary DeepSeek Flash Vision, with graceful Gemini fallback.
  */
 export async function analyzeImageWithGemini(imageUrl: string, customPrompt?: string): Promise<string> {
-    return analyzeImageWithDeepSeek(imageUrl, customPrompt);
+    return analyzeImageWithGeminiRaw(imageUrl, customPrompt);
 }
 
 /**

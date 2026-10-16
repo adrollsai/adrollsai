@@ -720,17 +720,7 @@ export async function callGeminiWithUsage(prompt: string, imageUrls?: string[]):
             return callGeminiWithUsageOriginal(prompt, imageUrls);
         }
 
-        // Static images: route to DeepSeek Flash Vision if DEEPSEEK_API_KEY is configured
-        if (deepSeekKey) {
-            try {
-                console.log(`[LLM ROUTER] Routing image analysis to DeepSeek Flash Vision (deepseek-flash)`);
-                return await callDeepSeekVisionWithUsage(prompt, imageUrls);
-            } catch (err: any) {
-                console.warn(`[LLM ROUTER] DeepSeek Flash Vision failed, falling back to Gemini. Error: ${err.message}`);
-                return callGeminiWithUsageOriginal(prompt, imageUrls);
-            }
-        }
-
+        // Multimodal / Image queries: Strictly route to Gemini 3.5/2.5 Flash (highest fidelity, zero DeepSeek credit burn)
         return callGeminiWithUsageOriginal(prompt, imageUrls);
     }
 
