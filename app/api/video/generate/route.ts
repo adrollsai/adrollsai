@@ -681,7 +681,7 @@ export async function POST(request: Request) {
                         ? `\nUSER CUSTOM INSTRUCTIONS & MANDATORY CREATIVE DIRECTION (HIGHEST PRIORITY):\n"${customInstructions}"\n[CRITICAL DIRECTIVE: You MUST strictly prioritize and weave the above user instructions into the presenter's delivery, action, environment, and camera focus!]\n`
                         : '';
 
-                    const isIndianAccent = body.accent === 'indian' || body.voiceAccent === 'indian' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
+                    const isIndianAccent = body.accent === 'indian' || body.voiceAccent === 'indian' || body.language === 'english_in' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
 
                     const avatarScenePromptGen = `You are an elite commercial video director specializing in photorealistic live-action video generation with Grok Imagine 1.5.
 Write an ultra-realistic, highly human-like 9:16 portrait video prompt for Scene ${i + 1} of ${requiredClips}.
@@ -1006,7 +1006,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                 grokAudioUrl = audioUrl;
                 if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
                     try {
-                        const isIndianVoice = body.accent === 'indian' || body.voiceAccent === 'indian' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
+                        const isIndianVoice = body.accent === 'indian' || body.voiceAccent === 'indian' || body.language === 'english_in' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
                         const ttsScene = isIndianVoice
                             ? "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial."
                             : "A professional commercial voiceover studio with warm, clear, and engaging tonality.";

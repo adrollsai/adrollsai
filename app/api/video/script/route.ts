@@ -204,11 +204,12 @@ Amenities/Features: ${property.amenities || "N/A"}
             const code = (langCode || 'hinglish').toLowerCase().trim();
             const userText = (userInstructionsText || '').toLowerCase();
 
-            if (code === 'english' || (code === 'hinglish' && (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')))) {
+            if (code === 'english' || code === 'english_in' || code === 'indian_english' || (code === 'hinglish' && (userText.includes('in english') || userText.includes('only english') || userText.includes('english language')))) {
+                const isIndianEnglish = code === 'english_in' || code === 'indian_english' || userText.includes('indian accent') || userText.includes('indian english') || userText.includes('indian');
                 return {
                     isEnglish: true,
                     isHinglish: false,
-                    langLabel: 'English',
+                    langLabel: isIndianEnglish ? 'English (Indian Accent)' : 'English',
                     instruction: "The script dialogue MUST be written entirely in ENGLISH using standard English letters. Speak directly and conversationally 1-on-1 to the viewer with charismatic energy, natural warmth, and high-converting direct-response persuasion. When promoting Indian properties or businesses, use natural Indian English conventions (e.g. state prices in Lakhs or Crores instead of millions/dollars, specify areas in Sq.Ft, and use familiar terminology like site visit, Vastu, etc.). Do NOT use any Hindi words or Devanagari script anywhere.",
                     calloutRule: "The script's spoken dialogue MUST be entirely in English from the very first word. No Hindi, Hinglish, or Devanagari script.",
                     pronunciationRule: "4.2. PRONUNCIATION: Use clear, standard English vocabulary with fluent conversational phrasing. State numerical amounts clearly (e.g., '50 Lakhs' or '1.5 Crore'). Keep the language accessible and professional."

@@ -50,7 +50,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Dialogue text is required for voiceover generation.' }, { status: 400 });
         }
 
-        const isIndianAccent = accent === 'indian' || (!accent && (language === 'hinglish' || language === 'hindi' || language === 'punjabi' || language === 'tamil' || language === 'telugu' || language === 'kannada' || language === 'marathi' || language === 'bengali' || language === 'gujarati'));
+        const isIndianAccent = accent === 'indian' || language === 'english_in' || language === 'indian_english' || (!accent && (language === 'hinglish' || language === 'hindi' || language === 'punjabi' || language === 'tamil' || language === 'telugu' || language === 'kannada' || language === 'marathi' || language === 'bengali' || language === 'gujarati'));
 
         const effectiveScene = scene || (isIndianAccent
             ? "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial."

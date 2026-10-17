@@ -85,7 +85,8 @@ const ASPECT_RATIOS = [
 
 const CREATION_LANGUAGES = [
   { code: 'hinglish', label: 'Hinglish (हिंग्लिश / Roman)', flag: '🇮🇳' },
-  { code: 'english', label: 'English', flag: '🇬🇧' },
+  { code: 'english_in', label: 'English (Indian Accent)', flag: '🇮🇳' },
+  { code: 'english', label: 'English (US / Global)', flag: '🌐' },
   { code: 'hindi', label: 'Hindi (हिंदी)', flag: '🇮🇳' },
   { code: 'punjabi', label: 'Punjabi (ਪੰਜਾਬੀ)', flag: '🇮🇳' },
   { code: 'marathi', label: 'Marathi (मराठी)', flag: '🇮🇳' },
@@ -1670,7 +1671,17 @@ export default function CreationPage() {
                     <Languages size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-500 pointer-events-none" />
                     <select 
                         value={videoLanguage}
-                        onChange={(e) => setVideoLanguage(e.target.value)}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            setVideoLanguage(val);
+                            if (val === 'english_in') {
+                                setGrokAccent('indian');
+                            } else if (val === 'english') {
+                                setGrokAccent('american');
+                            } else {
+                                setGrokAccent('indian');
+                            }
+                        }}
                         className="w-full bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/80 text-slate-800 text-[11px] font-bold rounded-[1rem] py-2.5 pl-9 pr-8 appearance-none outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer h-full"
                     >
                         {CREATION_LANGUAGES.map(lang => (
