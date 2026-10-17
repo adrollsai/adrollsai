@@ -1,0 +1,10 @@
+.git
+node_modules
+.next
+scratch
+*.mp4
+*.wav
+*.pcm
+*.pdf
+*.log
+scripts/
