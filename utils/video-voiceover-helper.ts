@@ -129,8 +129,8 @@ export async function resolveVoiceoverAudio(task: any, assetId?: string | null):
                     dialogueText: voiceText.trim(),
                     speakerName: 'Aoede',
                     style: '',
-                    scene: 'Professional real estate commercial voiceover studio',
-                    sampleContext: 'High converting luxury real estate marketing video'
+                    scene: 'A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a real estate commercial.',
+                    sampleContext: 'High converting luxury real estate marketing video with natural Indian English delivery'
                 });
 
                 if (newTtsId && !newTtsErr) {

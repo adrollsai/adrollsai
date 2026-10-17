@@ -13,6 +13,12 @@ export const RemotionRoot: React.FC = () => {
                 fps={30}
                 width={1080}
                 height={1920}
+                calculateMetadata={async ({ props }) => {
+                    const dur = (props as any)?.durationInFrames;
+                    return {
+                        durationInFrames: dur && Number(dur) > 0 ? Number(dur) : 30 * 30,
+                    };
+                }}
                 defaultProps={{
                     videoUrl: "",
                     captions: [],

@@ -38,24 +38,36 @@ export async function POST(request: Request) {
         const body = await request.json();
         const {
             dialogueText,
-            speakerName = "Zephyr",
+            speakerName = "Aoede",
             style = "",
-            scene = "A quiet technology studio with a clean and professional atmosphere.",
-            sampleContext = "High converting promo voiceover"
+            accent = "indian",
+            language = "hinglish",
+            scene,
+            sampleContext
         } = body;
 
         if (!dialogueText || typeof dialogueText !== 'string' || dialogueText.trim().length === 0) {
             return NextResponse.json({ error: 'Dialogue text is required for voiceover generation.' }, { status: 400 });
         }
 
-        console.log(`[Grok TTS API] Creating Gemini 3.1 Flash TTS task for text length ${dialogueText.length}...`);
+        const isIndianAccent = accent === 'indian' || (!accent && (language === 'hinglish' || language === 'hindi' || language === 'punjabi' || language === 'tamil' || language === 'telugu' || language === 'kannada' || language === 'marathi' || language === 'bengali' || language === 'gujarati'));
+
+        const effectiveScene = scene || (isIndianAccent
+            ? "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial."
+            : "A professional commercial voiceover studio with warm, clear, and engaging tonality.");
+
+        const effectiveContext = sampleContext || (isIndianAccent
+            ? "High converting luxury marketing video commercial with natural Indian English delivery"
+            : "High converting commercial marketing video");
+
+        console.log(`[Grok TTS API] Creating Gemini 3.1 Flash TTS task (Speaker: ${speakerName}, Accent: ${isIndianAccent ? 'Indian' : 'American'}, Text length: ${dialogueText.length})...`);
 
         const { taskId, error: createError } = await createGeminiTTS({
             dialogueText: dialogueText.trim(),
             speakerName,
             style,
-            scene,
-            sampleContext
+            scene: effectiveScene,
+            sampleContext: effectiveContext
         });
 
         if (createError || !taskId) {

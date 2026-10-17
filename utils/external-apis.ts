@@ -166,10 +166,10 @@ export async function queryKieTask(taskId: string): Promise<{ state: string; res
  */
 export async function createGeminiTTS({
     dialogueText,
-    speakerName = "Zephyr",
+    speakerName = "Aoede",
     style = "",
-    scene = "Professional studio recording",
-    sampleContext = "High converting marketing voiceover",
+    scene = "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial.",
+    sampleContext = "High converting luxury marketing video commercial with natural Indian English delivery",
     callBackUrl
 }: {
     dialogueText: string;

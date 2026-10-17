@@ -371,8 +371,8 @@ export default function CreationPage() {
   
   // NEW: Creation Mode Toggle
   const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
-  const [videoModel, setVideoModel] = useState<'seedance' | 'grok'>('grok')
   const [grokVoice, setGrokVoice] = useState<string>('Aoede')
+  const [grokAccent, setGrokAccent] = useState<'indian' | 'american'>('indian')
   
   // Presenter settings mode: 'video' (reference video), 'avatar' (avatar photo), or 'none'
   const [presenterMode, setPresenterMode] = useState<'video' | 'avatar' | 'none'>('none')
@@ -930,7 +930,9 @@ export default function CreationPage() {
                     preview: true,
                     duration: selectedDuration,
                     language: videoLanguage,
-                    useUploadedAudio
+                    useUploadedAudio,
+                    grokVoice,
+                    accent: grokAccent
                 })
             });
             const promptData = await promptResponse.json();
@@ -1058,7 +1060,9 @@ export default function CreationPage() {
                     preview: true,
                     duration: selectedDuration,
                     language: videoLanguage,
-                    useUploadedAudio
+                    useUploadedAudio,
+                    grokVoice,
+                    accent: grokAccent
                 })
             });
             const promptData = await promptResponse.json();
@@ -1205,6 +1209,7 @@ export default function CreationPage() {
             body: JSON.stringify({
                 dialogueText,
                 speakerName: grokVoice,
+                accent: grokAccent,
                 language: videoLanguage
             })
         });
@@ -1256,7 +1261,9 @@ export default function CreationPage() {
                 prompts: customPrompts,
                 audioUrl: audioUrl || null,
                 duration: selectedDuration,
-                language: videoLanguage
+                language: videoLanguage,
+                grokVoice,
+                accent: grokAccent
             })
         });
 
@@ -2348,24 +2355,38 @@ export default function CreationPage() {
                       </div>
                     </div>
 
-                    {/* Voice Selection & Audio Preview control for Grok Script Review (Voiceover Mode only) */}
+                    {/* Voice Selection, Accent & Audio Preview control for Grok Script Review (Voiceover Mode only) */}
                     {msg.grokStep === 'script_review' && presenterMode !== 'avatar' && (
-                      <div className="flex flex-col gap-2 bg-gradient-to-r from-purple-50/70 to-indigo-50/70 p-3.5 rounded-2xl border border-purple-200/80 mt-1 shadow-sm">
-                        <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-col gap-2.5 bg-gradient-to-r from-purple-50/70 to-indigo-50/70 p-3.5 rounded-2xl border border-purple-200/80 mt-1 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-[10px] font-black text-purple-800 uppercase tracking-wider flex items-center gap-1.5">
-                            <Mic size={14} className="text-purple-600" /> Choose AI Voice Persona:
+                            <Mic size={14} className="text-purple-600" /> Choose Voice & Accent:
                           </span>
-                          <select
-                            value={grokVoice}
-                            onChange={(e) => setGrokVoice(e.target.value)}
-                            className="bg-white border border-purple-300 text-xs font-bold text-purple-950 rounded-xl px-3 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer"
-                          >
-                            <option value="Aoede">Aoede (Warm & Energetic Female)</option>
-                            <option value="Puck">Puck (Upbeat & Conversational Male)</option>
-                            <option value="Kore">Kore (Deep & Confident Female)</option>
-                            <option value="Fenrir">Fenrir (Bold & Authoritative Male)</option>
-                            <option value="Charon">Charon (Smooth & Professional Male)</option>
-                          </select>
+                          <div className="flex items-center gap-2">
+                            {/* Accent Selector */}
+                            <select
+                              value={grokAccent}
+                              onChange={(e) => setGrokAccent(e.target.value as 'indian' | 'american')}
+                              className="bg-white border border-purple-300 text-xs font-bold text-purple-950 rounded-xl px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer"
+                              title="Voice Accent"
+                            >
+                              <option value="indian">🇮🇳 Indian Accent</option>
+                              <option value="american">🇺🇸 American / Global</option>
+                            </select>
+
+                            {/* Voice Persona Selector */}
+                            <select
+                              value={grokVoice}
+                              onChange={(e) => setGrokVoice(e.target.value)}
+                              className="bg-white border border-purple-300 text-xs font-bold text-purple-950 rounded-xl px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer"
+                            >
+                              <option value="Aoede">Aoede ({grokAccent === 'indian' ? 'Indian Female' : 'Warm Female'})</option>
+                              <option value="Puck">Puck ({grokAccent === 'indian' ? 'Indian Male' : 'Conversational Male'})</option>
+                              <option value="Kore">Kore ({grokAccent === 'indian' ? 'Indian Deep Female' : 'Confident Female'})</option>
+                              <option value="Fenrir">Fenrir ({grokAccent === 'indian' ? 'Indian Bold Male' : 'Bold Male'})</option>
+                              <option value="Charon">Charon ({grokAccent === 'indian' ? 'Indian Smooth Male' : 'Smooth Male'})</option>
+                            </select>
+                          </div>
                         </div>
 
                         {/* Audio Sample Preview */}
@@ -2373,7 +2394,7 @@ export default function CreationPage() {
                           <div className="flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
                             <span className="text-[10px] font-extrabold text-slate-700">
-                              Preview Voice Sample ({grokVoice})
+                              Preview Voice Sample ({grokVoice} &bull; {grokAccent === 'indian' ? 'Indian Accent' : 'American Accent'})
                             </span>
                           </div>
                           <audio 
@@ -2387,14 +2408,24 @@ export default function CreationPage() {
                       </div>
                     )}
 
-                    {/* Avatar Direct Speech Notice for Grok Avatar Mode */}
+                    {/* Avatar Direct Speech Notice for Grok Avatar Mode with Accent Control */}
                     {msg.grokStep === 'script_review' && presenterMode === 'avatar' && (
-                      <div className="flex items-center gap-2.5 bg-gradient-to-r from-purple-50 to-pink-50 p-3 rounded-2xl border border-purple-200/70 mt-1">
-                        <Sparkles size={16} className="text-purple-600 flex-shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wide">Avatar Video Mode</span>
-                          <span className="text-[11px] text-purple-700 font-medium leading-tight">Your Avatar model will speak the dialogue natively with full lip sync. No external voiceover delay!</span>
+                      <div className="flex flex-col gap-2 bg-gradient-to-r from-purple-50 to-pink-50 p-3 rounded-2xl border border-purple-200/70 mt-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Sparkles size={16} className="text-purple-600 flex-shrink-0" />
+                            <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wide">Avatar Spoken Accent:</span>
+                          </div>
+                          <select
+                            value={grokAccent}
+                            onChange={(e) => setGrokAccent(e.target.value as 'indian' | 'american')}
+                            className="bg-white border border-purple-300 text-xs font-bold text-purple-950 rounded-xl px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer"
+                          >
+                            <option value="indian">🇮🇳 Indian Accent</option>
+                            <option value="american">🇺🇸 American / Global</option>
+                          </select>
                         </div>
+                        <span className="text-[11px] text-purple-700 font-medium leading-tight">Your Avatar model will speak the dialogue natively with full lip sync and an authentic {grokAccent === 'indian' ? 'Indian English' : 'American English'} delivery.</span>
                       </div>
                     )}
 

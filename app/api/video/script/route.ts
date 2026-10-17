@@ -209,9 +209,9 @@ Amenities/Features: ${property.amenities || "N/A"}
                     isEnglish: true,
                     isHinglish: false,
                     langLabel: 'English',
-                    instruction: "The script dialogue MUST be written entirely in ENGLISH using standard English letters. Speak directly and conversationally 1-on-1 to the viewer with charismatic energy, natural warmth, and high-converting direct-response persuasion. Do NOT use any Hindi, Hinglish, or Devanagari script anywhere.",
+                    instruction: "The script dialogue MUST be written entirely in ENGLISH using standard English letters. Speak directly and conversationally 1-on-1 to the viewer with charismatic energy, natural warmth, and high-converting direct-response persuasion. When promoting Indian properties or businesses, use natural Indian English conventions (e.g. state prices in Lakhs or Crores instead of millions/dollars, specify areas in Sq.Ft, and use familiar terminology like site visit, Vastu, etc.). Do NOT use any Hindi words or Devanagari script anywhere.",
                     calloutRule: "The script's spoken dialogue MUST be entirely in English from the very first word. No Hindi, Hinglish, or Devanagari script.",
-                    pronunciationRule: "4.2. PRONUNCIATION: Use clear, standard English vocabulary. Keep the language accessible and professional. Avoid jargon or overly complex words."
+                    pronunciationRule: "4.2. PRONUNCIATION: Use clear, standard English vocabulary with fluent conversational phrasing. State numerical amounts clearly (e.g., '50 Lakhs' or '1.5 Crore'). Keep the language accessible and professional."
                 };
             }
 

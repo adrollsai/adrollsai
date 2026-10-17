@@ -681,6 +681,8 @@ export async function POST(request: Request) {
                         ? `\nUSER CUSTOM INSTRUCTIONS & MANDATORY CREATIVE DIRECTION (HIGHEST PRIORITY):\n"${customInstructions}"\n[CRITICAL DIRECTIVE: You MUST strictly prioritize and weave the above user instructions into the presenter's delivery, action, environment, and camera focus!]\n`
                         : '';
 
+                    const isIndianAccent = body.accent === 'indian' || body.voiceAccent === 'indian' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
+
                     const avatarScenePromptGen = `You are an elite commercial video director specializing in photorealistic live-action video generation with Grok Imagine 1.5.
 Write an ultra-realistic, highly human-like 9:16 portrait video prompt for Scene ${i + 1} of ${requiredClips}.
 ${customInstructionsBlock}
@@ -692,7 +694,7 @@ AVATAR IDENTITY & PRESENTER DIRECTIVES (MANDATORY):
 - Visual Identity: Image 1 is the primary reference image for the presenter's exact face, identity, hair, facial features, skin tone, and styling. The presenter in the video MUST look identical to the person in Image 1 throughout the entire clip.
 - Lifelike Human Expressions & Body Language: The presenter must look completely natural and alive, with authentic warm smiles, subtle facial micro-expressions, natural eye contact, realistic blinking, and relaxed, fluid body posture (avoid all robotic, stiff, or frozen poses).
 - Expressive Natural Gestures: While speaking, the presenter uses lively, organic hand gestures and natural head movements to emphasize key points warmly to the viewer.
-- Authentic Human Voice & Delivery Tonality: The presenter speaks in an authentic, warm, charismatic, and natural human voice with rich vocal texture, subtle breathing pauses, lively conversational cadence, expressive pitch variations, emotional conviction, and flawless lip synchronization saying: "${sceneDialogue}". Strictly NO robotic, artificial, or monotone voice synthesis.
+- Authentic Human Voice & Delivery Tonality: The presenter speaks in an authentic, warm, charismatic ${isIndianAccent ? 'Indian English' : 'natural human'} voice with ${isIndianAccent ? 'authentic Indian conversational cadence' : 'rich vocal texture'}, subtle breathing pauses, lively conversational cadence, expressive pitch variations, emotional conviction, and flawless lip synchronization saying: "${sceneDialogue}". Strictly NO robotic, artificial, or monotone voice synthesis.
 
 REALISTIC REAL-WORLD SCENE ENVIRONMENT:
 - Authentic Environment: The presenter is situated in an authentic, believable real-world setting (such as a bright sunlit modern living space, real estate presentation lounge, or terrace with genuine architectural depth and 35mm shallow focus). Real atmospheric lighting, believable ambient reflections, and authentic live-action commercial photography aesthetics. Absolutely NO flat green screens, NO artificial CGI rooms, and NO sterile virtual voids.
@@ -707,7 +709,7 @@ ${descriptionsText}
 
 CINEMATOGRAPHY & AUDIO:
 - 35mm anamorphic camera, shallow depth of field, natural soft ambient lighting, true-to-life skin textures with realistic micro-details. 9:16 vertical ratio.
-- High-fidelity natural human voice with realistic room acoustics and zero robotic distortion.
+- High-fidelity natural ${isIndianAccent ? 'Indian English' : 'human'} voice with realistic room acoustics and zero robotic distortion.
 - STRICT NO TEXT: Absolutely NO on-screen captions, NO text, NO titles, NO subtitles, NO watermarks.
 
 Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
@@ -735,7 +737,7 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                     }
 
                     if (!promptText) {
-                        promptText = `The presenter shown in Image 1 is the main character and is ALREADY actively speaking from the very first frame at second 0.0 with zero freeze or pause. Standing in a natural medium chest-up shot in an authentic sunlit architectural room with natural 35mm depth of field, with warm, lifelike facial micro-expressions, fluid head motion, and expressive natural hand gestures, she speaks continuously directly to the viewer in a warm, authentic human voice with natural conversational cadence and flawless lip sync saying: "${sceneDialogue}". The shot flows seamlessly with dynamic camera cuts highlighting ${sceneVisuals || productTitle} from the reference product photos while her speech continues without interruption. 35mm live-action cinema lighting, realistic skin texture, 9:16 portrait ratio, crisp natural human voice. Strictly NO static photo freeze, NO robotic stiffness, NO artificial monotone speech, NO dead air, and NO on-screen text or subtitles.`;
+                        promptText = `The presenter shown in Image 1 is the main character and is ALREADY actively speaking from the very first frame at second 0.0 with zero freeze or pause. Standing in a natural medium chest-up shot in an authentic sunlit architectural room with natural 35mm depth of field, with warm, lifelike facial micro-expressions, fluid head motion, and expressive natural hand gestures, she speaks continuously directly to the viewer in a warm, authentic ${isIndianAccent ? 'Indian English' : 'human'} voice with natural conversational cadence and flawless lip sync saying: "${sceneDialogue}". The shot flows seamlessly with dynamic camera cuts highlighting ${sceneVisuals || productTitle} from the reference product photos while her speech continues without interruption. 35mm live-action cinema lighting, realistic skin texture, 9:16 portrait ratio, crisp natural human voice. Strictly NO static photo freeze, NO robotic stiffness, NO artificial monotone speech, NO dead air, and NO on-screen text or subtitles.`;
                     }
 
                     if (!promptText.toLowerCase().includes('second 0') && !promptText.toLowerCase().includes('second 0.0')) {
@@ -744,8 +746,8 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                     if (!promptText.toLowerCase().includes('image 1') && !promptText.toLowerCase().includes('image_1')) {
                         promptText = `The presenter shown in Image 1 is the main character. ${promptText}`;
                     }
-                    if (!promptText.toLowerCase().includes('human voice') && !promptText.toLowerCase().includes('natural voice')) {
-                        promptText += ' Authentic, natural human speaking voice with warm conversational inflection, organic pauses, and perfectly synced lips. Strictly NO robotic tone.';
+                    if (!promptText.toLowerCase().includes('human voice') && !promptText.toLowerCase().includes('natural voice') && !promptText.toLowerCase().includes('indian english')) {
+                        promptText += ` Authentic, natural ${isIndianAccent ? 'Indian English' : 'human'} speaking voice with warm conversational inflection, organic pauses, and perfectly synced lips. Strictly NO robotic tone.`;
                     }
                     return promptText;
                 } else {
@@ -1004,13 +1006,21 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                 grokAudioUrl = audioUrl;
                 if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
                     try {
-                        console.log(`[Video Generate] Launching asynchronous Gemini TTS task for Grok Non-Avatar voiceover...`);
+                        const isIndianVoice = body.accent === 'indian' || body.voiceAccent === 'indian' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
+                        const ttsScene = isIndianVoice
+                            ? "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial."
+                            : "A professional commercial voiceover studio with warm, clear, and engaging tonality.";
+                        const ttsContext = isIndianVoice
+                            ? "High converting luxury marketing video commercial with natural Indian English delivery"
+                            : "High converting commercial marketing video";
+
+                        console.log(`[Video Generate] Launching asynchronous Gemini TTS task for Grok Non-Avatar voiceover (Speaker: ${body.grokVoice || 'Aoede'}, Accent: ${isIndianVoice ? 'Indian' : 'American'})...`);
                         const { taskId: ttsTaskId } = await createGeminiTTS({
                             dialogueText: script.dialogue.trim(),
                             speakerName: body.grokVoice || 'Aoede',
                             style: '',
-                            scene: 'Professional commercial voiceover studio',
-                            sampleContext: 'High converting commercial marketing video'
+                            scene: ttsScene,
+                            sampleContext: ttsContext
                         });
                         if (ttsTaskId) {
                             console.log(`[Video Generate] Gemini TTS task launched: ${ttsTaskId}`);
