@@ -372,6 +372,7 @@ export default function CreationPage() {
   
   // NEW: Creation Mode Toggle
   const [creationMode, setCreationMode] = useState<'image' | 'video'>('image')
+  const [videoModel, setVideoModel] = useState<'seedance' | 'grok'>('grok')
   const [grokVoice, setGrokVoice] = useState<string>('Aoede')
   const [grokAccent, setGrokAccent] = useState<'indian' | 'american'>('indian')
   
