@@ -118,8 +118,47 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const isOnboardingPage = pathname === '/dashboard/onboarding'
       const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(userProfile?.role || '')
 
-      // Allow unpaid/expired users to view billing and profile pages so they can access settings & Sign Out anytime!
-      if (!isPaid && !isBillingPage && !isProfilePage && isAdminLike) {
+      // 1. Onboarding Check: Ensure new users and accounts with incomplete onboarding go through onboarding first
+      if (!onboardingCompleted && isAdminLike) {
+        const primaryUserId = parentId || session.user.id
+        
+        // Count products/properties
+        const { count: propCount } = await supabase
+          .from('properties')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', primaryUserId)
+          
+        // Count assets
+        const { count: assetCount } = await supabase
+          .from('assets')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', primaryUserId)
+
+        if ((propCount && propCount > 0) || (assetCount && assetCount > 0)) {
+          onboardingCompleted = true
+          
+          await supabase
+            .from('profiles')
+            .update({ onboarding_completed: true })
+            .eq('id', session.user.id)
+            
+          if (parentId) {
+            await supabase
+              .from('profiles')
+              .update({ onboarding_completed: true })
+              .eq('id', parentId)
+          }
+        }
+      }
+
+      // If onboarding is NOT completed, direct them to onboarding page!
+      if (!onboardingCompleted && !isOnboardingPage && isAdminLike) {
+        router.push('/dashboard/onboarding')
+        return
+      }
+
+      // Allow unpaid/expired users to view billing, profile, and onboarding pages
+      if (!isPaid && !isBillingPage && !isProfilePage && !isOnboardingPage && isAdminLike) {
         router.push('/dashboard/billing')
         return
       }
@@ -166,43 +205,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           return
         }
       }
-
-      // Check if they are an existing client who already has properties or assets
-      if (isPaid && !onboardingCompleted && !isBillingPage && isAdminLike) {
-        const primaryUserId = parentId || session.user.id
-        
-        // Count products/properties
-        const { count: propCount } = await supabase
-          .from('properties')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', primaryUserId)
-          
-        // Count assets
-        const { count: assetCount } = await supabase
-          .from('assets')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', primaryUserId)
-
-        if ((propCount && propCount > 0) || (assetCount && assetCount > 0)) {
-          onboardingCompleted = true
-          
-          await supabase
-            .from('profiles')
-            .update({ onboarding_completed: true })
-            .eq('id', session.user.id)
-            
-          if (parentId) {
-            await supabase
-              .from('profiles')
-              .update({ onboarding_completed: true })
-              .eq('id', parentId)
-          }
-        }
-      }
-
-      if (isPaid && !onboardingCompleted && !isOnboardingPage && !isBillingPage && isAdminLike) {
-        router.push('/dashboard/onboarding')
-      } else {
         // AUTO-FIX: If they are 'agent'/'client' but have no parent_id/agency_id, they are a self-registered business owner -> Admin/Agency
         if ((userProfile?.role === 'agent' || userProfile?.role === 'client') && !userProfile?.parent_id && !userProfile?.agency_id) {
           console.log("🛠️ Auto-upgrading self-registered user to admin...");
@@ -225,7 +227,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const isTeamMember = !!(userProfile?.parent_id || userProfile?.agency_id || userProfile?.role === 'team_member')
         setAcceptedTerms(isTeamMember || userProfile?.accepted_terms !== false)
         setIsAuthorized(true)
-      }
     }
 
     enforcePaywall()

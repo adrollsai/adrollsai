@@ -96,7 +96,7 @@ function LoginForm() {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard/analytics`,
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard/onboarding`,
             data: {
               accepted_terms: true,
             }
@@ -110,7 +110,7 @@ function LoginForm() {
         
         if (signUpData?.user) {
           try {
-            const profilePayload: any = { id: signUpData.user.id, accepted_terms: true }
+            const profilePayload: any = { id: signUpData.user.id, accepted_terms: true, onboarding_completed: false }
             if (brandInfo.agencyId) {
               profilePayload.agency_id = brandInfo.agencyId
               profilePayload.role = 'client'
@@ -125,7 +125,7 @@ function LoginForm() {
         
         if (signUpData?.session) {
           toast.success("Account created successfully!")
-          router.push('/dashboard/analytics')
+          router.push('/dashboard/onboarding')
         } else {
           setSuccessMessage('Account created! Please check your email to verify your account.')
           toast.success("Verification email sent!")

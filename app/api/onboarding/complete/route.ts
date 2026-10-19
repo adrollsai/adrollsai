@@ -32,45 +32,65 @@ export async function POST(request: Request) {
             companyName, 
             companyDescription, 
             logoUrl, 
+            contactNumber,
+            address,
+            websiteUrl,
+            whatsappNumber,
             productTitle, 
             productDescription, 
             productPrice, 
             productImageUrl 
         } = body;
 
-        if (!companyName || !companyDescription || !productTitle || !productDescription) {
-            return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-        }
-
-        // 1. Fetch current profile to check if characters are already set
+        // 1. Fetch current profile to check existing data
         const { data: existingProfile } = await supabaseAdmin
             .from('profiles')
-            .select('character_url, character_audio_url, character_description')
+            .select('business_name, business_info, logo_url, contact_number, address, custom_domain, character_url, character_audio_url, character_description')
             .eq('id', user.id)
             .single();
 
+        const resolvedCompanyName = companyName || existingProfile?.business_name || 'My Business';
+        const resolvedCompanyDesc = companyDescription || existingProfile?.business_info || '';
         const characterUrl = existingProfile?.character_url || DEFAULT_CHARACTER_URL;
         const characterAudioUrl = existingProfile?.character_audio_url || DEFAULT_CHARACTER_AUDIO_URL;
         const characterDescription = existingProfile?.character_description || DEFAULT_CHARACTER_DESCRIPTION;
 
         // 2. Update profiles table
         console.log("[Onboarding API] Updating profile details for user:", user.id);
+        const profileUpdates: any = {
+            business_name: resolvedCompanyName,
+            business_info: resolvedCompanyDesc,
+            logo_url: logoUrl || existingProfile?.logo_url || '',
+            onboarding_completed: true,
+            character_url: characterUrl,
+            character_audio_url: characterAudioUrl,
+            character_description: characterDescription
+        };
+
+        if (contactNumber) profileUpdates.contact_number = contactNumber;
+        if (address) profileUpdates.address = address;
+        if (whatsappNumber) profileUpdates.whatsapp_phone_number = whatsappNumber;
+        if (websiteUrl && !existingProfile?.custom_domain) {
+            profileUpdates.custom_domain = websiteUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
+        }
+
         const { error: profileError } = await supabaseAdmin
             .from('profiles')
-            .update({
-                business_name: companyName,
-                business_info: companyDescription,
-                logo_url: logoUrl || '',
-                onboarding_completed: true,
-                character_url: characterUrl,
-                character_audio_url: characterAudioUrl,
-                character_description: characterDescription
-            })
+            .update(profileUpdates)
             .eq('id', user.id);
 
         if (profileError) {
             console.error("[Onboarding API] Profile update failed:", profileError);
             throw new Error(`Failed to update business profile: ${profileError.message}`);
+        }
+
+        // If no product was provided (skipped step), complete onboarding now!
+        if (!productTitle || !productDescription) {
+            console.log("[Onboarding API] Product step skipped. Onboarding completed successfully.");
+            return NextResponse.json({ 
+                success: true, 
+                message: 'Onboarding completed successfully without product generation.' 
+            });
         }
 
         // 3. Insert product into properties table
@@ -84,7 +104,7 @@ export async function POST(request: Request) {
                 price: productPrice || 'Contact for Price',
                 image_url: productImageUrl || '',
                 images: productImageUrl ? [productImageUrl] : [],
-                address: 'Online',
+                address: address || 'Online',
                 property_type: 'Generic',
                 status: 'Active',
                 auto_generate: false
