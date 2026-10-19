@@ -306,15 +306,15 @@ export async function stitchClipsLocally(
                 let shouldTrimToAudio = false;
                 let targetTotalDuration = rawTotalVideoDuration;
 
-                if (audioDuration > 5.0 && (rawTotalVideoDuration - audioDuration) > 1.0) {
-                    // Video duration significantly exceeds voiceover:
+                if (audioDuration > 5.0 && (rawTotalVideoDuration - audioDuration) > 5.0) {
+                    // Video duration significantly exceeds voiceover (by more than 5s):
                     // Proportionately scale clip durations so all scenes get balanced airtime across the voiceover,
-                    // with a natural 0.8s breath and smooth outro fade, eliminating awkward trailing silence!
+                    // with a natural 2.5s breath and smooth outro fade, eliminating awkward trailing silence!
                     shouldTrimToAudio = true;
-                    targetTotalDuration = audioDuration + 0.8;
+                    targetTotalDuration = Math.min(rawTotalVideoDuration, audioDuration + 2.5);
                     const targetClipDur = (targetTotalDuration + (localClipPaths.length - 1) * transitionDuration) / localClipPaths.length;
                     effectiveDurations = durations.map(d => Math.min(d, targetClipDur));
-                    console.log(`[Local Stitch] Video (${rawTotalVideoDuration.toFixed(2)}s) exceeds voiceover (${audioDuration.toFixed(2)}s). Proportionately scaling ${localClipPaths.length} clips to ${targetClipDur.toFixed(2)}s each (target total: ${targetTotalDuration.toFixed(2)}s) with zero trailing silence...`);
+                    console.log(`[Local Stitch] Video (${rawTotalVideoDuration.toFixed(2)}s) exceeds voiceover (${audioDuration.toFixed(2)}s) by >5s. Proportionately scaling ${localClipPaths.length} clips to ${targetClipDur.toFixed(2)}s each (target total: ${targetTotalDuration.toFixed(2)}s)...`);
                 }
 
                 const filterParts: string[] = [];
@@ -426,10 +426,10 @@ export async function stitchClipsLocally(
                 const vf = filter9x16 ? `[0:v]${filter9x16}[v];[1:a]atempo=${speed.toFixed(3)}[a]` : `[1:a]atempo=${speed.toFixed(3)}[a]`;
                 const vMap = filter9x16 ? `[v]` : `0:v:0`;
                 ffmpegCmd = `"${ffmpegExec}" -nostdin -y -f concat -safe 0 -i "${concatTxtPath}" -i "${localAudioPath}" -filter_complex "${vf}" -map "${vMap}" -map "[a]" -c:v libx264 -preset veryfast -crf 23 -maxrate 2500k -bufsize 5000k -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart "${outputPath}"`;
-            } else if (localAudioPath && audioDuration > 5.0 && totalFallbackDuration > audioDuration + 1.0) {
-                const targetDur = audioDuration + 0.8;
+            } else if (localAudioPath && audioDuration > 5.0 && totalFallbackDuration > audioDuration + 5.0) {
+                const targetDur = Math.min(totalFallbackDuration, audioDuration + 2.5);
                 const fadeStart = Math.max(0, targetDur - 0.5);
-                console.log(`[Local Stitch Fallback] Video (${totalFallbackDuration.toFixed(2)}s) exceeds audio (${audioDuration.toFixed(2)}s). Trimming video to ${targetDur.toFixed(2)}s with outro fade...`);
+                console.log(`[Local Stitch Fallback] Video (${totalFallbackDuration.toFixed(2)}s) exceeds audio (${audioDuration.toFixed(2)}s) by >5s. Trimming video to ${targetDur.toFixed(2)}s with outro fade...`);
                 const vfilter = filter9x16 
                     ? `[0:v]trim=0:${targetDur.toFixed(2)},setpts=PTS-STARTPTS,fade=t=out:st=${fadeStart.toFixed(2)}:d=0.5,${filter9x16}[v]`
                     : `[0:v]trim=0:${targetDur.toFixed(2)},setpts=PTS-STARTPTS,fade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[v]`;

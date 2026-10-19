@@ -340,8 +340,8 @@ export async function syncVideoTasksForUser(
                                     const speed = Math.min(1.4, Math.max(1.02, audDur / targetAud));
                                     console.log(`[Video Sync Helper] Voiceover (${audDur.toFixed(2)}s) reaches/exceeds video (${vidDur.toFixed(2)}s). Speeding up audio tempo by ${speed.toFixed(3)}x using atempo so voiceover ends cleanly at ${targetAud.toFixed(2)}s with zero paused frames...`);
                                     cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -filter_complex "[1:a]atempo=${speed.toFixed(3)}[a]" -map 0:v:0 -map "[a]" -c:v copy -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
-                                } else if (audDur > 0 && vidDur > audDur + 1.0) {
-                                    const targetDur = audDur + 0.8;
+                                } else if (audDur > 0 && vidDur > audDur + 5.0) {
+                                    const targetDur = Math.min(vidDur, audDur + 2.5);
                                     const fadeStart = Math.max(0, targetDur - 0.5);
                                     cmd = `"${ffmpegBinary}" -nostdin -y -i "${localPath}" -i "${audioPath}" -filter_complex "[0:v]trim=0:${targetDur.toFixed(2)},setpts=PTS-STARTPTS,fade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[v];[1:a]atrim=0:${targetDur.toFixed(2)},asetpts=PTS-STARTPTS,afade=t=out:st=${fadeStart.toFixed(2)}:d=0.5[a]" -map "[v]" -map "[a]" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
                                 } else {

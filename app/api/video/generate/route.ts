@@ -938,7 +938,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
         creditsDeductedSuccess = true;
 
         // 4. Create Placeholder Asset (Spinning Card) in Supabase
-        const initialAudioUrl = isAvatarPresenter ? 'native' : (body.audioUrl || null);
+        const initialAudioUrl = body.audioUrl || null;
         const { data: newAsset, error: newAssetError } = await supabaseAdmin
             .from('assets')
             .insert({
@@ -998,43 +998,40 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
         if (videoModel === 'grok') {
             console.log(`[Video Generate] Running GROK IMAGINE 1.5 pipeline for target user ${targetUserId}... (isAvatar: ${isAvatarPresenter})`);
 
-            let grokAudioUrl: string | null = null;
+            let grokAudioUrl: string | null = audioUrl || null;
 
-            // In Avatar mode, Grok natively produces dialogue speech in the video - NO external TTS needed!
-            // In Non-Avatar mode, launch asynchronous Gemini TTS to generate background voiceover.
-            if (!isAvatarPresenter) {
-                grokAudioUrl = audioUrl;
-                if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
-                    try {
-                        const isIndianVoice = body.accent === 'indian' || body.voiceAccent === 'indian' || body.language === 'english_in' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
-                        const ttsScene = isIndianVoice
-                            ? "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial."
-                            : "A professional commercial voiceover studio with warm, clear, and engaging tonality.";
-                        const ttsContext = isIndianVoice
-                            ? "High converting luxury marketing video commercial with natural Indian English delivery"
-                            : "High converting commercial marketing video";
+            // Generate asynchronous Gemini TTS voiceover across the dialogue script for BOTH Avatar and Non-Avatar videos.
+            // This guarantees studio-grade human speech (no robotic artifacts) and ensures the voiceover
+            // CONTINUES seamlessly while B-rolls are playing, eliminating dead air or silent scenes!
+            if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
+                try {
+                    const isIndianVoice = body.accent === 'indian' || body.voiceAccent === 'indian' || body.language === 'english_in' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
+                    const speakerName = body.grokVoice || 'Aoede';
+                    const ttsScene = isIndianVoice
+                        ? "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial."
+                        : "A professional commercial voiceover studio with warm, clear, and engaging tonality.";
+                    const ttsContext = isIndianVoice
+                        ? "High converting luxury marketing video commercial with natural Indian English delivery"
+                        : "High converting commercial marketing video";
 
-                        console.log(`[Video Generate] Launching asynchronous Gemini TTS task for Grok Non-Avatar voiceover (Speaker: ${body.grokVoice || 'Aoede'}, Accent: ${isIndianVoice ? 'Indian' : 'American'})...`);
-                        const { taskId: ttsTaskId } = await createGeminiTTS({
-                            dialogueText: script.dialogue.trim(),
-                            speakerName: body.grokVoice || 'Aoede',
-                            style: '',
-                            scene: ttsScene,
-                            sampleContext: ttsContext
-                        });
-                        if (ttsTaskId) {
-                            console.log(`[Video Generate] Gemini TTS task launched: ${ttsTaskId}`);
-                            grokAudioUrl = `tts:${ttsTaskId}`;
-                            await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl } }).eq('id', newAsset.id);
-                        }
-                    } catch (ttsErr: any) {
-                        console.warn('[Video Generate] Asynchronous TTS voiceover launch warning:', ttsErr.message);
+                    console.log(`[Video Generate] Launching asynchronous Gemini TTS task for Grok ${isAvatarPresenter ? 'Avatar' : 'Voiceover'} video (Speaker: ${speakerName}, Accent: ${isIndianVoice ? 'Indian' : 'American'})...`);
+                    const { taskId: ttsTaskId } = await createGeminiTTS({
+                        dialogueText: script.dialogue.trim(),
+                        speakerName,
+                        style: '',
+                        scene: ttsScene,
+                        sampleContext: ttsContext
+                    });
+                    if (ttsTaskId) {
+                        console.log(`[Video Generate] Gemini TTS task launched: ${ttsTaskId}`);
+                        grokAudioUrl = `tts:${ttsTaskId}`;
+                        await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl, isAvatar: isAvatarPresenter } }).eq('id', newAsset.id);
                     }
-                } else if (grokAudioUrl) {
-                    await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl } }).eq('id', newAsset.id);
+                } catch (ttsErr: any) {
+                    console.warn('[Video Generate] Asynchronous TTS voiceover launch warning:', ttsErr.message);
                 }
-            } else {
-                console.log(`[Video Generate] Avatar mode active: Grok will speak dialogues natively. Bypassing external TTS generation.`);
+            } else if (grokAudioUrl) {
+                await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl, isAvatar: isAvatarPresenter } }).eq('id', newAsset.id);
             }
 
             console.log(`[Grok Pipeline] Launching ${prompts.length} Grok scene clips with ${convertedRefImages.length} input image(s)...`);
@@ -1085,7 +1082,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                         last_successful_task_id: convertedRefImages[0] || null,
                         aspect_ratio: "9:16",
                         status: 'Processing',
-                        audio_url: isAvatarPresenter ? 'native' : (grokAudioUrl || null),
+                        audio_url: grokAudioUrl || null,
                         video_model: 'grok',
                         final_caption: script.finalCaption || null
                     });

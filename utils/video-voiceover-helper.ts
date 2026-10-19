@@ -17,9 +17,9 @@ const supabaseAdmin = createAdminClient(
 export async function resolveVoiceoverAudio(task: any, assetId?: string | null): Promise<string | null> {
     let candidateUrl: string | null = task?.audio_url || null;
 
-    // Explicit check for native audio flag (Avatar Mode)
-    if (candidateUrl === 'native' || candidateUrl === 'none') {
-        console.log('[Voiceover Helper] Task is flagged with native audio. Bypassing voiceover resolution.');
+    // Explicit check for disabled audio flag
+    if (candidateUrl === 'none') {
+        console.log('[Voiceover Helper] Task is flagged with no audio (none). Bypassing voiceover resolution.');
         return null;
     }
 
@@ -33,14 +33,8 @@ export async function resolveVoiceoverAudio(task: any, assetId?: string | null):
                 .eq('id', assetId)
                 .maybeSingle();
             assetMetadata = assetRow?.metadata;
-            
-            // If asset explicitly denotes an Avatar video, NEVER attach or generate external voiceover
-            if (assetMetadata?.isAvatar || assetMetadata?.presenterType === 'avatar' || assetMetadata?.audioUrl === 'native') {
-                console.log(`[Voiceover Helper] Asset ${assetId} is confirmed as an Avatar video. Native Grok audio preserved.`);
-                return null;
-            }
 
-            if (!candidateUrl) {
+            if (!candidateUrl || candidateUrl === 'native') {
                 candidateUrl = assetMetadata?.audioUrl || assetRow?.voiceover_url || assetRow?.audio_url || null;
             }
         } catch (e: any) {
@@ -48,16 +42,7 @@ export async function resolveVoiceoverAudio(task: any, assetId?: string | null):
         }
     }
 
-    if (candidateUrl === 'native' || candidateUrl === 'none') {
-        return null;
-    }
-
-    // Grok Avatar mode safeguard: If video_model is grok and prompt targets presenter in Image 1 without explicit external TTS
-    const isGrokAvatar = (task?.video_model === 'grok' || assetMetadata?.videoModel === 'grok') && 
-                         (task?.prompts?.[0]?.toLowerCase().includes('image 1') || task?.prompts?.[0]?.toLowerCase().includes('presenter') || !candidateUrl);
-
-    if (isGrokAvatar && (!candidateUrl || candidateUrl === 'native')) {
-        console.log('[Voiceover Helper] Detected Grok Avatar generation without external audio. Preserving native lip sync audio.');
+    if (candidateUrl === 'none') {
         return null;
     }
 
@@ -118,13 +103,13 @@ export async function resolveVoiceoverAudio(task: any, assetId?: string | null):
         }
     }
 
-    // 4. Fallback: ONLY for non-Grok and non-Avatar models if voiceover was intended
-    if ((!candidateUrl || candidateUrl.startsWith('tts:')) && assetId && task?.video_model !== 'grok' && !assetMetadata?.isAvatar) {
+    // 4. Fallback: Synthesize on-the-fly Gemini TTS if voiceover audio was not yet resolved or generated
+    if ((!candidateUrl || candidateUrl.startsWith('tts:') || candidateUrl === 'native') && assetId) {
         try {
             const { data: assetRow } = await supabaseAdmin.from('assets').select('caption, metadata').eq('id', assetId).maybeSingle();
             const voiceText = assetRow?.caption || task?.final_caption || task?.prompts?.[0];
             if (voiceText && typeof voiceText === 'string' && voiceText.trim().length > 10) {
-                console.log(`[Voiceover Helper] Synthesizing on-the-fly Gemini TTS voiceover for Seedance asset ${assetId}...`);
+                console.log(`[Voiceover Helper] Synthesizing on-the-fly Gemini TTS voiceover for asset ${assetId}...`);
                 const { taskId: newTtsId, error: newTtsErr } = await createGeminiTTS({
                     dialogueText: voiceText.trim(),
                     speakerName: 'Aoede',

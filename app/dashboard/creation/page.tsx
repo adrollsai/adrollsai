@@ -2367,12 +2367,12 @@ export default function CreationPage() {
                       </div>
                     </div>
 
-                    {/* Voice Selection, Accent & Audio Preview control for Grok Script Review (Voiceover Mode only) */}
-                    {msg.grokStep === 'script_review' && presenterMode !== 'avatar' && (
+                    {/* Voice Selection, Accent & Audio Preview control for Grok Script Review */}
+                    {msg.grokStep === 'script_review' && (
                       <div className="flex flex-col gap-2.5 bg-gradient-to-r from-purple-50/70 to-indigo-50/70 p-3.5 rounded-2xl border border-purple-200/80 mt-1 shadow-sm">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-[10px] font-black text-purple-800 uppercase tracking-wider flex items-center gap-1.5">
-                            <Mic size={14} className="text-purple-600" /> Choose Voice & Accent:
+                            <Mic size={14} className="text-purple-600" /> Choose {presenterMode === 'avatar' ? 'Avatar ' : ''}Voice & Accent:
                           </span>
                           <div className="flex items-center gap-2">
                             {/* Accent Selector */}
@@ -2417,27 +2417,13 @@ export default function CreationPage() {
                             className="h-7 w-48 accent-purple-600 rounded-lg outline-none" 
                           />
                         </div>
-                      </div>
-                    )}
 
-                    {/* Avatar Direct Speech Notice for Grok Avatar Mode with Accent Control */}
-                    {msg.grokStep === 'script_review' && presenterMode === 'avatar' && (
-                      <div className="flex flex-col gap-2 bg-gradient-to-r from-purple-50 to-pink-50 p-3 rounded-2xl border border-purple-200/70 mt-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <Sparkles size={16} className="text-purple-600 flex-shrink-0" />
-                            <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wide">Avatar Spoken Accent:</span>
+                        {presenterMode === 'avatar' && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-purple-700 font-medium px-1">
+                            <Sparkles size={13} className="text-purple-600 shrink-0" />
+                            <span>Your Avatar will speak with this voice, and the voiceover will continue seamlessly across all B-rolls with zero silent gaps.</span>
                           </div>
-                          <select
-                            value={grokAccent}
-                            onChange={(e) => setGrokAccent(e.target.value as 'indian' | 'american')}
-                            className="bg-white border border-purple-300 text-xs font-bold text-purple-950 rounded-xl px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-purple-500 shadow-sm cursor-pointer"
-                          >
-                            <option value="indian">🇮🇳 Indian Accent</option>
-                            <option value="american">🇺🇸 American / Global</option>
-                          </select>
-                        </div>
-                        <span className="text-[11px] text-purple-700 font-medium leading-tight">Your Avatar model will speak the dialogue natively with full lip sync and an authentic {grokAccent === 'indian' ? 'Indian English' : 'American English'} delivery.</span>
+                        )}
                       </div>
                     )}
 
@@ -2460,23 +2446,13 @@ export default function CreationPage() {
                     {msg.id === messages[messages.length - 1]?.id && (
                       <div className="flex gap-2 mt-2 border-t border-slate-100 pt-3">
                         {msg.grokStep === 'script_review' ? (
-                          presenterMode === 'avatar' ? (
-                            <button
-                              onClick={() => handleApproveGrokVideo(msg.id, msg.script, msg.refImages || [], undefined, msg.imageDescriptions, msg.prompts)}
-                              disabled={isThinking}
-                              className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-purple-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
-                            >
-                              <Sparkles size={14} /> Generate Grok Avatar Video 🎬
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleGenerateGrokTTS(msg.id, msg.script.dialogue, msg.script, msg.refImages || [])}
-                              disabled={isThinking}
-                              className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-purple-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
-                            >
-                              <Mic size={14} /> Approve Script & Generate Voiceover 🎙️
-                            </button>
-                          )
+                          <button
+                            onClick={() => handleGenerateGrokTTS(msg.id, msg.script.dialogue, msg.script, msg.refImages || [])}
+                            disabled={isThinking}
+                            className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-purple-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                          >
+                            <Mic size={14} /> Approve Script & Generate Voiceover 🎙️
+                          </button>
                         ) : msg.grokStep === 'tts_review' ? (
                           <>
                             <button
@@ -2491,7 +2467,7 @@ export default function CreationPage() {
                               disabled={isThinking}
                               className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-500/10 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                             >
-                              <Sparkles size={14} /> Approve Voiceover & Generate Grok Video 🎬
+                              <Sparkles size={14} /> Approve Voiceover & Generate Grok {presenterMode === 'avatar' ? 'Avatar ' : ''}Video 🎬
                             </button>
                           </>
                         ) : msg.prompts ? (
