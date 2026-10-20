@@ -11,7 +11,7 @@ const models = [
   'models/gemini-2.0-flash-lite-001',
   'models/gemini-2.0-flash-lite',
   'models/gemini-2.5-flash',
-  'models/gemini-3.1-flash-live-preview',
+  'models/gemini-3.8-live',
   'models/gemini-3.5-flash',
   'models/gemini-2.0-flash-thinking-exp-01-21',
   'models/gemini-2.0-flash-exp-001',

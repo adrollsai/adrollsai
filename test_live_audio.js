@@ -5,7 +5,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env.local') });
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
 function testLiveAudio() {
-  const modelName = "models/gemini-3.1-flash-live-preview";
+  const modelName = "models/gemini-3.8-live";
   console.log(`Testing audio output for model "${modelName}"...`);
   const socket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`);
 

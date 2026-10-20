@@ -252,13 +252,25 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         ? `\n--- CAMPAIGN SPECIFIC GUIDELINES ---\n${campaign.custom_prompt || campaign.prompt}\n`
         : '';
 
+    const isKannadaMode = (campaignGuidance && (campaignGuidance.toLowerCase().includes('kannada') || campaignGuidance.includes('ಕನ್ನಡ'))) || campaign?.audience_filter?.language === 'kannada';
+
+    const languageInstruction = isKannadaMode
+        ? `LANGUAGE REQUIREMENT:
+- MANDATORY STARTING LANGUAGE: YOU MUST BEGIN THE CALL DIRECTLY IN NATURAL, POLITE, FLUENT KANNADA (Kannada words spoken naturally and warmly).
+- DYNAMIC MULTILINGUAL SWITCHING: If the caller replies in English, Hindi, Hinglish, Telugu, Tamil, or asks to speak in another language, IMMEDIATELY switch smoothly to their preferred language and continue the rest of the conversation in that language without any hesitation!`
+        : `LANGUAGE REQUIREMENT:
+- DEFAULT TO NATURAL, FLUENT HINGLISH (conversational mix of Hindi and English, written in Latin script).
+- MULTILINGUAL ADAPTATION: If the caller speaks in Kannada, Telugu, Tamil, Punjabi, English, Hindi, or another regional language, IMMEDIATELY switch to their language and converse comfortably, fluently, and naturally!`;
+
+    const effectiveAck = isKannadaMode
+        ? (isFemale ? `"Haudu", "Sari", "Khanditha", "Ahan", "Hmm", "Samajh rahi hoon"` : `"Haudu", "Sari", "Khanditha", "Ahan", "Hmm", "Samajh raha hoon"`)
+        : backchannelAck;
+
     const systemInstruction = `
 You are an expert, professional outbound AI relationship representative calling on behalf of "${companyName}".
 You are speaking directly over the phone with ${leadName}.
 
-LANGUAGE REQUIREMENT:
-- DEFAULT TO NATURAL, FLUENT HINGLISH (conversational mix of Hindi and English, written in Latin script).
-- MULTILINGUAL ADAPTATION: If the caller speaks in Punjabi, English, Hindi, or another regional language, IMMEDIATELY switch to their language and converse comfortably, fluently, and naturally!
+${languageInstruction}
 
 ${genderGrammarInstruction}
 
@@ -272,7 +284,7 @@ CRITICAL CONVERSATIONAL STYLE (BE LESS TALKATIVE, LISTEN MORE):
 1. BE LESS TALKATIVE, LISTEN MUCH MORE: Never give long speeches, lectures, or sales pitches. Speak in short, crisp turns (under 10-15 words, maximum 1 short sentence per turn). Give the caller the maximum space to speak. You are here to LISTEN.
 2. ONE QUESTION AT A TIME: Ask at most one quick question at a time, then stop talking immediately and listen to the customer.
 3. NATURAL ACTIVE LISTENING & HUMAN SOUNDS:
-   - When listening and acknowledging the caller, use natural human conversational fillers like ${backchannelAck}.
+   - When listening and acknowledging the caller, use natural human conversational fillers like ${effectiveAck}.
    - Frequently begin turns with natural conversational nods such as "Hmm...", "Ahan...", "Haan ji...", "Achha...", or "Ji bilkul..." to sound completely human, attentive, and engaged on the call.
    - If the customer explains something, acknowledge with a gentle verbal nod before giving a brief answer.
 4. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately, acknowledge what they said with "Haan ji" or "Ahan", and address their point directly and concisely.
@@ -287,7 +299,7 @@ ${resolvedQuestionsInstruction}
 
     const setupPayload = {
         setup: {
-            model: "models/gemini-3.1-flash-live-preview",
+            model: process.env.GEMINI_LIVE_MODEL || "models/gemini-3.8-live",
             generationConfig: {
                 responseModalities: ["AUDIO"],
                 speechConfig: {
@@ -1092,13 +1104,24 @@ wss.on('connection', (wsConnection, req) => {
                     geminiReady = true;
 
                     const safeCompanyName = companyName || profile?.business_name || 'Bioque Estates';
-                    const safeProduct = targetProduct || 'OMAXE AMRITSAR Residential Plots';
+                    const safeProduct = targetProduct || 'our project';
                     const safeName = (leadName && leadName !== 'there') ? leadName.split(' ')[0] : '';
                     const nameGreeting = safeName ? `Hi ${safeName} ji` : `Hi ji`;
                     const bolRaha = isMaleVoice(voiceName, profile?.voice_gender) ? 'bol raha hoon' : 'bol rahi hoon';
-                    const openGreeting = `Haan ji, ${nameGreeting}, kaise hain aap? Main ${safeCompanyName} se ${bolRaha}, aapne Facebook par ${safeProduct} ke regarding inquiry form fill kiya tha. Kya do minute baat ho sakti hai?`;
 
-                    const textPrompt = `The call has just connected and "Hello?" was already spoken to the caller upon pickup. Speak EXACTLY this greeting message now in natural, fluent Hinglish and nothing else: "${openGreeting}"`;
+                    let openGreeting = campaign?.audience_filter?.greeting;
+                    if (!openGreeting) {
+                        const campPrompt = (campaign?.custom_prompt || campaign?.prompt || '').toLowerCase();
+                        const isKn = campPrompt.includes('kannada') || campPrompt.includes('ಕನ್ನಡ') || campaign?.audience_filter?.language === 'kannada';
+                        if (isKn) {
+                            const safeKnName = safeName ? `${safeName} avare` : 'avare';
+                            openGreeting = `Namaskara ${safeKnName}, hegiddira? Naanu ${safeCompanyName} inda call maadtha iddini. Neevu Facebook alli ${safeProduct} bagge inquiry form fill maadidri. Ondu nimisha maathadbahuda?`;
+                        } else {
+                            openGreeting = `Haan ji, ${nameGreeting}, kaise hain aap? Main ${safeCompanyName} se ${bolRaha}, aapne Facebook par ${safeProduct} ke regarding inquiry form fill kiya tha. Kya do minute baat ho sakti hai?`;
+                        }
+                    }
+
+                    const textPrompt = `The call has just connected and "Hello?" was already spoken to the caller upon pickup. Speak EXACTLY this greeting message now in a warm, natural tone in the language of the greeting, and nothing else: "${openGreeting}"`;
 
                     const initialTurn = {
                         clientContent: {

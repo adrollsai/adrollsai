@@ -278,7 +278,7 @@ export default function AiCallDemoPage() {
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium">
-                Live interactive prospect calling engine powered by Gemini 3.1 Flash Live & Vobiz
+                Live interactive prospect calling engine powered by Gemini 3.8 Live & Vobiz
               </p>
             </div>
           </div>

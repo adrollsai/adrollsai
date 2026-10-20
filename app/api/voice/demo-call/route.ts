@@ -66,6 +66,15 @@ export async function POST(req: Request) {
 
         console.log(`[AI CALL DEMO] Triggering demo call to ${cleanPhone} (${prospectName}) from Bioque Estates line (${BIOQUE_CALLER_NUMBER})...`)
 
+        const isKannada = templateId === 'amritha_vana' ||
+            businessName?.toLowerCase().includes('amritha') ||
+            customPrompt.toLowerCase().includes('kannada') ||
+            customPrompt.includes('ಕನ್ನಡ');
+
+        const initialGreeting = isKannada
+            ? `Namaskara ${prospectName} avare, hegiddira? Naanu Amritha Vana inda call maadtha iddini. Neevu Facebook alli Amritha Vana luxury farm plots bagge inquiry submit maadidri. Ondu nimisha maathadbahuda?`
+            : `Hi ${prospectName} ji, kaise hain aap?`;
+
         // 1. Create a dedicated demo voice campaign for prompt & voice routing
         const campaignName = `AI Call Demo - ${prospectName} (${templateTitle})`
         const { data: campaign, error: campErr } = await supabaseAdmin
@@ -76,7 +85,8 @@ export async function POST(req: Request) {
                 audience_filter: {
                     voice_name: voiceName,
                     is_demo: true,
-                    greeting: `Hi ${prospectName} ji, kaise hain aap?`
+                    language: isKannada ? 'kannada' : 'hinglish',
+                    greeting: initialGreeting
                 },
                 custom_prompt: customPrompt,
                 status: 'running'
@@ -113,7 +123,17 @@ export async function POST(req: Request) {
                     demo_voice_name: voiceName,
                     demo_prompt: customPrompt,
                     triggered_by_admin: callerProfile.email,
-                    triggered_at: new Date().toISOString()
+                    triggered_at: new Date().toISOString(),
+                    ...(isKannada || templateId === 'amritha_vana' ? {
+                        'primary_interest': 'Luxury Weekend Farmhouse with Dome',
+                        'preferred_configuration_and_budget': '₹50 Lakhs (6,000 Sq.Ft Plot + Dome Launch Offer)',
+                        'site_visit_timeline': 'This Coming Weekend',
+                        meta_ad_origin: {
+                            campaign_name: 'Amritha Vana Mysore - Luxury Farm Retreats',
+                            product_name: 'Amritha Vana Luxury Farm Plot + Dome (₹50L Launch Offer)',
+                            ad_name: 'Ad 1 - Luxury Glamping & Dome Retreat'
+                        }
+                    } : {})
                 }
             })
             .select()
