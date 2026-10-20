@@ -144,7 +144,14 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
 
     let leadPhone = lead?.phone || null;
     let leadName = lead?.name || 'there';
-    let companyName = profile?.business_name || 'Bioque Estates';
+    let demoBusinessName = null;
+    if (lead?.custom_fields) {
+        try {
+            const cf = typeof lead.custom_fields === 'string' ? JSON.parse(lead.custom_fields) : lead.custom_fields;
+            if (cf?.demo_business_name) demoBusinessName = cf.demo_business_name;
+        } catch (e) {}
+    }
+    let companyName = demoBusinessName || campaign?.audience_filter?.business_name || profile?.business_name || 'Nobogent Client';
     let targetProduct = null;
 
     // Check WhatsApp history
@@ -253,16 +260,28 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         : '';
 
     const campGuidanceLower = campaignGuidance.toLowerCase();
-    const isIndianEnglishMode = campGuidanceLower.includes('indian accent english') || campaign?.audience_filter?.language === 'english';
-    const isKannadaMode = !isIndianEnglishMode && ((campGuidanceLower.includes('kannada') || campaignGuidance.includes('ಕನ್ನಡ')) || campaign?.audience_filter?.language === 'kannada');
+    const isExplicitHinglish = campGuidanceLower.includes('hinglish') || (campGuidanceLower.includes('hindi') && !campGuidanceLower.includes('indian english'));
+    const isKannadaMode = (campGuidanceLower.includes('kannada') || campaignGuidance.includes('ಕನ್ನಡ')) || campaign?.audience_filter?.language === 'kannada';
+    const isIndianEnglishMode = !isExplicitHinglish && (
+        campGuidanceLower.includes('indian accent english') ||
+        campGuidanceLower.includes('indian english') ||
+        campGuidanceLower.includes('indian accent') ||
+        campGuidanceLower.includes('amritha') ||
+        campGuidanceLower.includes('mysore') ||
+        campGuidanceLower.includes('bangalore') ||
+        campaign?.audience_filter?.language === 'english' ||
+        (!isKannadaMode && !isExplicitHinglish)
+    );
 
     let languageInstruction;
     let effectiveAck = backchannelAck;
 
     if (isIndianEnglishMode) {
-        languageInstruction = `LANGUAGE REQUIREMENT:
-- MANDATORY STARTING LANGUAGE: YOU MUST SPEAK BY DEFAULT IN NATURAL, PROFESSIONAL, COURTEOUS INDIAN ACCENT ENGLISH (clear, warm, professional Indian English phrasing).
-- DYNAMIC MULTILINGUAL SWITCHING: If the caller replies in Kannada, Hindi/Hinglish, Telugu, Tamil, or asks to speak in Kannada or another regional language, IMMEDIATELY switch smoothly to their preferred language and continue the rest of the conversation fluently in that language without hesitation!`;
+        languageInstruction = `CRITICAL ACCENT, PRONUNCIATION & LANGUAGE MANDATE:
+- MANDATORY STARTING LANGUAGE: You MUST speak exclusively in NATURAL, POLITE, COURTEOUS INDIAN ENGLISH.
+- ABSOLUTE ACCENT RULE (STRICT NO-AMERICAN ACCENT): You MUST speak with an authentic, professional Indian English accent (urban Indian professional accent from Bangalore/Mumbai/Delhi). NEVER USE AN AMERICAN, BRITISH, OR WESTERN ACCENT UNDER ANY CIRCUMSTANCE. Any American accent is strictly prohibited and considered an immediate failure.
+- DICTION & CADENCE: Use crisp Indian English phonetics, clear Indian cadence and intonation, and authentic Indian phrasing (e.g. "Do you have a quick minute?", "Shall I connect you with our relationship manager?").
+- DYNAMIC MULTILINGUAL SWITCHING: If the caller replies in Kannada, Hindi/Hinglish, Telugu, Tamil, or asks to speak in a regional language, IMMEDIATELY switch smoothly to their preferred language and continue fluently in that language without hesitation!`;
         effectiveAck = `"Yes", "Sure", "Right", "Understood", "Definitely", "Absolutely", "Hmm"`;
     } else if (isKannadaMode) {
         languageInstruction = `LANGUAGE REQUIREMENT:
@@ -275,6 +294,10 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
 - MULTILINGUAL ADAPTATION: If the caller speaks in Kannada, Telugu, Tamil, Punjabi, English, Hindi, or another regional language, IMMEDIATELY switch to their language and converse comfortably, fluently, and naturally!`;
     }
 
+    const conversationNods = isIndianEnglishMode
+        ? `"Hmm...", "Yes...", "Right...", "Definitely...", or "Understood..."`
+        : `"Hmm...", "Ahan...", "Haan ji...", "Achha...", or "Ji bilkul..."`;
+
     const systemInstruction = `
 You are an expert, professional outbound AI relationship representative calling on behalf of "${companyName}".
 You are speaking directly over the phone with ${leadName}.
@@ -282,6 +305,8 @@ You are speaking directly over the phone with ${leadName}.
 ${languageInstruction}
 
 ${genderGrammarInstruction}
+
+${campaignGuidance ? `${campaignGuidance}\n` : ''}
 
 KEY OBJECTIVE & CALL FLOW:
 1. REMIND PROSPECT: Remind ${leadName} that they recently filled an inquiry form on Facebook regarding ${targetProduct}.
@@ -294,15 +319,14 @@ CRITICAL CONVERSATIONAL STYLE (BE LESS TALKATIVE, LISTEN MORE):
 2. ONE QUESTION AT A TIME: Ask at most one quick question at a time, then stop talking immediately and listen to the customer.
 3. NATURAL ACTIVE LISTENING & HUMAN SOUNDS:
    - When listening and acknowledging the caller, use natural human conversational fillers like ${effectiveAck}.
-   - Frequently begin turns with natural conversational nods such as "Hmm...", "Ahan...", "Haan ji...", "Achha...", or "Ji bilkul..." to sound completely human, attentive, and engaged on the call.
+   - Frequently begin turns with natural conversational nods such as ${conversationNods} to sound completely human, attentive, and engaged on the call.
    - If the customer explains something, acknowledge with a gentle verbal nod before giving a brief answer.
-4. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately, acknowledge what they said with "Haan ji" or "Ahan", and address their point directly and concisely.
+4. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately, acknowledge what they said with ${isIndianEnglishMode ? '"Yes" or "Sure"' : '"Haan ji" or "Ahan"'}, and address their point directly and concisely.
 5. BROCHURE & PRICING: If the customer asks for brochure or pricing, use the 'send_whatsapp_info' tool to dispatch it to their WhatsApp.
 6. APPOINTMENTS: When the customer agrees to connect or gives a preferred time with the Relationship Manager, trigger the 'book_appointment_slot' tool.
 7. ENDING CALL: When the conversation naturally finishes or the customer says bye / is busy, politely say goodbye and trigger the 'end_call' tool.
 
 ${formQuestionsSummary}
-${campaignGuidance}
 ${resolvedQuestionsInstruction}
 `.trim();
 
@@ -1119,20 +1143,29 @@ wss.on('connection', (wsConnection, req) => {
                     const bolRaha = isMaleVoice(voiceName, profile?.voice_gender) ? 'bol raha hoon' : 'bol rahi hoon';
 
                     let openGreeting = campaign?.audience_filter?.greeting;
+                    const campPrompt = (campaign?.custom_prompt || campaign?.prompt || '').toLowerCase();
+                    const isIndianEn = campPrompt.includes('indian accent english') || 
+                                       campPrompt.includes('indian english') || 
+                                       campPrompt.includes('indian accent') || 
+                                       campaign?.audience_filter?.language === 'english' || 
+                                       (!campPrompt.includes('kannada') && !campPrompt.includes('hinglish') && !campPrompt.includes('hindi'));
+
                     if (!openGreeting) {
-                        const campPrompt = (campaign?.custom_prompt || campaign?.prompt || '').toLowerCase();
-                        if (campPrompt.includes('indian accent english') || campaign?.audience_filter?.language === 'english') {
+                        if (isIndianEn) {
                             const safeEnName = safeName ? safeName : 'there';
-                            openGreeting = `Hello ${safeEnName}, how are you doing today? I am calling from ${safeCompanyName} regarding your inquiry form on Facebook for ${safeProduct}. Do you have a quick minute to speak?`;
+                            openGreeting = `Hello ${safeEnName}, how are you doing today? I am calling from ${safeCompanyName} regarding your inquiry form on Facebook. Do you have a quick minute to speak?`;
                         } else if (campPrompt.includes('kannada') || campPrompt.includes('ಕನ್ನಡ') || campaign?.audience_filter?.language === 'kannada') {
                             const safeKnName = safeName ? `${safeName} avare` : 'avare';
-                            openGreeting = `Namaskara ${safeKnName}, hegiddira? Naanu ${safeCompanyName} inda call maadtha iddini. Neevu Facebook alli ${safeProduct} bagge inquiry form fill maadidri. Ondu nimisha maathadbahuda?`;
+                            openGreeting = `Namaskara ${safeKnName}, hegiddira? Naanu ${safeCompanyName} inda call maadtha iddini. Neevu Facebook alli inquiry form fill maadidri. Ondu nimisha maathadbahuda?`;
                         } else {
-                            openGreeting = `Haan ji, ${nameGreeting}, kaise hain aap? Main ${safeCompanyName} se ${bolRaha}, aapne Facebook par ${safeProduct} ke regarding inquiry form fill kiya tha. Kya do minute baat ho sakti hai?`;
+                            openGreeting = `Haan ji, ${nameGreeting}, kaise hain aap? Main ${safeCompanyName} se ${bolRaha}, aapne Facebook par inquiry form fill kiya tha. Kya do minute baat ho sakti hai?`;
                         }
                     }
 
-                    const textPrompt = `The call has just connected and "Hello?" was already spoken to the caller upon pickup. Speak EXACTLY this greeting message now in a warm, natural tone in the language of the greeting, and nothing else: "${openGreeting}"`;
+                    const accentDirective = isIndianEn
+                        ? "in a warm, natural, professional Indian accent (distinctly Indian English, not American)"
+                        : "in a warm, natural tone in the language of the greeting";
+                    const textPrompt = `The call has just connected and "Hello?" was already spoken to the caller upon pickup. Speak EXACTLY this greeting message now ${accentDirective}, and nothing else: "${openGreeting}"`;
 
                     const initialTurn = {
                         clientContent: {

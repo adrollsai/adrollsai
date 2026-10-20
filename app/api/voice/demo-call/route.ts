@@ -66,15 +66,41 @@ export async function POST(req: Request) {
 
         console.log(`[AI CALL DEMO] Triggering demo call to ${cleanPhone} (${prospectName}) from Bioque Estates line (${BIOQUE_CALLER_NUMBER})...`)
 
-        const promptLower = customPrompt.toLowerCase();
-        const isIndianEnglish = promptLower.includes('indian accent english') || templateId === 'amritha_vana';
-        const isKannada = !isIndianEnglish && (promptLower.includes('kannada') || customPrompt.includes('ಕನ್ನಡ'));
+        // 1. Extract greeting directly from customPrompt if present
+        let extractedGreeting: string | null = null;
+        const greetingMatch = customPrompt.match(/(?:GREETING|Opening Greeting|1\.\s*(?:Opening\s*)?Greeting|Opening):\s*["']?([^"'\n\r]+)["']?/i);
+        if (greetingMatch && greetingMatch[1]) {
+            extractedGreeting = greetingMatch[1]
+                .replace(/\{name\}/gi, prospectName)
+                .replace(/\{lead_name\}/gi, prospectName)
+                .replace(/\{business_name\}/gi, businessName)
+                .replace(/\{company_name\}/gi, businessName)
+                .trim();
+        }
 
-        const initialGreeting = isIndianEnglish
-            ? `Hello ${prospectName}, how are you doing today? I am calling from ${businessName} regarding your inquiry on Facebook for our Amritha Vana luxury farm retreat plots. Do you have a quick minute?`
-            : isKannada
-            ? `Namaskara ${prospectName} avare, hegiddira? Naanu Amritha Vana inda call maadtha iddini. Neevu Facebook alli Amritha Vana luxury farm plots bagge inquiry submit maadidri. Ondu nimisha maathadbahuda?`
-            : `Hi ${prospectName} ji, kaise hain aap?`;
+        const promptLower = customPrompt.toLowerCase();
+        const isExplicitHinglish = promptLower.includes('hinglish') || (promptLower.includes('hindi') && !promptLower.includes('indian english'));
+        const isKannada = promptLower.includes('kannada') || customPrompt.includes('ಕನ್ನಡ');
+        const isIndianEnglish = !isExplicitHinglish && (
+            promptLower.includes('indian english') ||
+            promptLower.includes('indian accent') ||
+            templateId === 'amritha_vana' ||
+            (!isKannada && !isExplicitHinglish)
+        );
+
+        let initialGreeting = extractedGreeting;
+        if (!initialGreeting) {
+            if (isKannada) {
+                initialGreeting = `Namaskara ${prospectName} avare, hegiddira? Naanu ${businessName} inda call maadtha iddini. Neevu Facebook alli inquiry submit maadidri. Ondu nimisha maathadbahuda?`;
+            } else if (isIndianEnglish) {
+                initialGreeting = `Hello ${prospectName}, how are you doing today? I am calling from ${businessName} regarding your inquiry on Facebook. Do you have a quick minute to speak?`;
+            } else {
+                initialGreeting = `Hi ${prospectName} ji, kaise hain aap? Main ${businessName} se call kar rahi hoon aapki inquiry ke regarding.`;
+            }
+        }
+
+        const detectedLanguage = isIndianEnglish ? 'english' : (isKannada ? 'kannada' : 'hinglish');
+        console.log(`[AI CALL DEMO] Configured Greeting: "${initialGreeting}" (Language: ${detectedLanguage})`);
 
         // 1. Create a dedicated demo voice campaign for prompt & voice routing
         const campaignName = `AI Call Demo - ${prospectName} (${templateTitle})`
