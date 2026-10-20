@@ -37,9 +37,9 @@ export async function POST(req: Request) {
         const {
             prospectPhone,
             prospectName = 'Prospect',
-            voiceName = 'Aoede',
-            templateId = 'real_estate',
-            templateTitle = 'Real Estate Luxury Advisory',
+            voiceName = 'Nova',
+            templateId = 'amritha_vana',
+            templateTitle = 'Amritha Vana Luxury Farm Retreats',
             businessName = 'Bioque Estates International',
             customPrompt
         } = body
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
             } else if (isExplicitHinglish) {
                 initialGreeting = `Hi ${prospectName} ji, kaise hain aap? Main ${businessName} se call kar rahi hoon aapki inquiry ke regarding.`;
             } else {
-                initialGreeting = `Hello ${prospectName}, how are you doing today? I am calling from ${businessName} regarding your inquiry on Facebook. Do you have a quick minute to speak?`;
+                initialGreeting = `Hello ${prospectName}, I am Sahana calling from ${businessName} regarding your inquiry on Facebook. Do you have a quick minute to speak?`;
             }
         }
 

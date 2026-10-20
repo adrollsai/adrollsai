@@ -275,7 +275,12 @@ function CRMPageContent() {
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
   const searchParams = useSearchParams()
-  const impersonateId = searchParams.get('impersonate')
+  const rawImpersonateId = searchParams.get('impersonate')
+  const impersonateId = useMemo(() => {
+    if (!rawImpersonateId) return null
+    const cleaned = rawImpersonateId.trim().replace(/\s+/g, '-')
+    return cleaned !== 'null' && cleaned !== 'undefined' ? cleaned : null
+  }, [rawImpersonateId])
   
   // --- ROLE & HIERARCHY STATE ---
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent'>('admin')
@@ -982,7 +987,8 @@ function CRMPageContent() {
       setUserId(user.id)
 
       const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
-      const impersonateId = urlParams.get('impersonate')
+      const rawImp = urlParams.get('impersonate')
+      const impersonateId = rawImp ? rawImp.trim().replace(/\s+/g, '-') : null
 
       // Get profile for role resolution
       const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, full_name, enable_distribution, ad_account_id, auto_call_new_leads, badges').eq('id', user.id).single()
@@ -3314,10 +3320,37 @@ END:VCARD\n`
                 <p className="text-sm font-medium animate-pulse">Loading Pipeline...</p>
             </div>
         ) : filteredLeads.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-24 text-slate-400 bg-white rounded-[2.5rem] border border-slate-200/60 border-dashed">
+            <div className="flex flex-col items-center justify-center py-24 text-slate-400 bg-white rounded-[2.5rem] border border-slate-200/60 border-dashed px-6 text-center">
                 <Users size={48} className="text-slate-200 mb-4" />
-                <p className="text-base font-bold text-slate-600">No leads found.</p>
-                <p className="text-sm mt-1">Adjust filters or wait for new leads to sync.</p>
+                <p className="text-base font-bold text-slate-600">
+                    {leads.length > 0 ? "No leads match current filters." : "No leads found."}
+                </p>
+                <p className="text-sm mt-1 max-w-md text-slate-400">
+                    {leads.length > 0
+                        ? `This workspace has ${leads.length} leads loaded, but active filters (campaign, agent, date range, or pipeline stage) are hiding them.`
+                        : "Adjust filters or wait for new leads to sync."}
+                </p>
+                {(leads.length > 0 || selectedCampaigns.length > 0 || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || crmCustomDate || (crmStartDate && crmEndDate) || selectedSpecificStage !== 'ALL') && (
+                    <button
+                        onClick={() => {
+                            setSelectedCampaigns([])
+                            setSelectedForm('')
+                            setSelectedAgentFilter('ALL')
+                            setSelectedDateRange('ALL')
+                            setCrmCustomDate('')
+                            setCrmStartDate('')
+                            setCrmEndDate('')
+                            setSelectedDnpFilter('ALL')
+                            setSelectedNextActionFilter('ALL')
+                            setSelectedNextActionType('ALL')
+                            setSelectedSpecificStage('ALL')
+                            setSearchQuery('')
+                        }}
+                        className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer"
+                    >
+                        Clear All Filters
+                    </button>
+                )}
             </div>
         ) : (
             <>

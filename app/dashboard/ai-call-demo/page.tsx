@@ -36,8 +36,8 @@ export default function AiCallDemoPage() {
   const [adminEmail, setAdminEmail] = useState('')
 
   // --- Form State ---
-  const [selectedTemplateId, setSelectedTemplateId] = useState('real_estate')
-  const [selectedVoice, setSelectedVoice] = useState('Aoede')
+  const [selectedTemplateId, setSelectedTemplateId] = useState('amritha_vana')
+  const [selectedVoice, setSelectedVoice] = useState('Nova')
   const [prospectPhone, setProspectPhone] = useState('')
   const [prospectName, setProspectName] = useState('Rohan Sharma')
   const [businessName, setBusinessName] = useState('Bioque Estates International')
@@ -411,7 +411,7 @@ export default function AiCallDemoPage() {
                   </div>
                   <div>
                     <h3 className="font-bold text-base text-slate-900">Voice Selection</h3>
-                    <p className="text-[11px] text-slate-500 font-medium">Default: Aoede (warm natural Indian consultative female voice)</p>
+                    <p className="text-[11px] text-slate-500 font-medium">Default: Nova (natural Indian English consultative female voice)</p>
                   </div>
                 </div>
                 <span className="text-xs font-mono font-bold text-purple-700 bg-purple-50 px-3 py-1 rounded-xl border border-purple-200">

@@ -94,7 +94,7 @@ app.get('/health', (req, res) => {
 
 // Vobiz Answer XML endpoint (Returns Stream XML directly to Vobiz)
 
-async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName = 'Aoede') {
+async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName = 'Nova') {
     const campaignPromise = campaignId
         ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
         : Promise.resolve({ data: null });
@@ -246,7 +246,7 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
     }
 
     const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
-    const isFemale = vLower.includes('aoede') || vLower.includes('kore') || vLower.includes('female');
+    const isFemale = vLower.includes('nova') || vLower.includes('vega') || vLower.includes('capella') || vLower.includes('lyra') || vLower.includes('aoede') || vLower.includes('kore') || vLower.includes('female');
     const genderGrammarInstruction = isFemale
         ? `GENDER IDENTITY (FEMALE): You are a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon", "Call kar RAHI thi", "Samajh RAHI hoon"). NEVER use masculine endings.`
         : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHA hoon", "Main aapki help kar SAKTA hoon", "Call kar RAHA tha", "Samajh RAHA hoon").`;
@@ -278,9 +278,10 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
 
     if (isIndianEnglishMode) {
         languageInstruction = `CRITICAL ACCENT, PRONUNCIATION & LANGUAGE MANDATE:
-- MANDATORY STARTING LANGUAGE: You MUST speak exclusively in NATURAL, POLITE, COURTEOUS INDIAN ENGLISH.
-- ABSOLUTE ACCENT RULE (STRICT NO-AMERICAN ACCENT): You MUST speak with an authentic, professional Indian English accent (urban Indian professional accent from Bangalore/Mumbai/Delhi). NEVER USE AN AMERICAN, BRITISH, OR WESTERN ACCENT UNDER ANY CIRCUMSTANCE. Any American accent is strictly prohibited and considered an immediate failure.
-- DICTION & CADENCE: Use crisp Indian English phonetics, clear Indian cadence and intonation, and authentic Indian phrasing (e.g. "Do you have a quick minute?", "Shall I connect you with our relationship manager?").
+- MANDATORY STARTING LANGUAGE: You MUST speak exclusively in NATURAL, POLITE, COURTEOUS URBAN INDIAN ENGLISH (South Indian / Bangalore professional cadence).
+- STRICT ACCENT DIRECTIVE (NO AMERICAN ACCENT): You MUST speak with an authentic, professional Indian English accent (crisp non-rhotic pronunciation, warm Indian intonation and inflection, clear syllables). NEVER USE AN AMERICAN, BRITISH, OR WESTERN ACCENT. Any American accent is strictly prohibited.
+- AUTHENTIC PRONUNCIATION: Pronounce Indian names and words authentically: "Amritha Vana", "Mysore-Madikeri Road", "Rahul", "Suresh".
+- NATURAL INDIAN CADENCE & PHRASING: Use authentic Indian professional phrasing (e.g. "Do you have a quick minute to speak?", "Shall I connect you with our relationship manager?"). Avoid Americanisms like "How are you doing today".
 - DYNAMIC MULTILINGUAL SWITCHING: If the caller replies in Kannada, Hindi/Hinglish, Telugu, Tamil, or asks to speak in a regional language, IMMEDIATELY switch smoothly to their preferred language and continue fluently in that language without hesitation!`;
         effectiveAck = `"Yes", "Sure", "Right", "Understood", "Definitely", "Absolutely", "Hmm"`;
     } else if (isKannadaMode) {
@@ -332,13 +333,13 @@ ${resolvedQuestionsInstruction}
 
     const setupPayload = {
         setup: {
-            model: process.env.GEMINI_LIVE_MODEL || "models/gemini-3.8-live",
+            model: process.env.GEMINI_LIVE_MODEL || "models/gemini-3.1-flash-live-preview",
             generationConfig: {
                 responseModalities: ["AUDIO"],
                 speechConfig: {
                     voiceConfig: {
                         prebuiltVoiceConfig: {
-                            voiceName: voiceName || 'Aoede'
+                            voiceName: voiceName || 'Nova'
                         }
                     }
                 }
@@ -414,7 +415,7 @@ ${resolvedQuestionsInstruction}
     };
 }
 
-async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Aoede') {
+async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Nova') {
     if (!leadId || !profileId) return null;
     const existing = prewarmedPool.get(leadId);
     if (existing && !existing.used && (Date.now() - existing.createdAt < 60000)) {
@@ -510,7 +511,7 @@ app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
     // Auto-prewarm if not already prewarmed
     if (leadId && profileId && !prewarmedPool.has(leadId)) {
         console.log(`[BRIDGE VOBIZ-XML] Auto-prewarming session for lead ${leadId}...`);
-        prewarmSession(leadId, profileId, campaignId, req.query.voiceName || 'Aoede');
+        prewarmSession(leadId, profileId, campaignId, req.query.voiceName || 'Nova');
     }
     console.log(`[BRIDGE VOBIZ-XML] Served Voice XML to Vobiz for lead ${leadId}:\n${xml}`);
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
@@ -621,7 +622,7 @@ app.post('/prewarm', async (req, res) => {
             return res.status(400).json({ error: 'Missing leadId or profileId in prewarm request.' });
         }
         console.log(`[PREWARM] Prewarm request for lead: ${leadId}, profile: ${profileId}`);
-        prewarmSession(leadId, profileId, campaignId, voiceName || 'Aoede');
+        prewarmSession(leadId, profileId, campaignId, voiceName || 'Nova');
         res.json({ status: 'prewarming_started', leadId });
     } catch (err) {
         console.error('[PREWARM] Error in prewarm handler:', err);
@@ -821,7 +822,7 @@ if (isVobiz) {
 // Audio Signal Processing & Noise-Suppressed Stream Processor
 function isMaleVoice(vName, gender) {
     const str = `${vName || ''} ${gender || ''}`.toLowerCase();
-    return str.includes('male') || str.includes('fenrir') || str.includes('puck') || str.includes('charon') || str.includes('orus') || str.includes('zephyr') || str.includes('alcor') || str.includes('umbriel') || str.includes('guy');
+    return str.includes('male') || str.includes('fenrir') || str.includes('puck') || str.includes('charon') || str.includes('orus') || str.includes('zephyr') || str.includes('alcor') || str.includes('umbriel') || str.includes('guy') || str.includes('orion') || str.includes('pegasus') || str.includes('dipper');
 }
 
 function calculateRMS(pcm16Array) {
@@ -951,7 +952,7 @@ wss.on('connection', (wsConnection, req) => {
     let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
     let greetingPlayed = false;
-    let voiceName = queryVoiceName || 'Aoede';
+    let voiceName = queryVoiceName || 'Nova';
 
     const audioProcessor = new NoiseSuppressedAudioProcessor();
     let isCallHangingUp = false;
@@ -1044,7 +1045,7 @@ wss.on('connection', (wsConnection, req) => {
                     profileId = data.customParameters?.profileId || data.start?.customParameters?.profileId || queryProfileId;
                     var campaignId = data.customParameters?.campaignId || data.start?.customParameters?.campaignId || queryCampaignId;
                     greetingPlayed = (data.customParameters?.greetingPlayed || data.start?.customParameters?.greetingPlayed) === 'true';
-                    voiceName = queryVoiceName || data.customParameters?.voiceName || data.start?.customParameters?.voiceName || voiceName || 'Aoede';
+                    voiceName = queryVoiceName || data.customParameters?.voiceName || data.start?.customParameters?.voiceName || voiceName || 'Nova';
                     console.log(`[BRIDGE] Vobiz stream started. StreamId: ${vobizStreamId}, CallId: ${vobizCallId}, Format: ${vobizContentType}, leadId: ${leadId}, profileId: ${profileId}`);
 
                     // Trigger non-blocking background REST recording on active call
@@ -1075,7 +1076,7 @@ wss.on('connection', (wsConnection, req) => {
                     profileId = data.start?.customParameters?.profileId || queryProfileId;
                     var campaignId = data.start?.customParameters?.campaignId || queryCampaignId;
                     greetingPlayed = data.start?.customParameters?.greetingPlayed === 'true';
-                    voiceName = data.start?.customParameters?.voiceName || 'Aoede';
+                    voiceName = data.start?.customParameters?.voiceName || 'Nova';
                     console.log(`[BRIDGE] Twilio call started. StreamSid: ${twilioStreamSid}, CallSid: ${twilioCallSid}, leadId: ${leadId}, profileId: ${profileId}`);
                 }
 
@@ -1085,12 +1086,10 @@ wss.on('connection', (wsConnection, req) => {
                     return;
                 }
 
-                // Play instant crisp 0.6s "Hello?" pickup greeting immediately upon answer (<10ms)
+                // Do NOT play pre-recorded American audio clips on connect.
+                // Gemini Live generates the authentic Indian accent greeting turn directly upon session connection (<200ms).
                 const isMale = isMaleVoice(voiceName, data.customParameters?.voice_gender || data.start?.customParameters?.voice_gender || profileData?.voice_gender || profile?.voice_gender);
-                const initialVoice = isMale ? 'hello_male' : 'hello_female';
-                console.log(`[BRIDGE] Selected initial pickup greeting '${initialVoice}' for voice '${voiceName}' (isMale: ${isMale})`);
-                console.log(`[BRIDGE] Instantly streaming '${initialVoice}' (0.6s) audio to caller upon connect...`);
-                playClipToCaller(wsConnection, initialVoice, isVobiz, vobizStreamId || twilioStreamSid);
+                console.log(`[BRIDGE] Selected voice '${voiceName}' (isMale: ${isMale}) - dynamic Gemini stream active`);
                 greetingPlayed = true;
 
                 // 1. Retrieve pre-warmed session or initialize Gemini Live session on-demand
@@ -1180,7 +1179,7 @@ wss.on('connection', (wsConnection, req) => {
                     if (!openGreeting) {
                         if (isIndianEn) {
                             const safeEnName = safeName ? safeName : 'there';
-                            openGreeting = `Hello ${safeEnName}, how are you doing today? I am calling from ${safeCompanyName} regarding your inquiry form on Facebook. Do you have a quick minute to speak?`;
+                            openGreeting = `Hello ${safeEnName}, I am Sahana calling from ${safeCompanyName} regarding your inquiry form on Facebook for ${safeProduct}. Do you have a quick minute to speak?`;
                         } else if (campPromptLower.includes('kannada') || campPromptLower.includes('ಕನ್ನಡ') || campaign?.audience_filter?.language === 'kannada') {
                             const safeKnName = safeName ? `${safeName} avare` : 'avare';
                             openGreeting = `Namaskara ${safeKnName}, hegiddira? Naanu ${safeCompanyName} inda call maadtha iddini. Neevu Facebook alli inquiry form fill maadidri. Ondu nimisha maathadbahuda?`;
@@ -1190,9 +1189,9 @@ wss.on('connection', (wsConnection, req) => {
                     }
 
                     const accentDirective = isIndianEn
-                        ? "in a warm, natural, professional Indian accent (distinctly Indian English, not American)"
+                        ? "in a warm, polite, natural Urban Indian English accent (Bangalore / South India professional intonation, crisp non-rhotic pronunciation, strictly no American accent)"
                         : "in a warm, natural tone in the language of the greeting";
-                    const textPrompt = `The call has just connected and "Hello?" was already spoken to the caller upon pickup. Speak EXACTLY this greeting message now ${accentDirective}, and nothing else: "${openGreeting}"`;
+                    const textPrompt = `The call has just connected. Speak EXACTLY this greeting message now ${accentDirective}, and nothing else: "${openGreeting}"`;
 
                     const initialTurn = {
                         clientContent: {

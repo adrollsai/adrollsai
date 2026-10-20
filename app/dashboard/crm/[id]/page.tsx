@@ -83,8 +83,8 @@ function cleanTranscript(transcript: any[]) {
 function LeadProfilePageContent() {
     const { id } = useParams()
     const router = useRouter()
-    const searchParams = useSearchParams()
-    const impersonateId = searchParams.get('impersonate')
+    const rawImp = searchParams.get('impersonate')
+    const impersonateId = rawImp ? rawImp.trim().replace(/\s+/g, '-') : null
     const supabase = useMemo(() => createClient(), [])
 
     const [lead, setLead] = useState<any>(null)

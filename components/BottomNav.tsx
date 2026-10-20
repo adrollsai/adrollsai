@@ -51,7 +51,8 @@ export default function BottomNav() {
     }
   }, [])
 
-  const impersonateId = searchParams.get('impersonate')
+  const rawImp = searchParams.get('impersonate')
+  const impersonateId = rawImp ? rawImp.trim().replace(/\s+/g, '-') : null
   useEffect(() => {
     let isMounted = true;
 

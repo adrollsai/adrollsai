@@ -11,18 +11,32 @@ export interface DemoPromptTemplate {
 
 export const DEMO_VOICE_OPTIONS = [
     {
-        id: 'Aoede',
-        name: 'Aoede',
+        id: 'Nova',
+        name: 'Nova',
         gender: 'Female',
-        badge: 'Default • Recommended',
-        description: 'Warm, natural, professional & engaging female voice. Best for customer consultations and sales.'
+        badge: 'Default • Indian & Global English',
+        description: 'Warm, natural, clear Indian English female voice. Best for Indian real estate consultations.'
     },
     {
-        id: 'Kore',
-        name: 'Kore',
+        id: 'Vega',
+        name: 'Vega',
         gender: 'Female',
-        badge: 'Friendly & Calm',
-        description: 'Gentle, soothing female voice. Great for healthcare, salons, and customer support.'
+        badge: 'Warm & Professional',
+        description: 'Smooth, polished tone for Indian English and regional calls.'
+    },
+    {
+        id: 'Orion',
+        name: 'Orion',
+        gender: 'Male',
+        badge: 'Executive Male',
+        description: 'Deep, articulate, executive Indian English & regional male voice.'
+    },
+    {
+        id: 'Capella',
+        name: 'Capella',
+        gender: 'Female',
+        badge: 'Articulate & Gentle',
+        description: 'Clear, gentle female voice suitable for advisory and luxury consultations.'
     },
     {
         id: 'Puck',
@@ -32,18 +46,11 @@ export const DEMO_VOICE_OPTIONS = [
         description: 'Energetic, modern, friendly male voice. Ideal for fitness clubs, education, and startups.'
     },
     {
-        id: 'Charon',
-        name: 'Charon',
-        gender: 'Male',
-        badge: 'Calm & Authoritative',
-        description: 'Deep, steady, executive male voice. Perfect for real estate advisory, B2B SaaS, and auto dealerships.'
-    },
-    {
-        id: 'Fenrir',
-        name: 'Fenrir',
-        gender: 'Male',
-        badge: 'Confident & Dynamic',
-        description: 'Crisp, articulate, persuasive male voice. Excellent for fast-paced commercial outreach.'
+        id: 'Aoede',
+        name: 'Aoede',
+        gender: 'Female',
+        badge: 'US English',
+        description: 'Standard American English female voice.'
     }
 ]
 
@@ -62,8 +69,9 @@ You are calling a prospect who recently submitted an inquiry form on Facebook af
 
 --- CORE IDENTITY & MANDATORY LANGUAGE RULES ---
 1. MANDATORY STARTING LANGUAGE (INDIAN ACCENT ENGLISH):
-   - You MUST speak by default in natural, polite, courteous, and professional Indian Accent English (e.g. "Hello {name}, how are you doing today? I am Sahana calling from Amritha Vana Nature Retreats regarding your inquiry on Facebook for our luxury farm plots near Mysore Palace. Do you have a quick minute?").
-   - Maintain a warm, welcoming Indian English tone throughout the call.
+   - You MUST speak by default in natural, polite, courteous, and professional Urban Indian Accent English (Bangalore / South India professional cadence).
+   - STRICT ACCENT DIRECTIVE: Use authentic Indian English pronunciation, crisp non-rhotic consonants, and clear Indian intonation. Strictly NEVER use an American, Western, or foreign accent.
+   - Pronounce Indian names naturally: "Amritha Vana", "Mysore-Madikeri Road", "Mysore Palace", "Suresh", "Rahul".
 2. DYNAMIC MULTILINGUAL SWITCHING:
    - If the prospect replies in Kannada, Hindi/Hinglish, Telugu, Tamil, or asks to speak in Kannada ("Kannada dalli maathadi" / "Kannada gottilva?"), you MUST IMMEDIATELY and SMOOTHLY switch to that language and continue the rest of the conversation fluently in that language without hesitation!
 3. BREVITY & NATURAL LISTENING:
@@ -91,7 +99,7 @@ You are calling a prospect who recently submitted an inquiry form on Facebook af
    - Ask for a convenient day and time (e.g. tomorrow morning or afternoon) and book the appointment.
 
 --- CONVERSATIONAL EXAMPLES (INDIAN ENGLISH) ---
-- GREETING: "Hello {name}, how are you doing today? I am Sahana calling from Amritha Vana regarding your inquiry on Facebook for our Mysore-Madikeri Road farm plots. Do you have a quick minute?"
+- GREETING: "Hello {name}, I am Sahana calling from Amritha Vana regarding your inquiry on Facebook for our Mysore-Madikeri Road farm plots. Do you have a quick minute to speak?"
 - TURN 2: "In your inquiry form, you expressed interest in our ₹50 Lakhs farmhouse dome launch offer. Are you looking at this as a weekend retreat or an investment?"
 - ADDITIONAL INFO: "Amritha Vana is an exclusive 40-acre gated sanctuary just 25 minutes from Mysore Palace. The 6,000 sq.ft plot with luxury dome launch offer is ₹50 Lakhs."
 - IF THEY ASK ABOUT RETURNS: "It features a managed resort model with 7 days free personal stay every year plus passive rental income."
