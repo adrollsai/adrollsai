@@ -68,9 +68,18 @@ export async function POST(req: Request) {
 
         // 1. Extract greeting directly from customPrompt if present
         let extractedGreeting: string | null = null;
-        const greetingMatch = customPrompt.match(/(?:GREETING|Opening Greeting|1\.\s*(?:Opening\s*)?Greeting|Opening):\s*["']?([^"'\n\r]+)["']?/i);
-        if (greetingMatch && greetingMatch[1]) {
-            extractedGreeting = greetingMatch[1]
+        const directGreetingMatch = customPrompt.match(/GREETING:\s*["']([^"'\r\n]+)["']/i);
+        if (directGreetingMatch && directGreetingMatch[1]) {
+            extractedGreeting = directGreetingMatch[1];
+        } else {
+            const altGreetingMatch = customPrompt.match(/(?:Opening Greeting|First Message|Greeting)\s*(?::|-)\s*["']([^"'\r\n]+)["']/i);
+            if (altGreetingMatch && altGreetingMatch[1]) {
+                extractedGreeting = altGreetingMatch[1];
+            }
+        }
+
+        if (extractedGreeting) {
+            extractedGreeting = extractedGreeting
                 .replace(/\{name\}/gi, prospectName)
                 .replace(/\{lead_name\}/gi, prospectName)
                 .replace(/\{business_name\}/gi, businessName)
@@ -79,23 +88,24 @@ export async function POST(req: Request) {
         }
 
         const promptLower = customPrompt.toLowerCase();
-        const isExplicitHinglish = promptLower.includes('hinglish') || (promptLower.includes('hindi') && !promptLower.includes('indian english'));
-        const isKannada = promptLower.includes('kannada') || customPrompt.includes('ಕನ್ನಡ');
-        const isIndianEnglish = !isExplicitHinglish && (
-            promptLower.includes('indian english') ||
-            promptLower.includes('indian accent') ||
-            templateId === 'amritha_vana' ||
-            (!isKannada && !isExplicitHinglish)
-        );
+        const greetingLower = (extractedGreeting || '').toLowerCase();
+
+        const isGreetingEnglish = greetingLower.startsWith('hello') || greetingLower.startsWith('hi ') || greetingLower.includes('how are you') || greetingLower.includes('calling from');
+        const isGreetingKannada = greetingLower.startsWith('namaskara') || greetingLower.includes('hegiddira');
+        const isGreetingHindi = greetingLower.includes('kaise hain') || greetingLower.includes('kaise ho');
+
+        const isExplicitHinglish = !isGreetingEnglish && (promptLower.includes('default language: hinglish') || promptLower.includes('default language: hindi') || isGreetingHindi);
+        const isKannada = isGreetingKannada || (!isGreetingEnglish && (promptLower.includes('kannada') || customPrompt.includes('ಕನ್ನಡ')));
+        const isIndianEnglish = isGreetingEnglish || (!isExplicitHinglish && !isKannada);
 
         let initialGreeting = extractedGreeting;
         if (!initialGreeting) {
             if (isKannada) {
                 initialGreeting = `Namaskara ${prospectName} avare, hegiddira? Naanu ${businessName} inda call maadtha iddini. Neevu Facebook alli inquiry submit maadidri. Ondu nimisha maathadbahuda?`;
-            } else if (isIndianEnglish) {
-                initialGreeting = `Hello ${prospectName}, how are you doing today? I am calling from ${businessName} regarding your inquiry on Facebook. Do you have a quick minute to speak?`;
-            } else {
+            } else if (isExplicitHinglish) {
                 initialGreeting = `Hi ${prospectName} ji, kaise hain aap? Main ${businessName} se call kar rahi hoon aapki inquiry ke regarding.`;
+            } else {
+                initialGreeting = `Hello ${prospectName}, how are you doing today? I am calling from ${businessName} regarding your inquiry on Facebook. Do you have a quick minute to speak?`;
             }
         }
 

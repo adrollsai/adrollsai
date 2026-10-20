@@ -1142,19 +1142,46 @@ wss.on('connection', (wsConnection, req) => {
                     const nameGreeting = safeName ? `Hi ${safeName} ji` : `Hi ji`;
                     const bolRaha = isMaleVoice(voiceName, profile?.voice_gender) ? 'bol raha hoon' : 'bol rahi hoon';
 
-                    let openGreeting = campaign?.audience_filter?.greeting;
-                    const campPrompt = (campaign?.custom_prompt || campaign?.prompt || '').toLowerCase();
-                    const isIndianEn = campPrompt.includes('indian accent english') || 
-                                       campPrompt.includes('indian english') || 
-                                       campPrompt.includes('indian accent') || 
+                    let openGreeting = null;
+                    const campPrompt = campaign?.custom_prompt || campaign?.prompt || '';
+                    const campPromptLower = campPrompt.toLowerCase();
+
+                    // 1. Direct priority: Extract explicit greeting from custom prompt if present
+                    const promptGreetingMatch = campPrompt.match(/GREETING:\s*["']([^"'\r\n]+)["']/i) ||
+                                                campPrompt.match(/(?:Opening Greeting|First Message|Greeting)\s*(?::|-)\s*["']([^"'\r\n]+)["']/i);
+                    if (promptGreetingMatch && promptGreetingMatch[1]) {
+                        openGreeting = promptGreetingMatch[1]
+                            .replace(/\{name\}/gi, safeName || 'there')
+                            .replace(/\{lead_name\}/gi, safeName || 'there')
+                            .replace(/\{business_name\}/gi, safeCompanyName)
+                            .replace(/\{company_name\}/gi, safeCompanyName)
+                            .trim();
+                        console.log('[BRIDGE] Successfully extracted greeting from campaign prompt:', openGreeting);
+                    }
+
+                    // 2. Fallback to audience_filter.greeting if not a stale generic Hindi greeting on an English prompt
+                    if (!openGreeting && campaign?.audience_filter?.greeting) {
+                        const filterGreeting = campaign.audience_filter.greeting;
+                        const isEnglishPrompt = campPromptLower.includes('english') || campPromptLower.includes('amritha') || campPromptLower.includes('mysore');
+                        if (isEnglishPrompt && (filterGreeting.includes('kaise') || filterGreeting.includes('haan ji'))) {
+                            console.log('[BRIDGE] Rejecting stale Hindi filter greeting on English campaign prompt:', filterGreeting);
+                        } else {
+                            openGreeting = filterGreeting;
+                        }
+                    }
+
+                    const isIndianEn = campPromptLower.includes('indian accent english') || 
+                                       campPromptLower.includes('indian english') || 
+                                       campPromptLower.includes('indian accent') || 
                                        campaign?.audience_filter?.language === 'english' || 
-                                       (!campPrompt.includes('kannada') && !campPrompt.includes('hinglish') && !campPrompt.includes('hindi'));
+                                       (openGreeting && (openGreeting.toLowerCase().startsWith('hello') || openGreeting.toLowerCase().startsWith('hi '))) ||
+                                       (!campPromptLower.includes('kannada') && !campPromptLower.includes('default language: hinglish') && !campPromptLower.includes('default language: hindi'));
 
                     if (!openGreeting) {
                         if (isIndianEn) {
                             const safeEnName = safeName ? safeName : 'there';
                             openGreeting = `Hello ${safeEnName}, how are you doing today? I am calling from ${safeCompanyName} regarding your inquiry form on Facebook. Do you have a quick minute to speak?`;
-                        } else if (campPrompt.includes('kannada') || campPrompt.includes('ಕನ್ನಡ') || campaign?.audience_filter?.language === 'kannada') {
+                        } else if (campPromptLower.includes('kannada') || campPromptLower.includes('ಕನ್ನಡ') || campaign?.audience_filter?.language === 'kannada') {
                             const safeKnName = safeName ? `${safeName} avare` : 'avare';
                             openGreeting = `Namaskara ${safeKnName}, hegiddira? Naanu ${safeCompanyName} inda call maadtha iddini. Neevu Facebook alli inquiry form fill maadidri. Ondu nimisha maathadbahuda?`;
                         } else {
