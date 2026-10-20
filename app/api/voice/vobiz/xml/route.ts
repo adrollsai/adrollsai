@@ -165,7 +165,7 @@ async function handleRequest(req: Request) {
             authToken = bi?.voice_vobiz_auth_token || authToken;
         } catch (pErr) {}
 
-        let voiceName = searchParams.get('voiceName') || prof?.voice_name || 'Fenrir'
+        let voiceName = searchParams.get('voiceName') || prof?.voice_name || 'Aoede'
         if (effectiveCampaignId) {
             try {
                 const { data: camp } = await supabaseAdmin

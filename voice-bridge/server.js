@@ -94,7 +94,7 @@ app.get('/health', (req, res) => {
 
 // Vobiz Answer XML endpoint (Returns Stream XML directly to Vobiz)
 
-async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName = 'Nova') {
+async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName = 'Aoede') {
     const campaignPromise = campaignId
         ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
         : Promise.resolve({ data: null });
@@ -338,25 +338,26 @@ ${genderGrammarInstruction}
 ${campaignGuidance ? `${campaignGuidance}\n` : ''}
 
 KEY OBJECTIVE & CALL FLOW:
-1. REMIND PROSPECT: Remind ${leadName} that they recently filled an inquiry form on Facebook regarding ${targetProduct}.
-2. QUALIFY & CONFIRM: Confirm the key preferences & answers they submitted in the Facebook ad form.
-3. PROJECT INFO FROM CATALOGUE: If ${leadName} needs any more information of the project, provide crisp, accurate details directly from the Project Catalogue section below.
-4. CONNECT WITH RELATIONSHIP MANAGER: Explain that our senior Relationship Manager will guide them further with exact layouts, pricing options, and unit availability.
-5. BOOK MEETING: Ask for their convenient day and time (e.g., tomorrow 11:00 AM) and trigger the 'book_appointment_slot' tool to confirm the meeting with the Relationship Manager!
+1. GREETING & REMIND: You are calling ${leadName} who submitted an inquiry on Facebook for ${targetProduct}. The opening greeting has already been delivered.
+2. CONFIRM ONE DETAIL AT A TIME: Warmly acknowledge ONLY ONE key preference from their form (e.g. ask about the 2 BHK). Stop talking immediately and wait for their answer!
+3. PROJECT INFO FROM CATALOGUE: If ${leadName} asks questions about the project, provide crisp 1-sentence answers directly from the Project Catalogue section below.
+4. CONNECT WITH RELATIONSHIP MANAGER: Offer to connect them with our senior Relationship Manager for exact floor plans and payment plans.
+5. BOOK MEETING: Ask for their convenient day and time, and trigger the 'book_appointment_slot' tool to confirm!
 
-CRITICAL CONVERSATIONAL STYLE (BE LESS TALKATIVE, LISTEN MORE):
-1. BE LESS TALKATIVE, LISTEN MUCH MORE: Never give long speeches, lectures, or sales pitches. Speak in short, crisp turns (under 10-15 words, maximum 1 short sentence per turn). Give the caller the maximum space to speak. You are here to LISTEN.
-2. ONE QUESTION AT A TIME: Ask at most one quick question at a time, then stop talking immediately and listen to the customer.
-3. NATURAL ACTIVE LISTENING & HUMAN SOUNDS:
-   - When listening and acknowledging the caller, use natural human conversational fillers like ${effectiveAck}.
-   - Frequently begin turns with natural conversational nods such as ${conversationNods} to sound completely human, attentive, and engaged on the call.
-   - If the customer explains something, acknowledge with a gentle verbal nod before giving a brief answer.
-4. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately, acknowledge what they said with ${isIndianEnglishMode ? '"Yes" or "Sure"' : '"Haan ji" or "Ahan"'}, and address their point directly and concisely.
-5. BROCHURE & PRICING: If the customer asks for brochure or pricing, use the 'send_whatsapp_info' tool to dispatch it to their WhatsApp.
-6. APPOINTMENTS: When the customer agrees to connect or gives a preferred time with the Relationship Manager, trigger the 'book_appointment_slot' tool.
-7. STRICT END_CALL GUARDRAILS (NEVER HANG UP ON CUSTOMER):
+CRITICAL CONVERSATIONAL DISCIPLINE (NEVER MONOLOGUE, LISTEN MORE):
+1. STRICT BREVITY (10-15 WORDS MAX PER TURN): Never give speeches, long paragraphs, or multi-sentence monologues. Speak 1 short, crisp sentence per turn. Give the customer maximum space to speak. You are here to LISTEN.
+2. CONFIRM ONE DETAIL AT A TIME (NEVER LIST MULTIPLE QUESTIONS):
+   - ONLY mention ONE detail at a time.
+   - FORBIDDEN: Listing multiple questions in one turn (e.g., "Aapne 2 BHK dekha, budget 3-5M hai, 10% payment ready hai, kya ye sahi hai?"). NEVER DO THIS!
+   - CORRECT: "Raman ji, main dekh pa rahi hoon aapne 2 BHK ke liye inquiry ki thi, right?" -> STOP TALKING AND WAIT!
+3. NEVER REPEAT GREETING OR INTRO: The opening greeting was already spoken. NEVER introduce yourself again or repeat "inquiry ki thi. Kya do minute baat ho sakti hai?".
+4. ANSWER FIRST, THEN SEGUE: If the customer asks a question (price, location, etc.), answer directly in 1 short sentence, then ask if they would like to discuss unit options with the Relationship Manager.
+5. NATURAL HUMAN SOUNDS: Start turns with gentle verbal nods like ${effectiveAck}.
+6. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately!
+7. BROCHURE & PRICING: If the customer asks for brochure or pricing, use the 'send_whatsapp_info' tool to dispatch it to their WhatsApp.
+8. APPOINTMENTS: When the customer agrees to connect or gives a preferred time with the Relationship Manager, trigger the 'book_appointment_slot' tool.
+9. STRICT END_CALL GUARDRAILS (NEVER HANG UP ON CUSTOMER):
    - You MUST NEVER trigger 'end_call' while the customer is still speaking, asking questions, or waiting for documents!
-   - If the customer says "still I have not received" or asks about WhatsApp, APOLOGIZE, confirm their number, and explain that you are re-triggering it right now. NEVER say goodbye or hang up!
    - Trigger 'end_call' ONLY AND EXCLUSIVELY when:
      1. An appointment is confirmed AND the customer says goodbye/thank you.
      2. The customer explicitly says "bye", "thank you", or "I have to leave".
@@ -367,6 +368,9 @@ ${formQuestionsSummary}
 ${resolvedQuestionsInstruction}
 `.trim();
 
+    const validVoiceNames = ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'];
+    const chosenVoice = (voiceName && validVoiceNames.includes(voiceName)) ? voiceName : 'Aoede';
+
     const setupPayload = {
         setup: {
             model: process.env.GEMINI_LIVE_MODEL || "models/gemini-3.1-flash-live-preview",
@@ -375,7 +379,7 @@ ${resolvedQuestionsInstruction}
                 speechConfig: {
                     voiceConfig: {
                         prebuiltVoiceConfig: {
-                            voiceName: (voiceName && voiceName !== 'Aoede') ? voiceName : 'Nova'
+                            voiceName: chosenVoice
                         }
                     }
                 }
@@ -458,7 +462,7 @@ ${resolvedQuestionsInstruction}
     };
 }
 
-async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Nova') {
+async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Aoede') {
     if (!leadId || !profileId) return null;
     const existing = prewarmedPool.get(leadId);
     if (existing && !existing.used && (Date.now() - existing.createdAt < 60000)) {
@@ -554,7 +558,7 @@ app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
     // Auto-prewarm if not already prewarmed
     if (leadId && profileId && !prewarmedPool.has(leadId)) {
         console.log(`[BRIDGE VOBIZ-XML] Auto-prewarming session for lead ${leadId}...`);
-        prewarmSession(leadId, profileId, campaignId, req.query.voiceName || 'Nova');
+        prewarmSession(leadId, profileId, campaignId, req.query.voiceName || 'Aoede');
     }
     console.log(`[BRIDGE VOBIZ-XML] Served Voice XML to Vobiz for lead ${leadId}:\n${xml}`);
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
@@ -665,7 +669,7 @@ app.post('/prewarm', async (req, res) => {
             return res.status(400).json({ error: 'Missing leadId or profileId in prewarm request.' });
         }
         console.log(`[PREWARM] Prewarm request for lead: ${leadId}, profile: ${profileId}`);
-        prewarmSession(leadId, profileId, campaignId, voiceName || 'Nova');
+        prewarmSession(leadId, profileId, campaignId, voiceName || 'Aoede');
         res.json({ status: 'prewarming_started', leadId });
     } catch (err) {
         console.error('[PREWARM] Error in prewarm handler:', err);
@@ -995,7 +999,13 @@ wss.on('connection', (wsConnection, req) => {
     let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
     let greetingPlayed = false;
-    let voiceName = (queryVoiceName && queryVoiceName !== 'Aoede') ? queryVoiceName : 'Nova';
+    let voiceName = (queryVoiceName && ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'].includes(queryVoiceName)) ? queryVoiceName : 'Aoede';
+
+    let earlyConfigPromise = null;
+    if (leadId && profileId) {
+        console.log(`[BRIDGE] Early kickoff of Gemini setup config for lead ${leadId}...`);
+        earlyConfigPromise = buildGeminiSetupConfig(leadId, profileId, queryCampaignId, voiceName);
+    }
 
     const audioProcessor = new NoiseSuppressedAudioProcessor();
     let isCallHangingUp = false;
@@ -1005,8 +1015,9 @@ wss.on('connection', (wsConnection, req) => {
     let wrapUpTimer = null;
     let maxDurationTimer = null;
 
-    // Turn completion watchdog: ensures Gemini Live NEVER sits in silence after caller finishes speaking
+    // Turn completion watchdog: safety fallback to ensure Gemini Live never hangs indefinitely
     let userSpeakingActive = false;
+    let callerVoiceFrames = 0;
     let turnCompleteWatchdogTimer = null;
 
     function clearTurnWatchdog() {
@@ -1019,8 +1030,9 @@ wss.on('connection', (wsConnection, req) => {
     function triggerTurnComplete() {
         clearTurnWatchdog();
         if (userSpeakingActive && geminiSocket && geminiSocket.readyState === ws.OPEN && !audioProcessor.isAiSpeaking) {
-            console.log("[BRIDGE WATCHDOG] Caller finished speaking and silence verified (>450ms). Forcing turnComplete to Gemini Live...");
+            console.log("[BRIDGE WATCHDOG] Caller finished speaking and silence verified (>1200ms). Sending turnComplete...");
             userSpeakingActive = false;
+            callerVoiceFrames = 0;
             try {
                 geminiSocket.send(JSON.stringify({
                     clientContent: {
@@ -1033,7 +1045,7 @@ wss.on('connection', (wsConnection, req) => {
         }
     }
 
-    function scheduleTurnComplete(delayMs = 450) {
+    function scheduleTurnComplete(delayMs = 1200) {
         clearTurnWatchdog();
         turnCompleteWatchdogTimer = setTimeout(() => {
             triggerTurnComplete();
@@ -1123,7 +1135,7 @@ wss.on('connection', (wsConnection, req) => {
                     profileId = data.customParameters?.profileId || data.start?.customParameters?.profileId || queryProfileId;
                     var campaignId = data.customParameters?.campaignId || data.start?.customParameters?.campaignId || queryCampaignId;
                     greetingPlayed = (data.customParameters?.greetingPlayed || data.start?.customParameters?.greetingPlayed) === 'true';
-                    voiceName = queryVoiceName || data.customParameters?.voiceName || data.start?.customParameters?.voiceName || voiceName || 'Nova';
+                    voiceName = queryVoiceName || data.customParameters?.voiceName || data.start?.customParameters?.voiceName || voiceName || 'Aoede';
                     console.log(`[BRIDGE] Vobiz stream started. StreamId: ${vobizStreamId}, CallId: ${vobizCallId}, Format: ${vobizContentType}, leadId: ${leadId}, profileId: ${profileId}`);
 
                     // Trigger non-blocking background REST recording on active call
@@ -1154,7 +1166,7 @@ wss.on('connection', (wsConnection, req) => {
                     profileId = data.start?.customParameters?.profileId || queryProfileId;
                     var campaignId = data.start?.customParameters?.campaignId || queryCampaignId;
                     greetingPlayed = data.start?.customParameters?.greetingPlayed === 'true';
-                    voiceName = data.start?.customParameters?.voiceName || 'Nova';
+                    voiceName = data.start?.customParameters?.voiceName || 'Aoede';
                     console.log(`[BRIDGE] Twilio call started. StreamSid: ${twilioStreamSid}, CallSid: ${twilioCallSid}, leadId: ${leadId}, profileId: ${profileId}`);
                 }
 
@@ -1184,8 +1196,8 @@ wss.on('connection', (wsConnection, req) => {
                     geminiSocket.removeAllListeners('close');
                     sessionConfig = prewarmed.configData || (await prewarmed.configPromise);
                 } else {
-                    console.log(`[BRIDGE] No pre-warmed session found for lead ${leadId}. Initializing on-demand...`);
-                    sessionConfig = await buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName);
+                    console.log(`[BRIDGE] No pre-warmed session found for lead ${leadId}. Initializing on-demand (earlyConfig: ${!!earlyConfigPromise})...`);
+                    sessionConfig = await (earlyConfigPromise || buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName));
                     const keyToUse = sessionConfig.geminiApiKey || defaultApiKey;
                     geminiSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${keyToUse}`);
                     await new Promise((resolve) => {
@@ -1266,10 +1278,7 @@ wss.on('connection', (wsConnection, req) => {
                         }
                     }
 
-                    const accentDirective = isIndianEn
-                        ? "in a warm, polite, natural Urban Indian English accent (Bangalore / South India professional intonation, crisp non-rhotic pronunciation, strictly no American accent)"
-                        : "in a warm, natural tone in the language of the greeting";
-                    const textPrompt = `The call has just connected. Speak EXACTLY this greeting message now ${accentDirective}, and nothing else: "${openGreeting}"`;
+                    const textPrompt = `You are on an active phone call that just connected. Speak this greeting warmly and naturally right now: "${openGreeting}"`;
 
                     const initialTurn = {
                         clientContent: {
@@ -1610,8 +1619,7 @@ wss.on('connection', (wsConnection, req) => {
                                     }));
                                 } else if (call.name === 'search_properties') {
                                     console.log(`[BRIDGE] Gemini triggered live tool: search_properties for lead ${leadId}`, call.args);
-                                    // 1. Play natural verbal filler immediately so the customer doesn't experience dead silence!
-                                    playClipToCaller(wsConnection, 'filler_check_details', isVobiz, vobizStreamId || twilioStreamSid);
+                                    // Query Supabase directly without injecting male audio clips
 
                                     // 2. Query Supabase in parallel
                                     let propertiesList = [];
@@ -1660,8 +1668,6 @@ wss.on('connection', (wsConnection, req) => {
                                     }));
                                 } else if (call.name === 'get_available_slots') {
                                     console.log(`[BRIDGE] Gemini triggered live tool: get_available_slots for lead ${leadId}`);
-                                    // Play natural verbal filler while resolving slots
-                                    playClipToCaller(wsConnection, 'filler_check_slots', isVobiz, vobizStreamId || twilioStreamSid);
 
                                     geminiSocket.send(JSON.stringify({
                                         toolResponse: {
@@ -1774,15 +1780,18 @@ wss.on('connection', (wsConnection, req) => {
                     const procRes = audioProcessor.processFrame(pcm16);
                     sendPcmChunkToGemini(procRes.pcmOutput);
 
-                    // Track caller speech activity and trigger watchdog if Gemini lags after caller finishes speaking
+                    // Track caller speech activity (require sustained voice frames to filter out background line hiss/clicks)
                     if (!audioProcessor.isAiSpeaking) {
                         if (procRes.isVoice) {
-                            userSpeakingActive = true;
-                            clearTurnWatchdog();
+                            callerVoiceFrames++;
+                            if (callerVoiceFrames >= 6) { // ~120ms of sustained speech
+                                userSpeakingActive = true;
+                                clearTurnWatchdog();
+                            }
                         } else if (userSpeakingActive) {
                             // Caller was speaking and has now paused/finished speaking
                             if (!turnCompleteWatchdogTimer) {
-                                scheduleTurnComplete(450);
+                                scheduleTurnComplete(1200);
                             }
                         }
                     }
