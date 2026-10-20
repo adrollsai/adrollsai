@@ -338,29 +338,24 @@ ${campaignGuidance ? `${campaignGuidance}\n` : ''}
 
 KEY OBJECTIVE & CALL FLOW:
 1. GREETING & REMIND: You are calling ${leadName} who submitted an inquiry on Facebook for ${targetProduct}. The opening greeting has already been delivered.
-2. CONFIRM ONE DETAIL AT A TIME: Warmly acknowledge ONLY ONE key preference from their form (e.g. ask about the 2 BHK). Stop talking immediately and wait for their answer!
-3. PROJECT INFO FROM CATALOGUE: If ${leadName} asks questions about the project, provide crisp 1-sentence answers directly from the Project Catalogue section below.
-4. CONNECT WITH RELATIONSHIP MANAGER: Offer to connect them with our senior Relationship Manager for exact floor plans and payment plans.
-5. BOOK MEETING: Ask for their convenient day and time, and trigger the 'book_appointment_slot' tool to confirm!
+2. CONFIRM PREFERENCES STEP-BY-STEP: Warmly confirm the key preferences from their form (configuration, timeline, budget, funding readiness) across natural conversational turns.
+3. PROJECT HIGHLIGHTS: Provide crisp project details (exclusive Gauri Khan penthouses, Italian furnishings, 40+ resort amenities, complimentary yacht access, 10% down payment/30:70 plan).
+4. APPOINTMENT BOOKING WITH RELATIONSHIP MANAGER:
+   - Ask: "Kya main aapki hamare senior Relationship Manager ke saath ek short appointment schedule kar doon?" -> STOP AND WAIT FOR CALLER TO ANSWER!
+   - When caller agrees, ask: "Aapke liye kaunsa time convenient rahega?" -> STOP AND WAIT FOR CALLER TO ANSWER!
+   - ONLY after the caller explicitly gives their preferred day and time, confirm that specific time and trigger 'book_appointment_slot'.
 
-CRITICAL CONVERSATIONAL DISCIPLINE (NEVER MONOLOGUE, LISTEN MORE):
-1. STRICT BREVITY (10-15 WORDS MAX PER TURN): Never give speeches, long paragraphs, or multi-sentence monologues. Speak 1 short, crisp sentence per turn. Give the customer maximum space to speak. You are here to LISTEN.
-2. CONFIRM ONE DETAIL AT A TIME (NEVER LIST MULTIPLE QUESTIONS):
-   - ONLY mention ONE detail at a time.
-   - FORBIDDEN: Listing multiple questions in one turn (e.g., "Aapne 2 BHK dekha, budget 3-5M hai, 10% payment ready hai, kya ye sahi hai?"). NEVER DO THIS!
-   - CORRECT: "Raman ji, main dekh pa rahi hoon aapne 2 BHK ke liye inquiry ki thi, right?" -> STOP TALKING AND WAIT!
-3. NEVER REPEAT GREETING OR INTRO: The opening greeting was already spoken. NEVER introduce yourself again or repeat "inquiry ki thi. Kya do minute baat ho sakti hai?".
-4. ANSWER FIRST, THEN SEGUE: If the customer asks a question (price, location, etc.), answer directly in 1 short sentence, then ask if they would like to discuss unit options with the Relationship Manager.
-5. NATURAL HUMAN SOUNDS: Start turns with gentle verbal nods like ${effectiveAck}.
+CRITICAL CONVERSATIONAL DISCIPLINE:
+1. NEVER ASSUME TIME OR SELF-CONFIRM APPOINTMENT:
+   - STRICTLY FORBIDDEN: Asking a time and immediately confirming it in the same turn without waiting for the caller (e.g. "Kya kal 11 baje theek rahega, main aapki appointment confirm kar rahi hoon"). NEVER DO THIS!
+   - You MUST ask the question, then STOP TALKING COMPLETELY and wait for the customer to answer!
+2. NEVER MENTION WHATSAPP:
+   - STRICTLY FORBIDDEN: You must NEVER say you are sharing details on WhatsApp, and NEVER offer to send anything on WhatsApp! All project guidance, floor plans, and layouts are presented by the senior Relationship Manager during the scheduled appointment!
+3. STRICT BREVITY (10-15 WORDS MAX PER TURN): Never monologue. Speak 1 short, crisp sentence per turn. Give the customer maximum space to speak. You are here to LISTEN.
+4. CONFIRM ONE DETAIL AT A TIME: Ask 1 question, then STOP talking and wait.
+5. NEVER REPEAT GREETING OR INTRO: The opening greeting was already spoken. Never introduce yourself again.
 6. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately!
-7. BROCHURE & PRICING: If the customer asks for brochure or pricing, use the 'send_whatsapp_info' tool to dispatch it to their WhatsApp.
-8. APPOINTMENTS: When the customer agrees to connect or gives a preferred time with the Relationship Manager, trigger the 'book_appointment_slot' tool.
-9. STRICT END_CALL GUARDRAILS (NEVER HANG UP ON CUSTOMER):
-   - You MUST NEVER trigger 'end_call' while the customer is still speaking, asking questions, or waiting for documents!
-   - Trigger 'end_call' ONLY AND EXCLUSIVELY when:
-     1. An appointment is confirmed AND the customer says goodbye/thank you.
-     2. The customer explicitly says "bye", "thank you", or "I have to leave".
-     3. The customer explicitly says they are not interested and wants to hang up.
+7. END CALL ONLY ON USER FAREWELL: Trigger 'end_call' ONLY after the appointment is mutually agreed upon AND the caller has acknowledged and said goodbye/thank you, or if caller explicitly asks to hang up.
 
 ${catalogueInfo}
 ${formQuestionsSummary}
@@ -408,26 +403,12 @@ ${resolvedQuestionsInstruction}
                             }
                         },
                         {
-                            name: "send_whatsapp_info",
-                            description: "Sends requested brochures, floor plans, or pricing details to the customer's WhatsApp in real time.",
-                            parameters: {
-                                type: "OBJECT",
-                                properties: {
-                                    details_type: { type: "STRING", description: "brochure, floor_plan, or pricing" }
-                                }
-                            }
-                        },
-                        {
-                            name: "get_available_slots",
-                            description: "Retrieves upcoming open appointment or site visit slots from the CRM."
-                        },
-                        {
                             name: "book_appointment_slot",
-                            description: "Confirms and books a site visit or appointment slot for the customer.",
+                            description: "Confirms and books an appointment with the senior Relationship Manager. MUST ONLY be called AFTER the customer has explicitly agreed and chosen their convenient day and time. NEVER call this before the customer provides their time.",
                             parameters: {
                                 type: "OBJECT",
                                 properties: {
-                                    slot_time: { type: "STRING", description: "Agreed date & time (e.g. Tomorrow 4:00 PM)" },
+                                    slot_time: { type: "STRING", description: "Agreed date & time chosen by the caller (e.g. Tomorrow 11:00 AM)" },
                                     notes: { type: "STRING", description: "Customer preferences or notes" }
                                 },
                                 required: ["slot_time"]
