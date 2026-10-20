@@ -66,12 +66,13 @@ export async function POST(req: Request) {
 
         console.log(`[AI CALL DEMO] Triggering demo call to ${cleanPhone} (${prospectName}) from Bioque Estates line (${BIOQUE_CALLER_NUMBER})...`)
 
-        const isKannada = templateId === 'amritha_vana' ||
-            businessName?.toLowerCase().includes('amritha') ||
-            customPrompt.toLowerCase().includes('kannada') ||
-            customPrompt.includes('ಕನ್ನಡ');
+        const promptLower = customPrompt.toLowerCase();
+        const isIndianEnglish = promptLower.includes('indian accent english') || templateId === 'amritha_vana';
+        const isKannada = !isIndianEnglish && (promptLower.includes('kannada') || customPrompt.includes('ಕನ್ನಡ'));
 
-        const initialGreeting = isKannada
+        const initialGreeting = isIndianEnglish
+            ? `Hello ${prospectName}, how are you doing today? I am calling from ${businessName} regarding your inquiry on Facebook for our Amritha Vana luxury farm retreat plots. Do you have a quick minute?`
+            : isKannada
             ? `Namaskara ${prospectName} avare, hegiddira? Naanu Amritha Vana inda call maadtha iddini. Neevu Facebook alli Amritha Vana luxury farm plots bagge inquiry submit maadidri. Ondu nimisha maathadbahuda?`
             : `Hi ${prospectName} ji, kaise hain aap?`;
 
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
                 audience_filter: {
                     voice_name: voiceName,
                     is_demo: true,
-                    language: isKannada ? 'kannada' : 'hinglish',
+                    language: isIndianEnglish ? 'english' : (isKannada ? 'kannada' : 'hinglish'),
                     greeting: initialGreeting
                 },
                 custom_prompt: customPrompt,

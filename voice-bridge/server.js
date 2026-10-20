@@ -252,19 +252,28 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         ? `\n--- CAMPAIGN SPECIFIC GUIDELINES ---\n${campaign.custom_prompt || campaign.prompt}\n`
         : '';
 
-    const isKannadaMode = (campaignGuidance && (campaignGuidance.toLowerCase().includes('kannada') || campaignGuidance.includes('ಕನ್ನಡ'))) || campaign?.audience_filter?.language === 'kannada';
+    const campGuidanceLower = campaignGuidance.toLowerCase();
+    const isIndianEnglishMode = campGuidanceLower.includes('indian accent english') || campaign?.audience_filter?.language === 'english';
+    const isKannadaMode = !isIndianEnglishMode && ((campGuidanceLower.includes('kannada') || campaignGuidance.includes('ಕನ್ನಡ')) || campaign?.audience_filter?.language === 'kannada');
 
-    const languageInstruction = isKannadaMode
-        ? `LANGUAGE REQUIREMENT:
+    let languageInstruction;
+    let effectiveAck = backchannelAck;
+
+    if (isIndianEnglishMode) {
+        languageInstruction = `LANGUAGE REQUIREMENT:
+- MANDATORY STARTING LANGUAGE: YOU MUST SPEAK BY DEFAULT IN NATURAL, PROFESSIONAL, COURTEOUS INDIAN ACCENT ENGLISH (clear, warm, professional Indian English phrasing).
+- DYNAMIC MULTILINGUAL SWITCHING: If the caller replies in Kannada, Hindi/Hinglish, Telugu, Tamil, or asks to speak in Kannada or another regional language, IMMEDIATELY switch smoothly to their preferred language and continue the rest of the conversation fluently in that language without hesitation!`;
+        effectiveAck = `"Yes", "Sure", "Right", "Understood", "Definitely", "Absolutely", "Hmm"`;
+    } else if (isKannadaMode) {
+        languageInstruction = `LANGUAGE REQUIREMENT:
 - MANDATORY STARTING LANGUAGE: YOU MUST BEGIN THE CALL DIRECTLY IN NATURAL, POLITE, FLUENT KANNADA (Kannada words spoken naturally and warmly).
-- DYNAMIC MULTILINGUAL SWITCHING: If the caller replies in English, Hindi, Hinglish, Telugu, Tamil, or asks to speak in another language, IMMEDIATELY switch smoothly to their preferred language and continue the rest of the conversation in that language without any hesitation!`
-        : `LANGUAGE REQUIREMENT:
+- DYNAMIC MULTILINGUAL SWITCHING: If the caller replies in English, Hindi, Hinglish, Telugu, Tamil, or asks to speak in another language, IMMEDIATELY switch smoothly to their preferred language and continue the rest of the conversation in that language without any hesitation!`;
+        effectiveAck = isFemale ? `"Haudu", "Sari", "Khanditha", "Ahan", "Hmm", "Samajh rahi hoon"` : `"Haudu", "Sari", "Khanditha", "Ahan", "Hmm", "Samajh raha hoon"`;
+    } else {
+        languageInstruction = `LANGUAGE REQUIREMENT:
 - DEFAULT TO NATURAL, FLUENT HINGLISH (conversational mix of Hindi and English, written in Latin script).
 - MULTILINGUAL ADAPTATION: If the caller speaks in Kannada, Telugu, Tamil, Punjabi, English, Hindi, or another regional language, IMMEDIATELY switch to their language and converse comfortably, fluently, and naturally!`;
-
-    const effectiveAck = isKannadaMode
-        ? (isFemale ? `"Haudu", "Sari", "Khanditha", "Ahan", "Hmm", "Samajh rahi hoon"` : `"Haudu", "Sari", "Khanditha", "Ahan", "Hmm", "Samajh raha hoon"`)
-        : backchannelAck;
+    }
 
     const systemInstruction = `
 You are an expert, professional outbound AI relationship representative calling on behalf of "${companyName}".
@@ -1112,8 +1121,10 @@ wss.on('connection', (wsConnection, req) => {
                     let openGreeting = campaign?.audience_filter?.greeting;
                     if (!openGreeting) {
                         const campPrompt = (campaign?.custom_prompt || campaign?.prompt || '').toLowerCase();
-                        const isKn = campPrompt.includes('kannada') || campPrompt.includes('ಕನ್ನಡ') || campaign?.audience_filter?.language === 'kannada';
-                        if (isKn) {
+                        if (campPrompt.includes('indian accent english') || campaign?.audience_filter?.language === 'english') {
+                            const safeEnName = safeName ? safeName : 'there';
+                            openGreeting = `Hello ${safeEnName}, how are you doing today? I am calling from ${safeCompanyName} regarding your inquiry form on Facebook for ${safeProduct}. Do you have a quick minute to speak?`;
+                        } else if (campPrompt.includes('kannada') || campPrompt.includes('ಕನ್ನಡ') || campaign?.audience_filter?.language === 'kannada') {
                             const safeKnName = safeName ? `${safeName} avare` : 'avare';
                             openGreeting = `Namaskara ${safeKnName}, hegiddira? Naanu ${safeCompanyName} inda call maadtha iddini. Neevu Facebook alli ${safeProduct} bagge inquiry form fill maadidri. Ondu nimisha maathadbahuda?`;
                         } else {
