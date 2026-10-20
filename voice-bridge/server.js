@@ -394,6 +394,13 @@ ${resolvedQuestionsInstruction}
                     ]
                 }
             ],
+            realtimeInputConfig: {
+                automaticActivityDetection: {
+                    startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
+                    endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
+                    silenceDurationMs: 400
+                }
+            },
             inputAudioTranscription: {},
             outputAudioTranscription: {}
         }
@@ -839,12 +846,11 @@ class NoiseSuppressedAudioProcessor {
         // Telephony lines typically have RMS 50-200 for line noise, 400+ for speech
         this.bargeInThreshold = options.bargeInThreshold || 500;
         this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 3; // 3 frames * 20ms = 60ms of sustained speech
+        this.voiceThreshold = options.voiceThreshold || 240; // Caller speech RMS threshold
         this.isAiSpeaking = false;
         this.aiSpeakingTimeout = null;
         this.sustainedBargeInFrames = 0;
         this.bargeInTriggered = false; // Set true when barge-in fires, reset when AI starts speaking again
-
-        // Clean audio processor: ALWAYS forwards audio, detects user barge-in over AI speech
     }
 
     markAiSpeaking(durationMs = 1200) {
@@ -868,20 +874,22 @@ class NoiseSuppressedAudioProcessor {
         if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
     }
 
-    /**
-     * CRITICAL DESIGN: We ALWAYS forward the caller's real audio to Gemini.
-     * Gemini Live API requires continuous audio input to keep its session alive.
-     * Sending zero-filled silence causes Gemini to think the user left and drop the connection.
-     * 
-     * The processor only DETECTS barge-in and concurrent backchannel events — it does NOT gate audio.
-     */
     processFrame(pcm16Chunk) {
         const rms = calculateRMS(pcm16Chunk);
         const isVoice = rms >= this.voiceThreshold;
         const now = Date.now();
 
-        // Always forward real audio to Gemini — never send zeroes
-        const result = { pcmOutput: pcm16Chunk, rms, isVoice: rms >= 300, bargeIn: false };
+        // TELEPHONY NOISE GATE:
+        // Ambient mobile cellular line hiss on telephony is typically RMS 40-180.
+        // If the caller is not speaking (RMS < 200), forward clean digital zeroes so Gemini's
+        // automatic activity detection (VAD) cleanly detects silence (silenceDurationMs = 400ms).
+        // When caller speaks (RMS >= 200), forward full intact 16kHz audio.
+        let pcmOutput = pcm16Chunk;
+        if (!isVoice && rms < 200) {
+            pcmOutput = new Int16Array(pcm16Chunk.length);
+        }
+
+        const result = { pcmOutput, rms, isVoice, bargeIn: false };
 
         // Check for barge-in during AI speech
         if (this.isAiSpeaking && !this.bargeInTriggered) {
@@ -961,6 +969,41 @@ wss.on('connection', (wsConnection, req) => {
     let geminiGreetingStarted = false;
     let wrapUpTimer = null;
     let maxDurationTimer = null;
+
+    // Turn completion watchdog: ensures Gemini Live NEVER sits in silence after caller finishes speaking
+    let userSpeakingActive = false;
+    let turnCompleteWatchdogTimer = null;
+
+    function clearTurnWatchdog() {
+        if (turnCompleteWatchdogTimer) {
+            clearTimeout(turnCompleteWatchdogTimer);
+            turnCompleteWatchdogTimer = null;
+        }
+    }
+
+    function triggerTurnComplete() {
+        clearTurnWatchdog();
+        if (userSpeakingActive && geminiSocket && geminiSocket.readyState === ws.OPEN && !audioProcessor.isAiSpeaking) {
+            console.log("[BRIDGE WATCHDOG] Caller finished speaking and silence verified (>450ms). Forcing turnComplete to Gemini Live...");
+            userSpeakingActive = false;
+            try {
+                geminiSocket.send(JSON.stringify({
+                    clientContent: {
+                        turnComplete: true
+                    }
+                }));
+            } catch (err) {
+                console.warn("[BRIDGE WATCHDOG] Failed to send turnComplete:", err.message);
+            }
+        }
+    }
+
+    function scheduleTurnComplete(delayMs = 450) {
+        clearTurnWatchdog();
+        turnCompleteWatchdogTimer = setTimeout(() => {
+            triggerTurnComplete();
+        }, delayMs);
+    }
 
     // Connection health check (heartbeat to prevent lingering ghost connections)
     let isAlive = true;
@@ -1291,9 +1334,24 @@ wss.on('connection', (wsConnection, req) => {
                           if (!serverMsg.serverContent?.modelTurn?.parts?.some(p => p.inlineData) && !serverMsg.serverContent?.outputTranscription) {
                               console.log('[BRIDGE] Received from Gemini:', JSON.stringify(serverMsg));
                           }
-                                          // Handle user interruption (barge-in)
+                                          // Handle Gemini server voice activity detection (VAD)
+                         if (serverMsg.voiceActivity) {
+                             if (serverMsg.voiceActivity.type === 'ACTIVITY_START') {
+                                 console.log('[BRIDGE] Gemini VAD: ACTIVITY_START detected.');
+                                 userSpeakingActive = true;
+                                 clearTurnWatchdog();
+                             } else if (serverMsg.voiceActivity.type === 'ACTIVITY_END') {
+                                 console.log('[BRIDGE] Gemini VAD: ACTIVITY_END detected.');
+                                 userSpeakingActive = false;
+                                 clearTurnWatchdog();
+                             }
+                         }
+
+                         // Handle user interruption (barge-in)
                          if (serverMsg.serverContent?.interrupted) {
                               console.log('[BRIDGE] Gemini confirmed user interruption. Clearing AI playback...');
+                              userSpeakingActive = true;
+                              clearTurnWatchdog();
                               audioProcessor.clearAiSpeaking();
                              if (wsConnection.readyState === ws.OPEN) {
                                  if (isVobiz && vobizStreamId) {
@@ -1319,6 +1377,8 @@ wss.on('connection', (wsConnection, req) => {
 
                         // 1. Handle audio chunks from Gemini output (24kHz PCM)
                         if (serverMsg.serverContent?.modelTurn?.parts) {
+                            userSpeakingActive = false;
+                            clearTurnWatchdog();
                             if (!geminiGreetingStarted) {
                                 geminiGreetingStarted = true;
                                 console.log('[BRIDGE] Gemini AI audio output started.');
@@ -1677,6 +1737,19 @@ wss.on('connection', (wsConnection, req) => {
                     const procRes = audioProcessor.processFrame(pcm16);
                     sendPcmChunkToGemini(procRes.pcmOutput);
 
+                    // Track caller speech activity and trigger watchdog if Gemini lags after caller finishes speaking
+                    if (!audioProcessor.isAiSpeaking) {
+                        if (procRes.isVoice) {
+                            userSpeakingActive = true;
+                            clearTurnWatchdog();
+                        } else if (userSpeakingActive) {
+                            // Caller was speaking and has now paused/finished speaking
+                            if (!turnCompleteWatchdogTimer) {
+                                scheduleTurnComplete(450);
+                            }
+                        }
+                    }
+
                     // If barge-in detected, send clearAudio to stop AI playback on the caller's end
                     if (procRes.bargeIn && wsConnection.readyState === ws.OPEN) {
                         console.log('[BRIDGE] Barge-in! Clearing AI audio playback to caller...');
@@ -1708,6 +1781,7 @@ wss.on('connection', (wsConnection, req) => {
     });
 
      wsConnection.on('close', async (code, reason) => {
+        clearTurnWatchdog();
         if (ambienceInterval) { clearInterval(ambienceInterval); ambienceInterval = null; }
         clearInterval(pingInterval);
         if (wrapUpTimer) {
