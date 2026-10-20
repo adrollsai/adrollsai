@@ -94,7 +94,7 @@ app.get('/health', (req, res) => {
 
 // Vobiz Answer XML endpoint (Returns Stream XML directly to Vobiz)
 
-async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName = 'Aoede') {
+async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName = 'Kore') {
     const campaignPromise = campaignId
         ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
         : Promise.resolve({ data: null });
@@ -368,11 +368,14 @@ ${resolvedQuestionsInstruction}
 `.trim();
 
     const validVoiceNames = ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'];
-    const chosenVoice = (voiceName && validVoiceNames.includes(voiceName)) ? voiceName : 'Aoede';
+    let chosenVoice = 'Kore';
+    if (voiceName && validVoiceNames.includes(voiceName)) {
+        chosenVoice = voiceName === 'Aoede' ? 'Kore' : voiceName;
+    }
 
     const setupPayload = {
         setup: {
-            model: process.env.GEMINI_LIVE_MODEL || "models/gemini-3.1-flash-live-preview",
+            model: process.env.GEMINI_LIVE_MODEL || "models/gemini-2.0-flash-exp",
             generationConfig: {
                 responseModalities: ["AUDIO"],
                 speechConfig: {
@@ -461,7 +464,7 @@ ${resolvedQuestionsInstruction}
     };
 }
 
-async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Aoede') {
+async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Kore') {
     if (!leadId || !profileId) return null;
     const existing = prewarmedPool.get(leadId);
     if (existing && !existing.used && (Date.now() - existing.createdAt < 60000)) {
@@ -668,8 +671,20 @@ app.post('/prewarm', async (req, res) => {
             return res.status(400).json({ error: 'Missing leadId or profileId in prewarm request.' });
         }
         console.log(`[PREWARM] Prewarm request for lead: ${leadId}, profile: ${profileId}`);
-        prewarmSession(leadId, profileId, campaignId, voiceName || 'Aoede');
-        res.json({ status: 'prewarming_started', leadId });
+        const entry = await prewarmSession(leadId, profileId, campaignId, voiceName || 'Kore');
+        if (entry && !entry.setupComplete) {
+            await new Promise((resolve) => {
+                const timeout = setTimeout(resolve, 2500);
+                const checkInterval = setInterval(() => {
+                    if (entry.setupComplete || entry.used) {
+                        clearTimeout(timeout);
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 50);
+            });
+        }
+        res.json({ status: 'prewarmed', leadId, setupComplete: entry?.setupComplete || false });
     } catch (err) {
         console.error('[PREWARM] Error in prewarm handler:', err);
         res.status(500).json({ error: err.message });
@@ -998,7 +1013,7 @@ wss.on('connection', (wsConnection, req) => {
     let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
     let greetingPlayed = false;
-    let voiceName = (queryVoiceName && ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'].includes(queryVoiceName)) ? queryVoiceName : 'Aoede';
+    let voiceName = (queryVoiceName && ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'].includes(queryVoiceName)) ? (queryVoiceName === 'Aoede' ? 'Kore' : queryVoiceName) : 'Kore';
 
     let earlyConfigPromise = null;
     if (leadId && profileId) {

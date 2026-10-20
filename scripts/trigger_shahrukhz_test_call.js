@@ -110,7 +110,7 @@ async function runTestCall() {
         leadId: lead.id,
         profileId: userId,
         campaignId: voiceCampaignId,
-        voiceName: 'Aoede'
+        voiceName: 'Kore'
       })
     });
   } catch (pwErr) {
@@ -119,7 +119,7 @@ async function runTestCall() {
 
   // 4. Dial outbound via Vobiz API
   const appUrl = 'https://app.nobogent.com';
-  const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${lead.id}&profileId=${userId}&campaignId=${voiceCampaignId}&voiceName=Aoede`;
+  const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${lead.id}&profileId=${userId}&campaignId=${voiceCampaignId}&voiceName=Kore`;
   const hangupUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${lead.id}`;
 
   const requestPayload = {
