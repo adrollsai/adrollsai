@@ -10,9 +10,26 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { code, wabaId, phone_number_id } = await req.json();
+        const { code, wabaId, phone_number_id, targetUserId } = await req.json();
         if (!code) {
             return NextResponse.json({ error: 'Missing authorization code' }, { status: 400 });
+        }
+
+        const url = new URL(req.url);
+        const impersonateParam = url.searchParams.get('impersonate') || targetUserId;
+        let effectiveUserId = user.id;
+
+        if (impersonateParam && impersonateParam !== user.id) {
+            const { data: authProfile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single();
+            const authRole = authProfile?.role?.toLowerCase() || '';
+            if (['super_admin', 'agency', 'admin'].includes(authRole)) {
+                effectiveUserId = impersonateParam;
+                console.log(`[WHATSAPP ONBOARD] Impersonation active. Target user ID: ${effectiveUserId}`);
+            }
         }
 
         const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
@@ -115,7 +132,7 @@ export async function POST(req: Request) {
                 whatsapp_phone_number: displayPhoneNumber || null,
                 whatsapp_connected_at: new Date().toISOString()
             } as any) // cast as any to handle possible temporary typescript schema desync
-            .eq('id', user.id);
+            .eq('id', effectiveUserId);
 
         if (dbError) {
             console.error('[WHATSAPP ONBOARD] Supabase Save Error:', dbError);
@@ -187,7 +204,7 @@ export async function POST(req: Request) {
         // 3d. Register default WhatsApp automation templates with Meta
         if (finalWabaId && accessToken) {
             try {
-                const result = await registerDefaultTemplates(supabase, user.id, accessToken, finalWabaId);
+                const result = await registerDefaultTemplates(supabase, effectiveUserId, accessToken, finalWabaId);
                 console.log('[WHATSAPP ONBOARD] Default templates registration complete:', result);
             } catch (tplErr: any) {
                 console.error('[WHATSAPP ONBOARD] ⚠️ Template registration failed (non-fatal):', tplErr.message);
@@ -199,12 +216,12 @@ export async function POST(req: Request) {
             const { count } = await supabase
                 .from('whatsapp_flows')
                 .select('id', { count: 'exact', head: true })
-                .eq('user_id', user.id);
+                .eq('user_id', effectiveUserId);
 
             if (count === 0 || count === null) {
                 const defaultFlows = [
                     {
-                        user_id: user.id,
+                        user_id: effectiveUserId,
                         title: 'Instant Lead Welcome',
                         description: 'Send a welcome template 2 mins after lead capture from ads/pages.',
                         icon_name: 'MessageCircle',
@@ -214,7 +231,7 @@ export async function POST(req: Request) {
                         delay_minutes: 2
                     },
                     {
-                        user_id: user.id,
+                        user_id: effectiveUserId,
                         title: 'Site Visit Coordinator',
                         description: 'Reminds leads 24 hours before a scheduled site visit appointment.',
                         icon_name: 'CalendarClock',
@@ -224,7 +241,7 @@ export async function POST(req: Request) {
                         delay_minutes: 1440
                     },
                     {
-                        user_id: user.id,
+                        user_id: effectiveUserId,
                         title: 'New Launch Alert',
                         description: 'Alert leads immediately about new project phases or pricing updates.',
                         icon_name: 'BellRing',

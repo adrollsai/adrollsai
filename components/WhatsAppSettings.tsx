@@ -680,7 +680,8 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
             body: JSON.stringify({
               code,
               wabaId: finalMetadata.wabaId,
-              phone_number_id: finalMetadata.phone_number_id
+              phone_number_id: finalMetadata.phone_number_id,
+              targetUserId: userId
             })
           })
 
