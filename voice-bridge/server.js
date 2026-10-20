@@ -270,18 +270,6 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         activeQualifyingQuestions = campaign.audience_filter.qualifying_questions;
     }
 
-    const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
-    const isFemale = !vLower.includes('orion') && !vLower.includes('puck') && !vLower.includes('charon') && !vLower.includes('fenrir') && !vLower.includes('male');
-    const genderGrammarInstruction = isIndianEnglishMode
-        ? `GENDER IDENTITY (FEMALE): You are Sahana, a warm, professional, distinctly FEMALE customer relationship representative. You MUST speak in a polite, feminine, natural Indian English tone. NEVER sound male or robotic.`
-        : (isFemale
-            ? `GENDER IDENTITY (FEMALE): You are a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon"). NEVER use masculine endings.`
-            : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings.`);
-
-    const backchannelAck = isFemale
-        ? `"Haan ji", "Ahan", "Hmm", "Ji bilkul", "Achha", "Samajh rahi hoon"`
-        : `"Haan ji", "Ahan", "Hmm", "Ji bilkul", "Achha", "Samajh raha hoon"`;
-
     const campaignGuidance = (campaign?.custom_prompt || campaign?.prompt)
         ? `\n--- CAMPAIGN SPECIFIC GUIDELINES ---\n${campaign.custom_prompt || campaign.prompt}\n`
         : '';
@@ -296,9 +284,20 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         campGuidanceLower.includes('amritha') ||
         campGuidanceLower.includes('mysore') ||
         campGuidanceLower.includes('bangalore') ||
-        campaign?.audience_filter?.language === 'english' ||
-        (!isKannadaMode && !isExplicitHinglish)
+        campaign?.audience_filter?.language === 'english'
     );
+
+    const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
+    const isFemale = !vLower.includes('orion') && !vLower.includes('puck') && !vLower.includes('charon') && !vLower.includes('fenrir') && !vLower.includes('male');
+    const genderGrammarInstruction = isIndianEnglishMode
+        ? `GENDER IDENTITY (FEMALE): You are Sahana, a warm, professional, distinctly FEMALE customer relationship representative. You MUST speak in a polite, feminine, natural Indian English tone. NEVER sound male or robotic.`
+        : (isFemale
+            ? `GENDER IDENTITY (FEMALE): You are Priya, a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon"). NEVER use masculine endings.`
+            : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings.`);
+
+    const backchannelAck = isFemale
+        ? `"Haan ji", "Ahan", "Hmm", "Ji bilkul", "Achha", "Samajh rahi hoon"`
+        : `"Haan ji", "Ahan", "Hmm", "Ji bilkul", "Achha", "Samajh raha hoon"`;
 
     let languageInstruction;
     let effectiveAck = backchannelAck;
