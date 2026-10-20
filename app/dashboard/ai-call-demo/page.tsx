@@ -57,7 +57,7 @@ export default function AiCallDemoPage() {
 
   // Set default prompt on initial template load
   useEffect(() => {
-    const defaultTpl = DEMO_PROMPT_TEMPLATES.find(t => t.id === 'real_estate') || DEMO_PROMPT_TEMPLATES[0]
+    const defaultTpl = DEMO_PROMPT_TEMPLATES.find(t => t.id === 'amritha_vana') || DEMO_PROMPT_TEMPLATES[0]
     setCustomPrompt(defaultTpl.prompt)
     setBusinessName(defaultTpl.defaultBusinessName)
     setProspectName(defaultTpl.suggestedProspectName)

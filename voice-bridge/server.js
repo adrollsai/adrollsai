@@ -271,10 +271,12 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
     }
 
     const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
-    const isFemale = vLower.includes('nova') || vLower.includes('vega') || vLower.includes('capella') || vLower.includes('lyra') || vLower.includes('aoede') || vLower.includes('kore') || vLower.includes('female');
-    const genderGrammarInstruction = isFemale
-        ? `GENDER IDENTITY (FEMALE): You are a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon", "Call kar RAHI thi", "Samajh RAHI hoon"). NEVER use masculine endings.`
-        : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHA hoon", "Main aapki help kar SAKTA hoon", "Call kar RAHA tha", "Samajh RAHA hoon").`;
+    const isFemale = !vLower.includes('orion') && !vLower.includes('puck') && !vLower.includes('charon') && !vLower.includes('fenrir') && !vLower.includes('male');
+    const genderGrammarInstruction = isIndianEnglishMode
+        ? `GENDER IDENTITY (FEMALE): You are Sahana, a warm, professional, distinctly FEMALE customer relationship representative. You MUST speak in a polite, feminine, natural Indian English tone. NEVER sound male or robotic.`
+        : (isFemale
+            ? `GENDER IDENTITY (FEMALE): You are a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon"). NEVER use masculine endings.`
+            : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings.`);
 
     const backchannelAck = isFemale
         ? `"Haan ji", "Ahan", "Hmm", "Ji bilkul", "Achha", "Samajh rahi hoon"`
@@ -303,11 +305,12 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
 
     if (isIndianEnglishMode) {
         languageInstruction = `CRITICAL ACCENT, PRONUNCIATION & LANGUAGE MANDATE:
-- MANDATORY STARTING LANGUAGE: You MUST speak exclusively in NATURAL, POLITE, COURTEOUS URBAN INDIAN ENGLISH (South Indian / Bangalore professional cadence).
-- STRICT ACCENT DIRECTIVE (NO AMERICAN ACCENT): You MUST speak with an authentic, professional Indian English accent (crisp non-rhotic pronunciation, warm Indian intonation and inflection, clear syllables). NEVER USE AN AMERICAN, BRITISH, OR WESTERN ACCENT. Any American accent is strictly prohibited.
+- MANDATORY LANGUAGE: You MUST speak exclusively in NATURAL, POLITE, COURTEOUS URBAN INDIAN ENGLISH (Bangalore / South India professional cadence, warm feminine voice).
+- STRICT ACCENT DIRECTIVE (NO AMERICAN ACCENT): You MUST speak with an authentic, professional Indian English accent (crisp non-rhotic pronunciation, warm Indian intonation and inflection, clear syllables). NEVER USE AN AMERICAN, BRITISH, OR WESTERN ACCENT.
+- DO NOT SWITCH TO HINDI UNLESS ASKED: If the customer asks questions in English (e.g. "Can you explain about the project details?"), you MUST ANSWER IN INDIAN ENGLISH! Never speak in Hindi or Hinglish when the customer is speaking English!
 - AUTHENTIC PRONUNCIATION: Pronounce Indian names and words authentically: "Amritha Vana", "Mysore-Madikeri Road", "Rahul", "Suresh".
-- NATURAL INDIAN CADENCE & PHRASING: Use authentic Indian professional phrasing (e.g. "Do you have a quick minute to speak?", "Shall I connect you with our relationship manager?"). Avoid Americanisms like "How are you doing today".
-- DYNAMIC MULTILINGUAL SWITCHING: If the caller replies in Kannada, Hindi/Hinglish, Telugu, Tamil, or asks to speak in a regional language, IMMEDIATELY switch smoothly to their preferred language and continue fluently in that language without hesitation!`;
+- NATURAL INDIAN CADENCE & PHRASING: Use authentic Indian professional phrasing (e.g. "Do you have a quick minute to speak?", "Shall I connect you with our relationship manager?").
+- DYNAMIC REGIONAL SWITCHING: Only if the caller explicitly asks to speak in Kannada ("Kannada dalli maathadi") or Hindi ("Hindi mein baat karein"), then switch smoothly to that language.`;
         effectiveAck = `"Yes", "Sure", "Right", "Understood", "Definitely", "Absolutely", "Hmm"`;
     } else if (isKannadaMode) {
         languageInstruction = `LANGUAGE REQUIREMENT:
@@ -351,7 +354,13 @@ CRITICAL CONVERSATIONAL STYLE (BE LESS TALKATIVE, LISTEN MORE):
 4. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately, acknowledge what they said with ${isIndianEnglishMode ? '"Yes" or "Sure"' : '"Haan ji" or "Ahan"'}, and address their point directly and concisely.
 5. BROCHURE & PRICING: If the customer asks for brochure or pricing, use the 'send_whatsapp_info' tool to dispatch it to their WhatsApp.
 6. APPOINTMENTS: When the customer agrees to connect or gives a preferred time with the Relationship Manager, trigger the 'book_appointment_slot' tool.
-7. ENDING CALL: When the conversation naturally finishes or the customer says bye / is busy, politely say goodbye and trigger the 'end_call' tool.
+7. STRICT END_CALL GUARDRAILS (NEVER HANG UP ON CUSTOMER):
+   - You MUST NEVER trigger 'end_call' while the customer is still speaking, asking questions, or waiting for documents!
+   - If the customer says "still I have not received" or asks about WhatsApp, APOLOGIZE, confirm their number, and explain that you are re-triggering it right now. NEVER say goodbye or hang up!
+   - Trigger 'end_call' ONLY AND EXCLUSIVELY when:
+     1. An appointment is confirmed AND the customer says goodbye/thank you.
+     2. The customer explicitly says "bye", "thank you", or "I have to leave".
+     3. The customer explicitly says they are not interested and wants to hang up.
 
 ${catalogueInfo}
 ${formQuestionsSummary}
@@ -366,7 +375,7 @@ ${resolvedQuestionsInstruction}
                 speechConfig: {
                     voiceConfig: {
                         prebuiltVoiceConfig: {
-                            voiceName: voiceName || 'Nova'
+                            voiceName: (voiceName && voiceName !== 'Aoede') ? voiceName : 'Nova'
                         }
                     }
                 }
@@ -870,17 +879,18 @@ function calculateRMS(pcm16Array) {
 class NoiseSuppressedAudioProcessor {
     constructor(options = {}) {
         // Barge-in: RMS threshold for caller voice to be considered "speaking" during AI output
-        // Telephony lines typically have RMS 50-200 for line noise, 400+ for speech
-        this.bargeInThreshold = options.bargeInThreshold || 500;
-        this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 3; // 3 frames * 20ms = 60ms of sustained speech
-        this.voiceThreshold = options.voiceThreshold || 240; // Caller speech RMS threshold
+        // Human speech directly into phone microphone is typically RMS 1600 - 5000+
+        // Telephony ambient line noise and speaker acoustic echo is RMS 200 - 900
+        this.bargeInThreshold = options.bargeInThreshold || 1400;
+        this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 10; // 10 frames * 20ms = 200ms of sustained speech
+        this.voiceThreshold = options.voiceThreshold || 260; // Caller speech RMS threshold
         this.isAiSpeaking = false;
         this.aiSpeakingTimeout = null;
         this.sustainedBargeInFrames = 0;
-        this.bargeInTriggered = false; // Set true when barge-in fires, reset when AI starts speaking again
+        this.bargeInTriggered = false;
     }
 
-    markAiSpeaking(durationMs = 1200) {
+    markAiSpeaking(durationMs = 1500) {
         this.isAiSpeaking = true;
         this.bargeInTriggered = false;
         this.sustainedBargeInFrames = 0;
@@ -924,11 +934,9 @@ class NoiseSuppressedAudioProcessor {
                 this.sustainedBargeInFrames++;
                 if (this.sustainedBargeInFrames >= this.sustainedBargeInNeeded) {
                     // Caller is deliberately speaking over the AI
-                    console.log(`[AUDIO PROCESSOR] Barge-in detected! RMS: ${Math.round(rms)}, sustained ${this.sustainedBargeInFrames} frames`);
+                    console.log(`[AUDIO PROCESSOR] Sustained human speech detected over AI! RMS: ${Math.round(rms)}, sustained ${this.sustainedBargeInFrames} frames`);
                     this.bargeInTriggered = true;
-                    this.isAiSpeaking = false;
                     this.sustainedBargeInFrames = 0;
-                    if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
                     result.bargeIn = true;
                 }
             } else {
@@ -987,7 +995,7 @@ wss.on('connection', (wsConnection, req) => {
     let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
     let greetingPlayed = false;
-    let voiceName = queryVoiceName || 'Nova';
+    let voiceName = (queryVoiceName && queryVoiceName !== 'Aoede') ? queryVoiceName : 'Nova';
 
     const audioProcessor = new NoiseSuppressedAudioProcessor();
     let isCallHangingUp = false;
@@ -1348,8 +1356,10 @@ wss.on('connection', (wsConnection, req) => {
                 const checkAgentGoodbyeAndHangup = (text) => {
                     if (!text || isCallHangingUp) return;
                     const goodbyeRegex = /\b(thank\s*you|shukriya|alvida|have a (good|great|nice) day|bye\b|take\s*care|phir milte hain|dhanyawad)\b/i;
-                    if (goodbyeRegex.test(text) && transcriptTurns.length >= 2) {
-                        console.log(`[BRIDGE] Detected verbal farewell from agent: "${text.trim()}". Triggering fallback hangup...`);
+                    const userSaidGoodbye = transcriptTurns.some(t => t.role === 'user' && goodbyeRegex.test(t.message || ''));
+                    // Only trigger verbal hangup if the USER also said goodbye/thank you!
+                    if (goodbyeRegex.test(text) && userSaidGoodbye && transcriptTurns.length >= 4) {
+                        console.log(`[BRIDGE] Mutual verbal farewell detected ("${text.trim()}"). Triggering fallback hangup...`);
                         triggerCallHangup('verbal_goodbye_detected');
                     }
                 };

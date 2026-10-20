@@ -14,43 +14,36 @@ export const DEMO_VOICE_OPTIONS = [
         id: 'Nova',
         name: 'Nova',
         gender: 'Female',
-        badge: 'Default • Indian & Global English',
-        description: 'Warm, natural, clear Indian English female voice. Best for Indian real estate consultations.'
+        badge: 'Default • Authentic Indian English Female',
+        description: 'Warm, natural, distinctly feminine Indian English voice (Bangalore professional intonation).'
+    },
+    {
+        id: 'Kore',
+        name: 'Kore',
+        gender: 'Female',
+        badge: 'Gentle & Courteous Female',
+        description: 'Clear, gentle, feminine Indian English voice.'
     },
     {
         id: 'Vega',
         name: 'Vega',
         gender: 'Female',
-        badge: 'Warm & Professional',
+        badge: 'Warm & Polished Female',
         description: 'Smooth, polished tone for Indian English and regional calls.'
+    },
+    {
+        id: 'Capella',
+        name: 'Capella',
+        gender: 'Female',
+        badge: 'Articulate Female',
+        description: 'Clear, gentle female voice suitable for advisory and luxury consultations.'
     },
     {
         id: 'Orion',
         name: 'Orion',
         gender: 'Male',
         badge: 'Executive Male',
-        description: 'Deep, articulate, executive Indian English & regional male voice.'
-    },
-    {
-        id: 'Capella',
-        name: 'Capella',
-        gender: 'Female',
-        badge: 'Articulate & Gentle',
-        description: 'Clear, gentle female voice suitable for advisory and luxury consultations.'
-    },
-    {
-        id: 'Puck',
-        name: 'Puck',
-        gender: 'Male',
-        badge: 'High-Energy & Upbeat',
-        description: 'Energetic, modern, friendly male voice. Ideal for fitness clubs, education, and startups.'
-    },
-    {
-        id: 'Aoede',
-        name: 'Aoede',
-        gender: 'Female',
-        badge: 'US English',
-        description: 'Standard American English female voice.'
+        description: 'Deep, articulate, executive Indian English male voice.'
     }
 ]
 
