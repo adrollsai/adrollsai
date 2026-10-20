@@ -99,10 +99,9 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
         : Promise.resolve({ data: null });
 
-    const [profileRes, leadRes, propsRes, campaignRes, flaggedRes] = await Promise.all([
+    const [profileRes, leadRes, campaignRes, flaggedRes] = await Promise.all([
         supabaseAdmin.from('profiles').select('*').eq('id', profileId).maybeSingle(),
         supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle(),
-        supabaseAdmin.from('properties').select('*').eq('user_id', profileId).limit(5),
         campaignPromise,
         supabaseAdmin.from('flagged_questions').select('*').eq('lead_id', leadId).eq('resolved', true).not('answer', 'is', null)
     ]);
@@ -110,15 +109,10 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
     let lead = leadRes?.data || null;
     const effectiveProfileId = (lead && lead.user_id) ? lead.user_id : profileId;
     let profile = profileRes?.data || null;
-    let props = propsRes?.data || null;
 
     if (effectiveProfileId && (effectiveProfileId !== profileId || !profile)) {
-        const [ownerProfileRes, ownerPropsRes] = await Promise.all([
-            supabaseAdmin.from('profiles').select('*').eq('id', effectiveProfileId).maybeSingle(),
-            supabaseAdmin.from('properties').select('*').eq('user_id', effectiveProfileId).limit(5)
-        ]);
+        const ownerProfileRes = await supabaseAdmin.from('profiles').select('*').eq('id', effectiveProfileId).maybeSingle();
         profile = ownerProfileRes?.data || profile;
-        props = ownerPropsRes?.data || props;
     }
 
     let campaign = campaignRes ? campaignRes.data : null;
@@ -131,6 +125,37 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
                 .maybeSingle();
             if (fallbackCamp) campaign = fallbackCamp;
         } catch (cErr) {}
+    }
+
+    // Resolve target property from catalogue
+    let targetProperty = null;
+    const targetPropId = campaign?.property_id || campaign?.audience_filter?.property_id || lead?.property_id;
+    if (targetPropId) {
+        try {
+            const { data: tp } = await supabaseAdmin.from('properties').select('*').eq('id', targetPropId).maybeSingle();
+            if (tp) targetProperty = tp;
+        } catch (e) {}
+    }
+    if (!targetProperty) {
+        try {
+            const { data: allProps } = await supabaseAdmin.from('properties').select('*').eq('user_id', effectiveProfileId);
+            if (allProps && allProps.length > 0) {
+                const searchContext = `${campaign?.name || ''} ${lead?.ad_name || ''} ${lead?.campaign_id || ''}`.toLowerCase();
+                if (searchContext.includes('shahrukh') || searchContext.includes('danube')) {
+                    targetProperty = allProps.find(p => p.title?.toLowerCase().includes('shahrukh') || p.description?.toLowerCase().includes('shahrukh'));
+                } else if (searchContext.includes('amritsar') || searchContext.includes('omaxe')) {
+                    targetProperty = allProps.find(p => p.title?.toLowerCase().includes('amritsar') || p.title?.toLowerCase().includes('omaxe'));
+                }
+                if (!targetProperty && allProps.length === 1) {
+                    targetProperty = allProps[0];
+                }
+            }
+        } catch (pErr) {}
+    }
+
+    let catalogueInfo = '';
+    if (targetProperty) {
+        catalogueInfo = `--- PROJECT CATALOGUE & PROPERTY SPECIFICATIONS (${targetProperty.title}) ---\nProject: ${targetProperty.title}\n${targetProperty.address || targetProperty.location ? `Location: ${targetProperty.address || targetProperty.location}\n` : ''}${targetProperty.price ? `Price: ${targetProperty.price}\n` : ''}${targetProperty.description ? `Project Details & Amenities:\n${targetProperty.description}\n` : ''}------------------------------------------------------------\n`;
     }
 
     const resolvedQuestions = flaggedRes?.data || [];
@@ -236,7 +261,7 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         } catch (e) {}
     }
 
-    targetProduct = adProductName || formAdCampaignName || (campaign?.target_product) || 'our prime properties';
+    targetProduct = (targetProperty && targetProperty.title) || adProductName || formAdCampaignName || (campaign?.target_product) || 'our prime properties';
 
     // Build Hinglish system instruction
     const isQualifyingEnabled = profile?.qualifying_enabled !== false;
@@ -312,8 +337,9 @@ ${campaignGuidance ? `${campaignGuidance}\n` : ''}
 KEY OBJECTIVE & CALL FLOW:
 1. REMIND PROSPECT: Remind ${leadName} that they recently filled an inquiry form on Facebook regarding ${targetProduct}.
 2. QUALIFY & CONFIRM: Confirm the key preferences & answers they submitted in the Facebook ad form.
-3. CONNECT WITH RELATIONSHIP MANAGER: Explain that our senior Relationship Manager will guide them further with exact layouts, pricing options, and unit availability.
-4. BOOK MEETING: Ask for their convenient day and time (e.g., tomorrow 11:00 AM) and trigger the 'book_appointment_slot' tool to confirm the meeting with the Relationship Manager!
+3. PROJECT INFO FROM CATALOGUE: If ${leadName} needs any more information of the project, provide crisp, accurate details directly from the Project Catalogue section below.
+4. CONNECT WITH RELATIONSHIP MANAGER: Explain that our senior Relationship Manager will guide them further with exact layouts, pricing options, and unit availability.
+5. BOOK MEETING: Ask for their convenient day and time (e.g., tomorrow 11:00 AM) and trigger the 'book_appointment_slot' tool to confirm the meeting with the Relationship Manager!
 
 CRITICAL CONVERSATIONAL STYLE (BE LESS TALKATIVE, LISTEN MORE):
 1. BE LESS TALKATIVE, LISTEN MUCH MORE: Never give long speeches, lectures, or sales pitches. Speak in short, crisp turns (under 10-15 words, maximum 1 short sentence per turn). Give the caller the maximum space to speak. You are here to LISTEN.
@@ -327,6 +353,7 @@ CRITICAL CONVERSATIONAL STYLE (BE LESS TALKATIVE, LISTEN MORE):
 6. APPOINTMENTS: When the customer agrees to connect or gives a preferred time with the Relationship Manager, trigger the 'book_appointment_slot' tool.
 7. ENDING CALL: When the conversation naturally finishes or the customer says bye / is busy, politely say goodbye and trigger the 'end_call' tool.
 
+${catalogueInfo}
 ${formQuestionsSummary}
 ${resolvedQuestionsInstruction}
 `.trim();

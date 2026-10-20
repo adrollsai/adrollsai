@@ -3492,7 +3492,14 @@ RULES:
               if (properties && properties.length > 0) {
                   propertiesList = properties;
                   const searchStr = `${campaignName} ${adCampaignString} ${formName}`.toLowerCase();
-                  const matched = properties.find(p => p.title && p.title.trim().length > 2 && searchStr.includes(p.title.toLowerCase().trim()));
+                  const matched = properties.find(p => {
+                      if (!p.title || p.title.trim().length <= 2) return false;
+                      const pTitleLower = p.title.toLowerCase().trim();
+                      if (searchStr.includes(pTitleLower)) return true;
+                      // Substring / keyword match: e.g. 'shahrukh', 'amritsar', 'omaxe', 'danube'
+                      const keyTokens = pTitleLower.split(/[\s|,-]+/).filter((w: string) => w.length >= 4 && !['residences', 'plots', 'floors', 'estates', 'villas', 'apartments', 'project', 'projects', 'luxury'].includes(w));
+                      return keyTokens.some((w: string) => searchStr.includes(w));
+                  });
                   if (matched) {
                       matchedPropertyTitle = matched.title;
                       matchedPropertyId = matched.id;
@@ -3863,6 +3870,9 @@ RULES:
               });
               if (matchedVC) {
                 matchedVoiceCampaignId = matchedVC.id;
+                if (!matchedPropertyId && matchedVC.audience_filter?.property_id) {
+                  matchedPropertyId = matchedVC.audience_filter.property_id;
+                }
               }
             }
           } catch (vcErr) {
