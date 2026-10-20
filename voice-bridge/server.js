@@ -1300,7 +1300,12 @@ wss.on('connection', (wsConnection, req) => {
                 const triggerCallHangup = async (reason = 'tool_call') => {
                     if (isCallHangingUp) return;
                     isCallHangingUp = true;
-                    console.log(`[BRIDGE] Initiating call hangup sequence (reason: ${reason}, isVobiz: ${isVobiz}). Waiting 2.8s for final audio playout...`);
+                    console.log(`[BRIDGE] Initiating call hangup sequence (reason: ${reason}, isVobiz: ${isVobiz}). Waiting 2.0s for final audio playout...`);
+
+                    // Stop receiving any further speech turns from Gemini to prevent trailing duplicate speech
+                    if (geminiSocket) {
+                        geminiSocket.removeAllListeners('message');
+                    }
                     setTimeout(async () => {
                         try {
                             if (isVobiz) {
@@ -1708,8 +1713,7 @@ wss.on('connection', (wsConnection, req) => {
                                                 id: call.id,
                                                 response: {
                                                     success: true,
-                                                    confirmed_slot: slotTime,
-                                                    instruction_for_agent: `Appointment confirmed for ${slotTime}. Thank the customer and confirm that a WhatsApp reminder will follow.`
+                                                    confirmed_slot: slotTime
                                                 }
                                             }]
                                         }
