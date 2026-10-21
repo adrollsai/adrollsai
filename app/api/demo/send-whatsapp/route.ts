@@ -7,9 +7,6 @@ const supabaseAdmin = createSupabaseAdmin(
     { auth: { persistSession: false } }
 );
 
-const NOBOGENT_PHONE_ID = process.env.DEV_WHATSAPP_PHONE_ID || '1140952692437292';
-const NOBOGENT_TOKEN = process.env.DEV_WHATSAPP_ACCESS_TOKEN;
-
 export async function POST(req: Request) {
     try {
         const body = await req.json();
@@ -27,10 +24,6 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Valid prospect phone number is required.' }, { status: 400 });
         }
 
-        if (!NOBOGENT_TOKEN) {
-            return NextResponse.json({ error: 'WhatsApp API credentials not configured.' }, { status: 500 });
-        }
-
         // Clean & format destination phone number (digits with 91 prefix for India)
         let cleanDigits = prospectPhone.replace(/\D/g, '');
         if (cleanDigits.startsWith('00')) cleanDigits = cleanDigits.slice(2);
@@ -39,7 +32,32 @@ export async function POST(req: Request) {
         } else if (cleanDigits.length === 11 && cleanDigits.startsWith('0')) {
             cleanDigits = '91' + cleanDigits.slice(1);
         } else if (cleanDigits.length === 12 && cleanDigits.startsWith('91')) {
-            // Valid
+            // Already 91...
+        }
+
+        // Dynamically fetch super admin account (rchopra489@gmail.com) WABA credentials from Supabase
+        const { data: superAdminProfile, error: profileErr } = await supabaseAdmin
+            .from('profiles')
+            .select('id, email, whatsapp_phone_number_id, whatsapp_waba_id, whatsapp_access_token, facebook_token')
+            .eq('email', 'rchopra489@gmail.com')
+            .maybeSingle();
+
+        if (profileErr) {
+            console.error('[Demo WhatsApp] Failed to fetch super admin profile:', profileErr);
+        }
+
+        // Prioritize facebook_token (full business & whatsapp_business_messaging scopes), then whatsapp_access_token, then env fallback
+        const candidateTokens = [
+            superAdminProfile?.facebook_token,
+            superAdminProfile?.whatsapp_access_token,
+            process.env.DEV_WHATSAPP_ACCESS_TOKEN
+        ].filter(Boolean) as string[];
+
+        const phoneId = superAdminProfile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || '1140952692437292';
+
+        if (candidateTokens.length === 0) {
+            console.error('[Demo WhatsApp] No WhatsApp access token found for rchopra489@gmail.com');
+            return NextResponse.json({ error: 'WhatsApp API credentials not configured.' }, { status: 500 });
         }
 
         let templatePayload: any;
@@ -95,37 +113,113 @@ export async function POST(req: Request) {
             };
         }
 
-        console.log(`[Demo WhatsApp] Dispatching real ${templateName} template to +${cleanDigits}...`);
+        console.log(`[Demo WhatsApp] Dispatching real ${templateName} template to +${cleanDigits} using phoneId ${phoneId} from rchopra489@gmail.com WABA...`);
 
-        const metaUrl = `https://graph.facebook.com/v20.0/${NOBOGENT_PHONE_ID}/messages`;
-        const res = await fetch(metaUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${NOBOGENT_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(templatePayload)
-        });
+        let sendSuccess = false;
+        let lastError: any = null;
+        let messageId: string | null = null;
+        let usedTokenPrefix = '';
 
-        const data = await res.json();
-        console.log(`[Demo WhatsApp] Meta API Response for ${templateName}:`, data);
+        // Iterate through candidate tokens until success
+        for (const token of candidateTokens) {
+            try {
+                const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
+                const res = await fetch(metaUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(templatePayload)
+                });
 
-        if (!res.ok || data.error) {
-            console.error('[Demo WhatsApp] Failed to send template:', data.error);
+                const data = await res.json();
+                console.log(`[Demo WhatsApp] Meta API Response for token prefix ${token.substring(0, 10)}:`, data);
+
+                if (res.ok && data.messages?.[0]?.id) {
+                    sendSuccess = true;
+                    messageId = data.messages[0].id;
+                    usedTokenPrefix = token.substring(0, 15);
+                    break;
+                } else {
+                    lastError = data.error;
+                    console.warn(`[Demo WhatsApp] Candidate token failed (${data.error?.message || 'Unknown'}). Trying next candidate...`);
+                }
+            } catch (callErr: any) {
+                lastError = callErr;
+            }
+        }
+
+        if (!sendSuccess) {
+            console.error('[Demo WhatsApp] All candidate tokens failed:', lastError);
             return NextResponse.json({
-                error: data.error?.message || 'Meta WhatsApp delivery failed.',
-                details: data.error
+                error: lastError?.message || 'Meta WhatsApp delivery failed.',
+                details: lastError
             }, { status: 400 });
         }
 
-        const messageId = data.messages?.[0]?.id;
+        // Log message and update/create chat thread for rchopra489@gmail.com
+        if (superAdminProfile?.id) {
+            try {
+                const adminUserId = superAdminProfile.id;
+                const phoneDigits = cleanDigits.slice(-10);
+
+                let { data: chat } = await supabaseAdmin
+                    .from('whatsapp_chats')
+                    .select('id')
+                    .eq('user_id', adminUserId)
+                    .or(`recipient_phone.eq.${cleanDigits},recipient_phone.eq.+${cleanDigits},recipient_phone.ilike.%${phoneDigits}%`)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (!chat) {
+                    const { data: newChat } = await supabaseAdmin
+                        .from('whatsapp_chats')
+                        .insert({
+                            user_id: adminUserId,
+                            recipient_name: prospectName,
+                            recipient_phone: `+${cleanDigits}`,
+                            last_message_text: `[${templateName}] ${sampleText}`,
+                            unread_count: 0,
+                            updated_at: new Date().toISOString()
+                        })
+                        .select('id')
+                        .single();
+                    chat = newChat;
+                } else {
+                    await supabaseAdmin
+                        .from('whatsapp_chats')
+                        .update({
+                            recipient_name: prospectName,
+                            last_message_text: `[${templateName}] ${sampleText}`,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', chat.id);
+                }
+
+                if (chat?.id) {
+                    await supabaseAdmin.from('whatsapp_messages').insert({
+                        chat_id: chat.id,
+                        direction: 'outbound',
+                        message_text: sampleText,
+                        status: 'sent',
+                        meta_message_id: messageId,
+                        created_at: new Date().toISOString()
+                    });
+                }
+            } catch (logErr) {
+                console.warn('[Demo WhatsApp] Failed to log chat message to Supabase:', logErr);
+            }
+        }
 
         return NextResponse.json({
             success: true,
             recipient: cleanDigits,
             messageId,
             templateName,
-            sampleText
+            sampleText,
+            tokenPrefix: usedTokenPrefix
         });
 
     } catch (err: any) {
