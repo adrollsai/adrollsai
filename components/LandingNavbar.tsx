@@ -52,7 +52,11 @@ export default function LandingNavbar() {
                </div>
 
                {/* Desktop Links */}
-               <div className="hidden lg:flex items-center gap-8 xl:gap-10 text-base font-extrabold text-[#003D6F]/90">
+               <div className="hidden lg:flex items-center gap-7 xl:gap-9 text-base font-extrabold text-[#003D6F]/90">
+                  <Link href="/demo" className="text-white bg-gradient-to-r from-[#003D6F] to-[#B22B31] px-4 py-1.5 rounded-full hover:shadow-lg transition-all flex items-center gap-1.5 text-sm font-black shadow-sm">
+                     <span className="w-2 h-2 rounded-full bg-cyan-300 animate-pulse shrink-0" />
+                     Live AI Demo ✨
+                  </Link>
                   <Link href="/results" className="hover:text-[#B22B31] transition-colors hover:underline decoration-2 underline-offset-4 flex items-center gap-1.5 text-[#003D6F]">
                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                      Client Results
@@ -95,6 +99,10 @@ export default function LandingNavbar() {
                      exit={{ x: '100%' }}
                      className="lg:hidden fixed top-28 md:top-32 left-0 w-full h-screen bg-white border-t border-slate-200 p-6 flex flex-col gap-5 z-50 text-lg font-bold"
                   >
+                     <Link href="/demo" onClick={() => setIsMenuOpen(false)} className="text-white bg-gradient-to-r from-[#003D6F] to-[#B22B31] px-4 py-2.5 rounded-xl flex items-center gap-2 font-black text-base shadow-sm">
+                        <span className="w-2.5 h-2.5 rounded-full bg-cyan-300 animate-pulse" />
+                        Live AI Demo ✨
+                     </Link>
                      <Link href="/results" onClick={() => setIsMenuOpen(false)} className="text-[#003D6F] flex items-center gap-2 font-extrabold">
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                         Client Results

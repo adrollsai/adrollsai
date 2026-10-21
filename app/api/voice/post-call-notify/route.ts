@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     // 1. Fetch lead and profile
     const { data: lead, error: leadErr } = await supabaseAdmin
       .from('leads')
-      .select('id, name, phone, email, pipeline_stage, status, custom_fields, user_id, budget, source, ad_name, campaign_id, voice_campaign_id, notes, summary, voice_call_summary')
+      .select('id, name, phone, email, pipeline_stage, status, custom_fields, user_id, budget, source, ad_name, campaign_id, voice_campaign_id, notes, summary, voice_call_summary, assigned_to')
       .eq('id', leadId)
       .single()
 
@@ -149,6 +149,26 @@ export async function POST(req: Request) {
         emailSubject: `🎙️ Site Visit / Appointment Booked: ${leadName} (${propertyLabel})`
       })
 
+      // Also notify assigned agent if lead is assigned to someone other than owner
+      if (lead.assigned_to && lead.assigned_to !== ownerUserId) {
+        try {
+          await sendAdminMultiChannelNotification({
+            ownerUserId: lead.assigned_to,
+            title: `🎙️ Site Visit / Appointment Booked: ${leadName}`,
+            body: `AI Voice Agent successfully scheduled an on-site visit/appointment for your assigned lead ${leadName}!\n\n📅 Date & Time: ${formattedSlotDate} (IST)\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
+            url: `/dashboard/crm/${leadId}`,
+            type: 'meeting_booked',
+            leadPhone,
+            leadName,
+            leadId,
+            emailSubject: `🎙️ Site Visit / Appointment Booked for Assigned Lead: ${leadName} (${propertyLabel})`
+          })
+          console.log(`[POST-CALL NOTIFY] Sent Appointment Booked alert to assigned agent ${lead.assigned_to}`)
+        } catch (agentErr: any) {
+          console.warn(`[POST-CALL NOTIFY] Error notifying assigned agent ${lead.assigned_to}:`, agentErr.message)
+        }
+      }
+
       console.log(`[POST-CALL NOTIFY] Sent Appointment Booked admin alert for lead ${leadId}`)
 
       return NextResponse.json({
@@ -159,46 +179,15 @@ export async function POST(req: Request) {
       })
     }
 
-    // CASE 2: Prospect showed genuine interest (Must be explicitly qualified AND interested, or marked HOT)
-    // STRICT RULE: If the prospect asked for a callback, had no budget, or was not genuinely interested, DO NOT send a high-interest alert!
-    const hasClearInterest = !bookingTime && isInterested === true && (isQualified === true || leadPriority === 'HOT')
-
-    if (hasClearInterest) {
-      // Transition CRM stage to 'Interested' if currently 'New' or 'New Lead'
-      if (!lead.pipeline_stage || lead.pipeline_stage === 'New' || lead.pipeline_stage === 'New Lead') {
-        await supabaseAdmin
-          .from('leads')
-          .update({
-            pipeline_stage: 'Interested',
-            status: 'Interested'
-          })
-          .eq('id', leadId)
-      }
-
-      const priorityLabel = leadPriority || 'HOT'
-
-      // Send Multi-channel notification to Admin (WhatsApp + Email)
-      await sendAdminMultiChannelNotification({
-        ownerUserId,
-        title: `🔥 High-Interest Lead Alert: ${leadName}`,
-        body: `Prospect expressed genuine interest during AI calling!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🔥 Priority: ${priorityLabel}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}\n${formattedAnswersStr ? `\n📋 Qualification Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
-        url: `/dashboard/crm/${leadId}`,
-        type: 'lead_interested',
-        leadPhone,
-        leadName,
-        leadId,
-        emailSubject: `🔥 High-Interest Lead Alert: ${leadName} (${priorityLabel}) - ${propertyLabel}`
-      })
-
-      console.log(`[POST-CALL NOTIFY] Sent Interested Lead admin alert for lead ${leadId}`)
-
-      return NextResponse.json({
-        success: true,
-        action: 'interest_notified',
-        leadPriority: priorityLabel,
-        leadId
-      })
-    }
+    // CASE 2: No appointment booked.
+    // RULE: Keep lead in Fresh section so human tele-callers can get to them.
+    // Only appointments trigger external notifications to admin & assigned agents.
+    console.log(`[POST-CALL NOTIFY] Call completed for lead ${leadId} without appointment booking. Kept in Fresh section for tele-callers. No alert dispatched.`);
+    return NextResponse.json({
+      success: true,
+      action: 'fresh_retained_no_alert',
+      leadId
+    });
 
     // CASE 3: Prospect requested a callback at a specific time
     if (callbackTime) {

@@ -16,6 +16,7 @@ export async function middleware(request: NextRequest) {
                            hostname.includes('nobogent.com') ||
                            hostname.includes('nobogent') ||
                            hostname.includes('localhost') || 
+                           hostname.includes('127.0.0.1') ||
                            hostname.includes('vercel.app') || 
                            hostname.includes('ngrok-free.dev');
 

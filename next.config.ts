@@ -37,6 +37,18 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  async rewrites() {
+    return [
+      {
+        source: '/experience',
+        destination: '/demo',
+      },
+      {
+        source: '/live-demo',
+        destination: '/demo',
+      },
+    ];
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "50mb",
