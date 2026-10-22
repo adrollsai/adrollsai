@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Suspense } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Clock, MessageCircle, CheckCircle2, RefreshCw, Send, Phone, UserPlus, X, ChevronDown, Loader2, History, ChevronLeft, ChevronRight, Target, Sparkles, Building2, Users, PhoneOff, PhoneCall, Pencil, Check, Edit2, Download } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -83,7 +83,8 @@ function cleanTranscript(transcript: any[]) {
 function LeadProfilePageContent() {
     const { id } = useParams()
     const router = useRouter()
-    const rawImp = searchParams.get('impersonate')
+    const searchParams = useSearchParams()
+    const rawImp = searchParams ? searchParams.get('impersonate') : null
     const impersonateId = rawImp ? rawImp.trim().replace(/\s+/g, '-') : null
     const supabase = useMemo(() => createClient(), [])
 
@@ -3600,7 +3601,13 @@ END:VCARD`
 export default function LeadProfilePage() {
     return (
         <CRMErrorBoundary fallbackTitle="Lead Detail Workspace">
-            <LeadProfilePageContent />
+            <Suspense fallback={
+                <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                </div>
+            }>
+                <LeadProfilePageContent />
+            </Suspense>
         </CRMErrorBoundary>
     )
 }
