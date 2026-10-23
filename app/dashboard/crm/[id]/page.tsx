@@ -110,7 +110,7 @@ function LeadProfilePageContent() {
 
     const visibleLeadHistory = useMemo(() => {
         let base = [...leadHistory]
-        const hasCallJson = base.some((item: any) => item.description && item.description.startsWith('🎙️ CALL_JSON:'))
+        const hasCallJson = base.some((item: any) => typeof item?.description === 'string' && item.description.startsWith('🎙️ CALL_JSON:'))
         if (!hasCallJson && (lead?.voice_call_summary || lead?.summary)) {
             const sumText = lead.voice_call_summary || lead.summary
             base.unshift({
@@ -135,7 +135,7 @@ function LeadProfilePageContent() {
                     const isSystem = item.action_type === 'REOPENED' || 
                                      item.action_type === 'LEAD_CREATED' || 
                                      item.action_type === 'SYSTEM' || 
-                                     (item.description && (item.description.includes('Lead Source :') || item.description.includes('Facebook Ad Submission') || item.description.includes('Source Details :')))
+                                     (typeof item.description === 'string' && (item.description.includes('Lead Source :') || item.description.includes('Facebook Ad Submission') || item.description.includes('Source Details :')))
                     if (isSystem) return true
                     const itemDate = item.created_at ? new Date(item.created_at) : null
                     return itemDate && !isNaN(itemDate.getTime()) ? itemDate >= cutoffDate : true
@@ -159,7 +159,7 @@ function LeadProfilePageContent() {
     const effectiveRecordingUrl = useMemo(() => {
         if (lead?.voice_recording_url) return lead.voice_recording_url
         if (leadHistory && leadHistory.length > 0) {
-            const item = leadHistory.find((h: any) => h.description && h.description.startsWith('🎙️ CALL_JSON:'))
+            const item = leadHistory.find((h: any) => typeof h?.description === 'string' && h.description.startsWith('🎙️ CALL_JSON:'))
             if (item) {
                 try {
                     const parsed = JSON.parse(item.description.replace('🎙️ CALL_JSON:', '').trim())
@@ -183,7 +183,7 @@ function LeadProfilePageContent() {
             }
         }
         if (leadHistory && leadHistory.length > 0) {
-            const item = leadHistory.find((h: any) => h.description && h.description.startsWith('🎙️ CALL_JSON:'))
+            const item = leadHistory.find((h: any) => typeof h?.description === 'string' && h.description.startsWith('🎙️ CALL_JSON:'))
             if (item) {
                 try {
                     const parsed = JSON.parse(item.description.replace('🎙️ CALL_JSON:', '').trim())
@@ -199,7 +199,7 @@ function LeadProfilePageContent() {
     const effectiveSummary = useMemo(() => {
         if (lead?.voice_call_summary) return lead.voice_call_summary
         if (leadHistory && leadHistory.length > 0) {
-            const item = leadHistory.find((h: any) => h.description && h.description.startsWith('🎙️ CALL_JSON:'))
+            const item = leadHistory.find((h: any) => typeof h?.description === 'string' && h.description.startsWith('🎙️ CALL_JSON:'))
             if (item) {
                 try {
                     const parsed = JSON.parse(item.description.replace('🎙️ CALL_JSON:', '').trim())
@@ -800,8 +800,8 @@ function LeadProfilePageContent() {
             let allCompleted = true
             flowQuestions.forEach((q: any, idx: number) => {
                 const normQ = normalizeQualifyingQuestion(q, idx)
-                const qKey = normQ.key
-                const qClean = normQ.question.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30)
+                const qKey = String(normQ.key || `custom_q_${idx}`)
+                const qClean = String(normQ.question || '').toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30)
                 const val = currentCf[qKey] || currentCf[qClean] || 
                     (qKey === 'budget' ? (currentCf.budget || lead.budget) : undefined) ||
                     (qKey === 'timeline' ? (currentCf.timeline || lead.timeline) : undefined) ||
@@ -1601,7 +1601,8 @@ END:VCARD`
                     const cf = parseCustomFields(lead.custom_fields);
                     const actionDate = lead.next_followup || cf.next_action_date || lead.next_action_date;
                     const actionType = lead.next_action_type || cf.next_action_type || lead.last_followup_type || 'Call';
-                    const actionRemarks = lead.next_action_remarks || cf.next_remarks || cf.next_action_remark || cf.next_action_remarks || lead.last_followup_remark;
+                    const rawRemarks = lead.next_action_remarks || cf.next_remarks || cf.next_action_remark || cf.next_action_remarks || lead.last_followup_remark;
+                    const actionRemarks = typeof rawRemarks === 'object' && rawRemarks !== null ? JSON.stringify(rawRemarks) : (rawRemarks ? String(rawRemarks) : null);
                     const hasReminder = lead.remind_me !== false && cf.remind_me !== false;
                     
                     if (!actionDate) return null;
@@ -1718,10 +1719,10 @@ END:VCARD`
                                     const matchedProp = properties.find(p => 
                                         p.id === lead.property_id || 
                                         p.id === origin?.product_id || 
-                                        p.title === origin?.product_name ||
-                                        (p.title && (lead.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
-                                        (p.title && (origin?.ad_name || '').toLowerCase().includes(p.title.toLowerCase().trim())) ||
-                                        (p.title && (origin?.campaign_name || '').toLowerCase().includes(p.title.toLowerCase().trim()))
+                                        (p.title && origin?.product_name && String(p.title).trim() === String(origin.product_name).trim()) ||
+                                        (p.title && (lead.ad_name || '').toLowerCase().includes(String(p.title).toLowerCase().trim())) ||
+                                        (p.title && (origin?.ad_name || '').toLowerCase().includes(String(p.title).toLowerCase().trim())) ||
+                                        (p.title && (origin?.campaign_name || '').toLowerCase().includes(String(p.title).toLowerCase().trim()))
                                     );
                                     const productName = origin?.product_name || matchedProp?.title || null;
                                     const previewImageUrl = origin?.image_url || matchedProp?.image_url || (matchedProp?.images && matchedProp.images[0]) || null;
@@ -2063,8 +2064,9 @@ END:VCARD`
                                         'phone', 'email', 'email_address', 'full_name', 'name', 'first_name', 'last_name'
                                     ]);
 
-                                    const formatQuestionKey = (raw: string) => {
-                                        let q = raw.replace(/_/g, ' ').trim();
+                                    const formatQuestionKey = (raw: any) => {
+                                        const rawStr = typeof raw === 'string' ? raw : String(raw ?? '');
+                                        let q = rawStr.replace(/_/g, ' ').trim();
                                         if (!q.endsWith('?') && (q.toLowerCase().startsWith('what') || q.toLowerCase().startsWith('how') || q.toLowerCase().startsWith('which') || q.toLowerCase().startsWith('when') || q.toLowerCase().startsWith('where') || q.toLowerCase().startsWith('are') || q.toLowerCase().startsWith('do'))) {
                                             q = q + '?';
                                         }
@@ -2083,7 +2085,10 @@ END:VCARD`
                                         }
                                         if (val === true) return 'Yes';
                                         if (val === false) return 'No';
-                                        return String(val);
+                                        if (typeof val === 'object' && val !== null) {
+                                            return JSON.stringify(val);
+                                        }
+                                        return String(val ?? '');
                                     };
 
                                     const submittedAnswers: { question: string; answer: string; fieldKey: string }[] = [];
@@ -2093,7 +2098,7 @@ END:VCARD`
                                     if (cf.form_answers && typeof cf.form_answers === 'object') {
                                         Object.entries(cf.form_answers).forEach(([k, v]) => {
                                             if (v !== undefined && v !== null && String(v).trim().length > 0 && !EXCLUDE_KEYS.has(k)) {
-                                                seenKeys.add(k.toLowerCase());
+                                                seenKeys.add(String(k).toLowerCase());
                                                 submittedAnswers.push({
                                                     fieldKey: k,
                                                     question: formatQuestionKey(k),
@@ -2105,11 +2110,12 @@ END:VCARD`
 
                                     // 2. From top-level custom_fields
                                     Object.entries(cf).forEach(([k, v]) => {
-                                        if (EXCLUDE_KEYS.has(k) || seenKeys.has(k.toLowerCase())) return;
+                                        const keyLower = String(k).toLowerCase();
+                                        if (EXCLUDE_KEYS.has(k) || seenKeys.has(keyLower)) return;
                                         if (v !== undefined && v !== null && typeof v !== 'object') {
                                             const str = String(v).trim();
                                             if (str.length > 0) {
-                                                seenKeys.add(k.toLowerCase());
+                                                seenKeys.add(keyLower);
                                                 submittedAnswers.push({
                                                     fieldKey: k,
                                                     question: formatQuestionKey(k),
@@ -2242,27 +2248,36 @@ END:VCARD`
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                                                 {normalizedFlow.map((q, idx) => {
-                                                    const qKey = q.key;
-                                                    const qText = q.question;
+                                                    const qKey = String(q.key || `custom_q_${idx}`);
+                                                    const qText = String(q.question || q.text || `Question ${idx + 1}`);
                                                     const qClean = qText.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 30);
                                                     let rawVal = cf[qKey] || cf[qClean] || 
                                                         (qKey === 'budget' ? (cf.budget || lead.budget) : undefined) ||
                                                         (qKey === 'timeline' ? (cf.timeline || lead.timeline) : undefined) ||
                                                         (qKey === 'property_type' ? (cf.property_type || cf.interested_property) : undefined) || '';
-                                                    const options: string[] = Array.isArray(q.options) ? q.options : [];
+                                                    const rawOpts = Array.isArray(q.options) ? q.options : [];
+                                                    const options: string[] = rawOpts.map((o: any) => {
+                                                        if (typeof o === 'string') return o;
+                                                        if (o && typeof o === 'object') return o.label || o.text || o.title || o.value || JSON.stringify(o);
+                                                        return String(o ?? '');
+                                                    }).filter(Boolean);
                                                     const isSaving = savingQuestionKey === qKey;
 
                                                     // Auto-link to form answers if question not yet assigned
                                                     if (!rawVal && cf.form_answers && typeof cf.form_answers === 'object') {
                                                         const qCleanSimple = qText.toLowerCase().replace(/[^a-z0-9]/g, '');
                                                         for (const [fKey, fVal] of Object.entries(cf.form_answers)) {
-                                                            const fKeySimple = fKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                                            const fKeySimple = String(fKey || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                                                             if (fKeySimple.includes(qCleanSimple) || qCleanSimple.includes(fKeySimple)) {
                                                                 rawVal = fVal;
                                                                 break;
                                                             }
-                                                            if (options.length > 0 && typeof fVal === 'string') {
-                                                                const matchedOpt = options.find(o => fVal.toLowerCase().includes(o.toLowerCase()) || o.toLowerCase().includes(fVal.toLowerCase()));
+                                                            if (options.length > 0 && fVal !== undefined && fVal !== null) {
+                                                                const fValStr = String(fVal).toLowerCase();
+                                                                const matchedOpt = options.find(o => {
+                                                                    const oLower = String(o || '').toLowerCase();
+                                                                    return fValStr.includes(oLower) || oLower.includes(fValStr);
+                                                                });
                                                                 if (matchedOpt) {
                                                                     rawVal = matchedOpt;
                                                                     break;
@@ -2286,8 +2301,9 @@ END:VCARD`
 
                                                             {options.length > 0 ? (
                                                                 <div className="flex flex-wrap gap-1.5 pt-1">
-                                                                    {options.map((opt, oIdx) => {
-                                                                        const isSelected = String(rawVal).toLowerCase().trim() === opt.toLowerCase().trim();
+                                                                    {options.map((opt: any, oIdx) => {
+                                                                        const optStr = typeof opt === 'string' ? opt : (opt && typeof opt === 'object' ? (opt.label || opt.text || opt.title || opt.value || JSON.stringify(opt)) : String(opt ?? ''));
+                                                                        const isSelected = String(rawVal ?? '').toLowerCase().trim() === optStr.toLowerCase().trim();
                                                                         if (!isEditingFlowQuestions) {
                                                                             // Protected Read-Only View (NO ACCIDENTAL CLICKS)
                                                                             return (
@@ -2299,7 +2315,7 @@ END:VCARD`
                                                                                             : 'bg-slate-50 text-slate-400 border-slate-200 opacity-60'
                                                                                     }`}
                                                                                 >
-                                                                                    {isSelected && '✓ '} {opt}
+                                                                                    {isSelected && '✓ '} {optStr}
                                                                                 </span>
                                                                             );
                                                                         }
@@ -2310,14 +2326,14 @@ END:VCARD`
                                                                                 key={oIdx}
                                                                                 type="button"
                                                                                 disabled={isSaving}
-                                                                                onClick={() => handleUpdateQualificationAnswer(qKey, opt)}
+                                                                                onClick={() => handleUpdateQualificationAnswer(qKey, optStr)}
                                                                                 className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
                                                                                     isSelected
                                                                                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-300'
                                                                                         : 'bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 text-slate-700 border-slate-200'
                                                                                 }`}
                                                                             >
-                                                                                {isSelected && '✓ '} {opt}
+                                                                                {isSelected && '✓ '} {optStr}
                                                                             </button>
                                                                         );
                                                                     })}
@@ -2326,12 +2342,12 @@ END:VCARD`
                                                                 <div className="pt-1">
                                                                     {!isEditingFlowQuestions ? (
                                                                         <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800">
-                                                                            {rawVal || <span className="text-slate-400 italic font-normal">Pending prospect response...</span>}
+                                                                            {typeof rawVal === 'object' && rawVal !== null ? JSON.stringify(rawVal) : (rawVal || <span className="text-slate-400 italic font-normal">Pending prospect response...</span>)}
                                                                         </div>
                                                                     ) : (
                                                                         <input
                                                                             type="text"
-                                                                            defaultValue={rawVal}
+                                                                            defaultValue={typeof rawVal === 'object' && rawVal !== null ? JSON.stringify(rawVal) : String(rawVal ?? '')}
                                                                             placeholder="Type prospect answer..."
                                                                             onBlur={(e) => {
                                                                                 if (e.target.value !== rawVal) {
@@ -2804,7 +2820,7 @@ END:VCARD`
                                             const isWhatsApp = item.action_type === 'WHATSAPP_CHAT'
 
                                             // WhatsApp chat bubble rendering
-                                            if (isWhatsApp && item.description?.startsWith('💬 WA_JSON:')) {
+                                            if (isWhatsApp && typeof item.description === 'string' && item.description.startsWith('💬 WA_JSON:')) {
                                                 try {
                                                     const parsed = JSON.parse(item.description.replace('💬 WA_JSON:', ''))
                                                     return (
@@ -2859,12 +2875,13 @@ END:VCARD`
                                                 }
                                             }
 
-                                            if (isWhatsApp && item.description?.startsWith('💬 WA_TEMPLATE:')) {
+                                            if (isWhatsApp && typeof item.description === 'string' && item.description.startsWith('💬 WA_TEMPLATE:')) {
                                                 try {
                                                     const parsed = JSON.parse(item.description.replace('💬 WA_TEMPLATE:', ''))
-                                                    const renderFormattedBody = (txt: string) => {
-                                                        if (!txt) return null;
-                                                        let clean = txt.replace(/\*{2,3}/g, '*');
+                                                    const renderFormattedBody = (txt: any) => {
+                                                        const str = typeof txt === 'string' ? txt : (txt ? String(txt) : '');
+                                                        if (!str) return null;
+                                                        let clean = str.replace(/\*{2,3}/g, '*');
                                                         const lines = clean.split('\n');
                                                         return lines.map((line, lIdx) => {
                                                             const parts = line.split(/(\*[^*]+\*)/g);
@@ -2900,7 +2917,7 @@ END:VCARD`
                                                                     </time>
                                                                 </div>
 
-                                                                {parsed.header_media_url && (
+                                                                {parsed.header_media_url && typeof parsed.header_media_url === 'string' && (
                                                                     <div className="rounded-xl overflow-hidden border border-emerald-200/80 bg-slate-950 w-full flex items-center justify-center relative shadow-sm">
                                                                         {parsed.header_format === 'VIDEO' || parsed.header_media_url.match(/\.(mp4|mov|webm)$/i) ? (
                                                                             <video src={parsed.header_media_url} controls className="w-full max-h-80 object-contain" />
@@ -2941,7 +2958,7 @@ END:VCARD`
                                                     <div className="flex-1 min-w-0 bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 mt-0.5 space-y-2">
                                                         {/* Header: Actor Name, Action Badge, Time */}
                                                         {(() => {
-                                                            const rawDesc = item.description || ''
+                                                            const rawDesc = typeof item.description === 'string' ? item.description : String(item.description || '')
                                                             const byMatch = rawDesc.match(/\[by\s+([^\]]+)\]/i)
                                                             const isAiAutomation = rawDesc.startsWith('📱 [3-3-3') || 
                                                                                    rawDesc.startsWith('🎙️ [3-3-3') || 
@@ -2998,10 +3015,11 @@ END:VCARD`
                                                         <div className="text-xs text-slate-700 leading-relaxed font-medium">
                                                             {(() => {
                                                                 if (!item.description) return null
+                                                                const desc = typeof item.description === 'string' ? item.description : (typeof item.description === 'object' && item.description !== null ? JSON.stringify(item.description) : String(item.description))
 
-                                                                if (item.description.startsWith('🎙️ CALL_JSON:')) {
+                                                                if (desc.startsWith('🎙️ CALL_JSON:')) {
                                                                     try {
-                                                                        const parsed = JSON.parse(item.description.replace('🎙️ CALL_JSON:', ''))
+                                                                        const parsed = JSON.parse(desc.replace('🎙️ CALL_JSON:', '').trim())
                                                                         return (
                                                                             <div className="space-y-2">
                                                                                 <span className="font-extrabold text-indigo-600 block">🎙️ AI Voice Call Summary:</span>
@@ -3041,15 +3059,15 @@ END:VCARD`
                                                                             </div>
                                                                         )
                                                                     } catch (e) {
-                                                                        return item.description
+                                                                        return <span className="text-slate-800 font-medium">{desc}</span>
                                                                     }
                                                                 }
 
-                                                                const audioUrlMatch = item.description.match(/(https?:\/\/[^\s]+\.(mp3|m4a|wav|aac|ogg|3gp)|https?:\/\/[^\s]+\/call-recordings\/[^\s]+)/i)
+                                                                const audioUrlMatch = desc.match(/(https?:\/\/[^\s]+\.(mp3|m4a|wav|aac|ogg|3gp)|https?:\/\/[^\s]+\/call-recordings\/[^\s]+)/i)
                                                                 
                                                                 if (audioUrlMatch) {
                                                                     const audioUrl = audioUrlMatch[0]
-                                                                    const cleanText = item.description.replace(audioUrl, '').replace(/\[by\s+[^\]]+\]/i, '').trim()
+                                                                    const cleanText = desc.replace(audioUrl, '').replace(/\[by\s+[^\]]+\]/i, '').trim()
                                                                     return (
                                                                         <div className="space-y-2">
                                                                             {cleanText && <p className="text-slate-800 whitespace-pre-wrap font-medium">{cleanText}</p>}
@@ -3085,7 +3103,7 @@ END:VCARD`
                                                                 }
 
                                                                 // Clean trailing [by Name] tag since shown in header
-                                                                const cleanText = item.description.replace(/\[by\s+[^\]]+\]/gi, '').trim()
+                                                                const cleanText = desc.replace(/\[by\s+[^\]]+\]/gi, '').trim()
                                                                 
                                                                 // Format key-value lines nicely
                                                                 const lines = cleanText.split('\n')
@@ -3465,7 +3483,7 @@ END:VCARD`
 
                         <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
                             {visibleLeadHistory
-                                .filter(h => h.description && h.description.startsWith('🎙️ CALL_JSON:'))
+                                .filter(h => typeof h.description === 'string' && h.description.startsWith('🎙️ CALL_JSON:'))
                                 .map((item) => {
                                     let parsed: any = {}
                                     try {

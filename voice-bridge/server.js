@@ -290,13 +290,9 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
     const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
     const isFemale = !vLower.includes('orion') && !vLower.includes('puck') && !vLower.includes('charon') && !vLower.includes('fenrir') && !vLower.includes('male');
     const genderGrammarInstruction = isIndianEnglishMode
-        ? `GENDER IDENTITY (STRICTLY FEMALE): You are Sahana, a warm, professional, distinctly FEMALE customer relationship executive calling from Raj Abhijna Property Developers in Mysuru.
-CRITICAL PITCH AND GENDER LOCK:
-- You are 100% FEMALE with a warm, courteous Indian English voice.
-- You MUST maintain your warm feminine pitch consistently across every turn of the call.
-- NEVER mirror male pitch or drop into a deep/male register.`
+        ? `GENDER IDENTITY (FEMALE): You are Sahana, a warm, professional, distinctly FEMALE customer relationship representative. You MUST speak in a polite, feminine, natural Indian English tone. NEVER sound male or robotic.`
         : (isFemale
-            ? `GENDER IDENTITY (FEMALE): You are Priya, a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon"). NEVER use masculine endings or drop into a male voice.`
+            ? `GENDER IDENTITY (FEMALE): You are Priya, a FEMALE representative. In Hindi and Hinglish, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon"). NEVER use masculine endings.`
             : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings.`);
 
     const backchannelAck = isFemale
@@ -308,12 +304,12 @@ CRITICAL PITCH AND GENDER LOCK:
 
     if (isIndianEnglishMode) {
         languageInstruction = `CRITICAL ACCENT, PRONUNCIATION & LANGUAGE MANDATE:
-- LANGUAGE: Speak exclusively in clear, courteous, professional Indian English with a warm South Indian cadence.
-- ACCENT & TONE: Warm, natural, professional, polite. Speak smoothly and naturally.
-- STRICTLY NO HINDI: Speak 100% in English throughout the call. Do not switch to Hindi.
-- PRONUNCIATION: Pronounce Indian names naturally: "Amrithavana", "Bilikere", "Mysuru-Madikeri Highway", "Raj Abhijna", "Mysuru".
-- BREVITY & LISTENING: Keep your statements concise. After asking a question, STOP TALKING COMPLETELY and listen attentively to the customer.`;
-        effectiveAck = `"Yes", "Sure", "Right", "Understood", "Definitely", "Absolutely"`;
+- MANDATORY LANGUAGE: You MUST speak in NATURAL, POLITE, COURTEOUS URBAN INDIAN ENGLISH (Bangalore / South India professional cadence, warm feminine voice).
+- STRICT ACCENT DIRECTIVE (NO AMERICAN ACCENT): You MUST speak with an authentic, professional Indian English accent (crisp non-rhotic pronunciation, warm Indian intonation and inflection, clear syllables). NEVER USE AN AMERICAN, BRITISH, OR WESTERN ACCENT.
+- INSTANT KANNADA & REGIONAL SWITCHING: If the caller speaks in Kannada (e.g. "Haudu", "Heli", "Kannadadalli maathadi", "Namaskara", or any phrase in Kannada) or asks to converse in Kannada or Hindi, you MUST IMMEDIATELY and effortlessly switch 100% to fluent, natural, polite Kannada (or Hindi) from your very next word, and continue the rest of the conversation in that language!
+- AUTHENTIC PRONUNCIATION: Pronounce Indian names and words authentically: "Amritha Vana", "Bilikere", "Mysore-Madikeri Highway", "Raj Abhijna", "Mysuru".
+- NATURAL INDIAN CADENCE & PHRASING: Use authentic Indian professional phrasing (e.g. "Do you have a quick minute to speak?", "Shall I connect you with our relationship manager?").`;
+        effectiveAck = `"Yes", "Sure", "Right", "Understood", "Definitely", "Absolutely", "Hmm"`;
     } else if (isKannadaMode) {
         languageInstruction = `LANGUAGE REQUIREMENT:
 - MANDATORY STARTING LANGUAGE: YOU MUST BEGIN THE CALL DIRECTLY IN NATURAL, POLITE, FLUENT KANNADA (Kannada words spoken naturally and warmly).
@@ -329,18 +325,21 @@ CRITICAL PITCH AND GENDER LOCK:
         ? `"Hmm...", "Yes...", "Right...", "Definitely...", or "Understood..."`
         : `"Hmm...", "Ahan...", "Haan ji...", "Achha...", or "Ji bilkul..."`;
 
-    const hasCustomCallFlow = campGuidanceLower.includes('script') || campGuidanceLower.includes('role & objective') || campGuidanceLower.includes('key objective') || campGuidanceLower.includes('amritha');
-    const allowsWhatsApp = campGuidanceLower.includes('whatsapp');
-
-    const defaultCallFlow = `
+    const defaultFlow = `
 KEY OBJECTIVE & CALL FLOW:
 1. GREETING & REMIND: You are calling ${leadName} who submitted an inquiry on Facebook for ${targetProduct}. The opening greeting has already been delivered.
-2. CONFIRM PREFERENCES STEP-BY-STEP: Warmly confirm the key preferences from their form (configuration, timeline, budget, funding readiness) across natural conversational turns.
-3. PROJECT HIGHLIGHTS: Provide crisp project details for ${targetProduct}.
-4. APPOINTMENT BOOKING:
-   - Propose an appointment with our specialist / sales executive -> STOP AND WAIT FOR CALLER TO ANSWER!
-   - When caller agrees, ask: "Which day and time would be convenient for you?" -> STOP AND WAIT FOR CALLER TO ANSWER!
+2. CONFIRM PREFERENCES STEP-BY-STEP: Warmly confirm the key preferences from their form across natural conversational turns.
+3. APPOINTMENT BOOKING WITH RELATIONSHIP MANAGER:
+   - Ask: "Kya main aapki hamare senior Relationship Manager ke saath ek short appointment schedule kar doon?" -> STOP AND WAIT FOR CALLER TO ANSWER!
+   - When caller agrees, ask: "Aapke liye kaunsa time convenient rahega?" -> STOP AND WAIT FOR CALLER TO ANSWER!
    - ONLY after the caller explicitly gives their preferred day and time, confirm that specific time and trigger 'book_appointment_slot'.
+
+CRITICAL CONVERSATIONAL DISCIPLINE:
+1. NEVER ASSUME TIME OR SELF-CONFIRM APPOINTMENT: Ask the question, then STOP TALKING COMPLETELY and wait for the customer to answer!
+2. CONFIRM ONE DETAIL AT A TIME: Ask 1 question, then STOP talking and wait.
+3. NEVER REPEAT GREETING OR INTRO: The opening greeting was already spoken.
+4. IF INTERRUPTED: If the caller speaks at any point, stop speaking immediately!
+5. END CALL ONLY ON USER FAREWELL: Trigger 'end_call' ONLY after the appointment is mutually agreed upon AND the caller has acknowledged and said goodbye/thank you, or if caller explicitly asks to hang up.
 `;
 
     const systemInstruction = `
@@ -351,23 +350,7 @@ ${languageInstruction}
 
 ${genderGrammarInstruction}
 
-${campaignGuidance ? `${campaignGuidance}\n` : ''}
-
-${hasCustomCallFlow ? '' : defaultCallFlow}
-
-CRITICAL CONVERSATIONAL DISCIPLINE:
-1. NEVER ASSUME TIME OR SELF-CONFIRM APPOINTMENT:
-   - STRICTLY FORBIDDEN: Asking a time and immediately confirming it in the same turn without waiting for the caller. NEVER DO THIS!
-   - You MUST ask the question, then STOP TALKING COMPLETELY and wait for the customer to answer!
-${allowsWhatsApp ? '2. WHATSAPP DETAILS: Send/offer project details on WhatsApp as instructed in the campaign guidelines.\n' : '2. NEVER MENTION WHATSAPP:\n   - STRICTLY FORBIDDEN: You must NEVER say you are sharing details on WhatsApp unless explicitly instructed! All project guidance is presented during the scheduled appointment!\n'}
-3. STRICT BREVITY (10-15 WORDS MAX PER TURN): Never monologue. Speak 1 short, crisp sentence per turn. Give the customer maximum space to speak. You are here to LISTEN.
-4. CONFIRM ONE DETAIL AT A TIME: Ask 1 question, then STOP talking and wait.
-5. NO REPEATING INTROS: Once you have delivered your opening greeting, never re-introduce yourself or restart the script.
-6. HANDLING USER SPEECH, "HELLO HELLO", & INTERRUPTIONS:
-   - When an Indian caller says "Hello? Hello?", "Haan hello", "Kaun bol raha hai?", or speaks while you are talking, DO NOT stay silent!
-   - Acknowledge them immediately and warmly: e.g. "Haan ji hello! Main sun rahi hoon, boliye..." or continue naturally from where you left off.
-   - NEVER pause or wait in dead silence after the caller speaks or says hello. Keep the call energetic, human, polite, and responsive!
-7. END CALL ONLY ON FAREWELL: Trigger 'end_call' ONLY after the site visit/appointment is settled AND the caller has acknowledged and said goodbye/thank you, or if caller explicitly asks to hang up.
+${campaignGuidance ? `${campaignGuidance}\n` : defaultFlow}
 
 ${catalogueInfo}
 ${formQuestionsSummary}
@@ -375,9 +358,9 @@ ${resolvedQuestionsInstruction}
 `.trim();
 
     const validVoiceNames = ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'];
-    let chosenVoice = 'Aoede';
+    let chosenVoice = 'Kore';
     if (voiceName && validVoiceNames.includes(voiceName)) {
-        chosenVoice = voiceName;
+        chosenVoice = voiceName === 'Aoede' ? 'Kore' : voiceName;
     }
 
     const setupPayload = {
@@ -433,7 +416,7 @@ ${resolvedQuestionsInstruction}
                 automaticActivityDetection: {
                     startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
                     endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
-                    silenceDurationMs: 800
+                    silenceDurationMs: 300
                 }
             },
             inputAudioTranscription: {},
@@ -889,23 +872,24 @@ function calculateRMS(pcm16Array) {
 
 class NoiseSuppressedAudioProcessor {
     constructor(options = {}) {
-        // Barge-in: RMS threshold for caller voice to be considered genuine deliberate speech over AI output
-        // Telephony speakerphone feedback is RMS 300-800. Real human shouting/speaking over speaker is RMS 950+.
-        this.bargeInThreshold = options.bargeInThreshold || 950;
-        this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 5; // 5 frames * 20ms = 100ms of sustained speech
-        this.voiceThreshold = options.voiceThreshold || 240; // Caller speech RMS threshold
+        // Barge-in: RMS threshold for caller voice to be considered "speaking" during AI output
+        // Human speech directly into phone microphone is typically RMS 1600 - 5000+
+        // Telephony ambient line noise and speaker acoustic echo is RMS 200 - 900
+        this.bargeInThreshold = options.bargeInThreshold || 1400;
+        this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 10; // 10 frames * 20ms = 200ms of sustained speech
+        this.voiceThreshold = options.voiceThreshold || 260; // Caller speech RMS threshold
         this.isAiSpeaking = false;
-        this.aiSpeakingStartedAt = 0;
         this.aiSpeakingTimeout = null;
         this.sustainedBargeInFrames = 0;
         this.bargeInTriggered = false;
     }
 
-    markAiSpeaking(durationMs = 1200) {
+    markAiSpeaking(durationMs = 1500) {
         this.isAiSpeaking = true;
-        this.aiSpeakingStartedAt = Date.now();
         this.bargeInTriggered = false;
         this.sustainedBargeInFrames = 0;
+        this.callerSpeechStartTime = 0;
+        this.callerSilenceStartTime = 0;
         if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
         this.aiSpeakingTimeout = setTimeout(() => {
             this.isAiSpeaking = false;
@@ -916,6 +900,8 @@ class NoiseSuppressedAudioProcessor {
     clearAiSpeaking() {
         this.isAiSpeaking = false;
         this.sustainedBargeInFrames = 0;
+        this.callerSpeechStartTime = 0;
+        this.callerSilenceStartTime = 0;
         if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
     }
 
@@ -924,36 +910,31 @@ class NoiseSuppressedAudioProcessor {
         const isVoice = rms >= this.voiceThreshold;
         const now = Date.now();
 
-        // TELEPHONY ACOUSTIC ECHO SUPPRESSION & NOISE GATE:
-        // When AI is speaking, the caller's mobile earpiece/speaker plays audio that leaks into their mic (RMS 300-800).
-        // 1. For the first 450ms of AI speech, acoustic echo is at its highest spike. Suppress it!
-        // 2. Throughout AI speech, any audio below RMS 900 is speaker bleed — zero it out so Gemini VAD doesn't self-interrupt!
-        // 3. When AI is not speaking and caller is quiet (RMS < 220), send zeroes so Gemini VAD cleanly detects silence.
-        const timeSinceAiStarted = this.isAiSpeaking ? (now - (this.aiSpeakingStartedAt || 0)) : 99999;
-        const inAcousticEchoWindow = this.isAiSpeaking && timeSinceAiStarted < 450;
-
+        // TELEPHONY NOISE GATE:
+        // Ambient mobile cellular line hiss on telephony is typically RMS 40-180.
+        // If the caller is not speaking (RMS < 200), forward clean digital zeroes so Gemini's
+        // automatic activity detection (VAD) cleanly detects silence (silenceDurationMs = 400ms).
+        // When caller speaks (RMS >= 200), forward full intact 16kHz audio.
         let pcmOutput = pcm16Chunk;
-        if (inAcousticEchoWindow || (this.isAiSpeaking && rms < 900)) {
-            // Mute speaker echo so Gemini VAD doesn't self-interrupt on its own speech!
-            pcmOutput = new Int16Array(pcm16Chunk.length);
-        } else if (!isVoice && rms < 220) {
+        if (!isVoice && rms < 200) {
             pcmOutput = new Int16Array(pcm16Chunk.length);
         }
 
         const result = { pcmOutput, rms, isVoice, bargeIn: false };
 
-        // Check for genuine deliberate human barge-in during AI speech
-        if (this.isAiSpeaking && !this.bargeInTriggered && !inAcousticEchoWindow) {
+        // Check for barge-in during AI speech
+        if (this.isAiSpeaking && !this.bargeInTriggered) {
             if (rms >= this.bargeInThreshold) {
                 this.sustainedBargeInFrames++;
                 if (this.sustainedBargeInFrames >= this.sustainedBargeInNeeded) {
-                    console.log(`[AUDIO PROCESSOR] Verified deliberate human barge-in over AI! RMS: ${Math.round(rms)}, sustained ${this.sustainedBargeInFrames} frames`);
+                    // Caller is deliberately speaking over the AI
+                    console.log(`[AUDIO PROCESSOR] Sustained human speech detected over AI! RMS: ${Math.round(rms)}, sustained ${this.sustainedBargeInFrames} frames`);
                     this.bargeInTriggered = true;
-                    this.isAiSpeaking = false;
                     this.sustainedBargeInFrames = 0;
                     result.bargeIn = true;
                 }
             } else {
+                // Reset sustained counter if a quiet frame breaks the streak
                 this.sustainedBargeInFrames = Math.max(0, this.sustainedBargeInFrames - 1);
             }
         }
@@ -1008,7 +989,7 @@ wss.on('connection', (wsConnection, req) => {
     let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
     let greetingPlayed = false;
-    let voiceName = (queryVoiceName && ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'].includes(queryVoiceName)) ? queryVoiceName : 'Aoede';
+    let voiceName = (queryVoiceName && ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'].includes(queryVoiceName)) ? (queryVoiceName === 'Aoede' ? 'Kore' : queryVoiceName) : 'Kore';
 
     let earlyConfigPromise = null;
     if (leadId && profileId) {
@@ -1023,6 +1004,43 @@ wss.on('connection', (wsConnection, req) => {
     let geminiGreetingStarted = false;
     let wrapUpTimer = null;
     let maxDurationTimer = null;
+
+    // Turn completion watchdog: safety fallback to ensure Gemini Live never hangs indefinitely
+    let userSpeakingActive = false;
+    let callerVoiceFrames = 0;
+    let turnCompleteWatchdogTimer = null;
+
+    function clearTurnWatchdog() {
+        if (turnCompleteWatchdogTimer) {
+            clearTimeout(turnCompleteWatchdogTimer);
+            turnCompleteWatchdogTimer = null;
+        }
+    }
+
+    function triggerTurnComplete() {
+        clearTurnWatchdog();
+        if (geminiSocket && geminiSocket.readyState === ws.OPEN && !audioProcessor.isAiSpeaking) {
+            console.log("[BRIDGE WATCHDOG] Caller finished speaking. Dispatching turnComplete to Gemini Live...");
+            userSpeakingActive = false;
+            callerVoiceFrames = 0;
+            try {
+                geminiSocket.send(JSON.stringify({
+                    clientContent: {
+                        turnComplete: true
+                    }
+                }));
+            } catch (err) {
+                console.warn("[BRIDGE WATCHDOG] Failed to send turnComplete:", err.message);
+            }
+        }
+    }
+
+    function scheduleTurnComplete(delayMs = 450) {
+        clearTurnWatchdog();
+        turnCompleteWatchdogTimer = setTimeout(() => {
+            triggerTurnComplete();
+        }, delayMs);
+    }
 
     // Connection health check (heartbeat to prevent lingering ghost connections)
     let isAlive = true;
@@ -1047,8 +1065,6 @@ wss.on('connection', (wsConnection, req) => {
     // Helper to process and forward media packets (with 80ms batch buffering to slash latency & WebSocket overhead)
     let audioBufferList = [];
     let audioBufferSamples = 0;
-    let interruptionRecoveryTimer = null;
-    let lastCallerSpeechTime = Date.now();
 
     function flushAudioBufferToGemini() {
         if (audioBufferSamples === 0 || !geminiSocket || geminiSocket.readyState !== ws.OPEN) return;
@@ -1194,10 +1210,8 @@ wss.on('connection', (wsConnection, req) => {
                 geminiApiKey = sessionConfig.geminiApiKey;
                 const setupPayload = sessionConfig.setupPayload;
 
-                let greetingDispatched = false;
                 const sendInitialGreeting = () => {
-                    if (greetingDispatched || greetingTurnSent) return;
-                    greetingDispatched = true;
+                    if (greetingTurnSent) return;
                     greetingTurnSent = true;
                     geminiReady = true;
 
@@ -1254,18 +1268,20 @@ wss.on('connection', (wsConnection, req) => {
                         }
                     }
 
+                    const textPrompt = `You are on an active phone call that just connected. Speak this greeting warmly and naturally right now: "${openGreeting}"`;
+
                     const initialTurn = {
                         clientContent: {
                             turns: [
                                 {
                                     role: "user",
-                                    parts: [{ text: "Hello?" }]
+                                    parts: [{ text: textPrompt }]
                                 }
                             ],
                             turnComplete: true
                         }
                     };
-                    console.log('[BRIDGE] Sending initial greeting turn to Gemini (user: Hello?):', JSON.stringify(initialTurn));
+                    console.log('[BRIDGE] Sending initial greeting turn to Gemini:', JSON.stringify(initialTurn));
                     geminiSocket.send(JSON.stringify(initialTurn));
                     console.log('[BRIDGE] geminiReady set to true. Waiting for Gemini audio response...');
                 };
@@ -1273,8 +1289,6 @@ wss.on('connection', (wsConnection, req) => {
                 if (prewarmed && prewarmed.setupComplete) {
                     console.log('[BRIDGE] Session already has setupComplete! Dispatching greeting turn immediately (<200ms)...');
                     sendInitialGreeting();
-                } else {
-                    console.log('[BRIDGE] Waiting for Gemini setupComplete event before dispatching greeting turn...');
                 }
 
                 isCallHangingUp = false;
@@ -1365,15 +1379,21 @@ wss.on('connection', (wsConnection, req) => {
                          if (serverMsg.voiceActivity) {
                              if (serverMsg.voiceActivity.type === 'ACTIVITY_START') {
                                  console.log('[BRIDGE] Gemini VAD: ACTIVITY_START detected.');
+                                 userSpeakingActive = true;
+                                 clearTurnWatchdog();
                              } else if (serverMsg.voiceActivity.type === 'ACTIVITY_END') {
                                  console.log('[BRIDGE] Gemini VAD: ACTIVITY_END detected.');
+                                 userSpeakingActive = true;
+                                 scheduleTurnComplete(250);
                              }
                          }
 
                          // Handle user interruption (barge-in)
                          if (serverMsg.serverContent?.interrupted) {
-                             console.log('[BRIDGE] Gemini confirmed user interruption. Clearing AI playback...');
-                             audioProcessor.clearAiSpeaking();
+                              console.log('[BRIDGE] Gemini confirmed user interruption. Clearing AI playback...');
+                              userSpeakingActive = true;
+                              clearTurnWatchdog();
+                              audioProcessor.clearAiSpeaking();
                              if (wsConnection.readyState === ws.OPEN) {
                                  if (isVobiz && vobizStreamId) {
                                      wsConnection.send(JSON.stringify({
@@ -1387,30 +1407,6 @@ wss.on('connection', (wsConnection, req) => {
                                      }));
                                  }
                              }
-
-                             // CUE RECOVERY: If caller only said 'hello hello' or paused and remains silent, prompt AI to answer!
-                             if (interruptionRecoveryTimer) clearTimeout(interruptionRecoveryTimer);
-                             interruptionRecoveryTimer = setTimeout(() => {
-                                 if (geminiSocket && geminiSocket.readyState === ws.OPEN && !isCallHangingUp) {
-                                     const timeSinceSpeech = Date.now() - lastCallerSpeechTime;
-                                     if (timeSinceSpeech >= 1400) {
-                                         console.log('[BRIDGE RECOVERY] Caller is silent after interruption. Cueing Gemini to continue speaking...');
-                                         try {
-                                             geminiSocket.send(JSON.stringify({
-                                                 clientContent: {
-                                                     turns: [{
-                                                         role: 'user',
-                                                         parts: [{ text: "SYSTEM INSTRUCTION: The caller was interrupted or said hello and has now paused waiting for you. Immediately continue speaking warmly: say 'Haan ji hello! Main sun rahi hoon, boliye...' and continue the conversation smoothly!" }]
-                                                     }],
-                                                     turnComplete: true
-                                                 }
-                                             }));
-                                         } catch (cueErr) {
-                                             console.warn('[BRIDGE RECOVERY] Error sending recovery cue:', cueErr.message);
-                                         }
-                                     }
-                                 }
-                             }, 1600);
                          }
                          
                          // Handle setup complete before sending greeting
@@ -1422,6 +1418,8 @@ wss.on('connection', (wsConnection, req) => {
 
                         // 1. Handle audio chunks from Gemini output (24kHz PCM)
                         if (serverMsg.serverContent?.modelTurn?.parts) {
+                            userSpeakingActive = false;
+                            clearTurnWatchdog();
                             if (!geminiGreetingStarted) {
                                 geminiGreetingStarted = true;
                                 console.log('[BRIDGE] Gemini AI audio output started.');
@@ -1457,7 +1455,7 @@ wss.on('connection', (wsConnection, req) => {
                                     }, 270 * 1000); // 4.5 minutes
                                 }
                             }
-                            audioProcessor.markAiSpeaking(1200);
+                            audioProcessor.markAiSpeaking(600);
 
                             for (const part of serverMsg.serverContent.modelTurn.parts) {
                                 // Record agent text transcription
@@ -1474,7 +1472,7 @@ wss.on('connection', (wsConnection, req) => {
                                     // Pure, crystal-clear 24kHz studio PCM - zero noise on voice
 
                                     const chunkDurationMs = Math.round(pcm24.length / 24);
-                                    audioProcessor.markAiSpeaking(Math.max(1200, chunkDurationMs + 800));
+                                    audioProcessor.markAiSpeaking(Math.max(300, chunkDurationMs + 100));
 
                                     if (isVobiz && wsConnection.readyState === ws.OPEN && vobizStreamId) {
                                         // Pure, crystal-clear 24kHz studio PCM - clean voice without ambient noise
@@ -1710,8 +1708,7 @@ wss.on('connection', (wsConnection, req) => {
                                                 id: call.id,
                                                 response: {
                                                     success: true,
-                                                    confirmed_slot: slotTime,
-                                                    voice_instruction: "Respond warmly in your distinctly feminine, polite South Indian English voice. Do not lower your pitch."
+                                                    confirmed_slot: slotTime
                                                 }
                                             }]
                                         }
@@ -1775,19 +1772,27 @@ wss.on('connection', (wsConnection, req) => {
                     // ALWAYS forward real caller audio to Gemini — it needs continuous input
                     // to keep its session alive. The processor detects barge-in and backchannel events.
                     const procRes = audioProcessor.processFrame(pcm16);
-                    if (procRes.rms >= 300) {
-                        lastCallerSpeechTime = Date.now();
-                        if (interruptionRecoveryTimer) {
-                            clearTimeout(interruptionRecoveryTimer);
-                            interruptionRecoveryTimer = null;
-                        }
-                    }
                     sendPcmChunkToGemini(procRes.pcmOutput);
 
-                    // If verified barge-in detected by sustained speech, clear audio playback
+                    // Track caller speech activity (require sustained voice frames to filter out background line hiss/clicks)
+                    if (!audioProcessor.isAiSpeaking) {
+                        if (procRes.isVoice) {
+                            callerVoiceFrames++;
+                            if (callerVoiceFrames >= 4) { // ~80ms of sustained speech
+                                userSpeakingActive = true;
+                                clearTurnWatchdog();
+                            }
+                        } else if (userSpeakingActive) {
+                            // Caller was speaking and has now paused/finished speaking
+                            if (!turnCompleteWatchdogTimer) {
+                                scheduleTurnComplete(450);
+                            }
+                        }
+                    }
+
+                    // If barge-in detected, send clearAudio to stop AI playback on the caller's end
                     if (procRes.bargeIn && wsConnection.readyState === ws.OPEN) {
-                        console.log('[BRIDGE] Verified human barge-in! Clearing AI audio playback to caller...');
-                        audioProcessor.clearAiSpeaking();
+                        console.log('[BRIDGE] Barge-in! Clearing AI audio playback to caller...');
                         if (isVobiz && vobizStreamId) {
                             wsConnection.send(JSON.stringify({
                                 event: 'clearAudio',
@@ -1816,7 +1821,7 @@ wss.on('connection', (wsConnection, req) => {
     });
 
      wsConnection.on('close', async (code, reason) => {
-        if (interruptionRecoveryTimer) { clearTimeout(interruptionRecoveryTimer); interruptionRecoveryTimer = null; }
+        clearTurnWatchdog();
         if (ambienceInterval) { clearInterval(ambienceInterval); ambienceInterval = null; }
         clearInterval(pingInterval);
         if (wrapUpTimer) {
@@ -2320,31 +2325,16 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                 }
 
                 if (!isValidBooking) {
-                    // CRITICAL RULE: Keep lead in Fresh section so human tele-callers can get to them!
-                    // Do NOT transition lead stage to Contacted / Qualified unless an actual appointment is booked.
-                    if (!lead || !lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.status === 'New Lead' || lead.status === 'New') {
-                        updatePayload.status = 'New Lead';
-                        updatePayload.pipeline_stage = 'New Lead';
-                    }
-
-                    // Check if lead was uncommunicative (prospect didn't speak or hung up with 0 user responses)
-                    const userMessages = (mergedTurns || transcriptTurns || []).filter(t => t.role === 'user' && t.message && t.message.trim().length > 0);
-                    const hasUserSpoken = userMessages.length > 0;
-
-                    if (!hasUserSpoken && !callbackTime) {
-                        const currentRetries = lead?.voice_call_retry_count || 0;
-                        if (currentRetries < 3) {
-                            const nextRetryCount = currentRetries + 1;
-                            let delayMinutes = 30;
-                            if (nextRetryCount === 2) delayMinutes = 90;
-                            if (nextRetryCount === 3) delayMinutes = 180;
-
-                            const targetRawDate = new Date(Date.now() + delayMinutes * 60000);
-                            const { scheduledTime: validSlot } = computeValidCallingSlot(targetRawDate, 'Asia/Kolkata');
-                            updatePayload.voice_call_status = 'scheduled_retry';
-                            updatePayload.voice_call_scheduled_at = validSlot.toISOString();
-                            updatePayload.voice_call_retry_count = nextRetryCount;
-                            console.log(`[BRIDGE] Uncommunicative lead ${leadId} (0 user messages): scheduled follow-up retry #${nextRetryCount} for ${validSlot.toISOString()}`);
+                    if (isQualified && isInterested) {
+                        updatePayload.status = 'Qualified';
+                        updatePayload.pipeline_stage = 'Qualified';
+                    } else if (isInterested) {
+                        updatePayload.status = 'Contacted';
+                        updatePayload.pipeline_stage = 'Contacted';
+                    } else {
+                        if (!lead || !lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.status === 'New Lead' || lead.status === 'New') {
+                            updatePayload.status = 'Contacted';
+                            updatePayload.pipeline_stage = 'Contacted';
                         }
                     }
                 }

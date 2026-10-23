@@ -66,8 +66,13 @@ export function normalizeQualifyingQuestion(rawItem: any, idx: number): Normaliz
   let customKey = '';
 
   if (typeof item === 'object' && item !== null) {
-    questionText = item.question || item.text || `Question ${idx + 1}`;
-    options = Array.isArray(item.options) ? item.options : [];
+    questionText = String(item.question || item.text || `Question ${idx + 1}`);
+    const rawOptions = Array.isArray(item.options) ? item.options : [];
+    options = rawOptions.map((opt: any) => {
+      if (typeof opt === 'string') return opt;
+      if (opt && typeof opt === 'object') return opt.label || opt.text || opt.title || opt.value || JSON.stringify(opt);
+      return String(opt ?? '');
+    }).filter(Boolean);
     customKey = item.field_name || item.key || '';
   } else if (typeof item === 'string') {
     const match = item.match(/\(([^)]+)\)/);
@@ -77,7 +82,7 @@ export function normalizeQualifyingQuestion(rawItem: any, idx: number): Normaliz
     questionText = `Question ${idx + 1}`;
   }
 
-  const qLower = questionText.toLowerCase();
+  const qLower = String(questionText || '').toLowerCase();
   let key = customKey;
   if (!key) {
     if (qLower.includes('budget') || qLower.includes('price') || qLower.includes('cost') || qLower.includes('range')) {

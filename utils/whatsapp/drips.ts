@@ -288,22 +288,32 @@ export async function sendInstantFormCatalogMessage(
         let messageSent = false;
         let sentMessageText = '';
 
-        // 0. Primary: 3-button welcome options template (View Properties | Connect with Expert | Book an appointment)
+        // 0. Primary: 3-button welcome options template
         try {
+            const isDigiPro = ownerId === '426490e7-c7ec-43b7-979f-a891f947ab3c' || 
+                              (companyName || '').toLowerCase().includes('digipro') || 
+                              (profile?.email || '').toLowerCase().includes('faizal');
+            
+            const templateName = isDigiPro ? 'digipro_lead_welcome' : 'lead_welcome_options';
+            const leadFirstName = (leadName && leadName !== 'there') ? leadName.split(' ')[0] : 'there';
+            const bodyParams = isDigiPro 
+                ? [{ type: 'text', text: leadFirstName }]
+                : [
+                    { type: 'text', text: leadFirstName },
+                    { type: 'text', text: companyName }
+                  ];
+
             const welcomeOptionsPayload = {
                 messaging_product: 'whatsapp',
                 to: cleanPhone,
                 type: 'template',
                 template: {
-                    name: 'lead_welcome_options',
+                    name: templateName,
                     language: { code: 'en_US' },
                     components: [
                         {
                             type: 'body',
-                            parameters: [
-                                { type: 'text', text: (leadName && leadName !== 'there') ? leadName.split(' ')[0] : 'there' },
-                                { type: 'text', text: companyName }
-                            ]
+                            parameters: bodyParams
                         }
                     ]
                 }
@@ -320,13 +330,15 @@ export async function sendInstantFormCatalogMessage(
             const optData = await optRes.json();
             if (optRes.ok && optData.messages?.[0]?.id) {
                 messageSent = true;
-                sentMessageText = `Hi ${(leadName && leadName !== 'there') ? leadName.split(' ')[0] : 'there'}! 👋 Welcome to ${companyName}. Thank you for connecting with us regarding our properties and projects. [Buttons: View Properties | Connect with Expert | Book an appointment]`;
-                console.log(`[INSTANT CATALOG WA] Sent 3-button 'lead_welcome_options' to ${cleanPhone}: ${optData.messages[0].id}`);
+                sentMessageText = isDigiPro 
+                    ? `Hi ${leadFirstName}! 👋 Welcome to DigiPro Business Services. Thank you for connecting with us regarding company formation & business setup in Dubai. [Buttons: Visit Website | Connect with Expert | Book Appointment]`
+                    : `Hi ${leadFirstName}! 👋 Welcome to ${companyName}. Thank you for connecting with us regarding our properties and projects. [Buttons: View Properties | Connect with Expert | Book an appointment]`;
+                console.log(`[INSTANT CATALOG WA] Sent 3-button '${templateName}' to ${cleanPhone}: ${optData.messages[0].id}`);
             } else {
-                console.log('[INSTANT CATALOG WA] lead_welcome_options not yet approved/ready on this WABA, falling back to clean welcome:', optData?.error?.message || optData);
+                console.log(`[INSTANT CATALOG WA] ${templateName} not yet approved/ready on this WABA, falling back to clean welcome:`, optData?.error?.message || optData);
             }
         } catch (sErr) {
-            console.warn('[INSTANT CATALOG WA] lead_welcome_options exception:', sErr);
+            console.warn('[INSTANT CATALOG WA] welcome options exception:', sErr);
         }
 
         // 1. Fallback: auto_lead_welcome (Utility category, guaranteed delivery, no survey questions)
