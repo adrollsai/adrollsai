@@ -40,6 +40,16 @@ async function getNextRoundRobinAgent(supabaseAdmin: any, agentIds: string[]) {
     return selectedAgent;
 }
 
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+export async function OPTIONS() {
+    return new NextResponse(null, { status: 200, headers: corsHeaders })
+}
+
 export async function POST(request: Request) {
     try {
         const body = await request.json()
@@ -55,7 +65,7 @@ export async function POST(request: Request) {
         } = body
 
         if (!name || !phone || !user_id) {
-            return NextResponse.json({ error: "Missing required contact details." }, { status: 400 })
+            return NextResponse.json({ error: "Missing required contact details." }, { status: 400, headers: corsHeaders })
         }
 
         // We use an admin client to bypass RLS so that external landing page submissions
@@ -305,10 +315,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ 
             success: true, 
             leadId: newLead.id 
-        })
+        }, { headers: corsHeaders })
 
     } catch (error: any) {
         console.error("Lander Lead API Error:", error)
-        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 })
+        return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500, headers: corsHeaders })
     }
+
 }

@@ -173,8 +173,8 @@ export default function ProductsPage() {
           } else {
               targetUserId = impersonateId
           }
-      } else if (['admin', 'agent'].includes(currentRole as string) && (profile?.parent_id || profile?.agency_id)) {
-          // Staff (Admin/Agent) see their parent agency's data
+      } else if (currentRole === 'agent' && (profile?.parent_id || profile?.agency_id)) {
+          // Staff (Agent) see their parent agency's data
           targetUserId = (profile.parent_id || profile.agency_id) as string
       }
       
@@ -428,7 +428,7 @@ export default function ProductsPage() {
       let finalOwnerId = ownerId || user.id
       if (!ownerId) {
         const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single()
-        if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+        if (profile?.role === 'agent' && (profile?.parent_id || profile?.agency_id)) {
             finalOwnerId = (profile?.parent_id || profile?.agency_id) as string
         }
       }

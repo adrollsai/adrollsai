@@ -572,7 +572,7 @@ export default function CreationPage() {
       }
       
       let tUserId = user.id
-      if (['admin', 'agent'].includes(currentRole as string) && (currentUserProfile?.parent_id || currentUserProfile?.agency_id)) {
+      if (currentRole === 'agent' && (currentUserProfile?.parent_id || currentUserProfile?.agency_id)) {
           tUserId = (currentUserProfile?.parent_id || currentUserProfile?.agency_id) as string
       }
 

@@ -676,7 +676,7 @@ export default function AdsPage() {
       const { data: profile, error: profileErr } = await supabase.from('profiles').select('facebook_token, ad_account_id, selected_page_id, role, parent_id, agency_id, custom_domain, business_name, currency, pixel_id, whatsapp_phone_number, contact_number, business_info').eq('id', user.id).single()
       if (profileErr) throw new Error("profileErr: " + profileErr.message)
       let targetUserId = user.id
-      if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+      if (profile?.role === 'agent' && (profile?.parent_id || profile?.agency_id)) {
           targetUserId = (profile?.parent_id || profile?.agency_id) as string
       }
 
@@ -1776,7 +1776,7 @@ export default function AdsPage() {
           const { data: { user } } = await supabase.auth.getUser();
           const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user?.id).single();
           let tUserId = user?.id;
-          if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+          if (profile?.role === 'agent' && (profile?.parent_id || profile?.agency_id)) {
               tUserId = (profile?.parent_id || profile?.agency_id) as string;
           }
           if (impersonateId) tUserId = impersonateId;
@@ -1950,7 +1950,7 @@ export default function AdsPage() {
     const impersonateId = urlParams.get('impersonate');
     
     let tUserId = user?.id;
-    if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+    if (profile?.role === 'agent' && (profile?.parent_id || profile?.agency_id)) {
         tUserId = (profile?.parent_id || profile?.agency_id) as string;
     }
     if (impersonateId) tUserId = impersonateId;

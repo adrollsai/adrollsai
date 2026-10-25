@@ -642,13 +642,15 @@ async function executeBroadcastImmediately(
         }
     }
 
-    const CONCURRENCY = 8
+    const CONCURRENCY = 3
     let currIdx = 0
+    let circuitBreakerTripped = false
 
     async function dispatchWorker() {
-        while (currIdx < recipients.length) {
+        while (currIdx < recipients.length && !circuitBreakerTripped) {
             const index = currIdx++
             const r = recipients[index]
+            if (!r) break
             const lead = leads.find(l => l.id === r.lead_id)
             if (!lead) continue
 
@@ -761,12 +763,26 @@ async function executeBroadcastImmediately(
                 const metaData = await metaRes.json()
 
                 if (metaData.error) {
+                    const errCode = metaData.error.code
+                    const errMsg = metaData.error.message || ''
+
+                    // Circuit breaker: Business payment/eligibility or rate limit
+                    if (errCode === 131042 || errMsg.includes('131042') || errMsg.includes('payment') || errCode === 429 || errCode === 130429) {
+                        console.error(`[BROADCAST EXECUTION] ⚠️ Circuit breaker tripped! Meta returned ${errCode}: ${errMsg}. Pausing broadcast to preserve queue.`)
+                        circuitBreakerTripped = true
+                        await supabaseAdmin
+                            .from('whatsapp_broadcasts')
+                            .update({ status: 'paused' })
+                            .eq('id', broadcastId)
+                        break
+                    }
+
                     console.error(`[BROADCAST EXECUTION] Meta API send failed for phone ${cleanPhone}:`, metaData.error)
                     await supabaseAdmin
                         .from('whatsapp_broadcast_recipients')
                         .update({ 
                             status: 'failed', 
-                            error_message: metaData.error.message || 'Meta API returned error' 
+                            error_message: errMsg || 'Meta API returned error' 
                         })
                         .eq('broadcast_id', broadcastId)
                         .eq('lead_id', r.lead_id)

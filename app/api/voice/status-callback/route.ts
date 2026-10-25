@@ -729,9 +729,11 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                     updateData.pipeline_stage = 'Appointment Booked'
                     updateData.booked_time = bookingTime
                 } else if (!bookingTime) {
+                    // CRITICAL: Leads must remain in Fresh section ('New Lead') so human telecallers can contact them!
+                    // Even if AI caller contacted them, keep in Fresh unless an actual appointment was booked.
                     if (!lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || (lead as any).status === 'New Lead' || (lead as any).status === 'New') {
-                        updateData.status = 'Ongoing'
-                        updateData.pipeline_stage = 'Ongoing'
+                        updateData.status = (lead as any).status || 'New Lead'
+                        updateData.pipeline_stage = lead.pipeline_stage || 'New Lead'
                     }
                 }
             }

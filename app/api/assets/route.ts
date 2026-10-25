@@ -32,7 +32,7 @@ export async function GET(request: Request) {
         const impersonateId = url.searchParams.get('impersonate');
 
         const { data: currentProfile } = await supabaseAdmin.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single();
-        let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
+        let targetUserId = (currentProfile?.role === 'agent' && (currentProfile?.agency_id || currentProfile?.parent_id)) 
           ? (currentProfile.agency_id || currentProfile.parent_id) 
           : user.id;
 

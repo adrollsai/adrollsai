@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single();
-    let targetUserId = (['admin', 'agent'].includes(currentProfile?.role || '') && (currentProfile?.agency_id || currentProfile?.parent_id)) 
+    let targetUserId = (currentProfile?.role === 'agent' && (currentProfile?.agency_id || currentProfile?.parent_id)) 
       ? (currentProfile.agency_id || currentProfile.parent_id) 
       : user.id;
 

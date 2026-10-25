@@ -202,13 +202,15 @@ export async function POST(req: Request) {
 
         let sentCount = 0
         let failedCount = 0
-        const CONCURRENCY = 8
+        let circuitBreakerTripped = false
+        const CONCURRENCY = 3
         let currIdx = 0
 
         async function worker() {
-            while (currIdx < pendingRecipients.length) {
+            while (currIdx < pendingRecipients.length && !circuitBreakerTripped) {
                 const index = currIdx++
                 const r = pendingRecipients[index]
+                if (!r) break
                 const lead = leadsMap.get(r.lead_id)
 
                 let cleanPhone = (r.phone_number || lead?.phone || '').replace(/\D/g, '')
@@ -266,10 +268,24 @@ export async function POST(req: Request) {
                     const metaData = await metaRes.json()
 
                     if (metaData.error) {
+                        const errCode = metaData.error.code
+                        const errMsg = metaData.error.message || ''
+
+                        // Circuit breaker: Business payment/eligibility or rate limit
+                        if (errCode === 131042 || errMsg.includes('131042') || errMsg.includes('payment') || errCode === 429 || errCode === 130429) {
+                            console.error(`[BROADCAST WORKER] ⚠️ Circuit breaker tripped! Meta returned ${errCode}: ${errMsg}. Pausing broadcast to preserve queue.`)
+                            circuitBreakerTripped = true
+                            await supabaseAdmin
+                                .from('whatsapp_broadcasts')
+                                .update({ status: 'paused' })
+                                .eq('id', broadcastId)
+                            break
+                        }
+
                         failedCount++
                         await supabaseAdmin
                             .from('whatsapp_broadcast_recipients')
-                            .update({ status: 'failed', error_message: metaData.error.message || 'Meta error' })
+                            .update({ status: 'failed', error_message: errMsg || 'Meta error' })
                             .eq('id', r.id)
                     } else {
                         sentCount++
@@ -343,7 +359,7 @@ export async function POST(req: Request) {
                         .eq('id', r.id)
                 }
 
-                await new Promise(res => setTimeout(res, 40))
+                await new Promise(res => setTimeout(res, 120))
             }
         }
 

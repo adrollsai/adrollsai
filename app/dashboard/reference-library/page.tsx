@@ -81,7 +81,7 @@ export default function ReferenceLibraryPage() {
 
         // Resolve Target User ID (exactly like profile page)
         let tUserId = session.user.id
-        if (['admin', 'agent'].includes(userRole) && (profile?.agency_id || profile?.parent_id)) {
+        if (userRole === 'agent' && (profile?.agency_id || profile?.parent_id)) {
           tUserId = (profile?.agency_id || profile?.parent_id) as string
         }
 

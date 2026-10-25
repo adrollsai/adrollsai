@@ -94,7 +94,7 @@ app.get('/health', (req, res) => {
 
 // Vobiz Answer XML endpoint (Returns Stream XML directly to Vobiz)
 
-async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName = 'Kore') {
+async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName = 'Aoede') {
     const campaignPromise = campaignId
         ? supabaseAdmin.from('voice_campaigns').select('*').eq('id', campaignId).maybeSingle()
         : Promise.resolve({ data: null });
@@ -342,9 +342,19 @@ CRITICAL CONVERSATIONAL DISCIPLINE:
 5. END CALL ONLY ON USER FAREWELL: Trigger 'end_call' ONLY after the appointment is mutually agreed upon AND the caller has acknowledged and said goodbye/thank you, or if caller explicitly asks to hang up.
 `;
 
+    const voiceLockDirective = `
+ABSOLUTE VOICE LOCK & FEMININE TIMBRE (CRITICAL — NEVER VIOLATE):
+- You MUST maintain your bright, warm, distinctly feminine voice (Aoede timbre, natural pitch range 190-215 Hz) from your very first word until the call ends.
+- STRICT PROHIBITION AGAINST TIMBRE DRIFT: NEVER drop into a deeper, heavier, flat, or masculine vocal fry at ANY point in the call, especially during closing turns.
+- NEVER adopt an American, British, or Western accent. Maintain authentic Urban South Indian English (Bangalore / Mysuru cadence).
+- Every single turn, whether greeting, answering a question, or saying goodbye, MUST sound identically pleasant, bright, and feminine.
+- Your voice identity is LOCKED for the entire duration of this call session. No exceptions.`;
+
     const systemInstruction = `
 You are an expert, professional outbound AI relationship representative calling on behalf of "${companyName}".
 You are speaking directly over the phone with ${leadName}.
+
+${voiceLockDirective}
 
 ${languageInstruction}
 
@@ -358,9 +368,9 @@ ${resolvedQuestionsInstruction}
 `.trim();
 
     const validVoiceNames = ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'];
-    let chosenVoice = 'Kore';
+    let chosenVoice = 'Aoede';
     if (voiceName && validVoiceNames.includes(voiceName)) {
-        chosenVoice = voiceName === 'Aoede' ? 'Kore' : voiceName;
+        chosenVoice = voiceName;
     }
 
     const setupPayload = {
@@ -440,7 +450,7 @@ ${resolvedQuestionsInstruction}
     };
 }
 
-async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Kore') {
+async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Aoede') {
     if (!leadId || !profileId) return null;
     const existing = prewarmedPool.get(leadId);
     if (existing && !existing.used && (Date.now() - existing.createdAt < 60000)) {
@@ -538,6 +548,29 @@ app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
         console.log(`[BRIDGE VOBIZ-XML] Auto-prewarming session for lead ${leadId}...`);
         prewarmSession(leadId, profileId, campaignId, req.query.voiceName || 'Aoede');
     }
+
+    // Auto-trigger call recording if CallUUID is present
+    const callUuid = req.query.CallUUID || req.body?.CallUUID || req.query.call_uuid || req.body?.call_uuid;
+    if (callUuid) {
+        const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+        const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+        fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`, {
+            method: 'POST',
+            headers: {
+                'X-Auth-ID': authId,
+                'X-Auth-Token': authToken,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                file_format: 'mp3',
+                time_limit: 600,
+                callback_url: `${protocol}://${host}/vobiz-status?leadId=${leadId}&event=recording`
+            })
+        }).then(r => r.json()).then(d => {
+            console.log(`[BRIDGE VOBIZ-XML] Auto-triggered Vobiz recording for ${callUuid}:`, d);
+        }).catch(e => console.warn(`[BRIDGE VOBIZ-XML] Recording trigger error:`, e.message));
+    }
+
     console.log(`[BRIDGE VOBIZ-XML] Served Voice XML to Vobiz for lead ${leadId}:\n${xml}`);
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.send(xml);
@@ -647,7 +680,7 @@ app.post('/prewarm', async (req, res) => {
             return res.status(400).json({ error: 'Missing leadId or profileId in prewarm request.' });
         }
         console.log(`[PREWARM] Prewarm request for lead: ${leadId}, profile: ${profileId}`);
-        const entry = await prewarmSession(leadId, profileId, campaignId, voiceName || 'Kore');
+        const entry = await prewarmSession(leadId, profileId, campaignId, voiceName || 'Aoede');
         if (entry && !entry.setupComplete) {
             await new Promise((resolve) => {
                 const timeout = setTimeout(resolve, 2500);
@@ -824,15 +857,15 @@ function playClipToCaller(wsConn, clipKey, isVobiz = true, streamId = null) {
         }
         payload24 = Buffer.from(mixed.buffer, mixed.byteOffset, mixed.byteLength).toString('base64');
     }
-if (isVobiz) {
-        // Send directly in 24kHz linear PCM to Vobiz
+    if (isVobiz) {
+        // Send downsampled 16kHz linear PCM to Vobiz
         wsConn.send(JSON.stringify({
             event: 'playAudio',
             streamId: streamId,
             media: {
                 contentType: 'audio/x-l16',
-                sampleRate: 24000,
-                payload: payload24
+                sampleRate: 16000,
+                payload: asset.base64Pcm16 || payload24
             }
         }));
     } else {
@@ -874,14 +907,30 @@ class NoiseSuppressedAudioProcessor {
     constructor(options = {}) {
         // Barge-in: RMS threshold for caller voice to be considered "speaking" during AI output
         // Human speech directly into phone microphone is typically RMS 1600 - 5000+
-        // Telephony ambient line noise and speaker acoustic echo is RMS 200 - 900
-        this.bargeInThreshold = options.bargeInThreshold || 1400;
-        this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 10; // 10 frames * 20ms = 200ms of sustained speech
-        this.voiceThreshold = options.voiceThreshold || 260; // Caller speech RMS threshold
+        // Instant barge-in: RMS threshold for caller voice to interrupt AI output
+        // Mobile cell phone mic speech is typically RMS 400 - 1500
+        // Set to 400 RMS with 3 frames (60ms) so saying a single word ("price", "hello", "wait") immediately halts AI
+        this.bargeInThreshold = options.bargeInThreshold || 400;
+        this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 3; // 3 frames * 20ms = 60ms for instant interruption
+        this.voiceThreshold = options.voiceThreshold || 250; // Caller speech RMS threshold
         this.isAiSpeaking = false;
         this.aiSpeakingTimeout = null;
         this.sustainedBargeInFrames = 0;
         this.bargeInTriggered = false;
+    }
+
+    markAiSpeakingUntil(targetTimestamp) {
+        this.isAiSpeaking = true;
+        this.bargeInTriggered = false;
+        this.sustainedBargeInFrames = 0;
+        this.callerSpeechStartTime = 0;
+        this.callerSilenceStartTime = 0;
+        if (this.aiSpeakingTimeout) clearTimeout(this.aiSpeakingTimeout);
+        const remainingMs = Math.max(100, targetTimestamp - Date.now());
+        this.aiSpeakingTimeout = setTimeout(() => {
+            this.isAiSpeaking = false;
+            this.sustainedBargeInFrames = 0;
+        }, remainingMs);
     }
 
     markAiSpeaking(durationMs = 1500) {
@@ -912,8 +961,6 @@ class NoiseSuppressedAudioProcessor {
 
         // TELEPHONY NOISE GATE:
         // Ambient mobile cellular line hiss on telephony is typically RMS 40-180.
-        // If the caller is not speaking (RMS < 200), forward clean digital zeroes so Gemini's
-        // automatic activity detection (VAD) cleanly detects silence (silenceDurationMs = 400ms).
         // When caller speaks (RMS >= 200), forward full intact 16kHz audio.
         let pcmOutput = pcm16Chunk;
         if (!isVoice && rms < 200) {
@@ -922,20 +969,23 @@ class NoiseSuppressedAudioProcessor {
 
         const result = { pcmOutput, rms, isVoice, bargeIn: false };
 
-        // Check for barge-in during AI speech
-        if (this.isAiSpeaking && !this.bargeInTriggered) {
+        // Check for barge-in during AI speech (instant 60ms detection)
+        if (this.isAiSpeaking) {
             if (rms >= this.bargeInThreshold) {
                 this.sustainedBargeInFrames++;
                 if (this.sustainedBargeInFrames >= this.sustainedBargeInNeeded) {
-                    // Caller is deliberately speaking over the AI
-                    console.log(`[AUDIO PROCESSOR] Sustained human speech detected over AI! RMS: ${Math.round(rms)}, sustained ${this.sustainedBargeInFrames} frames`);
+                    console.log(`[AUDIO PROCESSOR] Instant caller barge-in detected! RMS: ${Math.round(rms)}, sustained ${this.sustainedBargeInFrames} frames`);
                     this.bargeInTriggered = true;
+                    this.isAiSpeaking = false; // Immediately clear AI speaking
                     this.sustainedBargeInFrames = 0;
                     result.bargeIn = true;
+                    result.pcmOutput = pcm16Chunk; // Forward caller voice directly!
                 }
             } else {
-                // Reset sustained counter if a quiet frame breaks the streak
-                this.sustainedBargeInFrames = Math.max(0, this.sustainedBargeInFrames - 1);
+                this.sustainedBargeInFrames = 0;
+            }
+            if (!result.bargeIn) {
+                result.pcmOutput = new Int16Array(pcm16Chunk.length);
             }
         }
 
@@ -989,7 +1039,7 @@ wss.on('connection', (wsConnection, req) => {
     let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
     let greetingPlayed = false;
-    let voiceName = (queryVoiceName && ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'].includes(queryVoiceName)) ? (queryVoiceName === 'Aoede' ? 'Kore' : queryVoiceName) : 'Kore';
+    let voiceName = (queryVoiceName && ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'].includes(queryVoiceName)) ? queryVoiceName : 'Aoede';
 
     let earlyConfigPromise = null;
     if (leadId && profileId) {
@@ -998,49 +1048,17 @@ wss.on('connection', (wsConnection, req) => {
     }
 
     const audioProcessor = new NoiseSuppressedAudioProcessor();
+    const streamStartTime = Date.now();
     let isCallHangingUp = false;
     let ambienceOffset = 0;
     let ambienceInterval = null;
     let geminiGreetingStarted = false;
+    let geminiGreetingFinished = false;
     let wrapUpTimer = null;
     let maxDurationTimer = null;
 
-    // Turn completion watchdog: safety fallback to ensure Gemini Live never hangs indefinitely
-    let userSpeakingActive = false;
-    let callerVoiceFrames = 0;
-    let turnCompleteWatchdogTimer = null;
-
-    function clearTurnWatchdog() {
-        if (turnCompleteWatchdogTimer) {
-            clearTimeout(turnCompleteWatchdogTimer);
-            turnCompleteWatchdogTimer = null;
-        }
-    }
-
-    function triggerTurnComplete() {
-        clearTurnWatchdog();
-        if (geminiSocket && geminiSocket.readyState === ws.OPEN && !audioProcessor.isAiSpeaking) {
-            console.log("[BRIDGE WATCHDOG] Caller finished speaking. Dispatching turnComplete to Gemini Live...");
-            userSpeakingActive = false;
-            callerVoiceFrames = 0;
-            try {
-                geminiSocket.send(JSON.stringify({
-                    clientContent: {
-                        turnComplete: true
-                    }
-                }));
-            } catch (err) {
-                console.warn("[BRIDGE WATCHDOG] Failed to send turnComplete:", err.message);
-            }
-        }
-    }
-
-    function scheduleTurnComplete(delayMs = 450) {
-        clearTurnWatchdog();
-        turnCompleteWatchdogTimer = setTimeout(() => {
-            triggerTurnComplete();
-        }, delayMs);
-    }
+    // Audio playout tracker: tracks exact timestamp when queued audio finishes playing on caller device
+    let aiPlaybackEndTime = 0;
 
     // Connection health check (heartbeat to prevent lingering ghost connections)
     let isAlive = true;
@@ -1225,17 +1243,28 @@ wss.on('connection', (wsConnection, req) => {
                     const campPrompt = campaign?.custom_prompt || campaign?.prompt || '';
                     const campPromptLower = campPrompt.toLowerCase();
 
-                    // 1. Direct priority: Extract explicit greeting from custom prompt if present
-                    const promptGreetingMatch = campPrompt.match(/GREETING:\s*["']([^"'\r\n]+)["']/i) ||
-                                                campPrompt.match(/(?:Opening Greeting|First Message|Greeting)\s*(?::|-)\s*["']([^"'\r\n]+)["']/i);
+                    // 1. Direct priority: Extract explicit OPENING greeting from custom prompt if present
+                    // IMPORTANT: Only match the primary opening/first greeting, NOT sub-template greetings
+                    // like "Kannada Greeting:", "Hindi Greeting:", etc.
+                    const promptGreetingMatch = campPrompt.match(/(?:^|\n)\s*(?:Opening Greeting|STEP 1[^:]*|First Message)\s*(?::|-)?\s*\n?\s*(?:Greeting:\s*)?["']([^"'\r\n]+)["']/im) ||
+                                                campPrompt.match(/(?:^|\n)\s*GREETING:\s*["']([^"'\r\n]+)["']/im);
                     if (promptGreetingMatch && promptGreetingMatch[1]) {
-                        openGreeting = promptGreetingMatch[1]
-                            .replace(/\{name\}/gi, safeName || 'there')
-                            .replace(/\{lead_name\}/gi, safeName || 'there')
-                            .replace(/\{business_name\}/gi, safeCompanyName)
-                            .replace(/\{company_name\}/gi, safeCompanyName)
-                            .trim();
-                        console.log('[BRIDGE] Successfully extracted greeting from campaign prompt:', openGreeting);
+                        // Verify it's not a Kannada/Hindi sub-template greeting
+                        const extractedLower = promptGreetingMatch[1].toLowerCase();
+                        const isSubTemplate = extractedLower.startsWith('namaskara') || extractedLower.startsWith('namaskar ') || extractedLower.includes('hegiddira') || extractedLower.includes('kaise hain');
+                        const isEnglishCampaign = campPromptLower.includes('indian english') || campPromptLower.includes('indian accent') || campaign?.audience_filter?.language === 'english';
+
+                        if (!isSubTemplate || !isEnglishCampaign) {
+                            openGreeting = promptGreetingMatch[1]
+                                .replace(/\{name\}/gi, safeName || 'there')
+                                .replace(/\{lead_name\}/gi, safeName || 'there')
+                                .replace(/\{business_name\}/gi, safeCompanyName)
+                                .replace(/\{company_name\}/gi, safeCompanyName)
+                                .trim();
+                            console.log('[BRIDGE] Successfully extracted greeting from campaign prompt:', openGreeting);
+                        } else {
+                            console.log('[BRIDGE] Skipped sub-template greeting extraction (Kannada/Hindi on English campaign):', promptGreetingMatch[1].substring(0, 50));
+                        }
                     }
 
                     // 2. Fallback to audience_filter.greeting if not a stale generic Hindi greeting on an English prompt
@@ -1268,7 +1297,20 @@ wss.on('connection', (wsConnection, req) => {
                         }
                     }
 
-                    const textPrompt = `You are on an active phone call that just connected. Speak this greeting warmly and naturally right now: "${openGreeting}"`;
+                    if (openGreeting) {
+                        openGreeting = openGreeting
+                            .replace(/\{name\}/gi, safeName || 'there')
+                            .replace(/\{lead_name\}/gi, safeName || 'there')
+                            .replace(/\{business_name\}/gi, safeCompanyName)
+                            .replace(/\{company_name\}/gi, safeCompanyName)
+                            .trim();
+                    }
+
+                    const accentDirective = isIndianEn
+                        ? "in a polite, natural Urban Indian English accent (South Indian / Bangalore professional intonation, crisp non-rhotic Indian pronunciation, strictly NO American accent)"
+                        : "in a warm, natural tone in the language of the greeting";
+                    const textPrompt = `The phone call has just connected. Speak EXACTLY this greeting message now ${accentDirective}, and nothing else: "${openGreeting}"
+CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIATELY. You MUST wait for the caller to respond before saying another word. Do NOT pitch the project, do NOT describe amenities, and do NOT proceed until the caller explicitly confirms!`;
 
                     const initialTurn = {
                         clientContent: {
@@ -1287,8 +1329,10 @@ wss.on('connection', (wsConnection, req) => {
                 };
 
                 if (prewarmed && prewarmed.setupComplete) {
-                    console.log('[BRIDGE] Session already has setupComplete! Dispatching greeting turn immediately (<200ms)...');
-                    sendInitialGreeting();
+                    console.log('[BRIDGE] Session already has setupComplete! Dispatching greeting turn immediately (250ms audio link settle)...');
+                    setTimeout(() => {
+                        sendInitialGreeting();
+                    }, 250);
                 }
 
                 isCallHangingUp = false;
@@ -1359,11 +1403,12 @@ wss.on('connection', (wsConnection, req) => {
 
                 const checkAgentGoodbyeAndHangup = (text) => {
                     if (!text || isCallHangingUp) return;
-                    const goodbyeRegex = /\b(thank\s*you|shukriya|alvida|have a (good|great|nice) day|bye\b|take\s*care|phir milte hain|dhanyawad)\b/i;
-                    const userSaidGoodbye = transcriptTurns.some(t => t.role === 'user' && goodbyeRegex.test(t.message || ''));
-                    // Only trigger verbal hangup if the USER also said goodbye/thank you!
-                    if (goodbyeRegex.test(text) && userSaidGoodbye && transcriptTurns.length >= 4) {
-                        console.log(`[BRIDGE] Mutual verbal farewell detected ("${text.trim()}"). Triggering fallback hangup...`);
+                    const partingIntentRegex = /\b(thank\s*you|shukriya|alvida|have a (good|great|nice) day|bye\b|take\s*care|phir milte hain|dhanyawad|dhanyavad|talk (to you )?later|call (me )?later|busy|not now|reach out later)\b/i;
+                    const agentFarewellRegex = /\b(have a (great|good|nice) day|take care|thank you.*great day|bye-bye|goodbye|dhanyavadagalu.*great day|great day\.)\b/i;
+                    const userExpressedParting = transcriptTurns.some(t => t.role === 'user' && partingIntentRegex.test(t.message || ''));
+                    // Immediate hangup if agent delivers farewell after user expressed parting or call has progressed
+                    if (agentFarewellRegex.test(text) && (userExpressedParting || transcriptTurns.length >= 4)) {
+                        console.log(`[BRIDGE] Agent farewell delivered ("${text.trim()}"). Triggering clean hangup to prevent run-on speech...`);
                         triggerCallHangup('verbal_goodbye_detected');
                     }
                 };
@@ -1375,25 +1420,20 @@ wss.on('connection', (wsConnection, req) => {
                           if (!serverMsg.serverContent?.modelTurn?.parts?.some(p => p.inlineData) && !serverMsg.serverContent?.outputTranscription) {
                               console.log('[BRIDGE] Received from Gemini:', JSON.stringify(serverMsg));
                           }
-                                          // Handle Gemini server voice activity detection (VAD)
+                         // Handle Gemini server voice activity detection (VAD)
                          if (serverMsg.voiceActivity) {
                              if (serverMsg.voiceActivity.type === 'ACTIVITY_START') {
                                  console.log('[BRIDGE] Gemini VAD: ACTIVITY_START detected.');
-                                 userSpeakingActive = true;
-                                 clearTurnWatchdog();
                              } else if (serverMsg.voiceActivity.type === 'ACTIVITY_END') {
                                  console.log('[BRIDGE] Gemini VAD: ACTIVITY_END detected.');
-                                 userSpeakingActive = true;
-                                 scheduleTurnComplete(250);
                              }
                          }
 
                          // Handle user interruption (barge-in)
                          if (serverMsg.serverContent?.interrupted) {
-                              console.log('[BRIDGE] Gemini confirmed user interruption. Clearing AI playback...');
-                              userSpeakingActive = true;
-                              clearTurnWatchdog();
-                              audioProcessor.clearAiSpeaking();
+                             console.log('[BRIDGE] Gemini confirmed interruption. Clearing telephony audio playback buffer immediately...');
+                             aiPlaybackEndTime = 0;
+                             audioProcessor.clearAiSpeaking();
                              if (wsConnection.readyState === ws.OPEN) {
                                  if (isVobiz && vobizStreamId) {
                                      wsConnection.send(JSON.stringify({
@@ -1408,18 +1448,27 @@ wss.on('connection', (wsConnection, req) => {
                                  }
                              }
                          }
-                         
+
+                         // Handle turn or generation completion
+                         if (serverMsg.serverContent?.generationComplete || serverMsg.serverContent?.turnComplete) {
+                             const remainingPlayoutMs = Math.max(0, aiPlaybackEndTime - Date.now());
+                             console.log(`[BRIDGE] Gemini generationComplete. Playout remaining on caller device: ${remainingPlayoutMs}ms`);
+                             setTimeout(() => {
+                                 geminiGreetingFinished = true;
+                             }, remainingPlayoutMs + 300);
+                         }
+
                          // Handle setup complete before sending greeting
-                          if (serverMsg.setupComplete) {
-                              console.log('[BRIDGE] Gemini Setup Complete received. Injecting greeting turn...');
-                              sendInitialGreeting();
-                              return;
-                          }
+                         if (serverMsg.setupComplete) {
+                             console.log('[BRIDGE] Gemini Setup Complete received. Injecting greeting turn immediately (250ms audio link settle)...');
+                             setTimeout(() => {
+                                 sendInitialGreeting();
+                             }, 250);
+                             return;
+                         }
 
                         // 1. Handle audio chunks from Gemini output (24kHz PCM)
                         if (serverMsg.serverContent?.modelTurn?.parts) {
-                            userSpeakingActive = false;
-                            clearTurnWatchdog();
                             if (!geminiGreetingStarted) {
                                 geminiGreetingStarted = true;
                                 console.log('[BRIDGE] Gemini AI audio output started.');
@@ -1455,7 +1504,7 @@ wss.on('connection', (wsConnection, req) => {
                                     }, 270 * 1000); // 4.5 minutes
                                 }
                             }
-                            audioProcessor.markAiSpeaking(600);
+                            // Audio chunk duration is tracked accurately below in line 1552
 
                             for (const part of serverMsg.serverContent.modelTurn.parts) {
                                 // Record agent text transcription
@@ -1472,18 +1521,25 @@ wss.on('connection', (wsConnection, req) => {
                                     // Pure, crystal-clear 24kHz studio PCM - zero noise on voice
 
                                     const chunkDurationMs = Math.round(pcm24.length / 24);
-                                    audioProcessor.markAiSpeaking(Math.max(300, chunkDurationMs + 100));
+                                    const now = Date.now();
+                                    if (aiPlaybackEndTime < now) {
+                                        aiPlaybackEndTime = now + chunkDurationMs;
+                                    } else {
+                                        aiPlaybackEndTime += chunkDurationMs;
+                                    }
+                                    audioProcessor.markAiSpeakingUntil(aiPlaybackEndTime + 400);
 
                                     if (isVobiz && wsConnection.readyState === ws.OPEN && vobizStreamId) {
-                                        // Pure, crystal-clear 24kHz studio PCM - clean voice without ambient noise
-                                        const mixedBuf = Buffer.from(pcm24.buffer, pcm24.byteOffset, pcm24.byteLength);
+                                        // Downsample 24kHz Gemini audio to 16kHz Linear PCM to perfectly match Vobiz stream specification
+                                        const pcm16 = downsample24To16(pcm24);
+                                        const pcm16Buf = Buffer.from(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
                                         wsConnection.send(JSON.stringify({
                                             event: 'playAudio',
                                             streamId: vobizStreamId,
                                             media: {
                                                 contentType: 'audio/x-l16',
-                                                sampleRate: 24000,
-                                                payload: mixedBuf.toString('base64')
+                                                sampleRate: 16000,
+                                                payload: pcm16Buf.toString('base64')
                                             }
                                         }));
                                     } else if (wsConnection.readyState === ws.OPEN && twilioStreamSid) {
@@ -1731,19 +1787,13 @@ wss.on('connection', (wsConnection, req) => {
                     if (reasonStr.includes('prepayment credits') || reasonStr.includes('billing')) {
                         console.error('[BRIDGE] CRITICAL: Google AI Studio prepayment credits are depleted for Gemini Live API!');
                     }
+                    // VOICE STABILITY FIX: Do NOT reconnect on transient 1011 errors.
+                    // Reconnecting creates a brand new Gemini Live session that has ZERO prior
+                    // audio context, causing the autoregressive voice model to start "cold" —
+                    // which leads to voice timbre drift (deeper/male voice, American accent).
+                    // Instead, gracefully end the call to preserve voice integrity.
                     if (code === 1011 && wsConnection.readyState === ws.OPEN && !isCallHangingUp) {
-                        console.warn('[BRIDGE] Transient 1011 received from Gemini Live. Reconnecting socket to keep call alive...');
-                        try {
-                            const newSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${geminiApiKey || defaultApiKey || ''}`);
-                            newSocket.once('open', () => {
-                                console.log('[BRIDGE] Gemini Socket reconnected successfully!');
-                                newSocket.send(JSON.stringify(setupPayload));
-                                geminiSocket = newSocket;
-                            });
-                        } catch (recErr) {
-                            console.error('[BRIDGE] Reconnect failed:', recErr);
-                        }
-                        return;
+                        console.warn('[BRIDGE] Transient 1011 received from Gemini Live. Ending call gracefully to prevent voice modulation (cold reconnect would reset voice conditioning).');
                     }
                     if (wsConnection.readyState === ws.OPEN) {
                         wsConnection.close();
@@ -1774,25 +1824,11 @@ wss.on('connection', (wsConnection, req) => {
                     const procRes = audioProcessor.processFrame(pcm16);
                     sendPcmChunkToGemini(procRes.pcmOutput);
 
-                    // Track caller speech activity (require sustained voice frames to filter out background line hiss/clicks)
-                    if (!audioProcessor.isAiSpeaking) {
-                        if (procRes.isVoice) {
-                            callerVoiceFrames++;
-                            if (callerVoiceFrames >= 4) { // ~80ms of sustained speech
-                                userSpeakingActive = true;
-                                clearTurnWatchdog();
-                            }
-                        } else if (userSpeakingActive) {
-                            // Caller was speaking and has now paused/finished speaking
-                            if (!turnCompleteWatchdogTimer) {
-                                scheduleTurnComplete(450);
-                            }
-                        }
-                    }
-
-                    // If barge-in detected, send clearAudio to stop AI playback on the caller's end
+                    // If genuine caller barge-in detected during AI speaking, clear telephony buffer
                     if (procRes.bargeIn && wsConnection.readyState === ws.OPEN) {
-                        console.log('[BRIDGE] Barge-in! Clearing AI audio playback to caller...');
+                        console.log('[BRIDGE] Genuine caller barge-in! Clearing AI audio playback to caller...');
+                        aiPlaybackEndTime = 0;
+                        audioProcessor.clearAiSpeaking();
                         if (isVobiz && vobizStreamId) {
                             wsConnection.send(JSON.stringify({
                                 event: 'clearAudio',
@@ -1821,7 +1857,6 @@ wss.on('connection', (wsConnection, req) => {
     });
 
      wsConnection.on('close', async (code, reason) => {
-        clearTurnWatchdog();
         if (ambienceInterval) { clearInterval(ambienceInterval); ambienceInterval = null; }
         clearInterval(pingInterval);
         if (wrapUpTimer) {
@@ -2325,17 +2360,15 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                 }
 
                 if (!isValidBooking) {
-                    if (isQualified && isInterested) {
-                        updatePayload.status = 'Qualified';
-                        updatePayload.pipeline_stage = 'Qualified';
-                    } else if (isInterested) {
-                        updatePayload.status = 'Contacted';
-                        updatePayload.pipeline_stage = 'Contacted';
+                    // CRITICAL: Leads must remain in Fresh section ('New Lead') so human telecallers can contact them!
+                    // Even if AI caller or WhatsApp bot contacted/followed up, keep in Fresh unless an actual appointment was booked.
+                    const isFresh = !lead || !lead.pipeline_stage || ['new', 'new lead', 'fresh', 'uncontacted', 'unprocessed'].includes((lead.pipeline_stage || '').trim().toLowerCase()) || ['new', 'new lead', 'fresh'].includes((lead.status || '').trim().toLowerCase());
+                    if (isFresh) {
+                        updatePayload.status = lead?.status || 'New Lead';
+                        updatePayload.pipeline_stage = lead?.pipeline_stage || 'New Lead';
                     } else {
-                        if (!lead || !lead.pipeline_stage || lead.pipeline_stage === 'New Lead' || lead.pipeline_stage === 'New' || lead.status === 'New Lead' || lead.status === 'New') {
-                            updatePayload.status = 'Contacted';
-                            updatePayload.pipeline_stage = 'Contacted';
-                        }
+                        if (lead?.status) updatePayload.status = lead.status;
+                        if (lead?.pipeline_stage) updatePayload.pipeline_stage = lead.pipeline_stage;
                     }
                 }
 

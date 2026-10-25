@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   
   logToFile(`[Campaigns API] Request by User: ${user.id} (${profile?.role}), Impersonating: ${impersonateId}`);
 
-  let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
+  let targetUserId = (profile?.role === 'agent' && (profile?.agency_id || profile?.parent_id)) 
     ? (profile.agency_id || profile.parent_id) 
     : user.id
 

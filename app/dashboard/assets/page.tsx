@@ -267,7 +267,7 @@ export default function AssetsPage() {
             if (profile) setUserRole(profile.role)
 
             let targetUserId = user.id
-            if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+            if (profile?.role === 'agent' && (profile?.parent_id || profile?.agency_id)) {
                 targetUserId = (profile?.parent_id || profile?.agency_id) as string
             }
 
@@ -578,7 +578,7 @@ export default function AssetsPage() {
 
             const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
             let targetUserId = user.id;
-            if (['admin', 'agent'].includes(profile?.role || '') && (profile?.parent_id || profile?.agency_id)) {
+            if (profile?.role === 'agent' && (profile?.parent_id || profile?.agency_id)) {
                 targetUserId = (profile?.parent_id || profile?.agency_id) as string;
             }
 

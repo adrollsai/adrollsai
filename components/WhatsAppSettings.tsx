@@ -28,7 +28,9 @@ import {
   Search,
   RefreshCw,
   X,
-  Download
+  Download,
+  Users,
+  Eye
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
@@ -418,6 +420,75 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
     variableMappings: {} as Record<string, string>
   })
   const [submittingBroadcast, setSubmittingBroadcast] = useState(false)
+
+  // Audience size preview state
+  const [audiencePreview, setAudiencePreview] = useState<{
+    totalMatching: number
+    validPhoneCount: number
+    missingPhoneCount: number
+    sampleLeads: any[]
+  } | null>(null)
+  const [loadingAudiencePreview, setLoadingAudiencePreview] = useState(false)
+  const [showSampleLeadsModal, setShowSampleLeadsModal] = useState(false)
+
+  const fetchAudiencePreview = async () => {
+    if (!userId) return
+    try {
+      setLoadingAudiencePreview(true)
+      const res = await fetch(buildUrl('/api/whatsapp/broadcasts/preview'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audienceFilter: {
+            targetType: broadcastTargetAudienceType,
+            audienceGroupName: selectedBroadcastAudienceGroup,
+            sources: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastSources,
+            metaCampaigns: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastMetaCampaigns,
+            csvAudiences: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastCsvAudiences,
+            pipelineStages: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastStages,
+            propertyIds: broadcastTargetAudienceType === 'all' ? [] : selectedBroadcastProperties,
+          },
+          recipientPropertyId: newBroadcast.recipientPropertyId || null,
+          recipientCsvAudience: newBroadcast.recipientCsvAudience || null,
+          impersonateId: userId
+        })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setAudiencePreview({
+          totalMatching: data.totalMatching,
+          validPhoneCount: data.validPhoneCount,
+          missingPhoneCount: data.missingPhoneCount,
+          sampleLeads: data.sampleLeads || []
+        })
+      }
+    } catch (err) {
+      console.error('Failed to preview audience size:', err)
+    } finally {
+      setLoadingAudiencePreview(false)
+    }
+  }
+
+  useEffect(() => {
+    if (isCreateBroadcastOpen && userId) {
+      const timer = setTimeout(() => {
+        fetchAudiencePreview()
+      }, 250)
+      return () => clearTimeout(timer)
+    }
+  }, [
+    isCreateBroadcastOpen,
+    broadcastTargetAudienceType,
+    selectedBroadcastAudienceGroup,
+    selectedBroadcastSources,
+    selectedBroadcastMetaCampaigns,
+    selectedBroadcastCsvAudiences,
+    selectedBroadcastStages,
+    selectedBroadcastProperties,
+    newBroadcast.recipientPropertyId,
+    newBroadcast.recipientCsvAudience,
+    userId
+  ])
 
   const getTemplateHeaderType = (templateName: string): 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'TEXT' | null => {
     const tpl = templates.find(t => t.name === templateName)
@@ -2552,13 +2623,86 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     )
                   })()}
 
+                  {/* LIVE AUDIENCE REACH PREVIEW */}
+                  <div className="bg-slate-900 text-white rounded-2xl p-4 border border-slate-800 space-y-3 shadow-md">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Users size={16} className="text-emerald-400" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-200">
+                          Audience Size Preview
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={fetchAudiencePreview}
+                        disabled={loadingAudiencePreview}
+                        className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 font-bold transition-colors cursor-pointer"
+                        title="Recalculate matching leads"
+                      >
+                        <RefreshCw size={11} className={loadingAudiencePreview ? 'animate-spin' : ''} />
+                        Refresh Count
+                      </button>
+                    </div>
+
+                    {loadingAudiencePreview ? (
+                      <div className="py-3 flex items-center gap-2 text-xs text-slate-400">
+                        <Loader2 size={15} className="animate-spin text-emerald-400" />
+                        Calculating verified audience across database...
+                      </div>
+                    ) : audiencePreview ? (
+                      <div className="space-y-2.5">
+                        <div className="flex items-baseline justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700/50">
+                          <div>
+                            <div className="text-2xl font-black text-emerald-400 tracking-tight flex items-baseline gap-1.5">
+                              {audiencePreview.validPhoneCount.toLocaleString()}
+                              <span className="text-xs font-semibold text-slate-300">verified contacts</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              Will receive this WhatsApp template
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-black text-slate-300 bg-slate-700/80 px-2 py-0.5 rounded-md">
+                              {audiencePreview.totalMatching.toLocaleString()} Total Matches
+                            </span>
+                          </div>
+                        </div>
+
+                        {audiencePreview.missingPhoneCount > 0 && (
+                          <div className="text-[10px] text-amber-300 flex items-center gap-1.5 font-medium bg-amber-950/40 px-3 py-1.5 rounded-lg border border-amber-800/40">
+                            ⚠️ {audiencePreview.missingPhoneCount.toLocaleString()} leads match your filters but lack valid phone numbers (will be automatically skipped).
+                          </div>
+                        )}
+
+                        {audiencePreview.sampleLeads && audiencePreview.sampleLeads.length > 0 && (
+                          <div className="pt-1 flex justify-between items-center text-[10px]">
+                            <span className="text-slate-400">
+                              Previewing {Math.min(audiencePreview.sampleLeads.length, audiencePreview.validPhoneCount)} sample recipients
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setShowSampleLeadsModal(true)}
+                              className="text-emerald-400 hover:text-emerald-300 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <Eye size={12} /> Inspect Sample Contacts
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="py-2 text-xs text-slate-400">
+                        Select an audience to preview reach.
+                      </div>
+                    )}
+                  </div>
+
                   <button 
                     type="submit"
-                    disabled={submittingBroadcast}
-                    className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                    disabled={submittingBroadcast || (audiencePreview?.validPhoneCount === 0)}
+                    className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     {submittingBroadcast && <Loader2 size={12} className="animate-spin" />}
-                    {newBroadcast.scheduledAt ? 'Schedule Broadcast' : 'Launch Broadcast Blast Now'}
+                    {newBroadcast.scheduledAt ? 'Schedule Broadcast' : `Launch Broadcast Blast Now (${audiencePreview?.validPhoneCount || 0} Leads)`}
                   </button>
                 </form>
               )}
@@ -2608,6 +2752,19 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                             >
                               <BarChart2 size={12} className="text-indigo-600" /> View Live Stats
                             </button>
+
+                            {(b.status === 'processing' || b.status === 'paused' || stats.total > stats.sent) && (
+                              <button
+                                onClick={() => handleResumeBroadcast(b.id)}
+                                disabled={resumingBroadcast}
+                                className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-black px-3 py-1.5 rounded-full transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                                title="Dispatch remaining queue"
+                              >
+                                <Send size={11} className={resumingBroadcast ? 'animate-spin' : ''} />
+                                Dispatch Remaining ({Math.max(0, stats.total - stats.sent)})
+                              </button>
+                            )}
+
                             <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
                               b.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : b.status === 'processing' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
                             }`}>
@@ -2640,6 +2797,47 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               )}
             </div>
           )}
+
+      {/* SAMPLE AUDIENCE CONTACTS INSPECTION MODAL */}
+      {showSampleLeadsModal && audiencePreview && (
+        <div className="fixed inset-0 z-[1000] bg-slate-900/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-2xl max-h-[80vh] overflow-hidden shadow-2xl flex flex-col">
+            <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+              <div>
+                <h4 className="font-extrabold text-sm text-slate-900">Audience Sample Contacts</h4>
+                <p className="text-xs text-slate-500">Previewing first {audiencePreview.sampleLeads.length} matching contacts</p>
+              </div>
+              <button onClick={() => setShowSampleLeadsModal(false)} className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto divide-y divide-slate-100 max-h-[60vh]">
+              {audiencePreview.sampleLeads.map((l: any) => (
+                <div key={l.id} className="py-2.5 flex items-center justify-between text-xs">
+                  <div>
+                    <div className="font-bold text-slate-800">{l.name}</div>
+                    <div className="text-[10px] text-slate-500">{l.phone} • {l.stage} • {l.source}</div>
+                  </div>
+                  <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${
+                    l.hasValidPhone ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                  }`}>
+                    {l.hasValidPhone ? 'Valid WhatsApp' : 'Missing Number'}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowSampleLeadsModal(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* LIVE CAMPAIGN STATS MODAL */}
       {selectedStatsBroadcast && (

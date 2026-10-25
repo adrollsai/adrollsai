@@ -179,37 +179,83 @@ export async function POST(req: Request) {
       })
     }
 
-    // CASE 2: No appointment booked.
-    // RULE: Keep lead in Fresh section so human tele-callers can get to them.
-    // Only appointments trigger external notifications to admin & assigned agents.
-    console.log(`[POST-CALL NOTIFY] Call completed for lead ${leadId} without appointment booking. Kept in Fresh section for tele-callers. No alert dispatched.`);
-    return NextResponse.json({
-      success: true,
-      action: 'fresh_retained_no_alert',
-      leadId
-    });
+    // CASE 2: Prospect confirmed interest / qualified (even if appointment is pending)
+    if (isInterested || isQualified || leadPriority === 'HOT') {
+      await sendAdminMultiChannelNotification({
+        ownerUserId,
+        title: `🔥 High Interest Lead: ${leadName}`,
+        body: `Prospect ${leadName} confirmed interest during AI call for ${propertyLabel}!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}` : ''}\n\n📝 Call Summary: ${summary}`,
+        url: `/dashboard/crm/${leadId}`,
+        type: 'expert_escalation',
+        leadPhone,
+        leadName,
+        leadId,
+        emailSubject: `🔥 High Interest Lead: ${leadName} (${propertyLabel})`
+      });
+
+      if (lead.assigned_to && lead.assigned_to !== ownerUserId) {
+        try {
+          await sendAdminMultiChannelNotification({
+            ownerUserId: lead.assigned_to,
+            title: `🔥 High Interest Lead: ${leadName}`,
+            body: `Assigned prospect ${leadName} confirmed interest during AI call for ${propertyLabel}!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}` : ''}\n\n📝 Call Summary: ${summary}`,
+            url: `/dashboard/crm/${leadId}`,
+            type: 'expert_escalation',
+            leadPhone,
+            leadName,
+            leadId,
+            emailSubject: `🔥 High Interest Lead: ${leadName} (${propertyLabel})`
+          });
+        } catch (e) {}
+      }
+
+      console.log(`[POST-CALL NOTIFY] Sent High Interest admin alert for lead ${leadId}`);
+      return NextResponse.json({
+        success: true,
+        action: 'high_interest_notified',
+        leadId
+      });
+    }
 
     // CASE 3: Prospect requested a callback at a specific time
     if (callbackTime) {
-      let cbDate = new Date(callbackTime)
+      let cbDate = new Date(callbackTime);
       const formattedCbDate = !isNaN(cbDate.getTime())
         ? cbDate.toLocaleString('en-IN', {
             timeZone: 'Asia/Kolkata',
             dateStyle: 'medium',
             timeStyle: 'short'
           })
-        : callbackTime
+        : callbackTime;
 
-      console.log(`[POST-CALL NOTIFY] Callback requested for lead ${leadId} at ${formattedCbDate}. No high-interest alarm needed.`)
+      await sendAdminMultiChannelNotification({
+        ownerUserId,
+        title: `📞 Callback Requested: ${leadName}`,
+        body: `Prospect ${leadName} requested a callback at ${formattedCbDate} regarding ${propertyLabel}.\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n⏰ Callback Time: ${formattedCbDate}\n📝 Call Summary: ${summary}`,
+        url: `/dashboard/crm/${leadId}`,
+        type: 'crm_reminder',
+        leadPhone,
+        leadName,
+        leadId,
+        emailSubject: `📞 Callback Requested: ${leadName} at ${formattedCbDate}`
+      });
+
+      console.log(`[POST-CALL NOTIFY] Callback requested for lead ${leadId} at ${formattedCbDate}. Alert dispatched.`);
       return NextResponse.json({
         success: true,
         action: 'callback_noted',
         callbackTime,
         leadId
-      })
+      });
     }
 
-    return NextResponse.json({ success: true, action: 'none_needed' })
+    // CASE 4: Call completed without high interest or booking
+    console.log(`[POST-CALL NOTIFY] Call completed for lead ${leadId} without high interest/booking. Kept in Fresh section for tele-callers.`);
+    return NextResponse.json({
+      success: true,
+      action: 'fresh_retained_no_alert',
+      leadId
+    });
   } catch (err: any) {
     console.error('[POST-CALL NOTIFY ERROR]', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })

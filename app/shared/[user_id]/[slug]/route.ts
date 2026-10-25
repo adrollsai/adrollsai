@@ -1921,11 +1921,12 @@ export async function GET(request: Request, { params }: RouteProps) {
             }
 
             if (finalHtml.match(prodContainerRegex)) {
-                finalHtml = finalHtml.replace(prodContainerRegex, `<div id="business-products-container">${productsHtml}</div>`)
-            } else if (!finalHtml.includes('LIVE_PROPERTIES') && !finalHtml.includes('home-properties-grid') && finalHtml.includes('</body>')) {
+                finalHtml = finalHtml.replace(prodContainerRegex, productsHtml ? `<div id="business-products-container">${productsHtml}</div>` : '')
+            } else if (productsHtml && !finalHtml.includes('LIVE_PROPERTIES') && !finalHtml.includes('home-properties-grid') && finalHtml.includes('</body>')) {
                 finalHtml = finalHtml.replace('</body>', `<div id="business-products-container">${productsHtml}</div></body>`)
             }
         }
+
 
         const containerRegex = /<div\s+[^>]*id="qualification-form-container"[^>]*>([\s\S]*?)<\/div>/gi
         if (finalHtml.match(containerRegex)) {

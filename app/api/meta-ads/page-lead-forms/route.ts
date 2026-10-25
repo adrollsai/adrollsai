@@ -28,7 +28,7 @@ export async function GET(request: Request) {
         let targetUserId = user.id;
 
         const { data: ownProfile } = await supabaseAdmin.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
-        if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
+        if (ownProfile?.role === 'agent' && (ownProfile?.parent_id || ownProfile?.agency_id)) {
             targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
         }
         if (impersonateId && ['super_admin', 'agency', 'admin'].includes(ownProfile?.role || '')) {

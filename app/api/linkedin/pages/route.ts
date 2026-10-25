@@ -21,7 +21,7 @@ export async function GET(req: Request) {
       .single()
 
     let targetUserId = user.id
-    if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
+    if (ownProfile?.role === 'agent' && (ownProfile?.parent_id || ownProfile?.agency_id)) {
       targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string
     }
 

@@ -24,7 +24,7 @@ async function resolveCredentials(supabase: any, impersonateId: string | null) {
         .eq('id', user.id)
         .single()
 
-    let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id))
+    let targetUserId = (profile?.role === 'agent' && (profile?.agency_id || profile?.parent_id))
         ? (profile.agency_id || profile.parent_id)
         : user.id
 

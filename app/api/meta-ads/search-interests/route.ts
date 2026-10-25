@@ -35,7 +35,7 @@ export async function GET(request: Request) {
                 .eq('id', user.id)
                 .single()
 
-            if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
+            if (ownProfile?.role === 'agent' && (ownProfile?.parent_id || ownProfile?.agency_id)) {
                 targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string
             }
 

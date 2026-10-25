@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const { data: ownProfile } = await supabaseAdmin.from('profiles').select('role, parent_id, agency_id').eq('id', user.id).single();
     let targetUserId = user.id;
 
-    if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
+    if (ownProfile?.role === 'agent' && (ownProfile?.parent_id || ownProfile?.agency_id)) {
         targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
     }
 

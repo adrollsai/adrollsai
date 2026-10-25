@@ -101,7 +101,7 @@ export default function AccountsPage() {
     // 2. Resolve the "Target" user (who we are viewing as)
     // If user is an Admin or Agent, they see through the eyes of their Agency
     let targetUserId = user.id
-    if (['admin', 'agent'].includes(authProfile?.role || '') && (authProfile?.agency_id || authProfile?.parent_id)) {
+    if (authProfile?.role === 'agent' && (authProfile?.agency_id || authProfile?.parent_id)) {
         targetUserId = (authProfile?.agency_id || authProfile?.parent_id) as string
     }
     

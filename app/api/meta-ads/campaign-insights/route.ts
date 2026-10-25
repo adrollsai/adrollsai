@@ -21,7 +21,7 @@ export async function GET(request: Request) {
         const impersonateId = searchParams.get('impersonate')
         const { data: profile } = await supabase.from('profiles').select('role, facebook_token, agency_id, parent_id').eq('id', user.id).single()
         
-        let targetUserId = (['admin', 'agent'].includes(profile?.role || '') && (profile?.agency_id || profile?.parent_id)) 
+        let targetUserId = (profile?.role === 'agent' && (profile?.agency_id || profile?.parent_id)) 
           ? (profile.agency_id || profile.parent_id) 
           : user.id
 

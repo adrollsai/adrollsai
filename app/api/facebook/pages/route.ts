@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   console.log(`DEBUG ROLE: ${ownProfile?.role} AGENCY_ID: ${ownProfile?.agency_id} PARENT_ID: ${ownProfile?.parent_id}`)
 
   // A. Staff (Admin/Agent) automatically see their Agency's profile
-  if (['admin', 'agent'].includes(ownProfile?.role || '') && (ownProfile?.parent_id || ownProfile?.agency_id)) {
+  if (ownProfile?.role === 'agent' && (ownProfile?.parent_id || ownProfile?.agency_id)) {
       targetUserId = (ownProfile?.parent_id || ownProfile?.agency_id) as string;
   }
 

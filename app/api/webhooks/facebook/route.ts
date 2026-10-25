@@ -2689,14 +2689,17 @@ RULES:
                                         console.log(`[WhatsApp Bot] Lead ${cleanFrom} clicked "Interested!".`);
                                         await syncFieldsAndScore({ interested_clicked: true, last_button_clicked: buttonReplyTitle || 'Interested' });
 
-                                        // Update lead stage in CRM to Interested
+                                        // Update lead in CRM with Interested tag; keep in Fresh if not yet worked by human telecallers
                                         if (latestLead?.id) {
                                             try {
                                                 const existingTags = Array.isArray((latestLead as any).tags) ? (latestLead as any).tags : [];
                                                 const newTags = Array.from(new Set([...existingTags, 'Clicked Interested']));
+                                                const currentStageNorm = (latestLead.pipeline_stage || latestLead.status || '').trim().toLowerCase();
+                                                const isFreshLead = !currentStageNorm || ['new', 'new lead', 'fresh', 'uncontacted', 'unprocessed'].includes(currentStageNorm);
+                                                const targetStage = isFreshLead ? (latestLead.pipeline_stage || 'New Lead') : 'Interested';
                                                 await supabaseAdmin
                                                     .from('leads')
-                                                    .update({ pipeline_stage: 'Interested', tags: newTags })
+                                                    .update({ pipeline_stage: targetStage, tags: newTags })
                                                     .eq('id', latestLead.id);
                                             } catch (leadStageErr) {
                                                 console.warn('[WhatsApp Bot] Failed to update lead stage to Interested:', leadStageErr);
@@ -3872,6 +3875,12 @@ RULES:
                 matchedVoiceCampaignId = matchedVC.id;
                 if (!matchedPropertyId && matchedVC.audience_filter?.property_id) {
                   matchedPropertyId = matchedVC.audience_filter.property_id;
+                }
+              } else if (vCamps.length === 1) {
+                // If only 1 active voice campaign exists for this account, use it as guaranteed fallback
+                matchedVoiceCampaignId = vCamps[0].id;
+                if (!matchedPropertyId && vCamps[0].audience_filter?.property_id) {
+                  matchedPropertyId = vCamps[0].audience_filter.property_id;
                 }
               }
             }
