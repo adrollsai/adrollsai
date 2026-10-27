@@ -3767,13 +3767,13 @@ RULES:
 
 
           // Check for existing lead with this facebook_lead_id to prevent duplicates from webhook retries
-          const { data: existingLead } = await supabaseAdmin
+          const { data: leadByFbId } = await supabaseAdmin
             .from('leads')
             .select('id')
             .eq('facebook_lead_id', leadgen_id)
             .limit(1);
 
-          if (existingLead && existingLead.length > 0) {
+          if (leadByFbId && leadByFbId.length > 0) {
             console.log(`[Facebook Webhook] Lead ${leadgen_id} already exists in DB (by leadgen_id). Skipping.`);
             continue;
           }
