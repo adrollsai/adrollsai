@@ -166,7 +166,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN ENGLISH: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience of the business in clear, compelling English. For example, if selling premium flats in Mohali to home buyers, the hook dialogue must start exactly like: "Looking for your dream home in Mohali?" or "Searching for the perfect home near Chandigarh?". ABSOLUTELY DO NOT start with generic greetings like "Hey everyone!", "Stop scrolling!", or filler phrases. It must be a direct, deep hook calling out the target audience from the very first word.`,
                     languageScriptRule: `8. Language & Script: ALL dialogue, hooks, descriptions, and concept text MUST be written entirely in English. Do NOT use any Hindi, Hinglish, or Devanagari script anywhere in the output. Write everything in standard English letters.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'Looking for your dream home in Mohali but worried about construction quality?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Cinematic slow push-in revealing sunlit architecture. Audio/Dialogue: 'Looking for your dream home in Mohali but worried about construction quality?')"`
                 };
             }
 
@@ -174,7 +174,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN HINDI: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in natural, compelling Hindi using native Devanagari script (e.g. "मोहाली में अपना सपनों का घर ढूंढ रहे हैं?"). ABSOLUTELY DO NOT start with generic greetings. Call out the audience directly from the very first word.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written entirely in natural Hindi using native Devanagari script. Explanations and visuals can be in English.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'मोहाली में अपना सपनों का घर ढूंढ रहे हैं?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Cinematic steadycam moving through a tranquil luxury space. Audio/Dialogue: 'मोहाली में अपना सपनों का घर ढूंढ रहे हैं?')"`
                 };
             }
 
@@ -182,7 +182,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN PUNJABI: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in lively, compelling Punjabi using native Gurmukhi script (e.g. "ਮੋਹਾਲੀ ਵਿੱਚ ਆਪਣਾ ਸੁਪਨਿਆਂ ਦਾ ਘਰ ਲੱਭ ਰਹੇ ਹੋ?"). Call out the audience directly from the very first word.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Punjabi using native Gurmukhi script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'ਮੋਹਾਲੀ ਵਿੱਚ ਆਪਣਾ ਸੁਪਨਿਆਂ ਦਾ ਘਰ ਲੱਭ ਰਹੇ ਹੋ?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Warm ambient 35mm establishing shot of the architecture. Audio/Dialogue: 'ਮੋਹਾਲੀ ਵਿੱਚ ਆਪਣਾ ਸੁਪਨਿਆਂ ਦਾ ਘਰ ਲੱਭ ਰਹੇ ਹੋ?')"`
                 };
             }
 
@@ -190,7 +190,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN MARATHI: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in Marathi using native Devanagari script (e.g. "पुण्यात स्वतःचे स्वप्नातील घर शोधत आहात का?").`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Marathi using native Devanagari script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'पुण्यात स्वतःचे स्वप्नातील घर शोधत आहात का?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Elegant slow push-in through natural morning light. Audio/Dialogue: 'पुण्यात स्वतःचे स्वप्नातील घर शोधत आहात का?')"`
                 };
             }
 
@@ -198,7 +198,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN GUJARATI: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in Gujarati using native Gujarati script.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Gujarati using native Gujarati script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'અમદાવાદમાં તમારા સપનાનું ઘર શોધી રહ્યા છો?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Atmospheric architectural view with subtle daylight. Audio/Dialogue: 'અમદાવાદમાં તમારા સપનાનું ઘર શોધી રહ્યા છો?')"`
                 };
             }
 
@@ -206,7 +206,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN BENGALI: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in Bengali using native Bengali script.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Bengali using native Bengali script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'কলকাতায় নিজের স্বপ্নের বাড়ি খুঁজছেন?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Smooth cinematic pan across a serene modern living area. Audio/Dialogue: 'কলকাতায় নিজের স্বপ্নের বাড়ি খুঁজছেন?')"`
                 };
             }
 
@@ -214,7 +214,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN TAMIL: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in Tamil using native Tamil script.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Tamil using native Tamil script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'சென்னையில் உங்கள் கனவு இல்லத்தை தேடுகிறீர்களா?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Elegant wide lens sweep across the grand interior. Audio/Dialogue: 'சென்னையில் உங்கள் கனவு இல்லத்தை தேடுகிறீர்களா?')"`
                 };
             }
 
@@ -222,7 +222,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN TELUGU: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in Telugu using native Telugu script.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Telugu using native Telugu script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'హైదరాబాద్‌లో మీ కలల ఇంటిని వెతుకుతున్నారా?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: 35mm shallow-depth focus slowly pulling into the living suite. Audio/Dialogue: 'హైదరాబాద్‌లో మీ కలల ఇంటిని వెతుకుతున్నారా?')"`
                 };
             }
 
@@ -230,7 +230,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN KANNADA: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in Kannada using native Kannada script.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Kannada using native Kannada script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'ಬೆಂಗಳೂರಿನಲ್ಲಿ ನಿಮ್ಮ ಕನಸಿನ ಮನೆಯನ್ನು ಹುಡುಕುತ್ತಿದ್ದೀರಾ?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Subtle steadicam drift through sunlit architectural terrace. Audio/Dialogue: 'ಬೆಂಗಳೂರಿನಲ್ಲಿ ನಿಮ್ಮ ಕನಸಿನ ಮನೆಯನ್ನು ಹುಡುಕುತ್ತಿದ್ದೀರಾ?')"`
                 };
             }
 
@@ -238,7 +238,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN MALAYALAM: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in Malayalam using native Malayalam script.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Malayalam using native Malayalam script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'കൊച്ചിയിൽ നിങ്ങളുടെ സ്വപ്ന ഭവനം അന്വേഷിക്കുകയാണോ?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Cinematic slow reveal of the premium interior architecture. Audio/Dialogue: 'കൊച്ചിയിൽ നിങ്ങളുടെ സ്വപ്ന ഭവനം അന്വേഷിക്കുകയാണോ?')"`
                 };
             }
 
@@ -246,7 +246,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN URDU: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in Urdu using standard Urdu script.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Urdu using standard Urdu script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'کیا آپ اپنے خوابوں کے گھر کی تلاش میں ہیں؟')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: 35mm filmic sweep across the sun-drenched lounge. Audio/Dialogue: 'کیا آپ اپنے خوابوں کے گھر کی تلاش میں ہیں؟')"`
                 };
             }
 
@@ -254,7 +254,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN ARABIC: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in Arabic using standard Arabic script.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Arabic using standard Arabic script.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'هل تبحث عن منزل أحلامك في دبي؟')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Luxury architectural reveal with Dubai skyline view. Audio/Dialogue: 'هل تبحث عن منزل أحلامك في دبي؟')"`
                 };
             }
 
@@ -262,7 +262,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN SPANISH: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in conversational Spanish.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in conversational Spanish.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: '¿Estás buscando la casa de tus sueños en una ubicación privilegiada?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Cinematic steadycam moving through high-ceiling living space. Audio/Dialogue: '¿Estás buscando la casa de tus sueños en una ubicación privilegiada?')"`
                 };
             }
 
@@ -270,7 +270,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN FRENCH: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in conversational French.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in conversational French.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'Vous cherchez la maison de vos rêves dans un quartier exclusif ?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Natural daylight glinting off refined marble and architecture. Audio/Dialogue: 'Vous cherchez la maison de vos rêves dans un quartier exclusif ?')"`
                 };
             }
 
@@ -278,7 +278,7 @@ Amenities/Features: ${property.amenities || "N/A"}
                 return {
                     hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN GERMAN: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience in conversational German.`,
                     languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in conversational German.`,
-                    hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'Suchen Sie nach Ihrem Traumhaus in bester Lage?')"`
+                    hookExample: `"hook": "The 3-second hook (e.g., Visual: Minimalist architectural push-in with warm ambient lighting. Audio/Dialogue: 'Suchen Sie nach Ihrem Traumhaus in bester Lage?')"`
                 };
             }
 
@@ -286,7 +286,7 @@ Amenities/Features: ${property.amenities || "N/A"}
             return {
                 hookLanguageRule: `1.5. CRITICAL FIRST-LINE TARGET AUDIENCE CALLOUT IN HINGLISH: The very first sentence of the concept's hook dialogue (first 2 seconds of the video) MUST call out the target audience of the business. For example, if selling premium flats in Mohali to home buyers, the hook dialogue must start exactly like: "मोहाली में अपना dream home ढूंढ रहे हो?" or "न्यू चंडीगढ़ में home search कर रहे हो?". It must mix Devanagari script for Hindi words and proper nouns, and standard English letters for English dictionary words. ABSOLUTELY DO NOT start with English words/greetings like "Hey everyone!", "Stop scrolling!", "Are you looking for...?", or "Did you know...?". It must be a direct, deep hook calling out the target audience from the very first word.`,
                 languageScriptRule: `8. Language & Script: The hook dialogue MUST be written in Hinglish, mixing native Hindi Devanagari script (Hindi characters) and standard English/Roman letters. To guarantee flawless pronunciation by the voice model, you MUST write proper nouns, location names (e.g. write "न्यू चंडीगढ़" instead of "New Chandigarh", "मोहाली" instead of "Mohali"), units (e.g. write "कनाल" instead of "Kanal", "बी-एच-के" instead of "BHK"), and Hindi words in native Devanagari script. Only keep standard, simple English dictionary words (like "dream home", "perfect space", "luxury flat") in standard Roman characters. Do NOT transliterate these simple English words to Devanagari. For example: "न्यू चंडीगढ़ में अपना dream home ढूंढ रहे हो?"`,
-                hookExample: `"hook": "The 3-second hook (e.g., Visual: character gasps. Audio/Dialogue: 'मोहाली में अपना dream home ढूंढ रहे हो?')"`
+                hookExample: `"hook": "The 3-second hook (e.g., Visual: Cinematic slow push-in through sunlit French doors. Audio/Dialogue: 'मोहाली में अपना dream home ढूंढ रहे हो?')"`
             };
         }
 

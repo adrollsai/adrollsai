@@ -528,8 +528,32 @@ CRITICAL RULES:
             slug,
             title: `${resolvedProductName || 'Offer'} | ${businessName}`,
             product_name: resolvedProductName || businessName,
-            html_content: mode === 'edit' ? currentHtml : '<!-- Generating page content with DeepSeek V4.1 Flash... -->',
             form_id: formId || null,
+            html_content: mode === 'edit' ? currentHtml : `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="4">
+  <title>Preparing ${resolvedProductName || 'Offer'}...</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; }
+    .card { text-align: center; max-width: 440px; padding: 40px 28px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+    .spinner { width: 44px; height: 44px; border: 3px solid rgba(59,130,246,0.2); border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h2 { font-size: 20px; margin: 0 0 8px; font-weight: 700; color: #f8fafc; }
+    p { font-size: 14px; margin: 0; color: #94a3b8; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <!-- Generating page content with DeepSeek V4.1 Flash... -->
+  <div class="card">
+    <div class="spinner"></div>
+    <h2>Crafting Property Showcase</h2>
+    <p>Our AI is generating this showcase experience. This page will update automatically in a few seconds...</p>
+  </div>
+</body>
+</html>`,
             updated_at: new Date().toISOString()
         }
         if (id) {

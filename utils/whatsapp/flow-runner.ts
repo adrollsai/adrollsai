@@ -980,17 +980,23 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
       if (nodeType === 'crmStageNode' || nodeType === 'action_crm_stage') {
         const targetStage = cfg.stage || cfg.pipeline_stage || 'Interested'
         if (latestLead?.id) {
+          const existingCf = typeof latestLead.custom_fields === 'string'
+            ? (() => { try { return JSON.parse(latestLead.custom_fields) } catch { return {} } })()
+            : (latestLead.custom_fields || {})
+          const updatedCf = { ...existingCf }
+
           const leadUpdates: Record<string, any> = { pipeline_stage: targetStage, status: targetStage }
           if (cfg.assignAgent) {
-            leadUpdates.assigned_to_name = cfg.assignAgent
-          }
-          if (cfg.note) {
-            const existingCf = latestLead.custom_fields || {}
-            leadUpdates.custom_fields = {
-              ...existingCf,
-              flow_note: cfg.note
+            updatedCf.assigned_to_name = cfg.assignAgent
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cfg.assignAgent)) {
+              leadUpdates.assigned_to = cfg.assignAgent
             }
           }
+          if (cfg.note) {
+            updatedCf.flow_note = cfg.note
+          }
+          leadUpdates.custom_fields = updatedCf
+
           await supabaseAdmin
             .from('leads')
             .update(leadUpdates)

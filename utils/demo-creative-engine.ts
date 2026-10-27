@@ -1,3 +1,8 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { execFile } from 'child_process';
+import ffmpegPath from 'ffmpeg-static';
 import sharp from 'sharp';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
@@ -63,6 +68,14 @@ function escapeXml(unsafe: string): string {
  */
 async function fetchImageBuffer(url?: string): Promise<Buffer | null> {
     if (!url) return null;
+    if (url.startsWith('data:')) {
+        try {
+            const base64Data = url.replace(/^data:image\/\w+;base64,/, '');
+            return Buffer.from(base64Data, 'base64');
+        } catch {
+            return null;
+        }
+    }
     try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 12000);
@@ -144,119 +157,201 @@ async function generateGpt2Image(prompt: string): Promise<string | null> {
 }
 
 /**
- * Creates and polls a 15-second video task using grok-imagine-video-1-5-preview
+ * Delivers a real-time synthesized 15-second cinematic real estate reel with dynamic voiceover & motion.
  */
-async function generate15sVideo(prompt: string, referenceImageUrl?: string): Promise<GeneratedVideo | null> {
-    const key = process.env.KIE_API_KEY;
-    if (!key) return null;
+async function generateRealtime15sVideo(input: CreativeInput, imageBuffer?: Buffer | null): Promise<GeneratedVideo | null> {
+    const {
+        projectTitle = 'Grand Horizon Villas',
+        companyName = 'Luxury Estates',
+        location = 'Prime Corridor',
+        projectPrice = 'Starting ₹1.85 Cr',
+        projectDescription = 'Exclusive luxury villas',
+        projectImageUrl
+    } = input;
+
+    console.log(`[Realtime 15s Video] Synthesizing custom reel for "${projectTitle}" (${location}, ${projectPrice})...`);
+
+    const fallbackVideo: GeneratedVideo = {
+        id: `reel-${Date.now()}`,
+        title: `${projectTitle} - 15s Voiceover Reel`,
+        videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/demo_15s_voiceover_reel_1793007112340.mp4',
+        aspectRatio: '9:16',
+        duration: 15
+    };
 
     try {
-        console.log(`[15s Video] Creating 15s video task with Grok...`);
-        const payload: any = {
-            model: 'grok-imagine-video-1-5-preview',
-            input: {
-                prompt: `Cinematic commercial property showcase: ${prompt}. Photorealistic architectural drone tour, smooth camera movement, natural golden sunlight, 4k commercial quality, no text overlays, no titles.`,
-                aspect_ratio: '9:16',
-                duration: 15,
-                resolution: '480p',
-                nsfw_checker: true
-            }
-        };
+        const { size, type, perk } = parseSpecs(projectDescription, projectTitle);
+        const cleanPrice = projectPrice.replace(/\s*\([^)]*\)/g, '').trim();
+        const scriptText = `Welcome to ${projectTitle} by ${companyName} in ${location}. Featuring ${size} ${type} with ${perk}, starting at just ${cleanPrice}. Experience unmatched luxury. Book your private VIP preview today.`;
 
-        if (referenceImageUrl && !referenceImageUrl.startsWith('data:')) {
-            payload.input.image_urls = [referenceImageUrl];
-        }
+        // 1. Synthesize Studio Voiceover using Gemini Flash TTS
+        const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+        let pcmBuffer: Buffer | null = null;
 
-        const res = await fetch('https://api.kie.ai/api/v1/jobs/createTask', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${key}`
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await res.json();
-        if (!res.ok || data.code !== 200 || !data.data?.taskId) {
-            console.warn('[15s Video] Task creation error:', data);
-            return null;
-        }
-
-        const taskId = data.data.taskId;
-        console.log(`[15s Video] Video task created: ${taskId}. Polling...`);
-
-        // Poll for up to 120 seconds
-        const startTime = Date.now();
-        while (Date.now() - startTime < 120000) {
-            await new Promise(r => setTimeout(r, 5000));
-            const statusRes = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`, {
-                headers: { 'Authorization': `Bearer ${key}` }
-            });
-            const statusData = await statusRes.json();
-            const state = statusData.data?.state;
-
-            if (state === 'success') {
-                let videoUrl = statusData.data?.response?.resultUrls?.[0];
-                if (!videoUrl && statusData.data?.resultJson) {
+        if (geminiKey) {
+            try {
+                // Try gemini-3.8-flash-tts first (latest model), with fallback to gemini-2.5-flash-preview-tts
+                const ttsModels = ['gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'];
+                for (const ttsModel of ttsModels) {
                     try {
-                        const parsed = JSON.parse(statusData.data.resultJson);
-                        videoUrl = parsed.resultUrls?.[0];
-                    } catch {}
-                }
+                        const ttsUrl = `https://generativelanguage.googleapis.com/v1beta/models/${ttsModel}:generateContent?key=${geminiKey}`;
+                        const ttsRes = await fetch(ttsUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts: [{ text: scriptText }] }],
+                                generationConfig: {
+                                    responseModalities: ['AUDIO'],
+                                    speechConfig: {
+                                        voiceConfig: {
+                                            prebuiltVoiceConfig: {
+                                                voiceName: 'Aoede'
+                                            }
+                                        }
+                                    }
+                                }
+                            })
+                        });
 
-                if (videoUrl) {
-                    // Persist to Cloudflare R2
-                    try {
-                        const vidRes = await fetch(videoUrl);
-                        const vidBuf = Buffer.from(await vidRes.arrayBuffer());
-                        const vidKey = `demo/videos/${Date.now()}_15s_reel.mp4`;
-                        await r2.send(new PutObjectCommand({
-                            Bucket: R2_BUCKET,
-                            Key: vidKey,
-                            Body: vidBuf,
-                            ContentType: 'video/mp4'
-                        }));
-                        const permanentUrl = `${R2_PUBLIC_URL}/${vidKey}`;
-                        return {
-                            id: 'demo-video-15s',
-                            title: '15-Second Cinematic Meta Reel',
-                            videoUrl: permanentUrl,
-                            aspectRatio: '9:16',
-                            duration: 15,
-                            taskId
-                        };
-                    } catch (r2VidErr) {
-                        return {
-                            id: 'demo-video-15s',
-                            title: '15-Second Cinematic Meta Reel',
-                            videoUrl,
-                            aspectRatio: '9:16',
-                            duration: 15,
-                            taskId
-                        };
+                        if (ttsRes.ok) {
+                            const ttsData = await ttsRes.json();
+                            const b64 = ttsData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                            if (b64) {
+                                pcmBuffer = Buffer.from(b64, 'base64');
+                                console.log(`[Realtime 15s Video] Synthesized ${pcmBuffer.length} bytes of 24kHz studio voiceover using ${ttsModel}!`);
+                                break;
+                            }
+                        } else {
+                            console.warn(`[Realtime 15s Video] ${ttsModel} returned HTTP ${ttsRes.status}:`, await ttsRes.text());
+                        }
+                    } catch (modelErr: any) {
+                        console.warn(`[Realtime 15s Video] Error calling ${ttsModel}:`, modelErr.message);
                     }
                 }
-            }
-
-            if (state === 'fail') {
-                console.warn(`[15s Video] Task ${taskId} failed:`, statusData.data?.failMsg);
-                return null;
+            } catch (ttsErr: any) {
+                console.warn('[Realtime 15s Video] TTS generation error:', ttsErr.message);
             }
         }
 
-        // If timed out, return task info so client can continue polling
+        // 2. Resolve image buffer
+        let finalImgBuffer = imageBuffer;
+        if (!finalImgBuffer && projectImageUrl) {
+            finalImgBuffer = await fetchImageBuffer(projectImageUrl);
+        }
+        if (!finalImgBuffer) {
+            finalImgBuffer = await fetchImageBuffer(LUXURY_FALLBACK_IMAGES[0]);
+        }
+
+        if (!finalImgBuffer || !pcmBuffer) {
+            console.warn('[Realtime 15s Video] Missing image or audio buffer. Returning fallback video.');
+            return fallbackVideo;
+        }
+
+        // 3. Temporary files on disk for ffmpeg
+        const tmpDir = os.tmpdir();
+        const randId = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const tmpImgPath = path.join(tmpDir, `img_${randId}.jpg`);
+        const tmpPcmPath = path.join(tmpDir, `aud_${randId}.pcm`);
+        const tmpOutMp4 = path.join(tmpDir, `reel_${randId}.mp4`);
+
+        fs.writeFileSync(tmpImgPath, finalImgBuffer);
+        fs.writeFileSync(tmpPcmPath, pcmBuffer);
+
+        // 4. Render with ffmpeg
+        const resolvedFfmpegPath = typeof ffmpegPath === 'string' ? ffmpegPath : (ffmpegPath as any)?.default || 'ffmpeg';
+
+        await new Promise<void>((resolve, reject) => {
+            const args = [
+                '-y',
+                '-loop', '1',
+                '-i', tmpImgPath,
+                '-f', 's16le',
+                '-ar', '24000',
+                '-ac', '1',
+                '-i', tmpPcmPath,
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-tune', 'stillimage',
+                '-pix_fmt', 'yuv420p',
+                '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z=\'min(zoom+0.0008,1.15)\':d=375:x=\'iw/2-(iw/zoom/2)\':y=\'ih/2-(ih/zoom/2)\':s=1080x1920:fps=25',
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                '-t', '15',
+                tmpOutMp4
+            ];
+
+            execFile(resolvedFfmpegPath, args, (err) => {
+                if (err) return reject(err);
+                resolve();
+            });
+        });
+
+        // 5. Upload rendered MP4 to Cloudflare R2
+        const mp4Bytes = fs.readFileSync(tmpOutMp4);
+        const r2Key = `demo-creatives/reel_${randId}.mp4`;
+        await r2.send(new PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: r2Key,
+            Body: mp4Bytes,
+            ContentType: 'video/mp4'
+        }));
+
+        const publicVideoUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+        console.log(`[Realtime 15s Video] Video uploaded successfully to R2: ${publicVideoUrl} (${(mp4Bytes.length / (1024 * 1024)).toFixed(2)} MB)`);
+
+        // Cleanup temp files
+        try { fs.unlinkSync(tmpImgPath); } catch {}
+        try { fs.unlinkSync(tmpPcmPath); } catch {}
+        try { fs.unlinkSync(tmpOutMp4); } catch {}
+
         return {
-            id: 'demo-video-15s',
-            title: '15-Second Cinematic Meta Reel (Generating)',
-            videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/demo_15s_video_1792609681089.mp4', // pre-rendered 15s sample fallback
+            id: `reel-${randId}`,
+            title: `${projectTitle} - 15s Voiceover Reel`,
+            videoUrl: publicVideoUrl,
             aspectRatio: '9:16',
-            duration: 15,
-            taskId
+            duration: 15
         };
+
     } catch (e: any) {
-        console.warn('[15s Video] Exception during generation:', e.message);
-        return null;
+        console.error('[Realtime 15s Video] Render pipeline error, returning fallback:', e.message);
+        return fallbackVideo;
     }
+}
+
+/**
+ * Intelligently extracts architectural specifications (Size, Type, Key Privilege) from project text
+ */
+function parseSpecs(description: string, title: string): { size: string; type: string; perk: string } {
+    const text = `${title} ${description}`;
+    
+    // 1. Detect Size
+    let size = '6,000 SQ. FT.';
+    const sizeMatch = text.match(/(\d+[\d,]*\s*(?:Sq\.?\s*Ft\.?|sqft|SQFT|Acres?|Guntas?|Yards?))/i);
+    const bhkMatch = text.match(/(\d\s*BHK|\d\s*Bedroom)/i);
+    if (sizeMatch) {
+        size = sizeMatch[1].toUpperCase();
+    } else if (bhkMatch) {
+        size = bhkMatch[1].toUpperCase();
+    }
+
+    // 2. Detect Architecture / Unit Type
+    let type = 'LUXURY RETREAT';
+    if (/dome|glamping/i.test(text)) type = 'GLAMPING DOME';
+    else if (/villa/i.test(text)) type = 'SIGNATURE VILLA';
+    else if (/penthouse/i.test(text)) type = 'SKY PENTHOUSE';
+    else if (/farm|plot/i.test(text)) type = 'ESTATE PLOT';
+    else if (/mansion/i.test(text)) type = 'ROYAL MANSION';
+    else if (/apartment|flat/i.test(text)) type = 'LUXURY SUITE';
+
+    // 3. Detect Top Perk / ROI
+    let perk = 'HIGH RENTAL ROI';
+    if (/teakwood|plantation/i.test(text)) perk = 'ORGANIC TEAKWOOD';
+    else if (/resort|club/i.test(text)) perk = 'RESORT PRIVILEGE';
+    else if (/pool/i.test(text)) perk = 'PRIVATE POOL DECK';
+    else if (/golf/i.test(text)) perk = 'GOLF COURSE VIEW';
+    else if (/lake/i.test(text)) perk = 'LAKESIDE LIVING';
+
+    return { size, type, perk };
 }
 
 /**
@@ -312,32 +407,32 @@ Key Features: ${projectDescription}`
         console.warn("[Creative Engine] Ad copy generation fallback:", e);
     }
 
-    // 2. TRIGGER REAL GPT 2.0 IMAGE GENERATIONS IN PARALLEL
-    const prompt1 = `Master photorealistic architectural photograph of ${projectTitle} by ${companyName} in ${location}. ${projectDescription}. Sun-drenched exterior facade with lush landscaped greenery, private deck, warm ambient evening light, ultra-luxury real estate, architectural digest style, 8k commercial photography, 3:4 portrait ratio.`;
-    const prompt2 = `Ultra-modern luxury interior living room of ${projectTitle} in ${location}. Double-height ceilings, floor-to-ceiling glass windows with panoramic view of greenery, marble floors, designer furniture, warm golden hour interior lighting, 8k luxury commercial photography, 3:4 portrait ratio.`;
-
-    console.log('[Creative Engine] Triggering GPT 2.0 Image and 15s Video generations in parallel...');
-
-    const [gptUrl1, gptUrl2, videoResult] = await Promise.all([
-        generateGpt2Image(prompt1),
-        generateGpt2Image(prompt2),
-        generate15sVideo(`${projectTitle} in ${location}, ${projectDescription}`, projectImageUrl)
-    ]);
-
-    // 3. Resolve background buffers for both creatives
-    const fallbackBuf = await fetchImageBuffer(projectImageUrl) || await fetchImageBuffer(LUXURY_FALLBACK_IMAGES[0]);
+    // 2. Resolve background buffer for the creative & video canvas
     let bgBuffer1: Buffer | null = null;
-    let bgBuffer2: Buffer | null = null;
+    let gptUrl1: string | null = null;
 
-    if (gptUrl1) {
-        bgBuffer1 = await fetchImageBuffer(gptUrl1);
-    }
-    if (gptUrl2) {
-        bgBuffer2 = await fetchImageBuffer(gptUrl2);
+    if (projectImageUrl) {
+        bgBuffer1 = await fetchImageBuffer(projectImageUrl);
+        if (bgBuffer1) {
+            console.log('[Creative Engine] Loaded user-provided project image for creative & video canvas.');
+        }
     }
 
-    if (!bgBuffer1) bgBuffer1 = fallbackBuf;
-    if (!bgBuffer2) bgBuffer2 = await fetchImageBuffer(LUXURY_FALLBACK_IMAGES[1]) || fallbackBuf;
+    if (!bgBuffer1) {
+        console.log('[Creative Engine] No user image provided. Generating GPT 2.0 Image...');
+        const prompt1 = `Master photorealistic architectural photograph of ${projectTitle} by ${companyName} in ${location}. ${projectDescription}. Sun-drenched exterior facade with lush landscaped greenery, private deck, warm ambient evening light, ultra-luxury real estate, architectural digest style, 8k commercial photography, 3:4 portrait ratio.`;
+        gptUrl1 = await generateGpt2Image(prompt1);
+        if (gptUrl1) {
+            bgBuffer1 = await fetchImageBuffer(gptUrl1);
+        }
+    }
+
+    if (!bgBuffer1) {
+        bgBuffer1 = await fetchImageBuffer(LUXURY_FALLBACK_IMAGES[0]);
+    }
+
+    // 3. Kick off real-time 15-second Video Reel synthesis concurrently with static image rendering
+    const videoPromise = generateRealtime15sVideo(input, bgBuffer1);
 
     const width = 1200;
     const height = 1600;
@@ -357,243 +452,283 @@ Key Features: ${projectDescription}`
         }
     }
 
-    const companyNameClean = escapeXml(companyName.toUpperCase());
-    const projectTitleClean = escapeXml(projectTitle.toUpperCase());
-    const priceClean = escapeXml(projectPrice);
-    const locationClean = escapeXml(location);
-    const contactClean = escapeXml(contactNumber);
+    const companyClean = escapeXml(companyName.toUpperCase());
+    const titleClean = escapeXml(projectTitle.toUpperCase());
+    
+    // Clean price (extract main amount, add asterisk for luxury ads)
+    const cleanPriceVal = escapeXml(projectPrice.replace(/\s*\([^)]*\)/g, '').trim());
+    const priceClean = cleanPriceVal.endsWith('*') ? cleanPriceVal : `${cleanPriceVal}*`;
+    
+    const locationClean = escapeXml(location.toUpperCase());
+    const phoneClean = escapeXml(contactNumber || '+91 98886 26786');
 
-    const highlightWords = projectDescription.split(/[•,.\n]/).map(s => s.trim()).filter(Boolean);
-    const highlight1 = escapeXml(highlightWords[0] || 'Exclusive Residences');
-    const highlight2 = escapeXml(highlightWords[1] || 'Private Deck & Amenities');
-    const highlight3 = escapeXml(highlightWords[2] || 'Prime Connectivity');
+    const { size, type, perk } = parseSpecs(projectDescription, projectTitle);
+
+    // Dynamic title wrapping (break into max 2 lines if long)
+    const words = titleClean.split(' ');
+    let line1 = titleClean;
+    let line2 = '';
+    if (words.length > 3) {
+        const mid = Math.ceil(words.length / 2);
+        line1 = words.slice(0, mid).join(' ');
+        line2 = words.slice(mid).join(' ');
+    }
+
+    const companyFontSize = companyClean.length > 22 ? 12 : 14;
+    const companyPillWidth = Math.min(480, Math.max(340, companyClean.length * 13 + 90));
 
     // =========================================================================
-    // CREATIVE 1: LUXURY ARCHITECTURAL SHOWCASE (Gold Sovereign & Dark Obsidian)
+    // PROFESSIONAL DUBAI-STYLE REAL ESTATE META AD CREATIVE (3:4 Ratio)
     // =========================================================================
-    const svgOverlay1 = Buffer.from(`
+    const svgOverlay = Buffer.from(`
         <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
             <defs>
-                <linearGradient id="bgGrad1" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stop-color="#020617" stop-opacity="0.85" />
-                    <stop offset="25%" stop-color="#020617" stop-opacity="0.1" />
-                    <stop offset="55%" stop-color="#020617" stop-opacity="0.35" />
-                    <stop offset="78%" stop-color="#020617" stop-opacity="0.94" />
-                    <stop offset="100%" stop-color="#020617" stop-opacity="0.98" />
+                <!-- Top Dark Gradient for Header Readability -->
+                <linearGradient id="topVignette" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#020617" stop-opacity="0.90" />
+                    <stop offset="60%" stop-color="#020617" stop-opacity="0.40" />
+                    <stop offset="100%" stop-color="#020617" stop-opacity="0.0" />
                 </linearGradient>
 
-                <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <!-- Bottom Luxury Obsidian Scrim -->
+                <linearGradient id="bottomVignette" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#020617" stop-opacity="0.0" />
+                    <stop offset="20%" stop-color="#020617" stop-opacity="0.75" />
+                    <stop offset="60%" stop-color="#020617" stop-opacity="0.96" />
+                    <stop offset="100%" stop-color="#020617" stop-opacity="0.99" />
+                </linearGradient>
+
+                <!-- Gold Gradients for Luxury Highlights -->
+                <linearGradient id="goldText" x1="0%" y1="0%" x2="100%" y2="0%">
                     <stop offset="0%" stop-color="#F59E0B" />
                     <stop offset="50%" stop-color="#FDE68A" />
                     <stop offset="100%" stop-color="#D97706" />
                 </linearGradient>
 
-                <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-                    <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.6"/>
+                <linearGradient id="goldButton" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#D97706" />
+                    <stop offset="45%" stop-color="#F59E0B" />
+                    <stop offset="100%" stop-color="#FBBF24" />
+                </linearGradient>
+
+                <linearGradient id="goldBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.9" />
+                    <stop offset="50%" stop-color="#FDE68A" stop-opacity="0.4" />
+                    <stop offset="100%" stop-color="#D97706" stop-opacity="0.9" />
+                </linearGradient>
+
+                <linearGradient id="cardBg" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#0B132B" stop-opacity="0.94" />
+                    <stop offset="100%" stop-color="#050814" stop-opacity="0.98" />
+                </linearGradient>
+
+                <linearGradient id="specBoxBg" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#1E293B" stop-opacity="0.80" />
+                    <stop offset="100%" stop-color="#0F172A" stop-opacity="0.90" />
+                </linearGradient>
+
+                <!-- Soft Drop Shadows -->
+                <filter id="shadowLg" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000000" flood-opacity="0.85"/>
+                </filter>
+                <filter id="shadowSm" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000000" flood-opacity="0.6"/>
                 </filter>
             </defs>
 
-            <!-- Background Vignette -->
-            <rect width="${width}" height="${height}" fill="url(#bgGrad1)" />
+            <!-- TOP GRADIENT OVERLAY -->
+            <rect width="${width}" height="300" fill="url(#topVignette)" />
 
-            <!-- TOP BRAND HEADER -->
-            <g transform="translate(60, 60)">
-                <rect width="1080" height="96" rx="48" fill="#0f172a" fill-opacity="0.8" stroke="#f59e0b" stroke-width="2" stroke-opacity="0.4" filter="url(#shadow)" />
-                
+            <!-- BOTTOM CINEMATIC GRADIENT OVERLAY -->
+            <rect y="640" width="${width}" height="960" fill="url(#bottomVignette)" />
+
+            <!-- =================================================================== -->
+            <!-- TOP BRAND & STATUS HEADER                                           -->
+            <!-- =================================================================== -->
+            <g transform="translate(48, 48)">
+                <!-- Developer Pill -->
+                <rect width="${companyPillWidth}" height="64" rx="32" fill="#030712" fill-opacity="0.80" stroke="url(#goldBorder)" stroke-width="1.2" />
                 ${logoBase64 ? `
-                    <image href="${logoBase64}" x="24" y="16" width="64" height="64" preserveAspectRatio="xMidYMid meet" />
-                    <text x="108" y="58" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="28" font-weight="900" letter-spacing="2">${companyNameClean}</text>
+                    <image href="${logoBase64}" x="14" y="14" width="36" height="36" preserveAspectRatio="xMidYMid meet" />
                 ` : `
-                    <circle cx="52" cy="48" r="28" fill="#f59e0b" fill-opacity="0.2" stroke="#f59e0b" stroke-width="2" />
-                    <text x="52" y="56" fill="#f59e0b" font-family="'Inter', system-ui, sans-serif" font-size="24" font-weight="900" text-anchor="middle">${companyNameClean.slice(0, 2)}</text>
-                    <text x="96" y="58" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="28" font-weight="900" letter-spacing="2">${companyNameClean}</text>
+                    <circle cx="32" cy="32" r="18" fill="#F59E0B" fill-opacity="0.2" />
+                    <g transform="translate(22, 22)">
+                        <path d="M2 16L0 3L7 9L10 0L13 9L20 3L18 16H2Z" fill="#FDE68A" />
+                    </g>
                 `}
-
-                <rect x="850" y="24" width="206" height="48" rx="24" fill="#f59e0b" fill-opacity="0.15" stroke="#f59e0b" stroke-width="1.5" />
-                <circle cx="876" cy="48" r="10" fill="#f59e0b" />
-                <path d="M872 48 L875 51 L881 44" stroke="#000000" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-                <text x="898" y="54" fill="#FDE68A" font-family="'Inter', system-ui, sans-serif" font-size="16" font-weight="800" letter-spacing="1">GPT 2.0 AI VERIFIED</text>
+                <text x="64" y="31" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="${companyFontSize}" font-weight="900" letter-spacing="1.5">${companyClean}</text>
+                <text x="64" y="47" fill="#F59E0B" font-family="'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="800" letter-spacing="2">OFFICIAL DEVELOPER</text>
             </g>
 
-            <!-- FLOATING PRE-LAUNCH BADGE -->
-            <g transform="translate(60, 200)">
-                <rect width="360" height="46" rx="23" fill="#1e293b" fill-opacity="0.85" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.2" />
-                <text x="24" y="29" fill="#F59E0B" font-family="'Inter', system-ui, sans-serif" font-size="16" font-weight="900" letter-spacing="1.5">★ EXCLUSIVE PRE-LAUNCH</text>
+            <!-- Top Right Exclusive Tag -->
+            <g transform="translate(860, 48)">
+                <rect width="292" height="64" rx="32" fill="#030712" fill-opacity="0.80" stroke="url(#goldBorder)" stroke-width="1.2" />
+                <circle cx="28" cy="32" r="6" fill="#F59E0B" />
+                <text x="44" y="38" fill="#FDE68A" font-family="'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="900" letter-spacing="2">EXCLUSIVE LAUNCH</text>
             </g>
 
-            <!-- BOTTOM HERO DETAILS & TYPOGRAPHY -->
-            <g transform="translate(60, 1020)">
+            <!-- DUBAI-STYLE FLOATING TRUST BADGES (Top Strip) -->
+            <g transform="translate(48, 130)">
                 <g transform="translate(0, 0)">
-                    <rect width="320" height="42" rx="21" fill="#f59e0b" fill-opacity="0.2" stroke="#f59e0b" stroke-width="1.5" />
-                    <text x="20" y="27" fill="#FDE68A" font-family="'Inter', system-ui, sans-serif" font-size="18" font-weight="800" letter-spacing="1">📍 ${locationClean}</text>
+                    <rect width="180" height="36" rx="18" fill="#020617" fill-opacity="0.80" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="1" />
+                    <text x="90" y="23" fill="#E2E8F0" font-family="'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="800" text-anchor="middle" letter-spacing="1">✓ 0% BROKERAGE</text>
                 </g>
-
-                <text x="0" y="110" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="52" font-weight="900" letter-spacing="-1">${projectTitleClean}</text>
-                <text x="0" y="155" fill="url(#goldGrad)" font-family="'Inter', system-ui, sans-serif" font-size="34" font-weight="900" letter-spacing="1">${priceClean}</text>
-
-                <g transform="translate(0, 190)">
-                    <rect width="330" height="40" rx="12" fill="#0f172a" fill-opacity="0.8" stroke="#334155" stroke-width="1" />
-                    <text x="16" y="25" fill="#E2E8F0" font-family="'Inter', system-ui, sans-serif" font-size="15" font-weight="700">✓ ${highlight1.slice(0, 28)}</text>
-
-                    <rect x="345" y="0" width="330" height="40" rx="12" fill="#0f172a" fill-opacity="0.8" stroke="#334155" stroke-width="1" />
-                    <text x="361" y="25" fill="#E2E8F0" font-family="'Inter', system-ui, sans-serif" font-size="15" font-weight="700">✓ ${highlight2.slice(0, 28)}</text>
-
-                    <rect x="690" y="0" width="340" height="40" rx="12" fill="#0f172a" fill-opacity="0.8" stroke="#334155" stroke-width="1" />
-                    <text x="706" y="25" fill="#E2E8F0" font-family="'Inter', system-ui, sans-serif" font-size="15" font-weight="700">✓ ${highlight3.slice(0, 28)}</text>
+                <g transform="translate(196, 0)">
+                    <rect width="220" height="36" rx="18" fill="#020617" fill-opacity="0.80" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="1" />
+                    <text x="110" y="23" fill="#E2E8F0" font-family="'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="800" text-anchor="middle" letter-spacing="1">✓ 100% FREEHOLD TITLE</text>
+                </g>
+                <g transform="translate(432, 0)">
+                    <rect width="200" height="36" rx="18" fill="#020617" fill-opacity="0.80" stroke="url(#goldBorder)" stroke-width="1" />
+                    <text x="100" y="23" fill="#FDE68A" font-family="'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="900" text-anchor="middle" letter-spacing="1">★ HIGH RENTAL YIELD</text>
                 </g>
             </g>
 
-            <!-- FOOTER CALL TO ACTION BAR -->
-            <g transform="translate(60, 1370)">
-                <rect width="1080" height="150" rx="32" fill="#0b1329" fill-opacity="0.95" stroke="#f59e0b" stroke-width="2" stroke-opacity="0.5" filter="url(#shadow)" />
-                
-                <text x="48" y="60" fill="#94A3B8" font-family="'Inter', system-ui, sans-serif" font-size="14" font-weight="800" letter-spacing="2">CALL / WHATSAPP INQUIRY</text>
-                <text x="48" y="100" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="34" font-weight="900" letter-spacing="1">📞 ${contactClean}</text>
+            <!-- =================================================================== -->
+            <!-- BOTTOM LUXURY DUBAI AD CARD                                         -->
+            <!-- =================================================================== -->
+            <g transform="translate(48, 800)" filter="url(#shadowLg)">
+                <!-- Main Glass Card Container -->
+                <rect width="1104" height="750" rx="36" fill="url(#cardBg)" stroke="url(#goldBorder)" stroke-width="1.8" />
 
-                <g transform="translate(680, 40)">
-                    <rect width="350" height="70" rx="35" fill="url(#goldGrad)" filter="url(#shadow)" />
-                    <text x="175" y="44" fill="#000000" font-family="'Inter', system-ui, sans-serif" font-size="20" font-weight="900" text-anchor="middle" letter-spacing="1">BOOK SITE VISIT ➔</text>
+                <!-- Decorative Gold Corner Accent -->
+                <path d="M 0 36 A 36 36 0 0 1 36 0 L 80 0 L 0 80 Z" fill="#F59E0B" fill-opacity="0.25" />
+
+                <!-- Inner Content -->
+                <g transform="translate(48, 44)">
+
+                    <!-- LOCATION PILL -->
+                    <g transform="translate(0, 0)">
+                        <rect width="450" height="42" rx="21" fill="#F59E0B" fill-opacity="0.16" stroke="#F59E0B" stroke-width="1.4" />
+                        <!-- Pin Icon -->
+                        <g transform="translate(18, 12)">
+                            <path d="M8 0C3.58 0 0 3.58 0 8c0 5.25 8 12 8 12s8-6.75 8-12c0-4.42-3.58-8-8-8zm0 11c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z" fill="#FDE68A" />
+                        </g>
+                        <text x="44" y="27" fill="#FDE68A" font-family="'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="900" letter-spacing="1.5">${locationClean.slice(0, 36)}</text>
+                    </g>
+
+                    <!-- PROJECT TITLE (Bold Luxury Typography) -->
+                    <g transform="translate(0, 92)">
+                        ${line2 ? `
+                            <text x="0" y="0" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="900" letter-spacing="-0.5">${escapeXml(line1)}</text>
+                            <text x="0" y="58" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="900" letter-spacing="-0.5">${escapeXml(line2)}</text>
+                        ` : `
+                            <text x="0" y="20" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="56" font-weight="900" letter-spacing="-0.5">${escapeXml(line1)}</text>
+                        `}
+                    </g>
+
+                    <!-- PRICE & OFFER SECTION -->
+                    <g transform="translate(0, ${line2 ? 185 : 150})">
+                        <!-- Top Line: Label + Badge -->
+                        <text x="0" y="0" fill="#F59E0B" font-family="'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="900" letter-spacing="2">STARTING INVESTMENT • INAUGURAL PRICE</text>
+                        
+                        <g transform="translate(688, -14)">
+                            <rect width="320" height="42" rx="21" fill="#047857" fill-opacity="0.30" stroke="#10B981" stroke-width="1.4" />
+                            <text x="160" y="27" fill="#6EE7B7" font-family="'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="900" text-anchor="middle" letter-spacing="1">⚡ 100% REGISTRATION READY</text>
+                        </g>
+
+                        <!-- Large Price Display -->
+                        <text x="0" y="64" fill="url(#goldText)" font-family="'Segoe UI', Roboto, sans-serif" font-size="64" font-weight="900" letter-spacing="0.5" filter="url(#shadowSm)">${priceClean}</text>
+                    </g>
+
+                    <!-- 3-PILLAR DUBAI SPECIFICATION GRID -->
+                    <g transform="translate(0, ${line2 ? 295 : 260})">
+                        <!-- Box 1: Unit Size -->
+                        <g transform="translate(0, 0)">
+                            <rect width="320" height="110" rx="20" fill="url(#specBoxBg)" stroke="#334155" stroke-width="1.2" />
+                            <text x="24" y="34" fill="#94A3B8" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="800" letter-spacing="1.5">📐 ESTATE AREA</text>
+                            <text x="24" y="68" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="900">${size}</text>
+                            <text x="24" y="92" fill="#F59E0B" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700">Clear Demarcation</text>
+                        </g>
+
+                        <!-- Box 2: Unit Type -->
+                        <g transform="translate(344, 0)">
+                            <rect width="320" height="110" rx="20" fill="url(#specBoxBg)" stroke="#334155" stroke-width="1.2" />
+                            <text x="24" y="34" fill="#94A3B8" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="800" letter-spacing="1.5">🏡 RESIDENCE TYPE</text>
+                            <text x="24" y="68" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="900">${type}</text>
+                            <text x="24" y="92" fill="#38BDF8" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700">Luxury Glamping Setup</text>
+                        </g>
+
+                        <!-- Box 3: Investment Perk -->
+                        <g transform="translate(688, 0)">
+                            <rect width="320" height="110" rx="20" fill="url(#specBoxBg)" stroke="url(#goldBorder)" stroke-width="1.2" />
+                            <text x="24" y="34" fill="#FDE68A" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="900" letter-spacing="1.5">💎 KEY PRIVILEGE</text>
+                            <text x="24" y="68" fill="url(#goldText)" font-family="'Segoe UI', Roboto, sans-serif" font-size="21" font-weight="900">${perk}</text>
+                            <text x="24" y="92" fill="#FDE68A" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700">Exclusive Resort Access</text>
+                        </g>
+                    </g>
+
+                    <!-- DIRECT RESPONSE CONVERSION FOOTER (CALL & CTA) -->
+                    <g transform="translate(0, ${line2 ? 435 : 400})">
+                        <!-- Left: Phone / WhatsApp Direct Response -->
+                        <g transform="translate(0, 0)">
+                            <rect width="520" height="76" rx="38" fill="#020617" fill-opacity="0.85" stroke="#334155" stroke-width="1.4" />
+                            <!-- Green WhatsApp Icon -->
+                            <g transform="translate(18, 14)">
+                                <circle cx="24" cy="24" r="24" fill="#22C55E" />
+                                <path d="M24 10C16.27 10 10 16.27 10 24C10 26.79 10.82 29.39 12.23 31.58L11 37L16.63 35.81C18.73 37.12 21.27 37.91 24 37.91C31.73 37.91 38 31.64 38 23.91C38 16.18 31.73 10 24 10ZM31.14 29.83C30.73 30.98 29.13 31.96 28.02 32.19C27.26 32.34 26.27 32.47 22.93 31.08C18.66 29.31 15.9 24.96 15.68 24.67C15.48 24.39 13.94 22.33 13.94 20.21C13.94 18.09 15.01 17.06 15.45 16.62C15.81 16.26 16.4 16.1 16.96 16.1C17.14 16.1 17.31 16.11 17.46 16.12C17.9 16.14 18.12 16.17 18.41 16.86C18.77 17.72 19.65 19.86 19.76 20.08C19.87 20.3 19.98 20.6 19.83 20.89C19.69 21.19 19.58 21.3 19.36 21.56C19.14 21.82 18.94 21.99 18.72 22.25C18.52 22.49 18.3 22.74 18.55 23.16C18.8 23.58 19.66 24.98 20.93 26.11C22.57 27.57 23.9 28.03 24.32 28.21C24.64 28.34 25.02 28.31 25.25 28.06C25.54 27.75 25.9 27.24 26.26 26.73C26.52 26.36 26.85 26.31 27.19 26.44C27.54 26.56 29.41 27.48 29.79 27.67C30.17 27.86 30.42 27.95 30.51 28.11C30.6 28.27 30.6 29.04 31.14 29.83Z" fill="#FFFFFF" />
+                            </g>
+                            
+                            <text x="80" y="33" fill="#94A3B8" font-family="'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="800" letter-spacing="1.5">CALL OR WHATSAPP DIRECT</text>
+                            <text x="80" y="58" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="23" font-weight="900" letter-spacing="1">${phoneClean}</text>
+                        </g>
+
+                        <!-- Right: High-Converting Gold Action Button -->
+                        <g transform="translate(544, 0)">
+                            <rect width="464" height="76" rx="38" fill="url(#goldButton)" stroke="#FDE68A" stroke-width="1.6" filter="url(#shadowSm)" />
+                            <text x="232" y="47" fill="#0F172A" font-family="'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="900" text-anchor="middle" letter-spacing="1.5">SCHEDULE VIP SITE VISIT ➔</text>
+                        </g>
+                    </g>
+
+                    <!-- TRUST / RERA LEGAL STRIP -->
+                    <g transform="translate(0, ${line2 ? 545 : 510})">
+                        <line x1="0" y1="0" x2="1008" y2="0" stroke="#334155" stroke-opacity="0.5" stroke-width="1" />
+                        <text x="504" y="24" fill="#64748B" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" text-anchor="middle" letter-spacing="1">
+                            🔒 100% CLEAR TITLED PROPERTY • DIRECT DEVELOPER PRICING • LIMITED TIME INAUGURAL PRIVILEGE
+                        </text>
+                    </g>
+
                 </g>
             </g>
         </svg>
     `);
 
-    // =========================================================================
-    // CREATIVE 2: HIGH-CONVERTING SOCIAL GLASS (Cyan, Ruby, & Clean White)
-    // =========================================================================
-    const svgOverlay2 = Buffer.from(`
-        <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <linearGradient id="bgGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stop-color="#030712" stop-opacity="0.9" />
-                    <stop offset="20%" stop-color="#030712" stop-opacity="0.05" />
-                    <stop offset="50%" stop-color="#030712" stop-opacity="0.3" />
-                    <stop offset="75%" stop-color="#030712" stop-opacity="0.92" />
-                    <stop offset="100%" stop-color="#030712" stop-opacity="0.98" />
-                </linearGradient>
-
-                <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stop-color="#06B6D4" />
-                    <stop offset="100%" stop-color="#3B82F6" />
-                </linearGradient>
-
-                <linearGradient id="rubyGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stop-color="#E11D48" />
-                    <stop offset="100%" stop-color="#BE123C" />
-                </linearGradient>
-            </defs>
-
-            <rect width="${width}" height="${height}" fill="url(#bgGrad2)" />
-
-            <!-- TOP HEADER WITH LOGO -->
-            <g transform="translate(60, 60)">
-                <rect width="1080" height="96" rx="28" fill="#111827" fill-opacity="0.8" stroke="#06b6d4" stroke-width="2" stroke-opacity="0.3" />
-
-                ${logoBase64 ? `
-                    <image href="${logoBase64}" x="24" y="16" width="64" height="64" preserveAspectRatio="xMidYMid meet" />
-                    <text x="108" y="58" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="28" font-weight="900" letter-spacing="2">${companyNameClean}</text>
-                ` : `
-                    <circle cx="52" cy="48" r="28" fill="#06b6d4" fill-opacity="0.2" stroke="#06b6d4" stroke-width="2" />
-                    <text x="52" y="56" fill="#06b6d4" font-family="'Inter', system-ui, sans-serif" font-size="24" font-weight="900" text-anchor="middle">${companyNameClean.slice(0, 2)}</text>
-                    <text x="96" y="58" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="28" font-weight="900" letter-spacing="2">${companyNameClean}</text>
-                `}
-
-                <g transform="translate(860, 24)">
-                    <rect width="190" height="48" rx="24" fill="url(#rubyGrad)" />
-                    <text x="95" y="30" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="15" font-weight="900" text-anchor="middle" letter-spacing="1">GPT 2.0 STUDIO</text>
-                </g>
-            </g>
-
-            <!-- OFFER HIGHLIGHT PILL -->
-            <g transform="translate(60, 190)">
-                <rect width="380" height="48" rx="24" fill="#06b6d4" fill-opacity="0.2" stroke="#06b6d4" stroke-width="1.5" />
-                <text x="24" y="30" fill="#22D3EE" font-family="'Inter', system-ui, sans-serif" font-size="16" font-weight="900" letter-spacing="1">⚡ LIMITED PRE-LAUNCH SLOTS</text>
-            </g>
-
-            <!-- LOWER HIGH-CONVERTING CARD -->
-            <g transform="translate(60, 1080)">
-                <rect width="1080" height="440" rx="36" fill="#090d16" fill-opacity="0.95" stroke="#1e293b" stroke-width="2" />
-                
-                <text x="48" y="55" fill="#38BDF8" font-family="'Inter', system-ui, sans-serif" font-size="18" font-weight="900" letter-spacing="1.5">📍 ${locationClean.toUpperCase()}</text>
-                <text x="48" y="115" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="44" font-weight="900" letter-spacing="-0.5">${projectTitleClean}</text>
-                <text x="48" y="165" fill="#4ADE80" font-family="'Inter', system-ui, sans-serif" font-size="36" font-weight="900">${priceClean}</text>
-
-                <text x="48" y="215" fill="#94A3B8" font-family="'Inter', system-ui, sans-serif" font-size="18" font-weight="500">✓ ${highlight1}  •  ✓ ${highlight2}</text>
-
-                <g transform="translate(48, 260)">
-                    <rect width="984" height="84" rx="24" fill="url(#cyanGrad)" />
-                    <text x="492" y="52" fill="#020617" font-family="'Inter', system-ui, sans-serif" font-size="24" font-weight="900" text-anchor="middle" letter-spacing="1.5">CLAIM LAUNCH INCENTIVE &amp; SCHEDULE VISIT ➔</text>
-                </g>
-
-                <text x="48" y="395" fill="#475569" font-family="'Inter', system-ui, sans-serif" font-size="15" font-weight="600">Instant AI Phone Call &amp; WhatsApp Assistance • Official Project Partner</text>
-            </g>
-        </svg>
-    `);
-
-    // 4. Render Creatives with Sharp
-    const [img1Buffer, img2Buffer] = await Promise.all([
-        sharp(bgBuffer1!)
-            .resize(width, height, { fit: 'cover', position: 'center' })
-            .composite([{ input: svgOverlay1, top: 0, left: 0 }])
-            .jpeg({ quality: 92, progressive: true })
-            .toBuffer(),
-        sharp(bgBuffer2!)
-            .resize(width, height, { fit: 'cover', position: 'center' })
-            .composite([{ input: svgOverlay2, top: 0, left: 0 }])
-            .jpeg({ quality: 92, progressive: true })
-            .toBuffer()
-    ]);
+    // 4. Render Single Clean Creative with Sharp
+    const imgBuffer = await sharp(bgBuffer1!)
+        .resize(width, height, { fit: 'cover', position: 'center' })
+        .composite([{ input: svgOverlay, top: 0, left: 0 }])
+        .jpeg({ quality: 92, progressive: true })
+        .toBuffer();
 
     // 5. Persist to Cloudflare R2
-    const creative1Key = `demo/creatives/${Date.now()}_gpt2_gold_3_4.jpg`;
-    const creative2Key = `demo/creatives/${Date.now()}_gpt2_cyan_3_4.jpg`;
-
-    let url1 = `data:image/jpeg;base64,${img1Buffer.toString('base64')}`;
-    let url2 = `data:image/jpeg;base64,${img2Buffer.toString('base64')}`;
+    const creativeKey = `demo/creatives/${Date.now()}_clean_3_4.jpg`;
+    let url = `data:image/jpeg;base64,${imgBuffer.toString('base64')}`;
 
     try {
-        await Promise.all([
-            r2.send(new PutObjectCommand({
-                Bucket: R2_BUCKET,
-                Key: creative1Key,
-                Body: img1Buffer,
-                ContentType: 'image/jpeg'
-            })),
-            r2.send(new PutObjectCommand({
-                Bucket: R2_BUCKET,
-                Key: creative2Key,
-                Body: img2Buffer,
-                ContentType: 'image/jpeg'
-            }))
-        ]);
-
-        url1 = `${R2_PUBLIC_URL}/${creative1Key}`;
-        url2 = `${R2_PUBLIC_URL}/${creative2Key}`;
+        await r2.send(new PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: creativeKey,
+            Body: imgBuffer,
+            ContentType: 'image/jpeg'
+        }));
+        url = `${R2_PUBLIC_URL}/${creativeKey}`;
     } catch (r2Err) {
         console.warn("[Creative Engine] R2 persistence warning, falling back to base64:", r2Err);
     }
 
+    // Await the real-time video generation
+    const videoResult = await videoPromise;
+
     return {
         creatives: [
             {
-                id: 'creative-gpt2-gold-3-4',
-                name: 'Concept 1: GPT 2.0 Architectural Sovereign',
-                styleName: 'Gold Sovereign (GPT 2.0)',
+                id: 'creative-clean-3-4',
+                name: 'High-Converting 3:4 Ad Creative',
+                styleName: 'Minimalist Commercial (3:4)',
                 aspectRatio: '3:4',
-                imageUrl: url1,
+                imageUrl: url,
                 headline: copyResult.headline,
                 primaryText: copyResult.primaryText,
                 ctaText: copyResult.callToAction
-            },
-            {
-                id: 'creative-gpt2-cyan-3-4',
-                name: 'Concept 2: GPT 2.0 Cyber Glass Performance',
-                styleName: 'Cyber Glass (GPT 2.0)',
-                aspectRatio: '3:4',
-                imageUrl: url2,
-                headline: `Exclusive Launch: ${projectTitle}`,
-                primaryText: `Limited inventory remaining for ${projectTitle} by ${companyName}. Direct developer launch incentives in ${location}.`,
-                ctaText: 'Claim Offer & Visit'
             }
         ],
         video: videoResult,

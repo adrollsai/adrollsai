@@ -1283,6 +1283,19 @@ function LeadProfilePageContent() {
     }
 
     const handleNotesChange = async (newNotes: string) => {
+        const isRestrictedAgent = !!(lead?.custom_fields?.history_visible_from && (currentUserRole === 'agent' || isTeamMember))
+        if (isRestrictedAgent) {
+            // Restricted agents must never wipe historical notes if they unfocus an empty or untouched textarea
+            if (!newNotes.trim()) return
+            const mergedNotes = newNotes.trim() + (lead.notes ? `\n\n${lead.notes}` : '')
+            const nextLead = { ...lead, notes: mergedNotes }
+            setLead(nextLead)
+            updateLocalCRMCache(nextLead)
+            await supabase.from('leads').update({ notes: mergedNotes }).eq('id', id)
+            return
+        }
+
+        if (newNotes === (lead?.notes || '')) return
         const nextLead = { ...lead, notes: newNotes }
         setLead(nextLead)
         updateLocalCRMCache(nextLead)
@@ -2939,6 +2952,7 @@ END:VCARD`
                                             return (
                                                 <div key={item.id} className="relative flex items-start gap-3 sm:gap-4">
                                                     <div className={`flex items-center justify-center w-10 h-10 rounded-full border-[3px] border-white shrink-0 z-10 shadow-sm ${
+                                                        item.action_type === 'REOPENED' ? 'bg-purple-100 text-purple-700 ring-2 ring-purple-300' :
                                                         isRemark ? 'bg-blue-100 text-blue-600' :
                                                         isReminder ? 'bg-amber-100 text-amber-600' :
                                                         item.action_type === 'DNP' ? 'bg-rose-100 text-rose-600' :
@@ -2947,7 +2961,8 @@ END:VCARD`
                                                         item.action_type === 'MEETING' ? 'bg-indigo-100 text-indigo-600' :
                                                         'bg-slate-100 text-slate-600'
                                                     }`}>
-                                                        {isRemark ? <MessageCircle size={15} /> :
+                                                        {item.action_type === 'REOPENED' ? <RefreshCw size={15} className="text-purple-700" /> :
+                                                         isRemark ? <MessageCircle size={15} /> :
                                                          isReminder ? <Clock size={15} /> :
                                                          item.action_type === 'DNP' ? <PhoneOff size={15} /> :
                                                          item.action_type === 'LEAD_CREATED' ? <Sparkles size={15} /> :
@@ -2955,7 +2970,11 @@ END:VCARD`
                                                          item.action_type === 'MEETING' ? <Users size={15} /> :
                                                          <CheckCircle2 size={15} />}
                                                     </div>
-                                                    <div className="flex-1 min-w-0 bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 mt-0.5 space-y-2">
+                                                    <div className={`flex-1 min-w-0 p-3.5 sm:p-4 rounded-2xl border mt-0.5 space-y-2 ${
+                                                        item.action_type === 'REOPENED' 
+                                                            ? 'bg-purple-50/60 border-purple-200/80' 
+                                                            : 'bg-slate-50 border-slate-200/80'
+                                                    }`}>
                                                         {/* Header: Actor Name, Action Badge, Time */}
                                                         {(() => {
                                                             const rawDesc = typeof item.description === 'string' ? item.description : String(item.description || '')
@@ -2971,15 +2990,19 @@ END:VCARD`
 
                                                             const rawActor = byMatch 
                                                                 ? byMatch[1].trim() 
-                                                                : isAiAutomation 
-                                                                    ? 'AI Assistant' 
-                                                                    : (item.actor_name || (lead as any)?.assigned_agent_name || (lead?.assigned_to ? 'Assigned Agent' : 'System'));
+                                                                : item.action_type === 'REOPENED'
+                                                                    ? (rawDesc.toLowerCase().includes('facebook') || rawDesc.toLowerCase().includes('meta') ? 'System / Meta Ads' : (lead?.source ? `System / ${lead.source}` : 'System / Ads'))
+                                                                    : isAiAutomation 
+                                                                        ? 'AI Assistant' 
+                                                                        : (item.actor_name || (lead as any)?.assigned_agent_name || (lead?.assigned_to ? 'Assigned Agent' : 'System'));
                                                             const actorName = String(rawActor || 'System');
 
                                                             const displayAction = item.action_type === 'STATUS_CHANGE'
                                                                 ? 'Stage Update'
                                                                 : item.action_type === 'LEAD_CREATED'
                                                                 ? 'New Lead Created'
+                                                                : item.action_type === 'REOPENED'
+                                                                ? '🔄 Lead Reopened'
                                                                 : item.action_type === 'DNP'
                                                                 ? 'Call Not Picked (DNP)'
                                                                 : item.action_type === 'CALL_FEEDBACK'

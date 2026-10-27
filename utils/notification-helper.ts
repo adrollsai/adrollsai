@@ -150,7 +150,8 @@ export async function sendPushNotification(
     title: string,
     body: string,
     url: string = '/dashboard/crm',
-    type: string = 'general'
+    type: string = 'general',
+    skipDbInsert: boolean = false
 ) {
   console.log(`[PUSH] Checking preferences and tokens for User: ${userId}`);
 
@@ -167,19 +168,21 @@ export async function sendPushNotification(
     console.warn('[PUSH PREFERENCE CHECK WARNING]:', prefErr.message);
   }
 
-  // Store in in-app notifications center
-  try {
-    await getSupabaseAdmin().from('notifications').insert({
-      user_id: userId,
-      title,
-      message: body,
-      type,
-      action_link: url,
-      is_read: false,
-      created_at: new Date().toISOString()
-    });
-  } catch (err: any) {
-    console.error('[PUSH DB Notification Insert Error]:', err.message);
+  // Store in in-app notifications center (unless caller already persisted it)
+  if (!skipDbInsert) {
+    try {
+      await getSupabaseAdmin().from('notifications').insert({
+        user_id: userId,
+        title,
+        message: body,
+        type,
+        action_link: url,
+        is_read: false,
+        created_at: new Date().toISOString()
+      });
+    } catch (err: any) {
+      console.error('[PUSH DB Notification Insert Error]:', err.message);
+    }
   }
 
   // Fetch profile to include agency/parent subscriptions if any
@@ -376,7 +379,7 @@ export async function sendAdminMultiChannelNotification({
       }
 
       try {
-        await sendPushNotification(ownerUserId, title, enrichedBody, leadPageUrl, type);
+        await sendPushNotification(ownerUserId, title, enrichedBody, leadPageUrl, type, true);
       } catch (err: any) {
         console.error(`[MULTI-CHANNEL PUSH ERROR]`, err.message);
       }

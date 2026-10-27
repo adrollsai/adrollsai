@@ -92,7 +92,7 @@ export async function GET(request: Request, { params }: RouteProps) {
         address: {
           '@type': 'PostalAddress',
           streetAddress: p.address || p.region || 'Prime Location',
-          addressLocality: p.region === 'Dubai' ? 'Dubai' : (p.region === 'Tri-City' ? 'Mohali' : 'New Chandigarh'),
+          addressLocality: p.region === 'Dubai' ? 'Dubai' : (p.region === 'Tri-City' ? 'Mohali' : (profile.city || profile.address || (isBioque ? 'New Chandigarh' : 'India'))),
           addressCountry: p.region === 'Dubai' ? 'AE' : 'IN'
         },
         offers: {
@@ -334,7 +334,7 @@ export async function GET(request: Request, { params }: RouteProps) {
       <div class="flex flex-col md:flex-row justify-between items-center gap-6 pb-8 border-b border-slate-800">
         <div>
           <span class="font-display text-lg font-bold text-[#D4AF37]">${profile.business_name}</span>
-          <p class="text-xs text-slate-400 mt-1">${profile.address || 'New Chandigarh, Tri-City & Dubai'}</p>
+          <p class="text-xs text-slate-400 mt-1">${profile.address || profile.city || (isBioque ? 'New Chandigarh, Tri-City & Dubai' : '')}</p>
         </div>
         <div class="flex items-center space-x-6 text-xs text-slate-300">
           <a href="/" class="hover:text-[#D4AF37]">Home</a>

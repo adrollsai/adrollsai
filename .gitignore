@@ -51,3 +51,27 @@ next-env.d.ts
 # firebase service accounts
 *firebase-adminsdk*.json
 firebase-service-account.json
+
+# Scratch files and temporary dumps in root
+*.pcm
+*.wav
+*.mp3
+*.raw
+*.pdf
+scratch_*
+server_*
+step_*
+test_*
+/*.html
+/*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!vercel.json
+# Media and large assets
+*.mp4
+*.zip
+public/campaign-assets/
+
+
+

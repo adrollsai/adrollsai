@@ -311,7 +311,10 @@ export function categorizeLeadStage(
   // 4. Check for Not Interested / Lost (legacy stage names)
   if (
     normalized.includes('lost') ||
-    normalized.includes('ni') ||
+    normalized.includes('lost/ni') ||
+    normalized === 'ni' ||
+    normalized.startsWith('ni ') ||
+    normalized.endsWith(' ni') ||
     normalized.includes('not interested') ||
     normalized.includes('not_interested') ||
     normalized.includes('junk') ||

@@ -307,7 +307,7 @@ export async function GET(request: Request) {
       .from('call_logs')
       .select(`
         *,
-        leads (id, name, phone, business_name),
+        leads (id, name, phone),
         profiles:user_id (id, full_name, business_name)
       `)
       .in('user_id', filterUserId ? [filterUserId] : allowedUserIds)

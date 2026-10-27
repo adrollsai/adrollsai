@@ -100,7 +100,7 @@ export async function POST(request: Request) {
         logoUrl,
         propImages, 
         templateUrl, 
-        aspectRatio = "4:5",
+        aspectRatio = "3:4",
         model,
         isDirect = false,
         isOrganic = false,
@@ -406,9 +406,10 @@ Follow these 20-year direct-response advertising master rules to maximize click-
 1. SCROLL-STOPPING COMMERCIAL PHOTOGRAPHY: The creative must look like authentic live-action commercial photography captured by a top advertising photographer. Never make it look like a 3D render, cartoon, architectural blueprint, or CGI illustration. Bright, airy, commercial natural morning or golden-hour lighting with crisp shadows and believable textures.
 ${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific product is selected. Focus the visual canvas on high-impact commercial branding, aspirational imagery, and clean graphic typography representing ${businessName || 'the brand'} in the ${industry || 'commercial'} sector according to the custom user instructions.` : `2. 60-70% HERO FOCUS: The real product or subject must occupy 60-70% of the canvas as the undisputed hero. ${excludeHousePhoto ? 'CRITICAL EXCLUSION: Do NOT describe or include any exterior architectural house, villa, or building photos.' : 'Keep the generated visuals faithful to the real subject in the input.'}`}
 3. HIGH-CONVERTING PERFORMANCE AD POSTER ARCHITECTURE (META / INSTAGRAM / LINKEDIN):
-   - TOP BANNER: Frosted category/offer pill tag (e.g. "OFFICIAL IMMIGRATION PATHWAY", "EXCLUSIVE PRE-LAUNCH", "AI REVENUE ENGINE", "PREMIUM CRAFTSMANSHIP") placed cleanly near the top margin.
+   - TOP BANNER & LOCATION TAG: Frosted category/offer pill tag (e.g. "OFFICIAL IMMIGRATION PATHWAY", "EXCLUSIVE PRE-LAUNCH", "AI REVENUE ENGINE", "PREMIUM CRAFTSMANSHIP") placed cleanly near top margin. MANDATORY LOCATION TAG: If location or sector is mentioned (e.g. "Downtown Dubai", "Sector 82 Mohali"), feature a sleek location pill (e.g. "📍 DOWNTOWN DUBAI").
    - HERO VISUAL (55-65% CANVAS): Aspirational, photorealistic hero visual featuring the product, service, or customer in an authentic real-world environment with tangible proof artifacts (passports, approval letters, certificates, product packaging, keys, or modern dashboard interfaces).
    - BENEFIT HOOK HEADLINE: Exactly ONE dominant, high-contrast outcome-driven headline (e.g., "Live & Work in Canada in 2026", "Own Luxury for 1% Monthly", "Automate 80% of Support") that instantly hooks the target customer.
+   - MANDATORY PRICE BADGE: Since we sell to businesses and high-intent buyers, if price, starting price, or payment terms are provided (e.g. "Starting at ₹1.2 Cr", "From AED 1,200,000", "1% Monthly Payment Plan", "$49/mo"), you MUST prominently display a luxury, high-contrast price badge or ribbon pill (e.g. "STARTING AT AED 1.2M", "FROM ₹1.2 CR*") on the creative!
    - TRUST PROOF BADGES / VALUE PILLS: Exactly 2 to 3 sleek, modern frosted glass or flat solid contrast chips/badges highlighting key credibility and risk-reversal points (e.g. "Licensed Consultants", "98% Success Rate", "Fast-Track Approval", "RERA Certified", "Zero Hidden Fees", "Free Consultation"). Badges must be modern, minimal, executive-grade UI elements.
    - FOOTER CTA BAR: Crisp high-contrast bottom action bar with a clear call-to-action button ("Book Free Consultation", "Explore Inventory", "Claim Offer", "Get Free Assessment") alongside the contact details "${finalContactNumber || ''}".
 4. STRICT BAN ON AMATEUR GIMMICKS:

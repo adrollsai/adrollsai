@@ -7,6 +7,57 @@ import { z } from 'zod';
 import { createCreativeSessionToken } from '@/utils/creative-token';
 import { recordFeedbackOrIssue, getRecentLearnings } from './feedback-engine';
 import { triggerOutboundCall } from '@/utils/voice-helper';
+import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+
+export interface OwnerBotMediaAttachment {
+    type: 'image' | 'document';
+    url: string;
+    filename?: string;
+    caption?: string;
+}
+
+export interface OwnerBotResponse {
+    text: string;
+    mediaAttachments?: OwnerBotMediaAttachment[];
+}
+
+function escapeCsvValue(val: any): string {
+    if (val === null || val === undefined) return '';
+    let str = String(val).trim();
+    if (/^[=+\-@\t\r]/.test(str)) {
+        str = `'${str}`;
+    }
+    if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+        return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+}
+
+async function createQuickChartUrl(chartConfig: any): Promise<string> {
+    try {
+        const res = await fetch('https://quickchart.io/chart/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chart: chartConfig,
+                backgroundColor: '#0f172a',
+                width: 600,
+                height: 400,
+                devicePixelRatio: 2
+            })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.url) {
+                return data.url;
+            }
+        }
+    } catch (e: any) {
+        console.error('[OWNER BOT] QuickChart create error:', e);
+    }
+    return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&bkg=%230f172a&w=600&h=400&devicePixelRatio=2`;
+}
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -72,27 +123,38 @@ export async function processOwnerMessage(params: {
     fromPhone: string;
     mediaUrl?: string;
     mediaType?: string;
-}): Promise<string> {
+}): Promise<OwnerBotResponse> {
     const { userId, messageText, fromPhone, mediaUrl, mediaType } = params;
+    const mediaAttachments: OwnerBotMediaAttachment[] = [];
 
-    // Fetch user profile, policies, learnings, and registered team members under this workspace
-    const [profRes, policyRes, learnings, teamRes] = await Promise.all([
+    // Fetch user profile and policies
+    const [profRes, policyRes, learnings] = await Promise.all([
         supabaseAdmin
             .from('profiles')
-            .select('id, email, business_name, business_info, address, contact_number, whatsapp_personal_number, whatsapp_phone_number, role, facebook_token, ad_account_id, selected_page_id, selected_page_token, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number_id, privacy_policy_url')
+            .select('id, email, parent_id, agency_id, business_name, business_info, address, contact_number, whatsapp_personal_number, whatsapp_phone_number, role, facebook_token, ad_account_id, selected_page_id, selected_page_token, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number_id, privacy_policy_url')
             .eq('id', userId)
             .single(),
         supabaseAdmin.from('agent_policies').select('*').eq('user_id', userId).maybeSingle(),
-        getRecentLearnings(userId),
-        supabaseAdmin
-            .from('profiles')
-            .select('id, full_name, business_name, email, role, contact_number')
-            .or(`parent_id.eq.${userId},agency_id.eq.${userId}`)
+        getRecentLearnings(userId)
     ]);
 
     const profile = profRes.data;
     const policy = policyRes.data;
-    const teamMembers = teamRes.data || [];
+    const orgOwnerId = profile?.parent_id || profile?.agency_id || userId;
+
+    // Fetch all registered team members under this workspace / agency
+    const { data: teamRes } = await supabaseAdmin
+        .from('profiles')
+        .select('id, full_name, business_name, email, role, contact_number')
+        .or(`id.eq.${orgOwnerId},parent_id.eq.${orgOwnerId},agency_id.eq.${orgOwnerId}`);
+
+    const teamMembers = teamRes || [];
+    const orgUserIds: string[] = [orgOwnerId];
+    if (!orgUserIds.includes(userId)) orgUserIds.push(userId);
+    teamMembers.forEach(m => {
+        if (!orgUserIds.includes(m.id)) orgUserIds.push(m.id);
+    });
+
     const businessName = profile?.business_name || 'your business';
 
     const teamListFormatted = teamMembers.map(m => {
@@ -102,7 +164,7 @@ export async function processOwnerMessage(params: {
 
     const systemPrompt = `
 You are Nobogent, the Executive AI Sales Director and Autonomous Business Co-pilot for ${businessName}.
-You are interacting directly with the business owner on WhatsApp.
+You are interacting directly with the business owner / admin on WhatsApp.
 
 You possess COMPLETE operational control across every capability of the Nobogent CRM, Team Management, Telecalling/Calling, Meta Ads, and WhatsApp Automation platform.
 
@@ -119,6 +181,28 @@ CRITICAL RULES FOR TEAM MEMBERS & CALLING STATUS:
    - Calling status breakdown (not_called vs called vs qualified_via_whatsapp)
    - Recent follow-up calls and remarks logged by that team member (e.g. DNP, call remarks in notes)
 5. Format your response cleanly and respectfully with WhatsApp-friendly emojis and bullet points. Never use markdown headers (like # or ##).
+
+ORGANIZATION DATA CRUNCHING, VISUAL GRAPHS & DOWNLOADABLE REPORTS:
+You are an executive data-crunching and BI intelligence co-pilot for ${businessName}.
+When the owner or admin asks about:
+- Pipeline metrics, stage conversions, lead volume, or stage distributions
+- Performance by sales agent, telecaller leaderboard, calling stats, or talk time
+- Lead quality, DNP rates, connection rates, or site visit conversion
+- Campaign ROI, adset lead volume, or source breakdown
+- Graphs, charts, visual breakdowns
+- Downloadable reports, CSV exports, or spreadsheets of leads
+
+ALWAYS:
+1. Invoke 'crunch_organization_analytics' to pull accurate real-time metrics across the workspace.
+2. If the user asks for a chart/graph, or if visual representation makes the data much easier to digest (e.g. comparing stages, team performance, or lead acquisition):
+   - Invoke 'generate_analytics_graph' with chartType ('doughnut' for stage distributions or sources, 'bar' or 'line' for daily/weekly trends, 'horizontalBar' for team leaderboards).
+   - This automatically delivers a high-resolution dark-themed visual graph directly into the owner's WhatsApp!
+3. If the user asks for a report, export, spreadsheet, list, or downloadable file:
+   - Invoke 'generate_downloadable_report' with the appropriate reportType and filters.
+   - This automatically generates a clean CSV, uploads it to secure cloud storage, and sends it directly to their WhatsApp as a downloadable document!
+4. In your message, provide sharp, high-level executive commentary:
+   - Highlight the key trends, top performers, conversion bottlenecks, and actionable recommendations.
+   - Format cleanly with WhatsApp-friendly emojis and bullet points. Never use markdown headers (like # or ##).
 
 LIVE TASK PROGRESS & STATUS TRACKING PROTOCOL:
 When the owner asks about the current status, live progress, or results of any task (Meta ads campaign, voice calling, broadcasts):
@@ -168,6 +252,478 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
     }
 
     const tools = {
+        // --- 0. ORGANIZATION DATA CRUNCHING, VISUAL GRAPHS & DOWNLOADABLE REPORTS ---
+        crunch_organization_analytics: tool({
+            description: "Performs real-time, comprehensive data crunching across the entire organization CRM: total leads, funnel conversion rates, pipeline stages, agent performance leaderboard, source attribution, and telecalling analytics for any timeframe.",
+            inputSchema: z.object({
+                timeframe: z.enum(['today', 'yesterday', 'last_7_days', 'last_30_days', 'this_month', 'all_time']).default('all_time'),
+                campaignName: z.string().optional().describe("Optional campaign name filter"),
+                assignedToMemberId: z.string().optional().describe("Optional agent filter")
+            }),
+            execute: async ({ timeframe, campaignName, assignedToMemberId }) => {
+                const now = new Date();
+                let startDate: Date | null = null;
+                let endDate: Date | null = null;
+
+                if (timeframe === 'today') {
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                } else if (timeframe === 'yesterday') {
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+                    endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                } else if (timeframe === 'last_7_days') {
+                    startDate = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+                } else if (timeframe === 'last_30_days') {
+                    startDate = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+                } else if (timeframe === 'this_month') {
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                }
+
+                let leadQ = supabaseAdmin
+                    .from('leads')
+                    .select('id, name, phone, pipeline_stage, source, ad_name, form_name, assigned_to, dnp_count, last_call_status, created_at, booked_time, budget')
+                    .or(`user_id.in.(${orgUserIds.join(',')}),assigned_to.in.(${orgUserIds.join(',')})`);
+
+                if (startDate) leadQ = leadQ.gte('created_at', startDate.toISOString());
+                if (endDate) leadQ = leadQ.lt('created_at', endDate.toISOString());
+                if (campaignName) leadQ = leadQ.or(`ad_name.ilike.%${campaignName}%,form_name.ilike.%${campaignName}%`);
+                if (assignedToMemberId) leadQ = leadQ.eq('assigned_to', assignedToMemberId);
+
+                let { data: leadsData } = await leadQ.limit(3000);
+                let fallbackAllTimeNote = '';
+                if ((!leadsData || leadsData.length === 0) && startDate) {
+                    const { data: allTimeLeads } = await supabaseAdmin
+                        .from('leads')
+                        .select('id, name, phone, pipeline_stage, source, ad_name, form_name, assigned_to, dnp_count, last_call_status, created_at, booked_time, budget')
+                        .or(`user_id.in.(${orgUserIds.join(',')}),assigned_to.in.(${orgUserIds.join(',')})`)
+                        .limit(3000);
+                    if (allTimeLeads && allTimeLeads.length > 0) {
+                        leadsData = allTimeLeads;
+                        fallbackAllTimeNote = `Note: 0 leads found strictly within timeframe '${timeframe}'. Results automatically populated with all-time records (${allTimeLeads.length} leads).`;
+                    }
+                }
+                const leads = leadsData || [];
+
+                const stageBreakdown: Record<string, number> = {};
+                const sourceBreakdown: Record<string, number> = {};
+                const campaignBreakdown: Record<string, number> = {};
+                const agentLeadMap: Record<string, number> = {};
+                let totalDnpCount = 0;
+                let siteVisitsCount = 0;
+                let dealsCount = 0;
+                let contactedCount = 0;
+
+                leads.forEach((l: any) => {
+                    const st = l.pipeline_stage || 'New';
+                    stageBreakdown[st] = (stageBreakdown[st] || 0) + 1;
+
+                    const src = l.source || 'Direct / Meta';
+                    sourceBreakdown[src] = (sourceBreakdown[src] || 0) + 1;
+
+                    const camp = l.ad_name || l.form_name;
+                    if (camp) {
+                        campaignBreakdown[camp] = (campaignBreakdown[camp] || 0) + 1;
+                    }
+
+                    const assignee = l.assigned_to || 'unassigned';
+                    agentLeadMap[assignee] = (agentLeadMap[assignee] || 0) + 1;
+
+                    if (l.dnp_count && l.dnp_count > 0) totalDnpCount += l.dnp_count;
+
+                    const stLower = st.toLowerCase();
+                    if (stLower.includes('contact') || stLower.includes('requirement')) contactedCount++;
+                    if (stLower.includes('visit') || stLower.includes('meeting')) siteVisitsCount++;
+                    if (stLower.includes('deal') || stLower.includes('token') || stLower.includes('won') || stLower.includes('closed')) dealsCount++;
+                });
+
+                // Calls in timeframe
+                let callQ = supabaseAdmin
+                    .from('call_logs')
+                    .select('id, user_id, status, duration, call_type, created_at')
+                    .in('user_id', orgUserIds);
+
+                if (startDate) callQ = callQ.gte('created_at', startDate.toISOString());
+                if (endDate) callQ = callQ.lt('created_at', endDate.toISOString());
+
+                const { data: callData } = await callQ.limit(3000);
+                const calls = callData || [];
+                const connectedCalls = calls.filter((c: any) => c.status === 'CONNECTED' || (c.duration && c.duration > 0));
+                const totalTalkTimeSecs = connectedCalls.reduce((s: number, c: any) => s + (c.duration || 0), 0);
+                const avgCallDurationSecs = connectedCalls.length > 0 ? Math.round(totalTalkTimeSecs / connectedCalls.length) : 0;
+
+                const memberLookup = new Map(teamMembers.map((m: any) => [m.id, m.full_name || m.business_name || m.email]));
+
+                const agentLeaderboard = teamMembers.map((m: any) => {
+                    const mCalls = calls.filter((c: any) => c.user_id === m.id);
+                    const mConnected = mCalls.filter((c: any) => c.status === 'CONNECTED' || (c.duration && c.duration > 0));
+                    const mLeads = leads.filter((l: any) => l.assigned_to === m.id);
+                    const mDeals = mLeads.filter((l: any) => {
+                        const s = (l.pipeline_stage || '').toLowerCase();
+                        return s.includes('deal') || s.includes('token') || s.includes('won');
+                    }).length;
+
+                    return {
+                        agentId: m.id,
+                        agentName: memberLookup.get(m.id) || 'Agent',
+                        role: m.role || 'agent',
+                        assignedLeads: mLeads.length,
+                        totalCalls: mCalls.length,
+                        connectedCalls: mConnected.length,
+                        dealsClosed: mDeals
+                    };
+                }).sort((a: any, b: any) => b.totalCalls - a.totalCalls);
+
+                const totalLeads = leads.length;
+                const contactRate = totalLeads > 0 ? `${(((contactedCount + siteVisitsCount + dealsCount) / totalLeads) * 100).toFixed(1)}%` : '0%';
+                const siteVisitRate = totalLeads > 0 ? `${((siteVisitsCount / totalLeads) * 100).toFixed(1)}%` : '0%';
+                const dealCloseRate = totalLeads > 0 ? `${((dealsCount / totalLeads) * 100).toFixed(1)}%` : '0%';
+
+                return {
+                    timeframe,
+                    totalLeads,
+                    pipelineStageBreakdown: stageBreakdown,
+                    sourceAttribution: sourceBreakdown,
+                    campaignBreakdown,
+                    funnelConversionMetrics: {
+                        totalLeads,
+                        contactedLeads: contactedCount,
+                        siteVisitsBooked: siteVisitsCount,
+                        dealsClosed: dealsCount,
+                        contactRate,
+                        siteVisitRate,
+                        dealCloseRate
+                    },
+                    telecallingAnalytics: {
+                        totalCallsLogged: calls.length,
+                        connectedCalls: connectedCalls.length,
+                        connectionRate: calls.length > 0 ? `${((connectedCalls.length / calls.length) * 100).toFixed(1)}%` : '0%',
+                        totalTalkTimeMinutes: Math.round(totalTalkTimeSecs / 60),
+                        avgDurationSeconds: avgCallDurationSecs,
+                        totalDnpFlagged: totalDnpCount
+                    },
+                    agentLeaderboard
+                };
+            }
+        }),
+
+        generate_analytics_graph: tool({
+            description: "Generates an executive visual graph / chart (doughnut, pie, bar, horizontalBar, line) for lead stages, team leaderboard, daily trends, or marketing sources, and sends it directly to the owner/admin's WhatsApp.",
+            inputSchema: z.object({
+                chartType: z.enum(['doughnut', 'pie', 'bar', 'horizontalBar', 'line']).describe("Type of chart"),
+                title: z.string().describe("Title displayed at the top of the graph"),
+                labels: z.array(z.string()).describe("Labels for categories or dates e.g. ['New', 'Contacted', 'Site Visit', 'Deal']"),
+                datasets: z.array(z.object({
+                    label: z.string().describe("Dataset label e.g. 'Leads Count'"),
+                    data: z.array(z.number()).describe("Numeric data points matching labels length")
+                })),
+                caption: z.string().optional().describe("WhatsApp image caption accompanying the graph")
+            }),
+            execute: async ({ chartType, title, labels, datasets, caption }) => {
+                const vibrantPalette = [
+                    '#38bdf8', '#818cf8', '#34d399', '#f59e0b', '#f43f5e',
+                    '#a855f7', '#ec4899', '#14b8a6', '#06b6d4', '#eab308'
+                ];
+
+                const isCircular = chartType === 'doughnut' || chartType === 'pie';
+                const formattedDatasets = datasets.map((ds, idx) => {
+                    if (isCircular) {
+                        return {
+                            label: ds.label,
+                            data: ds.data,
+                            backgroundColor: vibrantPalette.slice(0, ds.data.length),
+                            borderColor: '#0f172a',
+                            borderWidth: 2
+                        };
+                    }
+                    const color = vibrantPalette[idx % vibrantPalette.length];
+                    return {
+                        label: ds.label,
+                        data: ds.data,
+                        backgroundColor: chartType === 'line' ? `${color}33` : color,
+                        borderColor: color,
+                        borderWidth: chartType === 'line' ? 3 : 1,
+                        fill: chartType === 'line'
+                    };
+                });
+
+                const chartConfig = {
+                    type: chartType === 'horizontalBar' ? 'horizontalBar' : chartType,
+                    data: {
+                        labels,
+                        datasets: formattedDatasets
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: title,
+                                color: '#f8fafc',
+                                font: { size: 18, weight: 'bold' },
+                                padding: { top: 10, bottom: 20 }
+                            },
+                            legend: {
+                                display: true,
+                                position: isCircular ? 'bottom' : 'top',
+                                labels: { color: '#cbd5e1', font: { size: 12 } }
+                            },
+                            datalabels: {
+                                color: '#ffffff',
+                                font: { weight: 'bold', size: 12 },
+                                display: true,
+                                formatter: (val: any) => val > 0 ? val : ''
+                            }
+                        },
+                        scales: isCircular ? undefined : {
+                            x: {
+                                ticks: { color: '#94a3b8' },
+                                grid: { color: 'rgba(255, 255, 255, 0.08)' }
+                            },
+                            y: {
+                                ticks: { color: '#94a3b8' },
+                                grid: { color: 'rgba(255, 255, 255, 0.08)' }
+                            }
+                        }
+                    }
+                };
+
+                const chartUrl = await createQuickChartUrl(chartConfig);
+                mediaAttachments.push({
+                    type: 'image',
+                    url: chartUrl,
+                    caption: caption || `📊 ${title}`
+                });
+
+                return {
+                    success: true,
+                    chartUrl,
+                    message: `Graph '${title}' has been generated and queued for direct WhatsApp delivery.`
+                };
+            }
+        }),
+
+        generate_downloadable_report: tool({
+            description: "Generates an exportable, downloadable CSV report (all leads, team performance, hot leads, site visits, or call logs), uploads to cloud storage, and sends it directly to the owner/admin's WhatsApp as a downloadable document.",
+            inputSchema: z.object({
+                reportType: z.enum([
+                    'leads_master',
+                    'team_performance',
+                    'hot_leads_site_visits',
+                    'dnp_recovery',
+                    'call_logs',
+                    'campaign_performance'
+                ]).describe("Type of report to compile"),
+                stageFilter: z.string().optional().describe("Optional pipeline stage filter e.g. 'Site Visit', 'Deal', 'New'"),
+                assignedToMemberId: z.string().optional().describe("Filter by specific team member UUID"),
+                dateRange: z.enum(['today', 'yesterday', '7d', '30d', 'this_month', 'all']).default('all'),
+                customTitle: z.string().optional().describe("Custom title for the report file")
+            }),
+            execute: async ({ reportType, stageFilter, assignedToMemberId, dateRange, customTitle }) => {
+                try {
+                    let csvContent = '';
+                    let rowsCount = 0;
+                    const now = new Date();
+                    let startDate: Date | null = null;
+                    if (dateRange === 'today') startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    else if (dateRange === 'yesterday') startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+                    else if (dateRange === '7d') startDate = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+                    else if (dateRange === '30d') startDate = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+                    else if (dateRange === 'this_month') startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+
+                    if (reportType === 'team_performance') {
+                        const headers = ['Agent Name', 'Email', 'Role', 'Phone', 'Assigned Leads', 'Calls Logged', 'Connected Calls', 'Talk Time (Mins)', 'Site Visits', 'Deals Closed', 'Conversion Rate %'];
+                        const rows = await Promise.all(teamMembers.map(async (m: any) => {
+                            const [leadsRes, callsRes] = await Promise.all([
+                                supabaseAdmin.from('leads').select('pipeline_stage').eq('assigned_to', m.id),
+                                supabaseAdmin.from('call_logs').select('status, duration').eq('user_id', m.id)
+                            ]);
+                            const mLeads = leadsRes.data || [];
+                            const mCalls = callsRes.data || [];
+                            const connected = mCalls.filter((c: any) => c.status === 'CONNECTED' || (c.duration && c.duration > 0));
+                            const talkTimeMins = Math.round(connected.reduce((s: number, c: any) => s + (c.duration || 0), 0) / 60);
+                            const visits = mLeads.filter((l: any) => (l.pipeline_stage || '').toLowerCase().includes('visit')).length;
+                            const deals = mLeads.filter((l: any) => (l.pipeline_stage || '').toLowerCase().includes('deal') || (l.pipeline_stage || '').toLowerCase().includes('token')).length;
+                            const convRate = mLeads.length > 0 ? ((deals / mLeads.length) * 100).toFixed(1) : '0.0';
+
+                            return [
+                                escapeCsvValue(m.full_name || m.business_name || 'Agent'),
+                                escapeCsvValue(m.email || ''),
+                                escapeCsvValue(m.role || 'agent'),
+                                escapeCsvValue(m.contact_number || ''),
+                                escapeCsvValue(mLeads.length),
+                                escapeCsvValue(mCalls.length),
+                                escapeCsvValue(connected.length),
+                                escapeCsvValue(talkTimeMins),
+                                escapeCsvValue(visits),
+                                escapeCsvValue(deals),
+                                escapeCsvValue(`${convRate}%`)
+                            ].join(',');
+                        }));
+
+                        csvContent = [headers.join(','), ...rows].join('\n');
+                        rowsCount = rows.length;
+                    } else if (reportType === 'call_logs') {
+                        let callQ = supabaseAdmin
+                            .from('call_logs')
+                            .select('id, user_id, phone_number, call_type, status, duration, notes, started_at, created_at')
+                            .in('user_id', orgUserIds)
+                            .order('created_at', { ascending: false });
+
+                        if (startDate) callQ = callQ.gte('created_at', startDate.toISOString());
+                        const { data: calls } = await callQ.limit(2000);
+                        const allCalls = calls || [];
+
+                        const headers = ['Call ID', 'Phone Number', 'Type', 'Status', 'Duration (Secs)', 'Date & Time', 'Notes'];
+                        const rows = allCalls.map((c: any) => [
+                            escapeCsvValue(c.id),
+                            escapeCsvValue(c.phone_number),
+                            escapeCsvValue(c.call_type || 'outbound'),
+                            escapeCsvValue(c.status),
+                            escapeCsvValue(c.duration || 0),
+                            escapeCsvValue(c.created_at ? new Date(c.created_at).toLocaleString('en-IN') : ''),
+                            escapeCsvValue(c.notes || '')
+                        ].join(','));
+
+                        csvContent = [headers.join(','), ...rows].join('\n');
+                        rowsCount = rows.length;
+                    } else {
+                        let leadQ = supabaseAdmin
+                            .from('leads')
+                            .select('id, name, phone, email, pipeline_stage, source, ad_name, form_name, assigned_to, dnp_count, last_call_status, last_call_at, booked_time, notes, created_at, budget')
+                            .or(`user_id.in.(${orgUserIds.join(',')}),assigned_to.in.(${orgUserIds.join(',')})`)
+                            .order('created_at', { ascending: false });
+
+                        if (startDate) leadQ = leadQ.gte('created_at', startDate.toISOString());
+                        if (stageFilter) leadQ = leadQ.ilike('pipeline_stage', `%${stageFilter}%`);
+                        if (assignedToMemberId) leadQ = leadQ.eq('assigned_to', assignedToMemberId);
+                        if (reportType === 'hot_leads_site_visits') {
+                            leadQ = leadQ.or('pipeline_stage.ilike.%visit%,pipeline_stage.ilike.%meeting%,pipeline_stage.ilike.%deal%,pipeline_stage.ilike.%token%');
+                        } else if (reportType === 'dnp_recovery') {
+                            leadQ = leadQ.or('dnp_count.gte.1,last_call_status.eq.DNP,pipeline_stage.ilike.%dnp%');
+                        }
+
+                        let { data: leads } = await leadQ.limit(3000);
+                        if ((!leads || leads.length === 0) && startDate) {
+                            let fallbackQ = supabaseAdmin
+                                .from('leads')
+                                .select('id, name, phone, email, pipeline_stage, source, ad_name, form_name, assigned_to, dnp_count, last_call_status, last_call_at, booked_time, notes, created_at, budget')
+                                .or(`user_id.in.(${orgUserIds.join(',')}),assigned_to.in.(${orgUserIds.join(',')})`)
+                                .order('created_at', { ascending: false });
+                            if (stageFilter) fallbackQ = fallbackQ.ilike('pipeline_stage', `%${stageFilter}%`);
+                            if (assignedToMemberId) fallbackQ = fallbackQ.eq('assigned_to', assignedToMemberId);
+                            const fbRes = await fallbackQ.limit(3000);
+                            if (fbRes.data && fbRes.data.length > 0) leads = fbRes.data;
+                        }
+                        const allLeads = leads || [];
+                        const agentMap = new Map(teamMembers.map((a: any) => [a.id, a.full_name || a.business_name || a.email]));
+
+                        const headers = [
+                            'Lead ID', 'Name', 'Phone', 'Email', 'Pipeline Stage',
+                            'Assigned Agent', 'Source', 'Ad / Campaign', 'Lead Form',
+                            'Budget', 'DNP Count', 'Last Call Status', 'Last Call Time', 'Booked Visit Time',
+                            'Created Date', 'Notes'
+                        ];
+
+                        const rows = allLeads.map((l: any) => [
+                            escapeCsvValue(l.id),
+                            escapeCsvValue(l.name),
+                            escapeCsvValue(l.phone),
+                            escapeCsvValue(l.email || ''),
+                            escapeCsvValue(l.pipeline_stage || 'New'),
+                            escapeCsvValue(agentMap.get(l.assigned_to) || 'Unassigned'),
+                            escapeCsvValue(l.source || 'Direct'),
+                            escapeCsvValue(l.ad_name || ''),
+                            escapeCsvValue(l.form_name || ''),
+                            escapeCsvValue(l.budget || ''),
+                            escapeCsvValue(l.dnp_count || 0),
+                            escapeCsvValue(l.last_call_status || ''),
+                            escapeCsvValue(l.last_call_at ? new Date(l.last_call_at).toLocaleString('en-IN') : ''),
+                            escapeCsvValue(l.booked_time ? new Date(l.booked_time).toLocaleString('en-IN') : ''),
+                            escapeCsvValue(l.created_at ? new Date(l.created_at).toLocaleString('en-IN') : ''),
+                            escapeCsvValue(l.notes || '')
+                        ].join(','));
+
+                        csvContent = [headers.join(','), ...rows].join('\n');
+                        rowsCount = rows.length;
+                    }
+
+                    const baseName = customTitle || `${reportType}_${dateRange}`;
+                    const cleanFileName = `${baseName.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}.csv`;
+                    const r2Key = `reports/${userId}/${cleanFileName}`;
+
+                    await r2.send(new PutObjectCommand({
+                        Bucket: R2_BUCKET,
+                        Key: r2Key,
+                        Body: csvContent,
+                        ContentType: 'text/csv'
+                    }));
+
+                    const downloadUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+                    mediaAttachments.push({
+                        type: 'document',
+                        url: downloadUrl,
+                        filename: cleanFileName,
+                        caption: `📥 ${customTitle || reportType.replace(/_/g, ' ').toUpperCase()} (${rowsCount} records)`
+                    });
+
+                    return {
+                        success: true,
+                        downloadUrl,
+                        fileName: cleanFileName,
+                        rowsCount,
+                        message: `Report generated with ${rowsCount} records and uploaded to secure cloud storage. Downloadable file sent to WhatsApp.`
+                    };
+                } catch (err: any) {
+                    console.error('[OWNER BOT] Report generation error:', err);
+                    return { success: false, error: err.message };
+                }
+            }
+        }),
+
+        query_custom_crm_data: tool({
+            description: "Queries targeted leads with specific criteria (e.g. leads in a specific stage, leads with high DNP count, uncalled leads, or matching a search text).",
+            inputSchema: z.object({
+                stage: z.string().optional().describe("Pipeline stage name"),
+                minDnpCount: z.number().optional().describe("Minimum DNP count e.g. 2"),
+                callingStatus: z.enum(['all', 'not_called', 'called', 'failed', 'connected']).default('all'),
+                searchQuery: z.string().optional().describe("Search across name, phone, notes, or project"),
+                limit: z.number().default(15)
+            }),
+            execute: async ({ stage, minDnpCount, callingStatus, searchQuery, limit }) => {
+                let q = supabaseAdmin
+                    .from('leads')
+                    .select('id, name, phone, email, pipeline_stage, voice_call_status, dnp_count, last_call_status, assigned_to, notes, created_at')
+                    .in('user_id', orgUserIds)
+                    .order('created_at', { ascending: false });
+
+                if (stage) q = q.ilike('pipeline_stage', `%${stage}%`);
+                if (minDnpCount !== undefined && minDnpCount > 0) q = q.gte('dnp_count', minDnpCount);
+                if (callingStatus && callingStatus !== 'all') {
+                    if (callingStatus === 'not_called') q = q.or('voice_call_status.is.null,voice_call_status.eq.not_called');
+                    else if (callingStatus === 'called') q = q.eq('voice_call_status', 'called');
+                    else if (callingStatus === 'failed') q = q.in('last_call_status', ['DNP', 'FAILED', 'BUSY', 'NOT_CONNECTED']);
+                    else if (callingStatus === 'connected') q = q.eq('last_call_status', 'CONNECTED');
+                }
+                if (searchQuery) {
+                    const sq = searchQuery.trim();
+                    q = q.or(`name.ilike.%${sq}%,phone.ilike.%${sq}%,notes.ilike.%${sq}%`);
+                }
+
+                const { data: matched } = await q.limit(limit);
+                return {
+                    matchedCount: (matched || []).length,
+                    leads: (matched || []).map((l: any) => ({
+                        id: l.id,
+                        name: l.name,
+                        phone: l.phone,
+                        stage: l.pipeline_stage,
+                        dnpCount: l.dnp_count || 0,
+                        lastCallStatus: l.last_call_status || 'N/A',
+                        notesSnippet: (l.notes || '').replace(/\s+/g, ' ').slice(0, 100)
+                    }))
+                };
+            }
+        }),
+
         // --- 1. TEAM MEMBERS & STAFF MANAGEMENT ---
         list_team_members: tool({
             description: "Lists all registered team members (agents, admins) under this workspace with their roles, contact details, and assigned lead counts.",
@@ -176,7 +732,7 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
                 const { data: members } = await supabaseAdmin
                     .from('profiles')
                     .select('id, full_name, business_name, email, role, contact_number, created_at')
-                    .or(`parent_id.eq.${userId},agency_id.eq.${userId}`)
+                    .or(`id.eq.${orgOwnerId},parent_id.eq.${orgOwnerId},agency_id.eq.${orgOwnerId}`)
                     .order('created_at', { ascending: false });
 
                 if (!members || members.length === 0) {
@@ -1156,7 +1712,7 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
             model: getLLMModel(),
             system: systemPrompt,
             prompt: promptText,
-            stopWhen: stepCountIs(6),
+            stopWhen: stepCountIs(10),
             tools
         });
     } catch (llmErr: any) {
@@ -1165,13 +1721,19 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
             model: google('gemini-2.5-flash'),
             system: systemPrompt,
             prompt: promptText,
-            stopWhen: stepCountIs(6),
+            stopWhen: stepCountIs(10),
             tools
         });
     }
 
     const finalText = (result?.text || '').trim();
-    return finalText || "I have processed your request and updated the records. Please let me know if you need specific details or actions.";
+    const fallbackText = "I have processed your request and crunched the organization metrics. Please let me know if you would like more detailed breakdowns or downloadable exports.";
+    const responsePayload: OwnerBotResponse = {
+        text: finalText || fallbackText,
+        mediaAttachments
+    };
+    (responsePayload as any).toString = () => responsePayload.text;
+    return responsePayload;
 }
 
 /**

@@ -160,12 +160,11 @@ export async function GET(req: Request) {
             kycType,
             kycData,
             credits: profile?.credits || 0,
+            default_calling_language: profile?.default_calling_language || biKyc?.default_calling_language || 'hinglish',
+            voice_provider: profile?.voice_provider || 'gemini',
+            voice_name: profile?.voice_name || 'Aoede',
             hasClaimedVobizNumber: !!vobizNumber,
             claimedNumbers: Array.from(claimedNumbersSet),
-            missed_call_textback_enabled: (profile as any)?.missed_call_textback_enabled ?? biKyc?.missed_call_textback_enabled ?? false,
-            missed_call_platform: (profile as any)?.missed_call_platform || biKyc?.missed_call_platform || 'twilio',
-            missed_call_flow_type: (profile as any)?.missed_call_flow_type || biKyc?.missed_call_flow_type || 'booking_link',
-            missed_call_custom_template: (profile as any)?.missed_call_custom_template || biKyc?.missed_call_custom_template || ''
         })
     } catch (e: any) {
         return NextResponse.json({ error: e.message || 'Internal Server Error' }, { status: 500 })
@@ -199,13 +198,10 @@ export async function POST(req: Request) {
             auto_call_new_leads,
             voice_provider,
             voice_name,
+            default_calling_language,
             voice_twilio_sid,
             voice_twilio_token,
             voice_twilio_number,
-            missed_call_textback_enabled,
-            missed_call_platform,
-            missed_call_flow_type,
-            missed_call_custom_template
         } = body
 
         // Fetch current profile to merge business_info safely
@@ -228,26 +224,18 @@ export async function POST(req: Request) {
             }
         }
 
-        // Store provider in business_info JSON
+        // Store provider and default language in business_info JSON
         if (telephonyProvider) {
             bi.voice_telephony_provider = telephonyProvider
         }
-
-        // Store missed call settings in business_info JSON as well
-        if (missed_call_textback_enabled !== undefined) bi.missed_call_textback_enabled = !!missed_call_textback_enabled
-        if (missed_call_platform !== undefined) bi.missed_call_platform = missed_call_platform
-        if (missed_call_flow_type !== undefined) bi.missed_call_flow_type = missed_call_flow_type
-        if (missed_call_custom_template !== undefined) bi.missed_call_custom_template = missed_call_custom_template
+        if (default_calling_language) {
+            bi.default_calling_language = default_calling_language
+        }
 
         const updatePayload: any = {
             auto_call_new_leads: !!auto_call_new_leads,
             business_info: JSON.stringify(bi)
         }
-
-        if (missed_call_textback_enabled !== undefined) updatePayload.missed_call_textback_enabled = !!missed_call_textback_enabled
-        if (missed_call_platform !== undefined) updatePayload.missed_call_platform = missed_call_platform
-        if (missed_call_flow_type !== undefined) updatePayload.missed_call_flow_type = missed_call_flow_type
-        if (missed_call_custom_template !== undefined) updatePayload.missed_call_custom_template = missed_call_custom_template
 
         if (voice_provider) updatePayload.voice_provider = voice_provider
         if (voice_name) updatePayload.voice_name = voice_name

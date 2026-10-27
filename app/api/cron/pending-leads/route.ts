@@ -93,7 +93,7 @@ async function handlePendingLeads(request: Request) {
         .from('leads')
         .select('id')
         .eq('assigned_to', userId)
-        .eq('pipeline_stage', 'New')
+        .in('pipeline_stage', ['New', 'New Lead', 'new'])
 
       let totalNew = assignedLeads?.length || 0;
       let unassignedCount = 0;
@@ -106,7 +106,7 @@ async function handlePendingLeads(request: Request) {
           .select('id')
           .eq('user_id', userId)
           .is('assigned_to', null)
-          .eq('pipeline_stage', 'New')
+          .in('pipeline_stage', ['New', 'New Lead', 'new'])
 
         unassignedCount = unassignedLeads?.length || 0;
         totalNew += unassignedCount;

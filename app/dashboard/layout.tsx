@@ -18,7 +18,7 @@ function ImpersonationBanner() {
     if (!impersonateId) return null
 
     const handleExit = () => {
-        router.push(pathname) // Push the same path without query params
+        window.location.href = pathname // Full reload without query params to clean up state
     }
 
     return (
@@ -57,12 +57,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Check user's profile
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms, is_disabled, client_features')
+        .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms, client_features')
         .eq('id', session.user.id)
         .single()
 
       // Check if user account is disabled by admin
-      const isAccountDisabled = userProfile?.is_disabled === true || session.user.user_metadata?.is_disabled === true
+      const isAccountDisabled = session.user.user_metadata?.is_disabled === true
       if (isAccountDisabled) {
         await supabase.auth.signOut()
         router.push('/login?disabled=true')

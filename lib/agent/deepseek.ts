@@ -15,7 +15,6 @@ export function getDeepseekProvider() {
       name: 'deepseek',
       baseURL: 'https://api.deepseek.com',
       apiKey: key,
-      compatibility: 'compatible',
     });
   }
   return cachedProvider;

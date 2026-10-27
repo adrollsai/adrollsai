@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendPushNotification } from '@/utils/notification-helper'
+import { sendPushNotification, sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 
 // Admin client — webhooks have no user session
@@ -334,6 +334,7 @@ export async function POST(
                 status: 'New Lead',
                 notes: combinedNotes,
                 custom_fields: updatedCustomFields,
+                created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             }
             if (!existingLeadToReopen.ad_name) {
@@ -349,8 +350,33 @@ export async function POST(
                 lead_id: existingLeadToReopen.id,
                 user_id: assignedAgentId || profile.id,
                 action_type: 'REOPENED',
-                description: `Lead re-enquired via Housing.com.\nSource Details: ${sourceDetail}\nReset to New Lead.`
+                description: `Lead re-enquired via Housing.com.\nSource Details: ${sourceDetail}\nReset to New Lead.`,
+                created_at: new Date().toISOString()
             })
+
+            // Send multi-channel notification for reopened lead
+            try {
+                await sendAdminMultiChannelNotification({
+                    ownerUserId: profile.id,
+                    title: "🔄 Housing.com Lead Reopened!",
+                    body: `Lead: ${name || existingLeadToReopen.name}\nPhone: ${phone || 'N/A'}\nSource: ${sourceDetail}`,
+                    url: `/dashboard/crm/${existingLeadToReopen.id}`,
+                    type: 'new_lead'
+                }).catch(() => {});
+
+                const agentId = assignedAgentId || existingLeadToReopen.assigned_to;
+                if (agentId && agentId !== profile.id) {
+                    await sendAdminMultiChannelNotification({
+                        ownerUserId: agentId,
+                        title: "🔄 Reopened Housing.com Lead Assigned to You!",
+                        body: `Lead: ${name || existingLeadToReopen.name}\nPhone: ${phone || 'N/A'}\nSource: ${sourceDetail}`,
+                        url: `/dashboard/crm/${existingLeadToReopen.id}`,
+                        type: 'new_lead'
+                    }).catch(() => {});
+                }
+            } catch (notifErr) {
+                console.error('[Housing Webhook] Multi-channel notification failed for reopen:', notifErr);
+            }
 
             actionMessage = 'Existing lead reopened into Fresh pipeline from Housing.com.'
         } else {

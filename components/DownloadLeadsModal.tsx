@@ -949,8 +949,12 @@ export default function DownloadLeadsModal({
               return `"=""${cleanPhone.replace(/"/g, '""')}"""`
             }
 
-            // Standard CSV cell formatting with escaped quotes
-            return `"${strVal.replace(/"/g, '""')}"`
+            // Standard CSV cell formatting with escaped quotes and formula injection protection
+            let safeVal = strVal
+            if (/^[=+\-@\t\r]/.test(safeVal)) {
+              safeVal = "'" + safeVal
+            }
+            return `"${safeVal.replace(/"/g, '""')}"`
           })
           .join(',')
       })

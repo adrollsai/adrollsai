@@ -44,12 +44,10 @@ async function getTargetUserId(request: Request) {
       if (callerProfile?.role === 'super_admin' || callerProfile?.role === 'agency' || callerProfile?.role === 'admin' || user.id === impersonateId) {
         targetId = impersonateId
       }
-    } else {
-      targetId = impersonateId
     }
   }
 
-  return targetId || null
+  return user ? targetId : null
 }
 
 // GET: List notifications & unread count

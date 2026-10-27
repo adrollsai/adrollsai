@@ -60,9 +60,12 @@ NATURAL CONVERSATION FLOW:
 
 - Handling Other Scenarios:
   - If prospect says "Send details on WhatsApp":
-    "Bilkul sir, main WhatsApp par inventory sheet aur details share karwa deti hoon. Aap check kar lijiye. Thank you, have a great day!" -> Trigger end_call.
+    "Ji bilkul sir, main hamare senior relationship manager ko bol deti hoon, woh aapse directly connect karke saari details share kar denge. Thank you, have a great day!" -> Trigger end_call immediately.
   - If prospect says "Not interested / wrong number":
-    "Koi baat nahi sir, thank you for your time. Have a wonderful day!" -> Trigger end_call immediately.`;
+    "Koi baat nahi sir, thank you for your time. Have a wonderful day!" -> Trigger end_call immediately.
+
+STRICT RULE:
+- NEVER say "main WhatsApp par bhej doongi" or promise that you or an automated system will send anything on WhatsApp. Always state that a senior relationship manager will connect with them directly.`;
 
 async function main() {
   console.log('1. Updating campaign prompt with appointment-focused script...');

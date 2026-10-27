@@ -323,16 +323,51 @@ export async function GET(req: Request) {
 
         const teamData = rawTeamMembers.map(member => {
             const memberLeads = finalLeads.filter(l => l.assigned_to === member.id || l.user_id === member.id)
-            const wonLeads = memberLeads.filter(l => ['Won', 'Closed', 'Appointment done', 'Deal/Token'].includes(l.pipeline_stage) || ['Won', 'Closed', 'Appointment done', 'Deal/Token'].includes(l.status)).length
-            const qualifiedLeads = memberLeads.filter(l => ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won', 'Negotiation', 'Visit Done'].includes(l.pipeline_stage) || ['Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Won', 'Negotiation', 'Visit Done'].includes(l.status)).length
-            const lostLeads = memberLeads.filter(l => ['Lost', 'Unqualified', 'Lost/NI', 'Different Requirement'].includes(l.pipeline_stage) || ['Lost', 'Unqualified', 'Lost/NI', 'Different Requirement'].includes(l.status)).length
+            const getStage = (l: any) => ((l.pipeline_stage || l.status || '') as string).toLowerCase().trim()
+            const wonLeads = memberLeads.filter(l => {
+              const s = getStage(l)
+              return s === 'won' || s === 'closed' || s === 'already purchased' || s === 'deal/token' || s === 'deal / token paid'
+            }).length
+
+            const qualifiedLeads = memberLeads.filter(l => {
+              const s = getStage(l)
+              return s.includes('qualif') || s.includes('requirement') || s.includes('planned') || s.includes('scheduled') || s.includes('visit') || s.includes('meeting') || s.includes('negotiat') || s.includes('deal') || s === 'won' || s === 'closed'
+            }).length
+
+            const lostLeads = memberLeads.filter(l => {
+              const s = getStage(l)
+              return s.includes('lost') || s.includes('not interested') || s.includes('unqualified') || s.includes('junk') || s.includes('dealer') || s.includes('postponed') || s.includes('never picked') || s.includes('different requirement')
+            }).length
             
-            const reqTakenCount = memberLeads.filter(l => l.status === 'Requirement Taken' || l.pipeline_stage === 'Contacted').length
-            const visitPlannedCount = memberLeads.filter(l => l.status === 'Visit Planned' || l.pipeline_stage === 'Appointment booked').length
-            const visitDoneCount = memberLeads.filter(l => l.status === 'Visit Done' || l.pipeline_stage === 'Appointment done').length
-            const revisitDoneCount = memberLeads.filter(l => l.status === 'Revisit Done').length
-            const negotiationCount = memberLeads.filter(l => l.status === 'Negotiation' || l.pipeline_stage === 'Qualified').length
-            const dealTokenCount = memberLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
+            const reqTakenCount = memberLeads.filter(l => {
+              const s = getStage(l)
+              return s === 'requirement taken' || s === 'contacted' || s.includes('requirement')
+            }).length
+
+            const visitPlannedCount = memberLeads.filter(l => {
+              const s = getStage(l)
+              return s.includes('planned') || s.includes('scheduled') || s === 'appointment booked'
+            }).length
+
+            const visitDoneCount = memberLeads.filter(l => {
+              const s = getStage(l)
+              return s === 'visit done' || s === 'site visit done' || s === 'appointment done' || s === 'meeting done' || s === 'visited'
+            }).length
+
+            const revisitDoneCount = memberLeads.filter(l => {
+              const s = getStage(l)
+              return s === 'revisit done' || s === 're-visit done' || s === 'revisit'
+            }).length
+
+            const negotiationCount = memberLeads.filter(l => {
+              const s = getStage(l)
+              return s === 'negotiation' || s.includes('negotiat') || s.includes('proposal')
+            }).length
+
+            const dealTokenCount = memberLeads.filter(l => {
+              const s = getStage(l)
+              return s === 'deal/token' || s === 'deal / token paid' || s === 'token paid' || s === 'token'
+            }).length
 
             const memberHistory = safeHistoryLogs.filter(h => h.user_id === member.id)
             const memberCallCount = memberHistory.filter(isActualCallAction).length

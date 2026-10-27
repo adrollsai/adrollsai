@@ -240,7 +240,26 @@ export async function POST(req: Request) {
         emailSubject: `📞 Callback Requested: ${leadName} at ${formattedCbDate}`
       });
 
-      console.log(`[POST-CALL NOTIFY] Callback requested for lead ${leadId} at ${formattedCbDate}. Alert dispatched.`);
+      if (lead.assigned_to && lead.assigned_to !== ownerUserId) {
+        try {
+          await sendAdminMultiChannelNotification({
+            ownerUserId: lead.assigned_to,
+            title: `📞 Callback Requested: ${leadName}`,
+            body: `Assigned prospect ${leadName} requested a callback at ${formattedCbDate} regarding ${propertyLabel}.\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n⏰ Callback Time: ${formattedCbDate}\n📝 Call Summary: ${summary}`,
+            url: `/dashboard/crm/${leadId}`,
+            type: 'crm_reminder',
+            leadPhone,
+            leadName,
+            leadId,
+            emailSubject: `📞 Callback Requested for Assigned Lead: ${leadName} at ${formattedCbDate}`
+          });
+          console.log(`[POST-CALL NOTIFY] Sent Callback alert to assigned agent ${lead.assigned_to}`);
+        } catch (agentErr: any) {
+          console.warn(`[POST-CALL NOTIFY] Error notifying assigned agent for callback:`, agentErr.message);
+        }
+      }
+
+      console.log(`[POST-CALL NOTIFY] Callback requested for lead ${leadId} at ${formattedCbDate}. Alert dispatched to admin and assigned agent.`);
       return NextResponse.json({
         success: true,
         action: 'callback_noted',

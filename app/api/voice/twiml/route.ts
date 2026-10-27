@@ -100,19 +100,6 @@ export async function POST(req: Request) {
                 .eq('id', leadId)
                 .single();
 
-            if (profileId && leadData?.phone) {
-                import('@/utils/missed-call-textback').then(({ triggerMissedCallTextBack }) => {
-                    triggerMissedCallTextBack({
-                        supabaseAdmin,
-                        leadId,
-                        profileId,
-                        callerPhone: leadData.phone,
-                        callerName: leadData.name,
-                        reason: `Voicemail/Machine (${answeredBy})`
-                    }).catch(e => console.warn('[TWIML BRIDGE] Missed call textback error:', e))
-                }).catch(() => {})
-            }
-
             const currentRetries = leadData?.voice_call_retry_count || 0;
             if (currentRetries < 3) {
                 const nextRetryCount = currentRetries + 1;

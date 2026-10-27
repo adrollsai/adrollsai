@@ -53,6 +53,10 @@
     {
       "path": "/api/cron/agent-events",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/voice-caller",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

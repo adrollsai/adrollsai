@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendPushNotification } from '@/utils/notification-helper'
+import { sendPushNotification, sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 
 // Admin client — webhooks have no user session
@@ -317,47 +317,64 @@ export async function POST(
                 last_reopened_at: new Date().toISOString()
             };
 
+            cf = {
+                ...cf,
+                pipeline_stage: 'New Lead',
+                status: 'New Lead',
+                lead_status: 'New Lead',
+                client_status: 'New Lead',
+                next_action_date: null,
+                next_action_time: null,
+                next_action_type: null,
+                next_action_remark: null
+            };
+
             await supabaseAdmin
                 .from('leads')
                 .update({
                     custom_fields: cf,
                     pipeline_stage: 'New Lead',
                     status: 'New Lead',
+                    next_followup: null,
                     budget: budget ? (typeof budget === 'string' ? budget : String(budget)) : undefined,
+                    created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                 })
                 .eq('id', existingLeadToReopen.id);
 
             const sourceLabel = projectName ? `99acres - ${projectName}` : '99acres';
-            const reopenDesc = `The lead was reopened from 99acres Inquiry\nLead Name : ${name || existingLeadToReopen.name}\nContact no : ${phone}\nEmail : ${email || existingLeadToReopen.email || 'N/A'}\nLead Source : ${sourceLabel}\nProject : ${projectName || 'N/A'}\nBudget : ${budget || 'N/A'}\nMessage : ${message || 'N/A'}\nLead Status : ${existingLeadToReopen.pipeline_stage || 'New'}`;
+            const reopenDesc = `The lead was reopened from 99acres Inquiry\nLead Name : ${name || existingLeadToReopen.name}\nContact no : ${phone}\nEmail : ${email || existingLeadToReopen.email || 'N/A'}\nLead Source : ${sourceLabel}\nProject : ${projectName || 'N/A'}\nBudget : ${budget || 'N/A'}\nMessage : ${message || 'N/A'}\nReopened Count : ${reopenedCount}\nPrevious Stage : ${existingLeadToReopen.pipeline_stage || existingLeadToReopen.status || 'New Lead'}\nCurrent Stage : Fresh (New Lead)`;
 
             await supabaseAdmin.from('lead_history').insert({
                 lead_id: existingLeadToReopen.id,
+                user_id: existingLeadToReopen.assigned_to || assignedAgentId || profile.id,
                 action_type: 'REOPENED',
-                performed_by: 'System / 99acres',
-                actor_name: '99acres Portal',
                 description: reopenDesc,
-                details: {
-                    source: sourceLabel,
-                    project_name: projectName,
-                    budget,
-                    message,
-                    reopened_count: reopenedCount,
-                    timestamp: new Date().toISOString()
-                },
                 created_at: new Date().toISOString()
             });
 
-            // Send notification for reopened lead
+            // Send multi-channel notification for reopened lead to admin and assigned agent
             try {
-                await sendPushNotification(
-                    existingLeadToReopen.assigned_to || assignedAgentId || profile.id,
-                    "🔄 99acres Lead Reopened!",
-                    `${name || existingLeadToReopen.name} • ${phone} • ${projectName || city || '99acres'} (Reopened #${reopenedCount})`,
-                    `/dashboard/crm/${existingLeadToReopen.id}`
-                );
+                await sendAdminMultiChannelNotification({
+                    ownerUserId: profile.id,
+                    title: "🔄 99acres Lead Reopened!",
+                    body: `Lead: ${name || existingLeadToReopen.name}\nPhone: ${phone}\nProject: ${projectName || '99acres'}\nReopened Count: ${reopenedCount}`,
+                    url: `/dashboard/crm/${existingLeadToReopen.id}`,
+                    type: 'new_lead'
+                }).catch(() => {});
+
+                const assignedAgent = existingLeadToReopen.assigned_to || assignedAgentId;
+                if (assignedAgent && assignedAgent !== profile.id) {
+                    await sendAdminMultiChannelNotification({
+                        ownerUserId: assignedAgent,
+                        title: "🔄 Reopened 99acres Lead Assigned to You!",
+                        body: `Lead: ${name || existingLeadToReopen.name}\nPhone: ${phone}\nProject: ${projectName || '99acres'}`,
+                        url: `/dashboard/crm/${existingLeadToReopen.id}`,
+                        type: 'new_lead'
+                    }).catch(() => {});
+                }
             } catch (notifErr) {
-                console.error('[99acres Webhook] Push notification failed for reopen:', notifErr);
+                console.error('[99acres Webhook] Multi-channel notification failed for reopen:', notifErr);
             }
 
             return NextResponse.json({ success: true, message: 'Lead reopened successfully', leadId: existingLeadToReopen.id }, { status: 200 });

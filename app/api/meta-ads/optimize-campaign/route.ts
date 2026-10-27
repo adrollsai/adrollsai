@@ -293,7 +293,7 @@ export async function POST(request: Request) {
             for (let i = 0; i < requestedVariations.length; i++) {
                 const variant = requestedVariations[i];
                 const modelToUse = 'image-2.0';
-                const aspectRatio = '4:5';
+                const aspectRatio = '3:4';
                 
                 const cookieHeader = request.headers.get('cookie') || '';
                 

@@ -177,26 +177,30 @@ function getLeadNextActionTime(lead: any): number {
 
 function parseActionDate(text?: string, fallbackCreatedAt?: string): Date | null {
   if (text) {
-    // 1. Bracket notes format: [Followup (Call) - 31/8/2026, 12:10:24 pm] or [Call Not Picked - DNP (31/8/2026...)] or [Remark - 31/8/2026...]
-    const bracketMatch = text.match(/\[(?:📝[^-\]]*|⚠️[^-\]]*)\s*-\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
-    if (bracketMatch) {
-      const day = parseInt(bracketMatch[1], 10)
-      const month = parseInt(bracketMatch[2], 10) - 1
-      let year = parseInt(bracketMatch[3], 10)
+    // 1. Bracket notes format e.g. [Followup (Call) - 31/8/2026, 12:10:24 pm] or [Call Not Picked - DNP (31/8/2026, 12:10:24 pm)...] or [Remark - 31/8/2026...]
+    const dateMatch = text.match(/([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})(?:,?\s*([0-9]{1,2}):([0-9]{2})(?::([0-9]{2}))?\s*(am|pm)?)?/i)
+    if (dateMatch) {
+      const day = parseInt(dateMatch[1], 10)
+      const month = parseInt(dateMatch[2], 10) - 1
+      let year = parseInt(dateMatch[3], 10)
       if (year < 100) year += 2000
-      const d = new Date(year, month, day)
-      if (!isNaN(d.getTime())) return d
-    }
+      let hour = dateMatch[4] ? parseInt(dateMatch[4], 10) : 0
+      const min = dateMatch[5] ? parseInt(dateMatch[5], 10) : 0
+      const sec = dateMatch[6] ? parseInt(dateMatch[6], 10) : 0
+      const ampm = dateMatch[7] ? dateMatch[7].toLowerCase() : null
+      if (ampm === 'pm' && hour < 12) hour += 12
+      if (ampm === 'am' && hour === 12) hour = 0
 
-    // 2. Workveu historical logs: 'Call on 30/07/2026' or 'Call Not Picked on 30/07/2026' or 'Follow up Date: 30/07/2026'
-    const workveuMatch = text.match(/(?:Call on|Call Not Picked on|Follow up Date\s*:)\s*([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})/i)
-    if (workveuMatch) {
-      const day = parseInt(workveuMatch[1], 10)
-      const month = parseInt(workveuMatch[2], 10) - 1
-      let year = parseInt(workveuMatch[3], 10)
-      if (year < 100) year += 2000
-      const d = new Date(year, month, day)
-      if (!isNaN(d.getTime())) return d
+      // CRM bracket notes and action logs are stamped in Indian Standard Time (UTC+05:30)
+      if (dateMatch[4]) {
+        const utcMs = Date.UTC(year, month, day, hour, min, sec) - (5.5 * 3600 * 1000)
+        const d = new Date(utcMs)
+        if (!isNaN(d.getTime())) return d
+      } else {
+        const utcMs = Date.UTC(year, month, day, 0, 0, 0) - (5.5 * 3600 * 1000)
+        const d = new Date(utcMs)
+        if (!isNaN(d.getTime())) return d
+      }
     }
   }
 
@@ -641,9 +645,9 @@ export default function AnalyticsPage() {
         setLoading(false)
       }
 
-      // Step 2: Fetch remaining lead pages in parallel
+      // Step 2: Fetch remaining lead pages in parallel (capped to max 5,000 leads to prevent browser freeze)
       if (totalCount > 1000) {
-        const remainingPages = Math.ceil(totalCount / 1000) - 1
+        const remainingPages = Math.min(Math.ceil(totalCount / 1000) - 1, 4)
         const batchPromises = Array.from({ length: remainingPages }, (_, i) => {
           const pageIdx = i + 1
           return filterFn(supabase.from('leads').select(leadFields))
@@ -1021,12 +1025,27 @@ export default function AnalyticsPage() {
       ? totalServerCount 
       : filteredLeads.length
 
-    const wonLeads = filteredLeads.filter(l => l.pipeline_stage === 'Won' || l.pipeline_stage === 'Closed').length
-    const lostLeads = filteredLeads.filter(l => l.pipeline_stage === 'Lost' || l.pipeline_stage === 'Unqualified').length
-    const inProgress = totalLeads - wonLeads - lostLeads
+    const wonLeads = filteredLeads.filter(l => {
+      const s1 = (l.pipeline_stage || '').trim().toLowerCase()
+      const s2 = (l.status || '').trim().toLowerCase()
+      return s1 === 'won' || s1 === 'closed' || s1 === 'deal/token' || s2 === 'won' || s2 === 'closed' || s2 === 'deal/token'
+    }).length
+    const lostLeads = filteredLeads.filter(l => {
+      const s1 = (l.pipeline_stage || '').trim().toLowerCase()
+      const s2 = (l.status || '').trim().toLowerCase()
+      return s1 === 'lost' || s1 === 'unqualified' || s1 === 'lost/ni' || s2 === 'lost' || s2 === 'unqualified' || s2 === 'lost/ni'
+    }).length
+    const inProgress = Math.max(0, totalLeads - wonLeads - lostLeads)
     const conversionRate = totalLeads > 0 ? ((wonLeads / totalLeads) * 100).toFixed(1) : '0.0'
 
-    const totalCalls = filteredLeads.filter(l => l.last_call_at || l.last_call_status).length
+    const callLeadsList = filteredLeads.filter(l => {
+      let cf = l.custom_fields
+      if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+      const fType = (cf?.last_followup_type || l.last_followup_type || '').toLowerCase()
+      const isManualCall = fType.includes('call') || (l.notes && (l.notes.includes('[📝 Followup (Call)') || l.notes.includes('[⚠️ Call Not Picked')))
+      return Boolean(l.last_call_at || l.last_call_status || isManualCall || l.dnp_count > 0 || cf?.dnp_count > 0 || cf?.last_call_dnp === true)
+    })
+    const totalCalls = callLeadsList.length
     
     // Accurate DNP calculation: when date filter is active, count leads with an actual DNP logged during this duration
     const dnpLeadsList = isFilteredByDate
@@ -1162,8 +1181,10 @@ export default function AnalyticsPage() {
         }),
         meeting_done: repLeads.filter(l => l.status === 'Meeting Done' || l.pipeline_stage === 'Meeting Done'),
         dnp: repLeads.filter(l => {
+          let cf = l.custom_fields
+          if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
           const st = (l.pipeline_stage || l.status || '').toLowerCase()
-          return st === 'never picked' || st === 'never_picked'
+          return st === 'never picked' || st === 'never_picked' || st.includes('dnp') || cf?.last_call_dnp === true || (l.dnp_count > 0) || (cf?.dnp_count > 0)
         }),
         total: repLeads
       }
@@ -1271,7 +1292,12 @@ export default function AnalyticsPage() {
       total: rows.reduce((a, b) => a + b.total, 0)
     }
 
-    const totalUntouchedLeads = leads.filter(l => !l.last_call_at && (!l.dnp_count || l.dnp_count === 0))
+    const totalUntouchedLeads = leads.filter(l => {
+      const stage = (l.pipeline_stage || l.status || '').trim().toLowerCase()
+      const isFresh = ['new', 'new lead', 'fresh', 'uncontacted', 'unprocessed'].includes(stage) || !stage
+      const hasContact = !!(l.last_call_at || l.last_call_status || l.custom_fields?.last_followup_at || l.custom_fields?.last_action_date || (l.dnp_count > 0))
+      return isFresh && !hasContact
+    })
     const totalDnpLeads = leads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0))
 
     return { 
@@ -1470,8 +1496,8 @@ export default function AnalyticsPage() {
       const repLeads = leads.filter(l => isLeadAssignedToRep(l, rep.id))
       const repLeadIds = new Set(repLeads.map(l => l.id))
 
-      // Count call attempts from history for this rep's leads
-      const repHistory = history.filter(h => h.user_id === rep.id || repLeadIds.has(h.lead_id))
+      // Count call attempts from history for this rep's leads in range
+      const repHistory = history.filter(h => (h.user_id === rep.id || repLeadIds.has(h.lead_id)) && dateCutoffs.isDateInRange(h.created_at))
       const totalFollowups = repHistory.filter(isActualCallAction).length
 
       const closingMeetings = repLeads.filter(l => {
@@ -1610,7 +1636,7 @@ export default function AnalyticsPage() {
     const { startCutoff, endCutoff, isDateInRange } = dateCutoffs
 
     const ACTION_TYPES = [
-      { key: 'calls', label: 'Call Attempts', icon: '📞', color: 'blue' },
+      { key: 'calls', label: 'Connected Calls', icon: '📞', color: 'blue' },
       { key: 'dnp', label: 'DNP (Did Not Pick)', icon: '📵', color: 'rose' },
       { key: 'visits', label: 'Visits', icon: '🏠', color: 'purple' },
       { key: 'revisits', label: 'Re-visits', icon: '🔄', color: 'violet' },
@@ -1662,30 +1688,37 @@ export default function AnalyticsPage() {
 
     const repActionCounts: Record<string, Record<string, number>> = {}
     const repActionLeadIds: Record<string, Record<string, Set<string>>> = {}
-    const seenActionKeys = new Set<string>()
+    // Per-lead recorded action events: Map<leadId, Array<{ cat: string, time: number }>>
+    const leadRecordedEvents = new Map<string, Array<{ cat: string, time: number }>>()
 
     allSalesReps.forEach(r => {
       repActionCounts[r.id] = { calls: 0, dnp: 0, visits: 0, revisits: 0, closing_meetings: 0, home_meetings: 0, whatsapp: 0 }
       repActionLeadIds[r.id] = { calls: new Set(), dnp: new Set(), visits: new Set(), revisits: new Set(), closing_meetings: new Set(), home_meetings: new Set(), whatsapp: new Set() }
     })
 
+    const recordAction = (repId: string | null | undefined, leadId: string | null | undefined, cat: string, date: Date | null) => {
+      if (!repId || !cat || !date || !isDateInRange(date)) return
+      if (!repActionCounts[repId]) return
+
+      const time = date.getTime()
+      if (leadId) {
+        const existing = leadRecordedEvents.get(leadId) || []
+        // Deduplicate: same category on the same lead within 30 minutes is the same event logged across notes/custom_fields/history
+        if (existing.some(e => e.cat === cat && Math.abs(e.time - time) < 30 * 60 * 1000)) return
+        existing.push({ cat, time })
+        leadRecordedEvents.set(leadId, existing)
+      }
+
+      repActionCounts[repId][cat]++
+      if (leadId) repActionLeadIds[repId][cat].add(leadId)
+    }
+
     // 1. Process History Entries
     history.forEach(h => {
       const cat = classifyAction(h)
       if (!cat) return
       const effectiveDate = parseActionDate(h.description, h.created_at)
-      if (!isDateInRange(effectiveDate)) return
-
-      const targetRepId = h.user_id
-      if (targetRepId && repActionCounts[targetRepId]) {
-        const dateKey = effectiveDate ? effectiveDate.toISOString().slice(0, 13) : h.id
-        const dedupKey = `${h.lead_id || h.id}_${cat}_${dateKey}`
-        if (!seenActionKeys.has(dedupKey)) {
-          seenActionKeys.add(dedupKey)
-          repActionCounts[targetRepId][cat]++
-          if (h.lead_id) repActionLeadIds[targetRepId][cat].add(h.lead_id)
-        }
-      }
+      recordAction(h.user_id, h.lead_id, cat, effectiveDate)
     })
 
     // 2. Process Lead Notes Blocks
@@ -1735,15 +1768,7 @@ export default function AnalyticsPage() {
             else cat = 'calls'
           }
 
-          if (repActionCounts[matchedRep.id]) {
-            const dateKey = effectiveDate.toISOString().slice(0, 13)
-            const dedupKey = `${l.id}_${cat}_${dateKey}`
-            if (!seenActionKeys.has(dedupKey)) {
-              seenActionKeys.add(dedupKey)
-              repActionCounts[matchedRep.id][cat]++
-              repActionLeadIds[matchedRep.id][cat].add(l.id)
-            }
-          }
+          recordAction(matchedRep.id, l.id, cat, effectiveDate)
         })
       }
 
@@ -1774,22 +1799,14 @@ export default function AnalyticsPage() {
           else if (fType === 'whatsapp') cat = 'whatsapp'
           else cat = 'calls'
 
-          if (repActionCounts[matchedRep.id]) {
-            const dateKey = fDate.toISOString().slice(0, 13)
-            const dedupKey = `${l.id}_${cat}_${dateKey}`
-            if (!seenActionKeys.has(dedupKey)) {
-              seenActionKeys.add(dedupKey)
-              repActionCounts[matchedRep.id][cat]++
-              repActionLeadIds[matchedRep.id][cat].add(l.id)
-            }
-          }
+          recordAction(matchedRep.id, l.id, cat, fDate)
         })
       }
 
       // 4. Process Lead Level Last Followup
       if (cf?.last_followup_at && isDateInRange(cf.last_followup_at)) {
         const repId = l.assigned_to
-        if (repId && repActionCounts[repId]) {
+        if (repId) {
           const lType = (cf.last_followup_type || '').toLowerCase().trim()
           let cat = 'calls'
           if (cf.last_call_dnp === true || lType.includes('dnp') || lType.includes('not picked')) cat = 'dnp'
@@ -1800,13 +1817,7 @@ export default function AnalyticsPage() {
           else if (lType === 'whatsapp') cat = 'whatsapp'
           else cat = 'calls'
 
-          const dateKey = new Date(cf.last_followup_at).toISOString().slice(0, 13)
-          const dedupKey = `${l.id}_${cat}_${dateKey}`
-          if (!seenActionKeys.has(dedupKey)) {
-            seenActionKeys.add(dedupKey)
-            repActionCounts[repId][cat]++
-            repActionLeadIds[repId][cat].add(l.id)
-          }
+          recordAction(repId, l.id, cat, new Date(cf.last_followup_at))
         }
       }
     })
@@ -2821,7 +2832,7 @@ export default function AnalyticsPage() {
                     <span className="text-slate-300 text-xs font-semibold">Filter by Date & Sales Rep</span>
                   </div>
                   <h2 className="text-xl sm:text-2xl font-black">Agent Action Attempt Analytics</h2>
-                  <p className="text-xs text-blue-200/80 mt-0.5">Track calls, site visits, meetings, and DNPs attempted by each sales rep.</p>
+                  <p className="text-xs text-blue-200/80 mt-0.5">Track connected calls, site visits, meetings, and DNPs attempted by each sales rep.</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -2836,7 +2847,7 @@ export default function AnalyticsPage() {
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-black text-slate-900">Agent Action Attempts</h3>
-                    <p className="text-xs text-slate-500">Total action attempts punched by each sales rep (calls, DNPs, visits, revisits, closing meetings, home meetings, WhatsApp) — click numbers to view leads list</p>
+                    <p className="text-xs text-slate-500">Total action attempts punched by each sales rep (connected calls, DNPs, visits, revisits, closing meetings, home meetings, WhatsApp) — click numbers to view leads list</p>
                   </div>
                   <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-xl border border-indigo-200">
                     {actionReportData.grandTotalAttempts} Total Attempts
@@ -2847,6 +2858,7 @@ export default function AnalyticsPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 px-6 py-4 border-b border-slate-100 bg-slate-50/50">
                   {actionReportData.actionTypes.map(at => {
                     const total = actionReportData.actionTotals[at.key] || 0
+                    const leadsCount = (actionReportData.actionTotalLeads[at.key] || []).length
                     const colorMap: Record<string, string> = {
                       blue: 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-600 hover:text-white',
                       rose: 'text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-600 hover:text-white',
@@ -2860,7 +2872,7 @@ export default function AnalyticsPage() {
                       <button
                         key={at.key}
                         type="button"
-                        onClick={() => total > 0 && openLeadsDrilldown(`${at.label}`, `${total} total ${at.label.toLowerCase()} across all agents`, actionReportData.actionTotalLeads[at.key] || [])}
+                        onClick={() => total > 0 && openLeadsDrilldown(`${at.label}`, `${total} total ${at.label.toLowerCase()} across ${leadsCount} leads`, actionReportData.actionTotalLeads[at.key] || [])}
                         className={`p-3 rounded-2xl border transition-all cursor-pointer text-left ${colorMap[at.color] || colorMap.blue}`}
                       >
                         <p className="text-[10px] font-black uppercase tracking-wider">{at.icon} {at.label}</p>
@@ -2870,7 +2882,7 @@ export default function AnalyticsPage() {
                   })}
                   <button
                     type="button"
-                    onClick={() => actionReportData.grandTotalAttempts > 0 && openLeadsDrilldown('All Action Attempts', `Total ${actionReportData.grandTotalAttempts} action attempts across all agents`, actionReportData.grandTotalLeads)}
+                    onClick={() => actionReportData.grandTotalAttempts > 0 && openLeadsDrilldown('All Action Attempts', `Total ${actionReportData.grandTotalAttempts} action attempts across ${actionReportData.grandTotalLeads.length} leads`, actionReportData.grandTotalLeads)}
                     className="p-3 rounded-2xl border transition-all cursor-pointer text-left text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-600 hover:text-white"
                   >
                     <p className="text-[10px] font-black uppercase tracking-wider">⚡ Total Attempts</p>
@@ -2912,6 +2924,7 @@ export default function AnalyticsPage() {
                           </td>
                           {actionReportData.actionTypes.map(at => {
                             const count = row.actionCounts[at.key] || 0
+                            const leadsCount = (row.actionLeads[at.key] || []).length
                             const actionColorMap: Record<string, string> = {
                               blue: 'bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white',
                               rose: 'bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white',
@@ -2925,7 +2938,7 @@ export default function AnalyticsPage() {
                               <td key={at.key} className="py-3.5 px-3 text-center">
                                 <button
                                   type="button"
-                                  onClick={() => count > 0 && openLeadsDrilldown(`${row.rep.name} - ${at.label}`, `${count} ${at.label.toLowerCase()} by ${row.rep.name}`, row.actionLeads[at.key] || [])}
+                                  onClick={() => count > 0 && openLeadsDrilldown(`${row.rep.name} - ${at.label}`, `${count} ${at.label.toLowerCase()} across ${leadsCount} leads by ${row.rep.name}`, row.actionLeads[at.key] || [])}
                                   className={`px-2.5 py-1 rounded-xl font-black text-xs transition-all ${count > 0 ? `${actionColorMap[at.color] || actionColorMap.blue} cursor-pointer hover:shadow-xs` : 'bg-slate-50 text-slate-300 cursor-default'}`}
                                 >
                                   {count}
@@ -2936,7 +2949,7 @@ export default function AnalyticsPage() {
                           <td className="py-3.5 px-5 text-center bg-slate-50/60">
                             <button
                               type="button"
-                              onClick={() => row.totalAttempts > 0 && openLeadsDrilldown(`${row.rep.name} - All Action Attempts`, `Total ${row.totalAttempts} action attempts by ${row.rep.name}`, row.repLeads)}
+                              onClick={() => row.totalAttempts > 0 && openLeadsDrilldown(`${row.rep.name} - All Action Attempts`, `Total ${row.totalAttempts} action attempts across ${row.repLeads.length} leads by ${row.rep.name}`, row.repLeads)}
                               className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all ${row.totalAttempts > 0 ? 'bg-slate-900 text-white hover:bg-blue-600 cursor-pointer hover:shadow-xs' : 'bg-slate-50 text-slate-300 cursor-default'}`}
                             >
                               {row.totalAttempts}

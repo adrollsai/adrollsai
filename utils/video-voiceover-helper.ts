@@ -29,13 +29,13 @@ export async function resolveVoiceoverAudio(task: any, assetId?: string | null):
         try {
             const { data: assetRow } = await supabaseAdmin
                 .from('assets')
-                .select('metadata, voiceover_url, audio_url, caption')
+                .select('metadata, caption')
                 .eq('id', assetId)
                 .maybeSingle();
-            assetMetadata = assetRow?.metadata;
+            assetMetadata = typeof assetRow?.metadata === 'string' ? JSON.parse(assetRow.metadata) : (assetRow?.metadata || {});
 
             if (!candidateUrl || candidateUrl === 'native') {
-                candidateUrl = assetMetadata?.audioUrl || assetRow?.voiceover_url || assetRow?.audio_url || null;
+                candidateUrl = assetMetadata?.audioUrl || assetMetadata?.audio_url || assetMetadata?.voiceover_url || null;
             }
         } catch (e: any) {
             console.warn('[Voiceover Helper] Error fetching asset row:', e.message);

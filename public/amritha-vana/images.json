@@ -1,0 +1,61 @@
+{
+  "brochure": {
+    "local": "/amritha-vana/amrita-vana-brochure.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/amrita-vana-brochure.jpg",
+    "title": "Official Project Brochure"
+  },
+  "hero-dome-sunrise-lake": {
+    "local": "/amritha-vana/hero-dome-sunrise-lake.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/hero-dome-sunrise-lake.jpg",
+    "title": "Sunrise Geodesic Dome Lake View",
+    "category": "hero"
+  },
+  "dome-poolside-orchard": {
+    "local": "/amritha-vana/dome-poolside-orchard.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/dome-poolside-orchard.jpg",
+    "title": "Private Pool & Orchard Retreat",
+    "category": "resort"
+  },
+  "dome-evening-pool-pergola": {
+    "local": "/amritha-vana/dome-evening-pool-pergola.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/dome-evening-pool-pergola.jpg",
+    "title": "Twilight Pool & Floral Pergola Lounge",
+    "category": "resort"
+  },
+  "dome-canopy-treehouse": {
+    "local": "/amritha-vana/dome-canopy-treehouse.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/dome-canopy-treehouse.jpg",
+    "title": "Canopy Treetop Geodesic Sanctuary",
+    "category": "nature"
+  },
+  "dome-timber-deck-exterior": {
+    "local": "/amritha-vana/dome-timber-deck-exterior.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/dome-timber-deck-exterior.jpg",
+    "title": "Circular Timber Deck & Ambient Gardens",
+    "category": "architecture"
+  },
+  "dome-interior-branding": {
+    "local": "/amritha-vana/dome-interior-branding.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/dome-interior-branding.jpg",
+    "title": "Amritha Vana Branded Master Suite & Loft",
+    "category": "interior"
+  },
+  "dome-interior-living-lounge": {
+    "local": "/amritha-vana/dome-interior-living-lounge.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/dome-interior-living-lounge.jpg",
+    "title": "Designer Glamping Lounge & Forest Panorama",
+    "category": "interior"
+  },
+  "dome-technical-specs": {
+    "local": "/amritha-vana/dome-technical-specs.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/dome-technical-specs.jpg",
+    "title": "Model Mushroom Engineering Specifications",
+    "category": "specs"
+  },
+  "onsite-construction-pathway": {
+    "local": "/amritha-vana/onsite-construction-pathway.jpg",
+    "r2Url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/properties/f0ae1d0b-57e1-42fd-9438-7f9aa2cc5b8f/amritha-vana/onsite-construction-pathway.jpg",
+    "title": "Authentic On-Site Natural Stone Walkways",
+    "category": "progress"
+  }
+}

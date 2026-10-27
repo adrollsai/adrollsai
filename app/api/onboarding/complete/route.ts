@@ -165,7 +165,7 @@ Your task is to generate:
    "Make a premium, high-converting static meta ad. The final generated image must look 100% like an authentic, high-quality photograph, avoiding any artificial or plastic look. It must include beautiful, attractive, photorealistic humans (e.g. a family, professional man, or woman depending on the product, with true-to-life detailing of skin, hair, and features). The ethnicity of the humans must match the business origin (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise). Do NOT write or draw any text overlays, labels, or placeholders like 'logo', 'put logo here', 'business name', or text circles. Keep the image fully clean of text and placeholders.
    Product Info: ${productTitle}. Description: [Short sentence describing the visual scene based ONLY on the essential product info provided].
    Style: Render the image in a [Varying style, e.g., prompt 1 is 'Sunset Golden Hour', prompt 2 is 'Minimalist Clean Studio', prompt 3 is 'Warm Home Interior'] aesthetic."
-   Optimized for a 4:5 aspect ratio.
+   Optimized for a 3:4 aspect ratio.
 2. One (1) structured video prompt for Bytedance Seedance 2.0 (aspect ratio 9:16, 15 seconds duration).
    - Character Ethnicity / Details: Determine the country/business context based on the inputs (e.g. if the currency is ₹, or the company name/description/price refers to India, Delhi, Mumbai, etc., it is India).
      - If the context is India, describe the presenter in the "CHARACTER APPEARANCE" section as: "a beautiful Indian female with fair complexion and sharp features".
@@ -236,7 +236,7 @@ AVOID
         console.log("[Onboarding API] Prompts generated successfully. Image Prompts:", imagePrompts);
         console.log("[Onboarding API] Generated Video Prompt:", videoPrompt);
 
-        // 5. Submit 3 Image Tasks to Kie.ai (using 4:5 aspect ratio)
+        // 5. Submit 3 Image Tasks to Kie.ai (using 3:4 aspect ratio)
         console.log("[Onboarding API] Submitting 3 image tasks to Kie.ai...");
         const host = request.headers.get('host') || 'localhost:3000';
         const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');
@@ -250,7 +250,7 @@ AVOID
                 if (logoUrl) imageInputUrls.push(logoUrl);
                 const selectedImageModel = imageInputUrls.length > 0 ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
                 
-                const taskId = await createKieImageTask(prompt, selectedImageModel, "4:5", imageInputUrls);
+                const taskId = await createKieImageTask(prompt, selectedImageModel, "3:4", imageInputUrls);
                 if (taskId) {
                     // Fire background worker asynchronously (fire and forget)
                     fetch(`${baseUrl}/api/background-worker`, {

@@ -348,18 +348,20 @@ export default function UpdateFollowupModal({
           saveSuccess = true
         } else {
           const errData = await res.json().catch(() => null)
-          if (errData?.error && res.status !== 500 && res.status !== 504 && res.status !== 502) {
-            throw new Error(errData.error)
-          }
+          throw new Error(errData?.error || `Server returned error (${res.status})`)
         }
       } catch (fetchErr: any) {
-        console.warn('[UpdateFollowupModal] API route fetch failed, falling back to direct Supabase update:', fetchErr)
-        if (fetchErr.name !== 'AbortError' && fetchErr.message && !fetchErr.message.includes('Failed to fetch') && !fetchErr.message.includes('NetworkError') && !fetchErr.message.includes('fetch') && !fetchErr.message.includes('abort')) {
+        const isNetworkDisconnect = fetchErr.name === 'AbortError' || 
+          fetchErr.message?.includes('Failed to fetch') || 
+          fetchErr.message?.includes('NetworkError');
+
+        if (!isNetworkDisconnect) {
           throw fetchErr
         }
+        console.warn('[UpdateFollowupModal] Network offline, executing resilient direct Supabase update...')
       }
 
-      // Resilient Direct Supabase Fallback if API route had connection error or timed out
+      // Resilient Direct Supabase Fallback strictly if offline or connection aborted
       if (!saveSuccess) {
         console.log('[UpdateFollowupModal] Executing resilient direct Supabase update...')
         

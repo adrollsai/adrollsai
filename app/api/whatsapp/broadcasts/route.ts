@@ -392,7 +392,7 @@ export async function POST(req: Request) {
             fetchPromises.push(
                 supabaseAdmin
                     .from('leads')
-                    .select('id, name, phone, source, ad_name, csv_audience, pipeline_stage, property_id, custom_fields, created_at')
+                    .select('id, name, phone, source, ad_name, csv_audience, pipeline_stage, property_id, custom_fields, created_at, whatsapp_enabled')
                     .eq('user_id', targetUserId)
                     .range(p * pageSize, (p + 1) * pageSize - 1)
             )
@@ -406,6 +406,8 @@ export async function POST(req: Request) {
 
         // Filter leads based on broadcast criteria
         const leads = allUserLeads.filter(lead => {
+            if (lead.whatsapp_enabled === false) return false;
+
             if (audienceFilter) {
                 // Pre-built Audience Group target
                 if (audienceFilter.targetType === 'audience_group') {

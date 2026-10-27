@@ -183,7 +183,15 @@ export async function POST(request: Request) {
           custom_question_1: timeline || cf.custom_question_1 || '',
           last_contact_message: message,
           reopened_count: reopenedCount,
-          last_reopened_at: new Date().toISOString()
+          last_reopened_at: new Date().toISOString(),
+          pipeline_stage: 'New Lead',
+          status: 'New Lead',
+          lead_status: 'New Lead',
+          client_status: 'New Lead',
+          next_action_date: null,
+          next_action_time: null,
+          next_action_type: null,
+          next_action_remark: null
         };
 
         await supabaseAdmin
@@ -192,28 +200,20 @@ export async function POST(request: Request) {
             custom_fields: cf,
             pipeline_stage: 'New Lead',
             status: 'New Lead',
+            next_followup: null,
             budget: budget || undefined,
             timeline: timeline || undefined,
             updated_at: new Date().toISOString()
           })
           .eq('id', existingLead.id);
 
-        const reopenDesc = `The lead was reopened from Landing Page Contact Form\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Landing Page Contact\nMessage / Query : ${message}\nBudget : ${budget || 'N/A'}\nTimeline : ${timeline || 'N/A'}\nLead Status : ${existingLead.pipeline_stage || 'New'}`;
+        const reopenDesc = `The lead was reopened from Landing Page Contact Form\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Landing Page Contact\nMessage / Query : ${message}\nBudget : ${budget || 'N/A'}\nTimeline : ${timeline || 'N/A'}\nReopened Count : ${reopenedCount}\nPrevious Stage : ${existingLead.pipeline_stage || existingLead.status || 'New Lead'}\nCurrent Stage : Fresh (New Lead)`;
 
         await supabaseAdmin.from('lead_history').insert({
           lead_id: existingLead.id,
+          user_id: existingLead.assigned_to || assignedAgentId || targetUserId,
           action_type: 'REOPENED',
-          performed_by: 'System / Landing Page',
-          actor_name: 'Landing Page Form',
           description: reopenDesc,
-          details: {
-            source: 'Landing Page Contact',
-            message,
-            budget,
-            timeline,
-            reopened_count: reopenedCount,
-            timestamp: new Date().toISOString()
-          },
           created_at: new Date().toISOString()
         });
 

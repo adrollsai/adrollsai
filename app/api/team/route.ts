@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerClient } from '@/utils/supabase/server';
 import { getUserLimits } from '@/utils/subscription';
 import { sendPushNotification } from '@/utils/notification-helper';
 import { sendLeadTransferEmail } from '@/utils/email-helper';
@@ -13,6 +14,12 @@ const supabaseAdmin = createClient(
 // --- INVITE / ADD MEMBER OR SUB-ACCOUNT ---
 export async function POST(req: Request) {
   try {
+    const serverSupabase = await createServerClient();
+    const { data: { user: callerUser } } = await serverSupabase.auth.getUser();
+    if (!callerUser) {
+      return NextResponse.json({ error: 'Unauthorized: Admin authentication required.' }, { status: 401 });
+    }
+
     let { adminId, email, password, businessName, fullName, role } = await req.json();
 
     // Strict Sanitization
@@ -20,6 +27,15 @@ export async function POST(req: Request) {
 
     if (!adminId || !email || !password) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    // Verify caller is authorized for adminId
+    const { data: callerProfile } = await supabaseAdmin.from('profiles').select('id, role, parent_id').eq('id', callerUser.id).single();
+    const isSuperAdmin = callerProfile?.role === 'super_admin';
+    const isOwnerOrAdmin = callerUser.id === adminId || callerProfile?.parent_id === adminId;
+
+    if (!isSuperAdmin && !isOwnerOrAdmin) {
+      return NextResponse.json({ error: 'Forbidden: You do not have permission to manage team members for this account.' }, { status: 403 });
     }
 
     // PROJECT VERIFICATION LOG (Check your terminal)

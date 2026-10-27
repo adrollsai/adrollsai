@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     // 1. Check access: Caller must be owner, assigned agent, or staff of the owner
     const { data: checkLead, error: checkError } = await supabase
         .from('leads')
-        .select('user_id, assigned_to, pixel_id')
+        .select('user_id, assigned_to, pixel_id, name, phone, email, custom_fields')
         .eq('id', leadId)
         .single()
 
@@ -78,10 +78,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Forbidden: Unauthorized lead access' }, { status: 403 })
     }
 
-
     let cf = (checkLead as any).custom_fields || {}
-    if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
-    const stageLower = (newStage || '').toLowerCase()
+    if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) { cf = {} } }
+    if (!cf || typeof cf !== 'object' || Array.isArray(cf)) cf = {}
+
+    const stageLower = (newStage || '').toLowerCase().trim()
     const isCompletedVisit = 
       !stageLower.includes('planned') && 
       !stageLower.includes('scheduled') && 
@@ -103,14 +104,32 @@ export async function POST(request: Request) {
       if (!cf.visited_at) cf.visited_at = new Date().toISOString()
     }
 
+    const isTerminal = 
+      stageLower.includes('lost') ||
+      stageLower.includes('closed') ||
+      stageLower.includes('won') ||
+      stageLower.includes('already purchased') ||
+      stageLower.includes('dealer') ||
+      stageLower.includes('unqualified') ||
+      stageLower === 'deal/token' ||
+      stageLower === 'deal / token paid';
+
+    const updatePayload: Record<string, any> = { 
+        status: newStage,
+        pipeline_stage: newStage, 
+        notes: notes || undefined,
+        custom_fields: cf,
+        updated_at: new Date().toISOString()
+    }
+
+    if (isTerminal) {
+        updatePayload.next_followup = null;
+        updatePayload.calling_enabled = false;
+    }
+
     const { data: lead, error } = await supabaseAdmin
         .from('leads')
-        .update({ 
-            status: newStage,
-            pipeline_stage: newStage, 
-            notes: notes || undefined,
-            custom_fields: cf
-        })
+        .update(updatePayload)
         .eq('id', leadId)
         .select()
         .single()
@@ -129,10 +148,10 @@ export async function POST(request: Request) {
 
     if (accessToken && pixelId) {
         let eventName = '';
-        if (newStage === 'Contacted' || newStage === 'Qualified') eventName = 'Lead';
-        if (newStage === 'Appointment Booked' || newStage === 'Appointment booked') eventName = 'Schedule';
-        if (newStage === 'Visit Done' || newStage === 'Appointment done') eventName = 'Other';
-        if (newStage === 'Deal/Token' || newStage === 'Closed') eventName = 'Purchase';
+        if (stageLower.includes('contacted') || stageLower.includes('qualified') || stageLower.includes('requirement')) eventName = 'Lead';
+        else if (stageLower.includes('planned') || stageLower.includes('scheduled') || stageLower.includes('appointment booked')) eventName = 'Schedule';
+        else if (stageLower.includes('visit done') || stageLower.includes('visited') || stageLower.includes('meeting done') || stageLower.includes('appointment done')) eventName = 'Other';
+        else if (stageLower.includes('deal') || stageLower.includes('token') || stageLower.includes('closed') || stageLower.includes('won') || stageLower.includes('purchased')) eventName = 'Purchase';
 
         if (eventName) {
             // Split name if possible
@@ -147,6 +166,7 @@ export async function POST(request: Request) {
             const host = request.headers.get('host') || 'adrolls.in';
             const protocol = host.includes('localhost') || host.includes('ngrok') ? 'http' : 'https';
             const sourceUrl = referer || `${protocol}://${host}/shared/${user.id}`;
+            const eventId = `stage_${lead.id}_${eventName.toLowerCase()}_${new Date().toISOString().slice(0, 10)}`;
 
             await sendCAPIEvent(
                 accessToken, 
@@ -162,7 +182,8 @@ export async function POST(request: Request) {
                 newStage === 'Closed' ? 50000 : 0, // Assigning a default value for Closed leads
                 clientIp,
                 clientUa,
-                sourceUrl
+                sourceUrl,
+                eventId
             );
         }
     }
@@ -171,7 +192,7 @@ export async function POST(request: Request) {
     const UMANG_USER_ID = 'b685d287-7d54-4c9c-ae03-a46bb96ebdde';
     const isUmangAccount = checkLead.user_id === UMANG_USER_ID;
 
-    if (isUmangAccount && lead.phone) {
+    if (isUmangAccount && lead.phone && lead.whatsapp_enabled !== false) {
         dispatchUmangStageWhatsApp(supabaseAdmin, lead, newStage).catch(err => {
             console.error('[UMANG WA STAGE TRIGGER] Non-blocking dispatch error:', err);
         });
@@ -192,13 +213,13 @@ async function dispatchUmangStageWhatsApp(supabaseAdmin: any, lead: any, newStag
     let stageKey = '';
     let targetTemplateName = '';
 
-    if (stageLower.includes('planned') || stageLower === 'visit planned' || stageLower === 'appointment booked') {
+    if (stageLower.includes('planned') || stageLower === 'visit planned' || stageLower === 'site visit planned' || stageLower === 'appointment booked') {
         stageKey = 'visit_planned';
         targetTemplateName = 'umang_stage_visit_planned';
-    } else if (stageLower.includes('visit done') || stageLower === 'visited' || stageLower === 'visit done' || stageLower === 'appointment done') {
+    } else if (stageLower.includes('visit done') || stageLower === 'visited' || stageLower === 'site visit done' || stageLower === 'appointment done') {
         stageKey = 'visit_done';
         targetTemplateName = 'umang_stage_visit_done';
-    } else if (stageLower === 'closed' || stageLower === 'deal/token' || stageLower === 'won') {
+    } else if (stageLower === 'closed' || stageLower === 'deal/token' || stageLower === 'deal / token paid' || stageLower === 'won') {
         stageKey = 'deal_closed';
         targetTemplateName = 'umang_stage_deal_closed';
     }

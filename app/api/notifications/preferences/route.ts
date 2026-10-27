@@ -54,12 +54,10 @@ async function getTargetUserId(request: Request) {
       ) {
         targetId = impersonateId
       }
-    } else {
-      targetId = impersonateId
     }
   }
 
-  return { targetUserId: targetId || null, authenticatedUser: user }
+  return { targetUserId: user ? (targetId || null) : null, authenticatedUser: user }
 }
 
 // GET: Fetch notification preferences & admin status

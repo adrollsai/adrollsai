@@ -93,20 +93,6 @@ export async function POST(req: Request) {
                 .eq('id', leadId)
                 .single()
 
-            // Trigger Missed Call Text Back (SMS/WhatsApp with booking flow)
-            if (leadData?.user_id && leadData?.phone) {
-                import('@/utils/missed-call-textback').then(({ triggerMissedCallTextBack }) => {
-                    triggerMissedCallTextBack({
-                        supabaseAdmin,
-                        leadId,
-                        profileId: leadData.user_id,
-                        callerPhone: leadData.phone,
-                        callerName: leadData.name,
-                        reason: callStatus || 'Unanswered/Busy'
-                    }).catch(e => console.warn('[TWILIO STATUS CALLBACK] Missed call textback error:', e))
-                }).catch(() => {})
-            }
-
             const currentRetries = leadData?.voice_call_retry_count || 0
             if (currentRetries < 3) {
                 const nextRetryCount = currentRetries + 1
@@ -611,7 +597,10 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
 
             const updateData: any = {
                 voice_call_status: 'completed',
-                voice_call_retry_count: 0 // Default: reset retry count since call was picked up
+                voice_call_retry_count: 0, // Default: reset retry count since call was picked up
+                last_call_at: new Date().toISOString(),
+                last_call_status: 'connected',
+                last_called_by: 'AI Caller'
             }
             if (extractedCallingEnabled === false) {
                 updateData.calling_enabled = false
@@ -742,6 +731,26 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                 .from('leads')
                 .update(updateData)
                 .eq('id', leadId)
+
+            if (!updateErr && lead?.user_id) {
+                try {
+                    const callDur = callDuration || 0
+                    await supabaseAdmin.from('call_logs').insert({
+                        user_id: lead.user_id,
+                        lead_id: leadId,
+                        phone_number: lead.phone,
+                        call_type: 'AI_OUTGOING',
+                        duration: callDur,
+                        status: 'CONNECTED',
+                        recording_url: (formData.get('RecordingUrl') as string) || null,
+                        notes: summary ? `AI Voice Call: ${summary.slice(0, 300)}` : 'AI Voice Call completed',
+                        started_at: new Date(Date.now() - callDur * 1000).toISOString()
+                    })
+                    console.log(`[TWILIO STATUS CALLBACK] Inserted call_log for lead ${leadId} (${callDur}s)`)
+                } catch (clErr: any) {
+                    console.warn('[TWILIO STATUS CALLBACK] Failed to insert call_log:', clErr?.message)
+                }
+            }
 
             if (!updateErr && bookingTime) {
                 console.log(`[TWILIO STATUS CALLBACK] Call led to booking slot ${bookingTime}. Triggering bookAppointment helper...`)

@@ -353,6 +353,25 @@ export async function POST(request: Request) {
                                                 .ilike('phone_number', `%${phoneDigits}%`)
                                                 .eq('status', 'sent');
 
+                                            // Circuit breaker: Pause broadcast if Meta reports 131042 payment issue
+                                            if (firstErr.code === 131042) {
+                                                const { data: bRec } = await supabaseAdmin
+                                                    .from('whatsapp_broadcast_recipients')
+                                                    .select('broadcast_id')
+                                                    .ilike('phone_number', `%${phoneDigits}%`)
+                                                    .order('sent_at', { ascending: false })
+                                                    .limit(1)
+                                                    .maybeSingle();
+
+                                                if (bRec?.broadcast_id) {
+                                                    await supabaseAdmin
+                                                        .from('whatsapp_broadcasts')
+                                                        .update({ status: 'paused' })
+                                                        .eq('id', bRec.broadcast_id)
+                                                        .in('status', ['processing', 'pending', 'active']);
+                                                }
+                                            }
+
                                             if (chat.lead_id) {
                                                 await supabaseAdmin.from('lead_history').insert({
                                                     lead_id: chat.lead_id,
@@ -478,14 +497,14 @@ export async function POST(request: Request) {
                             : { data: [] };
                             
                         const matchedProfile = profiles?.find((p: any) => {
-                            const rawPersonal = p.whatsapp_personal_number || '';
-                            const cleanPersonal = rawPersonal.replace(/\D/g, '');
-                            if (!cleanPersonal) return false;
-                            
-                            const cleanPersonalDigits = cleanPersonal.slice(-10);
-                            const phoneMatch = cleanPersonal === cleanFrom || 
-                                               (cleanPersonalDigits.length === 10 && cleanFromDigits === cleanPersonalDigits);
-                                               
+                            const candidatePhones = [p.whatsapp_personal_number, p.contact_number, p.whatsapp_phone_number].filter(Boolean);
+                            const phoneMatch = candidatePhones.some((raw: string) => {
+                                const clean = (raw || '').replace(/\D/g, '');
+                                if (!clean) return false;
+                                const digits = clean.slice(-10);
+                                return clean === cleanFrom || (digits.length === 10 && cleanFromDigits === digits);
+                            });
+                                                
                             if (!phoneMatch) return false;
 
                             // If message arrived at Official Nobogent Master Bot, ANY registered personal number is valid!
@@ -755,22 +774,30 @@ export async function POST(request: Request) {
                                     }
                                     
                                     let botResponseText = "Hello! I received your message, but I encountered an error while processing your request. Please try again.";
+                                    let botAttachments: Array<{ type: 'image' | 'document'; url: string; filename?: string; caption?: string }> = [];
                                     let ownerUsage = { promptTokens: 500, completionTokens: 250, modelName: "deepseek-flash" };
 
                                     try {
                                         console.log(`🤖 [Owner Orchestrator] Executing processOwnerMessage for owner: ${matchedProfile.business_name} (${matchedProfile.id})`);
-                                        botResponseText = await processOwnerMessage({
+                                        const ownerResult: any = await processOwnerMessage({
                                             userId: matchedProfile.id,
                                             messageText: messageText,
                                             fromPhone: cleanFrom,
                                             mediaUrl: inboundMediaUrl || undefined,
                                             mediaType: inboundMediaType || undefined
                                         });
-                                        botResponseText = (botResponseText || '').trim();
+
+                                        if (typeof ownerResult === 'string') {
+                                            botResponseText = ownerResult.trim();
+                                        } else if (ownerResult && typeof ownerResult === 'object') {
+                                            botResponseText = (ownerResult.text || '').trim();
+                                            botAttachments = Array.isArray(ownerResult.mediaAttachments) ? ownerResult.mediaAttachments : [];
+                                        }
+
                                         if (!botResponseText) {
                                             botResponseText = "Hi! I checked your request and updated the system. Let me know if you would like more details.";
                                         }
-                                        console.log(`🤖 Final processed response: "${botResponseText.substring(0, 100)}..."`);
+                                        console.log(`🤖 Final processed response: "${botResponseText.substring(0, 100)}..." (Attachments: ${botAttachments.length})`);
                                     } catch (llmErr: any) {
                                         console.error("❌ processOwnerMessage failed:", llmErr?.message || llmErr);
                                         botResponseText = "Hi! I ran into an issue processing that request. Please try again in a moment.";
@@ -794,6 +821,82 @@ export async function POST(request: Request) {
                                         try {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${whatsappPhoneId}/messages`;
                                             console.log(`📤 Sending WhatsApp reply to ${recipientNumber} via phone ID ${whatsappPhoneId}`);
+
+                                            // 1. Dispatch any visual graphs or downloadable reports generated by LLM
+                                            for (const attachment of botAttachments) {
+                                                try {
+                                                    if (attachment.type === 'image' && attachment.url) {
+                                                        console.log(`📊 Dispatching WhatsApp graph image: ${attachment.url}`);
+                                                        const imgRes = await fetch(metaUrl, {
+                                                            method: 'POST',
+                                                            headers: {
+                                                                'Authorization': `Bearer ${whatsappToken}`,
+                                                                'Content-Type': 'application/json'
+                                                            },
+                                                            body: JSON.stringify({
+                                                                messaging_product: 'whatsapp',
+                                                                recipient_type: 'individual',
+                                                                to: recipientNumber,
+                                                                type: 'image',
+                                                                image: {
+                                                                    link: attachment.url,
+                                                                    caption: attachment.caption || '📊 Analytics Graph'
+                                                                }
+                                                            })
+                                                        });
+                                                        const imgData = await imgRes.json();
+                                                        if (!imgRes.ok) console.error("❌ WhatsApp image dispatch failed:", JSON.stringify(imgData));
+                                                        else console.log("✅ WhatsApp graph image sent:", imgData);
+
+                                                        if (ownerChat) {
+                                                            await supabaseAdmin.from('whatsapp_messages').insert({
+                                                                chat_id: ownerChat.id,
+                                                                direction: 'outbound',
+                                                                message_text: attachment.caption || '📊 Analytics Graph',
+                                                                media_url: attachment.url,
+                                                                media_type: 'image'
+                                                            });
+                                                        }
+                                                    } else if (attachment.type === 'document' && attachment.url) {
+                                                        console.log(`📥 Dispatching WhatsApp document report: ${attachment.url}`);
+                                                        const docRes = await fetch(metaUrl, {
+                                                            method: 'POST',
+                                                            headers: {
+                                                                'Authorization': `Bearer ${whatsappToken}`,
+                                                                'Content-Type': 'application/json'
+                                                            },
+                                                            body: JSON.stringify({
+                                                                messaging_product: 'whatsapp',
+                                                                recipient_type: 'individual',
+                                                                to: recipientNumber,
+                                                                type: 'document',
+                                                                document: {
+                                                                    link: attachment.url,
+                                                                    filename: attachment.filename || 'report.csv',
+                                                                    caption: attachment.caption || '📥 Downloadable Report'
+                                                                }
+                                                            })
+                                                        });
+                                                        const docData = await docRes.json();
+                                                        if (!docRes.ok) console.error("❌ WhatsApp document dispatch failed:", JSON.stringify(docData));
+                                                        else console.log("✅ WhatsApp document report sent:", docData);
+
+                                                        if (ownerChat) {
+                                                            await supabaseAdmin.from('whatsapp_messages').insert({
+                                                                chat_id: ownerChat.id,
+                                                                direction: 'outbound',
+                                                                message_text: attachment.caption || attachment.filename || '📥 Downloadable Report',
+                                                                media_url: attachment.url,
+                                                                media_type: 'document'
+                                                            });
+                                                        }
+                                                    }
+                                                } catch (mediaSendErr: any) {
+                                                    console.error("❌ Error sending WhatsApp media attachment:", mediaSendErr);
+                                                }
+                                            }
+
+                                            // 2. Dispatch the insightful textual summary
                                             console.log(`📝 Bot response (first 200 chars): ${botResponseText.substring(0, 200)}`);
                                             const sendRes = await fetch(metaUrl, {
                                                 method: 'POST',
@@ -2072,7 +2175,8 @@ CRITICAL RULES FOR PIPIXEL:
                                                         
                                                     if (properties && properties.length > 0) {
                                                         inventoryText = properties.map((p: any, idx: number) => {
-                                                            return `${idx + 1}. *${p.title}*\n   • Type: ${p.property_type || 'Residential'}\n   • Price: ${p.price || 'Contact for Price'}\n   • Location: ${p.address || 'New Chandigarh / Tri-city'}\n   • Highlights: ${p.description ? p.description.slice(0, 250) : 'Premium property'}`;
+                                                            const propLocation = p.address?.trim() || effectiveAddress || 'Location available on request';
+                                                            return `${idx + 1}. *${p.title}*\n   • Type: ${p.property_type || 'Residential'}\n   • Price: ${p.price || 'Contact for Price'}\n   • Location: ${propLocation}\n   • Highlights: ${p.description ? p.description.slice(0, 250) : 'Premium property'}`;
                                                         }).join('\n\n');
                                                     }
                                                 }
@@ -2390,7 +2494,7 @@ RULES:
                                             if (currentCustomFields?.timeline) leadUpdates.timeline = currentCustomFields.timeline;
 
                                             // If qualification is completed on WhatsApp, cancel any scheduled voice call
-                                            if (currentCustomFields?.qualification_completed) {
+                                            if (currentCustomFields?.qualification_completed && !currentCustomFields?.is_instant_form) {
                                                 leadUpdates.voice_call_scheduled_at = null;
                                                 leadUpdates.voice_call_status = 'qualified_via_whatsapp';
                                             } else if ((latestLead as any).voice_call_status === 'pending_qualification') {
@@ -3682,7 +3786,8 @@ RULES:
           const workspaceTeamIds = Array.from(new Set((workspaceMembers || []).map(p => p.id)));
           if (workspaceTeamIds.length === 0) workspaceTeamIds.push(profile.id);
 
-          // Also check by phone number (both raw and normalized last 10 digits) across workspace
+          // Also check by phone number (both raw and normalized last 10 digits) or email across workspace
+          let existingLead: any = null;
           const cleanPhoneDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
           if (cleanPhoneDigits && cleanPhoneDigits.length >= 7) {
             const { data: existingByPhone } = await supabaseAdmin
@@ -3694,165 +3799,202 @@ RULES:
               .limit(1);
 
             if (existingByPhone && existingByPhone.length > 0) {
-              const existingLead = existingByPhone[0];
-              let cf = existingLead.custom_fields || {};
-              if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
+              existingLead = existingByPhone[0];
+            }
+          }
 
-              // 1. Gather all previously processed facebook_lead_ids for this lead
-              const allFbLeadIds: string[] = Array.isArray(cf.all_facebook_lead_ids)
-                ? cf.all_facebook_lead_ids.map(String)
-                : (existingLead.facebook_lead_id ? [String(existingLead.facebook_lead_id)] : []);
+          if (!existingLead && email && email.includes('@')) {
+            const { data: existingByEmail } = await supabaseAdmin
+              .from('leads')
+              .select('*')
+              .in('user_id', workspaceTeamIds)
+              .ilike('email', email.trim())
+              .order('created_at', { ascending: false })
+              .limit(1);
 
-              // 2. Duplicate submission check: if this leadgen_id has ALREADY been recorded, skip!
-              if (leadgen_id && (allFbLeadIds.includes(String(leadgen_id)) || String(existingLead.facebook_lead_id) === String(leadgen_id))) {
-                console.log(`[Facebook Webhook] Lead submission ${leadgen_id} already processed for lead ${existingLead.id}. Skipping duplicate reopen.`);
-                continue;
-              }
+            if (existingByEmail && existingByEmail.length > 0) {
+              existingLead = existingByEmail[0];
+            }
+          }
 
-              // 3. Historical Form Submission Guard:
-              const submissionTime = fbLead.created_time ? new Date(fbLead.created_time).getTime() : Date.now();
-              const isHistoricalOldLead = !isNaN(submissionTime) && (Date.now() - submissionTime) > (48 * 3600 * 1000);
+          if (existingLead) {
+            let cf = existingLead.custom_fields || {};
+            if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) { cf = {}; } }
 
-              if (isHistoricalOldLead) {
-                const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgen_id)]));
-                await supabaseAdmin
-                  .from('leads')
-                  .update({
-                    custom_fields: {
-                      ...cf,
-                      all_facebook_lead_ids: updatedAllIds
-                    }
-                  })
-                  .eq('id', existingLead.id);
-                continue;
-              }
+            // 1. Gather all previously processed facebook_lead_ids for this lead
+            const allFbLeadIds: string[] = Array.isArray(cf.all_facebook_lead_ids)
+              ? cf.all_facebook_lead_ids.map(String)
+              : (existingLead.facebook_lead_id ? [String(existingLead.facebook_lead_id)] : []);
 
-              // 4. Global Cooldown Guard: at least 4 hours between ANY reopens for the same lead
-              const lastReopenTime = cf.last_reopened_at ? new Date(cf.last_reopened_at).getTime() : 0;
-              const isRecentReopenGlitch = (Date.now() - lastReopenTime) < (4 * 3600 * 1000);
+            // 2. Duplicate submission check: if this leadgen_id has ALREADY been recorded, skip!
+            if (leadgen_id && (allFbLeadIds.includes(String(leadgen_id)) || String(existingLead.facebook_lead_id) === String(leadgen_id))) {
+              console.log(`[Facebook Webhook] Lead submission ${leadgen_id} already processed for lead ${existingLead.id}. Skipping duplicate reopen.`);
+              continue;
+            }
 
-              if (isRecentReopenGlitch) {
-                console.log(`[Facebook Webhook] Skipping duplicate reopen for lead ${existingLead.id} within 4h cooldown.`);
-                const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgen_id)]));
-                await supabaseAdmin
-                  .from('leads')
-                  .update({
-                    custom_fields: {
-                      ...cf,
-                      all_facebook_lead_ids: updatedAllIds
-                    }
-                  })
-                  .eq('id', existingLead.id);
-                continue;
-              }
+            // 3. Historical Form Submission Guard:
+            const submissionTime = fbLead.created_time ? new Date(fbLead.created_time).getTime() : Date.now();
+            const isHistoricalOldLead = !isNaN(submissionTime) && (Date.now() - submissionTime) > (48 * 3600 * 1000);
 
-              const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
-              const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
-              const updatedSources = Array.from(new Set([...previousSources, currentSourceId]));
+            if (isHistoricalOldLead) {
               const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgen_id)]));
-              const reopenedCount = Math.max(1, updatedSources.length > 1 ? updatedSources.length - 1 : 1);
-
-              if (!cf.original_created_at) {
-                cf.original_created_at = existingLead.created_at;
-              }
-
-              cf = {
-                ...cf,
-                ...(customFields || {}),
-                all_facebook_lead_ids: updatedAllIds,
-                is_instant_form: true,
-                qualification_completed: true,
-                reopened_count: reopenedCount,
-                reopened_sources: updatedSources,
-                last_reopened_at: new Date().toISOString(),
-                last_reopened_source: currentSourceId,
-                meta_ad_origin: customFields?.meta_ad_origin || cf.meta_ad_origin
-              };
-
-              // Determine stage preservation:
-              const terminalStages = ['lost', 'lost/ni', 'not interested', 'junk', 'archive', 'closed', 'dropped'];
-              const currentStageLower = (existingLead.pipeline_stage || existingLead.status || '').toLowerCase().trim();
-              const isDeadOrNew = !currentStageLower || currentStageLower === 'new lead' || currentStageLower === 'fresh' || terminalStages.some(s => currentStageLower.includes(s));
-
-              const updatePayloadObj: Record<string, any> = {
-                source: 'Facebook Ads',
-                custom_fields: cf
-              };
-
-              if (isDeadOrNew) {
-                updatePayloadObj.pipeline_stage = 'New Lead';
-                updatePayloadObj.status = 'New Lead';
-              }
-
-              if (leadgen_id) {
-                updatePayloadObj.facebook_lead_id = leadgen_id;
-              }
-              if (fbLead.form_id) {
-                updatePayloadObj.form_id = fbLead.form_id;
-              }
-              if (campaignId) {
-                updatePayloadObj.campaign_id = campaignId;
-              }
-              if (adCampaignString) {
-                updatePayloadObj.ad_name = adCampaignString;
-              }
-              if (formName) {
-                updatePayloadObj.form_name = formName;
-              }
-              if (assignedAgentId) {
-                updatePayloadObj.assigned_to = assignedAgentId;
-              }
-
               await supabaseAdmin
                 .from('leads')
-                .update(updatePayloadObj)
+                .update({
+                  custom_fields: {
+                    ...cf,
+                    all_facebook_lead_ids: updatedAllIds
+                  }
+                })
                 .eq('id', existingLead.id);
+              continue;
+            }
 
-              const reopenDesc = `The lead was reopened from Facebook Ads\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${currentSourceId}\nReopen Count : ${reopenedCount}\nCurrent Stage : New Lead`;
+            // 4. Glitch guard: only debounce if the exact same ad/form submission fires within 60s
+            const lastReopenTime = cf.last_reopened_at ? new Date(cf.last_reopened_at).getTime() : 0;
+            const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
+            const isExactSameSourceRecent = (cf.last_reopened_source === currentSourceId) && (Date.now() - lastReopenTime < 60 * 1000);
 
-              await supabaseAdmin.from('lead_history').insert({
-                lead_id: existingLead.id,
-                user_id: assignedAgentId || existingLead.assigned_to || existingLead.user_id,
-                action_type: 'REOPENED',
-                performed_by: 'System / Facebook',
-                actor_name: 'Facebook Ads',
-                description: reopenDesc,
-                details: {
-                  source: 'Facebook Ads',
-                  ad_name: adCampaignString,
-                  form_name: formName,
-                  campaign_id: campaignId,
-                  reopened_count: reopenedCount,
-                  all_sources: updatedSources,
-                  timestamp: new Date().toISOString()
-                },
-                created_at: new Date().toISOString()
+            if (isExactSameSourceRecent) {
+              console.log(`[Facebook Webhook] Skipping duplicate rapid reopen glitch for lead ${existingLead.id} within 60s.`);
+              const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgen_id)]));
+              await supabaseAdmin
+                .from('leads')
+                .update({
+                  custom_fields: {
+                    ...cf,
+                    all_facebook_lead_ids: updatedAllIds
+                  }
+                })
+                .eq('id', existingLead.id);
+              continue;
+            }
+
+            const originalSource = existingLead.ad_name || existingLead.form_name || existingLead.source || 'Initial Meta Ad';
+            const previousSources: string[] = Array.isArray(cf.reopened_sources) && cf.reopened_sources.length > 0
+              ? cf.reopened_sources
+              : [originalSource];
+            const updatedSources = Array.from(new Set([...previousSources, currentSourceId]));
+            const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgen_id)]));
+            const reopenedCount = (Number(cf.reopened_count) || 0) + 1;
+
+            if (!cf.original_created_at) {
+              cf.original_created_at = existingLead.created_at;
+            }
+
+            // Extract custom form question responses for timeline
+            const submittedAnswersList: string[] = [];
+            if (customFields && typeof customFields === 'object') {
+              Object.entries(customFields).forEach(([k, v]) => {
+                if (k !== 'meta_ad_origin' && k !== 'is_instant_form' && k !== 'qualification_completed' && v) {
+                  submittedAnswersList.push(`• ${k}: ${v}`);
+                }
               });
+            }
 
-              // Multi-channel notifications for reopened lead
-              const cleanSource = (adCampaignString || 'Meta Ads').split(' / ')[0];
+            cf = {
+              ...cf,
+              ...(customFields || {}),
+              all_facebook_lead_ids: updatedAllIds,
+              is_instant_form: true,
+              qualification_completed: true,
+              is_reopened: true,
+              reopened_count: reopenedCount,
+              reopened_sources: updatedSources,
+              last_reopened_at: new Date().toISOString(),
+              last_reopened_source: currentSourceId,
+              meta_ad_origin: customFields?.meta_ad_origin || cf.meta_ad_origin,
+              pipeline_stage: 'New Lead',
+              status: 'New Lead',
+              lead_status: 'New Lead',
+              client_status: 'New Lead',
+              next_action_date: null,
+              next_action_time: null,
+              next_action_type: null,
+              next_action_remark: null
+            };
+
+            const previousStage = existingLead.pipeline_stage || existingLead.status || 'New Lead';
+            const updatePayloadObj: Record<string, any> = {
+              source: 'Facebook Ads',
+              pipeline_stage: 'New Lead',
+              status: 'New Lead',
+              next_followup: null,
+              custom_fields: cf,
+              updated_at: new Date().toISOString(),
+              created_at: new Date().toISOString() // Push reopened lead to the top of the Fresh section
+            };
+
+            if (leadgen_id) {
+              updatePayloadObj.facebook_lead_id = leadgen_id;
+            }
+            if (fbLead.form_id) {
+              updatePayloadObj.form_id = fbLead.form_id;
+            }
+            if (campaignId) {
+              updatePayloadObj.campaign_id = campaignId;
+            }
+            if (adCampaignString) {
+              updatePayloadObj.ad_name = adCampaignString;
+            }
+            if (formName) {
+              updatePayloadObj.form_name = formName;
+            }
+            if (assignedAgentId) {
+              updatePayloadObj.assigned_to = assignedAgentId;
+            }
+
+            const { error: updateErr } = await supabaseAdmin
+              .from('leads')
+              .update(updatePayloadObj)
+              .eq('id', existingLead.id);
+
+            if (updateErr) {
+              console.error('[Facebook Webhook] Error updating reopened lead:', updateErr.message);
+              continue;
+            }
+
+            let reopenDesc = `The lead was reopened from Facebook Ads\nLead Name : ${name || existingLead.name}\nContact no : ${phone || existingLead.phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook Ads\nSource Details : ${currentSourceId}\nReopen Count : ${reopenedCount}\nPrevious Stage : ${previousStage}\nCurrent Stage : Fresh (New Lead)`;
+            if (submittedAnswersList.length > 0) {
+              reopenDesc += `\n\n📋 New Ad Submission Answers:\n${submittedAnswersList.join('\n')}`;
+            }
+
+            // DB schema for lead_history contains: id, lead_id, user_id, action_type, description, created_at
+            const { error: histErr } = await supabaseAdmin.from('lead_history').insert({
+              lead_id: existingLead.id,
+              user_id: assignedAgentId || existingLead.assigned_to || existingLead.user_id,
+              action_type: 'REOPENED',
+              description: reopenDesc,
+              created_at: new Date().toISOString()
+            });
+
+            if (histErr) {
+              console.error('[Facebook Webhook] Error inserting reopen timeline record:', histErr);
+            }
+
+            // Multi-channel notifications for reopened lead
+            const cleanSource = (adCampaignString || 'Meta Ads').split(' / ')[0];
+            await sendAdminMultiChannelNotification({
+              ownerUserId: profile.id,
+              title: "🔄 Reopened Facebook Lead!",
+              body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
+              url: `/dashboard/crm/${existingLead.id}`,
+              type: 'new_lead'
+            }).catch(() => {});
+
+            const notifAgent = assignedAgentId || existingLead.assigned_to;
+            if (notifAgent && notifAgent !== profile.id) {
               await sendAdminMultiChannelNotification({
-                ownerUserId: profile.id,
-                title: "🔄 Reopened Facebook Lead!",
+                ownerUserId: notifAgent,
+                title: "🔄 Reopened Lead Assigned to You!",
                 body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
                 url: `/dashboard/crm/${existingLead.id}`,
                 type: 'new_lead'
               }).catch(() => {});
-
-              const notifAgent = assignedAgentId || existingLead.assigned_to;
-              if (notifAgent && notifAgent !== profile.id) {
-                await sendAdminMultiChannelNotification({
-                  ownerUserId: notifAgent,
-                  title: "🔄 Reopened Lead Assigned to You!",
-                  body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
-                  url: `/dashboard/crm/${existingLead.id}`,
-                  type: 'new_lead'
-                }).catch(() => {});
-              }
-
-              console.log(`[Facebook Webhook] Lead ${existingLead.id} reopened (${reopenedCount} times) from ${currentSourceId}`);
-              continue;
             }
+
+            console.log(`[Facebook Webhook] Lead ${existingLead.id} reopened (${reopenedCount} times) from ${currentSourceId} and moved to Fresh stage.`);
+            continue;
           }
 
           // Match corresponding active voice campaign for this user
@@ -4002,7 +4144,7 @@ RULES:
               (profile.email || '').toLowerCase() === 'rchopra489@gmail.com' ||
               (profile.business_name || '').toLowerCase().includes('nobogent');
 
-          // Trigger automated WhatsApp welcome drip campaign & instant catalog template with 'View Listings' button
+          // Trigger automated WhatsApp 3-Button Welcome message only (no redundant secondary drips)
           if (!isNobogentAccount && savedLead && phone) {
               sendInstantFormCatalogMessage(
                   supabaseAdmin,
@@ -4014,22 +4156,11 @@ RULES:
               ).catch(err => {
                   console.error('[INSTANT CATALOG WA] Instant form WhatsApp catalog message failed:', err);
               });
-
-              triggerWelcomeDrip(
-                  supabaseAdmin,
-                  savedLead.id,
-                  name,
-                  phone,
-                  profile.id,
-                  targetCampaignName
-              ).catch(err => {
-                  console.error('[DRIP TRIGGER] Facebook lead welcome drip failed:', err);
-              });
           }
 
-          // Trigger automated Voice Dialing ONLY if auto_call_new_leads is enabled AND user has a connected voice number
+          // Trigger automated Voice Dialing if auto_call_new_leads is enabled
           const biProfile = typeof profile?.business_info === 'string' ? JSON.parse(profile.business_info || '{}') : (profile?.business_info || {});
-          const hasConnectedVoice = !!(biProfile?.claimed_vobiz_number || biProfile?.voice_vobiz_number || (profile?.voice_twilio_number && profile?.voice_twilio_sid) || (profile?.voice_provider === 'vobiz' && profile?.voice_twilio_number));
+          const hasConnectedVoice = !!(profile?.voice_vobiz_number || biProfile?.claimed_vobiz_number || biProfile?.voice_vobiz_number || (profile?.voice_twilio_number && profile?.voice_twilio_sid) || profile?.voice_provider === 'vobiz' || process.env.VOBIZ_TEST_NUMBER);
           if (savedLead && phone && profile.auto_call_new_leads && hasConnectedVoice) {
               if (isIndianPhoneNumber(phone)) {
                   await triggerOutboundCall(supabaseAdmin, savedLead.id, profile.id, true, matchedVoiceCampaignId || undefined).catch(err => {
@@ -4045,7 +4176,6 @@ RULES:
                       lead_id: savedLead.id,
                       user_id: profile.id,
                       action_type: 'REMARK',
-                      performed_by: 'System / Facebook',
                       description: `🚫 Auto AI call skipped: Lead phone number (${phone}) is non-Indian. AI voice calling is restricted to Indian (+91) numbers.`
                   }).catch(() => {});
               }

@@ -80,7 +80,7 @@ async function handleVoiceCallerDispatcher(request: Request) {
       .neq('voice_call_status', 'calling')
       .neq('voice_call_status', 'failed')
       .neq('calling_enabled', false)
-      .not('pipeline_stage', 'in', '("Won", "Appointment booked")')
+      .not('pipeline_stage', 'in', '("Won", "won", "Closed", "closed", "Lost", "lost", "Lost/NI", "Already Purchased", "Deal/Token", "Deal / Token Paid", "Unqualified", "Dealer", "Appointment booked", "Appointment Booked", "Appointment done", "Appointment Done", "Site Visit Done", "Visit Done")')
 
     if (dbError) throw dbError
 

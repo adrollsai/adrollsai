@@ -137,21 +137,50 @@ export async function POST(request: Request) {
                 let cf: any = existingLead.custom_fields || {};
                 if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) { cf = {}; } }
                 
-                const reopenedCount = (cf.reopened_count || 0) + 1;
-                cf.reopened_count = reopenedCount;
-                cf.last_reopened_at = new Date().toISOString();
+                const reopenedCount = (Number(cf.reopened_count) || 0) + 1;
+                const currentSource = newLead.ad_name || newLead.form_name || 'Meta Ad';
+                const originalSource = existingLead.ad_name || existingLead.form_name || existingLead.source || 'Initial Meta Ad';
+                const previousSources: string[] = Array.isArray(cf.reopened_sources) && cf.reopened_sources.length > 0
+                    ? cf.reopened_sources
+                    : [originalSource];
+                const updatedSources = Array.from(new Set([...previousSources, currentSource]));
 
-                await supabase
+                cf = {
+                    ...cf,
+                    reopened_count: reopenedCount,
+                    reopened_sources: updatedSources,
+                    last_reopened_at: new Date().toISOString(),
+                    last_reopened_source: currentSource,
+                    pipeline_stage: 'New Lead',
+                    status: 'New Lead',
+                    lead_status: 'New Lead',
+                    client_status: 'New Lead',
+                    next_action_date: null,
+                    next_action_time: null,
+                    next_action_type: null,
+                    next_action_remark: null
+                };
+
+                const { error: updateErr } = await supabase
                     .from('leads')
                     .update({
                         pipeline_stage: 'New Lead',
                         status: 'New Lead',
+                        next_followup: null,
+                        source: 'Facebook Ads',
+                        ad_name: newLead.ad_name || existingLead.ad_name,
+                        form_name: newLead.form_name || existingLead.form_name,
                         custom_fields: cf,
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', existingLead.id);
 
-                const reopenDesc = `The lead was reopened from Facebook Ad Submission\nLead Name : ${newLead.name || existingLead.name}\nContact no : ${newLead.phone || existingLead.phone}\nEmail : ${newLead.email || existingLead.email || 'N/A'}\nLead Source : Facebook\nSource Details : ${newLead.ad_name || newLead.form_name || 'Meta Ad'}\nLead Status : ${existingLead.pipeline_stage || 'New'}`;
+                if (updateErr) {
+                    console.error('[CRM Sync Reopen Error] DB update failed:', updateErr.message);
+                    continue;
+                }
+
+                const reopenDesc = `The lead was reopened from Facebook Ad Submission\nLead Name : ${newLead.name || existingLead.name}\nContact no : ${newLead.phone || existingLead.phone}\nEmail : ${newLead.email || existingLead.email || 'N/A'}\nLead Source : Facebook Ads\nSource Details : ${currentSource}\nReopened Count : ${reopenedCount}\nPrevious Stage : ${existingLead.pipeline_stage || existingLead.status || 'New Lead'}\nCurrent Stage : Fresh (New Lead)`;
 
                 await supabase.from('lead_history').insert({
                     lead_id: existingLead.id,

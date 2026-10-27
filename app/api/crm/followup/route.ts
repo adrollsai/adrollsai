@@ -126,13 +126,11 @@ export async function POST(request: Request) {
       updatePayload.next_followup = nextActionDate
       if (nextActionType === 'Site Visit' || nextActionType === 'Meeting' || nextActionType === 'Appointment') {
         updatePayload.booked_time = nextActionDate
-      } else {
-        updatePayload.booked_time = null
       }
-    } else {
-      // When a follow-up is logged without scheduling a future date, previous next action is considered completed/neglected
+      // Note: Preserve existing booked_time on regular call/message follow-ups
+    } else if (nextActionDate === null || (typeof nextActionDate === 'string' && nextActionDate.trim() === '')) {
+      // Explicitly cleared follow-up date
       updatePayload.next_followup = null
-      updatePayload.booked_time = null
     }
 
     // Apply lead status/stage from the followup form (both DNP and non-DNP flows)
@@ -169,8 +167,6 @@ export async function POST(request: Request) {
       updatePayload.next_followup = nextActionDate
       if (nextActionType === 'Site Visit' || nextActionType === 'Meeting' || nextActionType === 'Appointment') {
         updatePayload.booked_time = nextActionDate
-      } else {
-        updatePayload.booked_time = null
       }
     } else if (isLostOrClosed) {
       updatePayload.next_followup = null
@@ -219,7 +215,7 @@ export async function POST(request: Request) {
         customFields.next_action_remark = null
         customFields.next_remarks = null
       }
-    } else {
+    } else if (isLostOrClosed || nextActionDate === null || (typeof nextActionDate === 'string' && nextActionDate.trim() === '')) {
       customFields.next_action_date = null
       updatePayload.next_followup = null
       customFields.next_action_type = null

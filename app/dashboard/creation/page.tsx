@@ -58,28 +58,70 @@ type Profile = {
 }
 
 
-// --- TEMPLATES LIBRARY ---
-const TEMPLATES: { id: string, name: string, url: string }[] = [
+// --- TEMPLATES LIBRARY (Reverse-engineered from Luxury Dubai References) ---
+export interface DesignTemplate {
+  id: string
+  name: string
+  category: string
+  description: string
+  badge: string
+  url: string
+}
+
+const TEMPLATES: DesignTemplate[] = [
   {
-    id: 'premium_orchid',
-    name: 'Premium Orchid Layout',
-    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/premium_seed_orchid.png'
+    id: 'dubai_sunset_splendor',
+    name: 'Dubai Sunset Splendor',
+    category: 'Golden Hour Luxury',
+    description: 'Aspirational sunset skyline, champagne & bronze warm lighting, prominent location pin & starting price pill.',
+    badge: 'Popular',
+    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081944492_0.jpg'
   },
   {
-    id: 'edm_farmland',
-    name: 'EDM Farmland Layout',
-    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/edm_seed_farmland.jpg'
+    id: 'obsidian_gold_executive',
+    name: 'Obsidian & Gold Executive',
+    category: 'Dark Mode Luxury',
+    description: 'Deep charcoal/navy backdrop, glowing gold accents, prominent starting price badge, 4 trust metrics & verified developer seal.',
+    badge: 'High Converting',
+    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081945419_1.jpg'
   },
   {
-    id: 'high_converting_99acres',
-    name: 'High Converting Layout',
-    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/reference-creatives/high_converting_seed_99acres.jpg'
+    id: 'warm_travertine_minimalist',
+    name: 'Warm Travertine Villa',
+    category: 'Minimalist Architecture',
+    description: 'Sun-drenched cream plaster, organic arch framing, lush landscaping, frosted glass price & location badge.',
+    badge: 'Architectural',
+    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081946159_3.jpg'
+  },
+  {
+    id: 'panoramic_horizon_penthouse',
+    name: 'Panoramic Horizon Penthouse',
+    category: 'Ultra-Luxury Vista',
+    description: 'Breathtaking infinity pool & skyline vista, refined serif & modern sans typography, bottom QR contact bar.',
+    badge: 'Ultra Luxury',
+    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081948991_6.jpg'
+  },
+  {
+    id: 'high_authority_showcase',
+    name: 'High-Authority Price & Location',
+    category: 'Direct Response',
+    description: 'High-converting direct-response layout with dominant price ribbon, location header pill, 3 value chips & CTA strip.',
+    badge: 'Highest ROI',
+    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081951867_9.jpg'
+  },
+  {
+    id: 'swiss_editorial_minimalist',
+    name: 'Swiss Modernist Editorial',
+    category: 'Clean White Space',
+    description: 'Expansive white negative space, Swiss modernist typography, asymmetrical 2-panel architecture, sharp pricing footer.',
+    badge: 'Contemporary',
+    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081954884_15.jpg'
   }
 ]
 
 const ASPECT_RATIOS = [
   { label: '1:1', value: '1:1', icon: Square },
-  { label: '4:5', value: '4:5', icon: RectangleVertical },
+  { label: '3:4', value: '3:4', icon: RectangleVertical },
   { label: '9:16', value: '9:16', icon: Smartphone }
 ]
 
@@ -305,8 +347,9 @@ export default function CreationPage() {
   ])
   
   // Configuration State
-  const [selectedRatio, setSelectedRatio] = useState('4:5')
+  const [selectedRatio, setSelectedRatio] = useState('3:4')
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
+  const [isTemplateChooserOpen, setIsTemplateChooserOpen] = useState(false)
   const [selectedModel, setSelectedModel] = useState<'google/nano-banana-2' | 'gpt/gpt-image-2-5-flare-text-to-image'>('gpt/gpt-image-2-5-flare-text-to-image')
   const [creativeCategory, setCreativeCategory] = useState('')
   
@@ -646,12 +689,13 @@ export default function CreationPage() {
   // --- BATCH CREATIVE WORKFLOW LOGIC ---
   const [creativeFlow, setCreativeFlow] = useState<{
     isOpen: boolean,
-    step: 'setup' | 'angles' | 'rendering' | 'final',
+    step: 'setup' | 'angles' | 'templates' | 'rendering' | 'final',
     product: Property | null,
     instructions: string,
     quantity: number,
     isOrganic: boolean,
     creativeCategory: string,
+    selectedTemplate: string | null,
     angles: any[],
     selectedAngles: number[],
     generatedAssets: any[],
@@ -665,6 +709,7 @@ export default function CreationPage() {
     quantity: 5,
     isOrganic: false,
     creativeCategory: '',
+    selectedTemplate: 'rotate',
     angles: [],
     selectedAngles: [],
     generatedAssets: [],
@@ -742,6 +787,7 @@ export default function CreationPage() {
     }
     const effectiveDescription = creativeFlow.product?.description || cleanProfileInfo || profile?.mission_statement || "";
 
+    let angleIdx = 0;
     for (const angle of selected) {
         try {
             let propImages: string[] = [];
@@ -758,15 +804,35 @@ export default function CreationPage() {
             // Check if logo is excluded
             const isLogoExcluded = profile?.logo_url ? creativeFlow.batchExcludedImages.includes(profile.logo_url) : false;
 
+            // Template assignment: choose selected template or rotate across Dubai luxury templates for variety
+            let assignedTemplateUrl: string | null = null;
+            let assignedStyleName = angle.title ? `${angle.title} - ${angle.visual_concept}` : undefined;
+            if (creativeFlow.selectedTemplate && creativeFlow.selectedTemplate !== 'rotate') {
+                const matched = TEMPLATES.find(t => t.id === creativeFlow.selectedTemplate);
+                if (matched) {
+                    assignedTemplateUrl = matched.url;
+                    assignedStyleName = `${matched.name} | ${assignedStyleName || ''}`;
+                }
+            } else {
+                // Dynamic rotation across distinct luxury templates
+                const rotatingTemplate = TEMPLATES[angleIdx % TEMPLATES.length];
+                if (rotatingTemplate) {
+                    assignedTemplateUrl = rotatingTemplate.url;
+                    assignedStyleName = `${rotatingTemplate.name} | ${assignedStyleName || ''}`;
+                }
+            }
+            angleIdx++;
+
             const payload = {
                 propertyTitle: effectiveTitle,
                 propertyDescription: effectiveDescription,
                 creativeCategory: creativeFlow.creativeCategory || '',
-                styleAesthetic: angle.title ? `${angle.title} - ${angle.visual_concept}` : undefined,
+                styleAesthetic: assignedStyleName,
+                templateUrl: assignedTemplateUrl,
                 userInstructions: (creativeFlow.instructions ? `${creativeFlow.instructions}\n` : '') + (angle.visual_concept ? `Visual Concept to follow: ${angle.visual_concept}` : ""),
                 propImages: filteredPropImages,
                 isOrganic: creativeFlow.isOrganic || angle.title?.toLowerCase().includes('raw') || angle.title?.toLowerCase().includes('smartphone') || creativeFlow.creativeCategory === 'High Converting',
-                aspectRatio: "4:5",
+                aspectRatio: "3:4",
                 model: 'image-2.0',
                 contactNumber: profile?.contact_number,
                 logoUrl: isLogoExcluded ? null : profile?.logo_url,
@@ -1350,8 +1416,17 @@ export default function CreationPage() {
     }
   }
 
+  const handleSelectTemplateAndGenerate = (templateId: string) => {
+    setSelectedTemplate(templateId);
+    setUploadedRefUrl(null);
+    setSelectedUserRefId(null);
+    setSelectedUserRefUrl(null);
+    setIsTemplateChooserOpen(false);
+    handleSend(templateId);
+  };
+
   // 3. Handle Send
-  const handleSend = async () => {
+  const handleSend = async (forcedTemplateId?: string) => {
     if (isThinking) return
     
     const userText = input.trim()
@@ -1361,6 +1436,19 @@ export default function CreationPage() {
     if (!userText && !selectedPropId && chatAttachments.length === 0) {
         alert("Please enter instructions or select a product.")
         return
+    }
+
+    // Always ask user to choose a template before generating an image creative
+    if (
+      creationMode === 'image' && 
+      !forcedTemplateId && 
+      !selectedTemplate && 
+      !uploadedRefUrl && 
+      !selectedUserRefId && 
+      !selectedUserRefUrl
+    ) {
+      setIsTemplateChooserOpen(true);
+      return;
     }
 
     setIsChatWorkspaceOpen(true)
@@ -1448,7 +1536,10 @@ export default function CreationPage() {
 
   const isEditMode = chatAttachments.length > 0 || isEditingLastImage;
 
-  const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
+  const effTemplate = forcedTemplateId || selectedTemplate
+  const templateObj = effTemplate === 'rotate'
+    ? TEMPLATES[Math.floor(Math.random() * TEMPLATES.length)]
+    : TEMPLATES.find(t => t.id === effTemplate)
   const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null
 
   const startResponse = await authFetch(`/api/chat${window.location.search}`, {
@@ -1861,7 +1952,58 @@ export default function CreationPage() {
                     <Layout size={16} />
                     <span className="text-[9px] font-bold uppercase tracking-wider">Auto</span>
                  </button>
-     
+
+                 {/* Rotate Diverse Luxury Styles */}
+                 <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTemplate('rotate');
+                      setUploadedRefUrl(null);
+                      setSelectedUserRefId(null);
+                      setSelectedUserRefUrl(null);
+                    }}
+                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${
+                      selectedTemplate === 'rotate' && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl
+                        ? 'border-blue-600 bg-blue-50/80 text-blue-600 ring-2 ring-blue-100 shadow-sm'
+                        : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                    title="Rotate Diverse Luxury Styles - AI rotates Dubai styles so designs are never repetitive"
+                 >
+                    <Sparkles size={16} className="text-blue-500 animate-pulse" />
+                    <span className="text-[8px] font-extrabold uppercase text-center leading-tight">Rotate</span>
+                 </button>
+
+                 {/* Curated Dubai Luxury Templates */}
+                 {TEMPLATES.map((tmpl) => {
+                    const isSelected = selectedTemplate === tmpl.id && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl;
+                    return (
+                      <button
+                        key={tmpl.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTemplate(tmpl.id);
+                          setUploadedRefUrl(null);
+                          setSelectedUserRefId(null);
+                          setSelectedUserRefUrl(null);
+                        }}
+                        className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden group transition-all ${
+                          isSelected ? 'border-blue-600 ring-2 ring-blue-500/20 shadow-md scale-95' : 'border-slate-200 hover:border-blue-300'
+                        }`}
+                        title={`${tmpl.name} - ${tmpl.category}`}
+                      >
+                        <img src={tmpl.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" alt={tmpl.name} />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-1">
+                          <span className="text-[7px] text-white font-extrabold truncate leading-none drop-shadow-sm text-left">{tmpl.name.split(' ')[0]}</span>
+                        </div>
+                        {isSelected && (
+                          <div className="absolute top-1 right-1 bg-blue-600 text-white rounded-full p-0.5 shadow-sm">
+                            <Check size={8} strokeWidth={3} />
+                          </div>
+                        )}
+                      </button>
+                    );
+                 })}
+      
                  {/* Custom style upload button */}
                  <div className="relative flex-shrink-0">
                       <button 
@@ -1956,22 +2098,28 @@ export default function CreationPage() {
                  </button>
 
                  {/* Active Selected Style Card preview */}
-                 {activeReferenceUrl && (
+                 {(activeReferenceUrl || selectedTemplate === 'rotate') && (
                      <div className="flex items-center gap-2 bg-purple-50/50 border border-purple-100 px-3 py-1.5 rounded-[1.25rem] flex-shrink-0 shadow-sm animate-in slide-in-from-left-2 duration-300">
-                         <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-purple-200 group">
-                             <img src={activeReferenceUrl} className="w-full h-full object-cover" alt="selected style" />
-                             <button
-                                 type="button"
-                                 onClick={() => handleOpenPreview(activeReferenceUrl, "Selected Reference Style", uploadedRefUrl ? "uploaded" : selectedTemplate ? "template" : "userRef", selectedTemplate || selectedUserRefId)}
-                                 className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300"
-                             >
-                                 <Eye size={12} className="text-white" />
-                             </button>
+                         <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-purple-200 group bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center flex-shrink-0">
+                             {activeReferenceUrl ? (
+                               <>
+                                 <img src={activeReferenceUrl} className="w-full h-full object-cover" alt="selected style" />
+                                 <button
+                                     type="button"
+                                     onClick={() => handleOpenPreview(activeReferenceUrl, "Selected Reference Style", uploadedRefUrl ? "uploaded" : selectedTemplate ? "template" : "userRef", selectedTemplate || selectedUserRefId)}
+                                     className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300"
+                                 >
+                                     <Eye size={12} className="text-white" />
+                                 </button>
+                               </>
+                             ) : (
+                               <Sparkles size={18} className="text-white animate-pulse" />
+                             )}
                          </div>
                          <div className="min-w-0">
                              <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-wider">Selected Style</span>
-                             <h4 className="text-[9.5px] font-black text-slate-800 mt-0.5 truncate max-w-[100px] capitalize leading-none">
-                                 {selectedTemplate ? `Template: ${selectedTemplate.replace('_', ' ')}` : selectedUserRefId ? "Library Item" : "Custom Upload"}
+                             <h4 className="text-[9.5px] font-black text-slate-800 mt-0.5 truncate max-w-[110px] capitalize leading-none">
+                                 {selectedTemplate === 'rotate' ? "Rotating Luxury Styles" : selectedTemplate ? `Template: ${selectedTemplate.replace(/_/g, ' ')}` : selectedUserRefId ? "Library Item" : "Custom Upload"}
                              </h4>
                          </div>
                          <button 
@@ -3351,6 +3499,153 @@ export default function CreationPage() {
         )}
       </AnimatePresence>
 
+      {/* TEMPLATE CHOOSER MODAL (Always asks user to choose a template before generating) */}
+      <AnimatePresence>
+        {isTemplateChooserOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white flex-shrink-0">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="text-blue-600 animate-pulse" size={20} />
+                    <h3 className="text-base font-extrabold text-slate-900">Choose a Design Template</h3>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Select a luxury aesthetic style for this creative, or choose dynamic rotation to ensure your ads never look repetitive.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTemplateChooserOpen(false)}
+                  className="bg-slate-50 hover:bg-slate-100 p-2 rounded-full text-slate-400 hover:text-slate-600 transition-all"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Template Grid */}
+              <div className="p-6 overflow-y-auto custom-scrollbar space-y-4">
+                {/* 1. Dynamic Rotating Card */}
+                <div
+                  onClick={() => handleSelectTemplateAndGenerate('rotate')}
+                  className="p-4 rounded-2xl border-2 border-blue-500/60 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-white hover:border-blue-600 hover:shadow-md transition-all cursor-pointer flex items-center gap-4 group"
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                    <Sparkles size={28} className="animate-pulse" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-600 text-white shadow-xs">
+                        Recommended
+                      </span>
+                      <span className="text-[10px] font-bold text-blue-700">Non-Repetitive Designs</span>
+                    </div>
+                    <h4 className="text-sm font-extrabold text-slate-900 group-hover:text-blue-700 transition-colors">
+                      Rotate Diverse Luxury Styles
+                    </h4>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">
+                      AI dynamically rotates through all 6 Dubai luxury design systems so each creative receives a distinct composition, lighting, and layout.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="bg-blue-600 group-hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all flex-shrink-0"
+                  >
+                    Select & Generate
+                  </button>
+                </div>
+
+                {/* 2. The 6 Dubai Templates */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {TEMPLATES.map((tmpl) => (
+                    <div
+                      key={tmpl.id}
+                      onClick={() => handleSelectTemplateAndGenerate(tmpl.id)}
+                      className="p-3.5 rounded-2xl border border-slate-200 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer bg-white flex gap-3.5 group relative"
+                    >
+                      <div className="w-20 h-24 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-100 relative">
+                        <img
+                          src={tmpl.url}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          alt={tmpl.name}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                      </div>
+                      <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                        <div>
+                          <div className="flex items-center justify-between gap-1 mb-1">
+                            <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 truncate">
+                              {tmpl.badge}
+                            </span>
+                          </div>
+                          <h4 className="text-xs font-extrabold text-slate-900 group-hover:text-blue-700 transition-colors leading-snug">
+                            {tmpl.name}
+                          </h4>
+                          <p className="text-[10px] text-slate-500 font-medium mt-1 leading-relaxed line-clamp-2">
+                            {tmpl.description}
+                          </p>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{tmpl.category}</span>
+                          <span className="text-[10px] font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+                            Use Style &rarr;
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsTemplateChooserOpen(false);
+                      setGalleryTab('all');
+                      setIsGalleryOpen(true);
+                    }}
+                    className="text-xs font-bold text-slate-600 hover:text-purple-700 bg-white border border-slate-200 px-3.5 py-2 rounded-xl transition-all shadow-2xs flex items-center gap-1.5"
+                  >
+                    <ImageIcon size={14} /> Open Reference Library
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsTemplateChooserOpen(false);
+                      refFileInputRef.current?.click();
+                    }}
+                    className="text-xs font-bold text-slate-600 hover:text-blue-600 bg-white border border-slate-200 px-3.5 py-2 rounded-xl transition-all shadow-2xs flex items-center gap-1.5"
+                  >
+                    <Upload size={14} /> Upload Custom Style
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSelectTemplateAndGenerate('rotate')}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-md shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-1.5"
+                >
+                  <Sparkles size={14} /> Quick Generate (Rotate)
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   )
 }
@@ -3377,7 +3672,7 @@ function CreativeFlowModal({
                 <Sparkles className="text-blue-600" size={24} /> AI Creative Engine
               </h2>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                Step {currentStep === 'setup' ? '1' : currentStep === 'angles' ? '2' : currentStep === 'rendering' ? '3' : '4'} of 4
+                Step {currentStep === 'setup' ? '1' : currentStep === 'angles' ? '2' : currentStep === 'templates' ? '3' : currentStep === 'rendering' ? '4' : '5'} of 5
               </p>
             </div>
             <button 
@@ -3585,6 +3880,85 @@ function CreativeFlowModal({
                 </div>
               </div>
             )}
+
+            {currentStep === 'templates' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-2xl border border-blue-100/80">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Sparkles className="text-blue-600" size={16} />
+                    <h3 className="text-sm font-bold text-slate-900">Choose Design Template Style</h3>
+                  </div>
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                    Select a reverse-engineered Dubai luxury aesthetic blueprint, or choose Dynamic Rotation to give each creative a distinct visual style, lighting, and composition.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Dynamic Rotating Card */}
+                  <div
+                    onClick={() => setCreativeFlow((prev: any) => ({ ...prev, selectedTemplate: 'rotate' }))}
+                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer group flex gap-3 relative ${
+                      creativeFlow.selectedTemplate === 'rotate' || !creativeFlow.selectedTemplate
+                        ? 'border-blue-600 bg-blue-50/40 ring-2 ring-blue-100 shadow-sm'
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    }`}
+                  >
+                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                      <Sparkles size={24} className="animate-pulse" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Recommended</span>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                          creativeFlow.selectedTemplate === 'rotate' || !creativeFlow.selectedTemplate
+                            ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'
+                        }`}>
+                          {(creativeFlow.selectedTemplate === 'rotate' || !creativeFlow.selectedTemplate) && <Check size={10} strokeWidth={3} />}
+                        </div>
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 leading-tight">Rotate Diverse Luxury Styles</h4>
+                      <p className="text-[10px] text-slate-500 font-medium mt-1 leading-snug line-clamp-2">
+                        AI automatically rotates distinct styles across variations so each creative looks uniquely stunning.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 6 Curated Dubai Templates */}
+                  {TEMPLATES.map((tmpl) => {
+                    const isSelected = creativeFlow.selectedTemplate === tmpl.id;
+                    return (
+                      <div
+                        key={tmpl.id}
+                        onClick={() => setCreativeFlow((prev: any) => ({ ...prev, selectedTemplate: tmpl.id }))}
+                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer group flex gap-3 relative overflow-hidden ${
+                          isSelected
+                            ? 'border-blue-600 bg-blue-50/40 ring-2 ring-blue-100 shadow-sm'
+                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                        }`}
+                      >
+                        <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200/60">
+                          <img src={tmpl.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt={tmpl.name} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1 mb-1">
+                            <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 truncate max-w-[100px]">{tmpl.badge}</span>
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                              isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'
+                            }`}>
+                              {isSelected && <Check size={10} strokeWidth={3} />}
+                            </div>
+                          </div>
+                          <h4 className="text-xs font-bold text-slate-900 leading-tight truncate">{tmpl.name}</h4>
+                          <p className="text-[10px] text-slate-500 font-medium mt-1 leading-snug line-clamp-2">
+                            {tmpl.description}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
   
             {currentStep === 'rendering' && (
               <div className="flex flex-col items-center justify-center py-20 animate-in fade-in zoom-in-95">
@@ -3596,7 +3970,7 @@ function CreativeFlowModal({
                 </div>
                 <h3 className="text-xl font-bold text-slate-900 mb-2">Batch Rendering Pipeline</h3>
                 <p className="text-sm text-slate-500 font-medium text-center max-w-sm">
-                  Generating {creativeFlow.selectedAngles.length} variations in high-fidelity 4:5 aspect ratio. This may take up to 60 seconds...
+                  Generating {creativeFlow.selectedAngles.length} variations in high-fidelity 3:4 aspect ratio. This may take up to 60 seconds...
                 </p>
                 
                 <div className="w-full max-w-xs bg-slate-100 h-1.5 rounded-full mt-8 overflow-hidden">
@@ -3640,7 +4014,10 @@ function CreativeFlowModal({
           <div className="p-6 border-t border-slate-100 bg-white flex justify-between items-center">
             {currentStep !== 'setup' && currentStep !== 'rendering' ? (
               <button 
-                onClick={() => setCreativeFlow((prev: any) => ({ ...prev, step: currentStep === 'angles' ? 'setup' : 'angles' }))}
+                onClick={() => setCreativeFlow((prev: any) => ({ 
+                  ...prev, 
+                  step: currentStep === 'angles' ? 'setup' : currentStep === 'templates' ? 'angles' : 'templates' 
+                }))}
                 className="bg-slate-100 text-slate-600 px-6 py-3 rounded-2xl font-bold hover:bg-slate-200 transition-colors"
               >
                 Back
@@ -3655,14 +4032,15 @@ function CreativeFlowModal({
               }
               onClick={() => {
                 if (currentStep === 'setup') handleGenerateAngles();
-                else if (currentStep === 'angles') handleStartBatchRendering();
+                else if (currentStep === 'angles') setCreativeFlow((prev: any) => ({ ...prev, step: 'templates' }));
+                else if (currentStep === 'templates') handleStartBatchRendering();
                 else if (currentStep === 'final') setCreativeFlow((prev: any) => ({ ...prev, isOpen: false }));
               }}
               className="bg-blue-600 text-white px-8 py-3.5 rounded-2xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/20 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
             >
               {creativeFlow.status === 'loading' ? <Loader2 className="animate-spin" size={18} /> : (
                 <>
-                  {currentStep === 'setup' ? 'Next: Strategy Review' : currentStep === 'angles' ? `Generate ${creativeFlow.selectedAngles.length} Creatives` : 'Done'}
+                  {currentStep === 'setup' ? 'Next: Strategy Review' : currentStep === 'angles' ? `Next: Choose Template (${creativeFlow.selectedAngles.length})` : currentStep === 'templates' ? `Generate ${creativeFlow.selectedAngles.length} Creatives (3:4)` : 'Done'}
                   {currentStep !== 'final' && <Plus size={18} />}
                 </>
               )}

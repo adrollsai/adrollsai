@@ -683,33 +683,31 @@ export async function POST(request: Request) {
 
                     const isIndianAccent = body.accent === 'indian' || body.voiceAccent === 'indian' || body.language === 'english_in' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
 
-                    const avatarScenePromptGen = `You are an elite commercial video director specializing in photorealistic live-action video generation with Grok Imagine 1.5.
-Write an ultra-realistic, highly human-like 9:16 portrait video prompt for Scene ${i + 1} of ${requiredClips}.
+                    const avatarScenePromptGen = `You are a premier cinematic commercial film director specializing in ultra-high-end 35mm live-action commercial cinematography.
+Write a cinematic, photorealistic 9:16 portrait video prompt for Scene ${i + 1} of ${requiredClips} for Grok Imagine 1.5.
 ${customInstructionsBlock}
-MANDATORY KINETIC OPENING (SECOND 0.0 — ZERO FREEZE DIRECTIVE):
-- Instant Active Motion: The scene opens with IMMEDIATE, fluid, lively motion and speech starting at the very first split-second (second 0.0). The presenter is ALREADY actively speaking, smiling warmly, with natural expressive facial micro-expressions, fluid lip-sync, and organic hand gestures.
-- Image 1 Disambiguation: Image 1 is strictly a character identity, facial likeness, hairstyle, skin tone, and wardrobe reference — it is NOT a static starting photo to freeze on. Absolutely DO NOT hold, freeze, or pause on the reference photo at the beginning. The video must start in live action immediately.
+CINEMATIC OPENING (SECOND 0.0 — ZERO FREEZE DIRECTIVE):
+- Fluid, Natural Delivery: The scene opens with smooth, natural motion starting at second 0.0. The presenter is in natural motion, speaking with calm, understated poise, authentic facial micro-expressions, fluid lip-sync, and subtle, natural presence.
+- Image 1 Disambiguation: Image 1 is strictly a character identity, facial likeness, hairstyle, skin tone, and wardrobe reference — NOT a static starting photo to freeze on. Absolutely DO NOT hold or freeze on the reference photo at the beginning.
 
-AVATAR IDENTITY & PRESENTER DIRECTIVES (MANDATORY):
-- Visual Identity: Image 1 is the primary reference image for the presenter's exact face, identity, hair, facial features, skin tone, and styling. The presenter in the video MUST look identical to the person in Image 1 throughout the entire clip.
-- Lifelike Human Expressions & Body Language: The presenter must look completely natural and alive, with authentic warm smiles, subtle facial micro-expressions, natural eye contact, realistic blinking, and relaxed, fluid body posture (avoid all robotic, stiff, or frozen poses).
-- Expressive Natural Gestures: While speaking, the presenter uses lively, organic hand gestures and natural head movements to emphasize key points warmly to the viewer.
-- Authentic Human Voice & Delivery Tonality: The presenter speaks in an authentic, warm, charismatic ${isIndianAccent ? 'Indian English' : 'natural human'} voice with ${isIndianAccent ? 'authentic Indian conversational cadence' : 'rich vocal texture'}, subtle breathing pauses, lively conversational cadence, expressive pitch variations, emotional conviction, and flawless lip synchronization saying: "${sceneDialogue}". Strictly NO robotic, artificial, or monotone voice synthesis.
+PRESENTER POISE & SUBTLETY (ZERO AGGRESSIVE OR UNCANNY EMOTIONS):
+- Visual Identity: Image 1 is the primary reference image for the presenter's exact face, identity, hair, skin tone, and styling. The presenter must look identical to Image 1.
+- Understated Demeanour: The presenter carries a quiet, sophisticated, relaxed confidence. Natural, subtle eye contact, relaxed posture, authentic conversational expressions. STRICTLY NO exaggerated theatrical grins, NO wide-eyed gasping, NO aggressive arm gestures, and NO cartoonish melodrama.
+- Refined Voice Delivery: The presenter speaks in an authentic, warm, refined ${isIndianAccent ? 'Indian English' : 'natural human'} voice with ${isIndianAccent ? 'nuanced conversational cadence' : 'rich vocal texture'}, natural breathing pauses, conversational warmth, and flawless lip synchronization saying: "${sceneDialogue}". Strictly NO robotic, artificial, or high-pitch monotone synthesis.
 
-REALISTIC REAL-WORLD SCENE ENVIRONMENT:
-- Authentic Environment: The presenter is situated in an authentic, believable real-world setting (such as a bright sunlit modern living space, real estate presentation lounge, or terrace with genuine architectural depth and 35mm shallow focus). Real atmospheric lighting, believable ambient reflections, and authentic live-action commercial photography aesthetics. Absolutely NO flat green screens, NO artificial CGI rooms, and NO sterile virtual voids.
+AUTHENTIC ARCHITECTURAL ENVIRONMENT (ZERO CGI / AI SHEEN):
+- High-End Real Setting: Situated in a sunlit architectural space (luxury terrace, sun-drenched penthouse lounge, or minimalist salon with genuine architectural depth and 35mm filmic focus). True ambient light, organic shadows, natural matte textures. Absolutely NO plastic CGI gloss, NO neon video-game sheen, and NO sterile virtual voids.
 
-CONTINUOUS SPEECH & PRODUCT B-ROLL SYNCHRONIZATION:
+CONTINUOUS SPEECH & CINEMATIC B-ROLL:
 - Product/Property Title: "${productTitle}"
 - Scene Visual Action: "${sceneVisuals}"
 - Reference Product Photos:
 ${descriptionsText}
-- Continuous Dialogue Flow: The spoken dialogue MUST span smoothly across the entire 15-second scene (from second 0 to second 14). NEVER stop speaking early leaving empty silent B-rolls at the tail end.
-- Visual B-Roll Motion: The camera transitions fluidly from the presenter to realistic dynamic B-roll angles showcasing the physical product/property features from reference photos (Images 2..${convertedRefImages.length}), while the presenter's speech continues seamlessly alongside the visual movement with ZERO dead air.
+- Spoken Dialogue: Spans smoothly across the 15-second scene without awkward abrupt stops.
+- Graceful Camera Flow: Camera transitions gracefully between the presenter and smooth, cinematic B-roll angles showcasing the architectural craftsmanship and textures from reference photos (Images 2..${convertedRefImages.length}).
 
-CINEMATOGRAPHY & AUDIO:
-- 35mm anamorphic camera, shallow depth of field, natural soft ambient lighting, true-to-life skin textures with realistic micro-details. 9:16 vertical ratio.
-- High-fidelity natural ${isIndianAccent ? 'Indian English' : 'human'} voice with realistic room acoustics and zero robotic distortion.
+CINEMATOGRAPHY & GRADE:
+- Shot on 35mm anamorphic camera, subtle organic film grain, shallow depth of field, warm ambient daylight, true-to-life skin textures with realistic micro-pores. 9:16 portrait ratio.
 - STRICT NO TEXT: Absolutely NO on-screen captions, NO text, NO titles, NO subtitles, NO watermarks.
 
 Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
@@ -737,7 +735,7 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                     }
 
                     if (!promptText) {
-                        promptText = `The presenter shown in Image 1 is the main character and is ALREADY actively speaking from the very first frame at second 0.0 with zero freeze or pause. Standing in a natural medium chest-up shot in an authentic sunlit architectural room with natural 35mm depth of field, with warm, lifelike facial micro-expressions, fluid head motion, and expressive natural hand gestures, she speaks continuously directly to the viewer in a warm, authentic ${isIndianAccent ? 'Indian English' : 'human'} voice with natural conversational cadence and flawless lip sync saying: "${sceneDialogue}". The shot flows seamlessly with dynamic camera cuts highlighting ${sceneVisuals || productTitle} from the reference product photos while her speech continues without interruption. 35mm live-action cinema lighting, realistic skin texture, 9:16 portrait ratio, crisp natural human voice. Strictly NO static photo freeze, NO robotic stiffness, NO artificial monotone speech, NO dead air, and NO on-screen text or subtitles.`;
+                        promptText = `The presenter shown in Image 1 is the main character and is in smooth, natural motion from the very first frame at second 0.0 with zero freeze. Standing in an elegant medium chest-up shot in an authentic sunlit architectural room with 35mm shallow depth of field, with calm, understated facial expressions and natural conversational poise, she speaks directly to the viewer in a warm, refined ${isIndianAccent ? 'Indian English' : 'human'} voice with natural conversational cadence and flawless lip sync saying: "${sceneDialogue}". The shot flows seamlessly with smooth camera reveals highlighting ${sceneVisuals || productTitle} from the reference photos while her speech continues naturally. 35mm filmic cinema lighting, realistic skin texture, 9:16 portrait ratio, crisp natural human voice. Strictly NO static photo freeze, NO exaggerated facial grimaces, NO robotic stiffness, NO CGI plastic sheen, and NO on-screen text or subtitles.`;
                     }
 
                     if (!promptText.toLowerCase().includes('second 0') && !promptText.toLowerCase().includes('second 0.0')) {
@@ -756,8 +754,8 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                         ? `\nUSER CUSTOM INSTRUCTIONS & MANDATORY CREATIVE DIRECTION (HIGHEST PRIORITY):\n"${customInstructions}"\n[CRITICAL DIRECTIVE: You MUST strictly prioritize and weave the above user instructions into the visual cuts, product demonstration, and pacing!]\n`
                         : '';
 
-                    const showcaseScenePromptGen = `You are an elite commercial cinematographer and director specializing in photorealistic, live-action commercial video ads.
-Write an authentic, highly natural, photorealistic 9:16 commercial video prompt for Scene ${i + 1} of ${requiredClips} for Grok Imagine 1.5.
+                    const showcaseScenePromptGen = `You are an elite architectural commercial cinematographer directing a luxury commercial film.
+Write a cinematic, highly atmospheric, premium 9:16 commercial video prompt for Scene ${i + 1} of ${requiredClips} for Grok Imagine 1.5.
 ${customInstructionsBlock}
 PRODUCT / PROPERTY CONTEXT:
 - Business/Product Title: "${productTitle}"
@@ -768,32 +766,20 @@ ${descriptionsText}
 SCRIPT SCENE ${i + 1} DIRECTIVES:
 - Visual Action: "${sceneVisuals}"
 
-TARGET DEMOGRAPHIC & CASTING (CRITICAL):
-- Target Market / Demographic: ${targetEthnicity}
-- Candid Lifestyle People: Any residents, buyers, or customers appearing in the scene must strictly be authentic ${targetEthnicity} demographic, with modern contemporary regional styling. They must appear in candid, unposed, natural real-world moments (such as walking past a sunlit window, sitting comfortably on a sofa, or stepping out onto the terrace). Strictly NO stiff poses, NO artificial doll-like grins, NO frozen mannequin stares, and NO uncanny valley expressions.
+CASTING & HUMAN INCLUSION DIRECTIVE (CRITICAL):
+- Context-Driven Human Inclusion: Unless explicitly instructed by the user, human presence should ONLY be included if it naturally elevates the visual composition (such as an ambient silhouette enjoying coffee by a terrace window or an elegant resident passing quietly through a sunlit foyer). If the concept is purely architectural, interior-focused, or product-driven, KEEP THE CAMERA STRICTLY FOCUSED on the magnificent architecture, space, and fine textures without forcing unnecessary people into the scene.
+- Understated Demeanour: Any people appearing in the frame must have calm, relaxed, understated emotions. STRICTLY NO exaggerated facial grimaces, NO theatrical gasping, NO aggressive grinning, and NO uncanny valley dolls.
 
-MASTER PHOTOREALISM & COMMERCIAL AD RULES:
-1. PURE LIVE-ACTION CINEMATOGRAPHY (ZERO CGI SHEEN):
-   - Shot on 35mm cinema camera with natural depth of field, authentic daylight flooding through real glass windows, soft organic room shadows, and true architectural color balance.
-   - STRICTLY NO CGI, NO 3D video game render sheen, NO plastic artificial gloss, NO oversaturated neon lighting, and NO cartoonish smoothness. The scene must look like real, filmed documentary commercial footage.
-2. STRICT REFERENCE IMAGE FIDELITY & RELEVANCE:
-   - Ground all visual architecture, room layout, materials, furniture style, and color palettes strictly in the tangible physical details visible in the reference images.
-   - Do not invent surreal, futuristic, or fantasy architecture. Highlight the real-world spaces, textures (matte wood, genuine stone/marble, textured fabric), and genuine features of the property/product.
-3. KINETIC COMMERCIAL PACING (RAPID YET GROUNDED):
-   - The prompt MUST strictly begin with: "The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 to 3 seconds where..."
-   - Progress through 4 to 5 distinct, coherent commercial camera moves showcasing the real space:
-     (a) 0-3s: Crisp wide hero establishing reveal of the space with a smooth push-in
-     (b) 3-6s: Quick cut to an authentic lifestyle moment of an authentic resident enjoying the living area
-     (c) 6-9s: Fast cut to a realistic macro detail showcasing premium architectural finishes/fixtures from the reference photos
-     (d) 9-12s: Dynamic handheld walkthrough moving through the sunlit space
-     (e) 12-15s: Wide cinematic perspective of the feature area with warm ambient light.
-   - Fluid camera motion: smooth dolly push-ins, dynamic whip-pans, and rack focus connecting shots without surreal morphing or rubbery warping.
-4. STRICT NO VOICEOVER / NO SPOKEN DIALOGUE IN VIDEO ENGINE:
-   - The video must contain STRICTLY ZERO voiceover, NO spoken speech, NO spoken dialogue, NO actors speaking, and NO talking heads. Pure visual commercial sequence.
-5. NO ON-SCREEN TEXT OR WATERMARKS:
-   - Absolutely NO text, NO titles, NO subtitles, NO captions, NO banners, and NO watermarks anywhere in the video.
-6. ANTI-AI NEGATIVE DIRECTIVES:
-   - Strictly avoid: CGI render look, 3D video game aesthetic, plastic artificial skin, oversaturated colors, distorted geometry, melted furniture, warping artifacts, or uncanny valley expressions.
+CINEMATIC LUXURY FILMMAKING (ZERO AI / CGI SHEEN):
+1. 35MM CINEMATIC FILM AESTHETIC (ANTI-AI SHEEN):
+   - Shot on 35mm cinema lens, subtle organic film grain, natural depth of field, authentic daylight pouring through expansive glass windows, soft room shadows, and tasteful, muted color grading.
+   - STRICTLY NO CGI, NO 3D video game render sheen, NO plastic artificial gloss, NO oversaturated neon colors, and NO cartoonish smoothness. Must look like authentic filmed live-action documentary or luxury architectural cinema.
+2. SMOOTH ARCHITECTURAL STEADICAM & GIMBAL MOTION:
+   - Begin smoothly from second 0. Use graceful, deliberate cinematic camera movements: slow steadycam push-ins, majestic architectural reveals, and elegant rack focus that showcase the physical materials (matte hardwoods, Italian marble, woven textiles). Avoid frantic or chaotic cut pacing.
+3. STRICT NO VOICEOVER / NO SPOKEN DIALOGUE IN VIDEO ENGINE:
+   - The video engine must contain STRICTLY ZERO voiceover, NO spoken speech, NO spoken dialogue, and NO talking heads. Pure visual cinematography.
+4. NO ON-SCREEN TEXT OR WATERMARKS:
+   - Absolutely NO text, NO titles, NO subtitles, NO captions, and NO watermarks anywhere in the video.
 
 Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do NOT use markdown code blocks or quotes.`;
 
@@ -816,15 +802,12 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
                             synthesized = res.text.trim();
                         } catch (genErr) {
                             console.warn(`[Grok Pipeline] Non-Avatar prompt generation fallback for scene ${i + 1}:`, genErr);
-                            synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 to 3 seconds where an authentic wide hero reveal showcases "${productTitle}" in natural daylight, cutting quickly to candid lifestyle moments of authentic ${targetEthnicity} residents enjoying the space, transitioning to a crisp macro focus on premium architectural finishes from the reference photos, and concluding with a warm wide-angle perspective. Shot on 35mm cinema lens, realistic natural window light, authentic live-action documentary realism, 9:16 portrait aspect ratio. Strictly NO CGI or 3D render sheen, NO plastic artificial surfaces, NO voiceover, NO spoken dialogue, NO speech, and NO talking heads. Absolutely NO text, NO titles, or text overlays of any kind.`;
+                            synthesized = `The scene opens smoothly from second 0 with a cinematic 35mm camera push-in showcasing "${productTitle}" in soft natural daylight, gliding gracefully to reveal premium architectural finishes, textured materials, and high-ceiling spaces from the reference photos, concluding with a serene wide-angle perspective. Shot on 35mm anamorphic cinema lens, natural daylight, organic film grain, authentic live-action architectural realism, 9:16 portrait aspect ratio. Strictly NO CGI or 3D render sheen, NO plastic artificial gloss, NO exaggerated human emotions, NO voiceover, NO spoken dialogue, and NO talking heads. Absolutely NO text, NO titles, or overlays of any kind.`;
                         }
                     }
 
-                    if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
-                        synthesized = `The scene starts immediately from second 0 with rapid, high-energy commercial cuts changing every 2 to 3 seconds where... ${synthesized}`;
-                    }
-                    if (!synthesized.toLowerCase().includes('no voiceover') && !synthesized.toLowerCase().includes('zero voiceover')) {
-                        synthesized += ` Strictly NO voiceover, NO spoken dialogue, NO spoken audio, NO speech, and NO talking to camera.`;
+                    if (!synthesized.toLowerCase().includes('starts immediately from second 0') && !synthesized.toLowerCase().includes('opens smoothly from second 0') && !synthesized.toLowerCase().includes('starts from second 0')) {
+                        synthesized = `The scene opens smoothly from second 0 with a cinematic camera move where... ${synthesized}`;
                     }
                     if (!synthesized.toLowerCase().includes(targetEthnicity.toLowerCase())) {
                         synthesized += ` Any featured people or residents are authentic ${targetEthnicity}.`;
@@ -841,16 +824,16 @@ Output ONLY the raw final prompt text in 3-4 vivid sentences (90-130 words). Do 
 
             // Character description — fed directly to Gemini
             const characterDescription = presenterType !== 'none'
-                ? (profileDesc || `a stunningly beautiful, highly attractive, charismatic ${extrapolatedEthnicity} female UGC content creator with a fair complexion, smiling warmly`)
-                : `a stunningly beautiful, highly charismatic ${extrapolatedEthnicity} female UGC content creator, smiling warmly and speaking directly to the camera`;
+                ? (profileDesc || `a sophisticated, elegantly styled ${extrapolatedEthnicity} commercial presenter with understated, calm poise and authentic, relaxed natural expressions`)
+                : `a sophisticated, elegantly styled ${extrapolatedEthnicity} host with understated, calm poise and authentic natural expressions`;
 
             const promptPromises = scenes.map(async (scene: any, i: number) => {
                 const characterAppearanceText = isCharacterVideo
                      ? `Use reference video ONLY for character facial appearance and identity consistency.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`
                      : `Use Image 1 reference photo ONLY for character facial appearance, identity consistency, and styling.\n\n${referenceAudioUrl ? "Use reference audio ONLY for voice characteristics.\n\n" : ""}Duration: 15 seconds\nAspect Ratio: 9:16`;
 
-                const synthesisPrompt = `You are a video generation prompt engineer for Bytedance/Kie.ai Seedance 2.0.
-Your task is to write a highly cohesive, concise prompt (around 120-150 words) for a 15-second UGC talking-head video scene.
+                const synthesisPrompt = `You are an elite video generation prompt engineer for high-end commercial live-action video production.
+Your task is to write a cohesive, concise cinematic prompt (around 120-150 words) for a 15-second commercial video scene.
 
 CREATOR CHARACTER:
 - Identity Reference: Image 1 is the exact avatar presenter photo. Faithfully clone and preserve their exact facial features, hair, skin tone, and persona from Image 1.
@@ -858,12 +841,12 @@ CREATOR CHARACTER:
 
 SCENE DETAILS:
 - Dialogue: "${scene.dialogue}"
-- Visuals/Camera: "${scene.visuals || 'medium chest-up shot looking directly at the camera with dynamic hand gestures'}"
+- Visuals/Camera: "${scene.visuals || 'medium chest-up shot looking directly at the camera with understated natural presence'}"
 
 Write the prompt following this exact structure and length:
-1. Cloning: "Use Image 1 to faithfully clone the person's face, identity, hairstyle, skin tone, clothing, and natural appearance. The presenter in the video must look identical to Image 1 throughout the entire clip. Deliver the speech in an authentic, warm, charismatic, and natural human voice with lively conversational cadence, organic pauses, and emotional conviction (strictly NO robotic AI tone)."
-2. Setting/Camera/Actions: Describe the scene setting and actions. You MUST strictly base this description on the scene visuals instruction: "${scene.visuals || 'medium chest-up shot'}". The presenter speaks continuously across the 15 seconds while gesturing naturally and interacting with the space. If product B-rolls are shown, the speech continues seamlessly over the visuals with zero dead air.
-3. Video specifications: "There should be no text captions on screen. Generate a highly photorealistic talking-head video with accurate lip synchronization. The speaker should maintain direct eye contact with the camera, use natural blinking, subtle head movements, and realistic hand gestures. Deliver the dialogue confidently and naturally like a professional advisor. Keep the speech conversational, expressive, and human-like throughout the entire 15 seconds. Avoid robotic delivery or exaggerated acting."
+1. Cloning: "Use Image 1 to faithfully clone the person's face, identity, hairstyle, skin tone, clothing, and natural appearance. The presenter in the video must look identical to Image 1 throughout the entire clip. Deliver the speech in an authentic, warm, refined, and natural human voice with nuanced conversational cadence, organic pauses, and quiet confidence (strictly NO robotic AI tone)."
+2. Setting/Camera/Actions: Describe the scene setting and actions. You MUST strictly base this description on the scene visuals instruction: "${scene.visuals || 'medium chest-up shot'}". The presenter speaks continuously across the 15 seconds with subtle, natural micro-movements in a 35mm filmic space. If product B-rolls are shown, the speech continues seamlessly over the visuals with zero dead air.
+3. Video specifications: "There should be no text captions on screen. Generate a highly photorealistic video with natural film grain, 35mm depth of field, and accurate lip synchronization. The speaker maintains relaxed, natural eye contact, subtle head movements, and quiet confident posture. Deliver the dialogue like a trusted, sophisticated advisor. Keep the speech natural and human throughout the entire 15 seconds. STRICTLY AVOID plastic CGI sheen, exaggerated grins, or dramatic cartoonish acting."
 4. Dialogue: Add a newline, then "Dialogue", then a newline, then print the exact dialogue wrapped in quotes.
 For example:
 Dialogue

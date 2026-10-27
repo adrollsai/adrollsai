@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, History, Clock, User, Phone, MessageSquare, AlertCircle, RefreshCw, FileText, ExternalLink, Package, Download } from 'lucide-react'
+import { X, History, Clock, User, Phone, MessageSquare, AlertCircle, RefreshCw, FileText, ExternalLink, Package, Download, Bot, Sparkles } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { getLeadFollowupCount } from '@/utils/lead-helpers'
@@ -19,13 +19,58 @@ interface LeadHistoryModalProps {
 const globalProfilesCache = new Map<string, string>()
 const leadHistoryCache = new Map<string, { items: any[]; timestamp: number }>()
 
+export const isAiOrAutomatedItem = (item: any): boolean => {
+  if (!item) return false
+  const desc = (item.description || '').toLowerCase()
+  const rawType = (item.action_type || item.title || '').toUpperCase()
+  const actor = (item.actor_name || item.performed_by || '').toLowerCase()
+
+  // 1. AI Voice calls & summaries & transcripts
+  if (rawType === 'AI_VOICE_CALL') return true
+  if (desc.startsWith('🎙️ call_json:') || desc.includes('call_json:') || desc.includes('ai voice call') || desc.includes('nobogent ai')) return true
+  if (desc.includes('ai caller') || actor.includes('ai voice') || actor.includes('nobogent ai')) return true
+
+  // 2. Automated outbound retries
+  if (desc.includes('automated retry') || desc.includes('scheduled automated retry')) return true
+  if (desc.includes('outbound call was unanswered') || desc.includes('outbound call was busy')) return true
+
+  // 3. Automated WhatsApp templates, chatbots & broadcasts
+  if (desc.startsWith('💬 wa_json:') || desc.startsWith('💬 wa_template:')) return true
+  if (desc.includes('whatsapp welcome') || desc.includes('video welcome') || desc.includes('instant whatsapp')) return true
+  if (actor.includes('automated system')) return true
+
+  // 4. System creations, imports & ad submissions
+  if (['LEAD_CREATED', 'LEAD_IMPORT', 'REOPENED', 'SYSTEM'].includes(rawType)) return true
+  if (item.id === 'foundational_lead_created') return true
+  if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('lead created from')) return true
+
+  return false
+}
+
 export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, teamMembers }: LeadHistoryModalProps) {
   const router = useRouter()
   const [historyItems, setHistoryItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'manual' | 'automated' | 'all'>('manual')
   const supabase = createClient()
 
   const [profilesMap, setProfilesMap] = useState<Map<string, string>>(new Map(globalProfilesCache))
+
+  const manualItems = React.useMemo(() => historyItems.filter(item => !isAiOrAutomatedItem(item)), [historyItems])
+  const automatedItems = React.useMemo(() => historyItems.filter(item => isAiOrAutomatedItem(item)), [historyItems])
+
+  const displayedItems = React.useMemo(() => {
+    if (activeTab === 'manual') return manualItems
+    if (activeTab === 'automated') return automatedItems
+    return historyItems
+  }, [activeTab, manualItems, automatedItems, historyItems])
+
+  useEffect(() => {
+    if (historyItems.length > 0) {
+      const hasManual = historyItems.some(it => !isAiOrAutomatedItem(it))
+      setActiveTab(hasManual ? 'manual' : 'automated')
+    }
+  }, [historyItems])
 
   // Ingest teamMembers into profile cache immediately
   useEffect(() => {
@@ -470,6 +515,72 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
           </div>
         </div>
 
+        {/* Tab Switcher: Manual Followups vs AI / Automated */}
+        <div className="px-3.5 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between gap-2 shrink-0 flex-wrap">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-200/70 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setActiveTab('manual')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'manual'
+                  ? 'bg-white text-blue-700 shadow-xs font-extrabold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <User size={13} />
+              <span>Manual Followups</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                activeTab === 'manual' ? 'bg-blue-100 text-blue-700' : 'bg-slate-300/60 text-slate-600'
+              }`}>
+                {manualItems.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('automated')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'automated'
+                  ? 'bg-white text-purple-700 shadow-xs font-extrabold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <Bot size={13} />
+              <span>AI / Automated</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                activeTab === 'automated' ? 'bg-purple-100 text-purple-700' : 'bg-slate-300/60 text-slate-600'
+              }`}>
+                {automatedItems.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={`px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                activeTab === 'all'
+                  ? 'bg-white text-slate-900 shadow-xs font-extrabold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <span>All</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                activeTab === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-300/60 text-slate-600'
+              }`}>
+                {historyItems.length}
+              </span>
+            </button>
+          </div>
+
+          <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">
+            {activeTab === 'manual'
+              ? '👤 Sales rep calls, DNPs & manual remarks'
+              : activeTab === 'automated'
+              ? '🤖 AI voice calls, retries & auto WhatsApp'
+              : '📜 Full chronological history'}
+          </span>
+        </div>
+
         {/* Modal Body: Timeline Items */}
         <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
           {loading ? (
@@ -533,9 +644,46 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                 </div>
               </div>
             </div>
+          ) : displayedItems.length === 0 ? (
+            /* Empty state for the active tab */
+            <div className="py-14 text-center space-y-3">
+              <div className={`w-12 h-12 rounded-2xl mx-auto flex items-center justify-center ${
+                activeTab === 'manual' ? 'bg-blue-50 text-blue-500' : 'bg-purple-50 text-purple-500'
+              }`}>
+                {activeTab === 'manual' ? <User size={24} /> : <Bot size={24} />}
+              </div>
+              <p className="font-extrabold text-sm text-slate-900">
+                {activeTab === 'manual' ? 'No Manual Followups Logged Yet' : 'No AI or Automated Followups'}
+              </p>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                {activeTab === 'manual'
+                  ? 'No calls, visits, meetings, or manual notes have been logged by sales reps for this lead yet.'
+                  : 'No AI voice calls, automated retry attempts, or automated WhatsApp broadcasts recorded for this lead.'}
+              </p>
+              {activeTab === 'manual' && automatedItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('automated')}
+                  className="px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-xs mt-1"
+                >
+                  <Bot size={14} />
+                  <span>View {automatedItems.length} AI / Automated Followup{automatedItems.length === 1 ? '' : 's'}</span>
+                </button>
+              )}
+              {activeTab === 'automated' && manualItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('manual')}
+                  className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl border border-blue-200 transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-xs mt-1"
+                >
+                  <User size={14} />
+                  <span>View {manualItems.length} Manual Followup{manualItems.length === 1 ? '' : 's'}</span>
+                </button>
+              )}
+            </div>
           ) : (
             <div className="relative pl-8 border-l-2 border-emerald-500/40 space-y-6 my-4">
-              {historyItems.map((item, idx) => {
+              {displayedItems.map((item, idx) => {
                 const resolveDisplayActionType = (it: any): string => {
                   const raw = (it.action_type || it.title || '').trim()
                   const desc = (it.description || '').toLowerCase()
@@ -560,6 +708,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   if (raw === 'MEETING') return 'MEETING'
                   if (raw === 'FOLLOWUP') return 'FOLLOWUP'
                   if (raw === 'PRIOR_FOLLOWUPS_SUMMARY') return 'PREVIOUS CRM FOLLOWUPS'
+                  if (raw === 'REOPENED') return '🔄 LEAD REOPENED'
                   return raw || 'Followup Event'
                 }
 
@@ -661,23 +810,35 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   )
                 }
 
+                const isReopenedItem = item.action_type === 'REOPENED'
+
                 return (
                   <div key={item.id || idx} className="relative">
                     {/* Circle Bullet on Timeline */}
-                    <span className="absolute -left-[39px] top-1 w-3.5 h-3.5 rounded-full border-2 border-emerald-500 bg-white" />
+                    <span className={`absolute -left-[39px] top-1 w-3.5 h-3.5 rounded-full border-2 ${
+                      isReopenedItem ? 'border-purple-600 bg-purple-100 ring-2 ring-purple-300' : 'border-emerald-500 bg-white'
+                    }`} />
 
                     {/* Actor Header */}
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 font-bold text-xs flex items-center justify-center border border-amber-300">
-                        {getInitial(actorName)}
+                      <div className={`w-7 h-7 rounded-full font-bold text-xs flex items-center justify-center border ${
+                        isReopenedItem ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-amber-100 text-amber-700 border-amber-300'
+                      }`}>
+                        {isReopenedItem ? '🔄' : getInitial(actorName)}
                       </div>
                       <span className="font-bold text-xs text-slate-800">{actorName}</span>
                       <span className="text-xs text-slate-400">{formatDateTime(item.created_at)}</span>
                     </div>
 
                     {/* Event Detail Card */}
-                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-1.5 text-xs text-slate-700 font-medium leading-relaxed">
-                      <p className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                    <div className={`p-4 rounded-2xl space-y-1.5 text-xs font-medium leading-relaxed border ${
+                      isReopenedItem 
+                        ? 'bg-purple-50/70 border-purple-200/90 text-purple-950' 
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                    }`}>
+                      <p className={`font-extrabold text-sm flex items-center gap-2 ${
+                        isReopenedItem ? 'text-purple-900' : 'text-slate-900'
+                      }`}>
                         <span>{displayActionType}</span>
                       </p>
 

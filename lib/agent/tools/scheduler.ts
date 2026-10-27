@@ -17,7 +17,7 @@ export function createSchedulerTools(supabase: SupabaseClient, userId: string) {
           'CUSTOM_CRON'
         ]).describe('Category of the scheduled job'),
         scheduledFor: z.string().describe('ISO-8601 string or future timestamp (e.g. 2026-10-02T10:00:00Z) when the task should trigger'),
-        payload: z.record(z.any()).describe('Contextual parameters for execution (e.g. leadIds, campaignName, message, targetTime)'),
+        payload: z.record(z.string(), z.any()).describe('Contextual parameters for execution (e.g. leadIds, campaignName, message, targetTime)'),
         recurrence: z.string().optional().describe('Optional cron recurrence expression or label (e.g. "daily", "weekly", "0 9 * * *")'),
       }),
       execute: async ({ taskTitle, eventType, scheduledFor, payload, recurrence }) => {

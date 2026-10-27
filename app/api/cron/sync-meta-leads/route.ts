@@ -444,7 +444,8 @@ async function handleSync(request: Request) {
                   } catch (e) {}
                 }
               }
-              // Check Duplicate Phone Number across entire workspace to Reopen Existing Lead
+              // Check Duplicate Phone Number or Email across entire workspace to Reopen Existing Lead
+              let existingLead: any = null;
               const cleanPhoneDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
               if (cleanPhoneDigits && cleanPhoneDigits.length >= 7) {
                 const { data: existingByPhone } = await supabaseAdmin
@@ -456,157 +457,201 @@ async function handleSync(request: Request) {
                   .limit(1);
 
                 if (existingByPhone && existingByPhone.length > 0) {
-                  const existingLead = existingByPhone[0];
-                  let cf = existingLead.custom_fields || {};
-                  if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) {} }
+                  existingLead = existingByPhone[0];
+                }
+              }
 
-                  // 1. Gather all previously processed facebook_lead_ids for this lead
-                  const allFbLeadIds: string[] = Array.isArray(cf.all_facebook_lead_ids)
-                    ? cf.all_facebook_lead_ids.map(String)
-                    : (existingLead.facebook_lead_id ? [String(existingLead.facebook_lead_id)] : []);
+              if (!existingLead && email && email.includes('@')) {
+                const { data: existingByEmail } = await supabaseAdmin
+                  .from('leads')
+                  .select('*')
+                  .in('user_id', workspaceTeamIds)
+                  .ilike('email', email.trim())
+                  .order('created_at', { ascending: false })
+                  .limit(1);
 
-                  // 2. Duplicate submission check: if this leadgenId has ALREADY been recorded, skip!
-                  if (leadgenId && (allFbLeadIds.includes(String(leadgenId)) || String(existingLead.facebook_lead_id) === String(leadgenId))) {
-                    continue;
-                  }
+                if (existingByEmail && existingByEmail.length > 0) {
+                  existingLead = existingByEmail[0];
+                }
+              }
 
-                  // 3. Historical Form Submission Guard:
-                  // Leads filled out on Meta more than 48 hours ago are historical pagination items, NEVER reopen!
-                  const submissionTime = fbLead.created_time ? new Date(fbLead.created_time).getTime() : Date.now();
-                  const isHistoricalOldLead = !isNaN(submissionTime) && (Date.now() - submissionTime) > (48 * 3600 * 1000);
+              if (existingLead) {
+                let cf = existingLead.custom_fields || {};
+                if (typeof cf === 'string') { try { cf = JSON.parse(cf); } catch (e) { cf = {}; } }
 
-                  if (isHistoricalOldLead) {
-                    const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgenId)]));
-                    await supabaseAdmin
-                      .from('leads')
-                      .update({
-                        custom_fields: {
-                          ...cf,
-                          all_facebook_lead_ids: updatedAllIds
-                        }
-                      })
-                      .eq('id', existingLead.id);
-                    continue;
-                  }
+                // 1. Gather all previously processed facebook_lead_ids for this lead
+                const allFbLeadIds: string[] = Array.isArray(cf.all_facebook_lead_ids)
+                  ? cf.all_facebook_lead_ids.map(String)
+                  : (existingLead.facebook_lead_id ? [String(existingLead.facebook_lead_id)] : []);
 
-                  // 4. Global Cooldown Guard: at least 4 hours between ANY reopens for the same lead
-                  const lastReopenTime = cf.last_reopened_at ? new Date(cf.last_reopened_at).getTime() : 0;
-                  const isRecentReopenGlitch = (Date.now() - lastReopenTime) < (4 * 3600 * 1000);
+                // 2. Duplicate submission check: if this leadgenId has ALREADY been recorded, skip!
+                if (leadgenId && (allFbLeadIds.includes(String(leadgenId)) || String(existingLead.facebook_lead_id) === String(leadgenId))) {
+                  continue;
+                }
 
-                  if (isRecentReopenGlitch) {
-                    const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgenId)]));
-                    await supabaseAdmin
-                      .from('leads')
-                      .update({
-                        custom_fields: {
-                          ...cf,
-                          all_facebook_lead_ids: updatedAllIds
-                        }
-                      })
-                      .eq('id', existingLead.id);
-                    continue;
-                  }
+                // 3. Historical Form Submission Guard:
+                // Leads filled out on Meta more than 48 hours ago are historical pagination items, NEVER reopen!
+                const submissionTime = fbLead.created_time ? new Date(fbLead.created_time).getTime() : Date.now();
+                const isHistoricalOldLead = !isNaN(submissionTime) && (Date.now() - submissionTime) > (48 * 3600 * 1000);
 
-                  const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
-                  const previousSources: string[] = Array.isArray(cf.reopened_sources) ? cf.reopened_sources : [];
-                  const updatedSources = Array.from(new Set([...previousSources, currentSourceId]));
+                if (isHistoricalOldLead) {
                   const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgenId)]));
-                  const reopenedCount = Math.max(1, updatedSources.length > 1 ? updatedSources.length - 1 : 1);
-
-                  if (!cf.original_created_at) {
-                    cf.original_created_at = existingLead.created_at;
-                  }
-
-                  cf = {
-                    ...cf,
-                    ...customFields,
-                    all_facebook_lead_ids: updatedAllIds,
-                    is_instant_form: true,
-                    qualification_completed: true,
-                    reopened_count: reopenedCount,
-                    reopened_sources: updatedSources,
-                    last_reopened_at: new Date().toISOString(),
-                    last_reopened_source: currentSourceId,
-                    meta_ad_origin: customFields.meta_ad_origin || cf.meta_ad_origin
-                  };
-
-                  // Determine stage preservation:
-                  // Only reset to 'New Lead' if the lead was previously dead / closed / lost / archive or had no stage.
-                  // If the agent is actively working the lead (Contacted, Site Visit Scheduled, Meeting, Negotiation, etc.),
-                  // PRESERVE the current stage so the agent's work is NEVER wiped out!
-                  const terminalStages = ['lost', 'lost/ni', 'not interested', 'junk', 'archive', 'closed', 'dropped'];
-                  const currentStageLower = (existingLead.pipeline_stage || existingLead.status || '').toLowerCase().trim();
-                  const isDeadOrNew = !currentStageLower || currentStageLower === 'new lead' || currentStageLower === 'fresh' || terminalStages.some(s => currentStageLower.includes(s));
-
-                  const updateLeadData: Record<string, any> = {
-                    source: 'Facebook Ads',
-                    custom_fields: cf
-                  };
-
-                  if (isDeadOrNew) {
-                    updateLeadData.pipeline_stage = 'New Lead';
-                    updateLeadData.status = 'New Lead';
-                  }
-
-                  if (leadgenId) {
-                    updateLeadData.facebook_lead_id = leadgenId;
-                  }
-                  if (adCampaignString) {
-                    updateLeadData.ad_name = adCampaignString;
-                  }
-                  if (formName) {
-                    updateLeadData.form_name = formName;
-                  }
-                  if (formId) {
-                    updateLeadData.form_id = formId;
-                  }
-                  if (campaignId) {
-                    updateLeadData.campaign_id = campaignId;
-                  }
-                  if (assignedAgentId) {
-                    updateLeadData.assigned_to = assignedAgentId;
-                  }
-
                   await supabaseAdmin
                     .from('leads')
-                    .update(updateLeadData)
+                    .update({
+                      custom_fields: {
+                        ...cf,
+                        all_facebook_lead_ids: updatedAllIds
+                      }
+                    })
                     .eq('id', existingLead.id);
+                  continue;
+                }
 
-                  const reopenDesc = `The lead was reopened from Meta Ads Sync\nLead Name : ${name || existingLead.name}\nContact no : ${phone}\nSource : Facebook Ads\nDetails : ${adCampaignString || formName}\nReopened Count : ${reopenedCount}`;
-                  await supabaseAdmin.from('lead_history').insert({
-                    lead_id: existingLead.id,
-                    user_id: assignedAgentId || existingLead.assigned_to || existingLead.user_id,
-                    action_type: 'REOPENED',
-                    performed_by: 'System / Meta Sync Cron',
-                    actor_name: 'Meta Ads Sync',
-                    description: reopenDesc,
-                    created_at: new Date().toISOString()
+                // 4. Glitch guard: only debounce if the exact same ad/form fires within 60s
+                const lastReopenTime = cf.last_reopened_at ? new Date(cf.last_reopened_at).getTime() : 0;
+                const currentSourceId = (adCampaignString || formName || campaignId || 'Meta Ad').trim();
+                const isExactSameSourceRecent = (cf.last_reopened_source === currentSourceId) && (Date.now() - lastReopenTime < 60 * 1000);
+
+                if (isExactSameSourceRecent) {
+                  const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgenId)]));
+                  await supabaseAdmin
+                    .from('leads')
+                    .update({
+                      custom_fields: {
+                        ...cf,
+                        all_facebook_lead_ids: updatedAllIds
+                      }
+                    })
+                    .eq('id', existingLead.id);
+                  continue;
+                }
+
+                const originalSource = existingLead.ad_name || existingLead.form_name || existingLead.source || 'Initial Meta Ad';
+                const previousSources: string[] = Array.isArray(cf.reopened_sources) && cf.reopened_sources.length > 0
+                  ? cf.reopened_sources
+                  : [originalSource];
+                const updatedSources = Array.from(new Set([...previousSources, currentSourceId]));
+                const updatedAllIds = Array.from(new Set([...allFbLeadIds, String(leadgenId)]));
+                const reopenedCount = (Number(cf.reopened_count) || 0) + 1;
+
+                if (!cf.original_created_at) {
+                  cf.original_created_at = existingLead.created_at;
+                }
+
+                // Extract custom question answers for timeline
+                const submittedAnswersList: string[] = [];
+                if (customFields && typeof customFields === 'object') {
+                  Object.entries(customFields).forEach(([k, v]) => {
+                    if (k !== 'meta_ad_origin' && k !== 'is_instant_form' && k !== 'qualification_completed' && v) {
+                      submittedAnswersList.push(`• ${k}: ${v}`);
+                    }
                   });
+                }
 
-                  // Notifications for reopened lead
-                  const cleanSource = (adCampaignString || 'Meta Ads').split(' / ')[0];
+                cf = {
+                  ...cf,
+                  ...customFields,
+                  all_facebook_lead_ids: updatedAllIds,
+                  is_instant_form: true,
+                  qualification_completed: true,
+                  is_reopened: true,
+                  reopened_count: reopenedCount,
+                  reopened_sources: updatedSources,
+                  last_reopened_at: new Date().toISOString(),
+                  last_reopened_source: currentSourceId,
+                  meta_ad_origin: customFields.meta_ad_origin || cf.meta_ad_origin,
+                  pipeline_stage: 'New Lead',
+                  status: 'New Lead',
+                  lead_status: 'New Lead',
+                  client_status: 'New Lead',
+                  next_action_date: null,
+                  next_action_time: null,
+                  next_action_type: null,
+                  next_action_remark: null
+                };
+
+                const previousStage = existingLead.pipeline_stage || existingLead.status || 'New Lead';
+                const updateLeadData: Record<string, any> = {
+                  source: 'Facebook Ads',
+                  pipeline_stage: 'New Lead',
+                  status: 'New Lead',
+                  next_followup: null,
+                  custom_fields: cf,
+                  updated_at: new Date().toISOString(),
+                  created_at: new Date().toISOString() // Surface reopened lead to the top of the Fresh section
+                };
+
+                if (leadgenId) {
+                  updateLeadData.facebook_lead_id = leadgenId;
+                }
+                if (adCampaignString) {
+                  updateLeadData.ad_name = adCampaignString;
+                }
+                if (formName) {
+                  updateLeadData.form_name = formName;
+                }
+                if (formId) {
+                  updateLeadData.form_id = formId;
+                }
+                if (campaignId) {
+                  updateLeadData.campaign_id = campaignId;
+                }
+                if (assignedAgentId) {
+                  updateLeadData.assigned_to = assignedAgentId;
+                }
+
+                const { error: updateErr } = await supabaseAdmin
+                  .from('leads')
+                  .update(updateLeadData)
+                  .eq('id', existingLead.id);
+
+                if (updateErr) {
+                  console.error('[Meta Leads Sync] DB error updating reopened lead:', updateErr.message);
+                  continue;
+                }
+
+                let reopenDesc = `The lead was reopened from Meta Ads Sync\nLead Name : ${name || existingLead.name}\nContact no : ${phone || existingLead.phone}\nEmail : ${email || existingLead.email || 'N/A'}\nLead Source : Facebook Ads\nSource Details : ${currentSourceId}\nReopen Count : ${reopenedCount}\nPrevious Stage : ${previousStage}\nCurrent Stage : Fresh (New Lead)`;
+                if (submittedAnswersList.length > 0) {
+                  reopenDesc += `\n\n📋 New Ad Submission Answers:\n${submittedAnswersList.join('\n')}`;
+                }
+
+                // DB schema for lead_history contains: id, lead_id, user_id, action_type, description, created_at
+                const { error: histErr } = await supabaseAdmin.from('lead_history').insert({
+                  lead_id: existingLead.id,
+                  user_id: assignedAgentId || existingLead.assigned_to || existingLead.user_id,
+                  action_type: 'REOPENED',
+                  description: reopenDesc,
+                  created_at: new Date().toISOString()
+                });
+
+                if (histErr) {
+                  console.error('[Meta Leads Sync] Error inserting reopen timeline record:', histErr);
+                }
+
+                // Notifications for reopened lead
+                const cleanSource = (adCampaignString || 'Meta Ads').split(' / ')[0];
+                sendAdminMultiChannelNotification({
+                  ownerUserId: profile.id,
+                  title: "🔄 Reopened Facebook Lead!",
+                  body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
+                  url: `/dashboard/crm/${existingLead.id}`,
+                  type: 'new_lead'
+                }).catch(() => {});
+
+                const notifAgent = assignedAgentId || existingLead.assigned_to;
+                if (notifAgent && notifAgent !== profile.id) {
                   sendAdminMultiChannelNotification({
-                    ownerUserId: profile.id,
-                    title: "🔄 Reopened Facebook Lead!",
+                    ownerUserId: notifAgent,
+                    title: "🔄 Reopened Lead Assigned to You!",
                     body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
                     url: `/dashboard/crm/${existingLead.id}`,
                     type: 'new_lead'
                   }).catch(() => {});
-
-                  const notifAgent = assignedAgentId || existingLead.assigned_to;
-                  if (notifAgent && notifAgent !== profile.id) {
-                    sendAdminMultiChannelNotification({
-                      ownerUserId: notifAgent,
-                      title: "🔄 Reopened Lead Assigned to You!",
-                      body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
-                      url: `/dashboard/crm/${existingLead.id}`,
-                      type: 'new_lead'
-                    }).catch(() => {});
-                  }
-
-                  diagnostics.reopenedLeads++;
-                  continue;
                 }
+
+                diagnostics.reopenedLeads++;
+                continue;
               }
 
               // Match corresponding active voice campaign for this user
@@ -692,19 +737,10 @@ async function handleSync(request: Request) {
                   (profile.email || '').toLowerCase() === 'rchopra489@gmail.com' ||
                   (profile.business_name || '').toLowerCase().includes('nobogent');
 
-              // Automated WhatsApp Welcome Drip & Instant Catalog (non-blocking)
+              // Automated WhatsApp 3-Button Welcome message only (no redundant secondary drips)
               if (!isNobogentAccount && savedLead && phone) {
                 const targetCampaignName = matchedPropertyTitle || campaignName || 'our properties';
                 sendInstantFormCatalogMessage(
-                  supabaseAdmin,
-                  savedLead.id,
-                  name,
-                  phone,
-                  profile.id,
-                  targetCampaignName
-                ).catch(() => {});
-
-                triggerWelcomeDrip(
                   supabaseAdmin,
                   savedLead.id,
                   name,
@@ -729,7 +765,6 @@ async function handleSync(request: Request) {
                     lead_id: savedLead.id,
                     user_id: profile.id,
                     action_type: 'REMARK',
-                    performed_by: 'System / Meta Sync',
                     description: `🚫 Auto AI call skipped: Lead phone number (${phone}) is non-Indian. AI voice calling is restricted to Indian (+91) numbers.`
                   }).catch(() => {});
                 }

@@ -11,40 +11,65 @@ async function checkMetaBilling() {
     const { data: profile } = await supabaseAdmin
         .from('profiles')
         .select('*')
-        .eq('email', 'rchopra489@gmail.com')
+        .eq('id', '2f62a259-f23b-48ee-a920-c436f36eaa4b')
         .single();
 
-    if (!profile) return console.log('No profile found');
-
-    const token = profile.whatsapp_access_token;
     const wabaId = profile.whatsapp_waba_id;
+    const token = profile.whatsapp_access_token;
     const phoneId = profile.whatsapp_phone_number_id;
 
-    console.log('Testing Meta Graph API with WABA:', wabaId, 'Phone:', phoneId);
+    console.log('Querying Meta Graph API for WABA:', wabaId);
 
-    // 1. Phone number details & quality rating & messaging tier & account mode
-    const pRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}?fields=display_phone_number,verified_name,code_verification_status,quality_rating,messaging_limit_tier,status,throughput,is_official_business_account,account_mode`, {
+    // 1. Query WABA fields
+    const res = await fetch(`https://graph.facebook.com/v20.0/${wabaId}?fields=id,name,currency,primary_funding_id,account_review_status,ownership_type,payment_method`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
-    console.log('Phone details:', await pRes.json());
+    console.log('WABA details:', await res.json());
 
-    // 2. WABA details & review status & currency & timezone
-    const wRes = await fetch(`https://graph.facebook.com/v20.0/${wabaId}?fields=name,account_review_status,currency,timezone_id,message_template_namespace,on_behalf_of_business_info,primary_funding_id`, {
+    // 2. Query Phone Number fields
+    const phoneRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating,messaging_limit_tier,status`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
-    console.log('WABA details:', await wRes.json());
+    console.log('Phone details:', await phoneRes.json());
 
-    // 3. Try to check payment methods / extended credit / billing
-    const payRes = await fetch(`https://graph.facebook.com/v20.0/${wabaId}/extended_credit_lines`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    console.log('Extended credit lines:', await payRes.json());
+    // 3. Let's do a test send of `anmol_avenu_wp_template` to Raman (+918288835235) from Blue Square's phone ID
+    console.log('\n--- ATTEMPTING TEST SEND TO 918288835235 ---');
+    const testPayload = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: "918288835235",
+        type: "template",
+        template: {
+            name: "anmol_avenu_wp_template",
+            language: { code: "en_US" },
+            components: [
+                {
+                    type: "header",
+                    parameters: [
+                        {
+                            type: "image",
+                            image: {
+                                link: "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    };
 
-    // 4. Try to check conversation analytics or payment info
-    const fundingRes = await fetch(`https://graph.facebook.com/v20.0/${wabaId}?fields=primary_funding_id,payment_configuration`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+    const sendRes = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(testPayload)
     });
-    console.log('Funding / Payment config:', await fundingRes.json());
+
+    const sendData = await sendRes.json();
+    console.log('Test send response status:', sendRes.status);
+    console.log('Test send response data:', JSON.stringify(sendData, null, 2));
 }
 
 checkMetaBilling().catch(console.error);

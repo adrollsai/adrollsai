@@ -158,7 +158,8 @@ export async function GET(request: Request) {
           try {
             const cf = parseCustomFields(vLead.custom_fields)
             // If already qualified on WhatsApp in the meantime, cancel call and skip
-            if (cf?.qualification_completed) {
+            // Note: Meta Instant Forms (is_instant_form: true) have qualification_completed: true from form submission, but MUST still receive their scheduled AI voice call.
+            if (cf?.qualification_completed && !cf?.is_instant_form) {
               await supabaseAdmin.from('leads').update({
                 voice_call_scheduled_at: null,
                 voice_call_status: 'qualified_via_whatsapp'

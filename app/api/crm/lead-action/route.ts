@@ -132,10 +132,27 @@ export async function POST(request: Request) {
       updates.notes = remarkNote + (currentLead.notes ? `\n\n${currentLead.notes}` : '')
     }
 
-    updates.custom_fields = customFields
+    const stageCheck = (updateStage || '').toLowerCase().trim()
+    const isTerminal = 
+      stageCheck.includes('lost') ||
+      stageCheck.includes('closed') ||
+      stageCheck.includes('won') ||
+      stageCheck.includes('already purchased') ||
+      stageCheck.includes('dealer') ||
+      stageCheck.includes('unqualified') ||
+      stageCheck === 'deal/token' ||
+      stageCheck === 'deal / token paid'
 
-    // Perform lead update
-    const { data: updatedLead, error: updateErr } = await supabase
+    if (isTerminal) {
+      updates.next_followup = null
+      updates.calling_enabled = false
+    }
+
+    updates.custom_fields = customFields
+    updates.updated_at = new Date().toISOString()
+
+    // Perform lead update using supabaseAdmin to guarantee permission
+    const { data: updatedLead, error: updateErr } = await supabaseAdmin
       .from('leads')
       .update(updates)
       .eq('id', leadId)
@@ -143,13 +160,15 @@ export async function POST(request: Request) {
       .single()
 
     if (updateErr) {
-      console.warn('Lead update warning (continuing fallback):', updateErr.message)
+      console.error('Lead update error in lead-action:', updateErr.message)
+      return NextResponse.json({ error: 'Could not save lead update: ' + updateErr.message }, { status: 500 })
     }
 
-    // 2. Save History Log with user_id for Team Stats tracking
-    const { error: historyError } = await supabase.from('lead_history').insert({
+    // 2. Save History Log with workspace user_id and actor_id
+    const { error: historyError } = await supabaseAdmin.from('lead_history').insert({
       lead_id: leadId,
-      user_id: user.id,
+      user_id: currentLead.user_id,
+      actor_id: user.id,
       action_type: actionType || 'CALL_FEEDBACK',
       description: description || `Action performed: ${actionType}`
     })

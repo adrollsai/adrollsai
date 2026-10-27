@@ -62,7 +62,8 @@ export async function processLeadEvent(event: OrchestrationEvent): Promise<{ suc
         return { success: false, error: 'Lead not found' };
     }
 
-    const userId = leadRecord.assigned_to;
+    const record = leadRecord as any;
+    const userId = record.assigned_to;
     if (!userId) {
         return { success: true, actionTaken: 'lead_unassigned' };
     }
@@ -79,7 +80,7 @@ export async function processLeadEvent(event: OrchestrationEvent): Promise<{ suc
         return { success: true, actionTaken: 'agent_not_enabled_for_user' };
     }
 
-    if (leadRecord.processing_lock_until && new Date(leadRecord.processing_lock_until).getTime() > now.getTime()) {
+    if (record.processing_lock_until && new Date(record.processing_lock_until).getTime() > now.getTime()) {
         console.log(`[ORCHESTRATOR] Lead ${leadId} is currently being processed by another worker. Skipping.`);
         return { success: true, actionTaken: 'locked_skipped' };
     }

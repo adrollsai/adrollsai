@@ -535,7 +535,7 @@ export default function ProductsPage() {
           logoUrl: profile?.logo_url || "",
           propImages: propImages,
           templateUrl: null,
-          aspectRatio: '4:5',
+          aspectRatio: '3:4',
           model: 'google/nano-banana-2',
           creativeCategory: 'premium'
       }

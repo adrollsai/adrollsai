@@ -827,7 +827,8 @@ function CRMPageContent() {
   const handleDeleteSelectedLeads = async () => {
     if (selectedLeadIds.length === 0) return
     try {
-      await supabase.from('leads').delete().in('id', selectedLeadIds)
+      const { error } = await supabase.from('leads').delete().in('id', selectedLeadIds)
+      if (error) throw error
       toast.success(`Deleted ${selectedLeadIds.length} lead(s).`)
       setSelectedLeadIds([])
       fetchLeads(true)
@@ -971,7 +972,7 @@ function CRMPageContent() {
 
   const isFetchingLeadsRef = useRef(false)
 
-  const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled'
+  const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled, calling_enabled, dnp_count, last_call_at, last_call_status, facebook_created_at'
 
   // 1. DIRECT SUPABASE PARALLEL FETCH — No API route middleman
   const fetchLeads = async (force = false, silent = false) => {
@@ -1237,8 +1238,11 @@ function CRMPageContent() {
       setLeads(prev => prev.map(l => {
         if (l.id === updatedData.id) {
           const merged = { ...l, ...updatedData }
-          if (updatedData.status) merged.pipeline_stage = updatedData.status
-          if (updatedData.pipeline_stage) merged.status = updatedData.pipeline_stage
+          const targetStage = updatedData.pipeline_stage || updatedData.status
+          if (targetStage) {
+            merged.pipeline_stage = targetStage
+            merged.status = targetStage
+          }
           merged.custom_fields = parseCustomFields(merged.custom_fields)
           if (!merged.next_followup || isNaN(new Date(merged.next_followup).getTime())) {
             merged.next_followup = null
@@ -1725,14 +1729,15 @@ function CRMPageContent() {
   const handleDeleteLead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation() 
     if (!confirm("Are you sure you want to delete this lead?")) return
-    // Optimistically remove immediately from local state
-    setLeads(prev => prev.filter(l => l.id !== id))
-    setTotalLeadsCount(prev => Math.max(0, prev - 1))
-    toast.success("Lead deleted")
     try {
-      await supabase.from('leads').delete().eq('id', id)
+      const { error } = await supabase.from('leads').delete().eq('id', id)
+      if (error) throw error
+      setLeads(prev => prev.filter(l => l.id !== id))
+      setTotalLeadsCount(prev => Math.max(0, prev - 1))
+      toast.success("Lead deleted")
       fetchLeads(true, true)
-    } catch (err) {
+    } catch (err: any) {
+      toast.error("Failed to delete lead: " + (err.message || String(err)))
       console.error("Failed to delete lead from database:", err)
     }
   }

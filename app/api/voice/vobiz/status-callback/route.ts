@@ -124,38 +124,48 @@ async function handleStatusCallback(req: Request) {
                 updatePayload.voice_call_status = updatedStatus
             }
 
-            // Automated follow-up retry scheduling for unanswered / busy / failed calls
+            // Automated follow-up retry scheduling for unanswered / busy / failed calls (Infinite Decaying Cadence)
             if (['no_answer', 'failed'].includes(updatedStatus || '')) {
                 try {
                     const { data: currentLead } = await supabaseAdmin
                         .from('leads')
-                        .select('id, voice_call_retry_count, pipeline_stage, status, notes')
+                        .select('id, voice_call_retry_count, pipeline_stage, status, notes, custom_fields, calling_enabled')
                         .eq('id', leadId)
                         .single()
 
-                    const currentRetries = currentLead?.voice_call_retry_count || 0
-                    if (currentRetries < 3) {
-                        const nextRetryCount = currentRetries + 1
-                        let delayMinutes = 30
-                        if (nextRetryCount === 2) delayMinutes = 90
-                        if (nextRetryCount === 3) delayMinutes = 180
+                    let cf: any = currentLead?.custom_fields || {}
+                    if (typeof cf === 'string') {
+                        try { cf = JSON.parse(cf) } catch (e) { cf = {} }
+                    }
 
-                        const { computeValidCallingSlot } = await import('@/utils/calling-window')
-                        const targetRawDate = new Date(Date.now() + delayMinutes * 60000)
-                        const { scheduledTime: validSlot } = computeValidCallingSlot(targetRawDate, 'Asia/Kolkata')
+                    // Check if lead has explicitly opted out or is disabled
+                    const isOptedOut = currentLead?.calling_enabled === false || cf.calling_enabled === false || cf.is_interested === false
+                    const terminalStages = ['Won', 'Lost', 'Lost/NI', 'Deal/Token', 'Appointment Booked', 'Disqualified', 'Wrong Number', 'Do Not Call']
+                    const isTerminalStage = terminalStages.some(s => (currentLead?.pipeline_stage || '').toLowerCase().includes(s.toLowerCase()))
+
+                    if (isOptedOut || isTerminalStage) {
+                        updatePayload.voice_call_status = 'no_answer'
+                        updatePayload.voice_call_scheduled_at = null
+                        console.log(`[VOBIZ STATUS] Lead ${leadId} has opted out or reached terminal stage. Retry skipped.`)
+                    } else {
+                        const currentRetries = currentLead?.voice_call_retry_count || 0
+                        const nextRetryCount = currentRetries + 1
+
+                        const { computeNextRetrySlot } = await import('@/utils/calling-window')
+                        const validSlot = computeNextRetrySlot(nextRetryCount, new Date(), 'Asia/Kolkata')
                         const scheduledTime = validSlot.toISOString()
 
                         updatePayload.voice_call_status = 'scheduled_retry'
                         updatePayload.voice_call_scheduled_at = scheduledTime
                         updatePayload.voice_call_retry_count = nextRetryCount
 
-                        // CRITICAL: Keep lead in Fresh section so human tele-callers can get to them!
+                        // CRITICAL: Keep lead in Fresh section so human tele-callers can also see them!
                         if (!currentLead?.pipeline_stage || currentLead.pipeline_stage === 'New' || currentLead.pipeline_stage === 'New Lead') {
                             updatePayload.pipeline_stage = 'New Lead'
                             updatePayload.status = 'New Lead'
                         }
 
-                        let updatedNotes = `[⚠️ Call Rescheduled]: Follow-up retry #${nextRetryCount} scheduled for ${validSlot.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} (Reason: ${callStatus})`
+                        let updatedNotes = `[⚠️ Call Rescheduled]: Automated follow-up retry #${nextRetryCount} scheduled for ${validSlot.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST (Reason: ${callStatus})`
                         if (currentLead?.notes) {
                             updatedNotes += `\n\n${currentLead.notes}`
                         }
@@ -166,16 +176,9 @@ async function handleStatusCallback(req: Request) {
                             .insert({
                                 lead_id: leadId,
                                 action_type: 'REMARK',
-                                description: `⚠️ Outbound call was unanswered/busy (${callStatus}). Scheduled automated retry #${nextRetryCount} at ${validSlot.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}.`
+                                description: `⚠️ Outbound call was unanswered/busy (${callStatus}). Scheduled automated retry #${nextRetryCount} for ${validSlot.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST.`
                             })
                         console.log(`[VOBIZ STATUS] Scheduled follow-up retry #${nextRetryCount} for lead ${leadId} at ${scheduledTime}`)
-                    } else {
-                        updatePayload.voice_call_status = 'no_answer'
-                        updatePayload.voice_call_scheduled_at = null
-                        if (!currentLead?.pipeline_stage || currentLead.pipeline_stage === 'New' || currentLead.pipeline_stage === 'New Lead') {
-                            updatePayload.pipeline_stage = 'New Lead'
-                            updatePayload.status = 'New Lead'
-                        }
                     }
                 } catch (retryErr: any) {
                     console.warn('[VOBIZ STATUS] Error scheduling follow-up retry:', retryErr.message)
@@ -219,6 +222,10 @@ async function handleStatusCallback(req: Request) {
                 updatePayload.voice_recording_url = publicRecordingUrl
             }
 
+            updatePayload.last_call_at = new Date().toISOString()
+            updatePayload.last_call_status = updatedStatus === 'completed' ? 'connected' : (['no_answer', 'busy'].includes(updatedStatus || '') ? 'no_answer' : 'failed')
+            updatePayload.last_called_by = 'AI Caller'
+
             if (Object.keys(updatePayload).length > 0) {
                 await supabaseAdmin
                     .from('leads')
@@ -249,20 +256,6 @@ async function handleStatusCallback(req: Request) {
                     } catch (rErr) {
                         console.warn('[VOBIZ STATUS] Failed to update recording in history:', rErr)
                     }
-                }
-
-                // If call was unanswered / failed / busy, trigger Missed Call Text Back with booking link
-                if (['no_answer', 'failed', 'busy'].includes(updatedStatus || '') && lead?.user_id && lead?.phone) {
-                    import('@/utils/missed-call-textback').then(({ triggerMissedCallTextBack }) => {
-                        triggerMissedCallTextBack({
-                            supabaseAdmin,
-                            leadId: lead.id,
-                            profileId: lead.user_id,
-                            callerPhone: lead.phone,
-                            callerName: lead.name,
-                            reason: `Vobiz Call (${updatedStatus})`
-                        }).catch(e => console.warn('[VOBIZ STATUS] Missed call textback error:', e))
-                    }).catch(() => {})
                 }
 
                 // If call finished (completed, failed, or no_answer)

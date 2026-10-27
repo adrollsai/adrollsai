@@ -1,21 +1,41 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerClient } from '@/utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 
-const supabaseAdmin = createClient(
+const supabaseAdmin = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export async function POST(req: Request) {
     try {
+        const authHeader = req.headers.get('authorization');
+        const isCron = process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+
+        let userId: string | null = null;
+        if (!isCron) {
+            const serverSupabase = await createServerClient();
+            const { data: { user } } = await serverSupabase.auth.getUser();
+            if (!user) {
+                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+            }
+            userId = user.id;
+        }
+
         const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
         const fortyFiveMinutesAgo = new Date(Date.now() - 45 * 60 * 1000).toISOString();
 
-        // Find all assets in 'Processing' state
-        const { data: activeAssets, error: fetchError } = await supabaseAdmin
+        // Find assets in 'Processing' state, scoped to user unless cron
+        let query = supabaseAdmin
             .from('assets')
             .select('id, type, created_at')
             .eq('status', 'Processing');
+
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
+
+        const { data: activeAssets, error: fetchError } = await query;
 
         if (fetchError) throw fetchError;
 

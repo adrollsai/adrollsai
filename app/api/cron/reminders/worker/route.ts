@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     if (reminderType === 'followup') {
       const { data: lead, error: leadErr } = await supabaseAdmin
         .from('leads')
-        .select('id, user_id, assigned_to, name, phone, next_followup')
+        .select('id, user_id, assigned_to, name, phone, next_followup, custom_fields')
         .eq('id', leadId)
         .maybeSingle()
 
@@ -63,16 +63,17 @@ export async function POST(request: Request) {
         ).catch(err => console.error(`[Reminders Worker] Push failed for ${targetId}:`, err))
       }
 
-      // Record that reminder was sent without erasing next_followup date
+      // Record that reminder was sent without erasing custom_fields or next_followup date
       let cf: any = lead.custom_fields || {}
       if (typeof cf === 'string') {
         try { cf = JSON.parse(cf) } catch (e) { cf = {} }
       }
+      if (!cf || typeof cf !== 'object' || Array.isArray(cf)) cf = {}
       cf.last_followup_reminder_sent_at = new Date().toISOString()
 
       const { error: updateError } = await supabaseAdmin
         .from('leads')
-        .update({ custom_fields: cf })
+        .update({ custom_fields: cf, updated_at: new Date().toISOString() })
         .eq('id', leadId)
 
       if (updateError) console.warn('[Reminders Worker] Failed to update custom_fields:', updateError)

@@ -54,15 +54,15 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
         const now = Date.now()
         const SIX_DAYS_MS = 6 * 24 * 60 * 60 * 1000 // Minimum 6 days spacing to prevent duplicate Saturday dispatches
 
-        // 1. Fetch leads across all accounts
+        // 1. Fetch leads across all accounts (excluding Lost, Won, and Not Interested categories)
         const { data: leads, error: leadsErr } = await supabaseAdmin
             .from('leads')
             .select('id, user_id, name, phone, email, booked_time, pipeline_stage, status, custom_fields, created_at')
             .not('phone', 'is', null)
             .is('booked_time', null)
-            .not('pipeline_stage', 'in', '("Won", "Deal/Token", "Lost/NI", "Dealer", "Already Purchased")')
+            .not('pipeline_stage', 'in', '("Won", "Deal/Token", "Deal / Token Paid", "Lost", "Lost/NI", "Not Interested", "Dealer", "Already Purchased", "Unqualified")')
             .order('created_at', { ascending: false })
-            .limit(200)
+            .limit(500)
 
         if (leadsErr) throw leadsErr
 
@@ -79,22 +79,22 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
             try {
                 const cf = parseCustomFields(lead.custom_fields)
 
-                // Check opt-out
-                if (cf.opt_out || cf.unsubscribed_at || lead.status === 'not_interested') {
+                // Check opt-out or explicit non-interest
+                const isLostOrNotInterested = 
+                    cf.opt_out || 
+                    cf.unsubscribed_at || 
+                    lead.status === 'not_interested' || 
+                    lead.status === 'lost' ||
+                    lead.pipeline_stage === 'Lost' ||
+                    lead.pipeline_stage === 'Lost/NI' ||
+                    lead.pipeline_stage === 'Not Interested'
+
+                if (isLostOrNotInterested) {
                     skippedCount++
                     continue
                 }
 
-                // Check qualification score (Qualified and above: Score >= 40 or warm/hot)
-                const scoreResult = calculateLeadScore(lead, ['property_type', 'budget', 'timeline'])
-                const isQualified = scoreResult.score >= 40 || ['warm', 'hot'].includes(scoreResult.tier)
-                
-                if (!isQualified) {
-                    skippedCount++
-                    continue
-                }
-
-                // Check weekly interval (Must be at least 7 days since last weekly followup)
+                // Check weekly interval (Must be at least 6 days since last weekly followup)
                 const lastWeeklyFollowup = cf.last_weekly_followup_at ? new Date(cf.last_weekly_followup_at).getTime() : 0
                 const createdTime = new Date(lead.created_at).getTime()
                 
@@ -128,8 +128,7 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                     continue
                 }
 
-                // Strictly ensure weekly inventory showcase followups ONLY run for real estate accounts with property inventory
-                // NEVER for Nobogent SaaS or non-real estate accounts
+                // Strictly ensure Nobogent SaaS internal test accounts do not blast automated prospect messages
                 const isNobogentSaaS = 
                     lead.user_id === 'bc63c065-9bcc-4793-bedc-f0960406425b' ||
                     lead.user_id === '91553adf-20b5-4c4c-9614-6b6f89fd0bfd' ||
@@ -139,16 +138,6 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                     (profile.business_name || '').toLowerCase().includes('nobogent') ||
                     (profile.business_name || '').toLowerCase().includes('adrolls')
                 if (isNobogentSaaS) {
-                    skippedCount++
-                    continue
-                }
-
-                const { count: propCount } = await supabaseAdmin
-                    .from('properties')
-                    .select('id', { count: 'exact', head: true })
-                    .eq('user_id', lead.user_id)
-
-                if (!propCount || propCount === 0) {
                     skippedCount++
                     continue
                 }
@@ -169,7 +158,9 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
 
                 const businessName = profile.business_name || 'our team'
                 const leadName = (lead.name && !lead.name.startsWith('+') && lead.name !== 'Customer') ? lead.name : 'there'
-                const promptText = `Hi ${leadName}! 👋 Following up from ${businessName} with our latest curated property opportunities and project updates.\n\nWhat would you like to do?`
+                
+                // Industry-agnostic 3-button message copy approved for all client verticals
+                const promptText = `Hi ${leadName}! 👋 Checking in from ${businessName}. We are here to assist you with your requirements. How can our team best help you today?`
 
                 // Send 3-Button Weekly Follow-Up Message via Meta Graph API
                 const metaUrl = `https://graph.facebook.com/v20.0/${waPhoneId}/messages`
@@ -183,8 +174,8 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                         body: { text: promptText },
                         action: {
                             buttons: [
-                                { type: 'reply', reply: { id: 'view_properties', title: 'View properties' } },
-                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to an expert' } },
+                                { type: 'reply', reply: { id: 'view_properties', title: 'View Offerings' } },
+                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Expert' } },
                                 { type: 'reply', reply: { id: 'book_appointment', title: 'Book an appointment' } }
                             ]
                         }

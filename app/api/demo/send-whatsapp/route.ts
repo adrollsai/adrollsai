@@ -53,7 +53,11 @@ export async function POST(req: Request) {
             process.env.DEV_WHATSAPP_ACCESS_TOKEN
         ].filter(Boolean) as string[];
 
-        const phoneId = superAdminProfile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || '1140952692437292';
+        // Official verified Nobogent WhatsApp Business Phone Number (+91 98771 61216, verified_name: 'Nobogent')
+        const NOBOGENT_OFFICIAL_PHONE_ID = '1185499271314063';
+        const phoneId = superAdminProfile?.whatsapp_phone_number_id === '1140952692437292' 
+            ? NOBOGENT_OFFICIAL_PHONE_ID 
+            : (superAdminProfile?.whatsapp_phone_number_id || NOBOGENT_OFFICIAL_PHONE_ID);
 
         if (candidateTokens.length === 0) {
             console.error('[Demo WhatsApp] No WhatsApp access token found for rchopra489@gmail.com');
