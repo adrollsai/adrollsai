@@ -67,8 +67,8 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
     ? `🎉 *Happy ${festivalName || 'Festive Season'}!*`
     : `🌅 *Daily Marketing Creative Ready:* *${title || 'Today\'s Highlight'}*`;
 
-  const noticeBlock = summaryNotice ? `${summaryNotice}\n\n` : '';
-  const fullText = `${headerPrefix}\n\n${noticeBlock}${caption}`.trim();
+  // Always use pure marketing copy only - never inject AI summaries, notes, or changelogs
+  const fullText = `${headerPrefix}\n\n${caption}`.trim();
   // WhatsApp interactive button body text limit is 1024 characters
   const bodyText = fullText.length > 1000 ? `${fullText.slice(0, 995)}...` : fullText;
 
@@ -618,25 +618,28 @@ export async function handleCreativeRevisionSubmission(params: {
         generationConfig: { responseMimeType: 'application/json' }
       });
 
-      const aiPrompt = `You are an expert marketing creative editor.
-The business owner has provided revision instructions for their daily social media marketing creative.
+      const aiPrompt = `You are an expert marketing creative director and advertising editor.
+The business owner has provided revision instructions (which may be in English, Hindi, or Hinglish) for their daily social media marketing creative graphic and copy.
 
 CURRENT POST DETAILS:
-- Subject / Property: "${propTitle}"
+- Subject / Brand: "${propTitle}"
 - Current Caption: "${currentCaption}"
-- Current Image URL: "${currentImageUrl}"
+- Current Creative Image URL: "${currentImageUrl}"
 
 OWNER'S REVISION INSTRUCTION:
 "${instructionText}"
 
-YOUR TASKS:
-1. Determine if the instruction asks for COPY/CAPTION changes (e.g. change text, rewrite headline, change tone, add discount/offer, change phone number, add hashtags, make it shorter/longer).
-2. Determine if the instruction asks for IMAGE/VISUAL changes (e.g. change background, show evening/night view, show villa, luxury interior, modern colors, brighter lighting, different aesthetic).
-3. If copy changes: Rewrite and polish the complete social media caption incorporating their exact request. Keep under 400 characters, include relevant emojis and CTA. If no copy change, return current caption.
-4. If image changes: Write a vivid, detailed text-to-image prompt for an AI image generator depicting the updated visual scene, composition, architecture/subject, lighting, and style. If no image change, return empty string "".
-5. Provide a 1-sentence summary of the changes made.
+CRITICAL RULES:
+1. In marketing, "creative" / "image" / "graphic" / "poster" refers to the visual image itself, which includes text, numbers, offers, and headlines rendered ON the graphic (e.g. "1,000 Free AI Calling Minutes", prices, bonuses, discounts).
+2. If the owner mentions changing ANY number, headline, offer, bonus, visual element, background, colors, layout, or says "creative mein" / "image mein" / "photo mein" / "graphic mein" / "poster mein" / "in the image" / "in the creative":
+   - hasImageChanges MUST be true!
+   - Write a detailed image edit prompt instructing the AI image-to-image model to modify the existing visual, explicitly specifying what text/numbers on the poster to replace (e.g. "Modify this marketing ad poster: replace the headline text '1,000 FREE AI Calling Minutes' with '500 FREE AI Calling Minutes', keeping the exact same theme, colors, logo, and layout").
+3. hasCopyChanges MUST be true if any copy, caption, headline, offer, number, or call-to-action is updated.
+   - Output ONLY the 100% clean, final social media caption incorporating the changes.
+   - NEVER include explanations, commentary, or changelogs in updatedCaption (e.g. NEVER say "The caption was updated to reflect..." or "Here is the new caption:"). Provide ONLY the clean social media caption ready to be published live.
+4. Provide a concise 1-sentence summary of the changes made for internal audit only.
 
-Return ONLY a JSON object with this exact structure:
+Return ONLY a JSON object:
 {
   "hasCopyChanges": boolean,
   "updatedCaption": "string",
@@ -659,10 +662,10 @@ Return ONLY a JSON object with this exact structure:
   } catch (aiErr: any) {
     console.error('[Creative Revision] Gemini analysis error:', aiErr?.message);
     // Fallback heuristic: check if instructions mention image/photo/look/visual
-    const isImageMention = /\b(image|photo|picture|pic|background|look|color|villa|view|design|visual)\b/i.test(instructionText);
+    const isImageMention = /\b(image|photo|picture|pic|background|look|color|villa|view|design|visual|creative)\b/i.test(instructionText);
     analysis = {
       hasCopyChanges: true,
-      updatedCaption: `${currentCaption}\n\nNote: ${instructionText}`,
+      updatedCaption: currentCaption,
       hasImageChanges: isImageMention,
       imageChangePrompt: isImageMention ? `${propTitle}, ${instructionText}, professional commercial marketing photography, 4k ultra-detailed` : '',
       summary: 'Updated creative with your instructions.'
@@ -676,8 +679,9 @@ Return ONLY a JSON object with this exact structure:
   if (analysis.hasImageChanges && analysis.imageChangePrompt) {
     console.log(`[Creative Revision] Generating updated image with prompt: "${analysis.imageChangePrompt.slice(0, 100)}..."`);
     try {
-      const kiePayload = {
-        model: "gpt-image-2-5-flare-text-to-image",
+      const selectedModel = currentImageUrl ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
+      const kiePayload: any = {
+        model: selectedModel,
         input: {
           prompt: `${analysis.imageChangePrompt}, clean composition, award-winning commercial advertising quality, no unwanted watermarks`,
           aspect_ratio: "3:4",
@@ -685,6 +689,10 @@ Return ONLY a JSON object with this exact structure:
           output_format: "png"
         }
       };
+
+      if (currentImageUrl) {
+        kiePayload.input.input_urls = [currentImageUrl];
+      }
 
       const kieTaskRes = await createKieTask(kiePayload);
 
@@ -780,8 +788,7 @@ Return ONLY a JSON object with this exact structure:
     creativeUrl: finalImageUrl,
     caption: finalCaption,
     title: propTitle,
-    assetId: asset.id,
-    summaryNotice: `✨ *Updated with your requested changes!*\n_${analysis.summary}_`
+    assetId: asset.id
   });
 
   return {

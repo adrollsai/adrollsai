@@ -151,7 +151,7 @@ export async function POST(req: Request) {
                 if (!camp && lead.custom_fields) {
                     let cf = lead.custom_fields
                     if (typeof cf === 'string') {
-                        try { cf = JSON.parse(cf) } catch (e) {}
+                        try { cf = JSON.parse(cf) } catch (e) { }
                     }
                     camp = cf?.lead_source_details || cf?.meta_ad_origin?.campaign_name
                 }
