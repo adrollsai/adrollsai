@@ -11,11 +11,14 @@ const supabaseAdmin = createClient(
   { auth: { persistSession: false } }
 );
 
-export const NOBOGENT_WABA_PHONE_ID =
+const rawPhoneId =
   process.env.NOBOGENT_WHATSAPP_PHONE_ID ||
   process.env.DEV_WHATSAPP_PHONE_ID ||
   process.env.WHATSAPP_PHONE_NUMBER_ID ||
   '1185499271314063';
+
+export const NOBOGENT_WABA_PHONE_ID =
+  rawPhoneId === '965464359976021' ? '1185499271314063' : rawPhoneId;
 
 export const NOBOGENT_WABA_TOKEN =
   process.env.NOBOGENT_WHATSAPP_ACCESS_TOKEN ||
