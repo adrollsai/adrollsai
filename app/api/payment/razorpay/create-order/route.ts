@@ -18,6 +18,7 @@ export async function POST(req: Request) {
         let amountInInr = 0;
         let itemName = "";
         let purchaseType: 'subscription' | 'topup' | 'addon' = 'subscription';
+        let activePlanConfig: any = null;
         let metadata: Record<string, any> = {
             userId: user.id,
             userEmail: user.email || ''
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
                 }
             }
 
+            activePlanConfig = planConfig;
             amountInInr = planConfig.totalPrice;
             itemName = planConfig.title;
             metadata = {
@@ -141,6 +143,57 @@ export async function POST(req: Request) {
         const receipt = `rcpt_${Date.now().toString().slice(-8)}_${Math.random().toString(36).substring(2, 6)}`;
 
         const razorpay = getRazorpayClient();
+
+        // Fetch user profile for contact prefill
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name, phone, business_name, email')
+            .eq('id', user.id)
+            .single();
+
+        // Check if this should be a Razorpay Recurring Subscription (e-Mandate / UPI Autopay)
+        const isRecurringSubscription = 
+            purchaseType === 'subscription' && 
+            paymentType === 'recurring' && 
+            !metadata.isTrial && 
+            Boolean(activePlanConfig?.razorpayPlanId);
+
+        if (isRecurringSubscription) {
+            // Determine maximum cycles: 12 months = 5 cycles, 6 months = 10 cycles, 1 month = 24 cycles
+            const totalCount = activePlanConfig?.durationMonths === 12 ? 5 : (activePlanConfig?.durationMonths === 6 ? 10 : 24);
+            
+            const subscription = await razorpay.subscriptions.create({
+                plan_id: activePlanConfig!.razorpayPlanId!,
+                total_count: totalCount,
+                quantity: 1,
+                customer_notify: 1,
+                notes: {
+                    ...metadata,
+                    paymentType: 'recurring',
+                    itemName: itemName,
+                    app: 'NobogentAI'
+                }
+            });
+
+            return NextResponse.json({
+                success: true,
+                isSubscription: true,
+                subscriptionId: subscription.id,
+                amount: amountInPaise,
+                currency: 'INR',
+                keyId: RAZORPAY_KEY_ID,
+                itemName: itemName,
+                purchaseType: purchaseType,
+                paymentType: 'recurring',
+                prefill: {
+                    name: profile?.full_name || profile?.business_name || '',
+                    email: profile?.email || user.email || '',
+                    contact: profile?.phone || ''
+                },
+                notes: subscription.notes
+            });
+        }
+
         const orderOptions = {
             amount: amountInPaise,
             currency: 'INR',
@@ -155,15 +208,9 @@ export async function POST(req: Request) {
 
         const order = await razorpay.orders.create(orderOptions);
 
-        // Fetch user profile for contact prefill
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('full_name, phone, business_name, email')
-            .eq('id', user.id)
-            .single();
-
         return NextResponse.json({
             success: true,
+            isSubscription: false,
             orderId: order.id,
             amount: order.amount,
             currency: order.currency,

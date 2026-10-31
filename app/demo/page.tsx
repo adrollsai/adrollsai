@@ -940,7 +940,7 @@ export default function DemoPage() {
             <div className="fixed inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:24px_24px] pointer-events-none opacity-50" />
 
             {/* TOP HEADER */}
-            <header className="w-full max-w-6xl mx-auto px-6 py-4 flex items-center justify-between z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl sticky top-0 shadow-xs">
+            <header className="w-full max-w-6xl mx-auto px-3.5 sm:px-6 py-3 sm:py-4 flex items-center justify-between z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl sticky top-0 shadow-xs">
                 <div className="flex items-center gap-3">
                     <img src="/logo.png" alt="Nobogent" className="h-7 w-auto object-contain" />
                     <span className="text-base font-extrabold tracking-tight text-slate-900">Nobogent</span>
@@ -957,9 +957,9 @@ export default function DemoPage() {
             </header>
 
             {/* PROGRESS STEPPER (NO NUMBERS) */}
-            <div className="w-full max-w-3xl mx-auto px-4 pt-6 pb-2 z-20">
-                <div className="relative flex items-center justify-between p-2 rounded-2xl bg-white/90 border border-slate-200/80 backdrop-blur-xl shadow-xs">
-                    <div className="absolute top-1/2 left-8 right-8 -translate-y-1/2 h-[2px] bg-slate-100 z-0" />
+            <div className="w-full max-w-3xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 pb-2 z-20">
+                <div className="relative flex items-center justify-between p-1.5 sm:p-2 rounded-2xl bg-white/90 border border-slate-200/80 backdrop-blur-xl shadow-xs">
+                    <div className="absolute top-1/2 left-6 sm:left-8 right-6 sm:right-8 -translate-y-1/2 h-[2px] bg-slate-100 z-0" />
                     {[
                         { key: 'onboarding', label: 'Onboard', icon: Building2 },
                         { key: 'showcase', label: 'Live Demo', icon: Layers },
@@ -986,10 +986,10 @@ export default function DemoPage() {
                                     setStep(m.key as any);
                                     playChime('beep');
                                 }}
-                                className="relative z-10 flex flex-col items-center gap-1 px-3 cursor-pointer group transition-all hover:scale-105 active:scale-95"
+                                className="relative z-10 flex flex-col items-center gap-0.5 sm:gap-1 px-1.5 sm:px-3 cursor-pointer group transition-all hover:scale-105 active:scale-95"
                                 title={`Navigate to ${m.label}`}
                             >
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 ${isDone
+                                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition-all duration-300 ${isDone
                                         ? 'bg-emerald-600 text-white font-bold shadow-xs ring-2 ring-emerald-200 group-hover:bg-emerald-500'
                                         : isCurrent
                                             ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold shadow-md shadow-blue-500/20 ring-4 ring-blue-100 scale-105'
@@ -997,7 +997,7 @@ export default function DemoPage() {
                                     }`}>
                                     {isDone ? <Check size={14} strokeWidth={3} /> : <m.icon size={14} />}
                                 </div>
-                                <span className={`text-[11px] font-bold transition-colors ${isCurrent ? 'text-blue-700' : isDone ? 'text-emerald-700 group-hover:text-emerald-800' : 'text-slate-400 group-hover:text-slate-600'
+                                <span className={`text-[10px] sm:text-[11px] font-bold transition-colors ${isCurrent ? 'text-blue-700' : isDone ? 'text-emerald-700 group-hover:text-emerald-800' : 'text-slate-400 group-hover:text-slate-600'
                                     }`}>
                                     {m.label}
                                 </span>
@@ -1008,7 +1008,7 @@ export default function DemoPage() {
             </div>
 
             {/* MAIN WORKSPACE */}
-            <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-6 flex flex-col justify-center z-20">
+            <main className="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6 flex flex-col justify-center z-20">
                 <AnimatePresence mode="wait">
 
                     {/* =========================================================================
@@ -1021,25 +1021,25 @@ export default function DemoPage() {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -15 }}
                             transition={{ duration: 0.2 }}
-                            className="bg-white/95 border border-slate-200/90 rounded-3xl p-6 sm:p-8 backdrop-blur-xl shadow-xl shadow-slate-200/50"
+                            className="bg-white/95 border border-slate-200/90 rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 md:p-8 backdrop-blur-xl shadow-xl shadow-slate-200/50"
                         >
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-slate-100">
                                 <div>
-                                    <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                                    <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
                                         See Nobogent In Action
                                     </h1>
-                                    <p className="text-sm text-slate-500 mt-1 max-w-xl">
+                                    <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-xl">
                                         Enter your details to generate your live ad creative, 30s voiceover reel, and landing page.
                                     </p>
                                 </div>
 
-                                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                                    <span className="text-xs font-semibold text-slate-400">Presets:</span>
+                                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
+                                    <span className="text-[11px] sm:text-xs font-semibold text-slate-400">Presets:</span>
                                     {PRESET_PROJECTS.map((p, idx) => (
                                         <button
                                             key={idx}
                                             onClick={() => handleSelectPreset(p)}
-                                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-50 border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-slate-600 hover:text-blue-700 transition-all cursor-pointer shadow-2xs"
+                                            className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-bold bg-slate-50 border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-slate-600 hover:text-blue-700 transition-all cursor-pointer shadow-2xs"
                                         >
                                             {p.name.split(' ')[0]}
                                         </button>
@@ -1048,7 +1048,7 @@ export default function DemoPage() {
                             </div>
 
                             {/* Website auto-extractor strip */}
-                            <div className="my-5 p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col sm:flex-row items-center gap-3">
+                            <div className="my-4 sm:my-5 p-2.5 sm:p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                                 <div className="flex items-center gap-2 text-xs font-bold text-slate-700 shrink-0">
                                     <Sparkles size={15} className="text-blue-600" />
                                     <span>Auto-Extract From Website:</span>
@@ -1059,7 +1059,7 @@ export default function DemoPage() {
                                         value={websiteUrl}
                                         onChange={(e) => setWebsiteUrl(e.target.value)}
                                         placeholder="https://yourbrandwebsite.com"
-                                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
+                                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-base sm:text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
                                     />
                                     <button
                                         onClick={handleExtractWebsite}
@@ -1073,12 +1073,12 @@ export default function DemoPage() {
                             </div>
 
                             {/* Reference Creative Design Selector Studio Banner */}
-                            <div className="my-5 rounded-2xl border border-blue-200/90 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-slate-50/90 p-4 sm:p-5 shadow-xs transition-all hover:border-blue-400 hover:shadow-md">
+                            <div className="my-4 sm:my-5 rounded-2xl border border-blue-200/90 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-slate-50/90 p-3 sm:p-5 shadow-xs transition-all hover:border-blue-400 hover:shadow-md">
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                     <div className="flex items-center gap-4">
                                         <div
                                             onClick={() => setIsTemplateModalOpen(true)}
-                                            className="relative w-16 h-22 sm:w-20 sm:h-26 rounded-xl overflow-hidden shadow-md border-2 border-white ring-1 ring-blue-300/60 shrink-0 bg-slate-950 cursor-pointer group"
+                                            className="relative w-14 h-20 sm:w-20 sm:h-26 rounded-xl overflow-hidden shadow-md border-2 border-white ring-1 ring-blue-300/60 shrink-0 bg-slate-950 cursor-pointer group"
                                             title="Click to browse all 35 templates"
                                         >
                                             <img
@@ -1102,7 +1102,7 @@ export default function DemoPage() {
                                                     • 35 Super-Admin Designs
                                                 </span>
                                             </div>
-                                            <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+                                            <h3 className="text-sm sm:text-lg font-extrabold text-slate-900 truncate">
                                                 {currentTemplate.name}
                                             </h3>
                                             <p className="text-xs text-slate-600 mt-0.5 max-w-lg line-clamp-2">
@@ -1114,7 +1114,7 @@ export default function DemoPage() {
                                     <button
                                         type="button"
                                         onClick={() => setIsTemplateModalOpen(true)}
-                                        className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+                                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
                                     >
                                         <Layers size={14} />
                                         <span>Browse All 35 Templates</span>
@@ -1123,7 +1123,7 @@ export default function DemoPage() {
                                 </div>
 
                                 {/* Quick-Pick Popular Blueprints Strip */}
-                                <div className="mt-3.5 pt-3 border-t border-blue-200/50 flex items-center gap-2 overflow-x-auto pb-1">
+                                <div className="mt-3 pt-2.5 sm:pt-3 border-t border-blue-200/50 flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar scroll-smooth pb-1">
                                     <span className="text-[11px] font-bold text-slate-500 shrink-0">Popular Styles:</span>
                                     {ALL_REFERENCE_TEMPLATES.slice(0, 5).map((tmpl) => {
                                         const isSelected = selectedTemplateId === tmpl.id || (selectedTemplateId === 'pinterest_damac_island' && tmpl.index === 0);
@@ -1165,7 +1165,7 @@ export default function DemoPage() {
                                             value={companyName}
                                             onChange={(e) => setCompanyName(e.target.value)}
                                             placeholder="Apex Luxury Developments"
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-medium focus:outline-none focus:border-blue-500 shadow-2xs"
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-base sm:text-sm text-slate-900 font-medium focus:outline-none focus:border-blue-500 shadow-2xs"
                                         />
                                     </div>
 
@@ -1178,7 +1178,7 @@ export default function DemoPage() {
                                             value={projectTitle}
                                             onChange={(e) => setProjectTitle(e.target.value)}
                                             placeholder="The Grand Crest Luxury Residences"
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-bold focus:outline-none focus:border-blue-500 shadow-2xs"
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-base sm:text-sm text-slate-900 font-bold focus:outline-none focus:border-blue-500 shadow-2xs"
                                         />
                                     </div>
 
@@ -1193,7 +1193,7 @@ export default function DemoPage() {
                                                 value={projectPrice}
                                                 onChange={(e) => setProjectPrice(e.target.value)}
                                                 placeholder="₹1.85 Cr"
-                                                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-bold focus:outline-none focus:border-blue-500 shadow-2xs"
+                                                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-base sm:text-sm text-slate-900 font-bold focus:outline-none focus:border-blue-500 shadow-2xs"
                                             />
                                         </div>
                                         <div className="sm:col-span-7">
@@ -1205,7 +1205,7 @@ export default function DemoPage() {
                                                 value={location}
                                                 onChange={(e) => setLocation(e.target.value)}
                                                 placeholder="Golf Course Extension Road, Prime Sector"
-                                                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-blue-500 shadow-2xs"
+                                                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-base sm:text-sm text-slate-900 focus:outline-none focus:border-blue-500 shadow-2xs"
                                             />
                                         </div>
                                     </div>
@@ -1219,7 +1219,7 @@ export default function DemoPage() {
                                             value={projectDescription}
                                             onChange={(e) => setProjectDescription(e.target.value)}
                                             placeholder="Ultra-luxury 3 & 4 BHK residences with sky terraces, private infinity pool, Italian marble finishes, and 24x7 smart concierge."
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 leading-relaxed focus:outline-none focus:border-blue-500 shadow-2xs"
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-base sm:text-xs text-slate-800 leading-relaxed focus:outline-none focus:border-blue-500 shadow-2xs"
                                         />
                                     </div>
 
@@ -1287,7 +1287,7 @@ export default function DemoPage() {
                                         </div>
 
                                         {/* Custom Color Toggle */}
-                                        <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                                        <div className="pt-2 border-t border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                                             <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5 cursor-pointer">
                                                 <input
                                                     type="checkbox"
@@ -1353,7 +1353,7 @@ export default function DemoPage() {
                                                 value={prospectName}
                                                 onChange={(e) => setProspectName(e.target.value)}
                                                 placeholder="e.g. Rahul Sharma"
-                                                className="flex-1 w-full px-3.5 py-2.5 bg-transparent text-sm text-slate-900 font-bold focus:outline-none placeholder:text-slate-400 placeholder:font-normal tracking-wide"
+                                                className="flex-1 w-full px-3.5 py-2.5 bg-transparent text-base sm:text-sm text-slate-900 font-bold focus:outline-none placeholder:text-slate-400 placeholder:font-normal tracking-wide"
                                             />
                                             {prospectName && (
                                                 <button
@@ -1382,7 +1382,7 @@ export default function DemoPage() {
                                                     setProspectPhone(clean);
                                                 }}
                                                 placeholder="9888626786 (10 digits)"
-                                                className="flex-1 w-full px-3.5 py-2.5 bg-transparent text-sm text-slate-900 font-mono font-bold focus:outline-none placeholder:text-slate-400 placeholder:font-mono placeholder:font-normal tracking-wide"
+                                                className="flex-1 w-full px-3.5 py-2.5 bg-transparent text-base sm:text-sm text-slate-900 font-mono font-bold focus:outline-none placeholder:text-slate-400 placeholder:font-mono placeholder:font-normal tracking-wide"
                                             />
                                             {prospectPhone && (
                                                 <button
@@ -1401,7 +1401,7 @@ export default function DemoPage() {
                                         </p>
 
                                         {/* Instant Telephony & WhatsApp Fast-Track Trigger */}
-                                        <div className="flex items-center justify-between pt-1 border-t border-blue-200/50 text-[11px]">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pt-1 border-t border-blue-200/50 text-[11px]">
                                             <span className="text-slate-500 font-medium">Just want to test AI Calling or WhatsApp?</span>
                                             <button
                                                 type="button"
@@ -1535,16 +1535,43 @@ export default function DemoPage() {
                                                         </div>
 
                                                         {/* Mobile persistent controls (always accessible) */}
-                                                        <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1 sm:hidden">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => imageInputRef.current?.click()}
-                                                                className="px-2.5 py-1 rounded-lg bg-slate-900/90 text-white font-bold text-[10px] shadow-sm backdrop-blur-xs flex items-center gap-1"
-                                                            >
-                                                                <Upload size={10} />
-                                                                <span>Change</span>
-                                                            </button>
-                                                        </div>
+                                                        <div className="absolute inset-x-0 bottom-0 z-20 p-1.5 bg-gradient-to-t from-slate-950/85 via-slate-950/50 to-transparent flex items-center justify-center gap-1.5 sm:hidden">
+      <button
+          type="button"
+          onClick={(e) => {
+              e.stopPropagation();
+              setImageLightboxUrl(projectImageUrl);
+          }}
+          className="px-2 py-1 rounded-lg bg-white/95 text-slate-800 font-bold text-[10px] shadow-sm flex items-center gap-1"
+      >
+          <Maximize2 size={10} />
+          <span>Preview</span>
+      </button>
+      <button
+          type="button"
+          onClick={(e) => {
+              e.stopPropagation();
+              imageInputRef.current?.click();
+          }}
+          className="px-2 py-1 rounded-lg bg-blue-600 text-white font-bold text-[10px] shadow-sm flex items-center gap-1"
+      >
+          <Upload size={10} />
+          <span>Change</span>
+      </button>
+      {isCustomImageUploaded && (
+          <button
+              type="button"
+              onClick={(e) => {
+                  e.stopPropagation();
+                  handleRemoveProjectImage();
+              }}
+              className="px-2 py-1 rounded-lg bg-red-600 text-white font-bold text-[10px] shadow-sm flex items-center gap-1"
+              title="Reset"
+          >
+              <Trash2 size={10} />
+          </button>
+      )}
+  </div>
                                                     </div>
                                                 ) : (
                                                     <div
@@ -1629,16 +1656,40 @@ export default function DemoPage() {
                                                         </div>
 
                                                         {/* Mobile persistent action */}
-                                                        <div className="absolute bottom-2 right-2 flex items-center gap-1 sm:hidden">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => logoInputRef.current?.click()}
-                                                                className="px-2.5 py-1 rounded-lg bg-slate-900/90 text-white font-bold text-[10px] shadow-sm backdrop-blur-xs flex items-center gap-1"
-                                                            >
-                                                                <Upload size={10} />
-                                                                <span>Change</span>
-                                                            </button>
-                                                        </div>
+                                                        <div className="absolute inset-x-0 bottom-0 z-20 p-1.5 bg-gradient-to-t from-slate-950/85 via-slate-950/50 to-transparent flex items-center justify-center gap-1.5 sm:hidden">
+      <button
+          type="button"
+          onClick={(e) => {
+              e.stopPropagation();
+              setImageLightboxUrl(logoUrl);
+          }}
+          className="px-2 py-1 rounded-lg bg-white/95 text-slate-800 font-bold text-[10px] shadow-sm flex items-center gap-1"
+      >
+          <Maximize2 size={10} />
+          <span>Preview</span>
+      </button>
+      <button
+          type="button"
+          onClick={(e) => {
+              e.stopPropagation();
+              logoInputRef.current?.click();
+          }}
+          className="px-2 py-1 rounded-lg bg-blue-600 text-white font-bold text-[10px] shadow-sm flex items-center gap-1"
+      >
+          <Upload size={10} />
+          <span>Change</span>
+      </button>
+      <button
+          type="button"
+          onClick={(e) => {
+              e.stopPropagation();
+              handleRemoveLogo();
+          }}
+          className="px-2 py-1 rounded-lg bg-red-600 text-white font-bold text-[10px] shadow-sm flex items-center gap-1"
+      >
+          <Trash2 size={10} />
+      </button>
+  </div>
                                                     </div>
                                                 ) : (
                                                     <div
@@ -1682,7 +1733,7 @@ export default function DemoPage() {
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 w-full pt-1">
-                                    {(creative?.imageUrl || generatedVideo?.script) ? (
+                                    {(creative?.imageUrl || generatedVideo?.scriptText || generatedVideo?.videoUrl) ? (
                                         <>
                                             <button
                                                 type="button"
@@ -1801,7 +1852,7 @@ export default function DemoPage() {
                             exit={{ opacity: 0, y: -15 }}
                             className="bg-white/95 border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 backdrop-blur-xl"
                         >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-5 border-b border-slate-100">
                                 <div>
                                     <div className="flex items-center gap-2.5">
                                         <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
@@ -1823,7 +1874,7 @@ export default function DemoPage() {
                                     </p>
                                 </div>
 
-                                <div className="flex items-center gap-2.5 shrink-0">
+                                <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2 shrink-0 w-full sm:w-auto">
                                     {!creative && !generatedVideo && !isGenerating && (
                                         <button
                                             type="button"
@@ -1836,7 +1887,7 @@ export default function DemoPage() {
                                     )}
                                     <button
                                         onClick={handleStartLiveSpeedToLead}
-                                        className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer shrink-0"
+                                        className="w-full sm:w-auto px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer shrink-0"
                                     >
                                         <Phone size={14} />
                                         <span>Test Live Inbound Flow</span>
@@ -1845,7 +1896,7 @@ export default function DemoPage() {
                             </div>
 
                             {/* Clean Tabs without Numbers */}
-                            <div className="flex flex-wrap items-center gap-1.5 my-5 p-1 bg-slate-100/80 rounded-2xl border border-slate-200/70 overflow-x-auto">
+                            <div className="flex flex-nowrap items-center gap-1.5 my-3.5 sm:my-5 p-1 sm:p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80 overflow-x-auto no-scrollbar scroll-smooth">
                                 {[
                                     { key: 'creative', label: 'Ad Creative', icon: Layers },
                                     { key: 'video', label: '30s Video Reel', icon: Film },
@@ -1857,7 +1908,7 @@ export default function DemoPage() {
                                     <button
                                         key={tab.key}
                                         onClick={() => setShowcaseTab(tab.key as any)}
-                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${showcaseTab === tab.key
+                                        className={`px-3 py-2 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${showcaseTab === tab.key
                                                 ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
                                                 : 'text-slate-600 hover:text-slate-900'
                                             }`}
@@ -1992,7 +2043,7 @@ export default function DemoPage() {
                                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                                     {/* Left Column: Remotion Live Video Reel Mockup (5 Cols) */}
                                     <div className="lg:col-span-5 flex flex-col items-center">
-                                        <div className="relative mx-auto w-full max-w-[280px] sm:max-w-[290px] aspect-[9/16] rounded-[38px] p-2.5 bg-slate-950 shadow-2xl overflow-hidden border-4 border-slate-800">
+                                        <div className="relative mx-auto w-full max-w-[260px] sm:max-w-[290px] aspect-[9/16] rounded-[30px] sm:rounded-[38px] p-2 sm:p-2.5 bg-slate-950 shadow-2xl overflow-hidden border-3 sm:border-4 border-slate-800">
                                             {/* Top Dynamic Island / Speaker */}
                                             <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-20 h-4 bg-slate-900 rounded-full z-30 flex items-center justify-center pointer-events-none">
                                                 <div className="w-2.5 h-2.5 rounded-full bg-slate-950 mr-2" />
@@ -2003,7 +2054,7 @@ export default function DemoPage() {
                                                 {isMounted ? (
                                                     <Player
                                                         ref={remotionPlayerRef}
-                                                        component={CaptionsComposition}
+                                                        component={CaptionsComposition as any}
                                                         durationInFrames={900}
                                                         compositionWidth={1080}
                                                         compositionHeight={1920}
@@ -2014,8 +2065,8 @@ export default function DemoPage() {
                                                         style={{ width: '100%', height: '100%', borderRadius: '28px' }}
                                                         inputProps={{
                                                             videoUrl: generatedVideo?.videoUrl || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/clean_silent_luxury_walkthrough.mp4',
-                                                            imageUrl: projectImageUrl || (previewImages.length > 0 ? previewImages[0] : 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80'),
-                                                            creativeUrl: creative?.imageUrl || projectImageUrl || (previewImages.length > 0 ? previewImages[0] : 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80'),
+                                                            imageUrl: projectImageUrl || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80',
+                                                            creativeUrl: creative?.imageUrl || projectImageUrl || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80',
                                                             audioUrl: generatedVideo?.audioUrl || 'https://file.aiquickdraw.com/as/6d50c95cee0c07540606a98b15e0d2a3_1793432995729.wav',
                                                             captions: editableCues,
                                                             effects: [
@@ -2030,7 +2081,7 @@ export default function DemoPage() {
                                                                 phone: prospectPhone || '+91 98886 26786',
                                                                 brand_color: customBrandColor || '#F59E0B',
                                                                 verified: true,
-                                                                property_image_url: projectImageUrl || (previewImages.length > 0 ? previewImages[0] : undefined)
+                                                                property_image_url: projectImageUrl || undefined
                                                             },
                                                             isPlayer: true
                                                         }}
@@ -2104,7 +2155,7 @@ export default function DemoPage() {
                                         </div>
 
                                         {/* Navigation Tabs (Styles, Animations, Adjust, Subtitles) */}
-                                        <div className="flex gap-1.5 p-1 bg-slate-100 border border-slate-200/80 rounded-2xl">
+                                        <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 border border-slate-200/80 rounded-2xl">
                                             {[
                                                 { id: 'styles', label: 'Styles', icon: Palette },
                                                 { id: 'animations', label: 'Animations', icon: Zap },
@@ -2115,7 +2166,7 @@ export default function DemoPage() {
                                                     key={tab.id}
                                                     type="button"
                                                     onClick={() => setCaptionStudioTab(tab.id as any)}
-                                                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                                    className={`py-1.5 sm:py-2 px-1 rounded-xl text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer truncate ${
                                                         captionStudioTab === tab.id
                                                             ? 'bg-white text-blue-600 shadow-sm border border-slate-200'
                                                             : 'text-slate-500 hover:text-slate-900'
@@ -2545,7 +2596,7 @@ export default function DemoPage() {
                                     </div>
 
                                     {/* 5-Column Kanban */}
-                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                                    <div className="overflow-x-auto no-scrollbar scroll-smooth flex md:grid md:grid-cols-5 gap-2.5 sm:gap-3 pb-2 md:pb-0">
                                         {[
                                             { stage: 'New Lead', count: leadPipelineStage === 'New Lead' ? 1 : 0 },
                                             { stage: 'AI Contacted', count: leadPipelineStage === 'AI Contacted' ? 1 : 0 },
@@ -2553,7 +2604,7 @@ export default function DemoPage() {
                                             { stage: 'Site Visit Booked', count: leadPipelineStage === 'Site Visit Booked' ? 1 : 0 },
                                             { stage: 'Closed', count: 0 }
                                         ].map((col, idx) => (
-                                            <div key={idx} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between min-h-[160px]">
+                                            <div key={idx} className="w-[190px] xs:w-[210px] shrink-0 md:w-auto p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between min-h-[150px] sm:min-h-[160px]">
                                                 <div>
                                                     <div className="flex items-center justify-between mb-2">
                                                         <span className="text-[11px] font-bold text-slate-700">{col.stage}</span>
@@ -2589,7 +2640,7 @@ export default function DemoPage() {
                             initial={{ opacity: 0, scale: 0.96 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.96 }}
-                            className="bg-white border border-blue-200 rounded-3xl p-6 sm:p-8 shadow-xl max-w-lg mx-auto text-center space-y-4"
+                            className="bg-white border border-blue-200 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-xl max-w-lg mx-auto text-center space-y-3.5 sm:space-y-4"
                         >
                             {/* Top Bar with Live Badge & Direct Return */}
                             <div className="flex items-center justify-between">
@@ -2683,12 +2734,12 @@ export default function DemoPage() {
                                         : 'Your customized luxury Ad Creative, 30s Commercial Reel, and Multipage Website are ready!'}
                                 </p>
 
-                                <div className="grid grid-cols-2 gap-2 pt-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setStep('showcase');
-                                            setShowcaseTab('creative');
+                                <div className="grid grid-cols-1 xs:grid-cols-2 gap-2 pt-1">
+      <button
+          type="button"
+          onClick={() => {
+              setStep('showcase');
+              setShowcaseTab('creative');
                                             playChime('beep');
                                         }}
                                         className="py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
@@ -2761,11 +2812,11 @@ export default function DemoPage() {
                             </div>
 
                             {/* Bottom Navigation */}
-                            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setStep('showcase');
+                            <div className="pt-3 border-t border-slate-100 flex flex-col xs:flex-row items-stretch xs:items-center justify-between gap-2.5 sm:gap-3">
+      <button
+          type="button"
+          onClick={() => {
+              setStep('showcase');
                                         playChime('beep');
                                     }}
                                     className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
@@ -2792,7 +2843,7 @@ export default function DemoPage() {
                             key="step-pricing-comparison"
                             initial={{ opacity: 0, scale: 0.96 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-10 shadow-xl"
+                            className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-10 shadow-xl"
                         >
                             <div className="text-center max-w-2xl mx-auto mb-8">
                                 <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -2878,7 +2929,7 @@ export default function DemoPage() {
                                 </div>
                             </div>
 
-                            <div className="flex flex-wrap items-center justify-center gap-3 pt-4 border-t border-slate-100">
+                            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-2.5 sm:gap-3 pt-4 border-t border-slate-100">
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -2982,7 +3033,7 @@ export default function DemoPage() {
                                 {/* Filter & Search Controls */}
                                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
                                     {/* Category Tabs */}
-                                    <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+                                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth w-full sm:w-auto pb-1 sm:pb-0">
                                         {[
                                             { key: 'all', label: 'All Designs (35)' },
                                             { key: 'high_converting', label: 'High Converting (16)' },

@@ -44,6 +44,29 @@ export function verifyRazorpaySignature(
 }
 
 /**
+ * Verifies Razorpay subscription checkout signature:
+ * generated_signature = hmac_sha256(payment_id + "|" + subscription_id, secret)
+ */
+export function verifyRazorpaySubscriptionSignature(
+    subscriptionId: string,
+    paymentId: string,
+    razorpaySignature: string,
+    secret: string = RAZORPAY_KEY_SECRET
+): boolean {
+    if (!subscriptionId || !paymentId || !razorpaySignature || !secret) {
+        return false;
+    }
+    const body = `${paymentId}|${subscriptionId}`;
+    const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(body)
+        .digest('hex');
+
+    return expectedSignature === razorpaySignature;
+}
+
+
+/**
  * Verifies Razorpay webhook signature (X-Razorpay-Signature)
  */
 export function verifyRazorpayWebhookSignature(
@@ -73,6 +96,7 @@ export interface RazorpayPlanConfig {
     creditsIncluded: number;
     description: string;
     oncePerUser?: boolean;
+    razorpayPlanId?: string;
 }
 
 export const RAZORPAY_PLANS: Record<string, RazorpayPlanConfig> = {
@@ -108,7 +132,8 @@ export const RAZORPAY_PLANS: Record<string, RazorpayPlanConfig> = {
         gstRate: 0.18,
         totalPrice: Math.round(9999 * 1.18), // ₹11,799
         creditsIncluded: 10000,
-        description: 'Nobogent Pro Plan (1 Month Subscription)'
+        description: 'Nobogent Pro Plan (1 Month Subscription)',
+        razorpayPlanId: 'plan_TuTputefIk9tWN'
     },
     '6-months': {
         id: '6-months',
@@ -118,7 +143,8 @@ export const RAZORPAY_PLANS: Record<string, RazorpayPlanConfig> = {
         gstRate: 0.18,
         totalPrice: Math.round(54999 * 1.18), // ₹64,899
         creditsIncluded: 25000,
-        description: 'Nobogent Pro Plan (6 Months Subscription)'
+        description: 'Nobogent Pro Plan (6 Months Subscription)',
+        razorpayPlanId: 'plan_TuTpv3jSGlLs5M'
     },
     '12-months': {
         id: '12-months',
@@ -128,7 +154,8 @@ export const RAZORPAY_PLANS: Record<string, RazorpayPlanConfig> = {
         gstRate: 0.18,
         totalPrice: Math.round(99999 * 1.18), // ₹117,999
         creditsIncluded: 100000,
-        description: 'Nobogent Pro Plan (12 Months Subscription)'
+        description: 'Nobogent Pro Plan (12 Months Subscription)',
+        razorpayPlanId: 'plan_TuTpvD3xeQfcGm'
     }
 };
 

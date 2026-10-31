@@ -743,9 +743,11 @@ export default function OnboardingPage() {
 
     // --- PAYMENT OR DASHBOARD FINISH ---
     const handlePurchasePlan = (planId: string) => {
+        // 7-day trial is strictly a one-time purchase pass
+        const effectiveType = planId === 'trial' || planId === '7-days-trial' ? 'one_time' : paymentType;
         openCheckout({
             planId,
-            paymentType,
+            paymentType: effectiveType,
             onSuccess: () => {
                 confetti({
                     particleCount: 120,

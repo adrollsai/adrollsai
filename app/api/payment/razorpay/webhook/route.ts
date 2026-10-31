@@ -34,12 +34,14 @@ export async function POST(req: Request) {
 
         console.log(`[Razorpay Webhook] Received event: ${event}`);
 
-        // Handle successful payment events
-        if (event === 'payment.captured' || event === 'order.paid') {
+        // Handle successful payment events & recurring subscription charges
+        if (event === 'payment.captured' || event === 'order.paid' || event === 'subscription.charged') {
+            const isSubscriptionEvent = event === 'subscription.charged';
+            const subEntity = payload?.subscription?.entity;
             const paymentEntity = payload?.payment?.entity || payload?.order?.entity;
-            const notes = paymentEntity?.notes || {};
+            const notes = subEntity?.notes || paymentEntity?.notes || {};
             const userId = notes?.userId;
-            const paymentId = paymentEntity?.id || 'webhook_pay';
+            const paymentId = paymentEntity?.id || subEntity?.id || 'webhook_pay';
 
             if (userId) {
                 const planId = (notes.planId || '').toLowerCase().trim();

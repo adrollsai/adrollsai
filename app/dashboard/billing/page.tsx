@@ -151,9 +151,11 @@ export default function BillingPage() {
     }, [router, supabase]);
 
     const handlePurchase = (planId: string) => {
+        // 7-day trial is strictly a one-time purchase pass
+        const effectiveType = planId === 'trial' || planId === '7-days-trial' ? 'one_time' : paymentType;
         openCheckout({
             planId: planId,
-            paymentType: paymentType,
+            paymentType: effectiveType,
             onSuccess: () => {
                 fetchBillingData();
             }

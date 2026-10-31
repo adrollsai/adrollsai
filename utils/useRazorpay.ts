@@ -89,7 +89,7 @@ export function useRazorpay() {
 
             const orderData = await orderRes.json();
 
-            if (!orderRes.ok || !orderData.orderId) {
+            if (!orderRes.ok || (!orderData.orderId && !orderData.subscriptionId)) {
                 toast.dismiss(toastId);
                 const errMsg = orderData.error || 'Failed to initialize payment order.';
                 toast.error(errMsg);
@@ -101,14 +101,11 @@ export function useRazorpay() {
             toast.dismiss(toastId);
 
             // 3. Open Razorpay Checkout Modal
-            const rzpOptions = {
+            const rzpOptions: any = {
                 key: orderData.keyId,
-                amount: orderData.amount,
-                currency: orderData.currency || 'INR',
                 name: 'Nobogent AI',
                 description: orderData.itemName || 'Nobogent Subscription / Credits',
                 image: 'https://app.nobogent.com/favicon.ico',
-                order_id: orderData.orderId,
                 prefill: {
                     name: orderData.prefill?.name || '',
                     email: orderData.prefill?.email || '',
@@ -129,7 +126,8 @@ export function useRazorpay() {
                 },
                 handler: async (response: {
                     razorpay_payment_id: string;
-                    razorpay_order_id: string;
+                    razorpay_order_id?: string;
+                    razorpay_subscription_id?: string;
                     razorpay_signature: string;
                 }) => {
                     const verifyToastId = toast.loading('Verifying payment and activating features...');
@@ -139,6 +137,7 @@ export function useRazorpay() {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 razorpay_order_id: response.razorpay_order_id,
+                                razorpay_subscription_id: response.razorpay_subscription_id || orderData.subscriptionId,
                                 razorpay_payment_id: response.razorpay_payment_id,
                                 razorpay_signature: response.razorpay_signature,
                                 planId: options.planId,
@@ -173,6 +172,14 @@ export function useRazorpay() {
                     }
                 }
             };
+
+            if (orderData.isSubscription && orderData.subscriptionId) {
+                rzpOptions.subscription_id = orderData.subscriptionId;
+            } else {
+                rzpOptions.order_id = orderData.orderId;
+                rzpOptions.amount = orderData.amount;
+                rzpOptions.currency = orderData.currency || 'INR';
+            }
 
             const paymentInstance = new window.Razorpay(rzpOptions);
 

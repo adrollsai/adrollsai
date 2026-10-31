@@ -3,7 +3,8 @@ import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { 
     getRazorpayClient, 
-    verifyRazorpaySignature, 
+    verifyRazorpaySignature,
+    verifyRazorpaySubscriptionSignature, 
     RAZORPAY_PLANS, 
     RAZORPAY_CREDIT_PACKAGES 
 } from '@/utils/razorpay';
@@ -25,7 +26,8 @@ export async function POST(req: Request) {
 
         const body = await req.json();
         const { 
-            razorpay_order_id, 
+            razorpay_order_id,
+            razorpay_subscription_id,
             razorpay_payment_id, 
             razorpay_signature,
             planId,
@@ -34,37 +36,53 @@ export async function POST(req: Request) {
             customCredits
         } = body;
 
-        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        if ((!razorpay_order_id && !razorpay_subscription_id) || !razorpay_payment_id || !razorpay_signature) {
             return NextResponse.json({ 
-                error: "Missing Razorpay verification parameters (order_id, payment_id, signature required)" 
+                error: "Missing Razorpay verification parameters (order_id/subscription_id, payment_id, signature required)" 
             }, { status: 400 });
         }
 
-        // 1. Verify HMAC SHA256 Signature
-        const isValid = verifyRazorpaySignature(
-            razorpay_order_id,
-            razorpay_payment_id,
-            razorpay_signature
-        );
+        // 1. Verify HMAC SHA256 Signature (Order vs Subscription)
+        let isValid = false;
+        if (razorpay_subscription_id) {
+            isValid = verifyRazorpaySubscriptionSignature(
+                razorpay_subscription_id,
+                razorpay_payment_id,
+                razorpay_signature
+            );
+        } else if (razorpay_order_id) {
+            isValid = verifyRazorpaySignature(
+                razorpay_order_id,
+                razorpay_payment_id,
+                razorpay_signature
+            );
+        }
 
         if (!isValid) {
-            console.error(`[Razorpay Signature Mismatch] Order: ${razorpay_order_id}, Payment: ${razorpay_payment_id}`);
+            console.error(`[Razorpay Signature Mismatch] Ref: ${razorpay_subscription_id || razorpay_order_id}, Payment: ${razorpay_payment_id}`);
             return NextResponse.json({ 
                 success: false, 
                 error: "Payment verification failed: Invalid digital signature." 
             }, { status: 400 });
         }
 
-        // 2. Fetch order details from Razorpay to read verified server notes
+        // 2. Fetch order or subscription details from Razorpay to read verified server notes
         let orderNotes: Record<string, any> = {};
         try {
             const razorpay = getRazorpayClient();
-            const orderInfo = await razorpay.orders.fetch(razorpay_order_id);
-            if (orderInfo && orderInfo.notes) {
-                orderNotes = orderInfo.notes;
+            if (razorpay_subscription_id) {
+                const subInfo = await razorpay.subscriptions.fetch(razorpay_subscription_id);
+                if (subInfo && subInfo.notes) {
+                    orderNotes = subInfo.notes;
+                }
+            } else if (razorpay_order_id) {
+                const orderInfo = await razorpay.orders.fetch(razorpay_order_id);
+                if (orderInfo && orderInfo.notes) {
+                    orderNotes = orderInfo.notes;
+                }
             }
         } catch (fetchErr) {
-            console.warn("[Razorpay Verify] Could not fetch order notes, falling back to request body:", fetchErr);
+            console.warn("[Razorpay Verify] Could not fetch notes from Razorpay, falling back to request body:", fetchErr);
         }
 
         const effectivePlanId = (orderNotes.planId || planId || '').toLowerCase().trim();
@@ -117,7 +135,8 @@ export async function POST(req: Request) {
             const updatedClientFeatures = {
                 ...(profile.client_features || {}),
                 payment_type: effectivePaymentType,
-                is_recurring: effectivePaymentType === 'recurring',
+                is_recurring: effectivePaymentType === 'recurring' || Boolean(razorpay_subscription_id),
+                razorpay_subscription_id: razorpay_subscription_id || null,
                 ...(isTrial ? {
                     has_purchased_trial: true,
                     trial_purchased_at: new Date().toISOString()
@@ -129,7 +148,7 @@ export async function POST(req: Request) {
                 .update({
                     subscription_plan: isTrial ? 'trial' : effectivePlanId,
                     subscription_status: isTrial ? 'trialing' : 'active',
-                    subscription_id: razorpay_payment_id,
+                    subscription_id: razorpay_subscription_id || razorpay_payment_id,
                     subscription_valid_until: planValidUntil.toISOString(),
                     credits: newCredits,
                     client_features: updatedClientFeatures
