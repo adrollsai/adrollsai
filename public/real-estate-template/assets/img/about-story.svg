@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000" width="1400" height="1000" role="img" aria-label="Property photo placeholder">
+  <defs>
+    <linearGradient id="sky-p73" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#ccd2d8"/>
+      <stop offset="0.55" stop-color="#8f9ca8"/>
+      <stop offset="1" stop-color="#4A5F72"/>
+    </linearGradient>
+    <radialGradient id="sun-p73" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#CBAE7D" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#CBAE7D" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#CBAE7D" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-p73" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#E9EFF3" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#E9EFF3" stop-opacity="0.3"/>
+    </linearGradient>
+    <linearGradient id="vig-p73" x1="0" y1="0.45" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.26"/>
+    </linearGradient>
+  </defs>
+  <rect width="1400" height="1000" fill="url(#sky-p73)"/>
+  <circle cx="958.52" cy="314.45" r="280" fill="url(#sun-p73)"/>
+  <g opacity="0.22"><rect x="-60" y="567.74" width="134.06" height="232.26" fill="#141C24" opacity="0.62"/><rect x="86.06" y="587.33" width="229.5" height="212.67" fill="#141C24" opacity="0.59"/><rect x="327.55" y="583.71" width="97.88" height="216.29" fill="#141C24" opacity="0.67"/><rect x="437.44" y="656.04" width="150.04" height="143.96" fill="#141C24" opacity="0.63"/><rect x="599.47" y="563.48" width="116.8" height="236.52" fill="#141C24" opacity="0.62"/><rect x="728.28" y="575.2" width="69" height="224.8" fill="#141C24" opacity="0.43"/><rect x="809.28" y="620.38" width="77.48" height="179.62" fill="#141C24" opacity="0.62"/><rect x="898.76" y="628.17" width="213.06" height="171.83" fill="#141C24" opacity="0.55"/><rect x="1123.82" y="697.74" width="206.58" height="102.26" fill="#141C24" opacity="0.39"/><rect x="1342.41" y="588.26" width="128.88" height="211.74" fill="#141C24" opacity="0.71"/></g>
+  <rect x="0" y="760" width="1400" height="240" fill="#141C24" opacity="0.5"/>
+  <path d="M240 500 L588 340 L936 500 Z" fill="#141C24" opacity="0.95"/><rect x="280" y="500" width="616" height="260" fill="#141C24" opacity="0.85"/><rect x="661.92" y="572.8" width="184.8" height="187.2" fill="url(#glass-p73)" opacity="0.42"/><rect x="320" y="540" width="132.22222222222223" height="62.4" rx="4" fill="url(#glass-p73)" opacity="0.72"/><rect x="320" y="626.4" width="132.22222222222223" height="62.4" rx="4" fill="url(#glass-p73)" opacity="0.72"/><rect x="474.22" y="540" width="132.22222222222223" height="62.4" rx="4" fill="url(#glass-p73)" opacity="0.72"/><rect x="474.22" y="626.4" width="132.22222222222223" height="62.4" rx="4" fill="url(#sun-p73)" opacity="0.85"/><rect x="628.44" y="540" width="132.22222222222223" height="62.4" rx="4" fill="url(#glass-p73)" opacity="0.72"/><rect x="628.44" y="626.4" width="132.22222222222223" height="62.4" rx="4" fill="url(#glass-p73)" opacity="0.72"/><rect x="566" y="400.8" width="44" height="80" fill="#141C24" opacity="0.9"/><rect x="772.8" y="412" width="34" height="88" fill="#141C24" opacity="0.8"/>
+  <rect width="1400" height="1000" fill="url(#vig-p73)"/>
+  <rect x="0" y="760" width="1400" height="2" fill="#CBAE7D" opacity="0.35"/>
+</svg>

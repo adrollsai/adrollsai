@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { createKieImageTask, createKieTask } from '@/utils/external-apis';
 import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-master';
 import { ensureJpegImage } from '@/utils/image-converter';
+import { getReferenceTemplate, ALL_REFERENCE_TEMPLATES } from '@/utils/reference-templates-data';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,6 +17,23 @@ const supabaseAdmin = createAdminClient(
 const DEFAULT_CHARACTER_URL = "https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/logos/character-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780563818432-trimmed.mp4";
 const DEFAULT_CHARACTER_AUDIO_URL = "https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/logos/voice-sample-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780556476936.mp3";
 const DEFAULT_CHARACTER_DESCRIPTION = "A young Indian female with straight shoulder-length black hair and a calm expression. She wears a striped button-down shirt and brown trousers, standing in a modern white interior with a feather-shaped wall light.";
+
+export interface InputVideoConfig {
+    id?: string;
+    duration: number; // e.g. 15, 30, 45, 60
+    customInstructions?: string;
+}
+
+export interface InputProjectConfig {
+    id?: string;
+    title: string;
+    description: string;
+    price?: string;
+    imageUrl?: string;
+    creativesCount?: number;
+    videos?: InputVideoConfig[];
+    customInstructions?: string;
+}
 
 export async function POST(request: Request) {
     try {
@@ -29,7 +47,8 @@ export async function POST(request: Request) {
 
         const body = await request.json();
         const { 
-            companyName, 
+            companyName,
+            country,
             companyDescription, 
             logoUrl, 
             contactNumber,
@@ -39,13 +58,15 @@ export async function POST(request: Request) {
             productTitle, 
             productDescription, 
             productPrice, 
-            productImageUrl 
+            productImageUrl,
+            selectedTemplates,
+            projects 
         } = body;
 
         // 1. Fetch current profile to check existing data
         const { data: existingProfile } = await supabaseAdmin
             .from('profiles')
-            .select('business_name, business_info, logo_url, contact_number, address, custom_domain, character_url, character_audio_url, character_description')
+            .select('business_name, business_info, client_features, logo_url, contact_number, address, custom_domain, character_url, character_audio_url, character_description, whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
             .eq('id', user.id)
             .single();
 
@@ -67,11 +88,26 @@ export async function POST(request: Request) {
             character_description: characterDescription
         };
 
+        const existingFeatures = existingProfile?.client_features || {};
+        profileUpdates.client_features = {
+            ...existingFeatures,
+            country: country || existingFeatures.country || 'India'
+        };
         if (contactNumber) profileUpdates.contact_number = contactNumber;
         if (address) profileUpdates.address = address;
         if (whatsappNumber) profileUpdates.whatsapp_phone_number = whatsappNumber;
+        if (Array.isArray(selectedTemplates) && selectedTemplates.length > 0) {
+            profileUpdates.selected_templates = selectedTemplates;
+        }
         if (websiteUrl && !existingProfile?.custom_domain) {
             profileUpdates.custom_domain = websiteUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
+        }
+
+        if (body.paywallSkipped || body.skipPayment) {
+            profileUpdates.client_features.paywall_skipped = true;
+            if (!existingProfile?.subscription_status || existingProfile.subscription_status === '') {
+                profileUpdates.subscription_status = 'free';
+            }
         }
 
         const { error: profileError } = await supabaseAdmin
@@ -84,8 +120,24 @@ export async function POST(request: Request) {
             throw new Error(`Failed to update business profile: ${profileError.message}`);
         }
 
-        // If no product was provided (skipped step), complete onboarding now!
-        if (!productTitle || !productDescription) {
+        // 3. Resolve projects list (support multi-project OR legacy single-product)
+        let resolvedProjects: InputProjectConfig[] = [];
+        if (Array.isArray(projects) && projects.length > 0) {
+            resolvedProjects = projects.filter(p => p.title?.trim() && p.description?.trim());
+        } else if (productTitle?.trim() && productDescription?.trim()) {
+            resolvedProjects = [{
+                title: productTitle.trim(),
+                description: productDescription.trim(),
+                price: productPrice || 'Contact for Price',
+                imageUrl: productImageUrl || '',
+                creativesCount: 3,
+                videos: [{ duration: 15, customInstructions: '' }],
+                customInstructions: ''
+            }];
+        }
+
+        // If no projects provided (skipped product step)
+        if (resolvedProjects.length === 0) {
             console.log("[Onboarding API] Product step skipped. Onboarding completed successfully.");
             return NextResponse.json({ 
                 success: true, 
@@ -93,259 +145,293 @@ export async function POST(request: Request) {
             });
         }
 
-        // 3. Insert product into properties table
-        console.log("[Onboarding API] Inserting product details into properties...");
-        const { data: property, error: propertyError } = await supabaseAdmin
-            .from('properties')
-            .insert({
-                user_id: user.id,
-                title: productTitle,
-                description: productDescription,
-                price: productPrice || 'Contact for Price',
-                image_url: productImageUrl || '',
-                images: productImageUrl ? [productImageUrl] : [],
-                address: address || 'Online',
-                property_type: 'Generic',
-                status: 'Active',
-                auto_generate: false
-            })
-            .select()
-            .single();
-
-        if (propertyError || !property) {
-            console.error("[Onboarding API] Product insertion failed:", propertyError);
-            throw new Error(`Failed to add product: ${propertyError?.message || 'Unknown error'}`);
-        }
-
         // 4. Auto-detect and persist industry
         console.log("[Onboarding API] Auto-detecting industry...");
-        const detectedIndustry = await detectIndustry(companyName, companyDescription, '');
+        const detectedIndustry = await detectIndustry(resolvedCompanyName, resolvedCompanyDesc, '');
         await supabaseAdmin
             .from('profiles')
             .update({ industry: detectedIndustry })
             .eq('id', user.id);
         console.log(`[Onboarding API] Industry detected and saved: ${detectedIndustry}`);
 
-        // Build master visual production rules for image prompts
         const visualProductionRules = buildImageSystemPrompt(detectedIndustry, false);
 
-        // 5. Generate image prompts and video script using Gemini
-        console.log("[Onboarding API] Generating prompts via Gemini...");
-        
-        let aiResult;
-        const schema = z.object({
-            imagePrompts: z.array(z.string()).length(3),
-            videoPrompt: z.string(),
-            finalCaption: z.string()
-        });
+        // Calculate and enforce 5-minute (300s) maximum global video budget
+        const MAX_GLOBAL_VIDEO_SECONDS = 300;
+        let cumulativeVideoSeconds = 0;
 
-        const masterPrompt = `You are a world-class Ad Creative Director.
-Analyze the following company profile and product details:
-Company Name: "${companyName}"
-Company Description: "${companyDescription}"
-Product Title: "${productTitle}"
-Product Description: "${productDescription}"
-Product Price: "${productPrice}"
-Industry/Vertical: "${detectedIndustry}"
-
-### SYSTEM-LEVEL VISUAL PRODUCTION RULES
-When writing image prompts, you MUST follow and apply the Visual Production Rules below as your foundational visual grammar:
-
-${visualProductionRules}
-
-### CONTENT INTEGRITY (CRITICAL)
-- ONLY use text, facts, prices, features, and claims that are EXPLICITLY provided in the product/business input above. Do NOT invent, fabricate, or assume ANY information.
-- If a detail (price, discount, phone, website) is NOT provided, do NOT include it. Leave it out entirely.
-- Keep the creative CLEAN and UNCLUTTERED — only the most essential info. Prefer visual storytelling over text-heavy layouts.
-- The business logo graphical icon from the input image (if present) must be integrated cleanly, but NEVER write any placeholder text like "logo", "put logo here", or draw text circles in the prompt.
-- Contact info MUST be included if provided (subtle bottom strip). Do NOT fabricate contact info if not provided.
-
-Your task is to generate:
-1. Three (3) highly converting, short image ad prompts. Each prompt MUST follow this exact, simple, short layout format (approx. 50-80 words):
-   "Make a premium, high-converting static meta ad. The final generated image must look 100% like an authentic, high-quality photograph, avoiding any artificial or plastic look. It must include beautiful, attractive, photorealistic humans (e.g. a family, professional man, or woman depending on the product, with true-to-life detailing of skin, hair, and features). The ethnicity of the humans must match the business origin (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise). Do NOT write or draw any text overlays, labels, or placeholders like 'logo', 'put logo here', 'business name', or text circles. Keep the image fully clean of text and placeholders.
-   Product Info: ${productTitle}. Description: [Short sentence describing the visual scene based ONLY on the essential product info provided].
-   Style: Render the image in a [Varying style, e.g., prompt 1 is 'Sunset Golden Hour', prompt 2 is 'Minimalist Clean Studio', prompt 3 is 'Warm Home Interior'] aesthetic."
-   Optimized for a 3:4 aspect ratio.
-2. One (1) structured video prompt for Bytedance Seedance 2.0 (aspect ratio 9:16, 15 seconds duration).
-   - Character Ethnicity / Details: Determine the country/business context based on the inputs (e.g. if the currency is ₹, or the company name/description/price refers to India, Delhi, Mumbai, etc., it is India).
-     - If the context is India, describe the presenter in the "CHARACTER APPEARANCE" section as: "a beautiful Indian female with fair complexion and sharp features".
-     - Otherwise, describe the character ethnicity appropriate for the context (e.g., "a beautiful Caucasian female" or "a beautiful Hispanic female", always with sharp features and a warm, attractive appearance).
-   - Video Style: TikTok/UGC-like, organic, dialogue delivery natural and expressive, with an attractive tone of voice.
-   - Dialogue:
-     - The dialogue MUST be in Hinglish: write Hindi words in native Devanagari script (e.g. 'अगर', 'सुकून', 'शानदार', 'घर') and English words in standard English letters. Keep dialogue under 45 words.
-     - Address the target audience in the first line of the dialogue.
-   - Prompt Structure to output:
-     The prompt must follow this EXACT format (ensure correct double newlines and exact uppercase headers):
-
-LOCATION (IMPORTANT)
-[Write the location guidelines. Determine appropriate environment settings for the presenter. E.g. "The presenter must remain in a premium, warm office environment."]
-
-CHARACTER APPEARANCE
-[Describe the presenter: a beautiful female with fair complexion, sharp features, ethnicity chosen based on the business context, and professional stylish outfit suited for the business]
-
-DIALOGUE
-"[dialogue text to be spoken. Under 45 words.]"
-
-SPEECH STYLE
-[Describe vocal delivery with rich personality, natural, expressive UGC style, attractive voice tone, conversational delivery.]
-
-ACTION
-[Describe the presenter's actions: maintaining eye contact, smiling warmly, using natural hand gestures.]
-
-B-ROLL
-[Describe B-roll showing the product in hand or premium lifestyle showcase.]
-
-CAMERA
-1. Medium shot presenter speaking to camera
-2. Close-up presenter shot
-3. B-roll close-up matching product image
-4. Presenter final medium close-up
-
-LIGHTING
-[Describe lighting, e.g., warm golden-hour / studio lighting, professional clean presentation.]
-
-STYLE
-[TikTok style UGC video advertisement, realistic movement, organic feel.]
-
-AVOID
-• No text overlays
-• No captions
-• No logos
-• No watermarks
-3. A highly converting ad caption in finalCaption (with emojis, CTA, but no bold markdown and no hashtags).
-`;
-
-        try {
-            const res = await generateObject({
-                model: google('gemini-3.5-flash'),
-                schema,
-                prompt: masterPrompt,
-            });
-            aiResult = res.object;
-        } catch (err: any) {
-            console.warn("[Onboarding API] Primary Gemini model failed. Trying fallback...", err.message);
-            const res = await generateObject({
-                model: google('gemini-3-flash-preview'),
-                schema,
-                prompt: masterPrompt,
-            });
-            aiResult = res.object;
-        }
-
-        const { imagePrompts, videoPrompt, finalCaption } = aiResult;
-        console.log("[Onboarding API] Prompts generated successfully. Image Prompts:", imagePrompts);
-        console.log("[Onboarding API] Generated Video Prompt:", videoPrompt);
-
-        // 5. Submit 3 Image Tasks to Kie.ai (using 3:4 aspect ratio)
-        console.log("[Onboarding API] Submitting 3 image tasks to Kie.ai...");
         const host = request.headers.get('host') || 'localhost:3000';
         const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');
         const baseUrl = isLocal ? 'http://127.0.0.1:3000' : `https://${host}`;
 
-        for (let i = 0; i < imagePrompts.length; i++) {
-            const prompt = imagePrompts[i];
-            try {
-                const imageInputUrls = [];
-                if (productImageUrl) imageInputUrls.push(productImageUrl);
-                if (logoUrl) imageInputUrls.push(logoUrl);
-                const selectedImageModel = imageInputUrls.length > 0 ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
-                
-                const taskId = await createKieImageTask(prompt, selectedImageModel, "3:4", imageInputUrls);
-                if (taskId) {
-                    // Fire background worker asynchronously (fire and forget)
-                    fetch(`${baseUrl}/api/background-worker`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            userId: user.id,
-                            propId: property.id,
-                            propertyTitle: property.title,
-                            existingTaskId: taskId,
-                            existingCaption: `Creative ${i + 1} for ${property.title}`
-                        })
-                    }).catch(err => console.error("[Onboarding API] Background worker call failed:", err));
-                }
-            } catch (imageErr: any) {
-                console.error(`[Onboarding API] Failed to submit image task ${i + 1}:`, imageErr.message);
-            }
-        }
+        const activeTemplates: string[] = (Array.isArray(selectedTemplates) && selectedTemplates.length > 0)
+            ? selectedTemplates
+            : ['pinterest_pin_0', 'pinterest_pin_1', 'pinterest_pin_2', 'pinterest_pin_3', 'pinterest_pin_4'];
 
-        // 6. Submit 1 Video Task to Kie.ai (duration 15s, aspect ratio 9:16)
-        console.log("[Onboarding API] Submitting video task to Kie.ai...");
-        const payload = {
-            model: "bytedance/seedance-2-mini",
-            callBackUrl: `${baseUrl}/api/video/callback`,
-            input: {
-                prompt: videoPrompt,
-                aspect_ratio: "9:16",
-                duration: 15,
-                generate_audio: true,
-                resolution: "480p",
-                nsfw_checker: true,
-                web_search: false
-            }
-        };
+        const generationSummary: Array<{ projectTitle: string; imageTasksQueued: number; videoTasksQueued: number }> = [];
 
-        if (property.image_url) {
-            const convertedImg = await ensureJpegImage(property.image_url, user.id);
-            // @ts-ignore
-            payload.input.reference_image_urls = [convertedImg];
-        }
+        // 5. Process each project
+        for (let pIdx = 0; pIdx < resolvedProjects.length; pIdx++) {
+            const proj = resolvedProjects[pIdx];
+            console.log(`[Onboarding API] Processing project ${pIdx + 1}/${resolvedProjects.length}: "${proj.title}"`);
 
-        const taskIds: string[] = [];
-        const taskResult = await createKieTask(payload);
-        if (taskResult.error || !taskResult.taskId) {
-            console.error("[Onboarding API] Onboarding video submission failed:", taskResult.error);
-        } else {
-            taskIds.push(taskResult.taskId);
-        }
-
-        if (taskIds.length > 0) {
-            // Create Video Asset Placeholder
-            console.log("[Onboarding API] Creating video asset placeholder...");
-            const { data: newAsset, error: assetErr } = await supabaseAdmin
-                .from('assets')
+            // Insert property into database
+            const { data: property, error: propertyError } = await supabaseAdmin
+                .from('properties')
                 .insert({
                     user_id: user.id,
-                    property_id: property.id,
-                    type: 'video',
-                    status: 'Processing',
-                    url: 'https://designs.adrolls.in/processing',
-                    caption: finalCaption
+                    title: proj.title,
+                    description: proj.description,
+                    price: proj.price || 'Contact for Price',
+                    image_url: proj.imageUrl || '',
+                    images: proj.imageUrl ? [proj.imageUrl] : [],
+                    address: address || 'Online',
+                    property_type: 'Generic',
+                    status: 'Active',
+                    auto_generate: false
                 })
                 .select()
                 .single();
 
-            if (assetErr || !newAsset) {
-                console.error("[Onboarding API] Failed to create video asset placeholder:", assetErr);
-            } else {
-                // Insert tasks into video_tasks table
-                console.log("[Onboarding API] Recording tasks in video_tasks...");
-                const videoTasksToInsert = taskIds.map((taskId, i) => ({
-                    user_id: user.id,
-                    property_id: property.id,
-                    asset_id: newAsset.id,
-                    prompts: [videoPrompt],
-                    current_index: i,
-                    last_task_id: taskId,
-                    last_successful_task_id: "",
-                    aspect_ratio: "9:16",
-                    status: 'Processing',
-                    final_caption: finalCaption
-                }));
+            if (propertyError || !property) {
+                console.error(`[Onboarding API] Property insertion failed for ${proj.title}:`, propertyError);
+                continue;
+            }
 
-                const { error: taskInsertErr } = await supabaseAdmin
-                    .from('video_tasks')
-                    .insert(videoTasksToInsert);
+            const creativesToGenerate = Math.max(1, Math.min(10, proj.creativesCount || 3));
+            let imageTasksCount = 0;
+            let videoTasksCount = 0;
 
-                if (taskInsertErr) {
-                    console.error("[Onboarding API] Failed to save video_tasks rows:", taskInsertErr);
+            // --- A. Generate Image Prompts & Submit Tasks ---
+            console.log(`[Onboarding API] Generating ${creativesToGenerate} static creatives for "${proj.title}"...`);
+            
+            for (let cIdx = 0; cIdx < creativesToGenerate; cIdx++) {
+                // Randomly select one template from the user's selected templates
+                const randomTmplId = activeTemplates[Math.floor(Math.random() * activeTemplates.length)];
+                const refTmpl = getReferenceTemplate(randomTmplId);
+                const templateStyleName = refTmpl?.name || 'Modern Minimalist Luxury';
+                const templateBadge = refTmpl?.badge || 'PREMIUM EXCLUSIVE';
+
+                const promptSchema = z.object({
+                    imagePrompt: z.string(),
+                    adCaption: z.string()
+                });
+
+                const creativeGenPrompt = `You are a world-class Ad Creative Director.
+Company: "${resolvedCompanyName}"
+Project Title: "${proj.title}"
+Project Description: "${proj.description}"
+Price: "${proj.price || 'Contact for Price'}"
+Industry: "${detectedIndustry}"
+Visual Template Style to Emulate: "${templateStyleName}" (${templateBadge})
+${proj.customInstructions ? `Custom Owner Instructions: "${proj.customInstructions}"` : ''}
+
+### VISUAL PRODUCTION RULES:
+${visualProductionRules}
+
+Requirements:
+- Static Meta Ad prompt optimized for 3:4 aspect ratio.
+- Must look 100% authentic photograph, not plastic or artificial.
+- Photorealistic humans matching context ethnicity.
+- DO NOT draw text overlays or placeholder circles. Clean visual layout.
+- Emulate the aesthetic tone of "${templateStyleName}".
+- If custom instructions are provided, honor them explicitly.
+`;
+
+                try {
+                    const { object } = await generateObject({
+                        model: google('gemini-3.5-flash'),
+                        schema: promptSchema,
+                        prompt: creativeGenPrompt
+                    });
+
+                    const imageInputUrls: string[] = [];
+                    if (proj.imageUrl) imageInputUrls.push(proj.imageUrl);
+                    if (logoUrl) imageInputUrls.push(logoUrl);
+                    if (refTmpl?.url) imageInputUrls.push(refTmpl.url);
+
+                    const selectedImageModel = imageInputUrls.length > 0 ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
+                    const taskId = await createKieImageTask(object.imagePrompt, selectedImageModel, "3:4", imageInputUrls);
+
+                    if (taskId) {
+                        imageTasksCount++;
+                        fetch(`${baseUrl}/api/background-worker`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                userId: user.id,
+                                propId: property.id,
+                                propertyTitle: property.title,
+                                existingTaskId: taskId,
+                                existingCaption: `${object.adCaption}\n\nPrice: ${property.price}`
+                            })
+                        }).catch(err => console.error("[Onboarding API] Background worker call failed:", err));
+                    }
+                } catch (imgErr: any) {
+                    console.error(`[Onboarding API] Failed to generate creative ${cIdx + 1} for ${property.title}:`, imgErr.message);
                 }
             }
+
+            // --- B. Generate Videos with Specified Durations (5-Min Total Budget) ---
+            const projectVideos = Array.isArray(proj.videos) ? proj.videos : [{ duration: 15, customInstructions: '' }];
+            
+            for (let vIdx = 0; vIdx < projectVideos.length; vIdx++) {
+                const vid = projectVideos[vIdx];
+                const requestedDuration = Number(vid.duration) || 15;
+
+                // Enforce global 5-minute pool
+                if (cumulativeVideoSeconds + requestedDuration > MAX_GLOBAL_VIDEO_SECONDS) {
+                    console.warn(`[Onboarding API] Video pool cap reached (300s). Skipping additional video.`);
+                    break;
+                }
+                cumulativeVideoSeconds += requestedDuration;
+
+                console.log(`[Onboarding API] Generating ${requestedDuration}s video for "${proj.title}"...`);
+
+                const videoSchema = z.object({
+                    videoPrompt: z.string(),
+                    finalCaption: z.string()
+                });
+
+                const videoGenPrompt = `You are an elite video ad director creating a ${requestedDuration}-second 9:16 mobile commercial reel.
+Company: "${resolvedCompanyName}"
+Project Title: "${proj.title}"
+Description: "${proj.description}"
+Price: "${proj.price || 'Contact for Price'}"
+Duration: ${requestedDuration} seconds.
+${vid.customInstructions ? `Specific Video Instructions: "${vid.customInstructions}"` : ''}
+${proj.customInstructions ? `General Project Instructions: "${proj.customInstructions}"` : ''}
+
+Output a structured video prompt for Seedance mini video engine with exact uppercase headers:
+LOCATION (IMPORTANT)
+CHARACTER APPEARANCE
+DIALOGUE (Spoken script fitting exactly ${requestedDuration} seconds: ~${Math.round(requestedDuration * 2.2)} words. If India context, write in natural conversational Hinglish with Hindi words in Devanagari script).
+SPEECH STYLE
+ACTION
+B-ROLL
+CAMERA
+LIGHTING
+STYLE
+AVOID
+`;
+
+                try {
+                    const { object: vidObj } = await generateObject({
+                        model: google('gemini-3.5-flash'),
+                        schema: videoSchema,
+                        prompt: videoGenPrompt
+                    });
+
+                    const videoPayload: any = {
+                        model: "bytedance/seedance-2-mini",
+                        callBackUrl: `${baseUrl}/api/video/callback`,
+                        input: {
+                            prompt: vidObj.videoPrompt,
+                            aspect_ratio: "9:16",
+                            duration: requestedDuration <= 15 ? 15 : 30, // Seedance mini accepts 15 or 30
+                            generate_audio: true,
+                            resolution: "480p",
+                            nsfw_checker: true,
+                            web_search: false
+                        }
+                    };
+
+                    if (property.image_url) {
+                        const convertedImg = await ensureJpegImage(property.image_url, user.id);
+                        videoPayload.input.reference_image_urls = [convertedImg];
+                    }
+
+                    const taskResult = await createKieTask(videoPayload);
+                    if (taskResult.taskId) {
+                        videoTasksCount++;
+                        const { data: newAsset } = await supabaseAdmin
+                            .from('assets')
+                            .insert({
+                                user_id: user.id,
+                                property_id: property.id,
+                                type: 'video',
+                                status: 'Processing',
+                                url: 'https://designs.adrolls.in/processing',
+                                caption: vidObj.finalCaption,
+                                metadata: { duration: requestedDuration, instructions: vid.customInstructions || proj.customInstructions }
+                            })
+                            .select()
+                            .single();
+
+                        if (newAsset) {
+                            await supabaseAdmin
+                                .from('video_tasks')
+                                .insert([{
+                                    user_id: user.id,
+                                    property_id: property.id,
+                                    asset_id: newAsset.id,
+                                    prompts: [vidObj.videoPrompt],
+                                    current_index: 0,
+                                    last_task_id: taskResult.taskId,
+                                    last_successful_task_id: "",
+                                    aspect_ratio: "9:16",
+                                    status: 'Processing',
+                                    final_caption: vidObj.finalCaption
+                                }]);
+                        }
+                    }
+                } catch (vErr: any) {
+                    console.error(`[Onboarding API] Video generation failed for ${property.title}:`, vErr.message);
+                }
+            }
+
+            generationSummary.push({
+                projectTitle: property.title,
+                imageTasksQueued: imageTasksCount,
+                videoTasksQueued: videoTasksCount
+            });
         }
 
-        console.log("[Onboarding API] Onboarding complete flow triggered successfully!");
-        return NextResponse.json({ success: true, message: 'Onboarding completed and production assets triggered.' });
+        // 6. Optional: Send WhatsApp notification to Admin if connected
+        const targetWaPhone = whatsappNumber || existingProfile?.contact_number;
+        const waPhoneId = existingProfile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID;
+        const waToken = existingProfile?.whatsapp_access_token || existingProfile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
+
+        if (targetWaPhone && waPhoneId && waToken) {
+            try {
+                const summaryText = generationSummary
+                    .map(s => `• *${s.projectTitle}*: ${s.imageTasksQueued} Creatives + ${s.videoTasksQueued} Video(s)`)
+                    .join('\n');
+
+                const introMsg = `🚀 *Nobogent Studio Initialized!*
+
+Welcome *${resolvedCompanyName}*! We have commenced generation across your projects:
+${summaryText}
+
+⏱️ *Total Video Duration Allocated*: ${cumulativeVideoSeconds}s / ${MAX_GLOBAL_VIDEO_SECONDS}s (5 Mins Free Budget)
+
+📲 *How Approvals & Revisions Work*:
+As each creative is synthesized, it will be delivered here with product copy in WhatsApp template format.
+• Reply *'Approve'* to instantly schedule it to your socials at peak 7:30 PM.
+• Reply with changes (e.g. _"Change price to ₹2.1 Cr"_ or _"Regenerate style"_) to trigger automatic revisions!`;
+
+                fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${waToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messaging_product: 'whatsapp',
+                        recipient_type: 'individual',
+                        to: targetWaPhone.replace(/\D/g, ''),
+                        type: 'text',
+                        text: { body: introMsg }
+                    })
+                }).catch(err => console.error("[Onboarding API] WhatsApp alert error:", err));
+            } catch {}
+        }
+
+        console.log("[Onboarding API] Multi-project onboarding completed successfully!");
+        return NextResponse.json({ 
+            success: true, 
+            message: `Onboarding completed for ${resolvedProjects.length} project(s).`,
+            totalVideoSecondsUsed: cumulativeVideoSeconds,
+            remainingVideoSeconds: Math.max(0, MAX_GLOBAL_VIDEO_SECONDS - cumulativeVideoSeconds),
+            summary: generationSummary 
+        });
 
     } catch (error: any) {
         console.error("[Onboarding API] Fatal Error:", error);

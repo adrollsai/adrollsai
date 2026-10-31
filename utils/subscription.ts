@@ -1,4 +1,36 @@
 export const PLANS = {
+    trial: {
+        name: "7-Day Trial Pass",
+        price: 999,
+        durationDays: 7,
+        oncePerUser: true,
+        limits: {
+            videos: 2,
+            images: 15,
+            seo_articles: 5,
+            campaign_launches: 2,
+            campaign_optimizations: 2,
+            team_members: 2,
+            retargeting_campaigns: 0,
+            storage_gb: 2
+        }
+    },
+    '7-days-trial': {
+        name: "7-Day Trial Pass",
+        price: 999,
+        durationDays: 7,
+        oncePerUser: true,
+        limits: {
+            videos: 2,
+            images: 15,
+            seo_articles: 5,
+            campaign_launches: 2,
+            campaign_optimizations: 2,
+            team_members: 2,
+            retargeting_campaigns: 0,
+            storage_gb: 2
+        }
+    },
     '1 month': {
         name: "1 Month Plan",
         price: 9999,
@@ -260,10 +292,10 @@ export function getUserLimits(profile: any) {
 
     const planKey = (profile?.subscription_plan || 'free').toLowerCase();
     const plan = PLANS[planKey as keyof typeof PLANS] || PLANS.free;
-    
+
     // Base limits from plan
     const base = plan.limits;
-    
+
     // Add purchased add-ons
     const addon_videos = profile?.addon_videos || 0;
     const addon_images = profile?.addon_images || 0;
@@ -274,14 +306,14 @@ export function getUserLimits(profile: any) {
 
     const isKhushiram = userEmail === 'khushiramrealtor@gmail.com' || profile?.business_name?.toLowerCase()?.includes('khushiram');
 
-    const isUnlimitedTeam = (isWhitelisted && !isKhushiram) || 
-        profile?.role === 'super_admin' || 
-        profile?.role === 'agency' || 
-        planKey === 'enterprise' || 
+    const isUnlimitedTeam = (isWhitelisted && !isKhushiram) ||
+        profile?.role === 'super_admin' ||
+        profile?.role === 'agency' ||
+        planKey === 'enterprise' ||
         base.team_members === 999999;
 
-    const teamMemberLimit = isKhushiram 
-        ? (3 + addon_team_members) 
+    const teamMemberLimit = isKhushiram
+        ? (3 + addon_team_members)
         : (isUnlimitedTeam ? 999999 : base.team_members + addon_team_members);
 
     return {

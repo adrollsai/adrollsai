@@ -72,6 +72,8 @@ export default function BillingPage() {
         const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
         return cached?.isManagedClient || false;
     });
+    const [paymentType, setPaymentType] = useState<'one_time' | 'recurring'>('one_time');
+    const [hasPurchasedTrial, setHasPurchasedTrial] = useState<boolean>(false);
 
     const fetchBillingData = async () => {
         try {
@@ -106,11 +108,22 @@ export default function BillingPage() {
                     setRenewalDate(formattedDate);
                 }
 
+                if (data.hasPurchasedTrial !== undefined) {
+                    setHasPurchasedTrial(Boolean(data.hasPurchasedTrial));
+                }
+                if (data.paymentType) {
+                    setPaymentType(data.paymentType === 'recurring' ? 'recurring' : 'one_time');
+                }
+
                 const { data: profile } = await supabase
                     .from('profiles')
-                    .select('subscription_plan, subscription_status')
+                    .select('subscription_plan, subscription_status, client_features')
                     .eq('id', user.id)
                     .single();
+
+                if (profile?.client_features?.has_purchased_trial || profile?.subscription_plan === 'trial') {
+                    setHasPurchasedTrial(true);
+                }
 
                 const plan = profile?.subscription_plan || 'free';
                 if (profile) {
@@ -140,6 +153,7 @@ export default function BillingPage() {
     const handlePurchase = (planId: string) => {
         openCheckout({
             planId: planId,
+            paymentType: paymentType,
             onSuccess: () => {
                 fetchBillingData();
             }
@@ -390,6 +404,114 @@ export default function BillingPage() {
                         </div>
                     ) : (
                         <>
+                    {/* Payment Frequency Toggle (One-Time vs Recurring) */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 mb-8 bg-slate-50/90 rounded-3xl border border-slate-200">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                                <RotateCw size={18} />
+                            </div>
+                            <div>
+                                <div className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                                    Select Payment Option
+                                </div>
+                                <div className="text-[11px] text-slate-500 font-medium">
+                                    {paymentType === 'one_time'
+                                        ? "Pay once for your chosen billing cycle. No auto-renewal or surprise deductions."
+                                        : "Automated recurring auto-debit. Stay uninterrupted, cancel or pause anytime."}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setPaymentType('one_time')}
+                                className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                                    paymentType === 'one_time'
+                                        ? 'bg-slate-900 text-white shadow-sm'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                            >
+                                One-Time Payment
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setPaymentType('recurring')}
+                                className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                                    paymentType === 'recurring'
+                                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                            >
+                                <span>Recurring Payment</span>
+                                <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold">Auto-Renew</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 7-Days Trial Package (₹999 + 18% GST - Purchased Only Once Per User) */}
+                    <div className="mb-10 relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-950 p-6 sm:p-8 text-white shadow-xl border-2 border-indigo-500/30">
+                        <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+                        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                            <div className="space-y-3 max-w-2xl">
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                    <span className="bg-amber-400 text-slate-950 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-sm">
+                                        Special 7-Day Trial Package
+                                    </span>
+                                    <span className="bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full">
+                                        Purchased Only Once Per User
+                                    </span>
+                                    {hasPurchasedTrial && (
+                                        <span className="bg-red-500/20 text-red-300 border border-red-500/30 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full">
+                                            Offer Already Claimed
+                                        </span>
+                                    )}
+                                </div>
+                                <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                                    7 Days All-Access Growth Trial
+                                </h3>
+                                <p className="text-xs sm:text-sm text-indigo-200 leading-relaxed font-medium">
+                                    Get complete access to the autonomous marketing stack: AI video ads, creative studio, WhatsApp chatbot, and automated Meta ad launches.
+                                </p>
+                                <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1 text-xs text-indigo-100 font-semibold">
+                                    <span className="flex items-center gap-1.5"><CheckCircle2 size={15} className="text-amber-400" /> 7 Full Days Access</span>
+                                    <span className="flex items-center gap-1.5"><CheckCircle2 size={15} className="text-amber-400" /> 2,500 Platform Credits</span>
+                                    <span className="flex items-center gap-1.5"><CheckCircle2 size={15} className="text-amber-400" /> 15 AI Creatives + 2 AI Videos</span>
+                                    <span className="flex items-center gap-1.5"><CheckCircle2 size={15} className="text-amber-400" /> WhatsApp Bot &amp; Meta Ads</span>
+                                </div>
+                            </div>
+
+                            <div className="shrink-0 bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/15 flex flex-col items-center justify-center min-w-[240px] text-center">
+                                <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider">
+                                    One-Time Trial Package
+                                </div>
+                                <div className="text-3xl sm:text-4xl font-black text-white mt-1">
+                                    ₹999
+                                </div>
+                                <div className="text-xs font-semibold text-indigo-200 mt-0.5">
+                                    + 18% GST (Total: ₹1,179)
+                                </div>
+                                <div className="text-[10px] text-amber-300 font-bold mt-1">
+                                    Valid 7 days • 1 purchase per user
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => handlePurchase('trial')}
+                                    disabled={isProcessing || hasPurchasedTrial}
+                                    className={`w-full mt-4 py-3 px-5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95 ${
+                                        hasPurchasedTrial
+                                            ? 'bg-white/20 text-white/50 cursor-not-allowed border border-white/10'
+                                            : 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 hover:shadow-amber-500/20'
+                                    }`}
+                                >
+                                    <ShoppingBag size={14} />
+                                    {hasPurchasedTrial ? 'Trial Already Claimed' : (isProcessing ? 'Connecting...' : 'Claim 7-Day Trial (₹1,179)')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Desktop Comparison Table (lg+) */}
                     <div className="hidden lg:block overflow-x-auto">
                         <table className="w-full border-collapse">
@@ -453,7 +575,7 @@ export default function BillingPage() {
                                                         disabled={isProcessing}
                                                         className={`w-full mt-4 py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50 ${plan.btnStyle}`}
                                                     >
-                                                        <ShoppingBag size={14} /> {isProcessing ? 'Connecting...' : 'Subscribe Now'}
+                                                        <ShoppingBag size={14} /> {isProcessing ? 'Connecting...' : (paymentType === 'recurring' ? 'Subscribe Recurring' : 'Pay Once & Activate')}
                                                     </button>
                                                 </div>
                                             </div>
@@ -598,7 +720,7 @@ export default function BillingPage() {
                                         disabled={isProcessing}
                                         className={`w-full py-4 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50 ${plan.btnStyle}`}
                                     >
-                                        <ShoppingBag size={16} /> {isProcessing ? 'Connecting...' : 'Subscribe Now'}
+                                        <ShoppingBag size={16} /> {isProcessing ? 'Connecting...' : (paymentType === 'recurring' ? 'Subscribe Recurring' : 'Pay Once & Activate')}
                                     </button>
                                 </div>
                             </div>

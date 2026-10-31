@@ -5,19 +5,49 @@
 
 export function parseCustomFields(cf: any): Record<string, any> {
   if (!cf) return {};
-  if (typeof cf === 'object' && cf !== null) return cf;
-  if (typeof cf === 'string') {
+  let obj = cf;
+  if (typeof obj === 'string') {
     try {
-      let parsed = JSON.parse(cf);
-      while (typeof parsed === 'string') {
-        parsed = JSON.parse(parsed);
+      while (typeof obj === 'string') {
+        obj = JSON.parse(obj);
       }
-      return parsed || {};
     } catch (e) {
       return {};
     }
   }
-  return {};
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+
+  // If object was corrupted by spreading a stringified JSON (numeric character indices)
+  if (obj['0'] !== undefined && obj['1'] !== undefined) {
+    const chars: string[] = [];
+    let i = 0;
+    while (obj[String(i)] !== undefined) {
+      chars.push(obj[String(i)]);
+      i++;
+    }
+    const reconstructedStr = chars.join('');
+    let inner: Record<string, any> = {};
+    try {
+      inner = parseCustomFields(reconstructedStr);
+    } catch (e) {}
+
+    const nonNumeric: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (isNaN(Number(k))) {
+        nonNumeric[k] = v;
+      }
+    }
+    return { ...inner, ...nonNumeric };
+  }
+
+  // Strip any accidental numeric keys
+  const sanitized: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (isNaN(Number(k))) {
+      sanitized[k] = v;
+    }
+  }
+  return sanitized;
 }
 
 /**

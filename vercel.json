@@ -23,7 +23,7 @@
     },
     {
       "path": "/api/cron/eod-report",
-      "schedule": "30 14 * * *"
+      "schedule": "30 13 * * *"
     },
 
     {

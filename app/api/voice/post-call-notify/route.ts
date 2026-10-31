@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     // 1. Fetch lead and profile
     const { data: lead, error: leadErr } = await supabaseAdmin
       .from('leads')
-      .select('id, name, phone, email, pipeline_stage, status, custom_fields, user_id, budget, source, ad_name, campaign_id, voice_campaign_id, notes, summary, voice_call_summary, assigned_to')
+      .select('id, name, phone, email, pipeline_stage, status, custom_fields, user_id, budget, source, ad_name, campaign_id, voice_campaign_id, notes, summary, voice_call_summary, voice_recording_url, voice_call_transcript, assigned_to')
       .eq('id', leadId)
       .single()
 
@@ -47,6 +47,21 @@ export async function POST(req: Request) {
       .select('id, email, whatsapp_personal_number, business_name, business_info')
       .eq('id', ownerUserId)
       .single()
+    // Resolve recording URL from lead, payload, or call_logs
+    let callRecordingUrl = lead.voice_recording_url || body.recordingUrl || null;
+    if (!callRecordingUrl) {
+      try {
+        const { data: cLog } = await supabaseAdmin
+          .from('call_logs')
+          .select('recording_url')
+          .eq('lead_id', leadId)
+          .not('recording_url', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cLog?.recording_url) callRecordingUrl = cLog.recording_url;
+      } catch (e) {}
+    }
 
     const leadName = lead.name || 'Valued Prospect'
     const leadPhone = lead.phone || 'N/A'
@@ -140,7 +155,7 @@ export async function POST(req: Request) {
       await sendAdminMultiChannelNotification({
         ownerUserId,
         title: `🎙️ Site Visit / Appointment Booked: ${leadName}`,
-        body: `AI Voice Agent successfully scheduled an on-site visit/appointment with ${leadName}!\n\n📅 Date & Time: ${formattedSlotDate} (IST)\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}\n${formattedAnswersStr ? `\n📋 Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
+        body: `AI Voice Agent successfully scheduled an on-site visit/appointment with ${leadName}!\n\n📅 Date & Time: ${formattedSlotDate} (IST)\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${callRecordingUrl ? `\n🎙️ Call Recording: ${callRecordingUrl}` : ''}\n${formattedAnswersStr ? `\n📋 Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
         url: `/dashboard/crm/${leadId}`,
         type: 'meeting_booked',
         leadPhone,
@@ -184,7 +199,7 @@ export async function POST(req: Request) {
       await sendAdminMultiChannelNotification({
         ownerUserId,
         title: `🔥 High Interest Lead: ${leadName}`,
-        body: `Prospect ${leadName} confirmed interest during AI call for ${propertyLabel}!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}` : ''}\n\n📝 Call Summary: ${summary}`,
+        body: `Prospect ${leadName} confirmed interest during AI call for ${propertyLabel}!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${callRecordingUrl ? `\n🎙️ Call Recording: ${callRecordingUrl}` : ''}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}` : ''}\n\n📝 Call Summary: ${summary}`,
         url: `/dashboard/crm/${leadId}`,
         type: 'expert_escalation',
         leadPhone,

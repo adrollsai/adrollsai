@@ -39,7 +39,7 @@ function computeValidCallingSlot(targetDate = new Date(), timeZone = 'Asia/Kolka
     const [hStr, mStr] = formattedStr.split(':');
     const hourVal = parseInt(hStr, 10);
     const minuteVal = parseInt(mStr, 10);
-    
+
     const timeInMinutes = hourVal * 60 + minuteVal;
     const startMinutes = 9 * 60;     // 9:00 AM
     const endMinutes = 19 * 60;      // 7:00 PM (19:00)
@@ -58,12 +58,12 @@ function computeValidCallingSlot(targetDate = new Date(), timeZone = 'Asia/Kolka
         hour12: false
     }).formatToParts(targetDate);
     const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-    
+
     const year = parseInt(partMap.year, 10);
     const month = parseInt(partMap.month, 10) - 1;
     let targetDay = parseInt(partMap.day, 10);
     const hour = parseInt(partMap.hour, 10);
-    
+
     if (hour >= 19) {
         targetDay += 1;
     }
@@ -124,7 +124,19 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
                 .eq('id', lead.voice_campaign_id)
                 .maybeSingle();
             if (fallbackCamp) campaign = fallbackCamp;
-        } catch (cErr) {}
+        } catch (cErr) { }
+    }
+    if (!campaign && effectiveProfileId) {
+        try {
+            const { data: userCamps } = await supabaseAdmin
+                .from('voice_campaigns')
+                .select('*')
+                .eq('user_id', effectiveProfileId)
+                .eq('status', 'active');
+            if (userCamps && userCamps.length === 1) {
+                campaign = userCamps[0];
+            }
+        } catch (cErr) { }
     }
 
     // Resolve target property from catalogue
@@ -134,7 +146,7 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         try {
             const { data: tp } = await supabaseAdmin.from('properties').select('*').eq('id', targetPropId).maybeSingle();
             if (tp) targetProperty = tp;
-        } catch (e) {}
+        } catch (e) { }
     }
     if (!targetProperty) {
         try {
@@ -150,7 +162,7 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
                     targetProperty = allProps[0];
                 }
             }
-        } catch (pErr) {}
+        } catch (pErr) { }
     }
 
     let catalogueInfo = '';
@@ -174,7 +186,7 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         try {
             const cf = typeof lead.custom_fields === 'string' ? JSON.parse(lead.custom_fields) : lead.custom_fields;
             if (cf?.demo_business_name) demoBusinessName = cf.demo_business_name;
-        } catch (e) {}
+        } catch (e) { }
     }
     let companyName = demoBusinessName || campaign?.audience_filter?.business_name || profile?.business_name || 'Nobogent Client';
     let targetProduct = null;
@@ -201,7 +213,7 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
                     .join('\n');
             }
         }
-    } catch (waErr) {}
+    } catch (waErr) { }
 
     // Check Previous Call summaries
     let previousCallsHistory = '';
@@ -222,12 +234,12 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
                         const parsed = JSON.parse(rawJson);
                         const dateStr = new Date(log.created_at).toLocaleDateString();
                         if (parsed.summary) parsedCalls.push(`- Call on ${dateStr}: ${parsed.summary}`);
-                    } catch (e) {}
+                    } catch (e) { }
                 }
             }
             if (parsedCalls.length > 0) previousCallsHistory = parsedCalls.join('\n');
         }
-    } catch (chErr) {}
+    } catch (chErr) { }
     if (!previousCallsHistory && lead?.voice_call_summary) {
         previousCallsHistory = `- Last Call Summary: ${lead.voice_call_summary}`;
     }
@@ -258,7 +270,7 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
             if (qPairs.length > 0) {
                 formQuestionsSummary = `--- QUESTIONS & ANSWERS SUBMITTED BY PROSPECT IN FACEBOOK INSTANT FORM ---\n${qPairs.join('\n')}\n`;
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     targetProduct = (targetProperty && targetProperty.title) || adProductName || formAdCampaignName || (campaign?.target_product) || 'our prime properties';
@@ -282,7 +294,7 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         } else if (profile?.business_info && typeof profile.business_info === 'object') {
             bi = profile.business_info;
         }
-    } catch (e) {}
+    } catch (e) { }
 
     const campGuidanceLower = campaignGuidance.toLowerCase();
 
@@ -307,10 +319,12 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
     const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
     const isFemale = !vLower.includes('orion') && !vLower.includes('puck') && !vLower.includes('charon') && !vLower.includes('fenrir') && !vLower.includes('male');
 
-    const genderGrammarInstruction = defaultCallingLang === 'english'
-        ? `GENDER IDENTITY (FEMALE): You are a warm, professional, distinctly FEMALE customer relationship representative. You MUST speak in a polite, feminine, natural Indian English tone. NEVER sound male or robotic.`
-        : (isFemale
-            ? `GENDER IDENTITY (FEMALE): You are Priya, a FEMALE representative. In Hindi, Hinglish, Punjabi, and Indian languages, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon"). NEVER use masculine endings.`
+    const genderGrammarInstruction = isFemale
+        ? (defaultCallingLang === 'english'
+            ? `GENDER IDENTITY (FEMALE): You are a warm, professional, distinctly FEMALE customer relationship representative. You MUST speak in a polite, feminine, natural Indian English tone. NEVER sound male or robotic.`
+            : `GENDER IDENTITY (FEMALE): You are Priya, a FEMALE representative. In Hindi, Hinglish, Punjabi, and Indian languages, you MUST ALWAYS use feminine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHI hoon", "Main aapki help kar SAKTI hoon"). NEVER use masculine endings.`)
+        : (defaultCallingLang === 'english'
+            ? `GENDER IDENTITY (MALE): You are a calm, professional, distinctly MALE representative. You MUST speak in a polite, calm, natural masculine Indian English tone. NEVER sound female or robotic.`
             : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi, Hinglish, Punjabi, and Indian languages, you MUST ALWAYS use masculine verb forms and grammatical endings.`);
 
     const backchannelAck = isFemale
@@ -386,9 +400,9 @@ CRITICAL DIRECTIVE — ABSOLUTE PROHIBITION ON WHATSAPP:
   NEVER agree to send it on WhatsApp yourself.
   Instead, politely say:
   ${defaultCallingLang === 'english'
-    ? '"Certainly, I\'ll connect you with our senior relationship manager who will get in touch with you directly and share all the details."'
-    : '"Ji bilkul sir, main hamare senior relationship manager ko bol deti hoon, woh aapse directly connect karke saari details share kar denge."'
-  }
+            ? '"Certainly, I\'ll connect you with our senior relationship manager who will get in touch with you directly and share all the details."'
+            : '"Ji bilkul sir, main hamare senior relationship manager ko bol deti hoon, woh aapse directly connect karke saari details share kar denge."'
+        }
   Then smoothly transition to confirm their preferred time for the relationship manager to call or say a polite goodbye.`;
 
     const defaultFlow = `
@@ -424,12 +438,17 @@ CRITICAL CONVERSATIONAL DISCIPLINE:
 6. END CALL CLEANLY: Trigger 'end_call' once preferred time is noted and farewell is exchanged.
 `;
 
-    const voiceLockDirective = `
+    const voiceLockDirective = isFemale ? `
 ABSOLUTE VOICE LOCK & FEMININE TIMBRE (CRITICAL — NEVER VIOLATE):
 - You MUST maintain your bright, warm, distinctly feminine voice (Aoede timbre, natural pitch range 190-215 Hz) from your very first word until the call ends.
 - STRICT PROHIBITION AGAINST TIMBRE DRIFT: NEVER drop into a deeper, heavier, flat, or masculine vocal fry at ANY point in the call, especially during closing turns.
 - NEVER adopt an American, British, or Western accent. Maintain authentic Urban Indian cadence.
 - Every single turn, whether greeting, answering a question, or saying goodbye, MUST sound identically pleasant, bright, and feminine.
+- Your voice identity is LOCKED for the entire duration of this call session. No exceptions.` : `
+ABSOLUTE VOICE LOCK & CALM MALE TIMBRE (CRITICAL — NEVER VIOLATE):
+- You MUST maintain a calm, steady, grounded, and completely natural MALE voice throughout the call.
+- NORMAL, UNHURRIED PACE: Speak in a relaxed, calm, normal conversational tone. NEVER sound rushed, hyperactive, or overly cheerful/upbeat.
+- NEVER adopt an American, British, or Western accent. Maintain an authentic, respectful North Indian / Punjabi cadence.
 - Your voice identity is LOCKED for the entire duration of this call session. No exceptions.`;
 
     const systemInstruction = `
@@ -598,7 +617,7 @@ async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Aoede'
                 console.log(`[PREWARM] Gemini setupComplete received in advance for lead ${leadId}! Session is HOT.`);
                 poolEntry.setupComplete = true;
             }
-        } catch (e) {}
+        } catch (e) { }
     };
     tempSocket.on('message', onPrewarmMsg);
 
@@ -611,12 +630,51 @@ async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Aoede'
 
 
 app.all(['/vobiz-xml', '/api/voice/vobiz/xml'], (req, res) => {
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const host = req.headers['x-forwarded-host'] || req.headers.host || process.env.VOICE_BRIDGE_HOST || 'gemini-voice-bridge-805895515412.us-central1.run.app';
     const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
     const wsProtocol = protocol === 'https' ? 'wss' : 'ws';
     const leadId = req.query.leadId || req.body?.leadId || '';
     const profileId = req.query.profileId || req.body?.profileId || '';
     const campaignId = req.query.campaignId || req.body?.campaignId || '';
+
+    const isAgentCall = req.query.isAgentCall === 'true' || req.body?.isAgentCall === 'true';
+    const agentSessionId = req.query.sessionId || req.body?.sessionId || '';
+
+    if (isAgentCall && agentSessionId) {
+        const vobizAuthId = req.query.vobizAuthId || req.body?.vobizAuthId || 'SA_RUY0ZNCH';
+        const vobizAuthToken = req.query.vobizAuthToken || req.body?.vobizAuthToken || 'kbcjLH5cXccdZkbbgkcucE2L2Jeul0vvXrhRuVQo0YxFQAfbFnQ5bzfReUSqs3oi';
+        const wsUrl = `${wsProtocol}://${host}/agent-bridge?sessionId=${encodeURIComponent(agentSessionId)}&role=vobiz${leadId ? `&leadId=${encodeURIComponent(leadId)}` : ''}`;
+        const escapedWsUrl = wsUrl.replace(/&/g, '&amp;');
+        const statusUrl = `${protocol}://${host}/vobiz-status?isAgentCall=true&sessionId=${encodeURIComponent(agentSessionId)}&leadId=${leadId}`;
+
+        const callUuid = req.query.CallUUID || req.body?.CallUUID || req.query.call_uuid || req.body?.call_uuid;
+        if (callUuid) {
+            console.log(`[BRIDGE VOBIZ-XML] Triggering background REST recording for Agent Call ${callUuid} (auth: ${vobizAuthId})...`);
+            fetch(`https://api.vobiz.ai/api/v1/Account/${vobizAuthId}/Call/${callUuid}/Record/`, {
+                method: 'POST',
+                headers: {
+                    'X-Auth-ID': vobizAuthId,
+                    'X-Auth-Token': vobizAuthToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    file_format: 'mp3',
+                    time_limit: 1800,
+                    callback_url: statusUrl,
+                    callback_method: 'POST'
+                })
+            }).catch(e => console.warn(`[BRIDGE VOBIZ-XML] Agent Record trigger warning:`, e.message));
+        }
+
+        const agentXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Stream bidirectional="true" keepCallAlive="true" streamTimeout="7200" contentType="audio/x-l16;rate=16000">${escapedWsUrl}</Stream>
+</Response>`;
+
+        console.log(`[BRIDGE VOBIZ-XML] Returning Agent Stream XML for session ${agentSessionId}:\n${agentXml}`);
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        return res.send(agentXml);
+    }
 
     const reqVoiceName = req.query.voiceName || req.body?.voiceName || '';
     const wsUrl = `${wsProtocol}://${host}/gemini-live-stream?leadId=${leadId}&profileId=${profileId}&campaignId=${campaignId}&telephony=vobiz${reqVoiceName ? `&voiceName=${encodeURIComponent(reqVoiceName)}` : ''}`;
@@ -808,22 +866,22 @@ function decodeMuLaw(uLawByte) {
 const BIAS = 0x84;
 const CLIP = 32635;
 const exp_lut = [
-    0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,
-    4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
-    5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
-    5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
-    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
-    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
-    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
-    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
+    0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7
 ];
 
 function encodeMuLaw(number) {
@@ -890,18 +948,18 @@ function loadPcmAsset(key, filename) {
         }
         const raw24 = fs.readFileSync(fullPath);
         const pcm24 = new Int16Array(raw24.buffer, raw24.byteOffset, Math.floor(raw24.length / 2));
-        
+
         // Downsample to 16k
         const pcm16 = downsample24To16(pcm24);
         const pcm16Buf = Buffer.from(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
-        
+
         // Downsample to 8k mu-law
         const pcm8 = downsample24To8(pcm24);
         const muLawBuf = Buffer.alloc(pcm8.length);
         for (let i = 0; i < pcm8.length; i++) {
             muLawBuf[i] = encodeMuLaw(pcm8[i]);
         }
-        
+
         AUDIO_ASSETS[key] = {
             raw24,
             pcm24,
@@ -990,13 +1048,13 @@ function calculateRMS(pcm16Array) {
 
 class NoiseSuppressedAudioProcessor {
     constructor(options = {}) {
-        // Barge-in: RMS threshold for caller voice to be considered "speaking" during AI output
-        // Human speech directly into phone microphone is typically RMS 1600 - 5000+
-        // Instant barge-in: RMS threshold for caller voice to interrupt AI output
-        // Mobile cell phone mic speech is typically RMS 400 - 1500
-        // Set to 400 RMS with 3 frames (60ms) so saying a single word ("price", "hello", "wait") immediately halts AI
-        this.bargeInThreshold = options.bargeInThreshold || 400;
-        this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 3; // 3 frames * 20ms = 60ms for instant interruption
+        // Barge-in: RMS threshold for caller voice to interrupt AI output.
+        // Mobile cell phone mic speech directly into mic is typically RMS 2000 - 5000+
+        // Telephony line pops, connection transients, and earpiece echo range from RMS 400 - 1800.
+        // Set to 2400 RMS with 8 frames (160ms) to ensure ONLY intentional speech interrupts,
+        // preventing line noise or speaker echo from cutting off AI speech.
+        this.bargeInThreshold = options.bargeInThreshold || 2400;
+        this.sustainedBargeInNeeded = options.sustainedBargeInFrames || 8; // 8 frames * 20ms = 160ms
         this.voiceThreshold = options.voiceThreshold || 250; // Caller speech RMS threshold
         this.isAiSpeaking = false;
         this.aiSpeakingTimeout = null;
@@ -1078,12 +1136,335 @@ class NoiseSuppressedAudioProcessor {
     }
 }
 
+// Active Agent Softphone VoIP Sessions Map
+const activeAgentSessions = new Map();
+
+async function finalizeAgentCall(session) {
+    if (!session || session.finalized) return;
+    session.finalized = true;
+    console.log(`[AGENT BRIDGE] Finalizing call for session ${session.id}, lead ${session.leadId}...`);
+
+    const callUuid = session.vobizCallId;
+    const authId = session.vobizAuthId || 'SA_RUY0ZNCH';
+    const authToken = session.vobizAuthToken || 'kbcjLH5cXccdZkbbgkcucE2L2Jeul0vvXrhRuVQo0YxFQAfbFnQ5bzfReUSqs3oi';
+    const leadId = session.leadId;
+
+    let recordingUrl = null;
+
+    if (callUuid) {
+        // Retry up to 4 times to fetch the MP3 recording from Vobiz
+        for (let attempt = 1; attempt <= 4; attempt++) {
+            try {
+                await new Promise(r => setTimeout(r, attempt === 1 ? 3000 : 5000));
+                const recRes = await fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Recording/?call_uuid=${callUuid}&limit=5`, {
+                    headers: { 'X-Auth-ID': authId, 'X-Auth-Token': authToken }
+                });
+                if (recRes.ok) {
+                    const recData = await recRes.json().catch(() => ({}));
+                    const objects = recData.objects || (recData.recording_url ? [recData] : []);
+                    for (const r of objects) {
+                        const mp3 = r.recording_url || r.url || r.mp3_url;
+                        if (mp3) {
+                            const audioFetch = await fetch(mp3, { headers: { 'X-Auth-ID': authId, 'X-Auth-Token': authToken } });
+                            if (audioFetch.ok) {
+                                const audioBuffer = Buffer.from(await audioFetch.arrayBuffer());
+                                if (audioBuffer.byteLength > 4000) {
+                                    const storagePath = `${leadId || 'manual'}/agent_call_${callUuid}_${Date.now()}.mp3`;
+                                    const { error: upErr } = await supabaseAdmin.storage
+                                        .from('lead-voice-recordings')
+                                        .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true });
+                                    if (!upErr) {
+                                        const { data: pubData } = supabaseAdmin.storage
+                                            .from('lead-voice-recordings')
+                                            .getPublicUrl(storagePath);
+                                        recordingUrl = pubData?.publicUrl || mp3;
+                                    } else {
+                                        recordingUrl = mp3;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (recordingUrl) break;
+                }
+            } catch (err) {
+                console.warn(`[AGENT BRIDGE] Recording fetch attempt ${attempt} warning:`, err.message);
+            }
+        }
+    }
+
+    let summary = 'Agent connected with prospect via Bluesquare VoIP softphone.';
+    let transcript = [];
+    let isQualified = false;
+    let isInterested = false;
+    let budget = null;
+    let propertyType = null;
+    let sentiment = 'Neutral';
+
+    if (recordingUrl) {
+        try {
+            console.log(`[AGENT BRIDGE] Requesting Gemini audio analysis for recording: ${recordingUrl}...`);
+            const audioDataRes = await fetch(recordingUrl);
+            if (audioDataRes.ok) {
+                const audioBuffer = Buffer.from(await audioDataRes.arrayBuffer());
+                const audioBase64 = audioBuffer.toString('base64');
+                const defaultKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
+
+                const analysisPrompt = `You are an expert sales call QA and intelligence analyst for real estate.
+Analyze this recorded phone call between a human sales agent and a prospective client/lead.
+Output JSON ONLY with the following schema:
+{
+  "summary": "Concise 2-3 sentence executive summary of the conversation",
+  "transcript": [
+    { "role": "Agent", "message": "..." },
+    { "role": "Client", "message": "..." }
+  ],
+  "sentiment": "Positive / Neutral / Negative / Not Interested",
+  "is_interested": true,
+  "is_qualified": true,
+  "budget": "Extracted budget or null",
+  "property_type": "Extracted property type or null",
+  "timeline": "Extracted timeline or null",
+  "key_points": ["point 1", "point 2"],
+  "next_action": "Recommended next step"
+}`;
+
+                const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${defaultKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: analysisPrompt },
+                                {
+                                    inlineData: {
+                                        mimeType: 'audio/mp3',
+                                        data: audioBase64
+                                    }
+                                }
+                            ]
+                        }],
+                        generationConfig: {
+                            responseMimeType: 'application/json'
+                        }
+                    })
+                });
+
+                if (geminiRes.ok) {
+                    const geminiData = await geminiRes.json();
+                    const jsonText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (jsonText) {
+                        try {
+                            const parsed = JSON.parse(jsonText);
+                            summary = parsed.summary || summary;
+                            transcript = parsed.transcript || [];
+                            isQualified = !!parsed.is_qualified;
+                            isInterested = !!parsed.is_interested;
+                            budget = parsed.budget || null;
+                            propertyType = parsed.property_type || null;
+                            sentiment = parsed.sentiment || 'Neutral';
+                        } catch (pe) { }
+                    }
+                }
+            }
+        } catch (genErr) {
+            console.warn('[AGENT BRIDGE] Gemini audio analysis warning:', genErr.message);
+        }
+    }
+
+    // Save into Supabase
+    if (leadId) {
+        const historyData = {
+            summary,
+            recording_url: recordingUrl,
+            transcript,
+            call_type: 'Agent VoIP Call',
+            caller_did: '+917965480905',
+            sentiment
+        };
+
+        await supabaseAdmin.from('lead_history').insert({
+            lead_id: leadId,
+            action_type: 'REMARK',
+            description: `🎙️ CALL_JSON:${JSON.stringify(historyData)}`
+        }).catch(e => console.warn('[AGENT BRIDGE] History insert warning:', e.message));
+
+        const leadUpdate = {
+            voice_call_status: 'completed',
+            voice_call_summary: summary,
+            voice_call_transcript: transcript,
+            last_called_by: 'Agent VoIP (+917965480905)'
+        };
+        if (recordingUrl) leadUpdate.voice_recording_url = recordingUrl;
+        if (budget) leadUpdate.budget = budget;
+
+        await supabaseAdmin.from('leads').update(leadUpdate).eq('id', leadId).catch(e => console.warn('[AGENT BRIDGE] Lead update warning:', e.message));
+    }
+
+    if (session.agentWs && session.agentWs.readyState === ws.OPEN) {
+        session.agentWs.send(JSON.stringify({
+            event: 'analysis_completed',
+            summary,
+            transcript,
+            recordingUrl
+        }));
+    }
+
+    // Cleanup session after 60 seconds
+    setTimeout(() => {
+        activeAgentSessions.delete(session.id);
+    }, 60000);
+}
+
+function handleAgentBridgeConnection(wsConnection, req, urlObj) {
+    let sessionId = urlObj?.searchParams?.get('sessionId') || urlObj?.searchParams?.get('amp;sessionId');
+    if (!sessionId && req?.url) {
+        const match = req.url.match(/sessionId=([^&]+)/);
+        if (match) sessionId = decodeURIComponent(match[1]);
+    }
+    if (!sessionId) sessionId = `sess_${Date.now()}`;
+
+    let role = (urlObj?.searchParams?.get('role') || urlObj?.searchParams?.get('amp;role') || '').toLowerCase().trim();
+    if (!role && req?.url) {
+        if (req.url.includes('role=vobiz') || req.url.includes('vobiz')) {
+            role = 'vobiz';
+        } else {
+            role = 'agent';
+        }
+    }
+    if (!role) role = 'agent';
+
+    const leadId = urlObj?.searchParams?.get('leadId') || urlObj?.searchParams?.get('amp;leadId');
+    const profileId = urlObj?.searchParams?.get('profileId') || urlObj?.searchParams?.get('amp;profileId');
+    const vobizAuthId = urlObj?.searchParams?.get('vobizAuthId') || urlObj?.searchParams?.get('amp;vobizAuthId') || 'SA_RUY0ZNCH';
+    const vobizAuthToken = urlObj?.searchParams?.get('vobizAuthToken') || urlObj?.searchParams?.get('amp;vobizAuthToken') || 'kbcjLH5cXccdZkbbgkcucE2L2Jeul0vvXrhRuVQo0YxFQAfbFnQ5bzfReUSqs3oi';
+
+    console.log(`[AGENT BRIDGE] Connection received: role=${role}, sessionId=${sessionId}, leadId=${leadId}`);
+
+    let session = activeAgentSessions.get(sessionId);
+    if (!session) {
+        session = {
+            id: sessionId,
+            leadId,
+            profileId,
+            vobizAuthId,
+            vobizAuthToken,
+            agentWs: null,
+            vobizWs: null,
+            vobizStreamId: null,
+            vobizCallId: null,
+            startTime: null,
+            callActive: false,
+            finalized: false
+        };
+        activeAgentSessions.set(sessionId, session);
+    }
+
+    if (role === 'agent') {
+        session.agentWs = wsConnection;
+        wsConnection.send(JSON.stringify({ event: 'agent_ready', sessionId }));
+
+        wsConnection.on('message', (msg) => {
+            try {
+                const parsed = JSON.parse(msg.toString());
+                if (parsed.event === 'agent_audio' && parsed.audio) {
+                    if (session.vobizWs && session.vobizWs.readyState === ws.OPEN && session.vobizStreamId) {
+                        session.vobizWs.send(JSON.stringify({
+                            event: 'playAudio',
+                            streamId: session.vobizStreamId,
+                            media: {
+                                contentType: 'audio/x-l16',
+                                sampleRate: 16000,
+                                payload: parsed.audio
+                            }
+                        }));
+                    }
+                } else if (parsed.event === 'hangup') {
+                    console.log(`[AGENT BRIDGE] Agent initiated hangup for session ${sessionId}`);
+                    if (session.vobizWs && session.vobizWs.readyState === ws.OPEN) {
+                        session.vobizWs.close();
+                    }
+                }
+            } catch (e) {
+                console.warn('[AGENT BRIDGE] Error handling agent message:', e.message);
+            }
+        });
+
+        wsConnection.on('close', () => {
+            console.log(`[AGENT BRIDGE] Agent WS disconnected for session ${sessionId}`);
+            session.agentWs = null;
+        });
+
+    } else if (role === 'vobiz') {
+        session.vobizWs = wsConnection;
+
+        wsConnection.on('message', (msg) => {
+            try {
+                const data = JSON.parse(msg.toString());
+                if (data.event === 'start') {
+                    session.vobizStreamId = data.streamId || data.start?.streamId;
+                    session.vobizCallId = data.callId || data.callUuid || data.start?.callSid;
+                    session.startTime = Date.now();
+                    session.callActive = true;
+                    console.log(`[AGENT BRIDGE] Vobiz stream started for session ${sessionId}: streamId=${session.vobizStreamId}, callId=${session.vobizCallId}`);
+                    if (session.agentWs && session.agentWs.readyState === ws.OPEN) {
+                        session.agentWs.send(JSON.stringify({
+                            event: 'call_connected',
+                            callId: session.vobizCallId,
+                            streamId: session.vobizStreamId
+                        }));
+                    }
+                } else if (data.event === 'media') {
+                    const clientAudio = data.media?.payload;
+                    if (clientAudio && session.agentWs && session.agentWs.readyState === ws.OPEN) {
+                        session.agentWs.send(JSON.stringify({
+                            event: 'remote_audio',
+                            audio: clientAudio
+                        }));
+                    }
+                } else if (data.event === 'stop') {
+                    console.log(`[AGENT BRIDGE] Vobiz call ended for session ${sessionId}`);
+                    session.callActive = false;
+                    if (session.agentWs && session.agentWs.readyState === ws.OPEN) {
+                        session.agentWs.send(JSON.stringify({
+                            event: 'call_ended',
+                            callId: session.vobizCallId
+                        }));
+                    }
+                    finalizeAgentCall(session);
+                }
+            } catch (e) {
+                console.warn('[AGENT BRIDGE] Error handling Vobiz message:', e.message);
+            }
+        });
+
+        wsConnection.on('close', () => {
+            console.log(`[AGENT BRIDGE] Vobiz WS disconnected for session ${sessionId}`);
+            if (session.agentWs && session.agentWs.readyState === ws.OPEN) {
+                session.agentWs.send(JSON.stringify({
+                    event: 'call_ended',
+                    callId: session.vobizCallId
+                }));
+            }
+            finalizeAgentCall(session);
+            session.vobizWs = null;
+        });
+    }
+}
+
 // WSS Handlers
 wss.on('connection', (wsConnection, req) => {
     let urlObj = null;
     try {
         urlObj = new URL(req.url, 'http://localhost');
-    } catch (e) {}
+    } catch (e) { }
+
+    console.log(`[BRIDGE WSS] Incoming WebSocket connection. URL: ${req.url}`);
+
+    if (urlObj && (urlObj.pathname === '/agent-bridge' || urlObj.pathname.includes('/agent-bridge'))) {
+        return handleAgentBridgeConnection(wsConnection, req, urlObj);
+    }
 
     const queryLeadId = urlObj?.searchParams?.get('leadId') || urlObj?.searchParams?.get('amp;leadId');
     const queryProfileId = urlObj?.searchParams?.get('profileId') || urlObj?.searchParams?.get('amp;profileId');
@@ -1109,7 +1490,7 @@ wss.on('connection', (wsConnection, req) => {
     let geminiSocket = null;
     let geminiReady = false;
     let geminiApiKey = null;
-    
+
     let leadId = queryLeadId || null;
     let profileId = queryProfileId || null;
     let profileData = null;
@@ -1332,7 +1713,7 @@ wss.on('connection', (wsConnection, req) => {
                     // IMPORTANT: Only match the primary opening/first greeting, NOT sub-template greetings
                     // like "Kannada Greeting:", "Hindi Greeting:", etc.
                     const promptGreetingMatch = campPrompt.match(/(?:^|\n)\s*(?:Opening Greeting|STEP 1[^:]*|First Message)\s*(?::|-)?\s*\n?\s*(?:Greeting:\s*)?["']([^"'\r\n]+)["']/im) ||
-                                                campPrompt.match(/(?:^|\n)\s*GREETING:\s*["']([^"'\r\n]+)["']/im);
+                        campPrompt.match(/(?:^|\n)\s*GREETING:\s*["']([^"'\r\n]+)["']/im);
                     if (promptGreetingMatch && promptGreetingMatch[1]) {
                         // Verify it's not a Kannada/Hindi sub-template greeting
                         const extractedLower = promptGreetingMatch[1].toLowerCase();
@@ -1431,10 +1812,10 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                 };
 
                 if (prewarmed && prewarmed.setupComplete) {
-                    console.log('[BRIDGE] Session already has setupComplete! Dispatching greeting turn immediately (250ms audio link settle)...');
-                    setTimeout(() => {
+                    console.log('[BRIDGE] Session already has setupComplete! Dispatching greeting turn immediately...');
+                    setImmediate(() => {
                         sendInitialGreeting();
-                    }, 250);
+                    });
                 }
 
                 isCallHangingUp = false;
@@ -1515,59 +1896,63 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                     }
                 };
 
-                 geminiSocket.on('message', async (data) => {
-                     try {
-                         const serverMsg = JSON.parse(data.toString());
-                          // Only log if it's not a standard streaming media packet
-                          if (!serverMsg.serverContent?.modelTurn?.parts?.some(p => p.inlineData) && !serverMsg.serverContent?.outputTranscription) {
-                              console.log('[BRIDGE] Received from Gemini:', JSON.stringify(serverMsg));
-                          }
-                         // Handle Gemini server voice activity detection (VAD)
-                         if (serverMsg.voiceActivity) {
-                             if (serverMsg.voiceActivity.type === 'ACTIVITY_START') {
-                                 console.log('[BRIDGE] Gemini VAD: ACTIVITY_START detected.');
-                             } else if (serverMsg.voiceActivity.type === 'ACTIVITY_END') {
-                                 console.log('[BRIDGE] Gemini VAD: ACTIVITY_END detected.');
-                             }
-                         }
+                geminiSocket.on('message', async (data) => {
+                    try {
+                        const serverMsg = JSON.parse(data.toString());
+                        // Only log if it's not a standard streaming media packet
+                        if (!serverMsg.serverContent?.modelTurn?.parts?.some(p => p.inlineData) && !serverMsg.serverContent?.outputTranscription) {
+                            console.log('[BRIDGE] Received from Gemini:', JSON.stringify(serverMsg));
+                        }
+                        // Handle Gemini server voice activity detection (VAD)
+                        if (serverMsg.voiceActivity) {
+                            if (serverMsg.voiceActivity.type === 'ACTIVITY_START') {
+                                console.log('[BRIDGE] Gemini VAD: ACTIVITY_START detected.');
+                            } else if (serverMsg.voiceActivity.type === 'ACTIVITY_END') {
+                                console.log('[BRIDGE] Gemini VAD: ACTIVITY_END detected.');
+                            }
+                        }
 
-                         // Handle user interruption (barge-in)
-                         if (serverMsg.serverContent?.interrupted) {
-                             console.log('[BRIDGE] Gemini confirmed interruption. Clearing telephony audio playback buffer immediately...');
-                             aiPlaybackEndTime = 0;
-                             audioProcessor.clearAiSpeaking();
-                             if (wsConnection.readyState === ws.OPEN) {
-                                 if (isVobiz && vobizStreamId) {
-                                     wsConnection.send(JSON.stringify({
-                                         event: 'clearAudio',
-                                         streamId: vobizStreamId
-                                     }));
-                                 } else if (twilioStreamSid) {
-                                     wsConnection.send(JSON.stringify({
-                                         event: 'clear',
-                                         streamSid: twilioStreamSid
-                                     }));
-                                 }
-                             }
-                         }
+                        // Handle user interruption (barge-in)
+                        if (serverMsg.serverContent?.interrupted) {
+                            if (!geminiGreetingFinished) {
+                                console.log('[BRIDGE] Ignoring Gemini interrupted flag during opening greeting to protect initial greeting playout.');
+                            } else {
+                                console.log('[BRIDGE] Gemini confirmed interruption. Clearing telephony audio playback buffer immediately...');
+                                aiPlaybackEndTime = 0;
+                                audioProcessor.clearAiSpeaking();
+                                if (wsConnection.readyState === ws.OPEN) {
+                                    if (isVobiz && vobizStreamId) {
+                                        wsConnection.send(JSON.stringify({
+                                            event: 'clearAudio',
+                                            streamId: vobizStreamId
+                                        }));
+                                    } else if (twilioStreamSid) {
+                                        wsConnection.send(JSON.stringify({
+                                            event: 'clear',
+                                            streamSid: twilioStreamSid
+                                        }));
+                                    }
+                                }
+                            }
+                        }
 
-                         // Handle turn or generation completion
-                         if (serverMsg.serverContent?.generationComplete || serverMsg.serverContent?.turnComplete) {
-                             const remainingPlayoutMs = Math.max(0, aiPlaybackEndTime - Date.now());
-                             console.log(`[BRIDGE] Gemini generationComplete. Playout remaining on caller device: ${remainingPlayoutMs}ms`);
-                             setTimeout(() => {
-                                 geminiGreetingFinished = true;
-                             }, remainingPlayoutMs + 300);
-                         }
+                        // Handle turn or generation completion
+                        if (serverMsg.serverContent?.generationComplete || serverMsg.serverContent?.turnComplete) {
+                            const remainingPlayoutMs = Math.max(0, aiPlaybackEndTime - Date.now());
+                            console.log(`[BRIDGE] Gemini generationComplete. Playout remaining on caller device: ${remainingPlayoutMs}ms`);
+                            setTimeout(() => {
+                                geminiGreetingFinished = true;
+                            }, remainingPlayoutMs + 300);
+                        }
 
-                         // Handle setup complete before sending greeting
-                         if (serverMsg.setupComplete) {
-                             console.log('[BRIDGE] Gemini Setup Complete received. Injecting greeting turn immediately (250ms audio link settle)...');
-                             setTimeout(() => {
-                                 sendInitialGreeting();
-                             }, 250);
-                             return;
-                         }
+                        // Handle setup complete before sending greeting
+                        if (serverMsg.setupComplete) {
+                            console.log('[BRIDGE] Gemini Setup Complete received. Injecting greeting turn immediately...');
+                            setImmediate(() => {
+                                sendInitialGreeting();
+                            });
+                            return;
+                        }
 
                         // 1. Handle audio chunks from Gemini output (24kHz PCM)
                         if (serverMsg.serverContent?.modelTurn?.parts) {
@@ -1615,7 +2000,7 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                                     transcriptTurns.push({ role: 'agent', message: part.text });
                                     checkAgentGoodbyeAndHangup(part.text);
                                 }
-                                
+
                                 if (part.inlineData && part.inlineData.data) {
                                     const rawPcmBytes = Buffer.from(part.inlineData.data, 'base64');
                                     let pcm24 = new Int16Array(rawPcmBytes.buffer, rawPcmBytes.byteOffset, Math.floor(rawPcmBytes.length / 2));
@@ -1816,7 +2201,7 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                     console.error('[BRIDGE] Gemini Socket Error:', err);
                 });
 
-                                    geminiSocket.on('close', async (code, reason) => {
+                geminiSocket.on('close', async (code, reason) => {
                     const reasonStr = reason ? reason.toString() : '';
                     console.log(`[BRIDGE] Gemini Socket closed. Code: ${code}, Reason: ${reasonStr}`);
                     if (reasonStr.includes('prepayment credits') || reasonStr.includes('billing')) {
@@ -1860,7 +2245,9 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                     sendPcmChunkToGemini(procRes.pcmOutput);
 
                     // If genuine caller barge-in detected during AI speaking, clear telephony buffer
-                    if (procRes.bargeIn && wsConnection.readyState === ws.OPEN) {
+                    // (Ignore during first 3.5s of stream to protect opening greeting against pickup/handshake transients)
+                    const isEarlyInCall = Date.now() - streamStartTime < 3500;
+                    if (procRes.bargeIn && !isEarlyInCall && wsConnection.readyState === ws.OPEN) {
                         console.log('[BRIDGE] Genuine caller barge-in! Clearing AI audio playback to caller...');
                         aiPlaybackEndTime = 0;
                         audioProcessor.clearAiSpeaking();
@@ -1891,7 +2278,7 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
         }
     });
 
-     wsConnection.on('close', async (code, reason) => {
+    wsConnection.on('close', async (code, reason) => {
         if (ambienceInterval) { clearInterval(ambienceInterval); ambienceInterval = null; }
         clearInterval(pingInterval);
         if (wrapUpTimer) {
@@ -1949,7 +2336,7 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                 const fullTranscript = mergedTurns
                     .map(t => `${t.role === 'user' ? (leadName || 'User') : 'Assistant'}: ${t.message}`)
                     .join('\n');
-                
+
                 console.log('[BRIDGE] Conversation Transcript Compiled:\n', fullTranscript);
 
                 let summary = 'Conversation took place via Gemini Voice AI.';
@@ -2189,7 +2576,7 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                             if (recListRes.ok) {
                                 const recListData = await recListRes.json().catch(() => ({}));
                                 const objects = recListData.objects || (recListData.recording_url ? [recListData] : []);
-                                
+
                                 let bestBuffer = null;
                                 let bestRecUrl = null;
 
@@ -2210,7 +2597,7 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                                                 bestRecUrl = vobizRecUrl;
                                             }
                                         }
-                                    } catch (dErr) {}
+                                    } catch (dErr) { }
                                 }
 
                                 if (bestBuffer && bestRecUrl) {
@@ -2307,8 +2694,8 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                                 const isKeyMatch = ansKLower === qKey.toLowerCase() || ansKLower === qClean;
                                 const isTextMatch = qText.toLowerCase().includes(ansKLower) || ansKLower.includes(qClean);
                                 const isSemanticMatch = (ansKLower.includes('budget') && qKey.includes('budget')) ||
-                                                        (ansKLower.includes('property') && qKey.includes('property')) ||
-                                                        (ansKLower.includes('time') && qKey.includes('time'));
+                                    (ansKLower.includes('property') && qKey.includes('property')) ||
+                                    (ansKLower.includes('time') && qKey.includes('time'));
 
                                 if (isKeyMatch || isTextMatch || isSemanticMatch) {
                                     mergedCf[qKey] = ansV;
@@ -2418,7 +2805,7 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                     try {
                         const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://app.nobogent.com';
                         const notifyUrl = `${appBaseUrl}/api/voice/post-call-notify`;
-                        
+
                         fetch(notifyUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -2441,8 +2828,8 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ leadId, qualifyingQuestions: activeQuestionsList })
-                        }).catch(() => {});
-                    } catch (scErr) {}
+                        }).catch(() => { });
+                    } catch (scErr) { }
                 } catch (leadErr) {
                     console.error('[BRIDGE] Failed to save transcript/summary to lead:', leadErr);
                 }

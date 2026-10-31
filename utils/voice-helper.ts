@@ -53,7 +53,8 @@ export async function triggerOutboundCall(
     leadId: string,
     profileId: string,
     isAutoTrigger = false,
-    campaignId?: string
+    campaignId?: string,
+    options?: { forceBluesquareDid?: boolean; useBluesquareDid?: boolean; allowAfterHours?: boolean }
 ): Promise<{ success: boolean; error?: string; callSid?: string; scheduled?: boolean; scheduledTime?: Date }> {
     try {
         // 1. Fetch credentials from user profile & lead details in parallel
@@ -135,7 +136,7 @@ export async function triggerOutboundCall(
         const isSubscriptionExpired = subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date()
         const isPaid = (subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro' || subscriptionStatus === 'enterprise') && !isSubscriptionExpired
 
-        if (!isPaid && !isWhitelisted) {
+        if (!isPaid && !isWhitelisted && !options?.forceBluesquareDid && !options?.useBluesquareDid) {
             return { success: false, error: 'SUBSCRIPTION_EXPIRED' }
         }
 
@@ -183,7 +184,7 @@ export async function triggerOutboundCall(
         }
 
         // Check if within window (strictly 9 AM to 7 PM business local time)
-        let allowAfterHours = false
+        let allowAfterHours = !!(options?.allowAfterHours || options?.forceBluesquareDid || options?.useBluesquareDid)
         if (lead && lead.custom_fields) {
             try {
                 const customFields = typeof lead.custom_fields === 'string'
@@ -235,7 +236,7 @@ export async function triggerOutboundCall(
         }
         
         // Check credit balance (must have at least 40 credits to dial 1 minute)
-        const hasCredits = await hasEnoughCredits(supabaseAdmin, profileId, 40)
+        const hasCredits = (options?.forceBluesquareDid || options?.useBluesquareDid) ? true : await hasEnoughCredits(supabaseAdmin, profileId, 40)
         if (!hasCredits) {
             console.warn(`[VOICE HELPER] Outbound call aborted for lead ${leadId}: Insufficient credits for user ${profileId}`)
             await supabaseAdmin
@@ -264,12 +265,16 @@ export async function triggerOutboundCall(
         // For super admin / nobogent master, prioritize Twilio line for testing unless explicitly configured with an owned Vobiz number
         const telephonyProvider = profile?.voice_telephony_provider || bi?.voice_telephony_provider || profile?.voice_provider || (isNobogentMaster ? 'twilio' : 'vobiz')
         const masterVobizNumber = process.env.VOBIZ_TEST_NUMBER || null
-        const vobizNumber = profile?.voice_vobiz_number || bi?.claimed_vobiz_number || bi?.voice_vobiz_number || (profile?.voice_twilio_number?.startsWith('+91') && profile?.voice_twilio_number !== '+911171366938' ? profile.voice_twilio_number : null) || masterVobizNumber
+        const isBluesquareVoip = !!(options?.forceBluesquareDid || options?.useBluesquareDid)
+        const BLUESQUARE_DID = '+917965480905'
+        const BLUESQUARE_VOBIZ_AUTH_ID = 'SA_RUY0ZNCH'
+        const BLUESQUARE_VOBIZ_AUTH_TOKEN = 'kbcjLH5cXccdZkbbgkcucE2L2Jeul0vvXrhRuVQo0YxFQAfbFnQ5bzfReUSqs3oi'
+        const vobizNumber = isBluesquareVoip ? BLUESQUARE_DID : (profile?.voice_vobiz_number || bi?.claimed_vobiz_number || bi?.voice_vobiz_number || (profile?.voice_twilio_number?.startsWith('+91') && profile?.voice_twilio_number !== '+911171366938' ? profile.voice_twilio_number : null) || masterVobizNumber)
         
         // Master account only uses Vobiz if telephonyProvider is explicitly 'vobiz' AND a valid owned vobizNumber exists
-        const useVobiz = !isNobogentMaster 
+        const useVobiz = isBluesquareVoip || (!isNobogentMaster 
             ? ((telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz') && !!vobizNumber)
-            : (telephonyProvider === 'vobiz' && !!vobizNumber && vobizNumber !== '+911171366938')
+            : (telephonyProvider === 'vobiz' && !!vobizNumber && vobizNumber !== '+911171366938'))
 
         if (useVobiz) {
             const vobizRes = await triggerVobizOutboundCall(supabaseAdmin, {
@@ -278,9 +283,20 @@ export async function triggerOutboundCall(
                 toPhone: lead.phone,
                 fromPhone: vobizNumber!,
                 campaignId,
-                voiceName: profile?.voice_name || 'Fenrir'
+                voiceName: profile?.voice_name || 'Fenrir',
+                allowAfterHours: isBluesquareVoip ? true : allowAfterHours,
+                skipCreditCheck: isBluesquareVoip ? true : false,
+                customAuthId: isBluesquareVoip ? BLUESQUARE_VOBIZ_AUTH_ID : undefined,
+                customAuthToken: isBluesquareVoip ? BLUESQUARE_VOBIZ_AUTH_TOKEN : undefined
             })
             if (vobizRes.success || vobizRes.scheduled) {
+                if (isBluesquareVoip) {
+                    supabaseAdmin.from('lead_history').insert({
+                        lead_id: lead.id,
+                        action_type: 'REMARK',
+                        description: `🎙️ VoIP call initiated with Bluesquare Infra DID (${BLUESQUARE_DID}) by Super Admin.`
+                    }).then(() => {}).catch(() => {})
+                }
                 return {
                     success: vobizRes.success,
                     callSid: vobizRes.callUuid,

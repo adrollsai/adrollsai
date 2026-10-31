@@ -13,7 +13,7 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const { planId, packageId, addonId, customAmount, customCredits } = body;
+        const { planId, packageId, addonId, customAmount, customCredits, paymentType = 'one_time' } = body;
 
         let amountInInr = 0;
         let itemName = "";
@@ -32,16 +32,50 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: `Invalid Subscription Plan: ${planId}` }, { status: 400 });
             }
 
+            if (planConfig.oncePerUser || normalizedPlanId === 'trial' || normalizedPlanId === '7-days-trial') {
+                // Check if user has already purchased the trial package
+                const { data: userProfile } = await supabase
+                    .from('profiles')
+                    .select('client_features, subscription_plan')
+                    .eq('id', user.id)
+                    .single();
+
+                const hasUsedTrial = userProfile?.client_features?.has_purchased_trial === true ||
+                    userProfile?.subscription_plan === 'trial' ||
+                    userProfile?.subscription_plan === '7-days-trial';
+
+                if (hasUsedTrial) {
+                    return NextResponse.json({
+                        error: "The 7-day trial package (₹999 + 18% GST) can only be purchased once per user. Please choose a monthly or annual plan."
+                    }, { status: 400 });
+                }
+
+                const { count: trialTxCount } = await supabase
+                    .from('credit_transactions')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('user_id', user.id)
+                    .eq('category', 'trial');
+
+                if (trialTxCount && trialTxCount > 0) {
+                    return NextResponse.json({
+                        error: "The 7-day trial package (₹999 + 18% GST) has already been purchased for this account."
+                    }, { status: 400 });
+                }
+            }
+
             amountInInr = planConfig.totalPrice;
             itemName = planConfig.title;
             metadata = {
                 ...metadata,
                 type: 'subscription',
                 planId: planConfig.id,
-                durationMonths: planConfig.durationMonths,
+                durationMonths: planConfig.durationMonths || 0,
+                durationDays: planConfig.durationDays || null,
+                paymentType: paymentType,
                 creditsIncluded: planConfig.creditsIncluded,
                 basePrice: planConfig.basePrice,
-                gstAmount: planConfig.totalPrice - planConfig.basePrice
+                gstAmount: planConfig.totalPrice - planConfig.basePrice,
+                isTrial: !!planConfig.oncePerUser
             };
         } else if (packageId) {
             purchaseType = 'topup';
@@ -113,6 +147,7 @@ export async function POST(req: Request) {
             receipt: receipt,
             notes: {
                 ...metadata,
+                paymentType: paymentType,
                 itemName: itemName,
                 app: 'NobogentAI'
             }
@@ -135,6 +170,7 @@ export async function POST(req: Request) {
             keyId: RAZORPAY_KEY_ID,
             itemName: itemName,
             purchaseType: purchaseType,
+            paymentType: paymentType,
             prefill: {
                 name: profile?.full_name || profile?.business_name || '',
                 email: profile?.email || user.email || '',

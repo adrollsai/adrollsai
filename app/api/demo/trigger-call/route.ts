@@ -42,34 +42,50 @@ export async function POST(req: Request) {
             cleanDigits = '+' + cleanDigits;
         }
 
-        const isEnglish = language === 'english';
+        const langLower = (language || 'hinglish').toLowerCase();
+        let initialGreeting = '';
+        let startingLangLabel = 'Hinglish (Hindi + English)';
 
-        // 1. Generate customized initial greeting
-        const initialGreeting = isEnglish
-            ? `Hello ${prospectName}, this is Priya calling from ${companyName} regarding your inquiry about ${projectTitle}. Do you have a quick minute to speak?`
-            : `Hi ${prospectName} ji, main ${companyName} se Priya baat kar rahi hoon aapki inquiry ke regarding ${projectTitle} project ke liye. Kya main aapse do minute baat kar sakti hoon?`;
+        if (langLower.includes('english')) {
+            startingLangLabel = 'Indian English';
+            initialGreeting = `Hello ${prospectName}, this is Priya calling from ${companyName} regarding your inquiry about ${projectTitle}. Do you have a quick minute to speak?`;
+        } else if (langLower.includes('hindi') && !langLower.includes('hinglish')) {
+            startingLangLabel = 'Pure Hindi';
+            initialGreeting = `नमस्ते ${prospectName} जी, मैं ${companyName} से प्रिया बात कर रही हूँ, ${projectTitle} प्रोजेक्ट में आपकी रुचि के संदर्भ में। क्या मैं आपसे दो मिनट बात कर सकती हूँ?`;
+        } else if (langLower.includes('punjabi')) {
+            startingLangLabel = 'Punjabi';
+            initialGreeting = `Sat Sri Akal ${prospectName} ji, main ${companyName} ton Priya gal kar rahi aan ${projectTitle} baare. Ki tussi do minute gal kar sakde ho ji?`;
+        } else {
+            startingLangLabel = 'Conversational Hinglish';
+            initialGreeting = `Hi ${prospectName} ji, main ${companyName} se Priya baat kar rahi hoon aapki inquiry ke regarding ${projectTitle} project ke liye. Kya main aapse do minute baat kar sakti hoon?`;
+        }
 
-        // 2. Build custom prompt tailored to this specific project
-        const customPrompt = `--- CAMPAIGN SPECIFIC GUIDELINES ---
+        // 2. Build custom prompt tailored to this specific project with dynamic multilingual code-switching
+        const customPrompt = `--- DYNAMIC MULTILINGUAL SALES ADVISOR ---
 COMPANY NAME: "${companyName}"
 PROJECT TITLE: "${projectTitle}"
 LOCATION: "${location}"
 PRICING / OFFER: "${projectPrice}"
 PROJECT HIGHLIGHTS: "${projectDescription}"
 PROSPECT NAME: "${prospectName}"
-DEFAULT LANGUAGE: ${isEnglish ? 'Indian English' : 'Hinglish'}
+PRIMARY STARTING LANGUAGE: ${startingLangLabel}
 
 GREETING: "${initialGreeting}"
 
 ROLE & CONTEXT:
-You are Priya, a polite, professional, and knowledgeable sales advisor calling from ${companyName}. The prospect (${prospectName}) just clicked on your Meta/Instagram advertisement and submitted a lead form inquiring about ${projectTitle}.
+You are Priya, a polite, charismatic, and knowledgeable sales executive calling from ${companyName}. The prospect (${prospectName}) clicked on your Meta/Instagram advertisement and submitted a lead form inquiring about ${projectTitle}.
 
 YOUR OBJECTIVES:
-1. Greet the prospect warmly and confirm if they submitted an inquiry for ${projectTitle}.
+1. Greet the prospect warmly in ${startingLangLabel} and confirm if they submitted an inquiry for ${projectTitle}.
 2. Highlight key USPs naturally: Located in ${location}, ${projectDescription}, with exclusive launch pricing at ${projectPrice}.
 3. Understand their requirement (e.g. looking for self-use or investment, preferred configuration).
-4. Secure a commitment for an in-person VIP site visit or zoom consultation this weekend or tomorrow.
+4. Secure a commitment for an in-person VIP site visit or video consultation this weekend or tomorrow.
 5. Once they agree to a visit or time, confirm their slot enthusiastically and thank them.
+
+CRITICAL MULTILINGUAL CODE-SWITCHING INSTRUCTION:
+- You must START the conversation in ${startingLangLabel} using the exact GREETING provided.
+- DYNAMIC CODE-SWITCHING: If the prospect replies, speaks, or asks to speak in ANY other language (such as English, Hindi, Hinglish, Punjabi, Marathi, Gujarati, Bengali, Tamil, Telugu, Spanish, French, etc.), you must IMMEDIATELY and SMOOTHLY switch to that language for all your following replies!
+- Never tell the user you cannot speak a language. Seamlessly match the prospect's language choice, accent, and cultural tone while continuing to qualify the lead.
 
 RULES:
 - Keep every response concise (1 to 2 sentences max) so it feels like a natural human phone call.
@@ -88,7 +104,7 @@ RULES:
                 audience_filter: {
                     voice_name: voiceName,
                     is_demo: true,
-                    language: isEnglish ? 'english' : 'hinglish',
+                    language: langLower,
                     greeting: initialGreeting,
                     business_name: companyName
                 },

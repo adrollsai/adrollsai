@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { generateDualDemoCreatives, CreativeInput } from '@/utils/demo-creative-engine';
 
+export const maxDuration = 180;
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
     try {
         const body: CreativeInput = await req.json();

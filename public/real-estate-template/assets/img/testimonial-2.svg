@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400" role="img" aria-label="Agent portrait placeholder">
+  <defs>
+    <linearGradient id="sky-a92" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#08222B"/>
+      <stop offset="0.55" stop-color="#2B6B77"/>
+      <stop offset="1" stop-color="#060B12"/>
+    </linearGradient>
+    <radialGradient id="sun-a92" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#E2C286" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#E2C286" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#E2C286" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-a92" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#E6F2F4" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#E6F2F4" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="vig-a92" x1="0" y1="0.45" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#sky-a92)"/>
+  <circle cx="200" cy="168" r="208" fill="url(#sun-a92)" opacity="0.7"/>
+  <text x="200" y="228" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="120" fill="#E6F2F4" fill-opacity="0.34" letter-spacing="6">RC</text>
+  <rect width="400" height="400" fill="url(#vig-a92)" opacity="0.7"/>
+</svg>

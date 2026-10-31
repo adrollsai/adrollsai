@@ -797,6 +797,8 @@ export async function sendLeadNotificationEmail({
   customBody,
   crmUrl,
   chatUrl,
+  recordingUrl,
+  callSummary,
   bcc
 }: {
   to: string | string[];
@@ -810,6 +812,8 @@ export async function sendLeadNotificationEmail({
   customBody?: string;
   crmUrl?: string;
   chatUrl?: string;
+  recordingUrl?: string;
+  callSummary?: string;
   bcc?: string | string[];
 }) {
   try {
@@ -830,6 +834,24 @@ export async function sendLeadNotificationEmail({
         <div style="font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap; background-color: #f8fafc; border-radius: 12px; padding: 16px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
 ${customBody}
         </div>
+        ${recordingUrl ? `
+        <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 16px; margin: 16px 0; text-align: left;">
+          <div style="font-weight: 800; font-size: 13px; color: #166534; margin-bottom: 4px;">
+            🎙️ AI Voice Call Recording Available
+          </div>
+          <p style="font-size: 12px; color: #15803d; margin: 0 0 10px 0;">
+            The prospect interacted directly with the AI voice caller. Listen to the verified recording:
+          </p>
+          <a href="${recordingUrl}" target="_blank" style="display: inline-block; padding: 10px 18px; background: #16a34a; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px; margin-right: 8px;">
+            ▶️ Listen to Call Recording
+          </a>
+          ${callSummary ? `
+          <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #86efac; font-size: 12px; color: #166534; line-height: 1.4;">
+            <strong>AI Call Summary:</strong> ${callSummary}
+          </div>
+          ` : ''}
+        </div>
+        ` : ''}
         <div style="margin-top: 16px;">
           ${waChatLink ? `<a href="${waChatLink}" style="display: inline-block; padding: 10px 18px; background-color: #25D366; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px; margin-right: 8px;">Open WhatsApp</a>` : ''}
           ${crmUrl ? `<a href="${crmUrl}" style="display: inline-block; padding: 10px 18px; background-color: #4f46e5; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px;">View in CRM</a>` : ''}
@@ -882,6 +904,24 @@ ${customBody}
           </table>
         </div>
 
+        ${recordingUrl ? `
+        <div style="background: #f0fdf4; border: 2px solid #86efac; border-radius: 14px; padding: 16px; margin: 16px 0; text-align: left;">
+          <div style="font-weight: 800; font-size: 13px; color: #166534; margin-bottom: 4px;">
+            🎙️ AI Voice Call Recording Attached
+          </div>
+          <p style="font-size: 12px; color: #15803d; margin: 0 0 10px 0;">
+            This lead engaged with our AI Voice Caller. Listen to the conversation audio:
+          </p>
+          <a href="${recordingUrl}" target="_blank" style="display: inline-block; padding: 11px 20px; background: #16a34a; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px; margin-bottom: 6px;">
+            ▶️ Listen to AI Call Recording
+          </a>
+          ${callSummary ? `
+          <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #86efac; font-size: 12px; color: #166534; line-height: 1.4;">
+            <strong>AI Call Summary:</strong> ${callSummary}
+          </div>
+          ` : ''}
+        </div>
+        ` : ''}
         <div style="margin-bottom: 24px; text-align: center;">
           <p style="font-size: 13px; color: #475569; margin-bottom: 14px; font-weight: 500;">
             The catalogue link was automatically delivered to the prospect on WhatsApp. Follow up promptly to convert:

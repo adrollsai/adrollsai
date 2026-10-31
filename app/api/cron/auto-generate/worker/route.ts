@@ -6,6 +6,8 @@ import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-mas
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
+import { getRandomReferenceTemplate } from '@/utils/reference-templates-data';
+import { dispatchCreativeToAdmin } from '@/utils/creative-dispatch-helper';
 
 // Force dynamic execution to bypass Vercel static build cache
 export const dynamic = 'force-dynamic';
@@ -105,10 +107,18 @@ export async function POST(request: Request) {
       }
     }
 
-    // Supported Kie dimensions for gpt-image-2-5-flare: '3:4', '1:1', '9:16', '16:9' (Default: 3:4)
-    let effectiveAspectRatio = autoGenSettings.dimensions || '3:4';
-    if (!['3:4', '1:1', '9:16', '16:9'].includes(effectiveAspectRatio)) {
-      effectiveAspectRatio = '3:4';
+    // Daily creatives are strictly generated in 3:4 aspect ratio based on selected templates
+    const effectiveAspectRatio = '3:4';
+
+    // Pick a random reference design template from user's selected templates (or all templates)
+    const userSelectedTemplates = Array.isArray(profile.selected_templates) && profile.selected_templates.length > 0
+      ? profile.selected_templates
+      : undefined;
+    const chosenTemplate = getRandomReferenceTemplate(userSelectedTemplates);
+    console.log(`[Auto-Generate Worker] Using reference template for 3:4 daily creative: ${chosenTemplate.name} (${chosenTemplate.id})`);
+
+    if (chosenTemplate.url) {
+      allInputImages.push(chosenTemplate.url);
     }
 
     const productCustomPrompt = (autoGenSettings.custom_prompt || '').trim();
@@ -124,6 +134,7 @@ PRODUCT DESCRIPTION: "${prop.description || ''}"
 BUSINESS NAME: "${businessName || ''}"
 CONTACT DETAILS: "${contactNumber || ''}"
 INDUSTRY/VERTICAL: "${industry || 'general'}"
+REFERENCE DESIGN BLUEPRINT: "${chosenTemplate.name}" - ${chosenTemplate.description} (Category: ${chosenTemplate.category})
 PRODUCT SPECIFIC CREATIVE INSTRUCTIONS: "${productCustomPrompt || 'None'}"
 GLOBAL USER INSTRUCTIONS: "${profile.custom_prompt || ''}"
 TARGET ASPECT RATIO: "${effectiveAspectRatio}"
@@ -133,6 +144,7 @@ The image prompt you generate must instruct the image model to follow these guid
 ${systemVisualRules}
 
 ### ADDITIONAL SPECIFIC DIRECTIONS
+- Adopt the visual composition, typography framing, and aesthetic mood of reference blueprint "${chosenTemplate.name}".
 - The product or property itself must be the primary focus and hero of the image. For real estate, showcase a gorgeous modern luxury apartment interior, living room, or a villa.
 - Show happy, attractive, photorealistic humans (e.g. a family, a professional, or a couple) interacting naturally with the product in the scene (e.g., enjoying the living room, standing in front of the villa, working at the desk). The people should have true-to-life skin detailing, real pores, natural expressions, and look completely authentic.
 - The ethnicity of the humans must match the business origin (e.g., South Asian/Indian ethnicity if the business context or product is based in India, Caucasian/Western otherwise).
@@ -286,12 +298,12 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       }
 
       // F. Save to Database
-      await supabaseAdmin.from('assets').insert({
+      const { data: insertedAsset } = await supabaseAdmin.from('assets').insert({
         user_id: prop.user_id,
         property_id: prop.id,
         url: persistedUrl,
         type: 'image',
-        status: 'Draft',
+        status: 'pending_approval',
         caption: generatedCaption,
         kie_task_id: taskId,
         metadata: {
@@ -301,7 +313,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
           custom_prompt: productCustomPrompt || undefined
         },
         created_at: new Date().toISOString()
-      });
+      }).select('id').single();
 
       // G. Trigger Push Notification to user
       await sendPushNotification(
@@ -310,6 +322,28 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
         `Your new automated marketing creative for ${prop.title} is ready to view.`,
         `/dashboard/assets`
       );
+
+      // H. Dispatch to Admin's WhatsApp & Email (Nobogent WABA with Approve & Edit buttons)
+      try {
+        const targetPhone = profile.whatsapp_personal_number || profile.contact_number;
+        const targetEmail = profile.notification_email || profile.email;
+
+        await dispatchCreativeToAdmin({
+          recipientEmail: targetEmail,
+          recipientPhone: targetPhone,
+          businessName,
+          creativeUrl: persistedUrl,
+          caption: generatedCaption,
+          title: prop.title,
+          assetId: insertedAsset?.id || null,
+          userId: prop.user_id,
+          isFestival: false,
+          clientWabaPhoneId: profile.whatsapp_phone_number_id,
+          clientWabaToken: profile.whatsapp_access_token || profile.facebook_token
+        });
+      } catch (dispatchErr: any) {
+        console.warn('[Auto-Generate Worker] Creative delivery warning (non-fatal):', dispatchErr.message);
+      }
 
       console.log(`[Auto-Generate Worker] Completed successfully for property ${prop.id}`);
       return NextResponse.json({ success: true, url: persistedUrl });

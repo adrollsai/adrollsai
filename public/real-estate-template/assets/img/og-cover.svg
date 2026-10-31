@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="Editorial image placeholder">
+  <defs>
+    <linearGradient id="sky-x130" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#0B2A26"/>
+      <stop offset="0.55" stop-color="#2E6F62"/>
+      <stop offset="1" stop-color="#060B12"/>
+    </linearGradient>
+    <radialGradient id="sun-x130" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#E6BB72" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#E6BB72" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#E6BB72" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-x130" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#EAF6F1" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#EAF6F1" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="vig-x130" x1="0" y1="0.45" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#sky-x130)"/>
+  <circle cx="912" cy="163.8" r="360" fill="url(#sun-x130)"/>
+  <path d="M784.35 461.35 q97.66 -81.39 162.77 0 t162.77 0" stroke="#E6BB72" stroke-opacity="0.21" stroke-width="5.69" fill="none"/><circle cx="308.97" cy="123.87" r="123.22" fill="#EAF6F1" opacity="0.07"/><rect x="607.11" y="330.07" width="139.57" height="140.37" rx="10" fill="#EAF6F1" opacity="0.14" transform="rotate(14.54 676.89 399.85)"/><path d="M611.54 318.67 q73.34 -61.11 122.23 0 t122.23 0" stroke="#E6BB72" stroke-opacity="0.34" stroke-width="2.67" fill="none"/>
+  <g opacity="0.2"><rect x="-40" y="413.07" width="112.25" height="216.93" fill="#0B2A26"/><rect x="80.25" y="449.52" width="85.83" height="180.48" fill="#0B2A26"/><rect x="174.08" y="493.16" width="131.89" height="136.84" fill="#0B2A26"/><rect x="313.97" y="513.66" width="51.9" height="116.34" fill="#0B2A26"/><rect x="373.87" y="424.69" width="56.23" height="205.31" fill="#0B2A26"/><rect x="438.1" y="503.92" width="97.47" height="126.08" fill="#0B2A26"/><rect x="543.57" y="553" width="123.77" height="77" fill="#0B2A26"/><rect x="675.34" y="443.61" width="52.17" height="186.39" fill="#0B2A26"/><rect x="735.51" y="537.42" width="61.93" height="92.58" fill="#0B2A26"/><rect x="805.45" y="468.09" width="127.87" height="161.91" fill="#0B2A26"/><rect x="941.32" y="443.29" width="113.68" height="186.71" fill="#0B2A26"/><rect x="1062.99" y="530.68" width="65.29" height="99.32" fill="#0B2A26"/><rect x="1136.28" y="573.93" width="104.19" height="56.07" fill="#0B2A26"/></g>
+  <rect width="1200" height="630" fill="url(#vig-x130)" opacity="0.65"/>
+</svg>

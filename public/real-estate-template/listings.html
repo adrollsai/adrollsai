@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<base href="/real-estate-template/">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homes for sale in Riverton — Everline Realty</title>
+<meta name="description" content="Browse every home for sale in Riverton Heights, The Old Quarter, Lakeshore and Cedar Hollow. Filter by price, beds, type and open-house dates.">
+<link rel="canonical" href="https://www.everlinerealty.com/listings.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Homes for sale in Riverton — Everline Realty">
+<meta property="og:description" content="Every home on our books, updated daily. Filter by price, beds, type and open-house dates.">
+<meta property="og:image" content="assets/img/og-cover.svg">
+<meta name="theme-color" content="#0b1220">
+<link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body data-page="listings">
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<div id="siteHeader">
+  <noscript>
+    <nav style="padding:1rem;background:#0b1220" aria-label="Primary">
+      <a style="color:#fff;margin-right:1rem" href="index.html">Home</a>
+      <a style="color:#fff;margin-right:1rem" href="listings.html">Listings</a>
+      <a style="color:#fff;margin-right:1rem" href="sell.html">Sell</a>
+      <a style="color:#fff;margin-right:1rem" href="agents.html">Agents</a>
+      <a style="color:#fff;margin-right:1rem" href="about.html">About</a>
+      <a style="color:#fff" href="contact.html">Contact</a>
+    </nav>
+  </noscript>
+</div>
+
+<main id="main">
+
+  <section class="page-hero">
+    <div class="container">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Home</a>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        <span aria-current="page">Listings</span>
+      </nav>
+      <span class="eyebrow">12 homes · updated today</span>
+      <h1>Homes for sale in Riverton</h1>
+      <p>Every property on our books, with the honest details most listings leave out: days on market, HOA dues, lot size and the agent who actually knows the street.</p>
+    </div>
+  </section>
+
+  <div class="section section--tight" id="listingsApp">
+    <div class="container">
+      <div class="listings-layout">
+
+        <!-- ================================================== FILTERS -->
+        <aside>
+          <form class="filters is-collapsed" data-filter-form aria-label="Filter homes">
+            <div class="filters__head">
+              <h2>Filter homes</h2>
+              <button class="filters__reset" type="reset">Reset</button>
+            </div>
+
+            <div class="filters__body">
+              <div class="filters__group">
+                <label class="filters__legend" for="fq">Keyword or MLS #</label>
+                <input class="input" id="fq" name="q" type="search" placeholder="e.g. canyon, duplex, RV-2451188">
+              </div>
+
+              <div class="filters__group">
+                <label class="filters__legend" for="floc">Neighbourhood</label>
+                <select class="select" id="floc" name="loc">
+                  <option value="">Any neighbourhood</option>
+                  <option>Riverton Heights</option>
+                  <option>The Old Quarter</option>
+                  <option>Lakeshore</option>
+                  <option>Cedar Hollow</option>
+                </select>
+              </div>
+
+              <div class="filters__group">
+                <label class="filters__legend" for="ftype">Property type</label>
+                <select class="select" id="ftype" name="type">
+                  <option value="">Any type</option>
+                  <option>House</option>
+                  <option>Condo</option>
+                  <option>Townhouse</option>
+                  <option>Multi-family</option>
+                  <option>Land</option>
+                </select>
+              </div>
+
+              <div class="filters__group">
+                <label class="filters__legend" for="fstatus">Status</label>
+                <select class="select" id="fstatus" name="status">
+                  <option value="">Any status</option>
+                  <option>For Sale</option>
+                  <option>New</option>
+                  <option>Open house</option>
+                  <option>Pending</option>
+                  <option>Sold</option>
+                </select>
+              </div>
+
+              <div class="filters__group">
+                <span class="filters__legend">Price range</span>
+                <div class="filters__row">
+                  <div class="field">
+                    <label class="visually-hidden" for="fmin">Minimum price</label>
+                    <input class="input" id="fmin" name="min" type="number" inputmode="numeric" step="25000" placeholder="Min" min="0">
+                  </div>
+                  <div class="field">
+                    <label class="visually-hidden" for="fmax">Maximum price</label>
+                    <input class="input" id="fmax" name="max" type="number" inputmode="numeric" step="25000" placeholder="Max" min="0">
+                  </div>
+                </div>
+              </div>
+
+              <div class="filters__group">
+                <span class="filters__legend">Bedrooms</span>
+                <div class="seg" data-seg="beds" data-seg-group="beds" role="group" aria-label="Minimum bedrooms">
+                  <button class="seg__btn" type="button" data-value="0" aria-pressed="true">Any</button>
+                  <button class="seg__btn" type="button" data-value="1" aria-pressed="false">1+</button>
+                  <button class="seg__btn" type="button" data-value="2" aria-pressed="false">2+</button>
+                  <button class="seg__btn" type="button" data-value="3" aria-pressed="false">3+</button>
+                  <button class="seg__btn" type="button" data-value="4" aria-pressed="false">4+</button>
+                  <button class="seg__btn" type="button" data-value="5" aria-pressed="false">5+</button>
+                </div>
+              </div>
+
+              <div class="filters__group">
+                <span class="filters__legend">Bathrooms</span>
+                <div class="seg" data-seg="baths" data-seg-group="baths" role="group" aria-label="Minimum bathrooms">
+                  <button class="seg__btn" type="button" data-value="0" aria-pressed="true">Any</button>
+                  <button class="seg__btn" type="button" data-value="1" aria-pressed="false">1+</button>
+                  <button class="seg__btn" type="button" data-value="2" aria-pressed="false">2+</button>
+                  <button class="seg__btn" type="button" data-value="3" aria-pressed="false">3+</button>
+                  <button class="seg__btn" type="button" data-value="4" aria-pressed="false">4+</button>
+                </div>
+              </div>
+
+              <div class="filters__foot">
+                <button class="btn btn--primary btn--block" type="submit">
+                  Show homes
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:16px;height:16px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                </button>
+                <p class="tiny muted" style="margin:0;text-align:center">Results update as you type.</p>
+              </div>
+            </div>
+          </form>
+
+          <div class="panel" style="margin-top:1.25rem">
+            <h3 style="font-family:var(--font-display);font-size:1.1rem">Not finding it?</h3>
+            <p class="muted" style="font-size:.87rem">Roughly a third of what we sell never reaches the portals. Tell us what you need and we'll check the private list first.</p>
+            <a class="btn btn--accent btn--block btn--sm" href="contact.html">Request an off-market list</a>
+          </div>
+        </aside>
+
+        <!-- ================================================== RESULTS -->
+        <div id="results">
+          <div class="results-bar">
+            <p class="results-bar__count" data-results-count role="status" aria-live="polite">Loading homes…</p>
+            <div class="results-bar__tools">
+              <button class="chip" type="button" data-saved-filter>Saved (0)</button>
+              <label class="visually-hidden" for="fsort">Sort homes</label>
+              <select class="select" id="fsort" data-sort>
+                <option value="featured">Sort: Recommended</option>
+                <option value="newest">Newest first</option>
+                <option value="price-asc">Price: low to high</option>
+                <option value="price-desc">Price: high to low</option>
+                <option value="sqft-desc">Largest first</option>
+                <option value="beds-desc">Most bedrooms</option>
+              </select>
+              <div class="view-toggle" role="group" aria-label="Result layout">
+                <button type="button" data-view="grid" aria-pressed="true" aria-label="Grid view">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                </button>
+                <button type="button" data-view="list" aria-pressed="false" aria-label="List view">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="15" width="18" height="5" rx="1.5"/></svg>
+                </button>
+              </div>
+              <button class="chip" type="button" data-filters-toggle aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:14px;height:14px"><path d="M3 5h18l-7 8.5V21l-4-2.5v-5z"/></svg>
+                Show filters
+              </button>
+            </div>
+          </div>
+
+          <div class="active-filters" data-active-filters hidden></div>
+
+          <!-- cards injected from assets/js/data.js -->
+          <div class="grid grid--3" data-results-grid></div>
+
+          <div class="empty-state" data-empty hidden>
+            <h3>No homes match those filters — yet</h3>
+            <p>New listings arrive most weeks and our private list moves first. Tell us what you're after and we'll contact you the day something matches.</p>
+            <div class="cluster" style="justify-content:center;margin-top:1.25rem">
+              <a class="btn btn--primary" href="contact.html">Set up a search alert</a>
+              <button class="btn btn--ghost" type="button" onclick="document.querySelector('[data-filter-form]').reset();document.querySelector('[data-filter-form]').requestSubmit();">Clear filters</button>
+            </div>
+          </div>
+
+          <div class="loadmore-wrap" data-load-more-wrap hidden>
+            <button class="btn btn--ghost" type="button" data-load-more>Load more homes</button>
+            <span class="tiny muted">Showing the best matches first.</span>
+          </div>
+
+          <div class="map-panel" style="margin-top:2rem">
+            <img src="assets/img/map-panel.svg" alt="Map of Riverton showing listing locations" loading="lazy" width="1200" height="900">
+            <div class="map-panel__overlay">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:18px;height:18px;color:var(--brand)"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              <div><b>Map view</b><span>Drop in your Google Maps or Mapbox embed where this image sits.</span></div>
+            </div>
+          </div>
+
+          <div class="cta-band" style="margin-top:2rem">
+            <div class="cta-band__grid">
+              <div>
+                <span class="eyebrow">Buyer representation</span>
+                <h2 style="font-size:clamp(1.4rem,1.1rem+1.2vw,2rem)">See a home you like? Bring someone who negotiates for a living.</h2>
+                <p>In most of our sales the buyer's side of the commission is paid from the seller's proceeds — our representation often costs you nothing out of pocket.</p>
+              </div>
+              <div class="cluster" style="justify-content:flex-end">
+                <a class="btn btn--light btn--lg" href="contact.html">Talk to a buyer's agent</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================== NEIGHBOURHOODS -->
+  <section class="section section--tint" id="neighbourhoods">
+    <div class="container">
+      <div class="section__head section__head--center" data-reveal>
+        <span class="eyebrow">Browse by area</span>
+        <h2>Where would you like to live?</h2>
+        <p>Each area has its own character, price band and commute. Our agents specialise by neighbourhood rather than covering the whole metro.</p>
+      </div>
+      <div class="grid grid--4" data-render="neighbourhoods"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="siteFooter">
+  <noscript>
+    <footer style="padding:2rem;background:#0b1220;color:#cbd6e0">
+      <p><strong>Everline Realty</strong> · 2140 Alder Street, Suite 300, Riverton, CA 94107 · (555) 018-2245</p>
+      <p><a style="color:#cbd6e0" href="index.html">Home</a> · <a style="color:#cbd6e0" href="sell.html">Sell</a> · <a style="color:#cbd6e0" href="contact.html">Contact</a></p>
+    </footer>
+  </noscript>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

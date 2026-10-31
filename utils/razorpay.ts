@@ -65,15 +65,41 @@ export function verifyRazorpayWebhookSignature(
 export interface RazorpayPlanConfig {
     id: string;
     title: string;
-    durationMonths: number;
+    durationMonths?: number;
+    durationDays?: number;
     basePrice: number;
     gstRate: number; // 0.18 for 18% GST
     totalPrice: number;
     creditsIncluded: number;
     description: string;
+    oncePerUser?: boolean;
 }
 
 export const RAZORPAY_PLANS: Record<string, RazorpayPlanConfig> = {
+    'trial': {
+        id: 'trial',
+        title: '7 DAYS TRIAL PASS',
+        durationDays: 7,
+        durationMonths: 0.23,
+        basePrice: 999,
+        gstRate: 0.18,
+        totalPrice: Math.round(999 * 1.18), // ₹1,179
+        creditsIncluded: 2500,
+        description: 'Nobogent 7-Day Trial Pass (₹999 + 18% GST - One-time purchase per user)',
+        oncePerUser: true
+    },
+    '7-days-trial': {
+        id: 'trial',
+        title: '7 DAYS TRIAL PASS',
+        durationDays: 7,
+        durationMonths: 0.23,
+        basePrice: 999,
+        gstRate: 0.18,
+        totalPrice: Math.round(999 * 1.18), // ₹1,179
+        creditsIncluded: 2500,
+        description: 'Nobogent 7-Day Trial Pass (₹999 + 18% GST - One-time purchase per user)',
+        oncePerUser: true
+    },
     '1-month': {
         id: '1-month',
         title: '1 MONTH PLAN',

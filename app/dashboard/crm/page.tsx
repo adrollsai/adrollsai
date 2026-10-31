@@ -26,6 +26,8 @@ import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, extractStagesFromProfile } from '@/utils/pipeline-stages'
 import { parseCustomFields, getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
 import { openPhoneDialer } from '@/utils/dialer'
+import VoipCallingModal from '@/components/VoipCallingModal'
+import CrmDialerTab from '@/components/CrmDialerTab'
 
 
 
@@ -290,6 +292,7 @@ function CRMPageContent() {
   const [targetUserId, setTargetUserId] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
   const [autoCallNewLeads, setAutoCallNewLeads] = useState(false)
+  const [callingVoipLeadId, setCallingVoipLeadId] = useState<string | null>(null)
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(role)
 
@@ -325,11 +328,11 @@ function CRMPageContent() {
   })
   const [customStages, setCustomStages] = useState<PipelineStageConfig[]>(DEFAULT_PIPELINE_STAGES)
   
-  // 4 Primary Sections: all | fresh | ongoing | not_interested
-  const [activeSection, setActiveSectionState] = useState<'all' | 'fresh' | 'ongoing' | 'not_interested'>(() => {
+  // 5 Primary Sections: all | fresh | ongoing | not_interested | dialer
+  const [activeSection, setActiveSectionState] = useState<'all' | 'fresh' | 'ongoing' | 'not_interested' | 'dialer'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('crm_section') || sessionStorage.getItem('crm_section')
-      if (saved && ['all', 'fresh', 'ongoing', 'not_interested'].includes(saved)) {
+      if (saved && ['all', 'fresh', 'ongoing', 'not_interested', 'dialer'].includes(saved)) {
         return saved as any
       }
       const legacyStage = sessionStorage.getItem('crm_stage')
@@ -343,7 +346,7 @@ function CRMPageContent() {
     return 'all'
   })
   
-  const setActiveSection = (section: 'all' | 'fresh' | 'ongoing' | 'not_interested') => {
+  const setActiveSection = (section: 'all' | 'fresh' | 'ongoing' | 'not_interested' | 'dialer') => {
     setActiveSectionState(section)
     setSelectedSpecificStage('ALL')
     setCurrentPageState(1)
@@ -353,6 +356,19 @@ function CRMPageContent() {
         sessionStorage.setItem('crm_section', section)
         sessionStorage.setItem('crm_page', '1')
       } catch (e) {}
+    }
+  }
+
+  // Softphone VoIP Calling Modal State
+  const [voipModalData, setVoipModalData] = useState<{ isOpen: boolean; phone: string; name?: string; leadId?: string } | null>(null)
+
+  const handleOpenVoipCallingModal = (leadOrPhone: any, name?: string, leadId?: string) => {
+    if (typeof leadOrPhone === 'string') {
+      setVoipModalData({ isOpen: true, phone: leadOrPhone, name, leadId })
+    } else if (leadOrPhone) {
+      const lead = leadOrPhone
+      const phone = lead.phone || lead.custom_fields?.whatsapp_number || lead.custom_fields?.phone_number || ''
+      setVoipModalData({ isOpen: true, phone, name: lead.name, leadId: lead.id })
     }
   }
 
@@ -965,6 +981,64 @@ function CRMPageContent() {
       }
     } catch (err: any) {
       alert(err.message || 'An error occurred triggering the campaign.')
+    } finally {
+      setIsCallingCampaign(false)
+    }
+  }
+  const handleTriggerBluesquareVoipCall = async (targetLead: any) => {
+    if (!targetLead) return
+    const rawPhone = targetLead.phone || targetLead.custom_fields?.whatsapp_number || targetLead.custom_fields?.phone_number
+    if (!rawPhone) {
+      toast.error('This lead does not have a valid phone number.')
+      return
+    }
+
+    setCallingVoipLeadId(targetLead.id)
+    try {
+      toast.info(`Initiating VoIP call via Bluesquare Infra DID (+91 79 6548 0905) to ${targetLead.name || rawPhone}...`)
+      const res = await fetch(`/api/voice/call${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: targetLead.id,
+          useBluesquareDid: true
+        })
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`🎙️ VoIP call initiated with Bluesquare DID (+91 79 6548 0905)! Recording and AI analysis will be processed automatically.`)
+        setLeads(prev => prev.map(l => l.id === targetLead.id ? { ...l, voice_call_status: 'calling', last_called_by: 'Super Admin (Bluesquare VoIP)' } : l))
+      } else {
+        toast.error(data.error || 'Failed to initiate VoIP call.')
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'An error occurred triggering VoIP call.')
+    } finally {
+      setCallingVoipLeadId(null)
+    }
+  }
+
+  const handleBulkBluesquareVoipCampaign = async () => {
+    if (selectedLeadIds.length === 0) return
+    setIsCallingCampaign(true)
+    try {
+      const res = await fetch(`/api/voice/call${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadIds: selectedLeadIds, useBluesquareDid: true })
+      })
+      const data = await res.json()
+      if (data.success) {
+        const successes = data.results?.filter((r: any) => r.success).length || 0
+        const total = data.results?.length || 0
+        toast.success(`🎙️ Bluesquare VoIP campaign triggered! Calls initiated to ${successes}/${total} leads.`)
+        setSelectedLeadIds([])
+        fetchLeads(true)
+      } else {
+        toast.error(data.error || 'Failed to trigger Bluesquare VoIP campaign.')
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'An error occurred triggering the VoIP campaign.')
     } finally {
       setIsCallingCampaign(false)
     }
@@ -3284,13 +3358,14 @@ END:VCARD\n`
                 </div>
             )}
 
-            {/* 4 PRIMARY SECTION TABS */}
+            {/* 5 PRIMARY SECTION TABS */}
             <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1 scrollbar-hide pt-1 border-b border-slate-100">
                 {[
                     { id: 'all', label: 'All Leads', count: sectionCounts.all, activeBorder: 'border-slate-900', activeText: 'text-slate-900', badgeActive: 'bg-slate-900 text-white' },
                     { id: 'fresh', label: 'Fresh Leads', count: sectionCounts.fresh, activeBorder: 'border-blue-600', activeText: 'text-blue-600', badgeActive: 'bg-blue-600 text-white' },
                     { id: 'ongoing', label: 'Ongoing', count: sectionCounts.ongoing, activeBorder: 'border-indigo-600', activeText: 'text-indigo-600', badgeActive: 'bg-indigo-600 text-white' },
-                    { id: 'not_interested', label: 'Not Interested', count: sectionCounts.not_interested, activeBorder: 'border-amber-600', activeText: 'text-amber-700', badgeActive: 'bg-amber-600 text-white' }
+                    { id: 'not_interested', label: 'Not Interested', count: sectionCounts.not_interested, activeBorder: 'border-amber-600', activeText: 'text-amber-700', badgeActive: 'bg-amber-600 text-white' },
+                    { id: 'dialer', label: '📞 VoIP Dialer', count: null, activeBorder: 'border-emerald-600', activeText: 'text-emerald-600', badgeActive: 'bg-emerald-600 text-white' }
                 ].map(sec => {
                     const isActive = activeSection === sec.id
                     return (
@@ -3309,17 +3384,24 @@ END:VCARD\n`
                             }`}
                         >
                             <span>{sec.label}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-black transition-colors ${isActive ? sec.badgeActive : 'bg-slate-100 text-slate-600'}`}>
-                                {sec.count}
-                            </span>
+                            {sec.count !== null && (
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-black transition-colors ${isActive ? sec.badgeActive : 'bg-slate-100 text-slate-600'}`}>
+                                    {sec.count}
+                                </span>
+                            )}
                         </button>
                     )
                 })}
             </div>
         </div>
 
-        {/* LEADS GRID */}
-        {loading ? (
+        {/* LEADS GRID OR DIALER */}
+        {activeSection === 'dialer' ? (
+            <CrmDialerTab
+                onInitiateCall={(phone, name, id) => handleOpenVoipCallingModal(phone, name, id)}
+                impersonateId={impersonateId}
+            />
+        ) : loading ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-4">
                 <Loader2 size={32} className="animate-spin text-slate-300" />
                 <p className="text-sm font-medium animate-pulse">Loading Pipeline...</p>
@@ -3638,6 +3720,20 @@ END:VCARD\n`
                                                         <PhoneCall size={13} /> Followup
                                                     </button>
                                                     {displayPhone && (
+                                                        <button 
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleOpenVoipCallingModal(lead);
+                                                            }}
+                                                            className="px-2.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+                                                            title="In-App VoIP Call via Vobiz (Recorded & Transcribed)"
+                                                        >
+                                                            <Phone size={12} className="fill-current text-white" />
+                                                            <span>VoIP</span>
+                                                        </button>
+                                                    )}
+                                                    {displayPhone && (
                                                         <>
                                                             <button 
                                                                 type="button"
@@ -3826,6 +3922,22 @@ END:VCARD\n`
                                         >
                                             <MessageCircle size={14} />
                                         </button>
+                                        {displayPhone && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleOpenVoipCallingModal(lead);
+                                                }}
+                                                className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl transition-all shadow-xs flex items-center justify-center cursor-pointer active:scale-95"
+                                                title="In-App VoIP Call via Vobiz (Recorded & Transcribed)"
+                                            >
+                                                <div className="flex items-center gap-1 px-1">
+                                                    <Phone size={11} className="fill-current text-white" />
+                                                    <span className="text-[11px] font-black tracking-tight">VoIP</span>
+                                                </div>
+                                            </button>
+                                        )}
                                          <button 
                                              type="button"
                                              onClick={e => { 
@@ -4194,6 +4306,16 @@ END:VCARD\n`
                   >
                       {isCallingCampaign ? <Loader2 size={12} className="animate-spin text-white" /> : <Phone size={12} />} Run Voice Campaign
                   </button>
+                  {role === 'super_admin' && (
+                      <button 
+                          onClick={handleBulkBluesquareVoipCampaign}
+                          disabled={isCallingCampaign}
+                          className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                          title="Trigger VoIP Campaign via Bluesquare DID (+91 79 6548 0905)"
+                      >
+                          {isCallingCampaign ? <Loader2 size={12} className="animate-spin text-white" /> : <Sparkles size={12} className="text-amber-300" />} BS VoIP Bulk
+                      </button>
+                  )}
                   <button 
                       onClick={() => setSelectedLeadIds([])}
                       className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-full text-xs font-bold transition-all text-slate-400 hover:text-white cursor-pointer"
@@ -5088,6 +5210,17 @@ END:VCARD\n`
           onSuccess={async () => {
             await fetchLeads(true)
           }}
+        />
+
+        {/* IN-APP SOFTPHONE VOIP CALLING MODAL */}
+        <VoipCallingModal
+          isOpen={!!voipModalData?.isOpen}
+          recipientPhone={voipModalData?.phone || ''}
+          recipientName={voipModalData?.name}
+          leadId={voipModalData?.leadId}
+          profileId={userId || undefined}
+          onClose={() => setVoipModalData(null)}
+          onCallFinished={() => fetchLeads()}
         />
         </div>
       </div>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Brand mark">
+  <rect width="48" height="48" rx="12" fill="#0B1220"/>
+  <path d="M11 30.5 24 12l13 18.5" fill="none" stroke="#C79A4B" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M17.5 36.5V24.5h13v12" fill="none" stroke="#FBF9F6" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.92"/>
+  <circle cx="24" cy="18.4" r="1.9" fill="#C79A4B"/>
+</svg>

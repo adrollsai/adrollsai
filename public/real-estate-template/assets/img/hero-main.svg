@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1500" width="1200" height="1500" role="img" aria-label="Property photo placeholder">
+  <defs>
+    <linearGradient id="sky-p71" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#c4d7d3"/>
+      <stop offset="0.55" stop-color="#7da69e"/>
+      <stop offset="1" stop-color="#2E6F62"/>
+    </linearGradient>
+    <radialGradient id="sun-p71" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#E6BB72" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#E6BB72" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#E6BB72" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-p71" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#EAF6F1" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#EAF6F1" stop-opacity="0.3"/>
+    </linearGradient>
+    <linearGradient id="vig-p71" x1="0" y1="0.45" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.26"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="1500" fill="url(#sky-p71)"/>
+  <circle cx="194.29" cy="365.28" r="240" fill="url(#sun-p71)"/>
+  <g opacity="0.22"><rect x="-60" y="1099.46" width="60.95" height="80.54" fill="#0B2A26" opacity="0.57"/><rect x="12.95" y="1090.46" width="219.62" height="89.54" fill="#0B2A26" opacity="0.75"/><rect x="244.56" y="992.13" width="104" height="187.87" fill="#0B2A26" opacity="0.66"/><rect x="360.56" y="1073.64" width="124.94" height="106.36" fill="#0B2A26" opacity="0.47"/><rect x="497.5" y="1094.16" width="183.26" height="85.84" fill="#0B2A26" opacity="0.74"/><rect x="692.76" y="982.84" width="179.8" height="197.16" fill="#0B2A26" opacity="0.45"/><rect x="884.56" y="1008.86" width="185.39" height="171.14" fill="#0B2A26" opacity="0.55"/><rect x="1081.95" y="931.39" width="100.86" height="248.61" fill="#0B2A26" opacity="0.42"/><rect x="1194.82" y="1019.59" width="167.06" height="160.41" fill="#0B2A26" opacity="0.62"/></g>
+  <rect x="0" y="1140" width="1200" height="360" fill="#0B2A26" opacity="0.5"/>
+  <rect x="144" y="810" width="744" height="330" fill="#0B2A26" opacity="0.88" rx="6"/><rect x="126" y="788" width="780" height="22" fill="#0B2A26" opacity="0.96" rx="4"/><rect x="126" y="788" width="780" height="7" fill="#E6BB72" opacity="0.4" rx="3"/><rect x="174" y="850" width="111.0344827586207" height="138.6" rx="4" fill="url(#glass-p71)" opacity="0.72"/><rect x="303.03" y="850" width="111.0344827586207" height="138.6" rx="4" fill="url(#glass-p71)" opacity="0.72"/><rect x="432.07" y="850" width="111.0344827586207" height="138.6" rx="4" fill="url(#glass-p71)" opacity="0.72"/><rect x="561.1" y="850" width="111.0344827586207" height="138.6" rx="4" fill="url(#sun-p71)" opacity="0.85"/><rect x="690.14" y="850" width="111.0344827586207" height="138.6" rx="4" fill="url(#glass-p71)" opacity="0.72"/><rect x="188.64" y="975" width="119.04" height="165" fill="url(#glass-p71)" opacity="0.45"/><rect x="367.2" y="1185" width="409.2" height="105" rx="8" fill="#EAF6F1" opacity="0.22"/><rect x="367.2" y="1185" width="409.2" height="5" rx="2" fill="#E6BB72" opacity="0.3"/><line x1="828.48" y1="1110" x2="838.48" y2="750" stroke="#0B2A26" stroke-opacity="0.75" stroke-width="9"/><ellipse cx="840.48" cy="735" rx="60" ry="52.5" fill="#0B2A26" opacity="0.6"/><ellipse cx="818.48" cy="780" rx="48" ry="42" fill="#0B2A26" opacity="0.5"/><line x1="895.44" y1="1110" x2="905.44" y2="750" stroke="#0B2A26" stroke-opacity="0.75" stroke-width="9"/><ellipse cx="907.44" cy="735" rx="60" ry="52.5" fill="#0B2A26" opacity="0.6"/><ellipse cx="885.44" cy="780" rx="48" ry="42" fill="#0B2A26" opacity="0.5"/>
+  <rect width="1200" height="1500" fill="url(#vig-p71)"/>
+  <rect x="0" y="1140" width="1200" height="2" fill="#E6BB72" opacity="0.35"/>
+</svg>

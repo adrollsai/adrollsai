@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="Editorial image placeholder">
+  <defs>
+    <linearGradient id="sky-x104" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#10131F"/>
+      <stop offset="0.55" stop-color="#4B4F72"/>
+      <stop offset="1" stop-color="#060B12"/>
+    </linearGradient>
+    <radialGradient id="sun-x104" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#E4C489" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#E4C489" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#E4C489" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-x104" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#ECEDF6" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#ECEDF6" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="vig-x104" x1="0" y1="0.45" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky-x104)"/>
+  <circle cx="1216" cy="234" r="480" fill="url(#sun-x104)"/>
+  <circle cx="289.78" cy="279.51" r="170.56" fill="#ECEDF6" opacity="0.08"/><rect x="596.71" y="345.2" width="417.3" height="324.9" rx="10" fill="#ECEDF6" opacity="0.08" transform="rotate(9.15 805.36 553.85)"/><circle cx="1151.47" cy="550.01" r="108.28" fill="#ECEDF6" opacity="0.09"/><path d="M485.82 616.3 q244.21 -203.51 407.02 0 t407.02 0" stroke="#E4C489" stroke-opacity="0.37" stroke-width="2.52" fill="none"/>
+  <g opacity="0.2"><rect x="-40" y="748.72" width="44.78" height="151.28" fill="#10131F"/><rect x="12.78" y="646.21" width="155.96" height="253.79" fill="#10131F"/><rect x="176.73" y="683.97" width="95.16" height="216.03" fill="#10131F"/><rect x="279.9" y="788.67" width="117.21" height="111.33" fill="#10131F"/><rect x="405.1" y="626.99" width="125.79" height="273.01" fill="#10131F"/><rect x="538.89" y="745.59" width="86.85" height="154.41" fill="#10131F"/><rect x="633.74" y="831.13" width="41.86" height="68.87" fill="#10131F"/><rect x="683.6" y="760.28" width="81.19" height="139.72" fill="#10131F"/><rect x="772.79" y="659.7" width="157.43" height="240.3" fill="#10131F"/><rect x="938.21" y="786.08" width="98.73" height="113.92" fill="#10131F"/><rect x="1044.94" y="686.06" width="62.13" height="213.94" fill="#10131F"/><rect x="1115.08" y="606.32" width="106.89" height="293.68" fill="#10131F"/><rect x="1229.97" y="833.53" width="87.83" height="66.47" fill="#10131F"/><rect x="1325.8" y="854.35" width="108.64" height="45.65" fill="#10131F"/><rect x="1442.43" y="765.44" width="95.25" height="134.56" fill="#10131F"/><rect x="1545.68" y="613.48" width="49.14" height="286.52" fill="#10131F"/></g>
+  <text x="800" y="468" text-anchor="middle" font-family="Georgia, serif" font-size="99" fill="#ECEDF6" fill-opacity="0.2" letter-spacing="10">DESIGN</text>
+  <rect width="1600" height="900" fill="url(#vig-x104)" opacity="0.65"/>
+</svg>

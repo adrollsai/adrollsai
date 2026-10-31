@@ -86,6 +86,23 @@ export async function GET(request: Request) {
         const effectiveCredits = hasDedicatedCredits ? profile.credits : (primaryProfile.credits || 0);
         const targetLedgerUserId = hasDedicatedCredits ? user.id : primaryUserId;
 
+        // Check if trial was already purchased
+        let hasPurchasedTrial = Boolean(
+            primaryProfile.client_features?.has_purchased_trial ||
+            primaryProfile.subscription_plan === 'trial' ||
+            primaryProfile.subscription_plan === '7-days-trial'
+        );
+
+        if (!hasPurchasedTrial) {
+            const { count: trialCount } = await supabase
+                .from('credit_transactions')
+                .select('id', { count: 'exact', head: true })
+                .eq('user_id', primaryUserId)
+                .eq('category', 'trial');
+            if (trialCount && trialCount > 0) {
+                hasPurchasedTrial = true;
+            }
+        }
         const usageData = {
             planName: activePlan.name,
             resetDate: primaryProfile.usage_reset_date,
@@ -135,6 +152,8 @@ export async function GET(request: Request) {
             },
             credits: effectiveCredits,
             isUnlimited: ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(primaryProfile?.email || ''),
+            hasPurchasedTrial: hasPurchasedTrial,
+            paymentType: primaryProfile.client_features?.payment_type || 'one_time',
             transactions: [] as any[],
             hasMore: false
         };

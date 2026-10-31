@@ -6,6 +6,7 @@ import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
 import { buildImageSystemPrompt, buildReferenceCreativePreamble, buildImageDisambiguationPreamble, detectIndustry, getRandomVisualArchetype, getRandomHumanPersona } from '@/utils/image-prompt-master';
+import { getRandomReferenceTemplate } from '@/utils/reference-templates-data';
 
 export const maxDuration = 120; // Allow 2 minutes for AI prompt synthesis & image task dispatch
 
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
     const url = new URL(request.url)
     const impersonateId = url.searchParams.get('impersonate') || body?.impersonateId || body?.payload?.impersonateId;
 
-    const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id').eq('id', user.id).single()
+    const { data: currentProfile } = await supabase.from('profiles').select('role, agency_id, parent_id, selected_templates').eq('id', user.id).single()
     targetUserId = (currentProfile?.role === 'agent' && (currentProfile?.agency_id || currentProfile?.parent_id)) 
       ? (currentProfile.agency_id || currentProfile.parent_id) 
       : user.id
@@ -258,7 +259,16 @@ export async function POST(request: Request) {
         validPropImages = [];
     }
     const validLogo = logoUrl && !excludedImages.includes(logoUrl) ? filterImages([logoUrl]).map(sanitizeImageUrl) : [];
-    const validTemplate = templateUrl && !excludedImages.includes(templateUrl) ? filterImages([templateUrl]).map(sanitizeImageUrl) : [];
+    let effectiveTemplateUrl = templateUrl;
+    if (!effectiveTemplateUrl && !isEdit) {
+      const userSelected = Array.isArray(currentProfile?.selected_templates) && currentProfile.selected_templates.length > 0
+        ? currentProfile.selected_templates
+        : undefined;
+      const randomTmpl = getRandomReferenceTemplate(userSelected);
+      effectiveTemplateUrl = randomTmpl.url;
+      logToFile(`[CHAT ROUTE] No template specified: randomly picked user reference design "${randomTmpl.name}" (${randomTmpl.url})`);
+    }
+    const validTemplate = effectiveTemplateUrl && !excludedImages.includes(effectiveTemplateUrl) ? filterImages([effectiveTemplateUrl]).map(sanitizeImageUrl) : [];
     
     // Capped at 16 images maximum for GPT 2 model
     const allInputImages = [...validPropImages, ...validLogo].slice(0, 16);

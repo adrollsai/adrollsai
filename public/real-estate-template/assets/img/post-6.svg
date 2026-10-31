@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="Editorial image placeholder">
+  <defs>
+    <linearGradient id="sky-x105" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#3A2C22"/>
+      <stop offset="0.55" stop-color="#9A7A57"/>
+      <stop offset="1" stop-color="#060B12"/>
+    </linearGradient>
+    <radialGradient id="sun-x105" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#F0D9B2" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#F0D9B2" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#F0D9B2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-x105" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#F7EFE4" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#F7EFE4" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="vig-x105" x1="0" y1="0.45" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky-x105)"/>
+  <circle cx="1216" cy="234" r="480" fill="url(#sun-x105)"/>
+  <circle cx="565.01" cy="245.64" r="180.24" fill="#F7EFE4" opacity="0.12"/><circle cx="553.51" cy="542.51" r="144.94" fill="#F7EFE4" opacity="0.07"/><path d="M1331.81 187.82 q100.93 -84.1 168.21 0 t168.21 0" stroke="#F0D9B2" stroke-opacity="0.2" stroke-width="2.37" fill="none"/><rect x="522.63" y="384.31" width="433.65" height="383.56" rx="10" fill="#F7EFE4" opacity="0.09" transform="rotate(-1.19 739.45 601.13)"/>
+  <g opacity="0.2"><rect x="-40" y="705.6" width="77.68" height="194.4" fill="#3A2C22"/><rect x="45.68" y="692.39" width="109.91" height="207.61" fill="#3A2C22"/><rect x="163.59" y="672.79" width="119.79" height="227.21" fill="#3A2C22"/><rect x="291.38" y="863.47" width="139.92" height="36.53" fill="#3A2C22"/><rect x="439.3" y="801.09" width="78.45" height="98.91" fill="#3A2C22"/><rect x="525.75" y="662.32" width="52.41" height="237.68" fill="#3A2C22"/><rect x="586.15" y="783.83" width="81.06" height="116.17" fill="#3A2C22"/><rect x="675.21" y="732.29" width="99.21" height="167.71" fill="#3A2C22"/><rect x="782.42" y="624.36" width="50.58" height="275.64" fill="#3A2C22"/><rect x="841" y="646.7" width="61.08" height="253.3" fill="#3A2C22"/><rect x="910.07" y="665.99" width="92.19" height="234.01" fill="#3A2C22"/><rect x="1010.27" y="738.89" width="154.3" height="161.11" fill="#3A2C22"/><rect x="1172.57" y="632.07" width="119.99" height="267.93" fill="#3A2C22"/><rect x="1300.56" y="782.19" width="97.4" height="117.81" fill="#3A2C22"/><rect x="1405.96" y="645.93" width="43.58" height="254.07" fill="#3A2C22"/><rect x="1457.54" y="649.94" width="57.79" height="250.06" fill="#3A2C22"/><rect x="1523.33" y="720.89" width="154.83" height="179.11" fill="#3A2C22"/></g>
+  <text x="800" y="468" text-anchor="middle" font-family="Georgia, serif" font-size="99" fill="#F7EFE4" fill-opacity="0.2" letter-spacing="10">FINANCE</text>
+  <rect width="1600" height="900" fill="url(#vig-x105)" opacity="0.65"/>
+</svg>

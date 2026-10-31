@@ -15,17 +15,21 @@ export async function POST(req: Request) {
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const body = await req.json()
-        const { leadId, leadIds, isAutoTrigger, impersonate } = body
+        const { leadId, leadIds, isAutoTrigger, impersonate, useBluesquareDid } = body
 
         // Check if caller is an agent account
         const { data: callerProfile } = await supabaseAdmin
             .from('profiles')
-            .select('role, parent_id, agency_id')
+            .select('role, parent_id, agency_id, email')
             .eq('id', user.id)
             .single()
 
         if (!isAutoTrigger && (callerProfile?.role === 'agent' || callerProfile?.role === 'team_member')) {
             return NextResponse.json({ error: 'Agent accounts are not permitted to initiate AI calls.' }, { status: 403 })
+        }
+        const isSuperAdmin = callerProfile?.role === 'super_admin' || user.email === 'rchopra489@gmail.com' || callerProfile?.email === 'rchopra489@gmail.com'
+        if (useBluesquareDid && !isSuperAdmin) {
+            return NextResponse.json({ error: 'Only Super Admin accounts are authorized to initiate VoIP calls with the Bluesquare DID.' }, { status: 403 })
         }
 
         const url = new URL(req.url)
@@ -78,7 +82,7 @@ export async function POST(req: Request) {
         const hasVobiz = !!(profile.voice_vobiz_number || bi.claimed_vobiz_number || bi.voice_vobiz_number)
         const hasTwilio = !!(profile.voice_twilio_number && profile.voice_twilio_sid)
 
-        if (!hasVobiz && !hasTwilio) {
+        if (!hasVobiz && !hasTwilio && !useBluesquareDid) {
             return NextResponse.json({
                 error: 'Voice calling is not active. No Vobiz or telephony number is connected to this account. Please connect a phone number in Voice settings.'
             }, { status: 400 })
@@ -88,7 +92,11 @@ export async function POST(req: Request) {
 
         if (targets.length === 1) {
             const targetLeadId = targets[0]
-            const res = await triggerOutboundCall(supabaseAdmin, targetLeadId, targetId, isAuto)
+            const res = await triggerOutboundCall(supabaseAdmin, targetLeadId, targetId, isAuto, undefined, {
+                useBluesquareDid: !!useBluesquareDid,
+                forceBluesquareDid: !!useBluesquareDid,
+                allowAfterHours: true
+            })
             return NextResponse.json({ success: true, results: [{ leadId: targetLeadId, ...res }] })
         } else {
             const campaignName = `CRM Bulk Call - ${new Date().toLocaleDateString('en-IN')} ${new Date().toLocaleTimeString('en-IN')}`

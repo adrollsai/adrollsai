@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mobile frame preview</title>
+<style>
+  html, body { margin: 0; background: #cfd4d8; }
+  .frame {
+    width: 390px;
+    margin: 0 auto;
+    background: #fff;
+    box-shadow: 0 0 0 1px #9aa4ac;
+  }
+  iframe { display: block; width: 390px; border: 0; }
+</style>
+</head>
+<body>
+<!-- Dev helper: renders a page in a true 390px-wide viewport so mobile
+     media queries can be checked with headless Chrome screenshots.
+     Usage: tools/mobile-preview.html?p=index.html&h=2600 -->
+<div class="frame">
+  <iframe id="f" title="Mobile preview" style="height:2400px"></iframe>
+</div>
+<script>
+  var q = new URLSearchParams(location.search);
+  var page = q.get("p") || "../index.html";
+  var h = q.get("h") || "2400";
+  var f = document.getElementById("f");
+  f.style.height = h + "px";
+  f.src = "../" + page;
+</script>
+</body>
+</html>

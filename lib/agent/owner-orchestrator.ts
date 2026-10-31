@@ -9,6 +9,8 @@ import { recordFeedbackOrIssue, getRecentLearnings } from './feedback-engine';
 import { triggerOutboundCall } from '@/utils/voice-helper';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { createKieImageTask } from '@/utils/external-apis';
+import { getReferenceTemplate } from '@/utils/reference-templates-data';
 
 export interface OwnerBotMediaAttachment {
     type: 'image' | 'document';
@@ -71,15 +73,19 @@ const supabaseAdmin = createClient(
 function getLLMModel() {
     const rawKey = process.env.DEEPSEEK_API_KEY || '';
     const cleanKey = rawKey.replace(/^["']|["']$/g, '').trim();
-    if (cleanKey) {
-        const deepseek = createOpenAI({
-            baseURL: 'https://api.deepseek.com/v1',
-            apiKey: cleanKey,
-            ...({ compatibility: 'compatible' } as any)
-        });
-        return deepseek.chat('deepseek-flash');
+    // Validate key format and check for known invalid keys
+    if (cleanKey && cleanKey.startsWith('sk-') && !cleanKey.includes('invalid') && !cleanKey.includes('382f') && cleanKey.length >= 30) {
+        try {
+            const deepseek = createOpenAI({
+                baseURL: 'https://api.deepseek.com/v1',
+                apiKey: cleanKey,
+                ...({ compatibility: 'compatible' } as any)
+            });
+            return deepseek.chat('deepseek-chat');
+        } catch {
+            // fallback
+        }
     }
-    console.warn('[OWNER ORCHESTRATOR] DEEPSEEK_API_KEY not found in environment, falling back to Gemini 2.5 Flash');
     return google('gemini-2.5-flash');
 }
 
@@ -131,7 +137,7 @@ export async function processOwnerMessage(params: {
     const [profRes, policyRes, learnings] = await Promise.all([
         supabaseAdmin
             .from('profiles')
-            .select('id, email, parent_id, agency_id, business_name, business_info, address, contact_number, whatsapp_personal_number, whatsapp_phone_number, role, facebook_token, ad_account_id, selected_page_id, selected_page_token, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number_id, privacy_policy_url')
+            .select('id, email, parent_id, agency_id, business_name, business_info, address, contact_number, whatsapp_personal_number, whatsapp_phone_number, role, facebook_token, ad_account_id, selected_page_id, selected_page_token, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number_id, privacy_policy_url, currency')
             .eq('id', userId)
             .single(),
         supabaseAdmin.from('agent_policies').select('*').eq('user_id', userId).maybeSingle(),
@@ -163,87 +169,71 @@ export async function processOwnerMessage(params: {
     }).join('\n') || 'No sub-agents or team members registered.';
 
     const systemPrompt = `
-You are Nobogent, the Executive AI Sales Director and Autonomous Business Co-pilot for ${businessName}.
+You are Nobogent Executive Co-pilot, the AI Intelligence and Analytics Director for ${businessName}.
 You are interacting directly with the business owner / admin on WhatsApp.
 
-You possess COMPLETE operational control across every capability of the Nobogent CRM, Team Management, Telecalling/Calling, Meta Ads, and WhatsApp Automation platform.
+WORKSPACE & ORGANIZATION CONTEXT:
+- Organization Name: ${businessName}
+- Workspace Owner ID: ${orgOwnerId}
+- Current Admin/User ID: ${userId}
+- Business Focus: ${profile?.business_info || 'Sales, Marketing & Lead Management'}
+- Currency: ${profile?.currency || 'INR'}
+- Active Telephony: Vobiz SIP Trunk / Master Telephony Connected
 
-WORKSPACE REGISTERED TEAM MEMBERS:
+REGISTERED ORGANIZATION TEAM MEMBERS:
 ${teamListFormatted}
 
 CRITICAL RULES FOR TEAM MEMBERS & CALLING STATUS:
-1. People listed in "WORKSPACE REGISTERED TEAM MEMBERS" above (such as Devraj Singh Rathore / Devraj) are TEAM MEMBERS / AGENTS in this workspace, NOT simply leads!
-2. Even if a lead record with the same name exists in the CRM, when the owner asks about a person by name (e.g. "Devraj", "calling status of leads assigned to Devraj", "Devraj's calling status"), they are ALWAYS referring to the TEAM MEMBER!
+1. People listed in "REGISTERED ORGANIZATION TEAM MEMBERS" above (such as Devraj, Amish, Amit, Sonam, etc.) are TEAM MEMBERS / AGENTS in this workspace, NOT leads!
+2. When the admin asks about a person by name (e.g. "Devraj", "Amish", "calling status of leads assigned to Amish"), they are ALWAYS referring to the TEAM MEMBER!
 3. NEVER reply that a team member is "just a lead" or has no activity without checking their assigned leads and calling performance!
 4. Use 'get_team_member_performance' or 'get_team_calling_status' to fetch:
-   - Total leads assigned in the CRM (e.g. 828 leads assigned to Devraj)
-   - Breakdown of assigned leads across stages (New, Contacted, Requirement Taken, Meeting Planned, Meeting Done, Visit Done, Appointment Booked, Deal/Token, Lost/NI)
+   - Total leads assigned in the CRM
+   - Breakdown of assigned leads across stages (New, Contacted, Requirement Taken, Meeting Planned, Meeting Done, Visit Done, Deal/Token, Lost/NI)
    - Calling status breakdown (not_called vs called vs qualified_via_whatsapp)
-   - Recent follow-up calls and remarks logged by that team member (e.g. DNP, call remarks in notes)
-5. Format your response cleanly and respectfully with WhatsApp-friendly emojis and bullet points. Never use markdown headers (like # or ##).
+   - Recent follow-up calls and remarks logged by that team member in CRM notes
 
-ORGANIZATION DATA CRUNCHING, VISUAL GRAPHS & DOWNLOADABLE REPORTS:
-You are an executive data-crunching and BI intelligence co-pilot for ${businessName}.
-When the owner or admin asks about:
-- Pipeline metrics, stage conversions, lead volume, or stage distributions
-- Performance by sales agent, telecaller leaderboard, calling stats, or talk time
-- Lead quality, DNP rates, connection rates, or site visit conversion
-- Campaign ROI, adset lead volume, or source breakdown
-- Graphs, charts, visual breakdowns
-- Downloadable reports, CSV exports, or spreadsheets of leads
+ABSOLUTE SECURITY DIRECTIVE: STRICT READ-ONLY / INFORMATION EXTRACTION ONLY:
+1. You have COMPLETE, 100% READ-ONLY extraction access to all database tables belonging strictly to this organization (${businessName}).
+2. Database modifications (UPDATE, DELETE, INSERT, REASSIGN) through WhatsApp AI are STRICTLY FORBIDDEN to protect data integrity, prevent accidental data loss, and maintain audit trails.
+3. If the admin asks to edit the database (e.g., "update lead stage to Deal Closed", "delete lead X", "assign 20 leads to Devraj", "add a new property to inventory", "change calling hours"):
+   - You MUST politely decline with:
+     "🔒 *Database modifications via WhatsApp AI are disabled for security and audit trail integrity.* I can extract, query, and analyze any information from your database, but please make changes directly in your Nobogent CRM dashboard."
+   - NEVER pretend or promise that an edit was made in the database.
 
-ALWAYS:
-1. Invoke 'crunch_organization_analytics' to pull accurate real-time metrics across the workspace.
-2. If the user asks for a chart/graph, or if visual representation makes the data much easier to digest (e.g. comparing stages, team performance, or lead acquisition):
-   - Invoke 'generate_analytics_graph' with chartType ('doughnut' for stage distributions or sources, 'bar' or 'line' for daily/weekly trends, 'horizontalBar' for team leaderboards).
-   - This automatically delivers a high-resolution dark-themed visual graph directly into the owner's WhatsApp!
-3. If the user asks for a report, export, spreadsheet, list, or downloadable file:
-   - Invoke 'generate_downloadable_report' with the appropriate reportType and filters.
-   - This automatically generates a clean CSV, uploads it to secure cloud storage, and sends it directly to their WhatsApp as a downloadable document!
-4. In your message, provide sharp, high-level executive commentary:
-   - Highlight the key trends, top performers, conversion bottlenecks, and actionable recommendations.
-   - Format cleanly with WhatsApp-friendly emojis and bullet points. Never use markdown headers (like # or ##).
+STRICT ORGANIZATION DATA ISOLATION:
+1. You have access ONLY to data belonging to ${businessName} (organization ID: ${orgOwnerId}).
+2. NEVER access, expose, query, or hallucinate data belonging to any other business or account.
 
-LIVE TASK PROGRESS & STATUS TRACKING PROTOCOL:
-When the owner asks about the current status, live progress, or results of any task (Meta ads campaign, voice calling, broadcasts):
-- Use 'get_live_task_status' to fetch real-time milestone progress.
-- Report the status clearly with current stage, active numbers, and live metrics.
+EXECUTIVE WHATSAPP FORMATTING & PRESENTATION PROTOCOL (MANDATORY):
+You are sending messages directly to a busy business owner's mobile phone on WhatsApp. Format EVERY response strictly according to these rules:
+1. *Concise & Skimmable*: Keep responses compact, high-value, and punchy. No long rambling paragraphs.
+2. *Bold Headers with Emojis*: Use WhatsApp bold syntax for clean section headers, e.g.:
+   *📊 Pipeline Overview*
+   *👥 Team Leaderboard*
+   *📞 Telecalling Performance*
+   *💡 Executive Takeaway*
+3. *Emoji Bullet Points*: Use clean bullet points with bold metric labels and values, e.g.:
+   • *Total Leads:* 16,151
+   • *Active in Pipeline:* 8,420
+   • *Connected Calls:* 311 (68.4% Connection Rate)
+   • *Deals Closed:* 12 (₹8.4 Cr total volume)
+4. *NEVER Use Markdown Tables*: NEVER use | Table | Column | syntax. Tables break, wrap chaotically, and are unreadable on mobile WhatsApp screens. Always format structured lists using bullet points.
+5. *NEVER Use Markdown Headers*: NEVER use '#', '##', or '###'. WhatsApp chat renders these as ugly literal '#' characters. Use *Bold Text* with an emoji instead.
+6. *Interesting & Actionable Commentary*: Always highlight key takeaways:
+   - Point out bottlenecks (e.g. high DNP rate or leads lingering in 'New' stage).
+   - Celebrate top performers.
+   - Give 1 actionable next step or recommendation.
 
-CONTINUOUS FEEDBACK & ISSUE TRACKING PROTOCOL:
-Whenever the owner corrects you, points out a mistake, expresses dissatisfaction, or if you detect an operational discrepancy:
-1. DO NOT argue or get defensive.
-2. ALWAYS invoke 'record_feedback_or_issue' to log the incident into the Nobogent Engineering Feedback Engine.
-3. Acknowledge the correction with humility, mention the tracking ticket number returned, and adapt your response immediately.
+VISUAL GRAPHS & DOWNLOADABLE REPORTS:
+1. When comparing pipeline stages, lead acquisition trends, or team leaderboards:
+   - Call 'generate_analytics_graph' with chartType ('doughnut', 'bar', 'line', 'horizontalBar') to deliver a stunning dark-themed chart directly to their WhatsApp!
+2. When the admin asks for an export, spreadsheet, full list, or file of leads/calls:
+   - Call 'generate_downloadable_report' to compile a clean CSV and send it directly to their WhatsApp as a downloadable document!
 
-ASSET & CREATIVE EXPLORATION PROTOCOL (CRITICAL):
-When the owner asks to see, preview, or select creatives, images, videos, floor plans, or assets for a product/project/campaign:
-- DO NOT dump dozens of images/videos directly into the WhatsApp chat.
-- ALWAYS invoke 'open_creative_session_browser' with the product or campaign name.
-- Present the generated session browser link clearly to the owner.
-
-GUARDIAN ANOMALY DETECTION & SELF-HEALING PROTOCOL:
-When asked about system health, outreach status, or if calling drops:
-1. Call 'detect_and_analyze_anomalies'.
-2. If anomalies are found, report symptoms, root cause, and ask: "Shall I execute this self-healing fix now?"
-3. If confirmed, call 'execute_self_healing'.
-
-CURRENT BUSINESS POLICIES & TELEPHONY:
-- Role: ${profile?.role || 'owner'} ${profile?.role === 'super_admin' || profile?.email === 'rchopra489@gmail.com' ? '(SUPER ADMIN - Master SIP Trunk & Vobiz Line Connected: +91 11 7136 6938)' : ''}
-- Calling Enabled: ${policy?.calling_enabled !== false}
-- Contact Intensity: ${policy?.contact_intensity || 'medium'}
-- Business Hours: ${policy?.business_hours_start || '09:30'} to ${policy?.business_hours_end || '19:00'}
-- Appointment Goal: ${policy?.appointment_goal || 'site_visit'}
-- Owner Registered Phone: ${profile?.whatsapp_personal_number || profile?.contact_number || '+918288835235'}
-
-CALLING & TEST DIALING PROTOCOL:
-When the owner requests to test a voice call or dial a phone number (e.g. "call my number", "call me", "call 8288835235", "test call super admin"):
-- ALWAYS invoke 'trigger_ai_call' with their phone number or "me".
-- If the owner mentions a specific topic, purpose, or question to discuss on the call (e.g. "ask them what are their plans on Nobogent", "call regarding XYZ"), ALWAYS extract that and pass it into 'topicOrNotes'.
-- NEVER refuse by saying voice calling is inactive or disabled without calling 'trigger_ai_call'.
-- Master telephony is active, and test calls bypass out-of-hours restriction.
-
-RECENT ADAPTATIONS & LEARNINGS FOR THIS ACCOUNT:
-${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.'}
+COMPREHENSIVE DATABASE QUERY ENGINE ('query_organization_db'):
+If the admin asks specific questions about leads, properties, calls, WhatsApp chats, ad campaigns, policies, or notifications:
+- Use 'query_organization_db' to securely query the exact table, filter, and extract the relevant data, then summarize it beautifully for WhatsApp.
 `;
 
     let promptText = messageText;
@@ -251,7 +241,91 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
         promptText = `${messageText || ''} [Attached Permanent Image URL: "${mediaUrl}". If the user wants to use this as an ad creative, call 'attach_image_to_inventory' or link to campaign]`.trim();
     }
 
+    const readOnlyRefusal = {
+        success: false,
+        readOnlyEnforced: true,
+        message: "Database modifications via WhatsApp AI are disabled for security and audit trail integrity. Admins can extract and query all organization data, but database edits (updating stages, assigning leads, creating records, modifying policies) must be performed directly in your Nobogent CRM dashboard."
+    };
+
     const tools = {
+        // --- 0. GENERAL READ-ONLY ORGANIZATION DATABASE QUERY ENGINE (MCP SUITE) ---
+        query_organization_db: tool({
+            description: "Secure, read-only MCP database query engine to extract any data strictly within this organization's database (leads, properties, call_logs, whatsapp_chats, whatsapp_messages, campaign_jobs, profiles/team, agent_policies, notifications, credit_transactions). Strictly executes SELECT queries; cannot modify data.",
+            inputSchema: z.object({
+                tableName: z.enum([
+                    'leads',
+                    'properties',
+                    'call_logs',
+                    'whatsapp_chats',
+                    'whatsapp_messages',
+                    'campaign_jobs',
+                    'profiles',
+                    'agent_policies',
+                    'notifications',
+                    'credit_transactions'
+                ]).describe("Table to query"),
+                select: z.string().default('*').describe("Columns to select e.g. 'id, name, phone, pipeline_stage, notes, created_at'"),
+                filterField: z.string().optional().describe("Column to filter on"),
+                filterOperator: z.enum(['eq', 'neq', 'ilike', 'gte', 'lte', 'gt', 'lt', 'is']).optional().default('eq'),
+                filterValue: z.string().optional().describe("Filter value"),
+                orderBy: z.string().optional().describe("Column to order by (defaults to created_at)"),
+                orderAscending: z.boolean().optional().default(false),
+                limit: z.number().default(20).describe("Max rows to return (up to 50)")
+            }),
+            execute: async ({ tableName, select, filterField, filterOperator, filterValue, orderBy, orderAscending, limit }) => {
+                const cappedLimit = Math.min(Math.max(limit, 1), 50);
+                let q = supabaseAdmin.from(tableName).select(select);
+
+                // Security: strictly scope to orgUserIds
+                if (tableName === 'leads') {
+                    q = q.or(`user_id.in.(${orgUserIds.join(',')}),assigned_to.in.(${orgUserIds.join(',')})`);
+                } else if (tableName === 'properties' || tableName === 'call_logs' || tableName === 'campaign_jobs' || tableName === 'agent_policies' || tableName === 'credit_transactions') {
+                    q = q.in('user_id', orgUserIds);
+                } else if (tableName === 'profiles') {
+                    q = q.in('id', orgUserIds);
+                } else if (tableName === 'whatsapp_chats') {
+                    q = q.in('user_id', orgUserIds);
+                } else if (tableName === 'whatsapp_messages') {
+                    const { data: orgChats } = await supabaseAdmin.from('whatsapp_chats').select('id').in('user_id', orgUserIds).limit(500);
+                    const chatIds = (orgChats || []).map(c => c.id);
+                    if (chatIds.length === 0) return { totalFound: 0, rows: [] };
+                    q = q.in('chat_id', chatIds);
+                } else if (tableName === 'notifications') {
+                    q = q.in('user_id', orgUserIds);
+                }
+
+                if (filterField && filterValue !== undefined) {
+                    const cleanField = filterField.trim().replace(/[^a-zA-Z0-9_]/g, '');
+                    if (filterOperator === 'ilike') q = q.ilike(cleanField, `%${filterValue}%`);
+                    else if (filterOperator === 'neq') q = q.neq(cleanField, filterValue);
+                    else if (filterOperator === 'gte') q = q.gte(cleanField, filterValue);
+                    else if (filterOperator === 'lte') q = q.lte(cleanField, filterValue);
+                    else if (filterOperator === 'gt') q = q.gt(cleanField, filterValue);
+                    else if (filterOperator === 'lt') q = q.lt(cleanField, filterValue);
+                    else if (filterOperator === 'is') q = q.is(cleanField, filterValue === 'null' ? null : filterValue);
+                    else q = q.eq(cleanField, filterValue);
+                }
+
+                if (orderBy) {
+                    const cleanOrder = orderBy.trim().replace(/[^a-zA-Z0-9_]/g, '');
+                    q = q.order(cleanOrder, { ascending: orderAscending ?? false });
+                } else if (['leads', 'properties', 'call_logs', 'whatsapp_chats', 'whatsapp_messages', 'campaign_jobs', 'notifications', 'credit_transactions'].includes(tableName)) {
+                    q = q.order('created_at', { ascending: false });
+                }
+
+                const { data, error } = await q.limit(cappedLimit);
+                if (error) {
+                    return { success: false, error: error.message };
+                }
+                return {
+                    success: true,
+                    tableName,
+                    totalFound: (data || []).length,
+                    rows: data || []
+                };
+            }
+        }),
+
         // --- 0. ORGANIZATION DATA CRUNCHING, VISUAL GRAPHS & DOWNLOADABLE REPORTS ---
         crunch_organization_analytics: tool({
             description: "Performs real-time, comprehensive data crunching across the entire organization CRM: total leads, funnel conversion rates, pipeline stages, agent performance leaderboard, source attribution, and telecalling analytics for any timeframe.",
@@ -856,104 +930,26 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
         }),
 
         assign_leads_to_team_member: tool({
-            description: "Assigns or reassigns one or more CRM leads to a team member.",
+            description: "Assigns or reassigns CRM leads to a team member (BLOCKED: Read-only access enforced).",
             inputSchema: z.object({
                 leadIdentifiers: z.array(z.string()).describe("Lead UUIDs, names, or phone numbers to assign"),
                 targetMemberNameOrId: z.string().describe("Target team member's name, email, or UUID")
             }),
-            execute: async ({ leadIdentifiers, targetMemberNameOrId }) => {
-                // Resolve member
-                let memberId = targetMemberNameOrId;
-                let memberName = targetMemberNameOrId;
-                const { data: members } = await supabaseAdmin
-                    .from('profiles')
-                    .select('id, full_name, business_name, email')
-                    .or(`parent_id.eq.${userId},agency_id.eq.${userId}`)
-                    .or(`full_name.ilike.%${targetMemberNameOrId}%,business_name.ilike.%${targetMemberNameOrId}%,email.ilike.%${targetMemberNameOrId}%,id.eq.${targetMemberNameOrId}`);
-
-                if (members && members.length > 0) {
-                    memberId = members[0].id;
-                    memberName = members[0].full_name || members[0].business_name || members[0].email;
-                }
-
-                let updatedCount = 0;
-                for (const ident of leadIdentifiers) {
-                    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ident);
-                    let q = supabaseAdmin.from('leads').update({ assigned_to: memberId });
-                    if (isUuid) {
-                        q = q.eq('id', ident);
-                    } else {
-                        q = q.or(`phone.ilike.%${ident}%,name.ilike.%${ident}%`).eq('user_id', userId);
-                    }
-                    const { error } = await q;
-                    if (!error) updatedCount++;
-                }
-
-                return {
-                    success: true,
-                    assignedTo: memberName,
-                    assignedCount: updatedCount,
-                    message: `Successfully assigned ${updatedCount} lead(s) to ${memberName}.`
-                };
+            execute: async () => {
+                return readOnlyRefusal;
             }
         }),
 
         transfer_leads: tool({
-            description: "Transfers leads in bulk from one team member (or unassigned pool) to another team member.",
+            description: "Transfers leads in bulk to another team member (BLOCKED: Read-only access enforced).",
             inputSchema: z.object({
                 fromMemberNameOrId: z.string().describe("Source team member name/email/UUID, or 'unassigned'"),
                 toMemberNameOrId: z.string().describe("Target team member name/email/UUID"),
                 stage: z.string().optional().describe("Optional pipeline stage filter, e.g. 'New'"),
                 limit: z.number().default(50).describe("Maximum number of leads to transfer")
             }),
-            execute: async ({ fromMemberNameOrId, toMemberNameOrId, stage, limit }) => {
-                // Resolve target
-                const { data: targetMembers } = await supabaseAdmin
-                    .from('profiles')
-                    .select('id, full_name, business_name, email')
-                    .or(`parent_id.eq.${userId},agency_id.eq.${userId}`)
-                    .or(`full_name.ilike.%${toMemberNameOrId}%,business_name.ilike.%${toMemberNameOrId}%,email.ilike.%${toMemberNameOrId}%,id.eq.${toMemberNameOrId}`)
-                    .limit(1);
-
-                if (!targetMembers || targetMembers.length === 0) {
-                    return { success: false, error: `Target team member '${toMemberNameOrId}' not found.` };
-                }
-                const targetMember = targetMembers[0];
-
-                let query = supabaseAdmin.from('leads').select('id').eq('user_id', userId);
-                if (fromMemberNameOrId.toLowerCase() === 'unassigned') {
-                    query = query.is('assigned_to', null);
-                } else {
-                    const { data: fromMembers } = await supabaseAdmin
-                        .from('profiles')
-                        .select('id')
-                        .or(`parent_id.eq.${userId},agency_id.eq.${userId}`)
-                        .or(`full_name.ilike.%${fromMemberNameOrId}%,business_name.ilike.%${fromMemberNameOrId}%,email.ilike.%${fromMemberNameOrId}%,id.eq.${fromMemberNameOrId}`)
-                        .limit(1);
-                    if (fromMembers && fromMembers.length > 0) {
-                        query = query.eq('assigned_to', fromMembers[0].id);
-                    }
-                }
-
-                if (stage) query = query.eq('pipeline_stage', stage);
-                const { data: leadsToTransfer } = await query.limit(limit);
-                const leadIds = (leadsToTransfer || []).map(l => l.id);
-
-                if (leadIds.length === 0) {
-                    return { success: false, message: 'No leads found matching the transfer criteria.' };
-                }
-
-                await supabaseAdmin
-                    .from('leads')
-                    .update({ assigned_to: targetMember.id })
-                    .in('id', leadIds);
-
-                return {
-                    success: true,
-                    transferredCount: leadIds.length,
-                    toMember: targetMember.full_name || targetMember.business_name || targetMember.email,
-                    message: `Transferred ${leadIds.length} lead(s) to ${targetMember.full_name || targetMember.business_name || targetMember.email}.`
-                };
+            execute: async () => {
+                return readOnlyRefusal;
             }
         }),
 
@@ -969,7 +965,7 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
                 let q = supabaseAdmin
                     .from('leads')
                     .select('id, name, phone, email, pipeline_stage, notes, assigned_to, source, created_at')
-                    .eq('user_id', userId)
+                    .or(`user_id.in.(${orgUserIds.join(',')}),assigned_to.in.(${orgUserIds.join(',')})`)
                     .or(`name.ilike.%${cleanQuery}%,phone.ilike.%${cleanQuery}%,email.ilike.%${cleanQuery}%,notes.ilike.%${cleanQuery}%`);
 
                 if (stage) q = q.eq('pipeline_stage', stage);
@@ -985,7 +981,7 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
             }),
             execute: async ({ leadIdentifier }) => {
                 const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadIdentifier);
-                let q = supabaseAdmin.from('leads').select('*').eq('user_id', userId);
+                let q = supabaseAdmin.from('leads').select('*').or(`user_id.in.(${orgUserIds.join(',')}),assigned_to.in.(${orgUserIds.join(',')})`);
                 if (isUuid) {
                     q = q.eq('id', leadIdentifier);
                 } else {
@@ -1006,32 +1002,14 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
         }),
 
         update_lead_stage: tool({
-            description: "Updates the pipeline stage of a lead (e.g. 'New Lead', 'Contacted', 'Requirement Taken', 'Meeting Planned', 'Meeting Done', 'Site Visit', 'Qualified', 'Deal/Token', 'Lost/NI').",
+            description: "Updates the pipeline stage of a lead (BLOCKED: Read-only access enforced).",
             inputSchema: z.object({
                 leadIdentifier: z.string().describe("Lead UUID, phone number, or name"),
                 newStage: z.string().describe("Target pipeline stage"),
                 notes: z.string().optional().describe("Optional notes/remarks to append")
             }),
-            execute: async ({ leadIdentifier, newStage, notes }) => {
-                const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadIdentifier);
-                let findQ = supabaseAdmin.from('leads').select('id, name, notes').eq('user_id', userId);
-                if (isUuid) findQ = findQ.eq('id', leadIdentifier);
-                else findQ = findQ.or(`phone.ilike.%${leadIdentifier}%,name.ilike.%${leadIdentifier}%`);
-
-                const { data: lead } = await findQ.maybeSingle();
-                if (!lead) return { success: false, error: `Lead '${leadIdentifier}' not found.` };
-
-                const updatedNotes = notes
-                    ? `${lead.notes ? `${lead.notes}\n` : ''}[${new Date().toLocaleDateString('en-IN')}]: ${notes}`
-                    : lead.notes;
-
-                const { error } = await supabaseAdmin
-                    .from('leads')
-                    .update({ pipeline_stage: newStage, notes: updatedNotes })
-                    .eq('id', lead.id);
-
-                if (error) return { success: false, error: error.message };
-                return { success: true, leadId: lead.id, leadName: lead.name, newStage, message: `Lead '${lead.name}' moved to stage '${newStage}'.` };
+            execute: async () => {
+                return readOnlyRefusal;
             }
         }),
 
@@ -1045,7 +1023,7 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
                 const { data: leads } = await supabaseAdmin
                     .from('leads')
                     .select('id, name, phone, email, pipeline_stage, assigned_to, created_at')
-                    .eq('user_id', userId)
+                    .or(`user_id.in.(${orgUserIds.join(',')}),assigned_to.in.(${orgUserIds.join(',')})`)
                     .ilike('pipeline_stage', `%${stageName}%`)
                     .limit(limit);
                 return leads || [];
@@ -1053,7 +1031,7 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
         }),
 
         add_crm_lead: tool({
-            description: "Adds a new lead directly into the CRM with name, phone, email, notes, and optional agent assignment.",
+            description: "Adds a new lead into the CRM (BLOCKED: Read-only access enforced).",
             inputSchema: z.object({
                 name: z.string().describe("Lead full name"),
                 phone: z.string().describe("Lead phone number"),
@@ -1061,38 +1039,10 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
                 pipeline_stage: z.string().default('New'),
                 budget: z.string().optional(),
                 notes: z.string().optional(),
-                assignToMemberNameOrId: z.string().optional().describe("Optional team member to assign this lead to")
+                assignToMemberNameOrId: z.string().optional()
             }),
-            execute: async ({ name, phone, email, pipeline_stage, budget, notes, assignToMemberNameOrId }) => {
-                let assignedToId: string | null = null;
-                if (assignToMemberNameOrId) {
-                    const { data: members } = await supabaseAdmin
-                        .from('profiles')
-                        .select('id')
-                        .or(`parent_id.eq.${userId},agency_id.eq.${userId}`)
-                        .or(`full_name.ilike.%${assignToMemberNameOrId}%,business_name.ilike.%${assignToMemberNameOrId}%,email.ilike.%${assignToMemberNameOrId}%,id.eq.${assignToMemberNameOrId}`)
-                        .limit(1);
-                    if (members && members.length > 0) assignedToId = members[0].id;
-                }
-
-                const { data: newLead, error } = await supabaseAdmin
-                    .from('leads')
-                    .insert({
-                        user_id: userId,
-                        name,
-                        phone,
-                        email: email || null,
-                        pipeline_stage: pipeline_stage || 'New',
-                        budget: budget || null,
-                        notes: notes || null,
-                        assigned_to: assignedToId,
-                        source: 'WhatsApp Assistant'
-                    })
-                    .select('id, name, phone, pipeline_stage')
-                    .single();
-
-                if (error) return { success: false, error: error.message };
-                return { success: true, lead: newLead, message: `Lead '${name}' (${phone}) added to CRM in stage '${pipeline_stage}'.` };
+            execute: async () => {
+                return readOnlyRefusal;
             }
         }),
 
@@ -1454,26 +1404,47 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
         }),
 
         get_whatsapp_performance: tool({
-            description: "Get analytics on WhatsApp template messages: delivery counts, and customer responses/replies.",
+            description: "Get analytics on WhatsApp conversations: message counts, customer responses, and active chats.",
             inputSchema: z.object({}),
             execute: async () => {
-                const { data: chatLogs } = await supabaseAdmin
+                const { data: chats } = await supabaseAdmin
                     .from('whatsapp_chats')
-                    .select('id, direction, message_text, created_at')
-                    .eq('user_id', userId)
-                    .order('created_at', { ascending: false })
+                    .select('id, recipient_name, recipient_phone, last_message_text, updated_at')
+                    .in('user_id', orgUserIds)
+                    .order('updated_at', { ascending: false })
                     .limit(200);
 
-                const chats = chatLogs || [];
-                const inbound = chats.filter(c => c.direction === 'inbound');
-                const outbound = chats.filter(c => c.direction === 'outbound');
-                const responseRate = outbound.length > 0 ? ((inbound.length / outbound.length) * 100).toFixed(1) : '0.0';
+                const orgChats = chats || [];
+                const chatIds = orgChats.map(c => c.id);
+
+                let inboundCount = 0;
+                let outboundCount = 0;
+                let recentCustomerReplies: string[] = [];
+
+                if (chatIds.length > 0) {
+                    const { data: messages } = await supabaseAdmin
+                        .from('whatsapp_messages')
+                        .select('direction, message_text, created_at')
+                        .in('chat_id', chatIds.slice(0, 100))
+                        .order('created_at', { ascending: false })
+                        .limit(500);
+
+                    const msgs = messages || [];
+                    const inboundMsgs = msgs.filter(m => m.direction === 'inbound');
+                    inboundCount = inboundMsgs.length;
+                    outboundCount = msgs.filter(m => m.direction === 'outbound').length;
+                    recentCustomerReplies = inboundMsgs.slice(0, 5).map(m => m.message_text).filter(Boolean);
+                }
+
+                const totalConversations = orgChats.length;
+                const responseRate = outboundCount > 0 ? ((inboundCount / outboundCount) * 100).toFixed(1) : '0.0';
 
                 return {
-                    totalTemplatesOutbound: outbound.length,
-                    totalCustomerResponses: inbound.length,
-                    responseRatePercentage: `${responseRate}%`,
-                    sampleRecentReplies: inbound.slice(0, 5).map(i => i.message_text)
+                    totalConversations,
+                    totalInboundMessages: inboundCount,
+                    totalOutboundMessages: outboundCount,
+                    customerResponseRate: `${responseRate}%`,
+                    recentCustomerReplies
                 };
             }
         }),
@@ -1489,7 +1460,7 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
                 let q = supabaseAdmin
                     .from('properties')
                     .select('id, title, price, address, property_type, status, image_url')
-                    .eq('user_id', userId);
+                    .in('user_id', orgUserIds);
                 if (search) q = q.ilike('title', `%${search}%`);
                 const { data } = await q.limit(limit);
                 return data || [];
@@ -1497,67 +1468,28 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
         }),
 
         add_inventory_item: tool({
-            description: "Adds a new property or product listing to the inventory catalog.",
+            description: "Adds a new property or product listing to the inventory catalog (BLOCKED: Read-only access enforced).",
             inputSchema: z.object({
-                title: z.string().describe("Property title e.g. '3BHK Luxury Apartment, Aerocity'"),
-                price: z.string().describe("Price or price range e.g. '₹85 Lakhs'"),
-                address: z.string().describe("Location or locality e.g. 'Sector 54, Gurgaon'"),
+                title: z.string().describe("Property title"),
+                price: z.string().describe("Price or price range"),
+                address: z.string().describe("Location"),
                 property_type: z.string().default('Generic'),
                 description: z.string().optional(),
                 image_urls: z.array(z.string()).optional()
             }),
-            execute: async ({ title, price, address, property_type, description, image_urls }) => {
-                const images = image_urls || (mediaUrl ? [mediaUrl] : []);
-                const { data: newProp, error } = await supabaseAdmin
-                    .from('properties')
-                    .insert({
-                        user_id: userId,
-                        title,
-                        price,
-                        address,
-                        property_type: property_type || 'Generic',
-                        description: description || '',
-                        image_url: images[0] || '',
-                        images: images,
-                        status: 'Active',
-                        show_on_landing_page: true
-                    })
-                    .select('id, title, price, address')
-                    .single();
-
-                if (error) return { success: false, error: error.message };
-                return { success: true, property: newProp, message: `Property '${title}' successfully added to inventory.` };
+            execute: async () => {
+                return readOnlyRefusal;
             }
         }),
 
         attach_image_to_inventory: tool({
-            description: "Attaches a photo/image to an existing property in the catalog.",
+            description: "Attaches photo/creative to property inventory (BLOCKED: Read-only access enforced).",
             inputSchema: z.object({
-                property_id: z.string().optional().describe("UUID of property"),
-                property_title: z.string().optional().describe("Title or search term of property"),
-                image_url: z.string().optional().describe("Image URL to attach. Defaults to current message attachment")
+                propertyIdOrTitle: z.string(),
+                imageUrl: z.string().optional()
             }),
-            execute: async ({ property_id, property_title, image_url }) => {
-                const targetImageUrl = image_url || mediaUrl;
-                if (!targetImageUrl) return { success: false, error: "No image attachment or URL available." };
-
-                let targetId = property_id;
-                if (!targetId) {
-                    let q = supabaseAdmin.from('properties').select('id, title, images').eq('user_id', userId);
-                    if (property_title) q = q.ilike('title', `%${property_title}%`);
-                    else q = q.order('created_at', { ascending: false });
-                    const { data: matched } = await q.limit(1);
-                    if (matched && matched.length > 0) targetId = matched[0].id;
-                }
-
-                if (!targetId) return { success: false, error: "No matching property found in catalog." };
-
-                const { data: currProp } = await supabaseAdmin.from('properties').select('images').eq('id', targetId).single();
-                const existingImages: string[] = Array.isArray(currProp?.images) ? [...currProp.images] : [];
-                if (!existingImages.includes(targetImageUrl)) existingImages.push(targetImageUrl);
-
-                await supabaseAdmin.from('properties').update({ image_url: targetImageUrl, images: existingImages }).eq('id', targetId);
-                return { success: true, message: `Successfully attached photo to property.` };
+            execute: async () => {
+                return readOnlyRefusal;
             }
         }),
 
@@ -1664,44 +1596,26 @@ ${learnings.length > 0 ? learnings.join('\n') : 'No previous corrections logged.
         }),
 
         execute_self_healing: tool({
-            description: "Executes an autonomous self-healing remediation action for a confirmed operational anomaly.",
+            description: "Executes an autonomous self-healing remediation action (BLOCKED: Read-only access enforced).",
             inputSchema: z.object({
                 actionType: z.enum(['PAUSE_AND_REQUEUE_CALLS', 'DISABLE_CALLING_POLICY', 'RESET_LEAD_QUEUE', 'ENABLE_CALLING_POLICY']),
                 reason: z.string()
             }),
-            execute: async ({ actionType, reason }) => {
-                if (actionType === 'PAUSE_AND_REQUEUE_CALLS') {
-                    await supabaseAdmin.from('agent_policies').upsert({ user_id: userId, calling_enabled: false }, { onConflict: 'user_id' });
-                    return { success: true, message: 'Calling paused and leads restored to queue.' };
-                }
-                if (actionType === 'ENABLE_CALLING_POLICY') {
-                    await supabaseAdmin.from('agent_policies').upsert({ user_id: userId, calling_enabled: true }, { onConflict: 'user_id' });
-                    return { success: true, message: 'Calling policy re-enabled.' };
-                }
-                return { success: true, message: `Remediation action '${actionType}' executed.` };
+            execute: async () => {
+                return readOnlyRefusal;
             }
         }),
 
         update_agent_policy: tool({
-            description: "Update autonomous agent policies such as calling enabled/disabled, contact intensity, or calling hours.",
+            description: "Update autonomous agent policies (BLOCKED: Read-only access enforced).",
             inputSchema: z.object({
                 callingEnabled: z.boolean().optional(),
                 contactIntensity: z.enum(['low', 'medium', 'high']).optional(),
                 businessHoursStart: z.string().optional(),
                 businessHoursEnd: z.string().optional()
             }),
-            execute: async (updates) => {
-                const dbUpdates: Record<string, any> = { user_id: userId, updated_at: new Date().toISOString() };
-                if (updates.callingEnabled !== undefined) dbUpdates.calling_enabled = updates.callingEnabled;
-                if (updates.contactIntensity) dbUpdates.contact_intensity = updates.contactIntensity;
-                if (updates.businessHoursStart) dbUpdates.business_hours_start = updates.businessHoursStart;
-                if (updates.businessHoursEnd) dbUpdates.business_hours_end = updates.businessHoursEnd;
-
-                const { error } = await supabaseAdmin
-                    .from('agent_policies')
-                    .upsert(dbUpdates, { onConflict: 'user_id' });
-                if (error) return { success: false, error: error.message };
-                return { success: true, updated: dbUpdates };
+            execute: async () => {
+                return readOnlyRefusal;
             }
         })
     };

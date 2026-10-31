@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900" role="img" aria-label="Map placeholder">
+  <rect width="1200" height="900" fill="#EDEAE3"/>
+  <g stroke="#DAD4C8" stroke-width="2">
+    <line x1="0" y1="0" x2="1200" y2="-60"/><line x1="0" y1="52" x2="1200" y2="-8"/><line x1="0" y1="104" x2="1200" y2="44"/><line x1="0" y1="156" x2="1200" y2="96"/><line x1="0" y1="208" x2="1200" y2="148"/><line x1="0" y1="260" x2="1200" y2="200"/><line x1="0" y1="312" x2="1200" y2="252"/><line x1="0" y1="364" x2="1200" y2="304"/><line x1="0" y1="416" x2="1200" y2="356"/><line x1="0" y1="468" x2="1200" y2="408"/><line x1="0" y1="520" x2="1200" y2="460"/><line x1="0" y1="572" x2="1200" y2="512"/><line x1="0" y1="624" x2="1200" y2="564"/><line x1="0" y1="676" x2="1200" y2="616"/><line x1="0" y1="728" x2="1200" y2="668"/><line x1="0" y1="780" x2="1200" y2="720"/><line x1="0" y1="832" x2="1200" y2="772"/><line x1="0" y1="884" x2="1200" y2="824"/>
+    <line x1="0" y1="0" x2="70" y2="900"/><line x1="96" y1="0" x2="166" y2="900"/><line x1="192" y1="0" x2="262" y2="900"/><line x1="288" y1="0" x2="358" y2="900"/><line x1="384" y1="0" x2="454" y2="900"/><line x1="480" y1="0" x2="550" y2="900"/><line x1="576" y1="0" x2="646" y2="900"/><line x1="672" y1="0" x2="742" y2="900"/><line x1="768" y1="0" x2="838" y2="900"/><line x1="864" y1="0" x2="934" y2="900"/><line x1="960" y1="0" x2="1030" y2="900"/><line x1="1056" y1="0" x2="1126" y2="900"/><line x1="1152" y1="0" x2="1222" y2="900"/><line x1="1248" y1="0" x2="1318" y2="900"/>
+  </g>
+  <path d="M-40 520 C 220 470 380 640 640 560 S 1020 420 1260 470" stroke="#BFD7D0" stroke-width="26" fill="none" opacity="0.85"/>
+  <path d="M180 -40 C 240 260 140 420 320 640 S 420 820 380 960" stroke="#FFFFFF" stroke-width="18" fill="none"/>
+  <path d="M-40 250 C 300 210 520 320 860 240 S 1120 180 1260 200" stroke="#FFFFFF" stroke-width="14" fill="none"/>
+  <g fill="#C9C2B3" opacity="0.9">
+    <rect x="600" y="600" width="120" height="80" rx="6"/>
+    <rect x="760" y="640" width="90" height="70" rx="6"/>
+    <rect x="480" y="380" width="110" height="90" rx="6"/>
+  </g>
+  <g>
+    <circle cx="640" cy="470" r="17" fill="#0E5B4E"/>
+    <circle cx="640" cy="470" r="5" fill="#FBF9F6"/>
+    <circle cx="430" cy="300" r="11" fill="#C79A4B"/>
+    <circle cx="820" cy="560" r="11" fill="#C79A4B"/>
+    <circle cx="300" cy="640" r="11" fill="#C79A4B"/>
+  </g>
+</svg>

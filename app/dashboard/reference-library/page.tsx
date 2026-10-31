@@ -101,7 +101,7 @@ export default function ReferenceLibraryPage() {
         setTargetUserId(tUserId)
 
         // Setup caching key
-        const cacheKey = `ref_library_cache_${tUserId}_${userRole === 'super_admin' && !impersonateId ? 'global' : 'user'}`;
+        const cacheKey = `ref_library_cache_v3_${tUserId}_${userRole === 'super_admin' && !impersonateId ? 'global' : 'all'}`;
         const cached = force ? [] : getLocalCache<ReferenceCreative>(cacheKey);
 
         if (cached.length > 0 && referenceCreatives.length === 0) {
@@ -124,7 +124,7 @@ export default function ReferenceLibraryPage() {
         if (userRole === 'super_admin' && !impersonateId) {
           query = query.is('user_id', null)
         } else {
-          query = query.eq('user_id', tUserId)
+          query = query.or(`user_id.eq.${tUserId},user_id.is.null`)
         }
 
         const { data: refs, error } = await query.order('created_at', { ascending: false })

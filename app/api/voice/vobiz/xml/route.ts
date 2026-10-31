@@ -149,8 +149,8 @@ async function handleRequest(req: Request) {
             appUrl = 'https://app.nobogent.com'
         }
 
-        let authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
-        let authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+        let authId = searchParams.get('vobizAuthId') || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+        let authToken = searchParams.get('vobizAuthToken') || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
 
         let prof: any = null;
         try {
@@ -161,8 +161,8 @@ async function handleRequest(req: Request) {
                 .maybeSingle();
             prof = fetchedProf;
             const bi = typeof prof?.business_info === 'string' ? JSON.parse(prof.business_info) : (prof?.business_info || {});
-            authId = bi?.voice_vobiz_auth_id || bi?.kyc_data?.vobizSubAuthId || authId;
-            authToken = bi?.voice_vobiz_auth_token || authToken;
+            if (!searchParams.get('vobizAuthId')) { authId = bi?.voice_vobiz_auth_id || bi?.kyc_data?.vobizSubAuthId || authId; }
+            if (!searchParams.get('vobizAuthToken')) { authToken = bi?.voice_vobiz_auth_token || authToken; }
         } catch (pErr) {}
 
         let voiceName = searchParams.get('voiceName') || prof?.voice_name || 'Aoede'
@@ -180,6 +180,43 @@ async function handleRequest(req: Request) {
         }
 
         const bridgeHost = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'
+        const isAgentCall = searchParams.get('isAgentCall') === 'true'
+        const agentSessionId = searchParams.get('sessionId')
+
+        if (isAgentCall && agentSessionId) {
+            const agentWsUrl = `${bridgeHost}/agent-bridge?sessionId=${encodeURIComponent(agentSessionId)}&role=vobiz${leadId ? `&leadId=${encodeURIComponent(leadId)}` : ''}`
+            const escapedWsUrl = agentWsUrl.replace(/&/g, '&amp;')
+            const recordCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?isAgentCall=true&sessionId=${encodeURIComponent(agentSessionId)}&leadId=${encodeURIComponent(leadId || '')}&event=recording`
+
+            if (callUuid) {
+                console.log(`[VOBIZ XML] Triggering background REST recording for Agent Call ${callUuid} (auth: ${authId}, session: ${agentSessionId})...`);
+                fetch(`https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/Record/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Auth-ID': authId,
+                        'X-Auth-Token': authToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        file_format: 'mp3',
+                        time_limit: 1800,
+                        callback_url: recordCallbackUrl,
+                        callback_method: 'POST'
+                    })
+                }).catch(e => console.warn(`[VOBIZ XML] Agent Call Record trigger warning:`, e.message));
+            }
+
+            const agentXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Stream bidirectional="true" keepCallAlive="true" streamTimeout="7200" contentType="audio/x-l16;rate=16000">${escapedWsUrl}</Stream>
+</Response>`
+
+            console.log(`[VOBIZ XML] Returning Agent Stream XML for session ${agentSessionId}:\n${agentXml}`)
+            return new NextResponse(agentXml, {
+                headers: { 'Content-Type': 'application/xml; charset=utf-8' }
+            })
+        }
+
         const statusCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}`
         const recordCallbackUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}&event=recording`
         const wsStreamUrl = `${bridgeHost}/gemini-live-stream?leadId=${leadId}&profileId=${effectiveProfileId}${effectiveCampaignId ? `&campaignId=${effectiveCampaignId}` : ''}&telephony=vobiz${isInbound ? '&inbound=true' : ''}${callUuid ? `&callUuid=${callUuid}` : ''}&voiceName=${encodeURIComponent(voiceName)}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`

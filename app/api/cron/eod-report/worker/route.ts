@@ -57,8 +57,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    if (profile.enable_eod_report === false || !profile.email) {
-      return NextResponse.json({ message: 'EOD report is disabled or email is missing' })
+    if (profile.enable_eod_report === false) {
+      return NextResponse.json({ message: 'EOD report is disabled for this profile' })
     }
 
     const startOfToday = new Date(Date.now() - 24 * 60 * 60 * 1000)
@@ -271,14 +271,18 @@ export async function POST(request: Request) {
       </div>
     `
 
-    // Dispatch daily EOD email
-    const { resolveNotificationRecipients } = await import('@/utils/email-helper')
-    const { toEmail, bccEmail } = resolveNotificationRecipients(profile)
-    const emailResult = await sendDailyEodReportEmail(toEmail || profile.email, businessName, emailHtml, bccEmail)
+    // Dispatch daily EOD email (only if email exists)
+    let emailResult = { success: false }
+    if (profile.email) {
+      const { resolveNotificationRecipients } = await import('@/utils/email-helper')
+      const { toEmail, bccEmail } = resolveNotificationRecipients(profile)
+      emailResult = await sendDailyEodReportEmail(toEmail || profile.email, businessName, emailHtml, bccEmail)
+      console.log(`[EOD Report Worker] EOD email status for ${toEmail || profile.email} (BCC: ${bccEmail || 'none'}): success=${emailResult.success}`)
+    } else {
+      console.log(`[EOD Report Worker] No email for profile ${profileId}, skipping email dispatch.`)
+    }
     
-    console.log(`[EOD Report Worker] EOD email status for ${toEmail || profile.email} (BCC: ${bccEmail || 'none'}): success=${emailResult.success}`)
-    
-    // Dispatch Push Notification & WhatsApp Free-form Text Message to Admin
+    // Dispatch Push Notification & WhatsApp Free-form Text Message via multi-channel
     try {
       const { sendAdminMultiChannelNotification } = await import('@/utils/notification-helper')
       const todayFormatted = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium' })
@@ -292,6 +296,168 @@ export async function POST(request: Request) {
       })
     } catch (notifErr: any) {
       console.error(`[EOD Report Worker] Failed to send multi-channel Push/WhatsApp notification:`, notifErr)
+    }
+
+    // ===================================================================
+    // EOD REPORT VIA WHATSAPP FROM CLIENT'S OWN WABA
+    // This is the second daily WhatsApp notification — sent at 7 PM IST
+    // from the client's own WABA phone number to admin's personal number.
+    // ===================================================================
+    try {
+      const clientWabaToken = profile.whatsapp_access_token || profile.facebook_token
+      const clientWabaPhoneId = profile.whatsapp_phone_number_id
+      const adminPhone = profile.whatsapp_personal_number || profile.contact_number
+
+      if (clientWabaToken && clientWabaPhoneId && adminPhone) {
+        let cleanAdminPhone = (adminPhone || '').replace(/\D/g, '')
+        if (cleanAdminPhone.length === 10) {
+          cleanAdminPhone = `91${cleanAdminPhone}`
+        }
+
+        const todayFormatted = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'long' })
+        const currency = profile.currency || 'INR'
+
+        // Build pipeline summary text
+        const pipelineLines = Object.entries(stageCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([stage, count]) => `  • ${stage}: *${count}*`)
+          .join('\n')
+
+        // Build campaign summary text
+        let campaignSummaryText = '_No Meta Ad Account linked._'
+        const facebookToken = profile.facebook_token
+        const adAccountId = profile.ad_account_id
+        if (facebookToken && adAccountId) {
+          try {
+            const cleanAdAccountIdForWa = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`
+            const fbUrlForWa = `https://graph.facebook.com/v19.0/${cleanAdAccountIdForWa}/campaigns?fields=id,name,status,effective_status,insights{spend,actions}&limit=5&access_token=${facebookToken}`
+            const fbResForWa = await fetch(fbUrlForWa)
+            if (fbResForWa.ok) {
+              const fbDataForWa = await fbResForWa.json()
+              if (fbDataForWa.data && Array.isArray(fbDataForWa.data) && fbDataForWa.data.length > 0) {
+                const activeCampaigns = fbDataForWa.data.filter((c: any) => (c.effective_status || c.status) === 'ACTIVE')
+                const totalSpend = fbDataForWa.data.reduce((sum: number, c: any) => {
+                  const spend = parseFloat(c.insights?.data?.[0]?.spend || '0')
+                  return sum + spend
+                }, 0)
+                const totalResults = fbDataForWa.data.reduce((sum: number, c: any) => {
+                  const results = parseInt(c.insights?.data?.[0]?.actions?.[0]?.value || '0', 10)
+                  return sum + results
+                }, 0)
+                campaignSummaryText = `  • Active Campaigns: *${activeCampaigns.length}*\n  • Total Spend: *${currency === 'INR' ? '₹' : '$'}${totalSpend.toFixed(2)}*\n  • Total Results: *${totalResults} leads*`
+              } else {
+                campaignSummaryText = '_No active campaigns running._'
+              }
+            }
+          } catch (campaignErr) {
+            console.warn('[EOD Report Worker] Campaign summary for WhatsApp failed:', campaignErr)
+          }
+        }
+
+        // Compose the full EOD WhatsApp report message
+        const eodWhatsAppText = `📊 *End-of-Day Operations Report*
+━━━━━━━━━━━━━━━━━━
+🏢 *${businessName}*
+📅 ${todayFormatted}
+━━━━━━━━━━━━━━━━━━
+
+📈 *Today's Key Metrics*
+
+🟢 *New Leads Captured:* ${leadsToday}
+📋 *Total CRM Leads:* ${totalLeads}
+
+💬 *WhatsApp Activity:*
+  • Messages Today: *${totalWaToday}*
+  • Inbound: *${inboundWaToday}* | Outbound: *${outboundWaToday}*
+
+📞 *AI Voice Calls:* ${callsTodayCount} completed
+
+━━━━━━━━━━━━━━━━━━
+
+📊 *CRM Pipeline Breakdown*
+${pipelineLines || '  _No leads in pipeline yet._'}
+
+━━━━━━━━━━━━━━━━━━
+
+📣 *Ad Campaign Summary*
+${campaignSummaryText}
+
+━━━━━━━━━━━━━━━━━━
+🔗 *Full Dashboard:* https://app.nobogent.com/dashboard
+💡 _Reply to this chat anytime to query your data or run reports!_
+━━━━━━━━━━━━━━━━━━
+_Powered by Nobogent AI_`
+
+        console.log(`[EOD Report Worker] Sending EOD WhatsApp report from client WABA (${clientWabaPhoneId}) to admin ${cleanAdminPhone}...`)
+
+        const eodWaMetaUrl = `https://graph.facebook.com/v20.0/${clientWabaPhoneId}/messages`
+        const eodWaRes = await fetch(eodWaMetaUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${clientWabaToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: cleanAdminPhone,
+            type: 'text',
+            text: { body: eodWhatsAppText }
+          })
+        })
+
+        if (eodWaRes.ok) {
+          console.log(`[EOD Report Worker] ✅ EOD WhatsApp report delivered from client WABA to ${cleanAdminPhone}`)
+        } else {
+          const eodWaErr = await eodWaRes.json().catch(() => ({}))
+          console.warn(`[EOD Report Worker] EOD WhatsApp report failed (${eodWaRes.status}):`, eodWaErr)
+
+          // Fallback: Try sending via a template if free-form fails (24h window closed)
+          try {
+            const templatePayload = {
+              messaging_product: 'whatsapp',
+              to: cleanAdminPhone,
+              type: 'template',
+              template: {
+                name: 'eod_report_notification',
+                language: { code: 'en_US' },
+                components: [
+                  {
+                    type: 'body',
+                    parameters: [
+                      { type: 'text', text: businessName },
+                      { type: 'text', text: `${leadsToday} new leads | ${totalWaToday} WA msgs | ${callsTodayCount} calls` },
+                      { type: 'text', text: 'https://app.nobogent.com/dashboard' }
+                    ]
+                  }
+                ]
+              }
+            }
+
+            const templateRes = await fetch(eodWaMetaUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${clientWabaToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(templatePayload)
+            })
+
+            if (templateRes.ok) {
+              console.log(`[EOD Report Worker] ✅ EOD WhatsApp template fallback delivered to ${cleanAdminPhone}`)
+            } else {
+              console.warn(`[EOD Report Worker] EOD WhatsApp template fallback also failed.`)
+            }
+          } catch (templateErr) {
+            console.warn('[EOD Report Worker] Template fallback exception:', templateErr)
+          }
+        }
+      } else {
+        console.log(`[EOD Report Worker] Client WABA not configured for profile ${profileId}. Skipping EOD WhatsApp from own WABA.`)
+      }
+    } catch (eodWaErr: any) {
+      console.error(`[EOD Report Worker] EOD WhatsApp from client WABA error:`, eodWaErr)
     }
 
     if (emailResult.success) {

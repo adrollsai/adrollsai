@@ -314,11 +314,13 @@ export async function sendAdminMultiChannelNotification({
 
     // Resolve lead source if not explicitly provided
     let resolvedLeadSource = (leadSource || '').trim();
+    let resolvedRecordingUrl: string | null = null;
+    let resolvedCallSummary: string | null = null;
     if (!resolvedLeadSource && leadId) {
       try {
         const { data: dbLead } = await getSupabaseAdmin()
           .from('leads')
-          .select('source, ad_name, form_name, campaign_id')
+          .select('id, name, phone, email, source, ad_name, form_name, campaign_id, budget, booked_time, notes, voice_recording_url, voice_call_summary, voice_call_transcript, voice_call_status, custom_fields')
           .eq('id', leadId)
           .maybeSingle();
         if (dbLead) {
@@ -327,16 +329,44 @@ export async function sendAdminMultiChannelNotification({
             dbLead.ad_name ? `(${dbLead.ad_name})` : (dbLead.form_name ? `(${dbLead.form_name})` : '')
           ].filter(Boolean);
           resolvedLeadSource = parts.join(' ').trim();
+
+          // Resolve AI caller recording URL
+          resolvedRecordingUrl = dbLead.voice_recording_url || null;
+          resolvedCallSummary = dbLead.voice_call_summary || null;
+        }
+
+        // Check call_logs if recording_url not yet on lead
+        if (!resolvedRecordingUrl && leadId) {
+          try {
+            const { data: cLog } = await getSupabaseAdmin()
+              .from('call_logs')
+              .select('recording_url, summary')
+              .eq('lead_id', leadId)
+              .not('recording_url', 'is', null)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (cLog?.recording_url) {
+              resolvedRecordingUrl = cLog.recording_url;
+              if (!resolvedCallSummary && cLog.summary) resolvedCallSummary = cLog.summary;
+            }
+          } catch (clErr) {}
         }
       } catch (lErr) {
         // fallback
       }
     }
 
-    // Ensure notification body contains lead source if available and not yet mentioned
+    // Ensure notification body contains lead source and AI call recording if available
     let enrichedBody = body;
     if (resolvedLeadSource && !/source:/i.test(enrichedBody)) {
       enrichedBody = `${enrichedBody}\n\n📢 Lead Source: ${resolvedLeadSource}`;
+    }
+    if (resolvedRecordingUrl && !/recording/i.test(enrichedBody)) {
+      enrichedBody = `${enrichedBody}\n\n🎙️ AI Call Recording Link:\n${resolvedRecordingUrl}`;
+      if (resolvedCallSummary && !/summary/i.test(enrichedBody)) {
+        enrichedBody = `${enrichedBody}\n📝 Call Summary: ${resolvedCallSummary}`;
+      }
     }
 
     // Fetch owner profile
@@ -549,6 +579,8 @@ export async function sendAdminMultiChannelNotification({
               buttonClicked: 'Interested',
               crmUrl: leadPageUrl,
               chatUrl: leadPageUrl,
+              recordingUrl: resolvedRecordingUrl || undefined,
+              callSummary: resolvedCallSummary || undefined,
               bcc: bccEmail
             });
             console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Interested lead notification email sent to: ${toEmail}`);

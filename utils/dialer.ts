@@ -1,5 +1,3 @@
-'use client'
-
 export function formatCallPhone(phoneRaw: string | null | undefined): string {
   if (!phoneRaw) return ''
   let clean = phoneRaw.trim()

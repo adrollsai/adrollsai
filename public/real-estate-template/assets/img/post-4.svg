@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="Editorial image placeholder">
+  <defs>
+    <linearGradient id="sky-x103" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#33201C"/>
+      <stop offset="0.55" stop-color="#9A5F4C"/>
+      <stop offset="1" stop-color="#060B12"/>
+    </linearGradient>
+    <radialGradient id="sun-x103" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#EFCBA4" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#EFCBA4" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#EFCBA4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-x103" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#F8ECE4" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#F8ECE4" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="vig-x103" x1="0" y1="0.45" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky-x103)"/>
+  <circle cx="1216" cy="234" r="480" fill="url(#sun-x103)"/>
+  <rect x="1133.68" y="152.5" width="321.75" height="440.51" rx="10" fill="#F8ECE4" opacity="0.11" transform="rotate(6.03 1294.55 313.37)"/><rect x="370.34" y="114.9" width="371.75" height="443.97" rx="10" fill="#F8ECE4" opacity="0.11" transform="rotate(-0.9 556.21 300.78)"/><circle cx="647.18" cy="309.42" r="116.39" fill="#F8ECE4" opacity="0.11"/><rect x="393.85" y="108.52" width="388.86" height="492.15" rx="10" fill="#F8ECE4" opacity="0.08" transform="rotate(-4.5 588.28 302.95)"/><path d="M485.67 542.98 q169.77 -141.47 282.95 0 t282.95 0" stroke="#EFCBA4" stroke-opacity="0.31" stroke-width="2.44" fill="none"/>
+  <g opacity="0.2"><rect x="-40" y="687.09" width="105.38" height="212.91" fill="#33201C"/><rect x="73.38" y="684.02" width="58.29" height="215.98" fill="#33201C"/><rect x="139.67" y="817.89" width="156.26" height="82.11" fill="#33201C"/><rect x="303.93" y="635.37" width="76.33" height="264.63" fill="#33201C"/><rect x="388.25" y="653.14" width="117.75" height="246.86" fill="#33201C"/><rect x="514.01" y="617.84" width="135.35" height="282.16" fill="#33201C"/><rect x="657.36" y="826.16" width="112.83" height="73.84" fill="#33201C"/><rect x="778.19" y="834.75" width="96.11" height="65.25" fill="#33201C"/><rect x="882.3" y="690.29" width="86.67" height="209.71" fill="#33201C"/><rect x="976.97" y="629.44" width="134.89" height="270.56" fill="#33201C"/><rect x="1119.86" y="868.87" width="153.35" height="31.13" fill="#33201C"/><rect x="1281.21" y="675.24" width="50.21" height="224.76" fill="#33201C"/><rect x="1339.43" y="765.23" width="62.5" height="134.77" fill="#33201C"/><rect x="1409.93" y="665.49" width="89.49" height="234.51" fill="#33201C"/><rect x="1507.41" y="752.7" width="65.97" height="147.3" fill="#33201C"/><rect x="1581.39" y="603.51" width="55.67" height="296.49" fill="#33201C"/></g>
+  <text x="800" y="468" text-anchor="middle" font-family="Georgia, serif" font-size="99" fill="#F8ECE4" fill-opacity="0.2" letter-spacing="10">BUYING</text>
+  <rect width="1600" height="900" fill="url(#vig-x103)" opacity="0.65"/>
+</svg>

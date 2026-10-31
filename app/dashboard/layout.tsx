@@ -112,7 +112,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           subscriptionStatus = 'expired'
       }
 
-      const isPaid = isWhitelisted || subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro' || subscriptionStatus === 'enterprise'
+      const hasSkippedPaywall = Boolean(
+        userProfile?.client_features?.paywall_skipped === true ||
+        (parentProfile as any)?.client_features?.paywall_skipped === true
+      )
+      const isPaid = isWhitelisted || 
+                     subscriptionStatus === 'active' || 
+                     subscriptionStatus === 'trialing' || 
+                     subscriptionStatus === 'pro' || 
+                     subscriptionStatus === 'enterprise' ||
+                     (subscriptionStatus !== 'expired' && (subscriptionStatus === 'free' || hasSkippedPaywall))
       const isBillingPage = pathname === '/dashboard/billing'
       const isProfilePage = pathname === '/dashboard/profile'
       const isOnboardingPage = pathname === '/dashboard/onboarding'
@@ -255,7 +264,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="flex items-center gap-2 text-xs font-semibold text-amber-900 mx-auto sm:mx-0">
               <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
               <span>
-                <strong>Plan Validity Expired:</strong> Your monthly plan validity has ended. Your account access remains active, but please recharge to keep automated services running smoothly.
+                <strong>Plan Validity Expired:</strong> Your plan has ended. 72-hour grace period active to preserve your dedicated Indian Vobiz caller ID and active campaigns. Please recharge now.
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0 mx-auto sm:mx-0">

@@ -87,26 +87,52 @@ export async function POST(req: Request) {
 
         // --- CASE 1: SUBSCRIPTION PLAN ACTIVATION ---
         if (effectivePlanId) {
+            const isTrial = effectivePlanId === 'trial' || effectivePlanId === '7-days-trial' || Boolean(orderNotes.isTrial);
+            const effectivePaymentType = orderNotes.paymentType || body.paymentType || 'one_time';
+
+            if (isTrial && profile.client_features?.has_purchased_trial) {
+                return NextResponse.json({
+                    success: false,
+                    error: "This 7-day trial package has already been purchased once for this account."
+                }, { status: 400 });
+            }
+
             const planConfig = RAZORPAY_PLANS[effectivePlanId] || 
                                Object.values(RAZORPAY_PLANS).find(p => p.id === effectivePlanId || p.title.toLowerCase().includes(effectivePlanId));
 
             const durationMonths = planConfig?.durationMonths || (orderNotes.durationMonths ? Number(orderNotes.durationMonths) : 1);
-            const creditsToAdd = planConfig?.creditsIncluded || (orderNotes.creditsIncluded ? Number(orderNotes.creditsIncluded) : 10000);
-            const planTitle = planConfig?.title || `Pro Plan (${effectivePlanId})`;
+            const creditsToAdd = planConfig?.creditsIncluded || (orderNotes.creditsIncluded ? Number(orderNotes.creditsIncluded) : (isTrial ? 2500 : 10000));
+            const planTitle = planConfig?.title || (isTrial ? '7-Day Trial Pass' : `Pro Plan (${effectivePlanId})`);
 
             const planValidUntil = new Date();
-            planValidUntil.setMonth(planValidUntil.getMonth() + durationMonths);
+            if (isTrial || planConfig?.durationDays) {
+                const days = planConfig?.durationDays || 7;
+                planValidUntil.setDate(planValidUntil.getDate() + days);
+            } else {
+                planValidUntil.setMonth(planValidUntil.getMonth() + durationMonths);
+            }
 
             const newCredits = currentCredits + creditsToAdd;
+
+            const updatedClientFeatures = {
+                ...(profile.client_features || {}),
+                payment_type: effectivePaymentType,
+                is_recurring: effectivePaymentType === 'recurring',
+                ...(isTrial ? {
+                    has_purchased_trial: true,
+                    trial_purchased_at: new Date().toISOString()
+                } : {})
+            };
 
             const { error: updateErr } = await supabaseAdmin
                 .from('profiles')
                 .update({
-                    subscription_plan: effectivePlanId,
-                    subscription_status: 'active',
+                    subscription_plan: isTrial ? 'trial' : effectivePlanId,
+                    subscription_status: isTrial ? 'trialing' : 'active',
                     subscription_id: razorpay_payment_id,
                     subscription_valid_until: planValidUntil.toISOString(),
-                    credits: newCredits
+                    credits: newCredits,
+                    client_features: updatedClientFeatures
                 })
                 .eq('id', user.id);
 
@@ -120,8 +146,8 @@ export async function POST(req: Request) {
                 await supabaseAdmin.from('credit_transactions').insert({
                     user_id: user.id,
                     amount: creditsToAdd,
-                    category: 'subscription',
-                    description: `Activated ${planTitle} (Razorpay #${razorpay_payment_id.slice(-6)})`
+                    category: isTrial ? 'trial' : 'subscription',
+                    description: `Activated ${planTitle} (${effectivePaymentType === 'recurring' ? 'Recurring' : 'One-Time'}) (Razorpay #${razorpay_payment_id.slice(-6)})`
                 });
             }
 
@@ -130,10 +156,12 @@ export async function POST(req: Request) {
             return NextResponse.json({
                 success: true,
                 message: `Successfully activated ${planTitle}!`,
-                plan: effectivePlanId,
+                plan: isTrial ? 'trial' : effectivePlanId,
                 credits: newCredits,
                 validUntil: planValidUntil.toISOString(),
-                paymentId: razorpay_payment_id
+                paymentId: razorpay_payment_id,
+                paymentType: effectivePaymentType,
+                isTrial: isTrial
             });
         }
 

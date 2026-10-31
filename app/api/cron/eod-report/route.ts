@@ -37,16 +37,16 @@ async function handleEodReportDispatcher(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all main profiles with active email addresses (ignore agent roles)
+    // Fetch all main profiles with active email or phone numbers (ignore agent roles)
     const { data: profiles, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, enable_eod_report, role')
+      .select('id, email, whatsapp_personal_number, contact_number, enable_eod_report, role')
       .neq('role', 'agent')
 
     if (profileError) throw profileError
 
-    // Filter profiles that have email and haven't explicitly disabled the EOD report
-    const activeProfiles = profiles?.filter(p => p.email && p.enable_eod_report !== false) || []
+    // Filter profiles that haven't explicitly disabled the EOD report
+    const activeProfiles = profiles?.filter(p => (p.email || p.whatsapp_personal_number || p.contact_number) && p.enable_eod_report !== false) || []
 
     if (activeProfiles.length === 0) {
       return NextResponse.json({ success: true, processedCount: 0, message: 'No profiles scheduled for EOD report.' })
@@ -54,14 +54,29 @@ async function handleEodReportDispatcher(request: Request) {
 
     console.log(`[EOD Report Dispatcher] Queueing reports for ${activeProfiles.length} profiles...`)
 
-    const qstashToken = process.env.QSTASH_TOKEN
-    if (!qstashToken) {
-      console.error('[EOD Report Dispatcher] QSTASH_TOKEN environment variable is not configured.')
-      return NextResponse.json({ error: 'QStash not configured' }, { status: 500 })
-    }
-
-    // Construct the destination worker URL dynamically
     const workerUrl = `${url.origin}/api/cron/eod-report/worker`
+    const qstashToken = process.env.QSTASH_TOKEN
+
+    if (!qstashToken) {
+      console.warn('[EOD Report Dispatcher] QSTASH_TOKEN not configured. Processing profiles inline/locally...')
+      const inlineResults = []
+      for (const prof of activeProfiles) {
+        try {
+          const res = await fetch(workerUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.CRON_SECRET || ''}`
+            },
+            body: JSON.stringify({ id: prof.id })
+          })
+          inlineResults.push({ id: prof.id, status: res.status })
+        } catch (err: any) {
+          console.error(`[EOD Report Dispatcher] Inline dispatch error for ${prof.id}:`, err.message)
+        }
+      }
+      return NextResponse.json({ success: true, processedCount: inlineResults.length, inline: true })
+    }
     const publishPromises = activeProfiles.map(async (prof) => {
       const qstashPublishUrl = `https://qstash.upstash.io/v2/publish/${workerUrl}`;
       

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="Editorial image placeholder">
+  <defs>
+    <linearGradient id="sky-x74" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#0A1F1A"/>
+      <stop offset="0.55" stop-color="#3F6A4F"/>
+      <stop offset="1" stop-color="#060B12"/>
+    </linearGradient>
+    <radialGradient id="sun-x74" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#DCC48B" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#DCC48B" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#DCC48B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-x74" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#EAF3EC" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#EAF3EC" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="vig-x74" x1="0" y1="0.45" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky-x74)"/>
+  <circle cx="1216" cy="234" r="480" fill="url(#sun-x74)"/>
+  <rect x="806.7" y="479.28" width="372.24" height="381.96" rx="10" fill="#EAF3EC" opacity="0.11" transform="rotate(-2.79 992.82 665.4)"/><circle cx="653.17" cy="648.76" r="87.83" fill="#EAF3EC" opacity="0.09"/><circle cx="977.48" cy="364.24" r="155.01" fill="#EAF3EC" opacity="0.07"/><rect x="959.64" y="225.86" width="177.95" height="135.29" rx="10" fill="#EAF3EC" opacity="0.07" transform="rotate(9.43 1048.62 314.83)"/>
+  <g opacity="0.2"><rect x="-40" y="740.8" width="118.89" height="159.2" fill="#0A1F1A"/><rect x="86.89" y="788.42" width="155.19" height="111.58" fill="#0A1F1A"/><rect x="250.07" y="609.66" width="93.59" height="290.34" fill="#0A1F1A"/><rect x="351.67" y="721.17" width="113.35" height="178.83" fill="#0A1F1A"/><rect x="473.02" y="869.62" width="69.28" height="30.38" fill="#0A1F1A"/><rect x="550.3" y="811.69" width="65.09" height="88.31" fill="#0A1F1A"/><rect x="623.4" y="644.03" width="146.71" height="255.97" fill="#0A1F1A"/><rect x="778.1" y="683.32" width="75.6" height="216.68" fill="#0A1F1A"/><rect x="861.7" y="626.22" width="142.15" height="273.78" fill="#0A1F1A"/><rect x="1011.86" y="689.4" width="138.95" height="210.6" fill="#0A1F1A"/><rect x="1158.81" y="679.53" width="94.14" height="220.47" fill="#0A1F1A"/><rect x="1260.95" y="773.26" width="124.77" height="126.74" fill="#0A1F1A"/><rect x="1393.72" y="767.27" width="130.08" height="132.73" fill="#0A1F1A"/><rect x="1531.8" y="768.23" width="44.9" height="131.77" fill="#0A1F1A"/><rect x="1584.7" y="622.79" width="52.94" height="277.21" fill="#0A1F1A"/></g>
+  <text x="800" y="468" text-anchor="middle" font-family="Georgia, serif" font-size="99" fill="#EAF3EC" fill-opacity="0.2" letter-spacing="10">TEAM</text>
+  <rect width="1600" height="900" fill="url(#vig-x74)" opacity="0.65"/>
+</svg>

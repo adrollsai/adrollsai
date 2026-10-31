@@ -15,6 +15,12 @@ import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
 import { processOwnerMessage, transcribeVoiceNote } from '@/lib/agent/owner-orchestrator'
+import {
+  handleCreativeApproval,
+  handleCreativeEditRequest,
+  handleCreativeRevisionSubmission,
+  getActiveEditingAsset
+} from '@/utils/creative-approval-handler'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -489,35 +495,64 @@ export async function POST(request: Request) {
                         const masterPhoneId = process.env.DEV_WHATSAPP_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || '';
                         const isMessageToOfficialBot = !wabaPhoneId || (masterPhoneId && wabaPhoneId === masterPhoneId);
                         
-                        // Look up matched profile by personal notification number (filtered by phone digits to avoid slow full-table scan)
-                        const { data: profiles } = cleanFromDigits ? await supabaseAdmin
-                            .from('profiles')
-                            .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, selected_page_id, currency, custom_domain')
-                            .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%,whatsapp_phone_number.ilike.%${cleanFromDigits}%`)
-                            : { data: [] };
-                            
-                        const matchedProfile = profiles?.find((p: any) => {
-                            const candidatePhones = [p.whatsapp_personal_number, p.contact_number, p.whatsapp_phone_number].filter(Boolean);
-                            const phoneMatch = candidatePhones.some((raw: string) => {
-                                const clean = (raw || '').replace(/\D/g, '');
-                                if (!clean) return false;
-                                const digits = clean.slice(-10);
-                                return clean === cleanFrom || (digits.length === 10 && cleanFromDigits === digits);
+                        let matchedProfile: any = null;
+
+                        // Case A: Message arrived at an organization's own WABA
+                        if (wabaPhoneId && !isMessageToOfficialBot) {
+                            // Find the organization profile that owns this WABA
+                            const { data: orgProfile } = await supabaseAdmin
+                                .from('profiles')
+                                .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, selected_page_id, currency, custom_domain')
+                                .eq('whatsapp_phone_number_id', wabaPhoneId)
+                                .maybeSingle();
+
+                            if (orgProfile) {
+                                // Fetch all registered team members / admins under this organization
+                                const { data: teamProfiles } = await supabaseAdmin
+                                    .from('profiles')
+                                    .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, selected_page_id, currency, custom_domain')
+                                    .or(`parent_id.eq.${orgProfile.id},agency_id.eq.${orgProfile.id}`);
+
+                                const candidateProfiles = [orgProfile, ...(teamProfiles || [])];
+
+                                // Match against normalized phone digits
+                                const matched = candidateProfiles.find((p: any) => {
+                                    const candidatePhones = [p.whatsapp_personal_number, p.contact_number, p.whatsapp_phone_number].filter(Boolean);
+                                    return candidatePhones.some((raw: string) => {
+                                        const clean = (raw || '').replace(/\D/g, '');
+                                        const digits = clean.slice(-10);
+                                        return clean === cleanFrom || (digits.length === 10 && cleanFromDigits === digits);
+                                    });
+                                });
+
+                                if (matched) {
+                                    matchedProfile = {
+                                        ...matched,
+                                        whatsapp_access_token: matched.whatsapp_access_token || orgProfile.whatsapp_access_token,
+                                        whatsapp_phone_number_id: matched.whatsapp_phone_number_id || orgProfile.whatsapp_phone_number_id || wabaPhoneId,
+                                        facebook_token: matched.facebook_token || orgProfile.facebook_token
+                                    };
+                                }
+                            }
+                        }
+
+                        // Case B: Message arrived at Official Nobogent Master Bot (or fallback lookup)
+                        if (!matchedProfile && isMessageToOfficialBot) {
+                            const { data: profiles } = cleanFromDigits ? await supabaseAdmin
+                                .from('profiles')
+                                .select('id, role, parent_id, agency_id, business_name, address, business_info, contact_number, whatsapp_phone_number, whatsapp_personal_number, whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, facebook_token, ad_account_id, selected_page_id, currency, custom_domain')
+                                .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%,whatsapp_phone_number.ilike.%${cleanFromDigits}%`)
+                                : { data: [] };
+
+                            matchedProfile = profiles?.find((p: any) => {
+                                const candidatePhones = [p.whatsapp_personal_number, p.contact_number, p.whatsapp_phone_number].filter(Boolean);
+                                return candidatePhones.some((raw: string) => {
+                                    const clean = (raw || '').replace(/\D/g, '');
+                                    const digits = clean.slice(-10);
+                                    return clean === cleanFrom || (digits.length === 10 && cleanFromDigits === digits);
+                                });
                             });
-                                                
-                            if (!phoneMatch) return false;
-
-                            // If message arrived at Official Nobogent Master Bot, ANY registered personal number is valid!
-                            if (isMessageToOfficialBot) {
-                                return true;
-                            }
-
-                            // If message arrived at a specific agency WABA, match if it's their WABA
-                            if (wabaPhoneId && p.whatsapp_phone_number_id) {
-                                return p.whatsapp_phone_number_id === wabaPhoneId;
-                            }
-                            return true;
-                        });
+                        }
                         
                         if (matchedProfile) {
                             console.log(`🤖 MATCHED PROFILE: ${matchedProfile.business_name} (User: ${matchedProfile.id})`);
@@ -773,6 +808,54 @@ export async function POST(request: Request) {
                                         console.error("❌ Failed to log owner message to DB:", dbErr);
                                     }
                                     
+                                    // =========================================================================
+                                    // NOBOGENT WABA DAILY CREATIVE APPROVE / EDIT / REVISION FLOW
+                                    // =========================================================================
+                                    const isApproveButtonClick = buttonReplyId?.startsWith('approve_creative_');
+                                    const isEditButtonClick = buttonReplyId?.startsWith('edit_creative_');
+                                    const trimmedMsg = (messageText || '').trim();
+                                    const isApproveText = /^(approve|approved|approve creative|approve and post|publish|publish creative)$/i.test(trimmedMsg);
+                                    const isEditText = /^(edit|edit creative|revise|make changes|change creative)$/i.test(trimmedMsg);
+
+                                    if (isApproveButtonClick || isApproveText) {
+                                        const assetIdFromBtn = isApproveButtonClick ? buttonReplyId.replace('approve_creative_', '') : null;
+                                        console.log(`[Facebook Webhook] Daily Creative APPROVE triggered for owner ${matchedProfile.id}, asset: ${assetIdFromBtn || 'latest'}`);
+                                        await handleCreativeApproval({
+                                            userId: matchedProfile.id,
+                                            assetId: assetIdFromBtn,
+                                            fromPhone: cleanFrom,
+                                            matchedProfile
+                                        });
+                                        return;
+                                    }
+
+                                    if (isEditButtonClick || isEditText) {
+                                        const assetIdFromBtn = isEditButtonClick ? buttonReplyId.replace('edit_creative_', '') : null;
+                                        console.log(`[Facebook Webhook] Daily Creative EDIT requested for owner ${matchedProfile.id}, asset: ${assetIdFromBtn || 'latest'}`);
+                                        await handleCreativeEditRequest({
+                                            userId: matchedProfile.id,
+                                            assetId: assetIdFromBtn,
+                                            fromPhone: cleanFrom
+                                        });
+                                        return;
+                                    }
+
+                                    // Check if user has an asset actively in 'editing' status or if message contains creative revision keywords
+                                    const activeEditingAsset = await getActiveEditingAsset(matchedProfile.id);
+                                    const hasExplicitCreativeModificationWords = /\b(change|modify|update|rewrite)\b.*\b(caption|headline|text|image|graphic|creative|copy|photo)\b/i.test(messageText || '')
+                                        || /\b(make.*headline|make.*caption|make.*image|change.*headline|change.*caption|change.*image)\b/i.test(messageText || '');
+
+                                    if (activeEditingAsset || (hasExplicitCreativeModificationWords && !trimmedMsg.toLowerCase().startsWith('what') && !trimmedMsg.toLowerCase().startsWith('how'))) {
+                                        console.log(`[Facebook Webhook] Daily Creative REVISION submission received for owner ${matchedProfile.id}: "${(messageText || '').slice(0, 100)}..."`);
+                                        await handleCreativeRevisionSubmission({
+                                            userId: matchedProfile.id,
+                                            instructionText: messageText || '',
+                                            fromPhone: cleanFrom,
+                                            assetId: activeEditingAsset?.id || null
+                                        });
+                                        return;
+                                    }
+
                                     let botResponseText = "Hello! I received your message, but I encountered an error while processing your request. Please try again.";
                                     let botAttachments: Array<{ type: 'image' | 'document'; url: string; filename?: string; caption?: string }> = [];
                                     let ownerUsage = { promptTokens: 500, completionTokens: 250, modelName: "deepseek-flash" };
@@ -1061,6 +1144,69 @@ export async function POST(request: Request) {
                                                 ownerHasVoiceNumber = !!(oBi.claimed_vobiz_number || oBi.voice_vobiz_number || (ownerProfile.voice_twilio_number && ownerProfile.voice_twilio_sid));
                                             }
                                             console.log(`[Flow] Owner resolved from lead match: ${selectedLead.name} -> user ${ownerUserId}`);
+                                        }
+                                    }
+
+                                    // CROSS-TENANT ATTRIBUTION PROTECTION:
+                                    // If the message was triggered by a Nobogent Ad / Campaign (e.g. Sales Partner Program, Aspiring Agency Owners, AI Employee, or Nobogent ad IDs)
+                                    // OR if the prospect already has a record in CRM under Nobogent,
+                                    // we MUST assign the lead & AI bot persona to Nobogent (bc63c065-9bcc-4793-bedc-f0960406425b), NEVER a client's real estate account!
+                                    const checkReferral = message.referral || (message.context as any)?.referral || null;
+                                    const refHeadlineStr = (checkReferral?.headline || '').toLowerCase();
+                                    const refBodyStr = (checkReferral?.body || '').toLowerCase();
+                                    const refSourceUrlStr = (checkReferral?.source_url || '').toLowerCase();
+                                    const refSourceIdStr = String(checkReferral?.source_id || checkReferral?.ad_id || '');
+                                    const cleanDigitsForCheck = cleanFrom.replace(/\D/g, '').slice(-10);
+
+                                    const isNobogentAdOrigin = 
+                                        refHeadlineStr.includes('nobogent') ||
+                                        refHeadlineStr.includes('agency career') ||
+                                        refHeadlineStr.includes('aspiring agency') ||
+                                        refHeadlineStr.includes('ai employee') ||
+                                        refBodyStr.includes('nobogent') ||
+                                        refBodyStr.includes('sales partner') ||
+                                        refSourceUrlStr.includes('nobogent') ||
+                                        refSourceIdStr === '120253304966590153' || // 'paper fold' (Aspiring Agency Owners)
+                                        refSourceIdStr === '120253304634360153' || // 'black bg' (Aspiring Agency Owners)
+                                        refSourceIdStr === '120253296375070153';   // 'image' (AI Employee / Real Estate)
+
+                                    let hasExistingNobogentRecord = false;
+                                    if (cleanDigitsForCheck.length >= 10) {
+                                        const { count: noboLeadCount } = await supabaseAdmin
+                                            .from('leads')
+                                            .select('id', { count: 'exact', head: true })
+                                            .eq('user_id', 'bc63c065-9bcc-4793-bedc-f0960406425b')
+                                            .ilike('phone', `%${cleanDigitsForCheck}%`);
+                                        hasExistingNobogentRecord = (noboLeadCount || 0) > 0;
+                                    }
+
+                                    if (isNobogentAdOrigin || hasExistingNobogentRecord) {
+                                        const { data: noboProfile } = await supabaseAdmin
+                                            .from('profiles')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution, voice_twilio_number, voice_twilio_sid')
+                                            .eq('id', 'bc63c065-9bcc-4793-bedc-f0960406425b')
+                                            .maybeSingle();
+
+                                        if (noboProfile) {
+                                            ownerUserId = noboProfile.id;
+                                            // Keep incoming wabaPhoneId and corresponding token so Meta Cloud API accepts sending the message back
+                                            ownerWaPhoneId = wabaPhoneId || noboProfile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID || null;
+                                            ownerWaToken = ownerWaToken || noboProfile.whatsapp_access_token || noboProfile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN || null;
+                                            ownerFacebookToken = noboProfile.facebook_token || ownerFacebookToken || null;
+                                            catalogueBtnText = 'Explore Nobogent';
+                                            ownerCustomDomain = 'app.nobogent.com';
+                                            ownerButtons = noboProfile.whatsapp_buttons || [];
+                                            ownerAutoCallNewLeads = false; // NEVER auto-call with property sales!
+                                            ownerRole = noboProfile.role || 'super_admin';
+                                            ownerQualifyingEnabled = false;
+                                            ownerQualifyingQuestions = [];
+                                            ownerBusinessName = 'Nobogent';
+                                            ownerAddress = noboProfile.address || '';
+                                            ownerBusinessInfo = 'Nobogent is the world\'s first AI Sales & Marketing Department for Real Estate and Agencies, automating lead generation, AI calling, WhatsApp follow-ups, and CRM for ₹9,999/mo.';
+                                            ownerContactNumber = noboProfile.contact_number || noboProfile.whatsapp_phone_number || '';
+                                            ownerEnableDistribution = false;
+                                            ownerHasVoiceNumber = false;
+                                            console.log(`[Flow] 🛡️ Cross-tenant ad protection triggered: Routed incoming WhatsApp lead (${cleanFrom}) to Nobogent (${ownerUserId}) (Source: ${refSourceIdStr || 'existing lead'})`);
                                         }
                                     }
 
@@ -2043,7 +2189,7 @@ export async function POST(request: Request) {
                                         .from('properties')
                                         .select('id', { count: 'exact', head: true })
                                         .eq('user_id', ownerUserId);
-                                    const hasProperties = (propertiesCount || 0) > 0;
+                                    const hasProperties = !isNobogentAccount && !isPipixelAccount && ((propertiesCount || 0) > 0);
 
                                     // Helper: Send 3-Button Standard Action Menu (dynamic based on business type / industry)
                                     const sendThreeButtons = async (promptText = "What would you like to do?") => {
@@ -2163,6 +2309,40 @@ CRITICAL RULES FOR PIPIXEL:
 5. If they ask about pricing or free trial, explain that we offer a free trial/demo strategy session and encourage them to connect with our specialist or schedule a call.
 6. Keep responses concise (under 90 words), highly readable on mobile, using WhatsApp formatting (bold *text*, bullet points •). Do NOT use HTML or markdown tables.
 7. End with a helpful, friendly question or call to action to guide the client to the next step.`;
+                                            } else if (isNobogentAccount) {
+                                                const isSalesPartnerInquiry = 
+                                                    (campaignName || '').toLowerCase().includes('agency') ||
+                                                    (campaignName || '').toLowerCase().includes('partner') ||
+                                                    (adNameStr || '').toLowerCase().includes('agency') ||
+                                                    (adHeadline || '').toLowerCase().includes('agency') ||
+                                                    (adBody || '').toLowerCase().includes('agency') ||
+                                                    (adBody || '').toLowerCase().includes('partner');
+
+                                                systemPrompt = `You are the friendly, expert AI Assistant representing "Nobogent" (https://nobogent.com).
+Nobogent is the world's first AI Sales & Marketing Department platform. It provides real estate professionals, builders, agencies, and business owners with an all-in-one AI growth engine starting at ₹9,999/month.
+
+Key Nobogent Features & Offerings:
+1. AI Sales Calling: Automated human-like AI inbound & outbound calls to qualify leads, book appointments, and handle FAQs.
+2. WhatsApp Automation & 24/7 AI Sales Rep: Instant lead qualification, interactive multi-button flows, automated drip follow-ups, and broadcast marketing.
+3. AI Creative Studio: Automatic generation of high-converting social media creatives and AI video ads.
+4. Real Estate / Agency CRM & Pipeline: Complete lead management from ad click to closing, with automated call scheduling and stage tracking.
+5. High-Converting Funnels & Websites: Mobile-responsive landing pages, property catalogs, and booking systems.
+6. Nobogent Sales Partner Program: For aspiring agency owners & sales professionals to partner with Nobogent, earn recurring commissions, and leverage Nobogent's proven software and qualified leads (100% commission-based, no fixed salary, qualified leads and sales support provided).
+
+Official Details for Nobogent:
+• Company Name: Nobogent
+• Website: https://nobogent.com
+• Software Pricing: Starts at ₹9,999/month
+• Watch 2-Min Demo: https://nobogent.com
+• Sales Partner Program: Apply / Book Interview at https://cal.com/nobogent/interview
+
+CRITICAL RULES FOR NOBOGENT:
+1. STRICTLY FORBIDDEN: NEVER mention or pitch individual real estate properties, plots, farm lands, villas, dome retreats, flats, apartments, floor plans, or site visits under ANY circumstance! Nobogent is a SaaS technology, AI software, and sales partner platform, NOT a real estate broker or seller of farm plots or properties.
+2. ${isSalesPartnerInquiry ? 'The user is inquiring about the NOBOGENT SALES PARTNER PROGRAM (Agency Owners / Sales Partner ad). Explain that we partner with aspiring agency owners where they focus on selling/closing clients while Nobogent provides the product, infrastructure, and qualified leads (100% commission-based). Encourage them to book a 1-on-1 interview call at https://cal.com/nobogent/interview or talk to our team.' : 'If the user asks about the Sales Partner Program or Agency Program, warmly explain the commission-based partnership model and invite them to schedule a call or speak with the team.'}
+3. If the user asks about software features or pricing, explain the ₹9,999/month plan that automates calling, WhatsApp, video ads, and CRM.
+4. If they ask for more info or details, provide a concise, exciting overview of Nobogent or the partner program and invite them to connect or book a call.
+5. Keep responses concise (under 90 words), highly readable on mobile, using WhatsApp formatting (bold *text*, bullet points •). Do NOT use HTML or markdown tables.
+6. End with a helpful, friendly question or call to action to guide the client to the next step.`;
                                             } else {
                                                 // Fetch real-time available properties for owner if applicable
                                                 let inventoryText = 'No specific listings in database yet.';
@@ -2217,6 +2397,8 @@ RULES:
                                             if (!aiReply || aiReply.trim().length === 0) {
                                                 aiReply = isPipixelAccount
                                                     ? `Thank you for reaching out to *PiPixel*! We help immigration and study-abroad businesses scale with high-converting marketing & automated client acquisition systems. Please let us know how we can assist you today.`
+                                                    : isNobogentAccount
+                                                    ? `Thank you for reaching out to *Nobogent*! We help businesses automate sales & marketing with AI calling, WhatsApp automation, and CRM systems. How can we assist you today?`
                                                     : `Thank you for reaching out to *${ownerBusinessName || 'our team'}*! We are delighted to assist you with our services, catalog, and offerings. Please let us know how we can help you today.`;
                                             }
 
@@ -3309,6 +3491,11 @@ RULES:
                                             if (isPipixelAccount) {
                                                 const greetingText = `Hello${leadDisplayName ? ' ' + leadDisplayName : ''}! 👋 Welcome to *PiPixel*. We help immigration and study-abroad businesses scale with high-converting marketing & client acquisition systems.\n\nHow can we assist you today?`;
                                                 await sendTextMessage(greetingText);
+                                                return;
+                                            }
+                                            if (isNobogentAccount) {
+                                                const greetingText = `Hello${leadDisplayName ? ' ' + leadDisplayName : ''}! 👋 Welcome to *Nobogent* — the world's first AI Sales & Marketing Platform.\n\nHow can we assist you today?`;
+                                                await sendThreeButtons(greetingText);
                                                 return;
                                             }
                                             const greetingText = `Hello${leadDisplayName ? ' ' + leadDisplayName : ''}! 👋 Welcome to *${ownerBusinessName || 'our team'}*. How can we assist you today?`;

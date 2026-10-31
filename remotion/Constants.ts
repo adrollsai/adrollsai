@@ -68,16 +68,16 @@ export const SUBTITLE_THEMES: Record<string, Theme> = {
     },
     goldenLuxury: {
         fontFamily: 'Outfit',
-        fontSize: 82,
-        color: '#F8FAFC',
+        fontSize: 54, // Premium restrained size, not too bulky
+        color: '#FAF8F5',
         highlightColor: '#F59E0B', // Amber Gold
         secondaryHighlightColor: '#FBBF24',
-        animation: 'slide',
-        position: 'bottom',
+        animation: 'fade', // Fade-in animation
+        position: 'center', // Center position
         glow: true,
-        strokeWidth: 8,
-        outlineColor: '#1e1503',
-        boxStyle: 'shadow'
+        strokeWidth: 5,
+        outlineColor: 'rgba(25, 20, 10, 0.85)',
+        boxStyle: 'none'
     },
     crimsonAlert: {
         fontFamily: 'Montserrat',
@@ -116,3 +116,5 @@ export const ANIMATION_OPTIONS: { id: Theme['animation']; label: string; icon: s
     { id: 'glitch', label: 'Glitch Jitter', icon: '👾', description: 'High-impact kinetic shake & glitch' },
     { id: 'zoom', label: 'Zoom In', icon: '🔍', description: 'Dramatic scale zoom into focus' },
 ];
+
+export const DEFAULT_SUBTITLE_THEME = SUBTITLE_THEMES.goldenLuxury;

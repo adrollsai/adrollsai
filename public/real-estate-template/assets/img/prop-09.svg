@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000" role="img" aria-label="Property photo placeholder">
+  <defs>
+    <linearGradient id="sky-p9" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#d2ccd6"/>
+      <stop offset="0.55" stop-color="#9b8fa3"/>
+      <stop offset="1" stop-color="#5E4A6B"/>
+    </linearGradient>
+    <radialGradient id="sun-p9" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#DDC08C" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#DDC08C" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#DDC08C" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass-p9" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#F1EAF2" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#F1EAF2" stop-opacity="0.3"/>
+    </linearGradient>
+    <linearGradient id="vig-p9" x1="0" y1="0.45" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.26"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#sky-p9)"/>
+  <circle cx="447.04" cy="324.78" r="320" fill="url(#sun-p9)"/>
+  <g opacity="0.22"><rect x="-60" y="662.93" width="174.58" height="137.07" fill="#241A28" opacity="0.6"/><rect x="126.58" y="617.46" width="83.24" height="182.54" fill="#241A28" opacity="0.43"/><rect x="221.82" y="643.22" width="123.72" height="156.78" fill="#241A28" opacity="0.67"/><rect x="357.54" y="669.38" width="196.86" height="130.62" fill="#241A28" opacity="0.71"/><rect x="566.41" y="625.09" width="203.5" height="174.91" fill="#241A28" opacity="0.7"/><rect x="781.91" y="609.53" width="214.47" height="190.47" fill="#241A28" opacity="0.41"/><rect x="1008.38" y="551.87" width="130.6" height="248.13" fill="#241A28" opacity="0.41"/><rect x="1150.99" y="551.26" width="192.73" height="248.74" fill="#241A28" opacity="0.46"/><rect x="1355.71" y="706.88" width="131.68" height="93.12" fill="#241A28" opacity="0.73"/><rect x="1499.4" y="607.9" width="188.3" height="192.1" fill="#241A28" opacity="0.6"/></g>
+  <rect x="0" y="760" width="1600" height="240" fill="#241A28" opacity="0.5"/>
+  <rect x="256" y="460" width="832" height="300" fill="#241A28" opacity="0.88" rx="6"/><rect x="638.72" y="274" width="432.64" height="186" fill="#241A28" opacity="0.94" rx="6"/><rect x="638.72" y="274" width="432.64" height="10" fill="#DDC08C" opacity="0.5" rx="5"/><rect x="290" y="506" width="136.9230769230769" height="78" rx="4" fill="url(#glass-p9)" opacity="0.72"/><rect x="290" y="610" width="136.9230769230769" height="78" rx="4" fill="url(#glass-p9)" opacity="0.72"/><rect x="452.92" y="506" width="136.9230769230769" height="78" rx="4" fill="url(#glass-p9)" opacity="0.72"/><rect x="452.92" y="610" width="136.9230769230769" height="78" rx="4" fill="url(#glass-p9)" opacity="0.72"/><rect x="615.85" y="506" width="136.9230769230769" height="78" rx="4" fill="url(#sun-p9)" opacity="0.85"/><rect x="615.85" y="610" width="136.9230769230769" height="78" rx="4" fill="url(#glass-p9)" opacity="0.72"/><rect x="778.77" y="506" width="136.9230769230769" height="78" rx="4" fill="url(#glass-p9)" opacity="0.72"/><rect x="778.77" y="610" width="136.9230769230769" height="78" rx="4" fill="url(#glass-p9)" opacity="0.72"/><rect x="668.72" y="320" width="124.09230769230768" height="72" rx="4" fill="url(#sun-p9)" opacity="0.85"/><rect x="816.81" y="320" width="124.09230769230768" height="72" rx="4" fill="url(#glass-p9)" opacity="0.72"/><rect x="322.56" y="604" width="166.4" height="156" fill="url(#glass-p9)" opacity="0.5"/><g stroke="#F1EAF2" stroke-opacity="0.3" stroke-width="7"><line x1="855.04" y1="284" x2="855.04" y2="760"/><line x1="881.04" y1="284" x2="881.04" y2="760"/><line x1="907.04" y1="284" x2="907.04" y2="760"/><line x1="933.04" y1="284" x2="933.04" y2="760"/><line x1="959.04" y1="284" x2="959.04" y2="760"/><line x1="985.04" y1="284" x2="985.04" y2="760"/><line x1="1011.04" y1="284" x2="1011.04" y2="760"/></g>
+  <rect width="1600" height="1000" fill="url(#vig-p9)"/>
+  <rect x="0" y="760" width="1600" height="2" fill="#DDC08C" opacity="0.35"/>
+</svg>

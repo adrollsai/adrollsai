@@ -15,6 +15,8 @@ export interface VobizCallParams {
     allowAfterHours?: boolean
     skipCreditCheck?: boolean
     voiceName?: string
+    customAuthId?: string
+    customAuthToken?: string
 }
 
 export interface VobizCallResult {
@@ -194,8 +196,8 @@ export async function triggerVobizOutboundCall(
 
     // 5. Auth Credentials & Caller ID
     const bi = typeof profile.business_info === 'string' ? JSON.parse(profile.business_info) : (profile.business_info || {})
-    const authId = profile.voice_vobiz_auth_id || bi.voice_vobiz_auth_id || bi.kyc_data?.vobizSubAuthId || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
-    const authToken = profile.voice_vobiz_auth_token || bi.voice_vobiz_auth_token || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+    const authId = params.customAuthId || profile.voice_vobiz_auth_id || bi.voice_vobiz_auth_id || bi.kyc_data?.vobizSubAuthId || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+    const authToken = params.customAuthToken || profile.voice_vobiz_auth_token || bi.voice_vobiz_auth_token || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
     
     // Strictly require an assigned number for the account. NEVER fall back to unverified test numbers.
     const isNobogentMaster = profile.email === 'rchopra489@gmail.com' || profile.role === 'super_admin'
@@ -263,8 +265,8 @@ export async function triggerVobizOutboundCall(
         console.warn('[VOBIZ HELPER] Failed to update lead status:', dbErr)
     }
 
-    const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${leadId}&profileId=${profileId}${campaignId ? `&campaignId=${campaignId}` : ''}${params.voiceName ? `&voiceName=${encodeURIComponent(params.voiceName)}` : ''}`
-    const hangupUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}`
+    const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${leadId}&profileId=${profileId}${campaignId ? `&campaignId=${campaignId}` : ''}${params.voiceName ? `&voiceName=${encodeURIComponent(params.voiceName)}` : ''}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
+    const hangupUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
 
     const requestPayload = {
         from: callerId,
@@ -528,5 +530,47 @@ export async function getVobizSubAccount(identifier: string): Promise<any | null
     } catch (err: any) {
         console.warn('[VOBIZ HELPER] Error fetching subaccount status:', err.message)
         return null
+    }
+}
+/**
+ * Unassigns a virtual number from a Vobiz sub-account and resets carrier routing.
+ */
+export async function releaseVobizNumber(phoneNumber: string, subAccountAuthId?: string): Promise<boolean> {
+    try {
+        if (!phoneNumber) return false;
+        const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
+        const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+
+        let cleanNumber = phoneNumber.replace(/\D/g, '');
+        if (!cleanNumber.startsWith('+')) {
+            cleanNumber = cleanNumber.startsWith('91') ? ('+' + cleanNumber) : ('+91' + cleanNumber);
+        }
+
+        if (subAccountAuthId) {
+            console.log(`[VOBIZ HELPER] Unassigning number ${cleanNumber} from subaccount ${subAccountAuthId}...`);
+            const res = await fetch(
+                `https://api.vobiz.ai/api/v1/account/${authId}/numbers/${encodeURIComponent(cleanNumber)}/assign-subaccount`,
+                {
+                    method: 'DELETE',
+                    headers: {
+                        'X-Auth-ID': authId,
+                        'X-Auth-Token': authToken,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            ).catch(err => {
+                console.warn('[VOBIZ HELPER] Error unassigning number:', err.message);
+                return null;
+            });
+            if (res && !res.ok) {
+                console.warn(`[VOBIZ HELPER] Vobiz unassign response status: ${res.status}`);
+            }
+        }
+
+        console.log(`[VOBIZ HELPER] Number ${cleanNumber} unassigned and released successfully.`);
+        return true;
+    } catch (err: any) {
+        console.error('[VOBIZ HELPER] Error releasing Vobiz number:', err.message);
+        return false;
     }
 }

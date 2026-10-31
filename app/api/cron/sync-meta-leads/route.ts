@@ -672,6 +672,8 @@ async function handleSync(request: Request) {
                   });
                   if (matchedVC) {
                     matchedVoiceCampaignId = matchedVC.id;
+                  } else if (vCamps.length === 1) {
+                    matchedVoiceCampaignId = vCamps[0].id;
                   }
                 }
               } catch (vcErr) {

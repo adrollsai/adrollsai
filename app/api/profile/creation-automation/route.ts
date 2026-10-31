@@ -1,0 +1,482 @@
+import { NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+function parseConfigurations(config: any): any {
+  if (!config) return {};
+  if (typeof config === 'object') return config;
+  try {
+    return JSON.parse(config);
+  } catch (e) {
+    return {};
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const impersonateId = searchParams.get('impersonate');
+
+    let user: any = null;
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace('Bearer ', '').trim();
+      if (token) {
+        const { data: userData } = await supabaseAdmin.auth.getUser(token);
+        if (userData?.user) user = userData.user;
+      }
+    }
+
+    if (!user) {
+      const supabase = await createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      user = userData?.user || null;
+    }
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const effectiveUserId = impersonateId || user.id;
+
+    // 1. Fetch profile context
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, business_name, client_features, selected_templates')
+      .eq('id', effectiveUserId)
+      .single();
+
+    // 2. Fetch all properties for this user
+    const { data: properties, error: propErr } = await supabaseAdmin
+      .from('properties')
+      .select('id, title, description, price, image_url, images, auto_generate, configurations, created_at')
+      .eq('user_id', effectiveUserId)
+      .order('created_at', { ascending: true });
+
+    if (propErr) throw propErr;
+
+    // 3. Fetch latest generated assets (both image and video) for all properties of this user
+    const { data: assets } = await supabaseAdmin
+      .from('assets')
+      .select('id, property_id, type, created_at, url')
+      .eq('user_id', effectiveUserId)
+      .order('created_at', { ascending: false });
+
+    const propertyAssetsMap: Record<string, { lastImageDate: string | null; lastVideoDate: string | null; imageCount: number; videoCount: number }> = {};
+
+    (properties || []).forEach(p => {
+      propertyAssetsMap[p.id] = {
+        lastImageDate: null,
+        lastVideoDate: null,
+        imageCount: 0,
+        videoCount: 0
+      };
+    });
+
+    let globalLastVideoDate: string | null = null;
+    let globalLastImageDate: string | null = null;
+
+    (assets || []).forEach(a => {
+      const isVideo = (a.type || '').toLowerCase() === 'video' || (a.url || '').endsWith('.mp4');
+      if (isVideo) {
+        if (!globalLastVideoDate) globalLastVideoDate = a.created_at;
+      } else {
+        if (!globalLastImageDate) globalLastImageDate = a.created_at;
+      }
+
+      if (a.property_id && propertyAssetsMap[a.property_id]) {
+        if (isVideo) {
+          propertyAssetsMap[a.property_id].videoCount++;
+          if (!propertyAssetsMap[a.property_id].lastVideoDate) {
+            propertyAssetsMap[a.property_id].lastVideoDate = a.created_at;
+          }
+        } else {
+          propertyAssetsMap[a.property_id].imageCount++;
+          if (!propertyAssetsMap[a.property_id].lastImageDate) {
+            propertyAssetsMap[a.property_id].lastImageDate = a.created_at;
+          }
+        }
+      }
+    });
+
+    // 4. Resolve Saved Order Sequence
+    // Priority: profiles.client_features.creation_round_robin_order -> properties.configurations.round_robin_order -> created_at
+    const savedOrder: string[] = Array.isArray(profile?.client_features?.creation_round_robin_order)
+      ? profile.client_features.creation_round_robin_order
+      : [];
+
+    const formattedQueue = (properties || []).map((prop) => {
+      const cfg = parseConfigurations(prop.configurations);
+      const isEnrolledInVideo = cfg.auto_gen_video === true || cfg.auto_gen_video === 'true';
+      const isEnrolledInDaily = prop.auto_generate === true;
+
+      // Determine order index
+      let orderIndex = 999;
+      const idxInSavedOrder = savedOrder.indexOf(prop.id);
+      if (idxInSavedOrder !== -1) {
+        orderIndex = idxInSavedOrder;
+      } else if (typeof cfg.round_robin_order === 'number') {
+        orderIndex = cfg.round_robin_order;
+      }
+
+      return {
+        id: prop.id,
+        title: prop.title || 'Untitled Product',
+        description: prop.description || '',
+        price: prop.price || '',
+        imageUrl: prop.image_url || (Array.isArray(prop.images) && prop.images[0]) || '',
+        autoGenerateDaily: isEnrolledInDaily,
+        autoGenerateVideo: isEnrolledInVideo,
+        orderIndex,
+        videoSettings: {
+          duration: cfg.auto_gen_video_settings?.duration || 30,
+          customPrompt: cfg.auto_gen_video_settings?.custom_prompt || '',
+          captionStyle: 'goldenLuxury'
+        },
+        imageSettings: {
+          dimensions: cfg.auto_gen_settings?.dimensions || '3:4',
+          timeOfDay: cfg.auto_gen_settings?.time_of_day || '09:00',
+          customPrompt: cfg.auto_gen_settings?.custom_prompt || ''
+        },
+        stats: propertyAssetsMap[prop.id] || { lastImageDate: null, lastVideoDate: null, imageCount: 0, videoCount: 0 }
+      };
+    });
+
+    // Sort queue by orderIndex ascending
+    formattedQueue.sort((a, b) => a.orderIndex - b.orderIndex);
+
+    // Normalize orderIndex to 1, 2, 3...
+    formattedQueue.forEach((item, idx) => {
+      item.orderIndex = idx + 1;
+    });
+
+    // 5. Calculate Cadence and Schedule
+    // Daily active products
+    const dailyActive = formattedQueue.filter(p => p.autoGenerateDaily);
+    // Video active products
+    const videoActive = formattedQueue.filter(p => p.autoGenerateVideo);
+
+    // Next Up for Daily: Pick the one whose last image date is oldest or null
+    let nextDailyProduct = dailyActive[0] || null;
+    if (dailyActive.length > 1) {
+      const sortedByImageAge = [...dailyActive].sort((a, b) => {
+        if (!a.stats.lastImageDate) return -1;
+        if (!b.stats.lastImageDate) return 1;
+        return new Date(a.stats.lastImageDate).getTime() - new Date(b.stats.lastImageDate).getTime();
+      });
+      nextDailyProduct = sortedByImageAge[0];
+    }
+
+    // Video 3-Day Rule:
+    // Video is made every third day starting from the first product.
+    // Check days elapsed since globalLastVideoDate
+    let daysSinceLastVideo = 99;
+    if (globalLastVideoDate) {
+      const diffMs = Date.now() - new Date(globalLastVideoDate).getTime();
+      daysSinceLastVideo = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    }
+
+    const isVideoDueToday = daysSinceLastVideo >= 3 || !globalLastVideoDate;
+    const daysUntilNextVideo = isVideoDueToday ? 0 : Math.max(0, 3 - daysSinceLastVideo);
+
+    // Next Up for Video:
+    // If no video was ever generated, it starts from the 1st product in the ordered queue!
+    let nextVideoProduct = videoActive[0] || null;
+    if (videoActive.length > 1 && globalLastVideoDate) {
+      // Find the product of the last video
+      const lastVideoAsset = (assets || []).find(a => {
+        const isVideo = (a.type || '').toLowerCase() === 'video' || (a.url || '').endsWith('.mp4');
+        return isVideo;
+      });
+      if (lastVideoAsset?.property_id) {
+        const lastIdx = videoActive.findIndex(p => p.id === lastVideoAsset.property_id);
+        if (lastIdx !== -1) {
+          const nextIdx = (lastIdx + 1) % videoActive.length;
+          nextVideoProduct = videoActive[nextIdx];
+        }
+      }
+    }
+
+    // 6. Generate 14-Day Timeline Schedule Forecast
+    const scheduleForecast: Array<{
+      dayIndex: number;
+      dayLabel: string;
+      dateFormatted: string;
+      imageProduct: { id: string; title: string; imageUrl: string } | null;
+      videoProduct: { id: string; title: string; imageUrl: string; duration: number } | null;
+      isVideoDay: boolean;
+    }> = [];
+
+    const now = new Date();
+    for (let day = 1; day <= 14; day++) {
+      const futureDate = new Date(now.getTime() + (day - 1) * 24 * 60 * 60 * 1000);
+      const dateFormatted = futureDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+      // Daily image rotates every day across dailyActive
+      let imgProd: any = null;
+      if (dailyActive.length > 0) {
+        const imgIdx = (day - 1) % dailyActive.length;
+        imgProd = {
+          id: dailyActive[imgIdx].id,
+          title: dailyActive[imgIdx].title,
+          imageUrl: dailyActive[imgIdx].imageUrl
+        };
+      }
+
+      // Video: Generated every third day starting from Day 1 (Day 1, Day 4, Day 7, Day 10, Day 13...)
+      const isVideoDay = (day - 1) % 3 === 0;
+      let vidProd: any = null;
+      if (isVideoDay && videoActive.length > 0) {
+        const videoCycleIndex = Math.floor((day - 1) / 3);
+        const vidIdx = videoCycleIndex % videoActive.length;
+        vidProd = {
+          id: videoActive[vidIdx].id,
+          title: videoActive[vidIdx].title,
+          imageUrl: videoActive[vidIdx].imageUrl,
+          duration: videoActive[vidIdx].videoSettings.duration
+        };
+      }
+
+      scheduleForecast.push({
+        dayIndex: day,
+        dayLabel: `Day ${day}`,
+        dateFormatted,
+        imageProduct: imgProd,
+        videoProduct: vidProd,
+        isVideoDay
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      queue: formattedQueue,
+      cadence: {
+        dailyActiveCount: dailyActive.length,
+        videoActiveCount: videoActive.length,
+        totalProductsCount: formattedQueue.length,
+        nextDailyProduct: nextDailyProduct ? { id: nextDailyProduct.id, title: nextDailyProduct.title, orderIndex: nextDailyProduct.orderIndex } : null,
+        nextVideoProduct: nextVideoProduct ? { id: nextVideoProduct.id, title: nextVideoProduct.title, orderIndex: nextVideoProduct.orderIndex } : null,
+        isVideoDueToday,
+        daysUntilNextVideo,
+        daysSinceLastVideo: daysSinceLastVideo === 99 ? null : daysSinceLastVideo,
+        captionSpecification: {
+          style: 'goldenLuxury',
+          animation: 'fade',
+          position: 'center',
+          fontFamily: 'Outfit',
+          fontSize: '54px'
+        }
+      },
+      scheduleForecast
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Creation Automation API GET] Error:', error);
+    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const impersonateId = searchParams.get('impersonate');
+
+    let user: any = null;
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace('Bearer ', '').trim();
+      if (token) {
+        const { data: userData } = await supabaseAdmin.auth.getUser(token);
+        if (userData?.user) user = userData.user;
+      }
+    }
+
+    if (!user) {
+      const supabase = await createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      user = userData?.user || null;
+    }
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const effectiveUserId = impersonateId || user.id;
+    const body = await request.json();
+    const { action } = body;
+
+    // A. ACTION: REORDER PRODUCTS
+    if (action === 'reorder') {
+      const { orderedProductIds } = body;
+      if (!Array.isArray(orderedProductIds)) {
+        return NextResponse.json({ error: 'orderedProductIds array is required' }, { status: 400 });
+      }
+
+      // 1. Update each property configurations with new round_robin_order
+      const updatePromises = orderedProductIds.map(async (pId: string, idx: number) => {
+        const { data: prop } = await supabaseAdmin
+          .from('properties')
+          .select('configurations')
+          .eq('id', pId)
+          .eq('user_id', effectiveUserId)
+          .single();
+
+        const cfg = parseConfigurations(prop?.configurations);
+        cfg.round_robin_order = idx + 1;
+
+        await supabaseAdmin
+          .from('properties')
+          .update({
+            configurations: JSON.stringify(cfg)
+          })
+          .eq('id', pId)
+          .eq('user_id', effectiveUserId);
+      });
+
+      await Promise.all(updatePromises);
+
+      // 2. Persist master order array into profiles.client_features
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('client_features')
+        .eq('id', effectiveUserId)
+        .single();
+
+      const existingFeatures = profile?.client_features || {};
+      const updatedFeatures = {
+        ...existingFeatures,
+        creation_round_robin_order: orderedProductIds
+      };
+
+      await supabaseAdmin
+        .from('profiles')
+        .update({ client_features: updatedFeatures })
+        .eq('id', effectiveUserId);
+
+      return NextResponse.json({ success: true, message: 'Round-robin order updated successfully' });
+    }
+
+    // B. ACTION: UPDATE PRODUCT AUTOMATION SETTINGS
+    if (action === 'update_product_settings') {
+      const { propertyId, autoGenerateDaily, autoGenerateVideo, videoDuration, customPrompt } = body;
+      if (!propertyId) {
+        return NextResponse.json({ error: 'propertyId is required' }, { status: 400 });
+      }
+
+      const { data: prop, error: fetchErr } = await supabaseAdmin
+        .from('properties')
+        .select('configurations, auto_generate')
+        .eq('id', propertyId)
+        .eq('user_id', effectiveUserId)
+        .single();
+
+      if (fetchErr || !prop) {
+        return NextResponse.json({ error: 'Product not found' }, { status: 404 });
+      }
+
+      const cfg = parseConfigurations(prop.configurations);
+      if (typeof autoGenerateVideo === 'boolean') {
+        cfg.auto_gen_video = autoGenerateVideo;
+      }
+      if (videoDuration || customPrompt !== undefined) {
+        cfg.auto_gen_video_settings = {
+          ...(cfg.auto_gen_video_settings || {}),
+          duration: videoDuration || cfg.auto_gen_video_settings?.duration || 30,
+          caption_style: 'goldenLuxury',
+          custom_prompt: customPrompt !== undefined ? customPrompt : (cfg.auto_gen_video_settings?.custom_prompt || '')
+        };
+      }
+      if (customPrompt !== undefined) {
+        cfg.auto_gen_settings = {
+          ...(cfg.auto_gen_settings || {}),
+          custom_prompt: customPrompt
+        };
+      }
+
+      const updates: any = {
+        configurations: JSON.stringify(cfg)
+      };
+
+      if (typeof autoGenerateDaily === 'boolean') {
+        updates.auto_generate = autoGenerateDaily;
+      }
+
+      const { data: updatedProp, error: updateErr } = await supabaseAdmin
+        .from('properties')
+        .update(updates)
+        .eq('id', propertyId)
+        .eq('user_id', effectiveUserId)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+
+      return NextResponse.json({ success: true, property: updatedProp });
+    }
+
+    // C. ACTION: ADD NEW PRODUCT TO AUTOMATION
+    if (action === 'add_product') {
+      const { title, description, price, imageUrl, autoGenerateDaily = true, autoGenerateVideo = true, videoDuration = 30 } = body;
+      if (!title?.trim() || !description?.trim()) {
+        return NextResponse.json({ error: 'Title and description are required' }, { status: 400 });
+      }
+
+      // Count existing properties to set order index at end
+      const { count } = await supabaseAdmin
+        .from('properties')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', effectiveUserId);
+
+      const nextOrder = (count || 0) + 1;
+
+      const newConfig = {
+        round_robin_order: nextOrder,
+        auto_gen_video: autoGenerateVideo,
+        auto_gen_video_settings: {
+          duration: videoDuration,
+          caption_style: 'goldenLuxury',
+          custom_prompt: ''
+        },
+        auto_gen_settings: {
+          dimensions: '3:4',
+          time_of_day: '09:00',
+          custom_prompt: ''
+        }
+      };
+
+      const { data: newProp, error: createErr } = await supabaseAdmin
+        .from('properties')
+        .insert({
+          user_id: effectiveUserId,
+          title: title.trim(),
+          description: description.trim(),
+          price: price?.trim() || 'Contact for Price',
+          image_url: imageUrl || '',
+          images: imageUrl ? [imageUrl] : [],
+          status: 'Active',
+          auto_generate: autoGenerateDaily,
+          configurations: JSON.stringify(newConfig)
+        })
+        .select()
+        .single();
+
+      if (createErr) throw createErr;
+
+      return NextResponse.json({ success: true, property: newProp });
+    }
+
+    return NextResponse.json({ error: 'Invalid action provided' }, { status: 400 });
+
+  } catch (error: any) {
+    console.error('❌ [Creation Automation API POST] Error:', error);
+    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+  }
+}

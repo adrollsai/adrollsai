@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<base href="/real-estate-template/">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insights — Riverton market reports &amp; buying guides | Everline Realty</title>
+<meta name="description" content="Monthly Riverton market reports, selling guides and buying strategy from the Everline Realty team. No fluff, no evergreen filler.">
+<link rel="canonical" href="https://www.everlinerealty.com/blog.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Insights — Everline Realty">
+<meta property="og:description" content="What the Riverton data says this month and what we're telling clients.">
+<meta property="og:image" content="assets/img/og-cover.svg">
+<meta name="theme-color" content="#0b1220">
+<link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body data-page="blog">
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<div id="siteHeader">
+  <noscript>
+    <nav style="padding:1rem;background:#0b1220" aria-label="Primary">
+      <a style="color:#fff;margin-right:1rem" href="index.html">Home</a>
+      <a style="color:#fff;margin-right:1rem" href="listings.html">Listings</a>
+      <a style="color:#fff;margin-right:1rem" href="blog.html">Insights</a>
+      <a style="color:#fff" href="contact.html">Contact</a>
+    </nav>
+  </noscript>
+</div>
+
+<main id="main">
+
+  <section class="page-hero">
+    <div class="container">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Home</a>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        <span aria-current="page">Insights</span>
+      </nav>
+      <span class="eyebrow">Market reports, guides &amp; opinion</span>
+      <h1>Local knowledge, published honestly</h1>
+      <p>We write what the data says this month and what we're actually telling clients — including the parts that don't flatter us. No evergreen filler, no "10 tips" posts.</p>
+
+      <div class="quicklinks" data-post-filter style="margin-top:1.5rem">
+        <span class="quicklinks__label">Filter</span>
+        <button class="chip is-active" type="button" data-category-value="">All articles</button>
+        <button class="chip" type="button" data-category-value="Market report">Market report</button>
+        <button class="chip" type="button" data-category-value="Selling">Selling</button>
+        <button class="chip" type="button" data-category-value="Buying">Buying</button>
+        <button class="chip" type="button" data-category-value="Guides">Guides</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--tight">
+    <div class="container">
+      <!-- lead article -->
+      <div data-render="posts" data-limit="1" data-featured="first" data-reveal></div>
+
+      <!-- remaining articles -->
+      <div class="grid grid--3" data-render="posts" data-skip="1" data-limit="5" style="margin-top:clamp(1.5rem,3vw,2.25rem)"></div>
+    </div>
+  </section>
+
+  <!-- ================================================== NEWSLETTER -->
+  <section class="section section--tight">
+    <div class="container">
+      <div class="cta-band" data-reveal>
+        <div class="cta-band__grid">
+          <div>
+            <span class="eyebrow">The monthly note</span>
+            <h2>New listings before the portals, plus the numbers</h2>
+            <p>One short email a month: what sold, what's coming, and the honest read on where prices are heading. Unsubscribe in one click.</p>
+          </div>
+          <div class="cta-panel">
+            <h3>Join 3,100 subscribers</h3>
+            <p>No spam. We send once a month and never sell your details.</p>
+            <form class="form" data-form="newsletter" novalidate>
+              <div class="field">
+                <label class="field__label" for="nlEmail">Email address <span class="req">*</span></label>
+                <input class="input" id="nlEmail" name="email" type="email" placeholder="you@example.com" required autocomplete="email">
+                <span class="field__error"></span>
+              </div>
+              <button class="btn btn--accent btn--block" type="submit">Subscribe</button>
+              <div class="form-status" data-form-status role="status" aria-live="polite"></div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== ASK A QUESTION -->
+  <section class="section">
+    <div class="container">
+      <div class="section__head section__head--center" data-reveal>
+        <span class="eyebrow">Ask us anything</span>
+        <h2>Is there something you'd like us to write about?</h2>
+        <p>We take requests. If you're weighing up two neighbourhoods or want to know what a specific street is doing, ask and we'll publish the answer.</p>
+      </div>
+      <div class="center-actions">
+        <a class="btn btn--primary" href="contact.html">Send a question</a>
+        <a class="btn btn--ghost" href="listings.html">Browse listings instead</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="siteFooter">
+  <noscript>
+    <footer style="padding:2rem;background:#0b1220;color:#cbd6e0">
+      <p><strong>Everline Realty</strong> · 2140 Alder Street, Suite 300, Riverton, CA 94107 · (555) 018-2245</p>
+    </footer>
+  </noscript>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

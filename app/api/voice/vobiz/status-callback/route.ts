@@ -58,8 +58,8 @@ async function handleStatusCallback(req: Request) {
 
         // Fetch lead and account profile to resolve correct Vobiz sub-account credentials
         let lead: any = null
-        let authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
-        let authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+        let authId = searchParams.get('vobizAuthId') || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
+        let authToken = searchParams.get('vobizAuthToken') || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
 
         if (leadId) {
             const { data: leadData } = await supabaseAdmin
@@ -69,7 +69,7 @@ async function handleStatusCallback(req: Request) {
                 .single()
             lead = leadData
 
-            if (lead?.user_id) {
+            if (lead?.user_id && !searchParams.get('vobizAuthId')) {
                 try {
                     const { data: prof } = await supabaseAdmin
                         .from('profiles')

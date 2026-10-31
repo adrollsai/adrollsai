@@ -9,6 +9,7 @@ interface RazorpayCheckoutOptions {
     addonId?: string;
     customAmount?: number;
     customCredits?: number;
+    paymentType?: 'one_time' | 'recurring';
     onSuccess?: (data: any) => void;
     onError?: (error: any) => void;
     onDismiss?: () => void;
@@ -81,7 +82,8 @@ export function useRazorpay() {
                     packageId: options.packageId,
                     addonId: options.addonId,
                     customAmount: options.customAmount,
-                    customCredits: options.customCredits
+                    customCredits: options.customCredits,
+                    paymentType: options.paymentType || 'one_time'
                 })
             });
 
@@ -142,7 +144,8 @@ export function useRazorpay() {
                                 planId: options.planId,
                                 packageId: options.packageId,
                                 addonId: options.addonId,
-                                customCredits: options.customCredits
+                                customCredits: options.customCredits,
+                                paymentType: options.paymentType || 'one_time'
                             })
                         });
 

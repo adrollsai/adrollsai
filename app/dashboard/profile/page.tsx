@@ -3874,7 +3874,32 @@ export default function ProfilePage() {
                   <ChevronRight size={20} className="text-slate-400" />
                 </button>
 
+                                {/* Creation Automation - Round Robin Planner */}
                 <button 
+                  onClick={() => router.push(`/dashboard/profile/creation-automation${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-amber-50/50 transition-all border-b border-slate-100 group cursor-pointer"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-gradient-to-br from-amber-500 to-orange-500 text-white p-3 rounded-2xl shadow-sm group-hover:scale-105 transition-transform">
+                      <Sparkles size={20} />
+                    </div>
+                    <div className="text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-slate-900 group-hover:text-amber-700 transition-colors">
+                          Creation Automation
+                        </span>
+                        <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 rounded-full">
+                          Round-Robin
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 font-medium block">
+                        Sequence products for daily creatives & 3-day luxury video reel round-robin
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400 group-hover:text-amber-600 transition-colors" />
+                </button>
+<button 
                   onClick={() => router.push(`/dashboard/automations${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
                   className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-violet-50/50 transition-all border-b border-slate-100 group cursor-pointer"
                 >

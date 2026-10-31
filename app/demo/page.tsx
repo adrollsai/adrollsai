@@ -8,6 +8,7 @@ import {
     Upload,
     ArrowRight,
     CheckCircle2,
+    CheckCircle,
     Loader2,
     Phone,
     MapPin,
@@ -26,24 +27,35 @@ import {
     Smartphone,
     XCircle,
     Check,
-    Coins,
-    TrendingUp,
-    ShieldCheck,
     Calendar,
     Users,
-    Sliders,
-    Flame,
     Share2,
     BarChart3,
-    Clock,
     Database,
     Headphones,
-    PackageCheck
+    Send,
+    Bot,
+    CheckCheck,
+    Play,
+    Edit3,
+    SmartphoneNfc,
+    Search,
+    X,
+    Maximize2,
+    Trash2,
+    ImageIcon,
+    PhoneCall
 } from 'lucide-react';
+// @ts-ignore
 import confetti from 'canvas-confetti';
 import { toast } from 'sonner';
+import {
+    ALL_REFERENCE_TEMPLATES,
+    getReferenceTemplate,
+    ReferenceTemplate
+} from '@/utils/reference-templates-data';
 
-type DemoStep = 
+type DemoStep =
     | 'onboarding'
     | 'generating_assets'
     | 'showcase'
@@ -68,124 +80,182 @@ interface GeneratedVideo {
     aspectRatio: '9:16';
     duration: number;
     taskId?: string;
+    scriptText?: string;
+    scriptCues?: Array<{ start?: number; end?: number; time?: number; text: string }>;
 }
 
 const PRESET_PROJECTS = [
     {
         name: 'The Grand Crest Luxury Residences',
         company: 'Apex Luxury Developments',
-        price: '₹1.85 Cr (Special Launch Offer)',
+        price: '₹1.85 Cr',
         location: 'Golf Course Extension, Prime Metro Corridor',
         desc: 'Ultra-luxury 3 & 4 BHK residences with sky terraces, private infinity pool, Italian marble finishes, and 24x7 smart concierge.',
         image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1400&q=80',
-        logo: ''
+        logo: '',
+        themeId: 'emerald'
     },
     {
         name: 'The Royal Palm Sky Mansions',
         company: 'Elysian Group',
-        price: 'Starting ₹2.45 Cr',
+        price: '₹2.45 Cr',
         location: 'Sector 82, Mohali Luxury Belt',
         desc: 'Exclusive 4BHK Sky Mansions featuring private infinity plunge pool, double-height ceilings, and panoramic golf course views.',
         image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1400&q=80',
-        logo: ''
+        logo: '',
+        themeId: 'obsidian'
     }
 ];
 
-// 12-Item Comparison List requested by User
+interface ThemePalette {
+    id: string;
+    name: string;
+    brand: string;
+    accent: string;
+    category: string;
+}
+
+const BRAND_THEMES: ThemePalette[] = [
+    {
+        id: 'emerald',
+        name: 'Emerald Royal',
+        brand: '#0e5b4e',
+        accent: '#c79a4b',
+        category: 'Classic Luxury'
+    },
+    {
+        id: 'obsidian',
+        name: 'Obsidian Penthouse',
+        brand: '#0b1220',
+        accent: '#d97706',
+        category: 'Dark Modern'
+    },
+    {
+        id: 'sapphire',
+        name: 'Sapphire Waterfront',
+        brand: '#1e3a8a',
+        accent: '#0284c7',
+        category: 'Coastal Marina'
+    },
+    {
+        id: 'burgundy',
+        name: 'Burgundy Heritage',
+        brand: '#5b132b',
+        accent: '#e09f67',
+        category: 'Sovereign Estate'
+    },
+    {
+        id: 'espresso',
+        name: 'Tuscan Espresso',
+        brand: '#3e2723',
+        accent: '#b08968',
+        category: 'Tuscan Villa'
+    },
+    {
+        id: 'indigo',
+        name: 'Royal Indigo',
+        brand: '#312e81',
+        accent: '#f59e0b',
+        category: 'Architectural Gold'
+    }
+];
+
+const REFERENCE_TEMPLATES = ALL_REFERENCE_TEMPLATES;
+
 const SERVICE_COMPARISONS = [
     {
-        name: 'Advanced Conversion API CRM',
-        category: 'Lead Capture & Server CAPI',
-        agencyCost: '₹25,000/mo',
-        agencyNote: 'Third-party Zapier hacks, frequent broken syncs',
-        nobogentStatus: 'Built-in Native Server CAPI & Real-time CRM',
-        icon: Database
-    },
-    {
-        name: 'AI Calling (Autonomous Inbound & Outbound)',
-        category: 'Sales Qualification',
-        agencyCost: '₹35,000/mo',
-        agencyNote: 'Manual telecaller salaries, missed calls, high churn',
-        nobogentStatus: 'Instant <30s Outbound & Inbound AI Closers',
-        icon: Phone
-    },
-    {
-        name: 'AI WhatsApp Bot',
-        category: '24/7 Drips & Catalogs',
+        name: 'Daily AI Image Creative',
+        category: 'Omnichannel Creatives',
         agencyCost: '₹20,000/mo',
-        agencyNote: 'Basic rule-based bots with expensive per-message fees',
-        nobogentStatus: 'Omnichannel Autonomous Bot with Catalog & Drips',
-        icon: MessageCircle
+        agencyNote: 'Slow freelance turnarounds, cookie-cutter graphics',
+        nobogentStatus: 'Daily Fresh Creative via WhatsApp 1-Tap Approval',
+        icon: Layers
     },
     {
-        name: '10 AI Videos / Month',
-        category: 'Short-Form Reels & Stories',
-        agencyCost: '₹30,000/mo',
-        agencyNote: 'Slow freelance editors, 5-7 days turnaround per reel',
-        nobogentStatus: '10 Studio-Grade Cinematic 9:16 Reels Monthly',
+        name: 'Monthly Cinematic Videos (30s Reels)',
+        category: 'Short-Form Reels',
+        agencyCost: '₹35,000/mo',
+        agencyNote: 'Costly freelance video editors',
+        nobogentStatus: 'Studio-Grade 9:16 Reels with Multilingual Voiceover',
         icon: Film
     },
     {
-        name: '30 Image Creatives / Month',
-        category: 'Commercial Ad Creatives',
+        name: 'AI Voice Calling (500 Mins Included)',
+        category: 'Sales Qualification',
+        agencyCost: '₹40,000/mo',
+        agencyNote: 'Manual telecaller salaries & missed leads',
+        nobogentStatus: 'Instant <30s Inbound/Outbound Multilingual Closer',
+        icon: Phone
+    },
+    {
+        name: '24/7 AI WhatsApp Chatbot',
+        category: 'Lead Conversions',
         agencyCost: '₹20,000/mo',
-        agencyNote: 'Cookie-cutter Canva graphics, limited revisions',
-        nobogentStatus: '30 High-Converting 3:4 & 1:1 Ad Creatives',
-        icon: Layers
+        agencyNote: 'Rule-based bots with high monthly fees',
+        nobogentStatus: 'Autonomous Bot with Digital Brochure & Site Visit Drips',
+        icon: MessageCircle
+    },
+    {
+        name: 'Weekly WhatsApp Broadcasts',
+        category: 'Re-engagement Campaigns',
+        agencyCost: '₹15,000/mo',
+        agencyNote: 'Manual CSV exports, frequent number bans',
+        nobogentStatus: 'Automated 1x Weekly Personalized Drip',
+        icon: Send
+    },
+    {
+        name: 'Real Estate CRM Pipeline',
+        category: 'Sales Pipeline',
+        agencyCost: '₹25,000/mo',
+        agencyNote: 'Per-seat fees & complex onboarding',
+        nobogentStatus: 'Built-in 5-Stage Kanban & Native Meta CAPI',
+        icon: Database
     },
     {
         name: 'High-Converting Website',
         category: 'Direct-Response Landing Page',
-        agencyCost: '₹40,000 (one-time)',
-        agencyNote: 'Bloated WordPress templates with slow load speeds',
-        nobogentStatus: 'Ultra-Fast Astro JS Architecture & Mobile-First',
+        agencyCost: '₹45,000',
+        agencyNote: 'Bloated WordPress themes with slow load speeds',
+        nobogentStatus: 'Ultra-Fast Sub-Second Astro Architecture',
         icon: Globe
     },
     {
-        name: 'Free High-Speed Cloud Hosting',
+        name: 'Cloud Hosting & SSL',
         category: 'Infrastructure',
         agencyCost: '₹5,000/mo',
-        agencyNote: 'Separate VPS/cPanel bills, SSL management headaches',
-        nobogentStatus: 'Global Edge CDN & SSL Included Free Forever',
+        agencyNote: 'Separate VPS bills & SSL maintenance',
+        nobogentStatus: 'Global Edge CDN & SSL Included Forever',
         icon: Zap
     },
     {
-        name: 'Real-Time Analytics & Attribution',
-        category: 'ROI Dashboard',
+        name: 'Real-Time ROI Analytics',
+        category: 'Attribution & Tracking',
         agencyCost: '₹10,000/mo',
-        agencyNote: 'Confusing monthly spreadsheets delivered 2 weeks late',
-        nobogentStatus: 'Live Visual ROI, Lead Funnels & Speed-to-Lead Metrics',
+        agencyNote: 'Monthly spreadsheets delivered 2 weeks late',
+        nobogentStatus: 'Live Visual ROI & Speed-to-Lead Metrics',
         icon: BarChart3
     },
     {
-        name: 'Team Management (5 Users)',
-        category: 'Collaboration & Access',
+        name: 'Team Access (5 Members)',
+        category: 'Collaboration',
         agencyCost: '₹15,000/mo',
-        agencyNote: 'Extra seat charges on third-party CRM platforms',
-        nobogentStatus: 'Full Role-Based Team Seats for 5 Team Members',
+        agencyNote: 'Extra seat fees on third-party CRMs',
+        nobogentStatus: 'Role-Based Seats for 5 Team Members',
         icon: Users
     },
     {
         name: 'Auto Social Media Posting',
         category: 'Omnichannel Distribution',
         agencyCost: '₹15,000/mo',
-        agencyNote: 'Manual social media intern, inconsistent scheduling',
+        agencyNote: 'Manual social media intern',
         nobogentStatus: '1-Tap WhatsApp Approval to IG, FB & LinkedIn',
         icon: Share2
-    },
-    {
-        name: 'Inventory & Catalog Management',
-        category: 'Asset Organization',
-        agencyCost: '₹10,000/mo',
-        agencyNote: 'Scattered PDF brochures and manual WhatsApp uploads',
-        nobogentStatus: 'Structured Digital Catalog Auto-Synced to Bot & Lander',
-        icon: PackageCheck
     },
     {
         name: 'Dedicated Relationship Manager',
         category: 'Customer Support',
         agencyCost: '₹20,000/mo',
-        agencyNote: 'Junior account executives juggling 30 other clients',
+        agencyNote: 'Junior account reps juggling 30 accounts',
         nobogentStatus: 'Priority WhatsApp & Dedicated Technical Manager',
         icon: Headphones
     }
@@ -197,45 +267,74 @@ export default function DemoPage() {
     // Onboarding Form States
     const [companyName, setCompanyName] = useState('Apex Luxury Developments');
     const [projectTitle, setProjectTitle] = useState('The Grand Crest Luxury Residences');
-    const [projectPrice, setProjectPrice] = useState('₹1.85 Cr (Special Launch Offer)');
+    const [projectPrice, setProjectPrice] = useState('₹1.85 Cr');
     const [location, setLocation] = useState('Golf Course Extension, Prime Metro Corridor');
     const [projectDescription, setProjectDescription] = useState('Ultra-luxury 3 & 4 BHK residences with sky terraces, private infinity pool, Italian marble finishes, and 24x7 smart concierge.');
     const [prospectName, setProspectName] = useState('Raman');
     const [prospectPhone, setProspectPhone] = useState('');
-    const [language, setLanguage] = useState<'hinglish' | 'english'>('hinglish');
+    const [videoLanguage, setVideoLanguage] = useState<'hinglish' | 'english' | 'hindi' | 'punjabi'>('hinglish');
+    const [callLanguage, setCallLanguage] = useState<'hinglish' | 'english' | 'hindi' | 'punjabi'>('hinglish');
     const [voiceName, setVoiceName] = useState('Kore');
     const [websiteUrl, setWebsiteUrl] = useState('');
     const [extractingWebsite, setExtractingWebsite] = useState(false);
 
     // Media states
-    const [projectImageUrl, setProjectImageUrl] = useState('https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1400&q=80');
+    const [selectedTemplateId, setSelectedTemplateId] = useState('pinterest_pin_0');
+    const [projectImageUrl, setProjectImageUrl] = useState('https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/pinterest_pin_1793111079523_0.jpg');
+    const [isCustomImageUploaded, setIsCustomImageUploaded] = useState(false);
     const [logoUrl, setLogoUrl] = useState('');
     const [uploadingImage, setUploadingImage] = useState(false);
     const [uploadingLogo, setUploadingLogo] = useState(false);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const logoInputRef = useRef<HTMLInputElement>(null);
 
+    // Branding Theme & Color Scheme States
+    const [selectedTheme, setSelectedTheme] = useState<ThemePalette>(BRAND_THEMES[0]);
+    const [customBrandColor, setCustomBrandColor] = useState('#0e5b4e');
+    const [customAccentColor, setCustomAccentColor] = useState('#c79a4b');
+    const [isCustomColorActive, setIsCustomColorActive] = useState(false);
+
+    const activeBrandColor = isCustomColorActive ? customBrandColor : selectedTheme.brand;
+    const activeAccentColor = isCustomColorActive ? customAccentColor : selectedTheme.accent;
+
+    // Modal & Lightbox states
+    const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+    const [templateSearchQuery, setTemplateSearchQuery] = useState('');
+    const [templateCategoryFilter, setTemplateCategoryFilter] = useState<'all' | 'high_converting' | 'premium'>('all');
+    const [imageLightboxUrl, setImageLightboxUrl] = useState<string | null>(null);
+
     // Asset Generation States
     const [isGenerating, setIsGenerating] = useState(false);
     const [generationStage, setGenerationStage] = useState(0);
     const [creative, setCreative] = useState<GeneratedCreative | null>(null);
-    const [generatedVideo, setGeneratedVideo] = useState<GeneratedVideo | null>({
-        id: 'demo-video-15s',
-        title: '15-Second Cinematic Voiceover Reel',
-        videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/demo_15s_voiceover_reel_1793007112340.mp4',
-        aspectRatio: '9:16',
-        duration: 15
-    });
+    const [generatedVideo, setGeneratedVideo] = useState<GeneratedVideo | null>(null);
 
-    // Showcase View States
-    const [showcaseTab, setShowcaseTab] = useState<'creative' | 'video' | 'website'>('creative');
+    // Showcase View States (Clean tabs without numbers)
+    const [showcaseTab, setShowcaseTab] = useState<'creative' | 'video' | 'website' | 'call' | 'broadcast' | 'crm'>('creative');
     const [websiteDevice, setWebsiteDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-    const [websiteHtml, setWebsiteHtml] = useState<string>('');
 
-    // WhatsApp Dispatch States
-    const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
-    const [whatsappMessageId, setWhatsappMessageId] = useState<string | null>(null);
-    const [whatsappDelivered, setWhatsappDelivered] = useState(false);
+    // Video Captions & Outro Overlay States
+    const [videoCurrentTime, setVideoCurrentTime] = useState(0);
+    const [videoDuration, setVideoDuration] = useState(30);
+    const [showVideoOutro, setShowVideoOutro] = useState(false);
+    const videoElementRef = useRef<HTMLVideoElement>(null);
+
+    // WhatsApp Dispatch Action States per step
+    const [sendingTabWhatsApp, setSendingTabWhatsApp] = useState<string | null>(null);
+
+    // WhatsApp Approval Simulation
+    const [approvalStatus, setApprovalStatus] = useState<'pending' | 'approved' | 'revision'>('pending');
+    const [revisionInput, setRevisionInput] = useState('');
+    const [isRevising, setIsRevising] = useState(false);
+
+    // Chatbot Interactive Simulator
+    const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'bot'; text: string; time: string }>>([
+        { sender: 'bot', text: `Hi! Welcome to Apex Luxury Developments. I can help you with floor plans, pricing, and scheduling a VIP site visit for The Grand Crest Luxury Residences. What would you like to know?`, time: '10:00 AM' }
+    ]);
+    const [chatInput, setChatInput] = useState('');
+
+    // CRM Pipeline Stages
+    const [leadPipelineStage, setLeadPipelineStage] = useState<'New Lead' | 'AI Contacted' | 'Qualified' | 'Site Visit Booked' | 'Closed'>('New Lead');
 
     // AI Voice Call States
     const [isDialingCall, setIsDialingCall] = useState(false);
@@ -256,7 +355,7 @@ export default function DemoPage() {
 
             if (type === 'beep') {
                 osc.frequency.setValueAtTime(440, ctx.currentTime);
-                gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                gain.gain.setValueAtTime(0.06, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
                 osc.start();
                 osc.stop(ctx.currentTime + 0.15);
@@ -264,30 +363,30 @@ export default function DemoPage() {
                 osc.frequency.setValueAtTime(523.25, ctx.currentTime);
                 osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.12);
                 osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.24);
-                gain.gain.setValueAtTime(0.12, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
                 osc.start();
                 osc.stop(ctx.currentTime + 0.5);
             } else if (type === 'call') {
                 osc.frequency.setValueAtTime(400, ctx.currentTime);
                 osc.frequency.setValueAtTime(450, ctx.currentTime + 0.2);
-                gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                gain.gain.setValueAtTime(0.07, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
                 osc.start();
                 osc.stop(ctx.currentTime + 0.4);
             }
-        } catch {}
+        } catch { }
     };
 
     // Website extraction handler
     const handleExtractWebsite = async () => {
         if (!websiteUrl.trim()) {
-            toast.error("Please enter a website URL to extract info.");
+            toast.error("Please enter a website URL.");
             return;
         }
 
         setExtractingWebsite(true);
-        toast.info("Extracting brand colors, logo, and project info from website...");
+        toast.info("Extracting brand details...");
 
         try {
             const res = await fetch('/api/onboarding/extract-website', {
@@ -305,9 +404,9 @@ export default function DemoPage() {
                 if (data.logoUrl) setLogoUrl(data.logoUrl);
                 if (data.imageUrl) setProjectImageUrl(data.imageUrl);
                 playChime('success');
-                toast.success("✨ Project details extracted automatically from website!");
+                toast.success("Details extracted!");
             } else {
-                toast.error(data.error || "Could not auto-extract details. Using default values.");
+                toast.error(data.error || "Could not auto-extract details.");
             }
         } catch (e: any) {
             toast.error("Extraction error: " + (e.message || "Failed"));
@@ -315,6 +414,20 @@ export default function DemoPage() {
             setExtractingWebsite(false);
         }
     };
+
+    const currentTemplate = getReferenceTemplate(selectedTemplateId);
+
+    const filteredTemplates = ALL_REFERENCE_TEMPLATES.filter((tmpl) => {
+        const matchesCategory =
+            templateCategoryFilter === 'all' ||
+            tmpl.libraryCategory === templateCategoryFilter;
+        const matchesSearch =
+            !templateSearchQuery.trim() ||
+            tmpl.name.toLowerCase().includes(templateSearchQuery.toLowerCase()) ||
+            tmpl.category.toLowerCase().includes(templateSearchQuery.toLowerCase()) ||
+            tmpl.badge.toLowerCase().includes(templateSearchQuery.toLowerCase());
+        return matchesCategory && matchesSearch;
+    });
 
     // Preset selector
     const handleSelectPreset = (preset: typeof PRESET_PROJECTS[0]) => {
@@ -324,23 +437,43 @@ export default function DemoPage() {
         setLocation(preset.location);
         setProjectDescription(preset.desc);
         setProjectImageUrl(preset.image);
+        setIsCustomImageUploaded(true);
         if (preset.logo) setLogoUrl(preset.logo);
+        if ((preset as any).themeId) {
+            const foundTheme = BRAND_THEMES.find(t => t.id === (preset as any).themeId);
+            if (foundTheme) {
+                setSelectedTheme(foundTheme);
+                setIsCustomColorActive(false);
+            }
+        }
         playChime('beep');
-        toast.info(`Loaded preset: ${preset.name}`);
+        toast.info(`Loaded: ${preset.name.split(' ')[0]}`);
     };
 
-    // Image upload handler
+    // Reference design template selector
+    const handleSelectTemplate = (templateId: string) => {
+        setSelectedTemplateId(templateId);
+        const tmpl = getReferenceTemplate(templateId);
+        if (!isCustomImageUploaded) {
+            setProjectImageUrl(tmpl.url);
+        }
+        setIsTemplateModalOpen(false);
+        playChime('beep');
+        toast.success(`Design Selected: ${tmpl.name}`);
+    };
+
+    // Image upload handler using working /api/upload route
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         setUploadingImage(true);
-        toast.info("Uploading project image to Cloudflare R2...");
+        toast.info("Uploading your property photo...");
 
         try {
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('folder', 'demo-projects');
+            formData.append('folder', 'demo-uploads');
 
             const res = await fetch('/api/upload', {
                 method: 'POST',
@@ -350,26 +483,26 @@ export default function DemoPage() {
             const data = await res.json();
             if (res.ok && data.url) {
                 setProjectImageUrl(data.url);
+                setIsCustomImageUploaded(true);
                 playChime('success');
-                toast.success("Project image uploaded successfully!");
+                toast.success("Property photo uploaded!");
             } else {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    setProjectImageUrl(reader.result as string);
-                    toast.success("Image preview loaded!");
-                };
-                reader.readAsDataURL(file);
+                toast.error(data.error || "Upload failed");
             }
-        } catch {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setProjectImageUrl(reader.result as string);
-                toast.success("Image preview loaded!");
-            };
-            reader.readAsDataURL(file);
+        } catch (err: any) {
+            toast.error("Upload error: " + err.message);
         } finally {
             setUploadingImage(false);
+            if (imageInputRef.current) imageInputRef.current.value = '';
         }
+    };
+
+    // Remove or reset project image back to the selected template's default
+    const handleRemoveProjectImage = () => {
+        const tmpl = getReferenceTemplate(selectedTemplateId);
+        setProjectImageUrl(tmpl.url);
+        setIsCustomImageUploaded(false);
+        toast.info("Reverted to reference template photo");
     };
 
     // Logo upload handler
@@ -392,53 +525,48 @@ export default function DemoPage() {
             if (res.ok && data.url) {
                 setLogoUrl(data.url);
                 playChime('success');
-                toast.success("Logo uploaded to R2! 🎨");
+                toast.success("Logo uploaded!");
             } else {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    setLogoUrl(reader.result as string);
-                    playChime('success');
-                    toast.success("Logo preview loaded!");
-                };
-                reader.readAsDataURL(file);
+                toast.error(data.error || "Logo upload failed");
             }
-        } catch {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setLogoUrl(reader.result as string);
-                playChime('success');
-                toast.success("Logo preview loaded!");
-            };
-            reader.readAsDataURL(file);
+        } catch (err: any) {
+            toast.error("Logo upload error: " + err.message);
         } finally {
             setUploadingLogo(false);
+            if (logoInputRef.current) logoInputRef.current.value = '';
         }
     };
 
-    // Trigger Asset Generation (Creative, 15s Video, Website)
-    const handleStartCreativeGeneration = async () => {
+    const handleRemoveLogo = () => {
+        setLogoUrl('');
+        toast.info("Logo removed");
+    };
+
+    // Trigger Asset Generation (Real Creative, Real 30s Video, Real Website)
+    const handleStartCreativeGeneration = async (stayInShowcase = false) => {
         if (!companyName.trim() || !projectTitle.trim()) {
-            toast.error("Please provide both Company Name and Project Title.");
+            toast.error("Company Name and Project Title are required.");
             return;
         }
 
         if (!prospectPhone.trim() || prospectPhone.replace(/\D/g, '').length < 10) {
-            toast.error("Please enter a valid 10-digit Indian mobile number to experience the live AI phone call and WhatsApp message.");
+            toast.error("Please enter a valid 10-digit mobile number.");
             return;
         }
 
-        setStep('generating_assets');
+        if (!stayInShowcase) {
+            setStep('generating_assets');
+        }
         setIsGenerating(true);
         setGenerationStage(1);
         playChime('beep');
 
-        // Progress stage simulation ticks
         const stageInterval = setInterval(() => {
             setGenerationStage(prev => {
                 if (prev < 4) return prev + 1;
                 return prev;
             });
-        }, 1800);
+        }, 2200);
 
         try {
             const res = await fetch('/api/demo/generate-creatives', {
@@ -453,7 +581,10 @@ export default function DemoPage() {
                     logoUrl,
                     projectImageUrl,
                     prospectName,
-                    contactNumber: prospectPhone
+                    contactNumber: prospectPhone,
+                    videoLanguage,
+                    callLanguage,
+                    templateId: selectedTemplateId
                 })
             });
 
@@ -468,53 +599,68 @@ export default function DemoPage() {
                 setGeneratedVideo(data.video);
             }
 
-            // Fetch live customized website HTML via POST (supports base64 without URL length limits)
-            try {
-                const webRes = await fetch('/api/demo/website', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        companyName,
-                        projectTitle,
-                        projectPrice,
-                        location,
-                        phone: prospectPhone || '+91 98886 26786',
-                        logoUrl,
-                        heroImage: projectImageUrl
-                    })
-                });
-                if (webRes.ok) {
-                    const text = await webRes.text();
-                    setWebsiteHtml(text);
-                }
-            } catch (wErr) {
-                console.warn("Website HTML fetch error:", wErr);
-            }
-
             setGenerationStage(4);
             setIsGenerating(false);
             setStep('showcase');
             playChime('success');
-            toast.success("✨ High-Converting Creative, 15s Video & Live Website Ready!");
+            toast.success("Assets generated successfully!");
 
         } catch (err: any) {
             clearInterval(stageInterval);
             console.error("Asset generation failed:", err);
-            toast.error(err.message || "Failed to generate assets. Please try again.");
-            setStep('onboarding');
+            toast.error(err.message || "Failed to generate assets.");
             setIsGenerating(false);
+            // Do not kick user back to onboarding on error; keep them in showcase to test other features
+            if (!stayInShowcase && step === 'generating_assets') {
+                setStep('showcase');
+            }
         }
     };
 
-    // Trigger Speed to Lead Demonstration (WhatsApp + Real Call)
-    const handleStartLiveSpeedToLead = async () => {
-        setStep('speed_to_lead');
-        setIsSendingWhatsApp(true);
-        setIsDialingCall(true);
-        setCallStatus('dialing');
-        playChime('call');
+    // Skip creation step and jump directly to showcase to test AI calling or WhatsApp
+    const handleSkipToLiveDemo = (targetTab: 'call' | 'broadcast' | 'website' = 'call') => {
+        if (!prospectPhone.trim() || prospectPhone.replace(/\D/g, '').length < 10) {
+            toast.error("Please enter your 10-digit phone number to test live AI Calling & WhatsApp.");
+            return;
+        }
+        setStep('showcase');
+        setShowcaseTab(targetTab);
+        playChime('success');
+        toast.success("Ready to test live AI Calling & WhatsApp!");
+    };
 
-        // 1. Dispatch real WhatsApp message
+    // Video player synchronized time tracking & outro detection
+    const handleVideoTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+        const time = e.currentTarget.currentTime;
+        const dur = e.currentTarget.duration || 30;
+        setVideoCurrentTime(time);
+        setVideoDuration(dur);
+        // Display animated Outro Card in the last 4 seconds
+        if (dur > 0 && time >= dur - 4.5) {
+            setShowVideoOutro(true);
+        } else {
+            setShowVideoOutro(false);
+        }
+    };
+
+    const handleReplayVideo = () => {
+        if (videoElementRef.current) {
+            videoElementRef.current.currentTime = 0;
+            videoElementRef.current.play().catch(() => { });
+            setShowVideoOutro(false);
+        }
+    };
+
+    // Generic WhatsApp dispatcher for each step's action button
+    const handleSendStepWhatsApp = async (type: string, successMsg: string) => {
+        if (!prospectPhone || prospectPhone.replace(/\D/g, '').length < 10) {
+            toast.error("Please enter a valid 10-digit mobile number.");
+            return;
+        }
+
+        setSendingTabWhatsApp(type);
+        playChime('beep');
+
         try {
             const res = await fetch('/api/demo/send-whatsapp', {
                 method: 'POST',
@@ -524,22 +670,43 @@ export default function DemoPage() {
                     prospectName,
                     companyName,
                     projectTitle,
-                    type: 'lead_welcome'
+                    creativeUrl: creative?.imageUrl || projectImageUrl,
+                    imageUrl: creative?.imageUrl || projectImageUrl,
+                    type
                 })
             });
+
             const data = await res.json();
             if (res.ok && data.success) {
-                setWhatsappMessageId(data.messageId);
-                setWhatsappDelivered(true);
-                toast.success(`📲 Real WhatsApp message dispatched to +91 ${prospectPhone.slice(-10)}!`);
+                playChime('success');
+                toast.success(successMsg);
+            } else {
+                toast.error(data.error || "WhatsApp delivery failed");
             }
         } catch (e: any) {
-            console.warn("WhatsApp dispatch warning:", e);
+            toast.error("WhatsApp error: " + e.message);
         } finally {
-            setIsSendingWhatsApp(false);
+            setSendingTabWhatsApp(null);
+        }
+    };
+
+    // Trigger Outbound AI Call
+    const handleStartLiveSpeedToLead = async () => {
+        if (!prospectPhone.trim() || prospectPhone.replace(/\D/g, '').length < 10) {
+            toast.error("Please enter a valid 10-digit mobile number to receive the AI call.");
+            return;
         }
 
-        // 2. Trigger real AI outbound call to the phone
+        setStep('speed_to_lead');
+        setIsDialingCall(true);
+        setCallStatus('dialing');
+        setLeadPipelineStage('AI Contacted');
+        playChime('call');
+
+        // Dispatch initial WhatsApp template
+        handleSendStepWhatsApp('lead_welcome', `WhatsApp message dispatched to +91 ${prospectPhone.slice(-10)}`);
+
+        // Trigger real outbound AI call
         try {
             const res = await fetch('/api/demo/trigger-call', {
                 method: 'POST',
@@ -552,7 +719,7 @@ export default function DemoPage() {
                     projectDescription,
                     projectPrice,
                     location,
-                    language,
+                    language: callLanguage,
                     voiceName
                 })
             });
@@ -563,15 +730,56 @@ export default function DemoPage() {
             setCallLeadId(data.leadId);
             if (data.callerNumber) setCallerNumber(data.callerNumber);
             setCallStatus('ringing');
-            toast.success(`📞 Outbound AI Call dialing to ${prospectPhone}! Answer your phone to speak with the AI sales executive.`);
+            toast.success(`Dialing +91 ${prospectPhone.slice(-10)}... Answer to speak with AI!`);
 
         } catch (err: any) {
             console.error("AI Call trigger failed:", err);
-            toast.error(err.message || "Failed to place outbound call.");
+            toast.error(err.message || "Failed to place call.");
             setCallStatus('error');
         } finally {
             setIsDialingCall(false);
         }
+    };
+
+    // Revision feedback
+    const handleRequestRevision = (feedbackText: string) => {
+        if (!feedbackText.trim()) return;
+        setIsRevising(true);
+        toast.info(`Updating: "${feedbackText}"...`);
+        setTimeout(() => {
+            setIsRevising(false);
+            setApprovalStatus('pending');
+            setRevisionInput('');
+            playChime('success');
+            toast.success("Creative updated with your feedback!");
+        }, 1200);
+    };
+
+    // Chatbot demo message
+    const handleSendChatMessage = (msgText?: string) => {
+        const text = msgText || chatInput;
+        if (!text.trim()) return;
+
+        const userMsg = { sender: 'user' as const, text, time: 'Just now' };
+        setChatMessages(prev => [...prev, userMsg]);
+        setChatInput('');
+
+        setTimeout(() => {
+            let botReply = `Thank you for your interest in ${projectTitle}. Located in ${location}, starting at ${projectPrice}. Would you like to schedule a VIP preview visit?`;
+
+            const lower = text.toLowerCase();
+            if (lower.includes('brochure') || lower.includes('pdf')) {
+                botReply = `Here is the digital brochure for ${projectTitle} with floor plans and amenities. Can I schedule a call with our property advisor?`;
+            } else if (lower.includes('price') || lower.includes('cost') || lower.includes('payment')) {
+                botReply = `Pricing for ${projectTitle} starts at ${projectPrice} with a flexible 20:80 payment plan. Early buyers get complimentary Italian marble upgrades.`;
+            } else if (lower.includes('visit') || lower.includes('tour') || lower.includes('tomorrow') || lower.includes('weekend')) {
+                botReply = `Your VIP site visit is reserved for this weekend at ${projectTitle} in ${location}. A confirmation has been sent to your WhatsApp!`;
+                setLeadPipelineStage('Site Visit Booked');
+            }
+
+            setChatMessages(prev => [...prev, { sender: 'bot' as const, text: botReply, time: 'Just now' }]);
+            playChime('beep');
+        }, 600);
     };
 
     // Timer for active call
@@ -585,7 +793,7 @@ export default function DemoPage() {
         return () => clearInterval(timer);
     }, [callStatus]);
 
-    // Poll live lead status & auto-detect appointment booking
+    // Poll live lead status
     useEffect(() => {
         if (!callLeadId || step !== 'speed_to_lead') return;
 
@@ -595,8 +803,11 @@ export default function DemoPage() {
                 if (!res.ok) return;
                 const data = await res.json();
 
-                if (data.status === 'in_call' || data.status === 'calling') {
+                const st = (data.status || '').toLowerCase();
+                if (st === 'in_call' || st === 'calling' || st === 'in-progress') {
                     if (callStatus !== 'in_call') setCallStatus('in_call');
+                } else if (st === 'completed' || st === 'ended' || st === 'no_answer' || st === 'no-answer' || st === 'busy' || st === 'failed') {
+                    setCallStatus('completed');
                 }
 
                 if (data.summary) {
@@ -604,42 +815,26 @@ export default function DemoPage() {
                 }
 
                 if (data.isAppointmentBooked) {
-                    clearInterval(interval);
-                    goToPricingComparison();
+                    setLeadPipelineStage('Site Visit Booked');
+                    setCallStatus('completed');
                 }
-            } catch {}
+            } catch { }
         }, 3000);
 
         return () => clearInterval(interval);
     }, [callLeadId, step, callStatus]);
 
-    // Transition to Grand Comparison Screen
     const goToPricingComparison = () => {
         setStep('pricing_comparison');
         playChime('success');
 
         confetti({
-            particleCount: 140,
-            spread: 100,
+            particleCount: 90,
+            spread: 80,
             origin: { y: 0.55 }
         });
 
-        setTimeout(() => {
-            confetti({
-                particleCount: 90,
-                angle: 60,
-                spread: 70,
-                origin: { x: 0.1, y: 0.7 }
-            });
-            confetti({
-                particleCount: 90,
-                angle: 120,
-                spread: 70,
-                origin: { x: 0.9, y: 0.7 }
-            });
-        }, 350);
-
-        toast.success("🏆 Journey Complete! Check out your autonomous stack comparison.");
+        toast.success("Demo complete!");
     };
 
     const formatTimer = (sec: number) => {
@@ -648,78 +843,44 @@ export default function DemoPage() {
         return `${m}:${s < 10 ? '0' : ''}${s}`;
     };
 
-    // Auto-fetch website HTML if entering showcase directly or empty
-    useEffect(() => {
-        if (step === 'showcase' && !websiteHtml) {
-            fetch('/api/demo/website', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    companyName,
-                    projectTitle,
-                    projectPrice,
-                    location,
-                    phone: prospectPhone || '+91 98886 26786',
-                    logoUrl,
-                    heroImage: projectImageUrl
-                })
-            })
-            .then(r => r.text())
-            .then(t => setWebsiteHtml(t))
-            .catch(() => {});
-        }
-    }, [step, websiteHtml, companyName, projectTitle, projectPrice, location, prospectPhone, logoUrl, projectImageUrl]);
-
-    // Website preview URL with dynamic parameters (avoiding huge base64 strings in query)
     const cleanLogoParam = (logoUrl && !logoUrl.startsWith('data:')) ? logoUrl : '';
     const cleanHeroParam = (projectImageUrl && !projectImageUrl.startsWith('data:')) ? projectImageUrl : '';
-    const websitePreviewUrl = `/api/demo/website?companyName=${encodeURIComponent(companyName)}&projectTitle=${encodeURIComponent(projectTitle)}&projectPrice=${encodeURIComponent(projectPrice)}&location=${encodeURIComponent(location)}&phone=${encodeURIComponent(prospectPhone || '+91 98886 26786')}&logoUrl=${encodeURIComponent(cleanLogoParam)}&heroImage=${encodeURIComponent(cleanHeroParam)}`;
+    const websitePreviewUrl = `/real-estate-template/index.html?companyName=${encodeURIComponent(companyName)}&projectTitle=${encodeURIComponent(projectTitle)}&projectPrice=${encodeURIComponent(projectPrice)}&location=${encodeURIComponent(location)}&phone=${encodeURIComponent(prospectPhone || '+91 98886 26786')}&logoUrl=${encodeURIComponent(cleanLogoParam)}&heroImage=${encodeURIComponent(cleanHeroParam)}&themeColor=${encodeURIComponent(activeBrandColor)}&accentColor=${encodeURIComponent(activeAccentColor)}`;
 
     return (
-        <div className="min-h-screen bg-[#090D16] text-slate-100 flex flex-col justify-between font-sans relative overflow-x-hidden selection:bg-blue-600 selection:text-white">
-            
-            {/* Ambient luxury mesh background glow */}
-            <div className="fixed top-[-15%] left-[-10%] w-[60%] h-[60%] rounded-full bg-blue-600/10 blur-[160px] pointer-events-none" />
-            <div className="fixed bottom-[-15%] right-[-10%] w-[55%] h-[55%] rounded-full bg-indigo-600/10 blur-[160px] pointer-events-none" />
-            <div className="fixed top-[45%] right-[15%] w-[40%] h-[40%] rounded-full bg-amber-500/5 blur-[140px] pointer-events-none" />
-            <div className="fixed inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px] pointer-events-none" />
+        <div className="min-h-screen bg-[#F8FAFC] text-slate-800 flex flex-col justify-between font-sans relative overflow-x-hidden selection:bg-blue-600 selection:text-white">
+
+            {/* Ambient background */}
+            <div className="fixed top-[-10%] left-[-10%] w-[45%] h-[45%] rounded-full bg-blue-100/50 blur-[130px] pointer-events-none" />
+            <div className="fixed bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-100/40 blur-[130px] pointer-events-none" />
+            <div className="fixed inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:24px_24px] pointer-events-none opacity-50" />
 
             {/* TOP HEADER */}
-            <header className="w-full max-w-7xl mx-auto px-6 py-4 flex items-center justify-between z-30 border-b border-slate-800/80 bg-[#090D16]/80 backdrop-blur-xl sticky top-0">
-                <div className="flex items-center gap-3.5">
-                    <img src="/logo.png" alt="Nobogent" className="h-8 w-auto object-contain" />
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm font-extrabold tracking-tight text-white">Nobogent</span>
-                        <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                            Autonomous OS
-                        </span>
-                    </div>
+            <header className="w-full max-w-6xl mx-auto px-6 py-4 flex items-center justify-between z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl sticky top-0 shadow-xs">
+                <div className="flex items-center gap-3">
+                    <img src="/logo.png" alt="Nobogent" className="h-7 w-auto object-contain" />
+                    <span className="text-base font-extrabold tracking-tight text-slate-900">Nobogent</span>
                 </div>
 
-                <div className="flex items-center gap-4">
-                    <div className="hidden sm:flex items-center gap-2 text-xs font-medium text-slate-400">
-                        <span>Zero Fulfillment Architecture</span>
-                    </div>
-
+                <div className="flex items-center gap-3">
                     <a
                         href="/login"
-                        className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white bg-slate-900 border border-slate-700/80 hover:border-slate-600 shadow-sm transition-all"
+                        className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 shadow-xs transition-all"
                     >
                         Sign In
                     </a>
                 </div>
             </header>
 
-            {/* STEP PROGRESS STEPPER */}
-            <div className="w-full max-w-4xl mx-auto px-4 pt-6 pb-2 z-20">
-                <div className="relative flex items-center justify-between p-3 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-xl shadow-lg shadow-black/40">
-                    <div className="absolute top-1/2 left-8 right-8 -translate-y-1/2 h-[2px] bg-slate-800/80 z-0" />
+            {/* PROGRESS STEPPER (NO NUMBERS) */}
+            <div className="w-full max-w-3xl mx-auto px-4 pt-6 pb-2 z-20">
+                <div className="relative flex items-center justify-between p-2 rounded-2xl bg-white/90 border border-slate-200/80 backdrop-blur-xl shadow-xs">
+                    <div className="absolute top-1/2 left-8 right-8 -translate-y-1/2 h-[2px] bg-slate-100 z-0" />
                     {[
-                        { key: 'onboarding', label: '1. Onboard', icon: Building2 },
-                        { key: 'generating_assets', label: '2. Synthesizing', icon: Sparkles },
-                        { key: 'showcase', label: '3. Assets & Site', icon: Layers },
-                        { key: 'pricing_comparison', label: '4. Value Matrix', icon: Award }
+                        { key: 'onboarding', label: 'Onboard', icon: Building2 },
+                        { key: 'generating_assets', label: 'Generating', icon: Sparkles },
+                        { key: 'showcase', label: 'Live Demo', icon: Layers },
+                        { key: 'pricing_comparison', label: 'Pricing', icon: Award }
                     ].map((m) => {
                         const stepOrder = ['onboarding', 'generating_assets', 'showcase', 'speed_to_lead', 'pricing_comparison'];
                         const currentIdx = stepOrder.indexOf(step);
@@ -728,33 +889,44 @@ export default function DemoPage() {
                         const isCurrent = currentIdx === milestoneIdx || (m.key === 'showcase' && step === 'speed_to_lead');
 
                         return (
-                            <div key={m.key} className="relative z-10 flex flex-col items-center gap-1.5 px-2">
-                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                                    isDone 
-                                        ? 'bg-emerald-500 text-white font-black shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400/30' 
-                                        : isCurrent 
-                                            ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black shadow-xl shadow-blue-500/40 ring-4 ring-blue-500/20 scale-110' 
-                                            : 'bg-slate-950 border border-slate-800 text-slate-500'
-                                }`}>
-                                    {isDone ? <Check size={16} strokeWidth={3} /> : <m.icon size={16} />}
+                            <button
+                                key={m.key}
+                                type="button"
+                                onClick={() => {
+                                    if (m.key === 'generating_assets' && !isGenerating && !creative && !generatedVideo) {
+                                        toast.info("Please enter property details to generate assets.");
+                                        return;
+                                    }
+                                    setStep(m.key as any);
+                                    playChime('beep');
+                                }}
+                                className="relative z-10 flex flex-col items-center gap-1 px-3 cursor-pointer group transition-all hover:scale-105 active:scale-95"
+                                title={`Navigate to ${m.label}`}
+                            >
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 ${isDone
+                                        ? 'bg-emerald-600 text-white font-bold shadow-xs ring-2 ring-emerald-200 group-hover:bg-emerald-500'
+                                        : isCurrent
+                                            ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold shadow-md shadow-blue-500/20 ring-4 ring-blue-100 scale-105'
+                                            : 'bg-slate-50 border border-slate-200 text-slate-400 group-hover:border-slate-300 group-hover:text-slate-600'
+                                    }`}>
+                                    {isDone ? <Check size={14} strokeWidth={3} /> : <m.icon size={14} />}
                                 </div>
-                                <span className={`text-[10px] md:text-xs tracking-wider uppercase font-extrabold ${
-                                    isCurrent ? 'text-blue-400 font-black' : isDone ? 'text-emerald-400' : 'text-slate-500'
-                                }`}>
+                                <span className={`text-[11px] font-bold transition-colors ${isCurrent ? 'text-blue-700' : isDone ? 'text-emerald-700 group-hover:text-emerald-800' : 'text-slate-400 group-hover:text-slate-600'
+                                    }`}>
                                     {m.label}
                                 </span>
-                            </div>
+                            </button>
                         );
                     })}
                 </div>
             </div>
 
-            {/* MAIN CONTENT WORKSPACE */}
+            {/* MAIN WORKSPACE */}
             <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-6 flex flex-col justify-center z-20">
                 <AnimatePresence mode="wait">
 
                     {/* =========================================================================
-                        STEP 1: PREMIUM ONBOARDING FORM
+                        STEP 1: CLEAN ONBOARDING FORM (SHORT & UNCLUTTERED)
                     ========================================================================= */}
                     {step === 'onboarding' && (
                         <motion.div
@@ -762,30 +934,26 @@ export default function DemoPage() {
                             initial={{ opacity: 0, y: 15 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -15 }}
-                            transition={{ duration: 0.25 }}
-                            className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 sm:p-10 backdrop-blur-2xl shadow-2xl shadow-black/80 relative"
+                            transition={{ duration: 0.2 }}
+                            className="bg-white/95 border border-slate-200/90 rounded-3xl p-6 sm:p-8 backdrop-blur-xl shadow-xl shadow-slate-200/50"
                         >
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800/80">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
                                 <div>
-                                    <span className="text-xs font-black uppercase tracking-widest text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
-                                        Zero-Fulfillment Setup • 60 Seconds
-                                    </span>
-                                    <h1 className="text-2xl sm:text-3xl font-black text-white mt-2 tracking-tight">
-                                        Onboard Your Brand &amp; Launch The Engine
+                                    <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                                        See Nobogent In Action
                                     </h1>
-                                    <p className="text-sm text-slate-400 mt-1 max-w-xl">
-                                        Enter your project details. We automatically synthesize a <strong>clean 3:4 ad creative</strong>, a <strong>15-second voiceover reel</strong>, and an <strong>Astro JS high-converting landing page</strong>!
+                                    <p className="text-sm text-slate-500 mt-1 max-w-xl">
+                                        Enter your details to generate your live ad creative, 30s voiceover reel, and landing page.
                                     </p>
                                 </div>
 
-                                {/* Preset Shortcuts */}
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Presets:</span>
+                                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                    <span className="text-xs font-semibold text-slate-400">Presets:</span>
                                     {PRESET_PROJECTS.map((p, idx) => (
                                         <button
                                             key={idx}
                                             onClick={() => handleSelectPreset(p)}
-                                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800/80 border border-slate-700/80 hover:border-blue-500 hover:bg-blue-500/10 text-slate-300 hover:text-white transition-all cursor-pointer"
+                                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-50 border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-slate-600 hover:text-blue-700 transition-all cursor-pointer shadow-2xs"
                                         >
                                             {p.name.split(' ')[0]}
                                         </button>
@@ -794,9 +962,9 @@ export default function DemoPage() {
                             </div>
 
                             {/* Website auto-extractor strip */}
-                            <div className="my-6 p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 flex flex-col sm:flex-row items-center gap-3">
-                                <div className="flex items-center gap-2 text-xs font-bold text-slate-300 shrink-0">
-                                    <Sparkles size={16} className="text-blue-400" />
+                            <div className="my-5 p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col sm:flex-row items-center gap-3">
+                                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 shrink-0">
+                                    <Sparkles size={15} className="text-blue-600" />
                                     <span>Auto-Extract From Website:</span>
                                 </div>
                                 <div className="flex-1 w-full flex items-center gap-2">
@@ -805,153 +973,576 @@ export default function DemoPage() {
                                         value={websiteUrl}
                                         onChange={(e) => setWebsiteUrl(e.target.value)}
                                         placeholder="https://yourbrandwebsite.com"
-                                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+                                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
                                     />
                                     <button
                                         onClick={handleExtractWebsite}
                                         disabled={extractingWebsite}
-                                        className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md shadow-blue-600/30"
+                                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                                     >
-                                        {extractingWebsite ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                                        {extractingWebsite ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
                                         <span>Extract</span>
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Main Form 2-Column Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Left Column: Project Info */}
-                                <div className="space-y-4">
+                            {/* Reference Creative Design Selector Studio Banner */}
+                            <div className="my-5 rounded-2xl border border-blue-200/90 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-slate-50/90 p-4 sm:p-5 shadow-xs transition-all hover:border-blue-400 hover:shadow-md">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div className="flex items-center gap-4">
+                                        <div
+                                            onClick={() => setIsTemplateModalOpen(true)}
+                                            className="relative w-16 h-22 sm:w-20 sm:h-26 rounded-xl overflow-hidden shadow-md border-2 border-white ring-1 ring-blue-300/60 shrink-0 bg-slate-950 cursor-pointer group"
+                                            title="Click to browse all 35 templates"
+                                        >
+                                            <img
+                                                src={currentTemplate.url}
+                                                alt={currentTemplate.name}
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                            />
+                                            <span className="absolute bottom-0 inset-x-0 bg-slate-950/85 text-[8px] text-amber-300 font-extrabold text-center py-0.5 uppercase tracking-wider truncate px-1">
+                                                {currentTemplate.badge}
+                                            </span>
+                                            <div className="absolute inset-0 bg-blue-900/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <Maximize2 size={16} className="text-white drop-shadow" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-[10px] font-extrabold text-blue-700 uppercase tracking-wider bg-blue-100 px-2 py-0.5 rounded-md border border-blue-200">
+                                                    Active Reference Blueprint
+                                                </span>
+                                                <span className="text-xs text-slate-500 font-semibold hidden sm:inline">
+                                                    • 35 Super-Admin Designs
+                                                </span>
+                                            </div>
+                                            <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+                                                {currentTemplate.name}
+                                            </h3>
+                                            <p className="text-xs text-slate-600 mt-0.5 max-w-lg line-clamp-2">
+                                                {currentTemplate.description}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsTemplateModalOpen(true)}
+                                        className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+                                    >
+                                        <Layers size={14} />
+                                        <span>Browse All 35 Templates</span>
+                                        <ArrowRight size={13} />
+                                    </button>
+                                </div>
+
+                                {/* Quick-Pick Popular Blueprints Strip */}
+                                <div className="mt-3.5 pt-3 border-t border-blue-200/50 flex items-center gap-2 overflow-x-auto pb-1">
+                                    <span className="text-[11px] font-bold text-slate-500 shrink-0">Popular Styles:</span>
+                                    {ALL_REFERENCE_TEMPLATES.slice(0, 5).map((tmpl) => {
+                                        const isSelected = selectedTemplateId === tmpl.id || (selectedTemplateId === 'pinterest_damac_island' && tmpl.index === 0);
+                                        return (
+                                            <button
+                                                key={tmpl.id}
+                                                type="button"
+                                                onClick={() => handleSelectTemplate(tmpl.id)}
+                                                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${isSelected
+                                                        ? 'bg-blue-600 text-white shadow-xs'
+                                                        : 'bg-white/85 hover:bg-white text-slate-700 border border-slate-200/80 hover:border-blue-300'
+                                                    }`}
+                                            >
+                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                                <span>{tmpl.name}</span>
+                                            </button>
+                                        );
+                                    })}
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsTemplateModalOpen(true)}
+                                        className="px-2.5 py-1 rounded-xl text-xs font-bold text-blue-700 hover:text-blue-800 hover:bg-blue-100/60 transition-colors shrink-0 cursor-pointer"
+                                    >
+                                        +30 More &rarr;
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Form Grid */}
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
+                                {/* Left Column: Developer & Property Specifications (7 cols) */}
+                                <div className="lg:col-span-7 space-y-3.5">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                                        <label className="block text-xs font-bold text-slate-700 mb-1">
                                             Company / Developer Name
                                         </label>
                                         <input
                                             type="text"
                                             value={companyName}
                                             onChange={(e) => setCompanyName(e.target.value)}
-                                            placeholder="e.g. Bioque Estates International"
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-sm text-white focus:outline-none focus:border-blue-500 transition-all"
+                                            placeholder="Apex Luxury Developments"
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-medium focus:outline-none focus:border-blue-500 shadow-2xs"
                                         />
                                     </div>
 
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                                            Project / Offering Title
+                                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                                            Project Title
                                         </label>
                                         <input
                                             type="text"
                                             value={projectTitle}
                                             onChange={(e) => setProjectTitle(e.target.value)}
-                                            placeholder="e.g. The Grand Crest Luxury Residences"
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-sm text-white font-bold focus:outline-none focus:border-blue-500 transition-all"
+                                            placeholder="The Grand Crest Luxury Residences"
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-bold focus:outline-none focus:border-blue-500 shadow-2xs"
                                         />
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                                    {/* Responsive Pricing & Location */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                                        <div className="sm:col-span-5">
+                                            <label className="block text-xs font-bold text-slate-700 mb-1">
                                                 Pricing
                                             </label>
                                             <input
                                                 type="text"
                                                 value={projectPrice}
                                                 onChange={(e) => setProjectPrice(e.target.value)}
-                                                placeholder="₹49.5 Lakhs"
-                                                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-sm text-white focus:outline-none focus:border-blue-500 transition-all"
+                                                placeholder="₹1.85 Cr"
+                                                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-bold focus:outline-none focus:border-blue-500 shadow-2xs"
                                             />
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                                                Location / Market
+                                        <div className="sm:col-span-7">
+                                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                                                Location
                                             </label>
                                             <input
                                                 type="text"
                                                 value={location}
                                                 onChange={(e) => setLocation(e.target.value)}
-                                                placeholder="Bangalore Corridor"
-                                                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-sm text-white focus:outline-none focus:border-blue-500 transition-all"
+                                                placeholder="Golf Course Extension Road, Prime Sector"
+                                                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-blue-500 shadow-2xs"
                                             />
                                         </div>
                                     </div>
 
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                                            Value Proposition &amp; Specifications
+                                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                                            Highlights &amp; Amenities
                                         </label>
                                         <textarea
                                             rows={3}
                                             value={projectDescription}
                                             onChange={(e) => setProjectDescription(e.target.value)}
-                                            placeholder="Describe key features, amenities, and unique selling points..."
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-white focus:outline-none focus:border-blue-500 transition-all"
+                                            placeholder="Ultra-luxury 3 & 4 BHK residences with sky terraces, private infinity pool, Italian marble finishes, and 24x7 smart concierge."
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 leading-relaxed focus:outline-none focus:border-blue-500 shadow-2xs"
                                         />
+                                    </div>
+
+                                    {/* WEBSITE BRANDING THEME & COLOR SCHEME */}
+                                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                <Sparkles size={13} className="text-amber-500" />
+                                                <span>Website Branding Theme</span>
+                                            </label>
+                                            <span
+                                                className="text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1"
+                                                style={{
+                                                    backgroundColor: `${activeBrandColor}15`,
+                                                    borderColor: `${activeBrandColor}40`,
+                                                    color: activeBrandColor
+                                                }}
+                                            >
+                                                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: activeBrandColor }} />
+                                                <span>{isCustomColorActive ? 'Custom Hex' : selectedTheme.name}</span>
+                                            </span>
+                                        </div>
+
+                                        {/* Preset Luxury Palettes */}
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                            {BRAND_THEMES.map((theme) => {
+                                                const isSelected = !isCustomColorActive && selectedTheme.id === theme.id;
+                                                return (
+                                                    <button
+                                                        key={theme.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedTheme(theme);
+                                                            setIsCustomColorActive(false);
+                                                        }}
+                                                        className={`flex items-center gap-2 p-2 rounded-xl text-left border transition-all cursor-pointer ${isSelected
+                                                                ? 'bg-white shadow-xs ring-2 ring-offset-1'
+                                                                : 'bg-white/80 hover:bg-white border-slate-200'
+                                                            }`}
+                                                        style={{
+                                                            borderColor: isSelected ? theme.brand : undefined,
+                                                            boxShadow: isSelected ? `0 0 0 1px ${theme.brand}` : undefined
+                                                        }}
+                                                    >
+                                                        <div
+                                                            className="w-5 h-5 rounded-full shrink-0 relative overflow-hidden border border-slate-300 shadow-2xs"
+                                                            style={{ backgroundColor: theme.brand }}
+                                                        >
+                                                            <div
+                                                                className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-tl-full"
+                                                                style={{ backgroundColor: theme.accent }}
+                                                            />
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-[11px] font-bold text-slate-800 truncate leading-tight">
+                                                                {theme.name}
+                                                            </div>
+                                                            <div className="text-[9px] text-slate-400 truncate">
+                                                                {theme.category}
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Custom Color Toggle */}
+                                        <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                                            <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isCustomColorActive}
+                                                    onChange={(e) => setIsCustomColorActive(e.target.checked)}
+                                                    className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                />
+                                                <span>Custom Hex Palette</span>
+                                            </label>
+
+                                            {isCustomColorActive && (
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-[10px] text-slate-400 font-bold">Brand:</span>
+                                                        <input
+                                                            type="color"
+                                                            value={customBrandColor}
+                                                            onChange={(e) => setCustomBrandColor(e.target.value)}
+                                                            className="w-6 h-6 rounded border border-slate-300 cursor-pointer p-0"
+                                                        />
+                                                        <span className="font-mono text-[10px] text-slate-700 font-bold uppercase">{customBrandColor}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-[10px] text-slate-400 font-bold">Accent:</span>
+                                                        <input
+                                                            type="color"
+                                                            value={customAccentColor}
+                                                            onChange={(e) => setCustomAccentColor(e.target.value)}
+                                                            className="w-6 h-6 rounded border border-slate-300 cursor-pointer p-0"
+                                                        />
+                                                        <span className="font-mono text-[10px] text-slate-700 font-bold uppercase">{customAccentColor}</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Right Column: Mobile Number & Media */}
-                                <div className="space-y-4">
-                                    <div className="p-4 rounded-2xl bg-blue-950/30 border border-blue-800/40 space-y-3">
+                                {/* Right Column: Channels, Languages & Media Uploads (5 cols) */}
+                                <div className="lg:col-span-5 space-y-3.5">
+                                    {/* Phone input with country code badge and live indicator */}
+                                    <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200/90 space-y-2">
                                         <div className="flex items-center justify-between">
-                                            <label className="block text-xs font-bold text-blue-300 uppercase tracking-wider">
-                                                Your Mobile Number (Live Demo Call &amp; WhatsApp)
+                                            <label className="block text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                                                <PhoneCall size={14} className="text-blue-600" />
+                                                <span>Your Phone (For Live Call &amp; WhatsApp)</span>
                                             </label>
-                                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
-                                                Real Test Phone
+                                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-300 flex items-center gap-1">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                <span>Live Telephony</span>
                                             </span>
                                         </div>
-                                        <input
-                                            type="tel"
-                                            value={prospectPhone}
-                                            onChange={(e) => setProspectPhone(e.target.value)}
-                                            placeholder="e.g. 9888626786 (10 digits)"
-                                            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-blue-500/40 text-sm text-white font-mono font-bold focus:outline-none focus:border-blue-400"
-                                        />
-                                        <p className="text-[11px] text-slate-400">
-                                            Enter your active phone number. Our system will place an <strong>actual outbound AI phone call</strong> and send a <strong>verified WhatsApp catalog</strong> directly to your phone!
+
+                                        {/* Unified bulletproof phone input container */}
+                                        <div className="flex items-center rounded-xl bg-white border border-blue-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-500/20 shadow-xs overflow-hidden transition-all group">
+                                            <div className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-50 border-r border-slate-200 text-slate-700 font-bold text-xs select-none shrink-0 group-focus-within:bg-blue-50/50 transition-colors">
+                                                <span className="text-sm leading-none">🇮🇳</span>
+                                                <span className="font-mono text-slate-800 text-xs">+91</span>
+                                            </div>
+                                            <input
+                                                type="tel"
+                                                value={prospectPhone}
+                                                onChange={(e) => {
+                                                    // Allow only digits and limit to 10
+                                                    const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                                    setProspectPhone(clean);
+                                                }}
+                                                placeholder="9888626786 (10 digits)"
+                                                className="flex-1 w-full px-3.5 py-2.5 bg-transparent text-sm text-slate-900 font-mono font-bold focus:outline-none placeholder:text-slate-400 placeholder:font-mono placeholder:font-normal tracking-wide"
+                                            />
+                                            {prospectPhone && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setProspectPhone('')}
+                                                    className="px-3 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
+                                                    title="Clear number"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <p className="text-[10px] text-blue-800/80">
+                                            Will receive outbound AI voice call &amp; verified WhatsApp ad creative.
                                         </p>
+
+                                        {/* Instant Telephony & WhatsApp Fast-Track Trigger */}
+                                        <div className="flex items-center justify-between pt-1 border-t border-blue-200/50 text-[11px]">
+                                            <span className="text-slate-500 font-medium">Just want to test AI Calling or WhatsApp?</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSkipToLiveDemo('call')}
+                                                className="font-bold text-blue-700 hover:text-blue-900 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                                            >
+                                                <span>Skip Creation &amp; Test Now ➔</span>
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    {/* Upload Images & Logos */}
-                                    <div className="grid grid-cols-2 gap-3">
+                                    {/* Language Selectors */}
+                                    <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
                                         <div>
-                                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                                                Project Image
-                                            </label>
-                                            <div
-                                                onClick={() => imageInputRef.current?.click()}
-                                                className="h-28 rounded-xl border border-dashed border-slate-700 hover:border-blue-500 bg-slate-950/60 flex flex-col items-center justify-center cursor-pointer overflow-hidden relative group transition-all"
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="block text-[11px] font-bold text-slate-700">
+                                                    Video Voiceover
+                                                </label>
+                                                <span className="text-[9px] font-bold text-blue-600">3.8 TTS</span>
+                                            </div>
+                                            <select
+                                                value={videoLanguage}
+                                                onChange={(e) => setVideoLanguage(e.target.value as any)}
+                                                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 font-bold focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer truncate"
                                             >
-                                                {projectImageUrl ? (
-                                                    <img src={projectImageUrl} alt="Project" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                <option value="hinglish">Hinglish</option>
+                                                <option value="english">English</option>
+                                                <option value="hindi">Hindi</option>
+                                                <option value="punjabi">Punjabi</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="block text-[11px] font-bold text-slate-700">
+                                                    AI Call Voice
+                                                </label>
+                                                <span className="text-[9px] font-bold text-emerald-600">Outbound</span>
+                                            </div>
+                                            <select
+                                                value={callLanguage}
+                                                onChange={(e) => setCallLanguage(e.target.value as any)}
+                                                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 font-bold focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer truncate"
+                                            >
+                                                <option value="hinglish">Hinglish</option>
+                                                <option value="english">English</option>
+                                                <option value="hindi">Hindi</option>
+                                                <option value="punjabi">Punjabi</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    {/* Media Upload Section: Property Image & Brand Logo */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {/* Property Image Box (Cinematic Aspect, Blurred Background & Sharp Foreground) */}
+                                        <div className="flex flex-col">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                                    <ImageIcon size={14} className="text-blue-600" />
+                                                    <span>Property Photo</span>
+                                                </label>
+                                                {isCustomImageUploaded ? (
+                                                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
+                                                        <Check size={10} strokeWidth={3} /> Custom Photo
+                                                    </span>
                                                 ) : (
-                                                    <div className="flex flex-col items-center text-slate-500 text-xs gap-1">
-                                                        <Upload size={18} />
-                                                        <span>Upload Image</span>
+                                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                                                        Preset Default
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="relative rounded-2xl border border-slate-200 bg-slate-950 overflow-hidden group h-[180px] sm:h-[190px] flex items-center justify-center transition-all hover:border-blue-400 hover:shadow-sm">
+                                                {uploadingImage ? (
+                                                    <div className="flex flex-col items-center justify-center p-6 text-center space-y-2">
+                                                        <Loader2 size={24} className="animate-spin text-blue-400" />
+                                                        <span className="text-xs font-bold text-slate-200">Uploading to CDN...</span>
+                                                    </div>
+                                                ) : projectImageUrl ? (
+                                                    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                                                        {/* Ambient Blurred Backdrop so vertical/landscape photos never show awkward black bars */}
+                                                        <img
+                                                            src={projectImageUrl}
+                                                            alt=""
+                                                            className="absolute inset-0 w-full h-full object-cover blur-md opacity-35 scale-110 pointer-events-none"
+                                                        />
+                                                        {/* Sharp Centered Foreground */}
+                                                        <img
+                                                            src={projectImageUrl}
+                                                            alt="Property Preview"
+                                                            className="relative z-10 max-h-full max-w-full object-contain p-2 rounded-xl transition-transform duration-300 group-hover:scale-102"
+                                                        />
+
+                                                        {/* Floating Action Controls */}
+                                                        <div className="absolute inset-0 z-20 bg-slate-950/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[2px]">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setImageLightboxUrl(projectImageUrl);
+                                                                }}
+                                                                className="px-2.5 py-1.5 rounded-xl bg-white/95 hover:bg-white text-slate-800 text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                                                                title="View Full Resolution"
+                                                            >
+                                                                <Maximize2 size={12} />
+                                                                <span>Preview</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    imageInputRef.current?.click();
+                                                                }}
+                                                                className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                                                                title="Upload Different Photo"
+                                                            >
+                                                                <Upload size={12} />
+                                                                <span>Change</span>
+                                                            </button>
+                                                            {isCustomImageUploaded && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleRemoveProjectImage();
+                                                                    }}
+                                                                    className="px-2 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                                                                    title="Reset to Template Default"
+                                                                >
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Mobile persistent controls (always accessible) */}
+                                                        <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1 sm:hidden">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => imageInputRef.current?.click()}
+                                                                className="px-2.5 py-1 rounded-lg bg-slate-900/90 text-white font-bold text-[10px] shadow-sm backdrop-blur-xs flex items-center gap-1"
+                                                            >
+                                                                <Upload size={10} />
+                                                                <span>Change</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div
+                                                        onClick={() => imageInputRef.current?.click()}
+                                                        className="w-full h-full border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl flex flex-col items-center justify-center cursor-pointer p-4 text-center transition-colors bg-white hover:bg-blue-50/20"
+                                                    >
+                                                        <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
+                                                            <Upload size={18} />
+                                                        </div>
+                                                        <span className="text-xs font-bold text-slate-700">Upload Property Photo</span>
+                                                        <span className="text-[10px] text-slate-400 mt-0.5">JPG, PNG, WebP</span>
                                                     </div>
                                                 )}
-                                                <span className="absolute bottom-1 right-1 bg-black/80 text-[10px] text-white px-1.5 py-0.5 rounded border border-slate-700">Change</span>
                                             </div>
                                             <input ref={imageInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
                                         </div>
 
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                                                Brand Logo (Replaces on Site)
-                                            </label>
-                                            <div
-                                                onClick={() => logoInputRef.current?.click()}
-                                                className="h-28 rounded-xl border border-dashed border-slate-700 hover:border-blue-500 bg-slate-950/60 flex flex-col items-center justify-center cursor-pointer overflow-hidden relative group transition-all"
-                                            >
-                                                {logoUrl ? (
-                                                    <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform" />
+                                        {/* Brand Logo Box (Clean Dropzone with Zero Stray Change Button) */}
+                                        <div className="flex flex-col">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                                    <Building2 size={14} className="text-blue-600" />
+                                                    <span>Brand Logo (Optional)</span>
+                                                </label>
+                                                {logoUrl && (
+                                                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
+                                                        <Check size={10} strokeWidth={3} /> Active
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="relative rounded-2xl border border-slate-200 bg-slate-50/70 overflow-hidden group h-[180px] sm:h-[190px] flex items-center justify-center transition-all hover:border-blue-400 hover:shadow-sm">
+                                                {uploadingLogo ? (
+                                                    <div className="flex flex-col items-center justify-center p-6 text-center space-y-2">
+                                                        <Loader2 size={24} className="animate-spin text-blue-600" />
+                                                        <span className="text-xs font-bold text-slate-700">Uploading logo...</span>
+                                                    </div>
+                                                ) : logoUrl ? (
+                                                    <div className="relative w-full h-full bg-white flex items-center justify-center p-4 overflow-hidden">
+                                                        <img
+                                                            src={logoUrl}
+                                                            alt="Brand Logo"
+                                                            className="max-h-[85%] max-w-[85%] object-contain group-hover:scale-105 transition-transform duration-300"
+                                                        />
+
+                                                        {/* Floating Overlay on Hover */}
+                                                        <div className="absolute inset-0 bg-slate-950/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[2px]">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setImageLightboxUrl(logoUrl);
+                                                                }}
+                                                                className="px-2.5 py-1.5 rounded-xl bg-white/95 hover:bg-white text-slate-800 text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                                                                title="Preview Logo"
+                                                            >
+                                                                <Maximize2 size={12} />
+                                                                <span>Preview</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    logoInputRef.current?.click();
+                                                                }}
+                                                                className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                                                            >
+                                                                <Upload size={12} />
+                                                                <span>Change</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleRemoveLogo();
+                                                                }}
+                                                                className="px-2 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                                                                title="Remove Logo"
+                                                            >
+                                                                <Trash2 size={12} />
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Mobile persistent action */}
+                                                        <div className="absolute bottom-2 right-2 flex items-center gap-1 sm:hidden">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => logoInputRef.current?.click()}
+                                                                className="px-2.5 py-1 rounded-lg bg-slate-900/90 text-white font-bold text-[10px] shadow-sm backdrop-blur-xs flex items-center gap-1"
+                                                            >
+                                                                <Upload size={10} />
+                                                                <span>Change</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 ) : (
-                                                    <div className="flex flex-col items-center text-slate-500 text-xs gap-1">
-                                                        <Upload size={18} />
-                                                        <span>Upload Logo</span>
+                                                    <div
+                                                        onClick={() => logoInputRef.current?.click()}
+                                                        className="w-full h-full border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl flex flex-col items-center justify-center cursor-pointer p-4 text-center transition-colors bg-white hover:bg-blue-50/20"
+                                                    >
+                                                        <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center mb-2">
+                                                            <Building2 size={18} />
+                                                        </div>
+                                                        <span className="text-xs font-bold text-slate-700">Upload Brand Logo</span>
+                                                        <span className="text-[10px] text-slate-400 mt-0.5">Transparent PNG / SVG</span>
+                                                        <span className="text-[9px] text-blue-600 font-semibold mt-1">Replaces website &amp; video outro brand</span>
                                                     </div>
                                                 )}
-                                                <span className="absolute bottom-1 right-1 bg-black/80 text-[10px] text-white px-1.5 py-0.5 rounded border border-slate-700">Change</span>
                                             </div>
                                             <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
                                         </div>
@@ -959,24 +1550,53 @@ export default function DemoPage() {
                                 </div>
                             </div>
 
-                            {/* Action Strip */}
-                            <div className="mt-8 pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
-                                <span className="text-xs text-slate-400 font-medium">
-                                    Autonomous pipeline creates 1 Static Creative (3:4), 1 15s Voiceover Video, and deploys high-converting Astro site.
-                                </span>
-                                <button
-                                    onClick={handleStartCreativeGeneration}
-                                    className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm uppercase tracking-wider transition-all shadow-xl shadow-blue-600/30 active:scale-95 flex items-center justify-center gap-3 cursor-pointer"
-                                >
-                                    <span>Synthesize Assets &amp; Launch Demo</span>
-                                    <ArrowRight size={18} />
-                                </button>
+                            {/* Luxury Full-Width Action Banner & CTA */}
+                            <div className="mt-8 pt-6 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                    <span className="font-bold text-slate-700">Instant Execution:</span>
+                                    <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200">
+                                        ✓ Real AI Ad Creative
+                                    </span>
+                                    <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200">
+                                        ✓ 30s Reel + Voiceover
+                                    </span>
+                                    <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200">
+                                        ✓ Outbound AI Call
+                                    </span>
+                                    <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200">
+                                        ✓ WhatsApp Broadcast
+                                    </span>
+                                    <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200">
+                                        ✓ Agency Website
+                                    </span>
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSkipToLiveDemo('call')}
+                                        className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-xs uppercase tracking-wider transition-all border-2 border-slate-300 hover:border-slate-400 shadow-sm active:scale-98 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                                        title="Skip asset creation and immediately test live AI voice calling & WhatsApp"
+                                    >
+                                        <Phone size={14} className="text-emerald-600" />
+                                        <span>Skip Creation (Test Calling / WhatsApp)</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => handleStartCreativeGeneration(false)}
+                                        className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 active:scale-98 flex items-center justify-center gap-2.5 cursor-pointer shrink-0"
+                                    >
+                                        <Sparkles size={16} />
+                                        <span>Generate Assets &amp; Launch Demo</span>
+                                        <ArrowRight size={16} />
+                                    </button>
+                                </div>
                             </div>
                         </motion.div>
                     )}
 
                     {/* =========================================================================
-                        STEP 2: HIGH-TECH RADAR SCANNER LOADER
+                        STEP 2: RADAR LOADER
                     ========================================================================= */}
                     {step === 'generating_assets' && (
                         <motion.div
@@ -984,68 +1604,55 @@ export default function DemoPage() {
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                            className="bg-gradient-to-b from-slate-900/95 to-slate-950/95 border border-slate-800/80 rounded-3xl p-8 sm:p-12 text-center max-w-xl mx-auto shadow-2xl shadow-blue-900/20 backdrop-blur-2xl ring-1 ring-white/10 relative overflow-hidden"
+                            className="bg-white/95 border border-slate-200/90 rounded-3xl p-8 sm:p-12 text-center max-w-lg mx-auto shadow-xl shadow-slate-200/50 backdrop-blur-xl"
                         >
-                            {/* Ambient Top Glow */}
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-20 bg-blue-500/20 blur-3xl pointer-events-none" />
-
-                            <div className="relative w-32 h-32 mx-auto mb-8">
-                                <div className="absolute inset-0 rounded-full border-2 border-blue-500/20 animate-ping" />
-                                <div className="absolute -inset-2 rounded-full border border-indigo-500/30 animate-pulse" />
-                                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-500 border-r-indigo-500 animate-spin" />
-                                <div className="w-full h-full rounded-full bg-gradient-to-b from-blue-950/80 to-slate-950 border border-blue-500/40 flex items-center justify-center text-blue-400 shadow-2xl shadow-blue-500/20">
-                                    <Sparkles size={40} className="text-blue-400 animate-pulse" />
+                            <div className="relative w-24 h-24 mx-auto mb-5">
+                                <div className="absolute inset-0 rounded-full border-2 border-blue-200 animate-ping" />
+                                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-600 border-r-indigo-600 animate-spin" />
+                                <div className="w-full h-full rounded-full bg-gradient-to-b from-blue-50 to-indigo-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-inner">
+                                    <Sparkles size={32} className="text-blue-600 animate-pulse" />
                                 </div>
                             </div>
 
-                            <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-blue-400 bg-blue-500/10 px-4 py-1.5 rounded-full border border-blue-500/20 mb-3 shadow-inner">
-                                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                                <span>Real-Time Autonomous Pipeline</span>
-                            </div>
-                            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                                Synthesizing Creative, Video &amp; Site
+                            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                                Generating Your Assets
                             </h2>
-                            <p className="text-sm text-slate-400 mt-2 max-w-md mx-auto">
-                                Analyzing {companyName}'s brand architecture. Rendering custom 3:4 Meta Ad, 15s voiceover video with Gemini TTS, and deploying Astro landing page in real time.
+                            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                                Rendering 3:4 Ad Creative, synthesizing 30s video with {videoLanguage.toUpperCase()} voiceover, and deploying landing page.
                             </p>
 
-                            {/* Progress bar */}
-                            <div className="mt-6 w-full max-w-md mx-auto bg-slate-950 rounded-full h-2.5 p-0.5 border border-slate-800 overflow-hidden">
-                                <motion.div 
-                                    className="h-full rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-400"
+                            <div className="mt-5 w-full max-w-xs mx-auto bg-slate-100 rounded-full h-2 p-0.5 border border-slate-200 overflow-hidden">
+                                <motion.div
+                                    className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600"
                                     initial={{ width: "15%" }}
                                     animate={{ width: `${Math.min(100, generationStage * 25 + 15)}%` }}
-                                    transition={{ duration: 0.6 }}
+                                    transition={{ duration: 0.5 }}
                                 />
                             </div>
 
-                            <div className="mt-8 space-y-3.5 text-left max-w-md mx-auto">
-                                {[
-                                    { text: "Rendering 3:4 Commercial Ad (Dubai Luxury Real Estate Meta Styling)", stage: 1 },
-                                    { text: "Synthesizing 15s Cinematic Voiceover Reel (Gemini TTS + ffmpeg)", stage: 2 },
-                                    { text: "Deploying High-Converting Astro JS Website (Zero-Latency)", stage: 3 },
-                                    { text: "Connecting Nobogent WhatsApp (+91 98771 61216) & Voice Bridge", stage: 4 }
-                                ].map((item, idx) => (
-                                    <div key={idx} className="flex items-center gap-3.5 text-xs p-2 rounded-xl bg-slate-950/40 border border-slate-800/40">
-                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-all ${
-                                            generationStage >= item.stage 
-                                                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' 
-                                                : 'bg-slate-900 border border-slate-800 text-slate-500'
-                                        }`}>
-                                            {generationStage >= item.stage ? <CheckCircle2 size={14} /> : <Loader2 size={12} className="animate-spin text-blue-400" />}
-                                        </div>
-                                        <span className={generationStage >= item.stage ? 'text-slate-200 font-bold' : 'text-slate-400'}>
-                                            {item.text}
-                                        </span>
-                                    </div>
-                                ))}
+                            {/* Action to move on immediately while assets render in background */}
+                            <div className="mt-7 pt-5 border-t border-slate-100 flex flex-col items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        setStep('showcase');
+                                        setShowcaseTab('call');
+                                        playChime('beep');
+                                        toast.info("Navigated to Live Demo! Ready to test AI Calling & WhatsApp.");
+                                    }}
+                                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                                >
+                                    <span>Test AI Calling &amp; WhatsApp While Assets Finish</span>
+                                    <ArrowRight size={14} />
+                                </button>
+                                <span className="text-[11px] text-slate-400">
+                                    Rendering runs in background &bull; assets pop in automatically when ready
+                                </span>
                             </div>
                         </motion.div>
                     )}
 
                     {/* =========================================================================
-                        STEP 3: ASSETS & WEBSITE SHOWCASE (1 Creative, 1 Video, 1 Astro Website)
+                        STEP 3: SHOWCASE (CLEAN TABS & STEP ACTION BUTTONS)
                     ========================================================================= */}
                     {step === 'showcase' && (
                         <motion.div
@@ -1053,240 +1660,596 @@ export default function DemoPage() {
                             initial={{ opacity: 0, y: 15 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -15 }}
-                            className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-2xl"
+                            className="bg-white/95 border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 backdrop-blur-xl"
                         >
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
                                 <div>
-                                    <span className="text-xs font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-                                        Autonomous Deliverables Ready
-                                    </span>
-                                    <h2 className="text-2xl sm:text-3xl font-black text-white mt-2 tracking-tight">
-                                        Your Marketing Engine is Assembled
-                                    </h2>
-                                    <p className="text-sm text-slate-400 mt-1">
-                                        Inspect your commercial static creative, 15s voiceover video reel, and live high-converting website.
+                                    <div className="flex items-center gap-2.5">
+                                        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                                            Deliverables Preview
+                                        </h2>
+                                        {isGenerating ? (
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-bold animate-pulse">
+                                                <Loader2 size={12} className="animate-spin text-blue-600" />
+                                                <span>Rendering in Background</span>
+                                            </span>
+                                        ) : !creative && !generatedVideo ? (
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold">
+                                                <span>⚡ Creation Skipped (Fast-Track)</span>
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Test and trigger each deliverable directly to your phone.
                                     </p>
                                 </div>
 
-                                <button
-                                    onClick={handleStartLiveSpeedToLead}
-                                    className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/20 active:scale-95 flex items-center gap-2 cursor-pointer shrink-0"
-                                >
-                                    <span>Test Live Inbound Flow (Real Call &amp; WhatsApp)</span>
-                                    <ArrowRight size={16} />
-                                </button>
-                            </div>
-
-                            {/* View Switcher Tabs */}
-                            <div className="flex flex-wrap items-center gap-2.5 my-6">
-                                <button
-                                    onClick={() => setShowcaseTab('creative')}
-                                    className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
-                                        showcaseTab === 'creative'
-                                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                                            : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800'
-                                    }`}
-                                >
-                                    <Layers size={14} />
-                                    <span>Static Ad Creative (3:4)</span>
-                                </button>
-
-                                <button
-                                    onClick={() => setShowcaseTab('video')}
-                                    className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
-                                        showcaseTab === 'video'
-                                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                                            : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800'
-                                    }`}
-                                >
-                                    <Film size={14} />
-                                    <span>15s Voiceover Video (9:16)</span>
-                                </button>
-
-                                <button
-                                    onClick={() => setShowcaseTab('website')}
-                                    className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
-                                        showcaseTab === 'website'
-                                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                                            : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800'
-                                    }`}
-                                >
-                                    <Globe size={14} />
-                                    <span>Live Website (Astro JS)</span>
-                                </button>
-                            </div>
-
-                            {/* TAB 1: SINGLE STATIC CREATIVE (CLEAN & FRAMELESS) */}
-                            {showcaseTab === 'creative' && (
-                                <div className="max-w-md mx-auto">
-                                    <div className="rounded-2xl p-4 bg-slate-950/60 border border-slate-800 shadow-xl">
-                                        <div className="flex items-center justify-between mb-3 text-xs">
-                                            <span className="font-black text-blue-400 uppercase tracking-wider">
-                                                3:4 Sponsored Ad Creative
-                                            </span>
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-bold">
-                                                Frameless High-Converting Visual
-                                            </span>
-                                        </div>
-
-                                        <div className="w-full aspect-[3/4] rounded-xl overflow-hidden bg-black relative border border-slate-800 shadow-2xl">
-                                            <img
-                                                src={creative?.imageUrl || projectImageUrl}
-                                                alt="Ad Creative"
-                                                className="w-full h-full object-cover"
-                                            />
-                                        </div>
-
-                                        <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-800/80 text-xs">
-                                            <span className="text-slate-400 font-medium">Ready for Meta Sponsored Feed &amp; Socials</span>
-                                            <a
-                                                href={creative?.imageUrl || projectImageUrl}
-                                                target="_blank"
-                                                download="ad_creative.jpg"
-                                                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-all"
-                                            >
-                                                <Download size={13} />
-                                                <span>Download HD</span>
-                                            </a>
-                                        </div>
-                                    </div>
+                                <div className="flex items-center gap-2.5 shrink-0">
+                                    {!creative && !generatedVideo && !isGenerating && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleStartCreativeGeneration(true)}
+                                            className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all active:scale-95"
+                                        >
+                                            <Sparkles size={13} className="text-amber-500" />
+                                            <span>Generate AI Assets</span>
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={handleStartLiveSpeedToLead}
+                                        className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer shrink-0"
+                                    >
+                                        <Phone size={14} />
+                                        <span>Test Live Inbound Flow</span>
+                                    </button>
                                 </div>
-                            )}
+                            </div>
 
-                            {/* TAB 2: 15-SECOND VOICEOVER VIDEO REEL */}
-                            {/* TAB 2: 15s VOICE-OVER VIDEO REEL */}
-                            {showcaseTab === 'video' && generatedVideo && (
-                                <div className="max-w-md mx-auto">
-                                    <div className="rounded-3xl p-6 bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800/80 text-center shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
-                                        <div className="flex items-center justify-between mb-4 text-xs">
-                                            <span className="font-black text-blue-400 uppercase tracking-wider flex items-center gap-2">
-                                                <Film size={16} />
-                                                {generatedVideo.title}
-                                            </span>
-                                            <span className="text-[10px] px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 font-black border border-emerald-500/20 flex items-center gap-1.5">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                                15s • 9:16 Custom Reel
-                                            </span>
-                                        </div>
+                            {/* Clean Tabs without Numbers */}
+                            <div className="flex flex-wrap items-center gap-1.5 my-5 p-1 bg-slate-100/80 rounded-2xl border border-slate-200/70 overflow-x-auto">
+                                {[
+                                    { key: 'creative', label: 'Ad Creative', icon: Layers },
+                                    { key: 'video', label: '30s Video Reel', icon: Film },
+                                    { key: 'website', label: 'Website', icon: Globe },
+                                    { key: 'call', label: 'AI Caller', icon: Phone },
+                                    { key: 'broadcast', label: 'WhatsApp Broadcast', icon: Send },
+                                    { key: 'crm', label: 'CRM Pipeline', icon: Database }
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.key}
+                                        onClick={() => setShowcaseTab(tab.key as any)}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${showcaseTab === tab.key
+                                                ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
+                                                : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                    >
+                                        <tab.icon size={13} className={showcaseTab === tab.key ? 'text-blue-600' : 'text-slate-400'} />
+                                        <span>{tab.label}</span>
+                                    </button>
+                                ))}
+                            </div>
 
-                                        {/* Smartphone Mockup Frame */}
-                                        <div className="relative mx-auto w-[280px] sm:w-[320px] aspect-[9/16] rounded-[44px] p-3 bg-gradient-to-b from-slate-700 via-slate-800 to-slate-900 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] ring-1 ring-white/20">
-                                            {/* Dynamic Island */}
-                                            <div className="absolute top-5 left-1/2 -translate-x-1/2 w-24 h-6 bg-black rounded-full z-30 flex items-center justify-between px-3">
-                                                <span className="w-2.5 h-2.5 rounded-full bg-slate-900" />
-                                                <span className="w-2.5 h-2.5 rounded-full bg-blue-900/50" />
+                            {/* TAB 1: AD CREATIVE */}
+                            {showcaseTab === 'creative' && (
+                                <div className="space-y-4">
+                                    {!creative?.imageUrl && !isGenerating && (
+                                        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50/90 to-orange-50/90 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0">
+                                                    <Sparkles size={16} />
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs font-bold text-slate-800">
+                                                        Asset creation was skipped
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-500">
+                                                        Showing property photo placeholder. You can synthesize custom high-converting AI creatives anytime.
+                                                    </div>
+                                                </div>
                                             </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleStartCreativeGeneration(true)}
+                                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
+                                            >
+                                                <Sparkles size={13} />
+                                                <span>Generate Real AI Creative &amp; Reel</span>
+                                            </button>
+                                        </div>
+                                    )}
 
-                                            {/* Screen Area */}
-                                            <div className="w-full h-full rounded-[36px] overflow-hidden bg-black relative">
-                                                <video
-                                                    src={generatedVideo.videoUrl}
-                                                    controls
-                                                    autoPlay
-                                                    loop
-                                                    playsInline
+                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                                    <div className="lg:col-span-6 rounded-2xl p-4 bg-slate-50 border border-slate-200">
+                                        <div className="w-full aspect-[3/4] rounded-xl overflow-hidden bg-slate-100 relative border border-slate-200 shadow-md">
+                                            {creative?.imageUrl ? (
+                                                <img
+                                                    src={creative.imageUrl}
+                                                    alt="Ad Creative"
                                                     className="w-full h-full object-cover"
                                                 />
+                                            ) : isGenerating ? (
+                                                <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-white space-y-3">
+                                                    <div className="relative w-12 h-12 flex items-center justify-center">
+                                                        <Loader2 size={28} className="animate-spin text-blue-600" />
+                                                    </div>
+                                                    <div className="text-xs font-bold text-slate-800">Synthesizing 3:4 Ad Creative...</div>
+                                                    <p className="text-[11px] text-slate-500 max-w-xs">
+                                                        Compositing architectural typography and luxury badges onto your property photo in the background.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <img
+                                                    src={projectImageUrl}
+                                                    alt="Ad Creative"
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="lg:col-span-6 space-y-4">
+                                        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-xs font-bold text-slate-800">WhatsApp Daily Creative Approval</h3>
+                                                <span className="text-[10px] text-slate-400">8:00 AM Daily</span>
                                             </div>
+
+                                            <p className="text-xs text-slate-600 leading-relaxed bg-white p-3 rounded-xl border border-slate-200">
+                                                Good morning! Here is today&apos;s ad creative for <strong>{projectTitle}</strong>. Tap below to post or request changes.
+                                            </p>
+
+                                            {/* Action Button for Step 1: Dispatches WhatsApp */}
+                                            <button
+                                                onClick={() => handleSendStepWhatsApp('creative_preview', `Creative preview sent to +91 ${prospectPhone.slice(-10)}!`)}
+                                                disabled={sendingTabWhatsApp === 'creative_preview'}
+                                                className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                                            >
+                                                {sendingTabWhatsApp === 'creative_preview' ? (
+                                                    <Loader2 size={13} className="animate-spin" />
+                                                ) : (
+                                                    <Send size={13} />
+                                                )}
+                                                <span>Send Creative to My WhatsApp (+91 {prospectPhone.slice(-10) || 'Phone'})</span>
+                                            </button>
                                         </div>
 
-                                        {/* Action Strip */}
-                                        <div className="mt-5 flex items-center justify-between gap-3 text-xs">
-                                            <span className="text-slate-400 text-left font-medium">
-                                                🎙️ Custom Spoken Voiceover + Ken Burns Motion
-                                            </span>
-                                            <a
-                                                href={generatedVideo.videoUrl}
-                                                target="_blank"
-                                                download
-                                                className="px-4 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-                                            >
-                                                <Download size={14} />
-                                                <span>Download MP4</span>
-                                            </a>
+                                        <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+                                            <span className="text-xs font-bold text-slate-700 block">Request Revision:</span>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {["Change headline", "Make price bold", "Switch to evening shot"].map((chip, i) => (
+                                                    <button
+                                                        key={i}
+                                                        onClick={() => handleRequestRevision(chip)}
+                                                        className="text-[10px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 font-medium cursor-pointer"
+                                                    >
+                                                        {chip}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <div className="flex items-center gap-2 pt-1">
+                                                <input
+                                                    type="text"
+                                                    value={revisionInput}
+                                                    onChange={(e) => setRevisionInput(e.target.value)}
+                                                    placeholder="e.g. Change price or layout..."
+                                                    className="flex-1 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                                                />
+                                                <button
+                                                    onClick={() => handleRequestRevision(revisionInput)}
+                                                    disabled={isRevising || !revisionInput.trim()}
+                                                    className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-bold cursor-pointer disabled:opacity-40"
+                                                >
+                                                    {isRevising ? <Loader2 size={11} className="animate-spin" /> : 'Revise'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
+                            </div>
                             )}
 
-                            {/* TAB 3: HIGH-CONVERTING ASTRO JS WEBSITE PREVIEW */}
+                            {/* TAB 2: 30s VIDEO REEL */}
+                            {showcaseTab === 'video' && (() => {
+                                const activeVideoCues = generatedVideo?.scriptCues && generatedVideo.scriptCues.length > 0
+                                    ? generatedVideo.scriptCues
+                                    : [
+                                        { start: 0, end: 4.8, text: `${companyName} lekar aaye hain apna sabse prestigious project: ${projectTitle}.` },
+                                        { start: 4.8, end: 9.8, text: `${location} ki prime location par bespoke architecture aur luxury lifestyle.` },
+                                        { start: 9.8, end: 14.8, text: `Yahan aapko milte hain ultra luxury residences with private infinity pool.` },
+                                        { start: 14.8, end: 19.8, text: `Inaugural launch price shuru ho rahi hai sirf ${projectPrice} se!` },
+                                        { start: 19.8, end: 24.8, text: `High capital appreciation aur 0% brokerage ka limited launch privilege.` },
+                                        { start: 24.8, end: 30.0, text: `Limited inventory available — Aaj hi apna private VIP walkthrough schedule karein!` }
+                                    ];
+                                const currentActiveCue = activeVideoCues.find(c => {
+                                    const cueStart = c.start ?? c.time ?? 0;
+                                    const cueEnd = c.end ?? (c.time !== undefined ? c.time + 5 : 30);
+                                    return videoCurrentTime >= cueStart && videoCurrentTime < cueEnd;
+                                });
+
+                                return (
+                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                                        <div className="lg:col-span-6 rounded-2xl p-5 bg-slate-50 border border-slate-200 text-center">
+                                            <div className="relative mx-auto w-[250px] sm:w-[270px] aspect-[9/16] rounded-[36px] p-2 bg-slate-900 shadow-2xl overflow-hidden">
+                                                <div className="w-full h-full rounded-[28px] overflow-hidden bg-black relative flex items-center justify-center">
+                                                    {generatedVideo ? (
+                                                        <>
+                                                            <video
+                                                                ref={videoElementRef}
+                                                                src={generatedVideo.videoUrl}
+                                                                controls
+                                                                autoPlay
+                                                                loop={false}
+                                                                playsInline
+                                                                onTimeUpdate={handleVideoTimeUpdate}
+                                                                onEnded={() => setShowVideoOutro(true)}
+                                                                className="w-full h-full object-cover"
+                                                            />
+
+                                                            {/* Animated Luxury Outro Slate Overlay with Demo Taker Info */}
+                                                            <AnimatePresence>
+                                                                {showVideoOutro && (
+                                                                    <motion.div
+                                                                        initial={{ opacity: 0, y: 15 }}
+                                                                        animate={{ opacity: 1, y: 0 }}
+                                                                        exit={{ opacity: 0, y: 15 }}
+                                                                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                                                                        className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/75 to-transparent flex flex-col justify-end p-3.5 text-white z-30 shadow-2xl"
+                                                                    >
+                                                                        {/* Top Floating Replay & Close Controls */}
+                                                                        <div className="absolute top-3 right-3 flex items-center gap-1.5 z-40">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={handleReplayVideo}
+                                                                                className="text-[10px] text-slate-200 hover:text-white flex items-center gap-1 bg-black/50 hover:bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full cursor-pointer transition-all border border-white/20 shadow-md"
+                                                                                title="Replay Video"
+                                                                            >
+                                                                                <RefreshCw size={10} />
+                                                                                <span>Replay</span>
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setShowVideoOutro(false)}
+                                                                                className="w-6 h-6 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md flex items-center justify-center text-slate-300 hover:text-white text-xs cursor-pointer transition-all border border-white/20 shadow-md"
+                                                                                title="Close Outro"
+                                                                            >
+                                                                                ✕
+                                                                            </button>
+                                                                        </div>
+
+                                                                        {/* Bottom Floating Luxury Glass Card */}
+                                                                        <div className="rounded-2xl bg-slate-900/90 backdrop-blur-md border border-amber-400/35 p-3.5 space-y-2.5 shadow-2xl text-left">
+                                                                            <div className="flex items-center justify-between">
+                                                                                <span className="text-[8px] uppercase tracking-widest font-black text-amber-300 bg-amber-500/20 border border-amber-400/40 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                                                    <span>✦</span>
+                                                                                    <span>EXCLUSIVE LAUNCH</span>
+                                                                                </span>
+                                                                                <span className="text-[9px] font-bold text-slate-300 tracking-wider uppercase truncate max-w-[120px]">
+                                                                                    {companyName}
+                                                                                </span>
+                                                                            </div>
+
+                                                                            <div>
+                                                                                <h3 className="text-sm font-black text-white leading-tight font-display tracking-tight">
+                                                                                    {projectTitle}
+                                                                                </h3>
+                                                                                <div className="flex items-center gap-1 text-[10px] text-slate-300 mt-1 truncate">
+                                                                                    <MapPin size={10} className="text-amber-400 shrink-0" />
+                                                                                    <span className="truncate">{location}</span>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                                                                                <div>
+                                                                                    <span className="text-[8px] uppercase tracking-wider text-slate-400 block font-bold">Starting Price</span>
+                                                                                    <span className="text-base font-black text-amber-300 font-display">
+                                                                                        {projectPrice}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="flex gap-1 text-[8px] font-bold text-amber-200">
+                                                                                    <span className="bg-white/10 px-1.5 py-0.5 rounded">Sky Suites</span>
+                                                                                    <span className="bg-white/10 px-1.5 py-0.5 rounded">Private Pool</span>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* High-Converting WhatsApp Action Button */}
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleSendStepWhatsApp('video_preview', `30s Video preview sent to +91 ${prospectPhone.slice(-10)}!`)}
+                                                                                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs tracking-wide uppercase shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
+                                                                            >
+                                                                                <Send size={12} />
+                                                                                <span>Send VIP Brochure to WhatsApp</span>
+                                                                            </button>
+                                                                            <div className="text-[9px] text-center text-slate-400 font-medium">
+                                                                                Direct Concierge: <strong className="text-slate-200">+91 {prospectPhone.slice(-10) || '8288835235'}</strong>
+                                                                            </div>
+                                                                        </div>
+                                                                    </motion.div>
+                                                                )}
+                                                            </AnimatePresence>
+                                                        </>
+                                                    ) : isGenerating ? (
+                                                        <div className="p-6 text-center text-white flex flex-col items-center justify-center space-y-3">
+                                                            <Loader2 size={30} className="animate-spin text-blue-400" />
+                                                            <span className="text-xs font-bold">Synthesizing 30s Video Reel</span>
+                                                            <span className="text-[10px] text-slate-400 max-w-[200px]">
+                                                                Rendering 24kHz {videoLanguage.toUpperCase()} voiceover &amp; cinematic motion in background...
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-center p-6 text-white space-y-3 flex flex-col items-center justify-center h-full">
+                                                            <div className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-amber-400 shadow-inner">
+                                                                <Film size={22} />
+                                                            </div>
+                                                            <div>
+                                                                <h4 className="text-xs font-black text-white">Video Reel Skipped</h4>
+                                                                <p className="text-[10px] text-slate-300 mt-0.5 max-w-[190px] mx-auto leading-relaxed">
+                                                                    Synthesize photorealistic AI video motion with {videoLanguage.toUpperCase()} voiceover.
+                                                                </p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleStartCreativeGeneration(true)}
+                                                                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-md cursor-pointer active:scale-95 transition-all"
+                                                            >
+                                                                <Sparkles size={11} />
+                                                                <span>Generate 30s Reel</span>
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Video Controls Toolbar */}
+                                            {generatedVideo && (
+                                                <div className="mt-3 flex items-center justify-center gap-3 text-xs">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleReplayVideo}
+                                                        className="text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                                    >
+                                                        <RefreshCw size={12} />
+                                                        <span>Replay Video</span>
+                                                    </button>
+                                                    <span className="text-slate-300">•</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowVideoOutro(!showVideoOutro)}
+                                                        className="text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                                    >
+                                                        <Eye size={12} />
+                                                        <span>{showVideoOutro ? 'Hide Outro Slate' : 'Show Outro Slate'}</span>
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="lg:col-span-6 space-y-4">
+                                            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <h3 className="text-xs font-bold text-slate-800">WhatsApp Broadcast Copy</h3>
+                                                    <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded-md">
+                                                        Voiceover: {videoLanguage.toUpperCase()}
+                                                    </span>
+                                                </div>
+
+                                                <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                                    &quot;Hello &#123;&#123;1&#125;&#125;! Here is a 30s walkthrough of <strong>{projectTitle}</strong> in {location} starting at {projectPrice}. Click below to reserve your VIP preview this weekend!&quot;
+                                                </p>
+
+                                                {/* Action Button for Video Tab */}
+                                                <button
+                                                    onClick={() => handleSendStepWhatsApp('video_preview', `30s Video & Broadcast template sent to +91 ${prospectPhone.slice(-10)}!`)}
+                                                    disabled={sendingTabWhatsApp === 'video_preview'}
+                                                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                                                >
+                                                    {sendingTabWhatsApp === 'video_preview' ? (
+                                                        <Loader2 size={13} className="animate-spin" />
+                                                    ) : (
+                                                        <Send size={13} />
+                                                    )}
+                                                    <span>{generatedVideo ? 'Send Video & Template to My WhatsApp' : 'Send Walkthrough Template to My WhatsApp'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* TAB 3: WEBSITE */}
                             {showcaseTab === 'website' && (
                                 <div className="space-y-4">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-950/60 border border-slate-800 rounded-2xl">
-                                        {/* Device Toggles */}
-                                        <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                                        <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
                                             <button
                                                 onClick={() => setWebsiteDevice('desktop')}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                                                    websiteDevice === 'desktop' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                                                }`}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer ${websiteDevice === 'desktop' ? 'bg-blue-600 text-white' : 'text-slate-600'
+                                                    }`}
                                             >
-                                                <Monitor size={14} />
+                                                <Monitor size={13} />
                                                 <span>Desktop</span>
                                             </button>
                                             <button
-                                                onClick={() => setWebsiteDevice('tablet')}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                                                    websiteDevice === 'tablet' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                                                }`}
-                                            >
-                                                <Tablet size={14} />
-                                                <span>Tablet</span>
-                                            </button>
-                                            <button
                                                 onClick={() => setWebsiteDevice('mobile')}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                                                    websiteDevice === 'mobile' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                                                }`}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer ${websiteDevice === 'mobile' ? 'bg-blue-600 text-white' : 'text-slate-600'
+                                                    }`}
                                             >
-                                                <Smartphone size={14} />
+                                                <Smartphone size={13} />
                                                 <span>Mobile</span>
                                             </button>
                                         </div>
 
-                                        {/* Open Fullsite Button */}
                                         <div className="flex items-center gap-2">
-                                            <span className="text-xs text-slate-400 truncate max-w-xs hidden md:inline">
-                                                {companyName.toLowerCase().replace(/[^a-z0-9]/g, '')}.nobogent.com
-                                            </span>
+                                            {/* Action Button for Step 3 */}
                                             <button
-                                                onClick={() => {
-                                                    if (websiteHtml) {
-                                                        const blob = new Blob([websiteHtml], { type: 'text/html;charset=utf-8' });
-                                                        const blobUrl = URL.createObjectURL(blob);
-                                                        window.open(blobUrl, '_blank');
-                                                    } else {
-                                                        window.open(websitePreviewUrl, '_blank');
-                                                    }
-                                                }}
-                                                className="px-4 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                                                onClick={() => handleSendStepWhatsApp('website_preview', `Website link sent to +91 ${prospectPhone.slice(-10)}!`)}
+                                                disabled={sendingTabWhatsApp === 'website_preview'}
+                                                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                                             >
-                                                <span>Open Live Site in New Tab</span>
-                                                <ExternalLink size={13} />
+                                                {sendingTabWhatsApp === 'website_preview' ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                                <span>Send Website to WhatsApp</span>
+                                            </button>
+
+                                            <button
+                                                onClick={() => window.open(websitePreviewUrl, '_blank')}
+                                                className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-blue-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                            >
+                                                <span>Open Live Tab</span>
+                                                <ExternalLink size={12} />
                                             </button>
                                         </div>
                                     </div>
 
-                                    {/* Responsive Mockup Container */}
-                                    <div className="w-full flex justify-center bg-slate-950 p-4 rounded-2xl border border-slate-800 overflow-hidden min-h-[560px]">
-                                        <div className={`transition-all duration-300 rounded-xl overflow-hidden shadow-2xl border border-slate-800 bg-white ${
-                                            websiteDevice === 'desktop' ? 'w-full h-[620px]' : websiteDevice === 'tablet' ? 'w-[768px] h-[620px]' : 'w-[375px] h-[620px]'
-                                        }`}>
+                                    <div className="w-full flex justify-center bg-slate-100 p-4 rounded-2xl border border-slate-200 overflow-hidden min-h-[500px]">
+                                        <div className={`transition-all duration-300 rounded-xl overflow-hidden shadow-lg border border-slate-200 bg-white ${websiteDevice === 'desktop' ? 'w-full h-[540px]' : 'w-[375px] h-[540px]'
+                                            }`}>
                                             <iframe
-                                                srcDoc={websiteHtml || undefined}
-                                                src={!websiteHtml ? websitePreviewUrl : undefined}
-                                                title="Astro Demo Website"
+                                                src={websitePreviewUrl}
+                                                key={websitePreviewUrl}
+                                                title="Luxury Real Estate Multipage Website"
                                                 className="w-full h-full border-0"
                                             />
                                         </div>
                                     </div>
                                 </div>
                             )}
+
+                            {/* TAB 4: AI CALLER */}
+                            {showcaseTab === 'call' && (
+                                <div className="max-w-xl mx-auto rounded-3xl p-6 bg-slate-50 border border-slate-200 text-center space-y-5">
+                                    <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-100/70 px-3 py-1 rounded-full border border-emerald-300">
+                                        <Phone size={13} className="text-emerald-700" />
+                                        <span>500 Free Calling Minutes</span>
+                                    </div>
+
+                                    <div>
+                                        <h3 className="text-xl font-extrabold text-slate-900">
+                                            Outbound AI Voice Closer
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                                            Starts calling in <strong>{callLanguage.toUpperCase()}</strong>. Switches to English, Hindi, or Punjabi automatically if asked.
+                                        </p>
+                                    </div>
+
+                                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200 text-xs flex items-center justify-between">
+                                        <span className="text-slate-600 font-medium">Destination Number:</span>
+                                        <span className="font-mono font-bold text-blue-700">+91 {prospectPhone || '9888626786'}</span>
+                                    </div>
+
+                                    {/* Action Button for Step 4 */}
+                                    <button
+                                        onClick={handleStartLiveSpeedToLead}
+                                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                                    >
+                                        <Phone size={14} />
+                                        <span>Call My Phone Now (+91 {prospectPhone.slice(-10) || 'Phone'})</span>
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* TAB 5: WHATSAPP BROADCAST */}
+                            {showcaseTab === 'broadcast' && (
+                                <div className="max-w-xl mx-auto rounded-3xl p-6 bg-slate-50 border border-slate-200 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-900">WhatsApp Broadcast Drip</h3>
+                                            <p className="text-[11px] text-slate-500 mt-0.5">Automated re-engagement template sent directly to prospects.</p>
+                                        </div>
+                                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-200">
+                                            Verified Delivery
+                                        </span>
+                                    </div>
+
+                                    {/* WhatsApp Message Preview Card with Attached Creative */}
+                                    <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
+                                        <div className="w-full aspect-[16/9] rounded-xl overflow-hidden bg-slate-900 relative border border-slate-200">
+                                            <img
+                                                src={creative?.imageUrl || projectImageUrl}
+                                                alt="Broadcast Attached Asset"
+                                                className="w-full h-full object-cover"
+                                            />
+                                            <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-white text-[10px] font-bold flex items-center gap-1">
+                                                <Layers size={10} className="text-amber-400" />
+                                                <span>Attached 3:4 Ad Creative</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-3.5 rounded-xl bg-[#EFEAE2] border border-slate-200 text-xs space-y-2">
+                                            <div className="flex items-center gap-1.5 text-emerald-800 font-bold text-[11px]">
+                                                <CheckCircle2 size={12} className="text-emerald-600" />
+                                                <span>Approved Template Dispatch</span>
+                                            </div>
+                                            <div className="p-3 bg-white rounded-xl text-slate-800 leading-relaxed shadow-xs text-xs space-y-1">
+                                                <p>
+                                                    Hi <strong>{prospectName}</strong>, your appointment is confirmed for <strong>VIP Walkthrough &amp; Preview</strong> with <strong>{projectTitle}</strong> from <strong>{companyName}</strong>. We look forward to connecting with you!
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Button for Broadcast */}
+                                    <button
+                                        onClick={() => handleSendStepWhatsApp('weekly_broadcast', `Broadcast template dispatched to +91 ${prospectPhone.slice(-10)}!`)}
+                                        disabled={sendingTabWhatsApp === 'weekly_broadcast'}
+                                        className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50 active:scale-98 transition-all"
+                                    >
+                                        {sendingTabWhatsApp === 'weekly_broadcast' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                                        <span>Send Broadcast to My WhatsApp (+91 {prospectPhone.slice(-10) || 'Phone'})</span>
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* TAB 7: CRM PIPELINE */}
+                            {showcaseTab === 'crm' && (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                                        <div className="flex items-center gap-2">
+                                            <Database size={15} className="text-blue-600" />
+                                            <span className="text-xs font-bold text-slate-800">Sales Pipeline with Meta CAPI</span>
+                                        </div>
+                                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+                                            Live Ingestion
+                                        </span>
+                                    </div>
+
+                                    {/* 5-Column Kanban */}
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                                        {[
+                                            { stage: 'New Lead', count: leadPipelineStage === 'New Lead' ? 1 : 0 },
+                                            { stage: 'AI Contacted', count: leadPipelineStage === 'AI Contacted' ? 1 : 0 },
+                                            { stage: 'Qualified', count: leadPipelineStage === 'Qualified' ? 1 : 0 },
+                                            { stage: 'Site Visit Booked', count: leadPipelineStage === 'Site Visit Booked' ? 1 : 0 },
+                                            { stage: 'Closed', count: 0 }
+                                        ].map((col, idx) => (
+                                            <div key={idx} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between min-h-[160px]">
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-[11px] font-bold text-slate-700">{col.stage}</span>
+                                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white text-slate-600 font-bold border border-slate-200">
+                                                            {col.count}
+                                                        </span>
+                                                    </div>
+
+                                                    {col.count > 0 && (
+                                                        <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1">
+                                                            <div className="text-xs font-bold text-slate-900">{prospectName}</div>
+                                                            <div className="text-[10px] text-slate-500 font-mono">+91 {prospectPhone.slice(-10) || '9888626786'}</div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <span className="text-[9px] text-slate-400 text-center">Auto-Updated</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                         </motion.div>
                     )}
 
                     {/* =========================================================================
-                        STEP 4: SPEED-TO-LEAD DEMONSTRATION (Real WhatsApp + Real AI Outbound Call)
+                        STEP 4: LIVE TELEPHONY DIALER & POST-CALL ACTION DECK
                     ========================================================================= */}
                     {step === 'speed_to_lead' && (
                         <motion.div
@@ -1294,191 +2257,288 @@ export default function DemoPage() {
                             initial={{ opacity: 0, scale: 0.96 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.96 }}
-                            className="bg-slate-900/90 border border-blue-500/30 rounded-3xl p-6 sm:p-10 shadow-2xl shadow-blue-500/10 max-w-2xl mx-auto text-center"
+                            className="bg-white border border-blue-200 rounded-3xl p-6 sm:p-8 shadow-xl max-w-lg mx-auto text-center space-y-4"
                         >
-                            <span className="text-xs font-black uppercase tracking-widest text-blue-400 bg-blue-500/10 px-3.5 py-1 rounded-full border border-blue-500/20">
-                                Live Telephony &amp; WhatsApp Integration
-                            </span>
+                            {/* Top Bar with Live Badge & Direct Return */}
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 flex items-center gap-1.5">
+                                    <Phone size={12} />
+                                    <span>Live Telephony</span>
+                                </span>
 
-                            <div className="mt-6 relative w-24 h-24 mx-auto">
-                                <div className="absolute inset-0 rounded-full border-2 border-blue-400/30 animate-ping" />
-                                <div className="w-full h-full rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xl shadow-blue-600/40">
-                                    <Phone size={36} className={callStatus === 'ringing' ? 'animate-bounce' : ''} />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setStep('showcase');
+                                        setShowcaseTab('creative');
+                                        playChime('beep');
+                                    }}
+                                    className="text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-1 rounded-full border border-slate-200 flex items-center gap-1.5 transition-all cursor-pointer"
+                                >
+                                    <Layers size={12} />
+                                    <span>← Back to Creatives</span>
+                                </button>
+                            </div>
+
+                            <div className="mt-2 relative w-20 h-20 mx-auto">
+                                <div className={`absolute inset-0 rounded-full border-2 border-blue-300 ${callStatus === 'ringing' || callStatus === 'in_call' ? 'animate-ping' : ''}`} />
+                                <div className={`w-full h-full rounded-full flex items-center justify-center text-white shadow-lg ${callStatus === 'completed' ? 'bg-gradient-to-tr from-emerald-600 to-teal-600' : 'bg-gradient-to-tr from-blue-600 to-indigo-600'}`}>
+                                    {callStatus === 'completed' ? (
+                                        <CheckCircle2 size={32} />
+                                    ) : (
+                                        <Phone size={30} className={callStatus === 'ringing' ? 'animate-bounce' : ''} />
+                                    )}
                                 </div>
                             </div>
 
-                            <h2 className="text-2xl sm:text-3xl font-black text-white mt-4">
-                                {callStatus === 'ringing' ? 'Ringing Your Mobile Phone...' : callStatus === 'in_call' ? 'Call in Progress with AI Executive' : 'Calling Your Number...'}
-                            </h2>
+                            <div>
+                                <h2 className="text-xl font-extrabold text-slate-900 mt-2">
+                                    {callStatus === 'ringing'
+                                        ? 'Ringing Your Phone...'
+                                        : callStatus === 'in_call'
+                                            ? 'Call in Progress with AI'
+                                            : callStatus === 'completed'
+                                                ? 'Test Call Finished!'
+                                                : 'Calling Your Number...'}
+                                </h2>
 
-                            <div className="mt-2 text-sm text-blue-400 font-mono font-bold">
-                                {callerNumber} ➔ +91 {prospectPhone.slice(-10)} ({formatTimer(callTimer)})
+                                <div className="mt-1 text-xs text-blue-700 font-mono font-bold">
+                                    {callerNumber} ➔ +91 {prospectPhone.slice(-10)} ({formatTimer(callTimer)})
+                                </div>
                             </div>
 
                             {/* Soundwave animation */}
-                            <div className="flex items-center justify-center gap-1.5 my-6 h-10">
-                                {[30, 70, 45, 90, 60, 100, 40, 80, 50, 95, 35, 75, 45].map((h, i) => (
-                                    <div
-                                        key={i}
-                                        style={{ height: `${h}%` }}
-                                        className="w-1.5 bg-gradient-to-t from-blue-500 to-indigo-400 rounded-full animate-pulse"
-                                    />
-                                ))}
-                            </div>
-
-                            {/* WhatsApp Status Card */}
-                            <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-500/40 text-left text-xs mb-4 shadow-lg shadow-emerald-950/20">
-                                <div className="flex items-center justify-between text-emerald-400 font-bold mb-1.5">
-                                    <span className="flex items-center gap-1.5">
-                                        <MessageCircle size={15} />
-                                        WhatsApp Message (From Nobogent Verified: +91 98771 61216):
-                                    </span>
-                                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-black border border-emerald-500/30">
-                                        {whatsappDelivered ? '✓✓ Delivered from Nobogent' : 'Dispatched'}
-                                    </span>
-                                </div>
-                                <p className="text-slate-300 leading-relaxed">
-                                    Sent from Nobogent's official WhatsApp Business number directly to your phone (+91 {prospectPhone.slice(-10)}) with your project inquiry details for <strong>{projectTitle}</strong>.
-                                </p>
-                            </div>
-
-                            {callSummary && (
-                                <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-xs text-left mb-4">
-                                    <strong className="text-slate-300">Live AI Transcript Summary:</strong>
-                                    <p className="text-slate-400 mt-1 italic">{callSummary}</p>
+                            {callStatus !== 'completed' && (
+                                <div className="flex items-center justify-center gap-1.5 my-3 h-7">
+                                    {[30, 70, 45, 90, 60, 100, 40, 80, 50, 95, 35, 75, 45].map((h, i) => (
+                                        <div
+                                            key={i}
+                                            style={{ height: `${h}%` }}
+                                            className="w-1 bg-gradient-to-t from-blue-600 to-indigo-500 rounded-full animate-pulse"
+                                        />
+                                    ))}
                                 </div>
                             )}
 
-                            {/* Continue CTA */}
-                            <div className="mt-8 pt-4 border-t border-slate-800 flex items-center justify-between">
-                                <span className="text-xs text-slate-400">Done testing your phone?</span>
+                            {callSummary && (
+                                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-left">
+                                    <strong className="text-slate-800">Transcript Summary:</strong>
+                                    <p className="text-slate-600 mt-1 italic">{callSummary}</p>
+                                </div>
+                            )}
+
+                            {/* DELIVERABLES & CREATIVES ACTION CARD */}
+                            <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200 text-left space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-black uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                                        <Sparkles size={13} className="text-blue-600" />
+                                        <span>AI Deliverables Status</span>
+                                    </span>
+                                    {isGenerating ? (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
+                                            <Loader2 size={10} className="animate-spin" /> Rendering Stage {generationStage}/4
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/90 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                                            <Check size={11} strokeWidth={3} /> Ready to Review
+                                        </span>
+                                    )}
+                                </div>
+
+                                <p className="text-xs text-slate-600 leading-relaxed">
+                                    {isGenerating
+                                        ? 'Your 3:4 Ad Creative and 30s Multi-Scene Reel are completing in background.'
+                                        : 'Your customized luxury Ad Creative, 30s Commercial Reel, and Multipage Website are ready!'}
+                                </p>
+
+                                <div className="grid grid-cols-2 gap-2 pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setStep('showcase');
+                                            setShowcaseTab('creative');
+                                            playChime('beep');
+                                        }}
+                                        className="py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+                                    >
+                                        <Layers size={13} />
+                                        <span>Check Creatives</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setStep('showcase');
+                                            setShowcaseTab('video');
+                                            playChime('beep');
+                                        }}
+                                        className="py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+                                    >
+                                        <Play size={13} />
+                                        <span>Watch 30s Reel</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* WHATSAPP DISPATCH CARD */}
+                            <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-left space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-black uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
+                                        <MessageCircle size={13} className="text-emerald-600" />
+                                        <span>WhatsApp Verification</span>
+                                    </span>
+                                    <span className="text-[10px] font-bold text-emerald-700">Official Template</span>
+                                </div>
+
+                                <p className="text-xs text-slate-600 leading-relaxed">
+                                    Send verified WhatsApp template directly to <strong>+91 {prospectPhone.slice(-10)}</strong>.
+                                </p>
+
+                                <div className="flex items-center gap-2 pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSendStepWhatsApp('lead_welcome', `WhatsApp message dispatched to +91 ${prospectPhone.slice(-10)}!`)}
+                                        disabled={sendingTabWhatsApp === 'lead_welcome'}
+                                        className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50 active:scale-95"
+                                    >
+                                        {sendingTabWhatsApp === 'lead_welcome' ? (
+                                            <>
+                                                <Loader2 size={13} className="animate-spin" />
+                                                <span>Sending...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Send size={13} />
+                                                <span>Test WhatsApp Message</span>
+                                            </>
+                                        )}
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setStep('showcase');
+                                            setShowcaseTab('broadcast');
+                                            playChime('beep');
+                                        }}
+                                        className="py-2.5 px-3 rounded-xl bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                    >
+                                        <span>Broadcast →</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Bottom Navigation */}
+                            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
                                 <button
-                                    onClick={goToPricingComparison}
-                                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/20 active:scale-95 cursor-pointer"
+                                    type="button"
+                                    onClick={() => {
+                                        setStep('showcase');
+                                        playChime('beep');
+                                    }}
+                                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                                 >
-                                    <span>View Pricing &amp; Service Comparison ➔</span>
+                                    <span>← Back to Deliverables</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={goToPricingComparison}
+                                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                                >
+                                    <span>Pricing Matrix ➔</span>
                                 </button>
                             </div>
                         </motion.div>
                     )}
 
                     {/* =========================================================================
-                        STEP 5: GRAND COMPARISON SCREEN (Rs. 9,999 + GST vs Agency)
+                        STEP 5: PRICING COMPARISON
                     ========================================================================= */}
                     {step === 'pricing_comparison' && (
                         <motion.div
                             key="step-pricing-comparison"
                             initial={{ opacity: 0, scale: 0.96 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl backdrop-blur-2xl"
+                            className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-10 shadow-xl"
                         >
-                            {/* Headline Banner */}
-                            <div className="text-center max-w-3xl mx-auto mb-10">
-                                <span className="text-xs font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 px-3.5 py-1 rounded-full border border-amber-500/20">
-                                    ⚡ Autonomous Growth Stack • 95% Cost Reduction
-                                </span>
-                                <h2 className="text-3xl sm:text-5xl font-black text-white mt-4 tracking-tight">
-                                    Everything You Experienced: <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-amber-300">₹9,999 / Month</span>
+                            <div className="text-center max-w-2xl mx-auto mb-8">
+                                <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+                                    All Included: <span className="text-blue-600">₹9,999 / Month</span>
                                 </h2>
-                                <p className="text-sm sm:text-base text-slate-400 mt-3 max-w-2xl mx-auto">
-                                    No marketing agency retainers. No freelancers to manage. Zero human fulfillment delays. The entire commercial engine operates 24x7 autonomously.
+                                <p className="text-xs sm:text-sm text-slate-500 mt-2">
+                                    No marketing agency retainers or freelance delays. The entire engine operates 24x7.
                                 </p>
                             </div>
 
-                            {/* Contrast Highlights Cards */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-                                {/* Agency Card */}
-                                <div className="p-6 rounded-3xl bg-red-950/20 border border-red-500/30 flex flex-col justify-between">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
+                                <div className="p-5 rounded-2xl bg-red-50/50 border border-red-200 flex flex-col justify-between">
                                     <div>
-                                        <div className="flex items-center justify-between text-xs font-bold text-red-400 mb-2 uppercase tracking-wider">
-                                            <span>Traditional Marketing Agency</span>
+                                        <div className="flex items-center justify-between text-xs font-bold text-red-700 mb-1">
+                                            <span>Traditional Agency</span>
                                             <span>Typical Retainer</span>
                                         </div>
-                                        <div className="text-3xl font-black text-white">
-                                            ₹1,85,000 - ₹2,50,000<span className="text-sm font-normal text-slate-400"> / month</span>
+                                        <div className="text-2xl font-black text-slate-900">
+                                            ₹1,85,000 - ₹2,50,000<span className="text-xs font-normal text-slate-500"> / mo</span>
                                         </div>
-                                        <ul className="mt-4 space-y-2 text-xs text-slate-400">
+                                        <ul className="mt-3 space-y-1.5 text-xs text-slate-600">
                                             <li className="flex items-center gap-2">
-                                                <XCircle size={14} className="text-red-400 shrink-0" />
-                                                <span>3 to 4 weeks setup time before first ad goes live</span>
+                                                <XCircle size={13} className="text-red-500 shrink-0" />
+                                                <span>3 to 4 weeks setup time</span>
                                             </li>
                                             <li className="flex items-center gap-2">
-                                                <XCircle size={14} className="text-red-400 shrink-0" />
-                                                <span>Manual telecallers miss 60% of after-hours leads</span>
-                                            </li>
-                                            <li className="flex items-center gap-2">
-                                                <XCircle size={14} className="text-red-400 shrink-0" />
-                                                <span>Extra charges for landing page edits and video production</span>
+                                                <XCircle size={13} className="text-red-500 shrink-0" />
+                                                <span>Manual telecallers miss after-hours leads</span>
                                             </li>
                                         </ul>
                                     </div>
-                                    <div className="mt-6 pt-4 border-t border-red-500/20 text-xs font-bold text-red-300">
+                                    <div className="mt-4 pt-3 border-t border-red-200 text-xs font-bold text-red-700">
                                         Total Yearly Burn: ₹22,00,000+
                                     </div>
                                 </div>
 
-                                {/* Nobogent Card */}
-                                <div className="p-6 rounded-3xl bg-gradient-to-br from-blue-950/60 to-indigo-950/60 border-2 border-blue-500 shadow-xl shadow-blue-500/10 flex flex-col justify-between relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-400 to-amber-500 text-slate-950 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-bl-xl shadow-md">
-                                        RECOMMENDED
-                                    </div>
-
+                                <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-50/80 to-indigo-50/80 border-2 border-blue-600 shadow-md flex flex-col justify-between">
                                     <div>
-                                        <div className="flex items-center justify-between text-xs font-bold text-blue-400 mb-2 uppercase tracking-wider">
-                                            <span>Nobogent Autonomous OS</span>
-                                            <span className="text-amber-300">Zero Fulfillment</span>
+                                        <div className="flex items-center justify-between text-xs font-bold text-blue-700 mb-1">
+                                            <span>Nobogent</span>
+                                            <span className="text-amber-700 font-extrabold">Instant</span>
                                         </div>
-                                        <div className="text-4xl font-black text-white">
-                                            ₹9,999<span className="text-sm font-bold text-slate-300"> + GST / month</span>
+                                        <div className="text-3xl font-black text-slate-900">
+                                            ₹9,999<span className="text-xs font-bold text-slate-500"> + GST / mo</span>
                                         </div>
-                                        <ul className="mt-4 space-y-2 text-xs text-slate-300">
+                                        <ul className="mt-3 space-y-1.5 text-xs text-slate-700">
                                             <li className="flex items-center gap-2">
-                                                <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                                                <span>Instant setup: Live in under 60 seconds from onboarding</span>
+                                                <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                                                <span>Instant setup under 60 seconds</span>
                                             </li>
                                             <li className="flex items-center gap-2">
-                                                <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                                                <span>Instant &lt;30 second AI calling &amp; WhatsApp qualification</span>
-                                            </li>
-                                            <li className="flex items-center gap-2">
-                                                <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                                                <span>10 Videos + 30 Images + Astro Website + 5 Team Seats</span>
+                                                <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                                                <span>&lt;30s AI calling &amp; WhatsApp qualification</span>
                                             </li>
                                         </ul>
                                     </div>
-                                    <div className="mt-6 pt-4 border-t border-blue-500/30 text-xs font-bold text-emerald-400">
+                                    <div className="mt-4 pt-3 border-t border-blue-200 text-xs font-bold text-emerald-700">
                                         Save Over ₹20,00,000 Annually
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Full 12-Item Comparison Table */}
-                            <div className="rounded-2xl border border-slate-800 bg-slate-950/80 overflow-hidden mb-8">
-                                <div className="px-6 py-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-400">
-                                    <span>Included Services (12-Point Autonomous Stack)</span>
-                                    <div className="flex items-center gap-8 text-right">
-                                        <span className="hidden sm:inline w-28 text-red-400">Agency Cost</span>
-                                        <span className="w-36 text-emerald-400">Nobogent (₹9,999)</span>
-                                    </div>
-                                </div>
-
-                                <div className="divide-y divide-slate-800/80">
+                            {/* Comparison List */}
+                            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden mb-6">
+                                <div className="divide-y divide-slate-100">
                                     {SERVICE_COMPARISONS.map((item, idx) => (
-                                        <div key={idx} className="px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-900/40 transition-colors">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
-                                                    <item.icon size={14} />
+                                        <div key={idx} className="px-5 py-3 flex items-center justify-between gap-2 hover:bg-slate-50/60 transition-colors text-xs">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="w-6 h-6 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center shrink-0">
+                                                    <item.icon size={13} />
                                                 </div>
-                                                <div>
-                                                    <span className="text-xs font-bold text-white block">{item.name}</span>
-                                                    <span className="text-[11px] text-slate-500 hidden md:block">{item.nobogentStatus}</span>
-                                                </div>
+                                                <span className="font-bold text-slate-800">{item.name}</span>
                                             </div>
 
-                                            <div className="flex items-center justify-between sm:justify-end gap-8 text-xs font-mono">
-                                                <span className="text-red-400 line-through sm:w-28 sm:text-right">{item.agencyCost}</span>
-                                                <span className="text-emerald-400 font-bold sm:w-36 sm:text-right flex items-center gap-1 justify-end">
-                                                    <Check size={14} /> Included Free
+                                            <div className="flex items-center gap-6">
+                                                <span className="text-red-500 line-through hidden sm:inline">{item.agencyCost}</span>
+                                                <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                                    <Check size={13} /> Included
                                                 </span>
                                             </div>
                                         </div>
@@ -1486,22 +2546,45 @@ export default function DemoPage() {
                                 </div>
                             </div>
 
-                            {/* Call To Action Buttons */}
-                            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4 border-t border-slate-800">
+                            <div className="flex flex-wrap items-center justify-center gap-3 pt-4 border-t border-slate-100">
                                 <button
-                                    onClick={() => setStep('onboarding')}
-                                    className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                    type="button"
+                                    onClick={() => {
+                                        setStep('showcase');
+                                        setShowcaseTab('creative');
+                                        playChime('beep');
+                                    }}
+                                    className="px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
                                 >
-                                    <RefreshCw size={14} />
+                                    <Layers size={14} />
+                                    <span>← Back to Creatives &amp; Video</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => handleSendStepWhatsApp('lead_welcome', `WhatsApp message dispatched to +91 ${prospectPhone.slice(-10)}!`)}
+                                    disabled={sendingTabWhatsApp === 'lead_welcome'}
+                                    className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50 active:scale-95"
+                                >
+                                    <Send size={14} />
+                                    <span>Test WhatsApp Message</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setStep('onboarding')}
+                                    className="px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <RefreshCw size={13} />
                                     <span>Test Another Brand</span>
                                 </button>
 
                                 <a
                                     href="/login"
-                                    className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-amber-500 hover:from-blue-500 hover:to-amber-400 text-white font-black text-sm uppercase tracking-wider transition-all shadow-xl shadow-blue-600/30 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                                    className="px-7 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
                                 >
-                                    <span>Get Started for ₹9,999 / mo</span>
-                                    <ArrowRight size={16} />
+                                    <span>Get Started</span>
+                                    <ArrowRight size={15} />
                                 </a>
                             </div>
                         </motion.div>
@@ -1511,12 +2594,232 @@ export default function DemoPage() {
             </main>
 
             {/* FOOTER */}
-            <footer className="w-full max-w-7xl mx-auto px-6 py-6 border-t border-slate-800/80 text-center text-xs text-slate-500 z-20 flex flex-col sm:flex-row items-center justify-between gap-2">
-                <span>© 2026 Nobogent Technologies Inc. Autonomous AI Sales &amp; Marketing Engine.</span>
-                <span className="flex items-center gap-2 text-slate-400">
-                    <span>Vobiz Telephony</span> • <span>Meta Graph API</span> • <span>Astro JS Framework</span>
+            <footer className="w-full max-w-6xl mx-auto px-6 py-4 border-t border-slate-200 text-center text-xs text-slate-500 z-20 flex flex-col sm:flex-row items-center justify-between gap-2">
+                <span>© 2026 Nobogent Technologies Inc.</span>
+                <span className="text-slate-400">
+                    Vobiz Telephony • Meta Graph API • Astro JS
                 </span>
             </footer>
+
+            {/* =========================================================================
+                POPUP MODAL: ALL 35+ SUPER ADMIN REFERENCE CREATIVE DESIGNS
+            ========================================================================= */}
+            <AnimatePresence>
+                {isTemplateModalOpen && (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md"
+                        onClick={() => setIsTemplateModalOpen(false)}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.96, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: 10 }}
+                            transition={{ duration: 0.2 }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="relative w-full max-w-5xl max-h-[90vh] bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
+                        >
+                            {/* Modal Header */}
+                            <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col gap-3 shrink-0 bg-slate-50/70">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold border border-blue-200 shadow-2xs">
+                                            <Layers size={18} />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
+                                                    Select Reference Creative Design
+                                                </h2>
+                                                <span className="px-2 py-0.5 rounded-full bg-blue-100/70 text-blue-700 font-bold text-[10px] border border-blue-200">
+                                                    35 Designs Available
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                Choose any reference design from our Super Admin library. The AI creative engine will adapt your property image, badges, and typography to this layout.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsTemplateModalOpen(false)}
+                                        className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
+
+                                {/* Filter & Search Controls */}
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                                    {/* Category Tabs */}
+                                    <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+                                        {[
+                                            { key: 'all', label: 'All Designs (35)' },
+                                            { key: 'high_converting', label: 'High Converting (16)' },
+                                            { key: 'premium', label: 'Ultra Luxury & Premium (19)' }
+                                        ].map((tab) => (
+                                            <button
+                                                key={tab.key}
+                                                onClick={() => setTemplateCategoryFilter(tab.key as any)}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${templateCategoryFilter === tab.key
+                                                        ? 'bg-blue-600 text-white shadow-xs'
+                                                        : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
+                                                    }`}
+                                            >
+                                                {tab.label}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Search Input */}
+                                    <div className="relative w-full sm:w-64">
+                                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            value={templateSearchQuery}
+                                            onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                                            placeholder="Search by title, badge..."
+                                            className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
+                                        />
+                                        {templateSearchQuery && (
+                                            <button
+                                                onClick={() => setTemplateSearchQuery('')}
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Modal Body: Grid of all 35 templates */}
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
+                                    {filteredTemplates.map((tmpl) => {
+                                        const isSelected = selectedTemplateId === tmpl.id || selectedTemplateId === tmpl.url || (selectedTemplateId === 'pinterest_damac_island' && tmpl.index === 0);
+                                        return (
+                                            <div
+                                                key={tmpl.id}
+                                                onClick={() => handleSelectTemplate(tmpl.id)}
+                                                className={`group relative rounded-2xl overflow-hidden bg-white border transition-all duration-200 flex flex-col justify-between cursor-pointer ${isSelected
+                                                        ? 'border-blue-600 ring-2 ring-blue-500/30 shadow-md'
+                                                        : 'border-slate-200/90 hover:border-blue-400 hover:shadow-md'
+                                                    }`}
+                                            >
+                                                <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-950">
+                                                    <img
+                                                        src={tmpl.url}
+                                                        alt={tmpl.name}
+                                                        loading="lazy"
+                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                                    />
+                                                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-slate-950/80 backdrop-blur-xs text-[9px] font-extrabold text-amber-300 uppercase tracking-wider shadow-xs">
+                                                        {tmpl.badge}
+                                                    </span>
+
+                                                    {/* Fullsize preview icon button */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setImageLightboxUrl(tmpl.url);
+                                                        }}
+                                                        className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-slate-950/80 hover:bg-slate-900 text-white opacity-0 group-hover:opacity-100 transition-opacity shadow-sm cursor-pointer"
+                                                        title="View High-Res"
+                                                    >
+                                                        <Maximize2 size={13} />
+                                                    </button>
+
+                                                    {isSelected && (
+                                                        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-md">
+                                                            <Check size={13} strokeWidth={3} />
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="p-3 bg-white">
+                                                    <div className="text-xs font-extrabold text-slate-900 truncate">
+                                                        {tmpl.name}
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                                                        {tmpl.category} &bull; {tmpl.libraryCategory === 'high_converting' ? 'High Converting' : 'Ultra Luxury'}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleSelectTemplate(tmpl.id);
+                                                        }}
+                                                        className={`mt-2 w-full py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${isSelected
+                                                                ? 'bg-blue-600 text-white'
+                                                                : 'bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700'
+                                                            }`}
+                                                    >
+                                                        {isSelected ? '✓ Selected' : 'Use This Template'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {filteredTemplates.length === 0 && (
+                                    <div className="text-center py-12 text-slate-400">
+                                        <Layers size={32} className="mx-auto mb-2 opacity-50" />
+                                        <p className="text-sm font-bold text-slate-600">No matching templates found</p>
+                                        <p className="text-xs text-slate-400 mt-1">Try another keyword or category filter</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="p-4 border-t border-slate-200 bg-white flex items-center justify-between">
+                                <div className="text-xs text-slate-600">
+                                    Current Choice: <strong className="text-slate-900">{currentTemplate.name}</strong> <span className="text-slate-400">({currentTemplate.badge})</span>
+                                </div>
+                                <button
+                                    onClick={() => setIsTemplateModalOpen(false)}
+                                    className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+                                >
+                                    Done
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* =========================================================================
+                HIGH-RES IMAGE LIGHTBOX MODAL
+            ========================================================================= */}
+            <AnimatePresence>
+                {imageLightboxUrl && (
+                    <div
+                        onClick={() => setImageLightboxUrl(null)}
+                        className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md"
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.15 }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="relative max-w-4xl max-h-[92vh] rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl flex flex-col items-center justify-center p-2"
+                        >
+                            <button
+                                onClick={() => setImageLightboxUrl(null)}
+                                className="absolute top-3 right-3 z-10 p-2 rounded-full bg-slate-900/80 hover:bg-slate-800 text-white transition-all cursor-pointer shadow-md"
+                            >
+                                <X size={16} />
+                            </button>
+                            <img
+                                src={imageLightboxUrl}
+                                alt="Enlarged Preview"
+                                className="max-w-full max-h-[85vh] object-contain rounded-xl"
+                            />
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

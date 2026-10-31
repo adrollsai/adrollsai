@@ -1303,6 +1303,7 @@ export type Database = {
           selected_page_name: string | null
           selected_page_token: string | null
           selected_text_llm: string | null
+          selected_templates: string[] | null
           seo_articles_used: number | null
           storage_bytes_used: number | null
           subscription_plan: string | null
@@ -1407,6 +1408,7 @@ export type Database = {
           selected_page_name?: string | null
           selected_page_token?: string | null
           selected_text_llm?: string | null
+          selected_templates?: string[] | null
           seo_articles_used?: number | null
           storage_bytes_used?: number | null
           subscription_plan?: string | null
@@ -1511,6 +1513,7 @@ export type Database = {
           selected_page_name?: string | null
           selected_page_token?: string | null
           selected_text_llm?: string | null
+          selected_templates?: string[] | null
           seo_articles_used?: number | null
           storage_bytes_used?: number | null
           subscription_plan?: string | null

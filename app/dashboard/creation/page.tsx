@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2, Globe, Languages, Mic, AlertCircle, Eye } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -11,6 +13,7 @@ import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import ProductSearchableSelect from '@/components/ProductSearchableSelect'
+import { ALL_REFERENCE_TEMPLATES, getReferenceTemplate, getRandomReferenceTemplate } from '@/utils/reference-templates-data'
 
 // --- TYPES ---
 type Message = {
@@ -55,6 +58,7 @@ type Profile = {
   avatar_url?: string
   avatar_description?: string
   avatar_audio_url?: string
+  selected_templates?: string[]
 }
 
 
@@ -68,56 +72,14 @@ export interface DesignTemplate {
   url: string
 }
 
-const TEMPLATES: DesignTemplate[] = [
-  {
-    id: 'dubai_sunset_splendor',
-    name: 'Dubai Sunset Splendor',
-    category: 'Golden Hour Luxury',
-    description: 'Aspirational sunset skyline, champagne & bronze warm lighting, prominent location pin & starting price pill.',
-    badge: 'Popular',
-    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081944492_0.jpg'
-  },
-  {
-    id: 'obsidian_gold_executive',
-    name: 'Obsidian & Gold Executive',
-    category: 'Dark Mode Luxury',
-    description: 'Deep charcoal/navy backdrop, glowing gold accents, prominent starting price badge, 4 trust metrics & verified developer seal.',
-    badge: 'High Converting',
-    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081945419_1.jpg'
-  },
-  {
-    id: 'warm_travertine_minimalist',
-    name: 'Warm Travertine Villa',
-    category: 'Minimalist Architecture',
-    description: 'Sun-drenched cream plaster, organic arch framing, lush landscaping, frosted glass price & location badge.',
-    badge: 'Architectural',
-    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081946159_3.jpg'
-  },
-  {
-    id: 'panoramic_horizon_penthouse',
-    name: 'Panoramic Horizon Penthouse',
-    category: 'Ultra-Luxury Vista',
-    description: 'Breathtaking infinity pool & skyline vista, refined serif & modern sans typography, bottom QR contact bar.',
-    badge: 'Ultra Luxury',
-    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081948991_6.jpg'
-  },
-  {
-    id: 'high_authority_showcase',
-    name: 'High-Authority Price & Location',
-    category: 'Direct Response',
-    description: 'High-converting direct-response layout with dominant price ribbon, location header pill, 3 value chips & CTA strip.',
-    badge: 'Highest ROI',
-    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081951867_9.jpg'
-  },
-  {
-    id: 'swiss_editorial_minimalist',
-    name: 'Swiss Modernist Editorial',
-    category: 'Clean White Space',
-    description: 'Expansive white negative space, Swiss modernist typography, asymmetrical 2-panel architecture, sharp pricing footer.',
-    badge: 'Contemporary',
-    url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/dubai_ref_1793081954884_15.jpg'
-  }
-]
+const TEMPLATES: DesignTemplate[] = ALL_REFERENCE_TEMPLATES.map(t => ({
+  id: t.id,
+  name: t.name,
+  category: t.category,
+  description: t.description,
+  badge: t.badge,
+  url: t.url
+}));
 
 const ASPECT_RATIOS = [
   { label: '1:1', value: '1:1', icon: Square },
@@ -804,21 +766,24 @@ export default function CreationPage() {
             // Check if logo is excluded
             const isLogoExcluded = profile?.logo_url ? creativeFlow.batchExcludedImages.includes(profile.logo_url) : false;
 
-            // Template assignment: choose selected template or rotate across Dubai luxury templates for variety
+            // Template assignment: choose selected template or randomly pick across user's selected reference templates
             let assignedTemplateUrl: string | null = null;
             let assignedStyleName = angle.title ? `${angle.title} - ${angle.visual_concept}` : undefined;
             if (creativeFlow.selectedTemplate && creativeFlow.selectedTemplate !== 'rotate') {
-                const matched = TEMPLATES.find(t => t.id === creativeFlow.selectedTemplate);
+                const matched = getReferenceTemplate(creativeFlow.selectedTemplate);
                 if (matched) {
                     assignedTemplateUrl = matched.url;
                     assignedStyleName = `${matched.name} | ${assignedStyleName || ''}`;
                 }
             } else {
-                // Dynamic rotation across distinct luxury templates
-                const rotatingTemplate = TEMPLATES[angleIdx % TEMPLATES.length];
-                if (rotatingTemplate) {
-                    assignedTemplateUrl = rotatingTemplate.url;
-                    assignedStyleName = `${rotatingTemplate.name} | ${assignedStyleName || ''}`;
+                // In batch mode: use reference designs selected by the user randomly
+                const userSelected = profile?.selected_templates && profile.selected_templates.length > 0
+                    ? profile.selected_templates
+                    : undefined;
+                const randomTmpl = getRandomReferenceTemplate(userSelected);
+                if (randomTmpl) {
+                    assignedTemplateUrl = randomTmpl.url;
+                    assignedStyleName = `${randomTmpl.name} | ${assignedStyleName || ''}`;
                 }
             }
             angleIdx++;
@@ -1438,17 +1403,22 @@ export default function CreationPage() {
         return
     }
 
-    // Always ask user to choose a template before generating an image creative
+    let effForcedTemplateId = forcedTemplateId;
+    // If user hasn't selected any template during creation, use one of their saved selected templates randomly
     if (
       creationMode === 'image' && 
-      !forcedTemplateId && 
+      !effForcedTemplateId && 
       !selectedTemplate && 
       !uploadedRefUrl && 
       !selectedUserRefId && 
       !selectedUserRefUrl
     ) {
-      setIsTemplateChooserOpen(true);
-      return;
+      const userSelected = profile?.selected_templates && profile.selected_templates.length > 0
+        ? profile.selected_templates
+        : undefined;
+      const randomTmpl = getRandomReferenceTemplate(userSelected);
+      effForcedTemplateId = randomTmpl.id;
+      toast.info(`Using reference style: ${randomTmpl.name}`);
     }
 
     setIsChatWorkspaceOpen(true)
@@ -1536,11 +1506,15 @@ export default function CreationPage() {
 
   const isEditMode = chatAttachments.length > 0 || isEditingLastImage;
 
-  const effTemplate = forcedTemplateId || selectedTemplate
+  const effTemplate = effForcedTemplateId || forcedTemplateId || selectedTemplate
+  const userSelected = profile?.selected_templates && profile.selected_templates.length > 0
+    ? profile.selected_templates
+    : undefined;
+  const randomFallback = getRandomReferenceTemplate(userSelected);
   const templateObj = effTemplate === 'rotate'
-    ? TEMPLATES[Math.floor(Math.random() * TEMPLATES.length)]
-    : TEMPLATES.find(t => t.id === effTemplate)
-  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null
+    ? randomFallback
+    : effTemplate ? getReferenceTemplate(effTemplate) : randomFallback;
+  const activeReferenceUrl = uploadedRefUrl || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || templateObj?.url || randomFallback.url
 
   const startResponse = await authFetch(`/api/chat${window.location.search}`, {
     method: 'POST',
@@ -1691,6 +1665,13 @@ export default function CreationPage() {
                 >
                     <Zap size={10} fill="white" /> Batch Mode
                 </button>
+
+                <Link
+                    href="/dashboard/delivery-plan"
+                    className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest shadow-2xs active:scale-95 transition-all"
+                >
+                    <Clock size={10} className="text-indigo-600" /> 5-Min Delivery Plan
+                </Link>
 
                 <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-all ${profile?.logo_url && profile?.contact_number ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-amber-50 border-amber-100 text-amber-600'}`}>
                     <div className={`w-1.5 h-1.5 rounded-full ${profile?.logo_url && profile?.contact_number ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />

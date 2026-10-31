@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<base href="/real-estate-template/">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thank you — Everline Realty</title>
+<meta name="description" content="Thank you — your enquiry has reached the Everline Realty team. We reply within one business hour.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0b1220">
+<link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body data-page="thankyou">
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<div id="siteHeader">
+  <noscript>
+    <nav style="padding:1rem;background:#0b1220" aria-label="Primary">
+      <a style="color:#fff;margin-right:1rem" href="index.html">Home</a>
+      <a style="color:#fff;margin-right:1rem" href="listings.html">Listings</a>
+      <a style="color:#fff" href="contact.html">Contact</a>
+    </nav>
+  </noscript>
+</div>
+
+<main id="main">
+
+  <section class="state-page">
+    <div class="container container--narrow">
+      <div class="state-page__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      </div>
+      <span class="eyebrow eyebrow--plain" style="justify-content:center">Message received</span>
+      <h1 id="tyTitle">Thank you — your enquiry is with us</h1>
+      <p id="tyBody">One of our advisors will be in touch within one business hour, Monday to Saturday. If it's urgent, call us on <a href="tel:+15550182245">(555) 018-2245</a> and we'll pick up.</p>
+
+      <div class="grid grid--3" style="margin-top:2.5rem;text-align:left">
+        <div class="card"><div class="card__body">
+          <h4 style="font-size:1rem">1. We read it properly</h4>
+          <p class="muted" style="font-size:.9rem">A licensed agent reads every enquiry — not a call centre, not a bot.</p>
+        </div></div>
+        <div class="card"><div class="card__body">
+          <h4 style="font-size:1rem">2. We come prepared</h4>
+          <p class="muted" style="font-size:.9rem">By the time we call we'll have looked at your property or your search criteria.</p>
+        </div></div>
+        <div class="card"><div class="card__body">
+          <h4 style="font-size:1rem">3. No pressure</h4>
+          <p class="muted" style="font-size:.9rem">One conversation, then it's your decision. We won't chase you for weeks.</p>
+        </div></div>
+      </div>
+
+      <div class="center-actions">
+        <a class="btn btn--primary btn--lg" href="listings.html">Browse homes for sale</a>
+        <a class="btn btn--ghost btn--lg" href="blog.html">Read the market report</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--tint">
+    <div class="container">
+      <div class="section__head section__head--row">
+        <div>
+          <span class="eyebrow">While you're here</span>
+          <h2>Three homes worth a look</h2>
+        </div>
+        <a class="link-arrow" href="listings.html">All listings
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px"><path d="M4 12h15"/><path d="m13 5 7 7-7 7"/></svg>
+        </a>
+      </div>
+      <div class="grid grid--3" data-render="featured"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="siteFooter">
+  <noscript>
+    <footer style="padding:2rem;background:#0b1220;color:#cbd6e0">
+      <p><strong>Everline Realty</strong> · 2140 Alder Street, Suite 300, Riverton, CA 94107 · (555) 018-2245</p>
+    </footer>
+  </noscript>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+  /* Personalise the confirmation headline from ?form= */
+  (function () {
+    var map = {
+      "valuation": ["Thank you — your valuation request is in", "We'll review your property and come back with a written valuation, usually within one business day."],
+      "seller-valuation": ["Thank you — your valuation request is in", "We'll review your property and come back with a written valuation, usually within one business day."],
+      "instant-valuation": ["Thank you — your estimate is on its way", "A licensed agent will confirm the figure by email within one business hour, including the comparable sales behind it."],
+      "viewing": ["Thank you — your viewing request is in", "We'll confirm a time with you shortly. Viewings can usually be arranged within 48 hours."],
+      "contact": ["Thank you — your message is with us", "One of our advisors will be in touch within one business hour, Monday to Saturday."],
+      "newsletter": ["You're on the list", "The next market note goes out at the start of the month. You can unsubscribe in one click."],
+      "agent-contact": ["Thank you — your message is with your agent", "Your agent will reply personally within one business hour."]
+    };
+    var key = new URLSearchParams(location.search).get("form");
+    var entry = map[key];
+    if (entry) {
+      document.getElementById("tyTitle").textContent = entry[0];
+      document.getElementById("tyBody").innerHTML = entry[1] + ' If it\'s urgent, call <a href="tel:+15550182245">(555) 018-2245</a>.';
+    }
+  })();
+</script>
+</body>
+</html>

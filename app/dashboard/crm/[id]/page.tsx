@@ -16,6 +16,7 @@ import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
 import { openPhoneDialer } from '@/utils/dialer'
 import { categorizeLeadStage } from '@/utils/pipeline-stages'
 import CRMErrorBoundary from '@/components/CRMErrorBoundary'
+import VoipCallingModal from '@/components/VoipCallingModal'
 
 const STAGES = [
   'New Lead',
@@ -33,9 +34,38 @@ const STAGES = [
   'Plan Postponed',
   'Already Purchased',
   'Lost/NI',
-  'Different Requirement',
   'Appointment Booked'
 ]
+
+const INTERNAL_SYSTEM_KEYS = new Set([
+  // Contact identifiers (already in lead header)
+  'full_name', 'name', 'first_name', 'last_name',
+  'whatsapp_number', 'phone_number', 'phone', 'mobile', 'contact', 'tel',
+  'email', 'email_address',
+
+  // Ad & Campaign attribution metadata
+  'meta_ad_origin', 'ad_id', 'ad_name', 'adset_id', 'adset_name',
+  'campaign_id', 'campaign_name', 'form_id', 'form_name',
+  'is_instant_form', 'all_facebook_lead_ids', 'inbox_url', 'page_id', 'page_name', 'pixel_id',
+
+  // Scoring & AI metadata
+  'score_breakdown', 'lead_score', 'lead_tier', 'score_updated_at',
+  'awaiting_lead_name', 'qualification_completed', 'is_qualified',
+  'voice_campaign_id', 'form_answers', 'history_visible_from',
+
+  // Reopen & DNP tracking
+  'dnp_count', 'last_reopened_at', 'last_reopened_source',
+  'reopened_count', 'reopened_sources', 'last_call_dnp',
+
+  // Followup & CRM Action metadata
+  'last_remark', 'last_followup_remark', 'last_followup_at', 'last_followup_type',
+  'next_action_date', 'next_action_type', 'next_action_remarks', 'next_action_remark', 'next_remarks',
+  'remind_me', 'has_visited', 'visited', 'allow_after_hours', 'calling_enabled',
+  'pipeline_stage', 'status',
+
+  // System & database properties
+  'id', 'user_id', 'assigned_to', 'created_at', 'updated_at', 'property_id'
+])
 
 function formatCallPhone(phoneRaw: string | null | undefined): string {
     if (!phoneRaw) return '';
@@ -96,6 +126,7 @@ function LeadProfilePageContent() {
     const [newFieldValue, setNewFieldValue] = useState('')
     const [leadHistory, setLeadHistory] = useState<any[]>([])
     const [currentUserRole, setCurrentUserRole] = useState<string>('admin')
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null)
     const [isTeamMember, setIsTeamMember] = useState(false)
     const [loading, setLoading] = useState(true)
 
@@ -149,6 +180,8 @@ function LeadProfilePageContent() {
     const [pixels, setPixels] = useState<any[]>([])
     const [isLoadingPixels, setIsLoadingPixels] = useState(false)
     const [isCalling, setIsCalling] = useState(false)
+    const [isCallingVoip, setIsCallingVoip] = useState(false)
+    const [isVoipModalOpen, setIsVoipModalOpen] = useState(false)
     const [showTranscript, setShowTranscript] = useState(true)
 
     // Collapsible Section States (Voice & Qualification open by default)
@@ -261,6 +294,7 @@ function LeadProfilePageContent() {
         }
         supabase.auth.getUser().then(({ data: { user } }) => {
             if (user) {
+                setCurrentUserId(user.id)
                 supabase.from('profiles').select('role, parent_id, agency_id, business_name').eq('id', user.id).single().then(({ data }) => {
                     if (data) {
                         if (data.business_name) setUserBusinessName(data.business_name)
@@ -429,17 +463,7 @@ function LeadProfilePageContent() {
         const channel = supabase.channel(`lead_detail_${id}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads', filter: `id=eq.${id}` }, (payload) => {
                 const updatedLead = payload.new;
-                let parsedCustomFields = updatedLead.custom_fields;
-                if (parsedCustomFields && typeof parsedCustomFields === 'string') {
-                    try {
-                        while (typeof parsedCustomFields === 'string') {
-                            parsedCustomFields = JSON.parse(parsedCustomFields);
-                        }
-                    } catch (e) {
-                        parsedCustomFields = {};
-                    }
-                }
-                updatedLead.custom_fields = parsedCustomFields;
+                updatedLead.custom_fields = parseCustomFields(updatedLead.custom_fields);
                 setLead(updatedLead)
                 updateLocalCRMCache(updatedLead)
                 fetchLeadHistory()
@@ -463,17 +487,7 @@ function LeadProfilePageContent() {
                 .single()
 
             if (data && data.voice_call_status !== 'calling') {
-                let parsedCustomFields = data.custom_fields;
-                if (parsedCustomFields && typeof parsedCustomFields === 'string') {
-                    try {
-                        while (typeof parsedCustomFields === 'string') {
-                            parsedCustomFields = JSON.parse(parsedCustomFields);
-                        }
-                    } catch (e) {
-                        parsedCustomFields = {};
-                    }
-                }
-                data.custom_fields = parsedCustomFields;
+                data.custom_fields = parseCustomFields(data.custom_fields);
                 setLead(data)
                 updateLocalCRMCache(data)
                 fetchLeadHistory()
@@ -604,17 +618,8 @@ function LeadProfilePageContent() {
 
             const data = leadRes.data
             if (data) {
-                let parsedCustomFields = data.custom_fields
-                if (parsedCustomFields && typeof parsedCustomFields === 'string') {
-                    try {
-                        while (typeof parsedCustomFields === 'string') {
-                            parsedCustomFields = JSON.parse(parsedCustomFields)
-                        }
-                    } catch (e) {
-                        parsedCustomFields = {}
-                    }
-                }
-                data.custom_fields = parsedCustomFields || {}
+                const parsedCustomFields = parseCustomFields(data.custom_fields)
+                data.custom_fields = parsedCustomFields
                 setLead(data)
 
                 // Dynamically resolve updated Campaign Name
@@ -784,7 +789,7 @@ function LeadProfilePageContent() {
         if (!lead) return
         setSavingQuestionKey(key)
         try {
-            const currentCf = typeof lead.custom_fields === 'object' && lead.custom_fields !== null ? { ...lead.custom_fields } : {}
+            const currentCf = parseCustomFields(lead.custom_fields)
             currentCf[key] = value
             if (key === 'property_type') currentCf.interested_property = value
             if (key === 'budget') {
@@ -911,7 +916,7 @@ function LeadProfilePageContent() {
             const selectedProp = properties.find(p => p.id === propertyId);
             const newPropTitle = selectedProp ? selectedProp.title : null;
 
-            let updatedCustomFields = lead?.custom_fields || {};
+            let updatedCustomFields = parseCustomFields(lead?.custom_fields);
             if (updatedCustomFields.meta_ad_origin) {
                 updatedCustomFields = {
                     ...updatedCustomFields,
@@ -962,8 +967,7 @@ function LeadProfilePageContent() {
                     
                     setLead((prev: any) => {
                         if (!prev) return prev
-                        let cf = prev.custom_fields || {}
-                        if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+                        const cf = parseCustomFields(prev.custom_fields)
                         return { ...prev, custom_fields: { ...cf, meta_ad_origin: updatedOrigin } }
                     })
                 }
@@ -983,15 +987,7 @@ function LeadProfilePageContent() {
             return alert("Both field name and value are required")
         }
 
-        let currentFields = lead.custom_fields || {}
-        if (typeof currentFields === 'string') {
-            try {
-                currentFields = JSON.parse(currentFields)
-            } catch (e) {
-                currentFields = {}
-            }
-        }
-
+        const currentFields = parseCustomFields(lead.custom_fields)
         const updatedFields = {
             ...currentFields,
             [newFieldKey.trim()]: newFieldValue.trim()
@@ -1017,15 +1013,7 @@ function LeadProfilePageContent() {
     const handleDeleteCustomField = async (keyToDelete: string) => {
         if (!confirm(`Are you sure you want to delete the field "${keyToDelete}"?`)) return
 
-        let currentFields = lead.custom_fields || {}
-        if (typeof currentFields === 'string') {
-            try {
-                currentFields = JSON.parse(currentFields)
-            } catch (e) {
-                currentFields = {}
-            }
-        }
-
+        const currentFields = parseCustomFields(lead.custom_fields)
         const updatedFields = { ...currentFields }
         delete updatedFields[keyToDelete]
 
@@ -1222,8 +1210,7 @@ function LeadProfilePageContent() {
         // Update local lead state so notes, stage, and last_remark reflect this manual remark immediately
         const nowFormatted = new Date().toLocaleString([], { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
         const prependedNote = `[${nowFormatted}]: ${text}\n\n${lead?.notes || ''}`
-        let cf = { ...(lead?.custom_fields || {}) }
-        if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+        const cf = parseCustomFields(lead?.custom_fields)
         cf.last_remark = text
         if (isFresh) {
             cf.pipeline_stage = 'Contacted'
@@ -1328,6 +1315,39 @@ function LeadProfilePageContent() {
         }
     }
 
+    const handleTriggerBluesquareVoipCall = async () => {
+        if (currentUserRole !== 'super_admin') {
+            toast.error("Only Super Admin is authorized to initiate Bluesquare VoIP calls.")
+            return
+        }
+        const leadPhone = lead?.phone || lead?.custom_fields?.whatsapp_number || lead?.custom_fields?.phone_number
+        if (!leadPhone) {
+            toast.error("Lead has no phone number to call.")
+            return
+        }
+        setIsCallingVoip(true)
+        try {
+            toast.info(`Initiating VoIP call with Bluesquare Infra DID (+91 79 6548 0905)...`)
+            const res = await fetch(`/api/voice/call${impersonateId ? `?impersonate=${impersonateId}` : ''}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ leadId: id, useBluesquareDid: true })
+            })
+            const data = await res.json()
+            if (data.success) {
+                toast.success('🎙️ VoIP call initiated with Bluesquare DID! Recording and AI analysis will be processed automatically.')
+                setLead((prev: any) => ({ ...prev, voice_call_status: 'calling', last_called_by: 'Super Admin (Bluesquare VoIP)' }))
+                fetchLeadData()
+            } else {
+                toast.error(data.error || 'Failed to initiate VoIP call.')
+            }
+        } catch (err: any) {
+            toast.error(err.message || 'An error occurred triggering VoIP call.')
+        } finally {
+            setIsCallingVoip(false)
+        }
+    }
+
     const handleFieldUpdate = async (field: string, value: any) => {
         const nextLead = { ...lead, [field]: value }
         setLead(nextLead)
@@ -1427,8 +1447,7 @@ END:VCARD`
                             )}
                             <LeadScoreBadge lead={lead} size="sm" showDetails />
                             {(() => {
-                                let cf = lead.custom_fields
-                                if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
+                                const cf = parseCustomFields(lead.custom_fields);
                                 const stage = (lead.status || lead.pipeline_stage || '').toLowerCase()
                                 const isVisited = cf?.has_visited === true || cf?.visited === true || (!stage.includes('planned') && !stage.includes('scheduled') && (stage.includes('visit done') || stage.includes('visited') || stage.includes('revisit done') || stage.includes('appointment done') || stage.includes('site visit done')))
                                 if (isVisited) {
@@ -1459,7 +1478,20 @@ END:VCARD`
                             )}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mt-1">
-                            <p className="text-xs font-medium text-slate-500 break-all">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
+                            <div className="flex items-center gap-2">
+                                <p className="text-xs font-medium text-slate-500 break-all">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</p>
+                                {lead.phone && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsVoipModalOpen(true)}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-extrabold transition-all cursor-pointer shadow-2xs active:scale-95"
+                                        title="Initiate In-Browser VoIP Call via Vobiz"
+                                    >
+                                        <Phone size={10} className="fill-current text-blue-600" />
+                                        <span>VoIP</span>
+                                    </button>
+                                )}
+                            </div>
                             
                             {/* Interactive Stage Selector */}
                             <div className="relative shrink-0">
@@ -1549,6 +1581,15 @@ END:VCARD`
                         )}
                         {lead.phone && (
                             <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-end ml-auto sm:ml-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsVoipModalOpen(true)}
+                                    className="p-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-full shadow-sm transition-all flex items-center gap-1.5 px-3.5 font-bold text-[11px] sm:text-xs shrink-0 cursor-pointer active:scale-95"
+                                    title="Initiate In-Browser VoIP Call via Vobiz (Recorded & Transcribed)"
+                                >
+                                    <Phone size={14} className="fill-current text-white" />
+                                    <span>VoIP Call</span>
+                                </button>
                                 <button
                                     type="button"
                                     onClick={() => setIsUpdateFollowupOpen(true)}
@@ -1718,16 +1759,7 @@ END:VCARD`
                                 )}
                                 {/* Meta Ad Origin & Creative Preview */}
                                 {(() => {
-                                    let customFields = lead.custom_fields;
-                                    if (customFields && typeof customFields === 'string') {
-                                        try {
-                                            while (typeof customFields === 'string') {
-                                                customFields = JSON.parse(customFields);
-                                            }
-                                        } catch (e) {
-                                            customFields = {};
-                                        }
-                                    }
+                                    const customFields = parseCustomFields(lead.custom_fields);
                                     const origin = customFields?.meta_ad_origin;
                                     const matchedProp = properties.find(p => 
                                         p.id === lead.property_id || 
@@ -2068,19 +2100,22 @@ END:VCARD`
                                  {/* Submitted Form Answers (From Meta Lead Form, Web Form, etc.) */}
                                 {(() => {
                                     const cf = parseCustomFields(lead.custom_fields);
-                                    const EXCLUDE_KEYS = new Set([
-                                        'meta_ad_origin', 'score_breakdown', 'lead_score', 'lead_tier', 
-                                        'score_updated_at', 'awaiting_lead_name', 'qualification_completed', 
-                                        'voice_campaign_id', 'campaign_id', 'is_instant_form', 'dnp_count', 
-                                        'last_reopened_at', 'last_reopened_source', 'reopened_count', 
-                                        'form_answers', 'history_visible_from', 'whatsapp_number', 'phone_number',
-                                        'phone', 'email', 'email_address', 'full_name', 'name', 'first_name', 'last_name'
-                                    ]);
 
                                     const formatQuestionKey = (raw: any) => {
                                         const rawStr = typeof raw === 'string' ? raw : String(raw ?? '');
-                                        let q = rawStr.replace(/_/g, ' ').trim();
-                                        if (!q.endsWith('?') && (q.toLowerCase().startsWith('what') || q.toLowerCase().startsWith('how') || q.toLowerCase().startsWith('which') || q.toLowerCase().startsWith('when') || q.toLowerCase().startsWith('where') || q.toLowerCase().startsWith('are') || q.toLowerCase().startsWith('do'))) {
+                                        let q = rawStr.replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+                                        if (!q.endsWith('?') && !q.endsWith('.') && (
+                                            q.toLowerCase().startsWith('what') || 
+                                            q.toLowerCase().startsWith('how') || 
+                                            q.toLowerCase().startsWith('which') || 
+                                            q.toLowerCase().startsWith('when') || 
+                                            q.toLowerCase().startsWith('where') || 
+                                            q.toLowerCase().startsWith('are') || 
+                                            q.toLowerCase().startsWith('do') ||
+                                            q.toLowerCase().startsWith('is') ||
+                                            q.toLowerCase().startsWith('can') ||
+                                            q.toLowerCase().startsWith('you work as')
+                                        )) {
                                             q = q + '?';
                                         }
                                         return q.charAt(0).toUpperCase() + q.slice(1);
@@ -2091,7 +2126,7 @@ END:VCARD`
                                             const trimmed = val.trim();
                                             if (trimmed.toLowerCase() === 'true') return 'Yes';
                                             if (trimmed.toLowerCase() === 'false') return 'No';
-                                            if (trimmed.includes('_') && !trimmed.includes(' ') && !trimmed.includes('@')) {
+                                            if (trimmed.includes('_') && !trimmed.includes(' ') && !trimmed.includes('@') && !trimmed.includes('/')) {
                                                 return trimmed.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
                                             }
                                             return trimmed;
@@ -2110,8 +2145,11 @@ END:VCARD`
                                     // 1. From explicit cf.form_answers
                                     if (cf.form_answers && typeof cf.form_answers === 'object') {
                                         Object.entries(cf.form_answers).forEach(([k, v]) => {
-                                            if (v !== undefined && v !== null && String(v).trim().length > 0 && !EXCLUDE_KEYS.has(k)) {
-                                                seenKeys.add(String(k).toLowerCase());
+                                            if (!isNaN(Number(k))) return; // Ignore numeric character indices
+                                            const kLower = String(k).toLowerCase().trim();
+                                            if (INTERNAL_SYSTEM_KEYS.has(kLower)) return;
+                                            if (v !== undefined && v !== null && String(v).trim().length > 0) {
+                                                seenKeys.add(kLower);
                                                 submittedAnswers.push({
                                                     fieldKey: k,
                                                     question: formatQuestionKey(k),
@@ -2123,12 +2161,13 @@ END:VCARD`
 
                                     // 2. From top-level custom_fields
                                     Object.entries(cf).forEach(([k, v]) => {
-                                        const keyLower = String(k).toLowerCase();
-                                        if (EXCLUDE_KEYS.has(k) || seenKeys.has(keyLower)) return;
+                                        if (!isNaN(Number(k))) return; // Ignore numeric character indices
+                                        const kLower = String(k).toLowerCase().trim();
+                                        if (INTERNAL_SYSTEM_KEYS.has(kLower) || seenKeys.has(kLower)) return;
                                         if (v !== undefined && v !== null && typeof v !== 'object') {
                                             const str = String(v).trim();
                                             if (str.length > 0) {
-                                                seenKeys.add(keyLower);
+                                                seenKeys.add(kLower);
                                                 submittedAnswers.push({
                                                     fieldKey: k,
                                                     question: formatQuestionKey(k),
@@ -2389,36 +2428,35 @@ END:VCARD`
                                 {(() => {
                                     const customFields = parseCustomFields(lead.custom_fields);
                                     const origin = customFields?.meta_ad_origin;
-                                    const HIDDEN_INTERNAL_FIELDS = [
-                                        'meta_ad_origin',
-                                        'score_breakdown',
-                                        'lead_score',
-                                        'lead_tier',
-                                        'score_updated_at',
-                                        'awaiting_lead_name',
-                                        'qualification_completed',
-                                        'voice_campaign_id',
-                                        'campaign_id',
-                                        'is_qualified',
-                                        'full_name',
-                                        'is_instant_form',
-                                        'dnp_count',
-                                        'last_reopened_at',
-                                        'last_reopened_source',
-                                        'reopened_count',
-                                        'reopened_sources',
-                                        'all_facebook_lead_ids',
-                                        'last_followup_remark',
-                                        'last_followup_at',
-                                        'last_followup_type',
-                                        'allow_after_hours',
-                                        'calling_enabled',
-                                        'form_answers',
-                                        'history_visible_from',
-                                        'whatsapp_number',
-                                        'phone_number'
-                                    ];
-                                    const entries = Object.entries(customFields).filter(([k]) => !HIDDEN_INTERNAL_FIELDS.includes(k));
+
+                                    // Collect form questions already presented so they are not duplicated here
+                                    const seenFormAnswerKeys = new Set<string>();
+                                    if (customFields.form_answers && typeof customFields.form_answers === 'object') {
+                                        Object.keys(customFields.form_answers).forEach(k => seenFormAnswerKeys.add(k.toLowerCase().trim()));
+                                    }
+                                    const hasInstantForm = !!(lead.form_name || lead.facebook_lead_id || customFields.is_instant_form);
+
+                                    const entries = Object.entries(customFields).filter(([k, v]) => {
+                                        if (!isNaN(Number(k))) return false;
+                                        const kLower = k.toLowerCase().trim();
+                                        if (INTERNAL_SYSTEM_KEYS.has(kLower)) return false;
+                                        if (seenFormAnswerKeys.has(kLower)) return false;
+                                        if (v === undefined || v === null || String(v).trim().length === 0) return false;
+                                        // For instant forms, questions are rendered in the Submitted Form Answers card above
+                                        if (hasInstantForm && (
+                                            kLower.includes('?') || 
+                                            kLower.startsWith('what') || 
+                                            kLower.startsWith('when') || 
+                                            kLower.startsWith('where') || 
+                                            kLower.startsWith('which') || 
+                                            kLower.startsWith('are') || 
+                                            kLower.startsWith('you_work_as') ||
+                                            kLower === 'city'
+                                        )) {
+                                            return false;
+                                        }
+                                        return true;
+                                    });
                                     const matchedProp = properties.find(p => p.id === lead.property_id || p.id === origin?.product_id || p.title === origin?.product_name);
                                     const productName = origin?.product_name || matchedProp?.title || null;
 
@@ -2523,6 +2561,14 @@ END:VCARD`
                                                     <History size={12} /> Call History
                                                 </button>
                                             )}
+                                            <button 
+                                                type="button"
+                                                onClick={() => setIsVoipModalOpen(true)}
+                                                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black px-4 py-2 rounded-full transition-all flex items-center gap-1.5 active:scale-95 shadow-sm cursor-pointer"
+                                                title="Initiate In-Browser VoIP Call via Vobiz (Recorded & Transcribed)"
+                                            >
+                                                <Phone size={12} className="fill-current text-white" /> VoIP Softphone
+                                            </button>
                                             {currentUserRole !== 'agent' && !isTeamMember && (
                                                 <button 
                                                     onClick={handleTriggerCall}
@@ -3633,6 +3679,20 @@ END:VCARD`
                     }, 30)
                 }}
                 properties={properties}
+            />
+
+            {/* IN-APP SOFTPHONE VOIP CALLING MODAL */}
+            <VoipCallingModal
+                isOpen={isVoipModalOpen}
+                recipientPhone={lead?.phone || lead?.custom_fields?.whatsapp_number || lead?.custom_fields?.phone_number || ''}
+                recipientName={lead?.name}
+                leadId={lead?.id}
+                profileId={currentUserId || lead?.user_id}
+                onClose={() => setIsVoipModalOpen(false)}
+                onCallFinished={() => {
+                    fetchLeadData()
+                    fetchLeadHistory()
+                }}
             />
         </div>
         </div>
