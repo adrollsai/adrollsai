@@ -572,7 +572,7 @@ export async function POST(request: Request) {
                             const { data: matchedSenderProfiles } = cleanFromDigits ? await supabaseAdmin
                                 .from('profiles')
                                 .select('id, whatsapp_personal_number, contact_number')
-                                .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%`)
+                                .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%,whatsapp_phone_number.ilike.%${cleanFromDigits}%`)
                                 : { data: [] };
 
                             if (matchedSenderProfiles && matchedSenderProfiles.length > 0) {
@@ -612,7 +612,7 @@ export async function POST(request: Request) {
                             const { data: senderProfilesForEdit } = await supabaseAdmin
                                 .from('profiles')
                                 .select('id')
-                                .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%`);
+                                .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%,whatsapp_phone_number.ilike.%${cleanFromDigits}%`);
 
                             if (senderProfilesForEdit && senderProfilesForEdit.length > 0) {
                                 const candidateUserIds = senderProfilesForEdit.map((p: any) => p.id);
