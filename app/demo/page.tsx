@@ -48,7 +48,8 @@ import {
     Palette,
     SlidersHorizontal,
     Type,
-    Volume2
+    Volume2,
+    User
 } from 'lucide-react';
 import { Player } from '@remotion/player';
 import { CaptionsComposition, Caption, Effect, Theme } from '@/remotion/CaptionsComposition';
@@ -303,11 +304,11 @@ export default function DemoPage() {
     const [projectPrice, setProjectPrice] = useState('₹1.85 Cr');
     const [location, setLocation] = useState('Golf Course Extension, Prime Metro Corridor');
     const [projectDescription, setProjectDescription] = useState('Ultra-luxury 3 & 4 BHK residences with sky terraces, private infinity pool, Italian marble finishes, and 24x7 smart concierge.');
-    const [prospectName, setProspectName] = useState('Raman');
+    const [prospectName, setProspectName] = useState('');
     const [prospectPhone, setProspectPhone] = useState('');
     const [videoLanguage, setVideoLanguage] = useState<string>('hinglish');
     const [callLanguage, setCallLanguage] = useState<string>('hinglish');
-    const [voiceName, setVoiceName] = useState('Kore');
+    const [voiceName, setVoiceName] = useState('Charon');
     const [websiteUrl, setWebsiteUrl] = useState('');
     const [extractingWebsite, setExtractingWebsite] = useState(false);
 
@@ -1328,16 +1329,42 @@ export default function DemoPage() {
                                 {/* Right Column: Channels, Languages & Media Uploads (5 cols) */}
                                 <div className="lg:col-span-5 space-y-3.5">
                                     {/* Phone input with country code badge and live indicator */}
-                                    <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200/90 space-y-2">
+                                    {/* Contact info: Prospect Name & Phone for Call & WhatsApp */}
+                                    <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200/90 space-y-2.5">
                                         <div className="flex items-center justify-between">
                                             <label className="block text-xs font-bold text-blue-950 flex items-center gap-1.5">
                                                 <PhoneCall size={14} className="text-blue-600" />
-                                                <span>Your Phone (For Live Call &amp; WhatsApp)</span>
+                                                <span>Your Contact Info (For Live Call &amp; WhatsApp)</span>
                                             </label>
                                             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-300 flex items-center gap-1">
                                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                                 <span>Live Telephony</span>
                                             </span>
+                                        </div>
+
+                                        {/* Prospect Name input */}
+                                        <div className="flex items-center rounded-xl bg-white border border-blue-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-500/20 shadow-xs overflow-hidden transition-all group">
+                                            <div className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-50 border-r border-slate-200 text-slate-700 font-bold text-xs select-none shrink-0 group-focus-within:bg-blue-50/50 transition-colors">
+                                                <User size={13} className="text-blue-600" />
+                                                <span className="text-slate-800 text-xs font-bold">Name</span>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={prospectName}
+                                                onChange={(e) => setProspectName(e.target.value)}
+                                                placeholder="e.g. Rahul Sharma"
+                                                className="flex-1 w-full px-3.5 py-2.5 bg-transparent text-sm text-slate-900 font-bold focus:outline-none placeholder:text-slate-400 placeholder:font-normal tracking-wide"
+                                            />
+                                            {prospectName && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setProspectName('')}
+                                                    className="px-3 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
+                                                    title="Clear name"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            )}
                                         </div>
 
                                         {/* Unified bulletproof phone input container */}
@@ -1370,7 +1397,7 @@ export default function DemoPage() {
                                         </div>
 
                                         <p className="text-[10px] text-blue-800/80">
-                                            Will receive outbound AI voice call &amp; verified WhatsApp ad creative.
+                                            AI caller &amp; WhatsApp will greet you by name with personalized property presentation.
                                         </p>
 
                                         {/* Instant Telephony & WhatsApp Fast-Track Trigger */}
@@ -1986,7 +2013,7 @@ export default function DemoPage() {
                                                         loop
                                                         style={{ width: '100%', height: '100%', borderRadius: '28px' }}
                                                         inputProps={{
-                                                            videoUrl: '', // Explicitly blank: dynamically renders property photo & AI creative with cinematic Ken Burns drift
+                                                            videoUrl: generatedVideo?.videoUrl || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/clean_silent_luxury_walkthrough.mp4',
                                                             imageUrl: projectImageUrl || (previewImages.length > 0 ? previewImages[0] : 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80'),
                                                             creativeUrl: creative?.imageUrl || projectImageUrl || (previewImages.length > 0 ? previewImages[0] : 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80'),
                                                             audioUrl: generatedVideo?.audioUrl || 'https://file.aiquickdraw.com/as/6d50c95cee0c07540606a98b15e0d2a3_1793432995729.wav',
@@ -2020,11 +2047,25 @@ export default function DemoPage() {
                                         {/* Audio & Playback Status Pill */}
                                         <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-100/90 px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
                                             <Volume2 size={12} className="text-blue-600 animate-pulse" />
-                                            <span>Voiceover Active ({videoLanguage.toUpperCase()}) • Unmute to listen</span>
+                                            <span>Voiceover Active ({videoLanguage.toUpperCase()}) • Tap player controls or button below to unmute</span>
                                         </div>
 
                                         {/* Player Quick Timeline Scrub & Preview Jump */}
                                         <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (remotionPlayerRef.current) {
+                                                        remotionPlayerRef.current.unmute();
+                                                        remotionPlayerRef.current.play();
+                                                    }
+                                                }}
+                                                className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                                                title="Unmute and Play Voiceover"
+                                            >
+                                                <Volume2 size={12} className="text-blue-600" />
+                                                <span>Unmute Audio</span>
+                                            </button>
                                             <button
                                                 type="button"
                                                 onClick={() => remotionPlayerRef.current?.seekTo(0)}
@@ -2472,7 +2513,7 @@ export default function DemoPage() {
                                             </div>
                                             <div className="p-3 bg-white rounded-xl text-slate-800 leading-relaxed shadow-xs text-xs space-y-1">
                                                 <p>
-                                                    Hi <strong>{prospectName}</strong>, your appointment is confirmed for <strong>VIP Walkthrough &amp; Preview</strong> with <strong>{projectTitle}</strong> from <strong>{companyName}</strong>. We look forward to connecting with you!
+                                                    Hi <strong>{prospectName || 'Valued Client'}</strong>, your appointment is confirmed for <strong>VIP Walkthrough &amp; Preview</strong> with <strong>{projectTitle}</strong> from <strong>{companyName}</strong>. We look forward to connecting with you!
                                                 </p>
                                             </div>
                                         </div>
@@ -2523,7 +2564,7 @@ export default function DemoPage() {
 
                                                     {col.count > 0 && (
                                                         <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1">
-                                                            <div className="text-xs font-bold text-slate-900">{prospectName}</div>
+                                                            <div className="text-xs font-bold text-slate-900">{prospectName || 'Valued Client'}</div>
                                                             <div className="text-[10px] text-slate-500 font-mono">+91 {prospectPhone.slice(-10) || '9888626786'}</div>
                                                         </div>
                                                     )}

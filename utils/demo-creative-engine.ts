@@ -429,12 +429,12 @@ Language: ${langInstruction}`
     return {
         id: `reel-${Date.now()}`,
         title: `${projectTitle} - 30s Voiceover Reel (${videoLanguage.toUpperCase()})`,
-        videoUrl: '', // In browser preview, displays the demo taker's actual property photo & AI creative with smooth Ken Burns motion!
+        videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/clean_silent_luxury_walkthrough.mp4',
         aspectRatio: '9:16',
         duration: 30,
         scriptText,
         scriptCues,
-        audioUrl,
+        audioUrl: audioUrl || 'https://file.aiquickdraw.com/as/6d50c95cee0c07540606a98b15e0d2a3_1793432995729.wav',
         captionStyle: 'goldenLuxury'
     };
 }
