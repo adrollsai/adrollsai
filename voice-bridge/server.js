@@ -749,8 +749,8 @@ app.all(['/vobiz-status', '/api/voice/vobiz/status-callback'], async (req, res) 
         let publicRecUrl = recordUrl;
         if (recordUrl) {
             try {
-                const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86';
-                const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU';
+                const authId = req.query.vobizAuthId || req.body?.vobizAuthId || process.env.VOBIZ_AUTH_ID || 'SA_RUY0ZNCH';
+                const authToken = req.query.vobizAuthToken || req.body?.vobizAuthToken || process.env.VOBIZ_AUTH_TOKEN || 'kbcjLH5cXccdZkbbgkcucE2L2Jeul0vvXrhRuVQo0YxFQAfbFnQ5bzfReUSqs3oi';
                 const audioRes = await fetch(recordUrl, {
                     headers: { 'X-Auth-ID': authId, 'X-Auth-Token': authToken }
                 });
@@ -806,6 +806,19 @@ app.all(['/vobiz-status', '/api/voice/vobiz/status-callback'], async (req, res) 
                         .from('lead_history')
                         .update({ description: `🎙️ CALL_JSON:${JSON.stringify(parsed)}` })
                         .eq('id', latestHistory.id);
+                } else {
+                    const historyData = {
+                        summary: 'In-app VoIP call completed.',
+                        recording_url: publicRecUrl,
+                        transcript: [],
+                        call_type: 'Agent VoIP Call',
+                        caller_did: req.body?.From || req.body?.from || '+917965480905'
+                    };
+                    await supabaseAdmin.from('lead_history').insert({
+                        lead_id: leadId,
+                        action_type: 'REMARK',
+                        description: `🎙️ CALL_JSON:${JSON.stringify(historyData)}`
+                    });
                 }
             } catch (hErr) {
                 console.warn('[BRIDGE VOBIZ-STATUS] History update error:', hErr);

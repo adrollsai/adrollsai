@@ -47,7 +47,8 @@ import {
     PhoneCall,
     Palette,
     SlidersHorizontal,
-    Type
+    Type,
+    Volume2
 } from 'lucide-react';
 import { Player } from '@remotion/player';
 import { CaptionsComposition, Caption, Effect, Theme } from '@/remotion/CaptionsComposition';
@@ -357,18 +358,25 @@ export default function DemoPage() {
         if (generatedVideo?.scriptCues && generatedVideo.scriptCues.length > 0) {
             setEditableCues(generatedVideo.scriptCues.map((c, i) => ({
                 text: c.text,
-                start: c.start ?? (i * 4.2),
-                end: c.end ?? ((i + 1) * 4.2),
-                emphasis: c.emphasis || i === 0 || i === 3
+                start: c.start ?? (i * 2.0),
+                end: c.end ?? ((i + 1) * 2.0),
+                emphasis: c.emphasis || i === 0 || i % 4 === 0
             })));
         } else {
+            // Rapid viral caption cadence (short, punchy 2 to 4 words per cue)
             setEditableCues([
-                { start: 0.5, end: 4.8, text: `${companyName || 'Nobogent'} presents ${projectTitle || 'Chandigarh Residencies'}`, emphasis: true },
-                { start: 4.8, end: 9.2, text: `Experience bespoke architectural luxury at ${location || 'Prime Metro Corridor'}`, emphasis: false },
-                { start: 9.2, end: 13.5, text: `Ultra luxury residences crafted with panoramic views and world-class amenities`, emphasis: true },
-                { start: 13.5, end: 17.8, text: `Inaugural launch price starting at only ${projectPrice || '₹1.85 Cr'}`, emphasis: true },
-                { start: 17.8, end: 22.0, text: `Exclusive high ROI launch privilege with flexible investor payment plans`, emphasis: false },
-                { start: 22.0, end: 25.8, text: `Limited inventory available — Book your private VIP walkthrough today!`, emphasis: true }
+                { start: 0.5, end: 2.2, text: `IMAGINE LIVING 🏡`, emphasis: true },
+                { start: 2.2, end: 4.2, text: `KING-SIZE LUXURY ✨`, emphasis: true },
+                { start: 4.2, end: 6.2, text: `${companyName || 'NOBOGENT'} PRESENTS`, emphasis: false },
+                { start: 6.2, end: 8.5, text: `${projectTitle || 'CHANDIGARH RESIDENCIES'}`, emphasis: true },
+                { start: 8.5, end: 10.8, text: `IN ${location?.split(',')[0]?.toUpperCase() || 'GOLF COURSE EXTENSION'} 📍`, emphasis: false },
+                { start: 10.8, end: 13.0, text: `BESPOKE SIGNATURE LIVING`, emphasis: false },
+                { start: 13.0, end: 15.2, text: `STARTING AT ${projectPrice || '₹1.85 CR'} 💎`, emphasis: true },
+                { start: 15.2, end: 17.5, text: `PRIVATE SKY TERRACE 🌆`, emphasis: true },
+                { start: 17.5, end: 19.8, text: `HEATED INFINITY POOL 🏊‍♂️`, emphasis: true },
+                { start: 19.8, end: 22.0, text: `HIGH APPRECIATION VALUE 📈`, emphasis: false },
+                { start: 22.0, end: 24.0, text: `0% BROKERAGE PRIVILEGE`, emphasis: false },
+                { start: 24.0, end: 25.8, text: `BOOK VIP SITE VISIT ➔`, emphasis: true }
             ]);
         }
     }, [generatedVideo, companyName, projectTitle, location, projectPrice]);
@@ -1978,8 +1986,10 @@ export default function DemoPage() {
                                                         loop
                                                         style={{ width: '100%', height: '100%', borderRadius: '28px' }}
                                                         inputProps={{
-                                                            videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/clean_silent_luxury_walkthrough.mp4',
-                                                            audioUrl: generatedVideo?.audioUrl || undefined,
+                                                            videoUrl: '', // Explicitly blank: dynamically renders property photo & AI creative with cinematic Ken Burns drift
+                                                            imageUrl: projectImageUrl || (previewImages.length > 0 ? previewImages[0] : 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80'),
+                                                            creativeUrl: creative?.imageUrl || projectImageUrl || (previewImages.length > 0 ? previewImages[0] : 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80'),
+                                                            audioUrl: generatedVideo?.audioUrl || 'https://file.aiquickdraw.com/as/6d50c95cee0c07540606a98b15e0d2a3_1793432995729.wav',
                                                             captions: editableCues,
                                                             effects: [
                                                                 { type: 'zoom', start: 0, end: 2.5 },
@@ -1992,7 +2002,8 @@ export default function DemoPage() {
                                                                 logo_url: logoUrl || null,
                                                                 phone: prospectPhone || '+91 98886 26786',
                                                                 brand_color: customBrandColor || '#F59E0B',
-                                                                verified: true
+                                                                verified: true,
+                                                                property_image_url: projectImageUrl || (previewImages.length > 0 ? previewImages[0] : undefined)
                                                             },
                                                             isPlayer: true
                                                         }}
@@ -2006,12 +2017,18 @@ export default function DemoPage() {
                                             </div>
                                         </div>
 
+                                        {/* Audio & Playback Status Pill */}
+                                        <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-100/90 px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
+                                            <Volume2 size={12} className="text-blue-600 animate-pulse" />
+                                            <span>Voiceover Active ({videoLanguage.toUpperCase()}) • Unmute to listen</span>
+                                        </div>
+
                                         {/* Player Quick Timeline Scrub & Preview Jump */}
-                                        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                                        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
                                             <button
                                                 type="button"
                                                 onClick={() => remotionPlayerRef.current?.seekTo(0)}
-                                                className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                                                className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
                                                 title="Play from Beginning"
                                             >
                                                 <RefreshCw size={12} />
@@ -2029,24 +2046,24 @@ export default function DemoPage() {
                                         </div>
                                     </div>
 
-                                    {/* Right Column: AI Caption Studio (Font Styling & Animation Options - 7 Cols) */}
-                                    <div className="lg:col-span-7 rounded-3xl bg-slate-950 text-white border border-slate-800 shadow-2xl p-5 sm:p-6 flex flex-col space-y-5">
+                                    {/* Right Column: AI Caption Studio - Crisp Light Themed UI */}
+                                    <div className="lg:col-span-7 rounded-3xl bg-white text-slate-800 border border-slate-200/90 shadow-xl shadow-slate-100 p-5 sm:p-6 flex flex-col space-y-5">
                                         {/* Studio Header */}
-                                        <div className="flex items-center justify-between pb-4 border-b border-white/10">
+                                        <div className="flex items-center justify-between pb-4 border-b border-slate-200">
                                             <div>
                                                 <div className="flex items-center gap-2">
-                                                    <Sparkles className="text-amber-400 animate-pulse" size={18} />
-                                                    <h3 className="text-base sm:text-lg font-black tracking-tight">AI Caption Studio</h3>
+                                                    <Sparkles className="text-amber-500 animate-pulse" size={18} />
+                                                    <h3 className="text-base sm:text-lg font-black tracking-tight text-slate-900">AI Caption Studio</h3>
                                                 </div>
-                                                <p className="text-xs text-slate-400 mt-0.5">Real-time viral subtitle typography, animations &amp; styling</p>
+                                                <p className="text-xs text-slate-500 mt-0.5">Real-time viral subtitle typography, animations &amp; styling</p>
                                             </div>
-                                            <span className="text-[10px] font-extrabold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-full">
+                                            <span className="text-[10px] font-extrabold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-full shadow-2xs">
                                                 {selectedCaptionTheme.replace(/([A-Z])/g, ' $1')}
                                             </span>
                                         </div>
 
                                         {/* Navigation Tabs (Styles, Animations, Adjust, Subtitles) */}
-                                        <div className="flex gap-1.5 p-1 bg-white/5 border border-white/5 rounded-2xl">
+                                        <div className="flex gap-1.5 p-1 bg-slate-100 border border-slate-200/80 rounded-2xl">
                                             {[
                                                 { id: 'styles', label: 'Styles', icon: Palette },
                                                 { id: 'animations', label: 'Animations', icon: Zap },
@@ -2059,8 +2076,8 @@ export default function DemoPage() {
                                                     onClick={() => setCaptionStudioTab(tab.id as any)}
                                                     className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                                                         captionStudioTab === tab.id
-                                                            ? 'bg-blue-600 text-white shadow-md'
-                                                            : 'text-slate-400 hover:text-white'
+                                                            ? 'bg-white text-blue-600 shadow-sm border border-slate-200'
+                                                            : 'text-slate-500 hover:text-slate-900'
                                                     }`}
                                                 >
                                                     <tab.icon size={13} />
@@ -2073,7 +2090,7 @@ export default function DemoPage() {
                                         {captionStudioTab === 'styles' && (
                                             <div className="space-y-4">
                                                 <div>
-                                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-2">
+                                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">
                                                         Viral Subtitle Presets (8 Styles)
                                                     </label>
                                                     <div className="grid grid-cols-2 gap-2.5 max-h-[300px] overflow-y-auto pr-1">
@@ -2086,30 +2103,30 @@ export default function DemoPage() {
                                                                     onClick={() => handleSelectCaptionTheme(themeKey)}
                                                                     className={`p-3 rounded-2xl border-2 transition-all text-left relative overflow-hidden cursor-pointer ${
                                                                         isSelected
-                                                                            ? 'border-blue-500 bg-blue-500/15 shadow-md shadow-blue-500/20'
-                                                                            : 'border-white/5 bg-white/5 hover:bg-white/10'
+                                                                            ? 'border-blue-600 bg-blue-50/70 shadow-sm'
+                                                                            : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
                                                                     }`}
                                                                 >
                                                                     {isSelected && (
-                                                                        <div className="absolute top-2 right-2 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                                                                        <div className="absolute top-2 right-2 w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center">
                                                                             <Check size={10} className="text-white" strokeWidth={3} />
                                                                         </div>
                                                                     )}
-                                                                    <p className={`font-extrabold text-xs capitalize ${isSelected ? 'text-blue-400' : 'text-slate-200'}`}>
+                                                                    <p className={`font-extrabold text-xs capitalize ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
                                                                         {themeKey.replace(/([A-Z])/g, ' $1')}
                                                                     </p>
                                                                     <div className="flex items-center gap-1.5 mt-2">
                                                                         <div
-                                                                            className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-xs"
+                                                                            className="w-3.5 h-3.5 rounded-full border border-slate-300 shadow-2xs"
                                                                             style={{ backgroundColor: themeData.highlightColor }}
                                                                             title="Highlight Color"
                                                                         />
                                                                         <div
-                                                                            className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-xs"
+                                                                            className="w-3.5 h-3.5 rounded-full border border-slate-300 shadow-2xs"
                                                                             style={{ backgroundColor: themeData.secondaryHighlightColor || themeData.color }}
                                                                             title="Secondary Color"
                                                                         />
-                                                                        <span className="text-[10px] text-slate-400 font-mono capitalize ml-1">
+                                                                        <span className="text-[10px] text-slate-500 font-mono capitalize ml-1">
                                                                             {themeData.animation}
                                                                         </span>
                                                                     </div>
@@ -2124,7 +2141,7 @@ export default function DemoPage() {
                                         {/* Tab 2: ANIMATIONS */}
                                         {captionStudioTab === 'animations' && (
                                             <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
-                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block">
+                                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block">
                                                     Select Animation Dynamic
                                                 </label>
                                                 {ANIMATION_OPTIONS.map((anim) => {
@@ -2136,25 +2153,25 @@ export default function DemoPage() {
                                                             onClick={() => updateCaptionTheme({ animation: anim.id })}
                                                             className={`w-full p-3 rounded-2xl border-2 transition-all flex items-center justify-between text-left cursor-pointer ${
                                                                 isSelected
-                                                                    ? 'border-blue-500 bg-blue-500/15 shadow-md shadow-blue-500/20'
-                                                                    : 'border-white/5 bg-white/5 hover:bg-white/10'
+                                                                    ? 'border-blue-600 bg-blue-50/70 shadow-sm'
+                                                                    : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
                                                                 }`}
                                                         >
                                                             <div className="flex items-center gap-3">
-                                                                <span className="text-xl p-2 bg-white/5 rounded-xl border border-white/5">
+                                                                <span className="text-xl p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
                                                                     {anim.icon}
                                                                 </span>
                                                                 <div>
-                                                                    <p className={`font-black text-xs ${isSelected ? 'text-blue-400' : 'text-white'}`}>
+                                                                    <p className={`font-black text-xs ${isSelected ? 'text-blue-700' : 'text-slate-900'}`}>
                                                                         {anim.label}
                                                                     </p>
-                                                                    <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                                                                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
                                                                         {anim.description}
                                                                     </p>
                                                                 </div>
                                                             </div>
                                                             <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                                                                isSelected ? 'border-blue-500 bg-blue-500' : 'border-slate-700'
+                                                                isSelected ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
                                                             }`}>
                                                                 {isSelected && <Check size={10} className="text-white" strokeWidth={3} />}
                                                             </div>
@@ -2169,7 +2186,7 @@ export default function DemoPage() {
                                             <div className="space-y-4 max-h-[320px] overflow-y-auto pr-1">
                                                 {/* Vertical Position */}
                                                 <div>
-                                                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                                                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
                                                         Vertical Position
                                                     </label>
                                                     <div className="grid grid-cols-3 gap-2">
@@ -2180,8 +2197,8 @@ export default function DemoPage() {
                                                                 onClick={() => updateCaptionTheme({ position: pos })}
                                                                 className={`py-2 rounded-xl border font-bold text-xs capitalize transition-all cursor-pointer ${
                                                                     captionThemeConfig.position === pos
-                                                                        ? 'border-blue-500 bg-blue-500/20 text-blue-400 font-black'
-                                                                        : 'border-white/5 bg-white/5 text-slate-400 hover:text-white'
+                                                                        ? 'border-blue-600 bg-blue-50 text-blue-700 font-black shadow-2xs'
+                                                                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                                                                 }`}
                                                             >
                                                                 {pos}
@@ -2190,9 +2207,9 @@ export default function DemoPage() {
                                                     </div>
                                                 </div>
 
-                                                {/* Font Family */}
+                                                {/* Typography Font Family */}
                                                 <div>
-                                                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                                                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
                                                         Typography Font Family
                                                     </label>
                                                     <div className="grid grid-cols-2 gap-2">
@@ -2203,8 +2220,8 @@ export default function DemoPage() {
                                                                 onClick={() => updateCaptionTheme({ fontFamily: font })}
                                                                 className={`py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                                                                     captionThemeConfig.fontFamily === font
-                                                                        ? 'border-blue-500 bg-blue-500/20 text-blue-400 font-black'
-                                                                        : 'border-white/5 bg-white/5 text-slate-400 hover:text-white'
+                                                                        ? 'border-blue-600 bg-blue-50 text-blue-700 font-black shadow-2xs'
+                                                                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                                                                 }`}
                                                                 style={{ fontFamily: font }}
                                                             >
@@ -2217,10 +2234,10 @@ export default function DemoPage() {
                                                 {/* Font Size Slider */}
                                                 <div>
                                                     <div className="flex justify-between items-center mb-1.5">
-                                                        <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                                                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
                                                             Font Size
                                                         </label>
-                                                        <span className="text-xs font-mono font-bold text-blue-400">
+                                                        <span className="text-xs font-mono font-bold text-blue-600">
                                                             {captionThemeConfig.fontSize || 54}px
                                                         </span>
                                                     </div>
@@ -2231,13 +2248,13 @@ export default function DemoPage() {
                                                         step="2"
                                                         value={captionThemeConfig.fontSize || 54}
                                                         onChange={(e) => updateCaptionTheme({ fontSize: parseInt(e.target.value) })}
-                                                        className="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                                                        className="w-full accent-blue-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
                                                     />
                                                 </div>
 
                                                 {/* Highlight Colors */}
                                                 <div>
-                                                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
+                                                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-2">
                                                         Viral Highlight Color
                                                     </label>
                                                     <div className="flex flex-wrap gap-2">
@@ -2247,7 +2264,7 @@ export default function DemoPage() {
                                                                 type="button"
                                                                 onClick={() => updateCaptionTheme({ highlightColor: color })}
                                                                 className={`w-7 h-7 rounded-xl border-2 transition-transform active:scale-90 flex items-center justify-center cursor-pointer ${
-                                                                    captionThemeConfig.highlightColor === color ? 'border-white scale-110 shadow-md' : 'border-transparent hover:scale-105'
+                                                                    captionThemeConfig.highlightColor === color ? 'border-slate-900 scale-110 shadow-sm' : 'border-slate-200 hover:scale-105'
                                                                 }`}
                                                                 style={{ backgroundColor: color }}
                                                             >
@@ -2261,7 +2278,7 @@ export default function DemoPage() {
 
                                                 {/* Box Style */}
                                                 <div>
-                                                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                                                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">
                                                         Box &amp; Background Styling
                                                     </label>
                                                     <div className="grid grid-cols-4 gap-1.5">
@@ -2272,8 +2289,8 @@ export default function DemoPage() {
                                                                 onClick={() => updateCaptionTheme({ boxStyle: style })}
                                                                 className={`py-1.5 rounded-xl border text-[11px] font-bold capitalize transition-all cursor-pointer ${
                                                                     captionThemeConfig.boxStyle === style
-                                                                        ? 'border-blue-500 bg-blue-500/20 text-blue-400 font-black'
-                                                                        : 'border-white/5 bg-white/5 text-slate-400 hover:text-white'
+                                                                        ? 'border-blue-600 bg-blue-50 text-blue-700 font-black shadow-2xs'
+                                                                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                                                                 }`}
                                                             >
                                                                 {style}
@@ -2287,13 +2304,13 @@ export default function DemoPage() {
                                         {/* Tab 4: SUBTITLES LIST */}
                                         {captionStudioTab === 'subtitles' && (
                                             <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
-                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block">
+                                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block">
                                                     Timed Caption Segments ({editableCues.length})
                                                 </label>
                                                 {editableCues.map((cue, idx) => (
-                                                    <div key={idx} className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
-                                                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                                                            <span className="font-bold text-blue-400">#{idx + 1}</span>
+                                                    <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                                                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                                                            <span className="font-bold text-blue-600">#{idx + 1}</span>
                                                             <span>{cue.start.toFixed(1)}s - {cue.end.toFixed(1)}s</span>
                                                         </div>
                                                         <input
@@ -2304,7 +2321,7 @@ export default function DemoPage() {
                                                                 updated[idx] = { ...updated[idx], text: e.target.value };
                                                                 setEditableCues(updated);
                                                             }}
-                                                            className="w-full bg-slate-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-medium focus:outline-none focus:border-blue-500"
+                                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                                         />
                                                     </div>
                                                 ))}
@@ -2312,15 +2329,15 @@ export default function DemoPage() {
                                         )}
 
                                         {/* Bottom In-Browser Live Preview & WhatsApp Action (NO RENDER BUTTON) */}
-                                        <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
-                                            <div className="flex items-center gap-2 text-xs text-slate-400">
-                                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                                <span className="font-medium">Live Browser Preview (No rendering wait)</span>
+                                        <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                                <span className="font-medium text-slate-600">Live Browser Preview (Zero rendering wait)</span>
                                             </div>
                                             <button
                                                 type="button"
                                                 onClick={() => handleSendStepWhatsApp('video_preview', `30s Video preview link sent to +91 ${prospectPhone.slice(-10)}!`)}
-                                                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-95"
+                                                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-95"
                                             >
                                                 <Send size={12} />
                                                 <span>Send VIP Preview to WhatsApp</span>

@@ -215,13 +215,30 @@ export default function VoipCallingModal({
             } catch (e) {}
         }
 
-        // Notify backend to terminate Vobiz call
+        // Notify backend to terminate Vobiz call & finalize recording/analysis
         if (callUuid) {
             fetch('/api/voice/vobiz/agent-call', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'hangup', callUuid })
+                body: JSON.stringify({ action: 'hangup', callUuid, leadId })
             }).catch(() => {})
+
+            fetch('/api/voice/vobiz/agent-call', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'finalize', callUuid, leadId })
+            }).then(r => r.json()).then(res => {
+                if (res.success) {
+                    setAnalysisResult({
+                        summary: res.summary,
+                        transcript: res.transcript,
+                        recordingUrl: res.recordingUrl
+                    })
+                    setCallState('completed')
+                    setStatusMessage('AI Analysis complete! Attached to lead history.')
+                    if (onCallFinished) onCallFinished()
+                }
+            }).catch(e => console.warn('VoIP finalize error:', e))
         }
 
         // Stop local microphone recording
@@ -403,6 +420,25 @@ export default function VoipCallingModal({
                             if (timerIntervalRef.current) {
                                 clearInterval(timerIntervalRef.current)
                                 timerIntervalRef.current = null
+                            }
+                            const effectiveUuid = data.callId || callUuid
+                            if (effectiveUuid) {
+                                fetch('/api/voice/vobiz/agent-call', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'finalize', callUuid: effectiveUuid, leadId })
+                                }).then(r => r.json()).then(res => {
+                                    if (res.success) {
+                                        setAnalysisResult({
+                                            summary: res.summary,
+                                            transcript: res.transcript,
+                                            recordingUrl: res.recordingUrl
+                                        })
+                                        setCallState('completed')
+                                        setStatusMessage('AI Analysis complete! Attached to lead history.')
+                                        if (onCallFinished) onCallFinished()
+                                    }
+                                }).catch(e => console.warn('VoIP finalize on call_ended error:', e))
                             }
 
                         } else if (data.event === 'analysis_completed') {

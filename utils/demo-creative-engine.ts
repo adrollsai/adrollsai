@@ -373,39 +373,30 @@ Language: ${langInstruction}`
         }
     }
 
-    // 2. Generate Timed Caption Cues in the exact 'goldenLuxury' / AI edit style (Every 3rd Day Automation Style)
-    // 6 synchronized segments spanning 30 seconds with emphasis flags on high-value terms
-    let scriptCues = [];
-    const segmentDuration = 5.0; // 6 segments of 5 seconds each = 30 seconds
-    const words = scriptText.split(/\s+/);
-    const chunkSize = Math.ceil(words.length / 6);
+    // 2. Generate Rapid Viral Caption Cues in the exact 'goldenLuxury' / AI edit style (Every 3rd Day Automation Style)
+    // Short, punchy 3 to 4 words per segment so text is never too long or overwhelming
+    let scriptCues: CaptionCue[] = [];
+    const words = scriptText.split(/\s+/).filter(Boolean);
+    const wordsPerCue = 3; // 3 words at a time for optimal high-retention readability
+    const totalCues = Math.ceil(words.length / wordsPerCue);
+    const activeDuration = 25.5; // Final 4.5s strictly reserved for the Remotion Outro
+    const cueDuration = activeDuration / Math.max(1, totalCues);
 
-    for (let i = 0; i < 6; i++) {
-        const segWords = words.slice(i * chunkSize, (i + 1) * chunkSize);
+    for (let i = 0; i < totalCues; i++) {
+        const segWords = words.slice(i * wordsPerCue, (i + 1) * wordsPerCue);
         const segText = segWords.join(' ').trim();
         if (segText) {
             const hasEmphasis = /₹|Cr|Lakh|Price|VIP|Launch|Luxury|Ultra|Private|Exclusive|किंमत|કિંમત|ధర|விலை|ಬೆಲೆ|मूल्य/i.test(segText);
             scriptCues.push({
-                start: Math.round(i * segmentDuration * 10) / 10,
-                end: Math.round((i + 1) * segmentDuration * 10) / 10,
+                start: Math.round(i * cueDuration * 10) / 10,
+                end: Math.round((i + 1) * cueDuration * 10) / 10,
                 text: segText,
-                emphasis: hasEmphasis || i === 3 || i === 5
+                emphasis: hasEmphasis || i === 0 || i % 4 === 0
             });
         }
     }
 
-    while (scriptCues.length < 6) {
-        const last = scriptCues[scriptCues.length - 1];
-        const nextStart = last ? last.end : 0;
-        scriptCues.push({
-            start: nextStart,
-            end: Math.min(30, nextStart + 5),
-            text: `Schedule your VIP site visit for ${projectTitle} today!`,
-            emphasis: true
-        });
-    }
-
-    // 3. Synthesize Indian accent voiceover in background if Kie TTS is available
+    // 3. Synthesize Indian accent voiceover in background via Kie TTS (allowing up to 20s for full audio generation)
     let audioUrl = undefined;
     try {
         const isHinglishOrHindi = langLower.includes('hinglish') || langLower.includes('hindi');
@@ -421,8 +412,8 @@ Language: ${langInstruction}`
         });
 
         if (ttsTaskId) {
-            for (let p = 0; p < 4; p++) {
-                await new Promise(r => setTimeout(r, 1500));
+            for (let p = 0; p < 10; p++) {
+                await new Promise(r => setTimeout(r, 2000));
                 const ttsStatus = await queryKieTask(ttsTaskId);
                 if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
                     audioUrl = ttsStatus.resultUrl;
@@ -431,14 +422,14 @@ Language: ${langInstruction}`
                 }
             }
         }
-    } catch (ttsErr) {
+    } catch (ttsErr: any) {
         console.warn('[Browser Demo Video] Quick voiceover synthesis notice:', ttsErr.message);
     }
 
     return {
         id: `reel-${Date.now()}`,
         title: `${projectTitle} - 30s Voiceover Reel (${videoLanguage.toUpperCase()})`,
-        videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/clean_silent_luxury_walkthrough.mp4',
+        videoUrl: '', // In browser preview, displays the demo taker's actual property photo & AI creative with smooth Ken Burns motion!
         aspectRatio: '9:16',
         duration: 30,
         scriptText,

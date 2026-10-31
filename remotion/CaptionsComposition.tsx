@@ -63,7 +63,9 @@ export type Theme = {
 };
 
 interface CaptionsCompositionProps {
-    videoUrl: string;
+    videoUrl?: string;
+    imageUrl?: string;
+    creativeUrl?: string;
     audioUrl?: string;
     captions: Caption[];
     effects?: Effect[];
@@ -74,6 +76,8 @@ interface CaptionsCompositionProps {
 
 export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
     videoUrl,
+    imageUrl,
+    creativeUrl,
     audioUrl,
     captions,
     effects = [],
@@ -101,6 +105,21 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
             />
         );
     }
+
+    const hasVideo = Boolean(videoUrl && (videoUrl.endsWith('.mp4') || videoUrl.endsWith('.mov') || videoUrl.endsWith('.webm')));
+    const midFrame = Math.floor(originalDurationInFrames / 2);
+    const isFirstScene = frame < midFrame;
+    const currentSceneImage = isFirstScene
+        ? (imageUrl || profile?.property_image_url || creativeUrl)
+        : (creativeUrl || imageUrl || profile?.property_image_url);
+
+    const kenBurnsScale = isFirstScene
+        ? interpolate(frame, [0, midFrame], [1.02, 1.15], { extrapolateRight: 'clamp' })
+        : interpolate(frame, [midFrame, originalDurationInFrames], [1.04, 1.16], { extrapolateRight: 'clamp' });
+
+    const kenBurnsY = isFirstScene
+        ? interpolate(frame, [0, midFrame], [0, -20], { extrapolateRight: 'clamp' })
+        : interpolate(frame, [midFrame, originalDurationInFrames], [12, -12], { extrapolateRight: 'clamp' });
 
     // Active visual effects calculations
     const activeZoom = effects.find(eff => eff.type === 'zoom' && frame >= eff.start * fps && frame < eff.end * fps);
@@ -133,9 +152,9 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
     return (
         <AbsoluteFill style={{ backgroundColor: 'black' }}>
             {/* Voiceover Audio Track */}
-            {audioUrl && <Audio src={audioUrl} volume={1.0} />}
+            {audioUrl && <Audio src={audioUrl} volume={1.0} crossOrigin="anonymous" />}
 
-            {/* Background Video with Zoom & Shake transforms */}
+            {/* Background Media with Zoom & Shake transforms */}
             <div style={{
                 width: '100%',
                 height: '100%',
@@ -143,22 +162,66 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                 position: 'absolute',
                 inset: 0,
             }}>
-                <Loop durationInFrames={450}>
-                    {isPlayer ? (
-                        <Video 
-                            src={videoUrl} 
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                            volume={audioUrl ? 0 : 0.8}
-                        />
-                    ) : (
-                        <OffthreadVideo 
-                            src={videoUrl} 
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                            crossOrigin="anonymous" 
-                            volume={audioUrl ? 0 : 0.8}
-                        />
-                    )}
-                </Loop>
+                {hasVideo ? (
+                    <Loop durationInFrames={450}>
+                        {isPlayer ? (
+                            <Video 
+                                src={videoUrl!} 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                volume={audioUrl ? 0 : 0.8}
+                            />
+                        ) : (
+                            <OffthreadVideo 
+                                src={videoUrl!} 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                crossOrigin="anonymous" 
+                                volume={audioUrl ? 0 : 0.8}
+                            />
+                        )}
+                    </Loop>
+                ) : (
+                    /* Cinematic Property Showcase with Ken Burns Drift & Ambient Glow */
+                    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', backgroundColor: '#020617' }}>
+                        {currentSceneImage && (
+                            <>
+                                {/* Ambient blurred backdrop fills the full 9:16 frame */}
+                                <img 
+                                    src={currentSceneImage} 
+                                    alt=""
+                                    style={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover',
+                                        filter: 'blur(30px) brightness(0.6)',
+                                        transform: 'scale(1.25)',
+                                    }}
+                                />
+                                {/* Sharp foreground with slow, elegant cinematic zoom & pan */}
+                                <img 
+                                    src={currentSceneImage} 
+                                    alt="Property Scene"
+                                    style={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'contain',
+                                        transform: `scale(${kenBurnsScale}) translateY(${kenBurnsY}px)`,
+                                    }}
+                                />
+                                {/* Subtle luxury vignette gradient overlay for text readability */}
+                                <div style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.1) 45%, rgba(0,0,0,0.4) 100%)',
+                                    pointerEvents: 'none',
+                                }} />
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Glowing Neon Vignette Border */}

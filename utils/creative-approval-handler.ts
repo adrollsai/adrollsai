@@ -15,7 +15,7 @@ export const NOBOGENT_WABA_PHONE_ID =
   process.env.NOBOGENT_WHATSAPP_PHONE_ID ||
   process.env.DEV_WHATSAPP_PHONE_ID ||
   process.env.WHATSAPP_PHONE_NUMBER_ID ||
-  '965464359976021';
+  '1185499271314063';
 
 export const NOBOGENT_WABA_TOKEN =
   process.env.NOBOGENT_WHATSAPP_ACCESS_TOKEN ||
@@ -301,17 +301,17 @@ export async function handleCreativeApproval(params: {
 
   console.log(`[Creative Approval] Handling approval for user ${userId}, assetId: ${assetId || 'latest'}`);
 
-  // 1. Fetch target asset
+  // 1. Fetch target asset (by specific ID if provided, otherwise latest pending/draft for user)
   let assetQuery = supabaseAdmin
     .from('assets')
-    .select('*, properties(id, title, configurations)')
-    .eq('user_id', userId);
+    .select('*, properties(id, title, configurations)');
 
   if (assetId && assetId !== 'latest') {
     assetQuery = assetQuery.eq('id', assetId);
   } else {
     // Find latest pending or draft asset
     assetQuery = assetQuery
+      .eq('user_id', userId)
       .in('status', ['pending_approval', 'editing', 'Draft'])
       .order('created_at', { ascending: false })
       .limit(1);
@@ -336,10 +336,12 @@ export async function handleCreativeApproval(params: {
       await sendNobogentTextMessage(fromPhone, msg);
       return { success: false, message: msg };
     }
-    return executeAssetApproval(userId, fallbackAsset, fromPhone, matchedProfile);
+    const resolvedUserId = fallbackAsset.user_id || userId;
+    return executeAssetApproval(resolvedUserId, fallbackAsset, fromPhone, matchedProfile);
   }
 
-  return executeAssetApproval(userId, asset, fromPhone, matchedProfile);
+  const resolvedUserId = asset.user_id || userId;
+  return executeAssetApproval(resolvedUserId, asset, fromPhone, matchedProfile);
 }
 
 async function executeAssetApproval(
@@ -495,13 +497,13 @@ export async function handleCreativeEditRequest(params: {
   // Find target asset
   let assetQuery = supabaseAdmin
     .from('assets')
-    .select('id, caption, url, status, metadata, properties(title)')
-    .eq('user_id', userId);
+    .select('id, user_id, caption, url, status, metadata, properties(title)');
 
   if (assetId && assetId !== 'latest') {
     assetQuery = assetQuery.eq('id', assetId);
   } else {
     assetQuery = assetQuery
+      .eq('user_id', userId)
       .in('status', ['pending_approval', 'editing', 'Draft', 'Approved'])
       .order('created_at', { ascending: false })
       .limit(1);
@@ -563,13 +565,13 @@ export async function handleCreativeRevisionSubmission(params: {
   // 1. Locate the asset being edited
   let assetQuery = supabaseAdmin
     .from('assets')
-    .select('*, properties(id, title, configurations)')
-    .eq('user_id', userId);
+    .select('*, properties(id, title, configurations)');
 
   if (assetId && assetId !== 'latest') {
     assetQuery = assetQuery.eq('id', assetId);
   } else {
     assetQuery = assetQuery
+      .eq('user_id', userId)
       .in('status', ['editing', 'pending_approval', 'Draft'])
       .order('created_at', { ascending: false })
       .limit(1);

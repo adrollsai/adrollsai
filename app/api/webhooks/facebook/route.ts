@@ -544,7 +544,22 @@ export async function POST(request: Request) {
                                 .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%,whatsapp_phone_number.ilike.%${cleanFromDigits}%`)
                                 : { data: [] };
 
+                            // Prioritize whatsapp_personal_number (direct admin/client WhatsApp), then role === 'super_admin', then generic contact_number
                             matchedProfile = profiles?.find((p: any) => {
+                                const clean = (p.whatsapp_personal_number || '').replace(/\D/g, '');
+                                const digits = clean.slice(-10);
+                                return clean === cleanFrom || (digits.length === 10 && cleanFromDigits === digits);
+                            }) || profiles?.find((p: any) => {
+                                if (p.role === 'super_admin') {
+                                    const candidatePhones = [p.whatsapp_personal_number, p.contact_number, p.whatsapp_phone_number].filter(Boolean);
+                                    return candidatePhones.some((raw: string) => {
+                                        const clean = (raw || '').replace(/\D/g, '');
+                                        const digits = clean.slice(-10);
+                                        return clean === cleanFrom || (digits.length === 10 && cleanFromDigits === digits);
+                                    });
+                                }
+                                return false;
+                            }) || profiles?.find((p: any) => {
                                 const candidatePhones = [p.whatsapp_personal_number, p.contact_number, p.whatsapp_phone_number].filter(Boolean);
                                 return candidatePhones.some((raw: string) => {
                                     const clean = (raw || '').replace(/\D/g, '');
