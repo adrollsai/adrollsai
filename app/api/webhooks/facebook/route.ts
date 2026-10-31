@@ -19,7 +19,8 @@ import {
   handleCreativeApproval,
   handleCreativeEditRequest,
   handleCreativeRevisionSubmission,
-  getActiveEditingAsset
+  getActiveEditingAsset,
+  sendNobogentTextMessage
 } from '@/utils/creative-approval-handler'
 
 export const dynamic = 'force-dynamic'
@@ -485,6 +486,38 @@ export async function POST(request: Request) {
 
                         let messageText = buttonReplyTitle || listReplyTitle || nfmFlowText || message.text?.body || mediaCaption || (isMediaMessage ? `[${message.type}]` : '');
 
+                        // Auto-transcribe incoming audio / voice notes for all flows (including creative revisions)
+                        if (message.type === 'audio' && message.audio?.id) {
+                            const audioMediaId = message.audio.id;
+                            const token = process.env.DEV_WHATSAPP_ACCESS_TOKEN;
+                            if (token) {
+                                try {
+                                    console.log(`🎙️ Resolving & transcribing voice note media ID ${audioMediaId}...`);
+                                    const mediaRes = await fetch(`https://graph.facebook.com/v20.0/${audioMediaId}`, {
+                                        headers: { 'Authorization': `Bearer ${token}` }
+                                    });
+                                    if (mediaRes.ok) {
+                                        const mediaData = await mediaRes.json();
+                                        if (mediaData.url) {
+                                            const audioBytesRes = await fetch(mediaData.url, {
+                                                headers: { 'Authorization': `Bearer ${token}` }
+                                            });
+                                            if (audioBytesRes.ok) {
+                                                const audioBuffer = Buffer.from(await audioBytesRes.arrayBuffer());
+                                                const transcription = await transcribeVoiceNote(audioBuffer, message.audio.mime_type || 'audio/ogg');
+                                                if (transcription) {
+                                                    console.log(`🎙️ Transcribed voice note: "${transcription}"`);
+                                                    messageText = transcription;
+                                                }
+                                            }
+                                        }
+                                    }
+                                } catch (transcribeErr) {
+                                    console.error('❌ Failed to transcribe voice note:', transcribeErr);
+                                }
+                            }
+                        }
+
                         
                         console.log(`💬 Received message from ${fromPhone}: "${messageText}"${isMediaMessage ? ` [media: ${message.type}]` : ''}`);
                         if (!messageText && !isMediaMessage) continue;
@@ -593,6 +626,10 @@ export async function POST(request: Request) {
                                     .maybeSingle();
 
                                 if (activeEditingAsset) {
+                                    if (messageText === '[audio]') {
+                                        await sendNobogentTextMessage(cleanFrom, "🎙️ I received your voice note, but could not transcribe the audio clearly. Please send another voice note or type your changes as text!");
+                                        continue;
+                                    }
                                     console.log(`[Facebook Webhook] 🎨 Revision submission for asset ${activeEditingAsset.id} from ${cleanFrom}: "${(messageText || '').slice(0, 100)}..."`);
                                     await handleCreativeRevisionSubmission({
                                         userId: activeEditingAsset.user_id,
