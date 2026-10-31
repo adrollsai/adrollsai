@@ -56,9 +56,11 @@ export default function VoipCallingModal({
     const timerIntervalRef = useRef<NodeJS.Timeout | null>(null)
     const isMutedRef = useRef(false)
     const isSpeakerMutedRef = useRef(false)
+    const callUuidRef = useRef<string | null>(null)
 
     isMutedRef.current = isMuted
     isSpeakerMutedRef.current = isSpeakerMuted
+    callUuidRef.current = callUuid
 
     const cleanRecipient = formatCallPhone(recipientPhone)
     const displayRecipient = cleanRecipient ? cleanRecipient.replace('+91', '+91 ') : recipientPhone
@@ -169,21 +171,21 @@ export default function VoipCallingModal({
         if (processorRef.current) {
             try {
                 processorRef.current.disconnect()
-            } catch (e) {}
+            } catch (e) { }
             processorRef.current = null
         }
 
         if (mediaStreamRef.current) {
             try {
                 mediaStreamRef.current.getTracks().forEach(track => track.stop())
-            } catch (e) {}
+            } catch (e) { }
             mediaStreamRef.current = null
         }
 
         if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
             try {
                 audioContextRef.current.close()
-            } catch (e) {}
+            } catch (e) { }
             audioContextRef.current = null
         }
 
@@ -192,7 +194,7 @@ export default function VoipCallingModal({
                 if (wsRef.current.readyState === WebSocket.OPEN) {
                     wsRef.current.close()
                 }
-            } catch (e) {}
+            } catch (e) { }
             wsRef.current = null
         }
     }, [])
@@ -212,21 +214,22 @@ export default function VoipCallingModal({
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             try {
                 wsRef.current.send(JSON.stringify({ event: 'hangup' }))
-            } catch (e) {}
+            } catch (e) { }
         }
 
         // Notify backend to terminate Vobiz call & finalize recording/analysis
-        if (callUuid) {
+        const activeUuid = callUuidRef.current || callUuid
+        if (activeUuid) {
             fetch('/api/voice/vobiz/agent-call', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'hangup', callUuid, leadId })
-            }).catch(() => {})
+                body: JSON.stringify({ action: 'hangup', callUuid: activeUuid, leadId })
+            }).catch(() => { })
 
             fetch('/api/voice/vobiz/agent-call', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'finalize', callUuid, leadId })
+                body: JSON.stringify({ action: 'finalize', callUuid: activeUuid, leadId })
             }).then(r => r.json()).then(res => {
                 if (res.success) {
                     setAnalysisResult({
@@ -243,10 +246,10 @@ export default function VoipCallingModal({
 
         // Stop local microphone recording
         if (processorRef.current) {
-            try { processorRef.current.disconnect() } catch (e) {}
+            try { processorRef.current.disconnect() } catch (e) { }
         }
         if (mediaStreamRef.current) {
-            try { mediaStreamRef.current.getTracks().forEach(t => t.stop()) } catch (e) {}
+            try { mediaStreamRef.current.getTracks().forEach(t => t.stop()) } catch (e) { }
         }
 
         // Automatically close/dismiss widget after 2 seconds if user doesn't dismiss manually, letting analysis finish in bg
@@ -320,7 +323,7 @@ export default function VoipCallingModal({
 
                 const bridgeWsHost = process.env.NEXT_PUBLIC_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'
                 const wsUrl = `${bridgeWsHost}/agent-bridge?sessionId=${encodeURIComponent(generatedSessionId)}&role=agent&leadId=${encodeURIComponent(leadId || '')}&profileId=${encodeURIComponent(profileId || '')}`
-                
+
                 const ws = new WebSocket(wsUrl)
                 wsRef.current = ws
 
@@ -347,6 +350,7 @@ export default function VoipCallingModal({
                             throw new Error(data.error || 'Failed to dial phone number')
                         }
                         if (data.callUuid) {
+                            callUuidRef.current = data.callUuid
                             setCallUuid(data.callUuid)
                         }
                         if (data.callerDid) {
@@ -368,7 +372,10 @@ export default function VoipCallingModal({
                         if (data.event === 'call_connected') {
                             setCallState('in_call')
                             setStatusMessage('Connected • Call in Progress')
-                            if (data.callId) setCallUuid(data.callId)
+                            if (data.callId) {
+                                callUuidRef.current = data.callId
+                                setCallUuid(data.callId)
+                            }
 
                             // Start Duration Timer
                             setDurationSeconds(0)
@@ -421,7 +428,7 @@ export default function VoipCallingModal({
                                 clearInterval(timerIntervalRef.current)
                                 timerIntervalRef.current = null
                             }
-                            const effectiveUuid = data.callId || callUuid
+                            const effectiveUuid = data.callId || callUuidRef.current || callUuid
                             if (effectiveUuid) {
                                 fetch('/api/voice/vobiz/agent-call', {
                                     method: 'POST',
@@ -537,10 +544,10 @@ export default function VoipCallingModal({
     // ==========================================
     if (isMinimized) {
         return (
-            <div 
+            <div
                 className="fixed inset-0 z-[200] pointer-events-none select-none"
             >
-                <div 
+                <div
                     ref={widgetRef}
                     style={{ transform: `translate3d(${position.x}px, ${position.y}px, 0)` }}
                     onMouseDown={handleMouseDown}
@@ -601,22 +608,21 @@ export default function VoipCallingModal({
     // ==========================================
     return (
         <div className="fixed inset-0 z-[200] pointer-events-none select-none">
-            <div 
+            <div
                 ref={widgetRef}
                 style={{ transform: `translate3d(${position.x}px, ${position.y}px, 0)` }}
                 className="absolute bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-slate-700/80 rounded-3xl w-[350px] overflow-hidden shadow-2xl shadow-slate-950/80 flex flex-col relative text-white pointer-events-auto select-auto animate-in zoom-in-95 duration-150 ring-1 ring-white/10"
             >
                 {/* Top Ambient Call Status Accent */}
-                <div className={`absolute top-0 left-0 right-0 h-1.5 transition-all duration-500 ${
-                    callState === 'in_call' ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 animate-pulse' :
-                    callState === 'ringing' || callState === 'dialing' ? 'bg-gradient-to-r from-amber-500 via-indigo-500 to-blue-500 animate-pulse' :
-                    callState === 'analyzing' ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-pink-500 animate-pulse' :
-                    callState === 'completed' ? 'bg-emerald-500' :
-                    callState === 'error' ? 'bg-rose-500' : 'bg-slate-700'
-                }`} />
+                <div className={`absolute top-0 left-0 right-0 h-1.5 transition-all duration-500 ${callState === 'in_call' ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 animate-pulse' :
+                        callState === 'ringing' || callState === 'dialing' ? 'bg-gradient-to-r from-amber-500 via-indigo-500 to-blue-500 animate-pulse' :
+                            callState === 'analyzing' ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-pink-500 animate-pulse' :
+                                callState === 'completed' ? 'bg-emerald-500' :
+                                    callState === 'error' ? 'bg-rose-500' : 'bg-slate-700'
+                    }`} />
 
                 {/* Draggable Header Handle */}
-                <div 
+                <div
                     onMouseDown={handleMouseDown}
                     onTouchStart={handleTouchStart}
                     className="p-3.5 pb-2.5 flex items-center justify-between border-b border-slate-800/60 cursor-grab active:cursor-grabbing bg-slate-900/60 hover:bg-slate-800/40 transition-colors select-none"
@@ -635,7 +641,7 @@ export default function VoipCallingModal({
 
                     <div className="flex items-center gap-1">
                         {/* Minimize Button */}
-                        <button 
+                        <button
                             type="button"
                             onClick={() => setIsMinimized(true)}
                             className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
@@ -645,7 +651,7 @@ export default function VoipCallingModal({
                         </button>
 
                         {/* Close / Hangup Button */}
-                        <button 
+                        <button
                             type="button"
                             onClick={handleHangup}
                             className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
@@ -658,23 +664,22 @@ export default function VoipCallingModal({
 
                 {/* Central Body: Avatar, Name, Status, Waveform */}
                 <div className="p-5 flex flex-col items-center text-center space-y-3.5">
-                    
+
                     {/* Glowing Avatar */}
                     <div className="relative my-1">
                         {/* Dynamic outer pulse ring based on mic or remote volume */}
-                        <div 
+                        <div
                             className="absolute -inset-2.5 rounded-full transition-all duration-150 opacity-40 blur-md pointer-events-none"
                             style={{
                                 backgroundColor: callState === 'in_call' ? '#10B981' : '#6366F1',
                                 transform: `scale(${1 + (Math.max(micLevel, remoteLevel) / 100) * 0.4})`
                             }}
                         />
-                        <div className={`w-16 h-16 rounded-full flex items-center justify-center font-black text-xl shadow-xl relative z-10 transition-all ${
-                            callState === 'in_call' ? 'bg-gradient-to-br from-emerald-500 to-teal-700 text-white shadow-emerald-500/30' :
-                            callState === 'ringing' || callState === 'dialing' ? 'bg-gradient-to-br from-indigo-500 to-blue-700 text-white shadow-indigo-500/30 animate-pulse' :
-                            callState === 'completed' ? 'bg-emerald-600 text-white' :
-                            callState === 'error' ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-300'
-                        }`}>
+                        <div className={`w-16 h-16 rounded-full flex items-center justify-center font-black text-xl shadow-xl relative z-10 transition-all ${callState === 'in_call' ? 'bg-gradient-to-br from-emerald-500 to-teal-700 text-white shadow-emerald-500/30' :
+                                callState === 'ringing' || callState === 'dialing' ? 'bg-gradient-to-br from-indigo-500 to-blue-700 text-white shadow-indigo-500/30 animate-pulse' :
+                                    callState === 'completed' ? 'bg-emerald-600 text-white' :
+                                        callState === 'error' ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-300'
+                            }`}>
                             {callState === 'in_call' ? (
                                 <Phone size={26} className="animate-pulse" />
                             ) : callState === 'completed' ? (
@@ -748,7 +753,7 @@ export default function VoipCallingModal({
                                 const level = isMuted ? 0 : Math.max(micLevel, remoteLevel) * multiplier
                                 const height = Math.max(4, Math.min(22, Math.round(level * 0.28)))
                                 return (
-                                    <div 
+                                    <div
                                         key={idx}
                                         className="w-1 rounded-full transition-all duration-100"
                                         style={{
@@ -772,7 +777,7 @@ export default function VoipCallingModal({
                                 {analysisResult.summary || 'Call successfully completed and transcribed.'}
                             </p>
                             {analysisResult.recordingUrl && (
-                                <a 
+                                <a
                                     href={analysisResult.recordingUrl}
                                     target="_blank"
                                     rel="noreferrer"
@@ -802,16 +807,15 @@ export default function VoipCallingModal({
 
                 {/* Bottom Action Controls */}
                 <div className="p-4 pt-2 bg-slate-950/70 border-t border-slate-800/60 flex items-center justify-around">
-                    
+
                     {callState === 'in_call' ? (
                         <>
                             {/* Mute Mic Button */}
                             <button
                                 type="button"
                                 onClick={() => setIsMuted(!isMuted)}
-                                className={`p-3 rounded-full transition-all cursor-pointer shadow-md ${
-                                    isMuted ? 'bg-rose-600 text-white ring-4 ring-rose-500/20' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-                                }`}
+                                className={`p-3 rounded-full transition-all cursor-pointer shadow-md ${isMuted ? 'bg-rose-600 text-white ring-4 ring-rose-500/20' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                                    }`}
                                 title={isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
                             >
                                 {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
@@ -831,9 +835,8 @@ export default function VoipCallingModal({
                             <button
                                 type="button"
                                 onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
-                                className={`p-3 rounded-full transition-all cursor-pointer shadow-md ${
-                                    isSpeakerMuted ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-                                }`}
+                                className={`p-3 rounded-full transition-all cursor-pointer shadow-md ${isSpeakerMuted ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                                    }`}
                                 title={isSpeakerMuted ? 'Unmute Speaker' : 'Mute Speaker'}
                             >
                                 {isSpeakerMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
@@ -843,9 +846,8 @@ export default function VoipCallingModal({
                             <button
                                 type="button"
                                 onClick={() => setShowKeypad(!showKeypad)}
-                                className={`p-3 rounded-full transition-all cursor-pointer shadow-md ${
-                                    showKeypad ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-                                }`}
+                                className={`p-3 rounded-full transition-all cursor-pointer shadow-md ${showKeypad ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                                    }`}
                                 title="Toggle DTMF Keypad"
                             >
                                 <Grid size={16} />
