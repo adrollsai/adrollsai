@@ -5,34 +5,30 @@ import { useRouter } from 'next/navigation';
 import { 
     Sparkles, 
     Building2, 
-    Package, 
     Upload, 
     ArrowRight, 
     CheckCircle2, 
     Check, 
     Loader2, 
-    Globe,
-    Phone,
-    MapPin,
-    Facebook,
-    MessageCircle,
-    Crown,
-    ExternalLink,
-    AlertCircle,
-    RefreshCw,
-    ShieldCheck,
-    Layers,
-    Megaphone,
-    Volume2,
-    VolumeX,
-    Zap,
-    Maximize2,
-    Trash2,
-    ImageIcon,
-    X,
-    Award,
-    Search,
-    Plus
+    Globe, 
+    Phone, 
+    MapPin, 
+    Facebook, 
+    MessageCircle, 
+    Crown, 
+    ExternalLink, 
+    AlertCircle, 
+    RefreshCw, 
+    ShieldCheck, 
+    Layers, 
+    Megaphone, 
+    Zap, 
+    Maximize2, 
+    Trash2, 
+    X, 
+    Award, 
+    Search, 
+    Plus 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 // @ts-ignore
@@ -43,7 +39,7 @@ import { createClient } from '@/utils/supabase/client';
 import { useRazorpay } from '@/utils/useRazorpay';
 import { ALL_REFERENCE_TEMPLATES, ReferenceTemplate } from '@/utils/reference-templates-data';
 
-type OnboardingStep = 'profile' | 'integrations' | 'product' | 'templates' | 'generating' | 'payment';
+type OnboardingStep = 'profile' | 'integrations' | 'templates' | 'payment';
 
 const INSPIRATIONAL_QUOTES = [
     {
@@ -67,21 +63,6 @@ const INSPIRATIONAL_QUOTES = [
         badge: "🤖 24/7 Automation"
     }
 ];
-
-export interface OnboardingProjectConfig {
-    id: string;
-    title: string;
-    price: string;
-    description: string;
-    imageUrl: string;
-    creativesCount: number;
-    videos: Array<{
-        id: string;
-        duration: number; // 15, 30, 45, 60, 90
-        customInstructions: string;
-    }>;
-    customInstructions: string;
-}
 
 export default function OnboardingPage() {
     const router = useRouter();
@@ -141,142 +122,6 @@ export default function OnboardingPage() {
     const [whatsappNumberInput, setWhatsappNumberInput] = useState('');
     const [isSavingWhatsappNum, setIsSavingWhatsappNum] = useState(false);
 
-    // Product & Multi-Project Details
-
-    const [productTitle, setProductTitle] = useState('');
-    const [productDescription, setProductDescription] = useState('');
-    const [productPrice, setProductPrice] = useState('');
-    const [productImageUrl, setProductImageUrl] = useState('');
-    const [uploadingProductImage, setUploadingProductImage] = useState(false);
-    const productInputRef = useRef<HTMLInputElement>(null);
-
-    // Multi-Project Delivery Allocation (5-Minute Global Video Pool)
-    const MAX_VIDEO_POOL_SECONDS = 300;
-    const [projects, setProjects] = useState<OnboardingProjectConfig[]>([
-        {
-            id: 'proj_1',
-            title: '',
-            price: '',
-            description: '',
-            imageUrl: '',
-            creativesCount: 3,
-            videos: [
-                { id: 'vid_1', duration: 30, customInstructions: '' }
-            ],
-            customInstructions: ''
-        }
-    ]);
-    const [activeProjectIndex, setActiveProjectIndex] = useState(0);
-
-    const totalAllocatedVideoSeconds = projects.reduce((total, p) => {
-        return total + ((p.videos || []).reduce((pTot, v) => pTot + (Number(v?.duration) || 0), 0));
-    }, 0);
-    const remainingVideoSeconds = Math.max(0, MAX_VIDEO_POOL_SECONDS - (totalAllocatedVideoSeconds || 0));
-    const videoProgressPercent = Math.min(100, (((totalAllocatedVideoSeconds || 0) / MAX_VIDEO_POOL_SECONDS) * 100) || 0);
-
-    const handleAddProject = () => {
-        const defaultVidDuration = remainingVideoSeconds >= 30 ? 30 : (remainingVideoSeconds >= 15 ? 15 : 0);
-        const newProj: OnboardingProjectConfig = {
-            id: 'proj_' + Date.now(),
-            title: '',
-            price: '',
-            description: '',
-            imageUrl: '',
-            creativesCount: 3,
-            videos: defaultVidDuration > 0 ? [{ id: 'vid_' + Date.now(), duration: defaultVidDuration, customInstructions: '' }] : [],
-            customInstructions: ''
-        };
-        setProjects(prev => [...prev, newProj]);
-        setActiveProjectIndex(projects.length);
-        playChime('beep');
-        toast.success("Added new project slot! Configure deliverables below.");
-    };
-
-    const handleRemoveProject = (index: number) => {
-        if (projects.length <= 1) {
-            toast.error("You must have at least one project.");
-            return;
-        }
-        setProjects(prev => prev.filter((_, i) => i !== index));
-        if (activeProjectIndex >= index && activeProjectIndex > 0) {
-            setActiveProjectIndex(activeProjectIndex - 1);
-        }
-        playChime('beep');
-        toast.info("Project removed");
-    };
-
-    const handleUpdateProjectField = (index: number, field: keyof OnboardingProjectConfig, value: any) => {
-        setProjects(prev => {
-            const next = [...prev];
-            next[index] = { ...next[index], [field]: value };
-            return next;
-        });
-        if (index === 0) {
-            if (field === 'title') setProductTitle(value);
-            if (field === 'description') setProductDescription(value);
-            if (field === 'price') setProductPrice(value);
-            if (field === 'imageUrl') setProductImageUrl(value);
-        }
-    };
-
-    const handleAddVideoToProject = (projectIndex: number) => {
-        if (remainingVideoSeconds < 15) {
-            toast.error("You have reached your 5-minute video duration budget. Remove or shorten existing videos to free up seconds.");
-            return;
-        }
-        const newDuration = remainingVideoSeconds >= 30 ? 30 : 15;
-        setProjects(prev => {
-            const next = [...prev];
-            next[projectIndex] = {
-                ...next[projectIndex],
-                videos: [...next[projectIndex].videos, { id: 'vid_' + Date.now(), duration: newDuration, customInstructions: '' }]
-            };
-            return next;
-        });
-        playChime('beep');
-        toast.success('Added ' + newDuration + 's video reel to ' + (projects[projectIndex].title || 'Project') + '.');
-    };
-
-    const handleRemoveVideoFromProject = (projectIndex: number, videoIndex: number) => {
-        setProjects(prev => {
-            const next = [...prev];
-            const updatedVideos = next[projectIndex].videos.filter((_, idx) => idx !== videoIndex);
-            next[projectIndex] = { ...next[projectIndex], videos: updatedVideos };
-            return next;
-        });
-        playChime('beep');
-        toast.info("Video reel removed. Budget restored.");
-    };
-
-    const handleUpdateVideoDuration = (projectIndex: number, videoIndex: number, newDuration: number) => {
-        const currentVideoDuration = projects[projectIndex].videos[videoIndex].duration;
-        const durationDiff = newDuration - currentVideoDuration;
-
-        if (durationDiff > remainingVideoSeconds) {
-            toast.error('Not enough remaining duration. You have ' + remainingVideoSeconds + 's available.');
-            return;
-        }
-
-        setProjects(prev => {
-            const next = [...prev];
-            const updatedVideos = [...next[projectIndex].videos];
-            updatedVideos[videoIndex] = { ...updatedVideos[videoIndex], duration: newDuration };
-            next[projectIndex] = { ...next[projectIndex], videos: updatedVideos };
-            return next;
-        });
-        playChime('beep');
-    };
-
-    const handleUpdateVideoInstruction = (projectIndex: number, videoIndex: number, instruction: string) => {
-        setProjects(prev => {
-            const next = [...prev];
-            const updatedVideos = [...next[projectIndex].videos];
-            updatedVideos[videoIndex] = { ...updatedVideos[videoIndex], customInstructions: instruction };
-            next[projectIndex] = { ...next[projectIndex], videos: updatedVideos };
-            return next;
-        });
-    };
-
     // Design Template Selection (Up to 10 templates, pre-selected with top 5)
     const [selectedTemplates, setSelectedTemplates] = useState<string[]>([
         'pinterest_pin_0',
@@ -287,15 +132,7 @@ export default function OnboardingPage() {
     ]);
     const [templateCategoryFilter, setTemplateCategoryFilter] = useState<'all' | 'high_converting' | 'premium' | 'waterfront' | 'direct_response' | 'dark_mode'>('all');
     const [templateSearchQuery, setTemplateSearchQuery] = useState('');
-
-    // Generation State
-    const [generatingAssets, setGeneratingAssets] = useState(false);
-    const [generationFinished, setGenerationFinished] = useState(false);
-    const [progressStep, setProgressStep] = useState(0);
-
-    // Walkthrough video states
-    const [isVideoMuted, setIsVideoMuted] = useState(true);
-    const videoRef = useRef<HTMLVideoElement>(null);
+    const [isSavingTemplates, setIsSavingTemplates] = useState(false);
 
     // Audio chime helper using Web Audio API synthesis
     const playChime = (type: 'beep' | 'success') => {
@@ -436,30 +273,10 @@ export default function OnboardingPage() {
             if (extracted.businessAddress) setBusinessAddress(extracted.businessAddress);
             if (extracted.logoUrl && !logoUrl) setLogoUrl(extracted.logoUrl);
 
-            // Also prefill product if found
-            if (extracted.product) {
-                if (extracted.product.title) setProductTitle(extracted.product.title);
-                if (extracted.product.description) setProductDescription(extracted.product.description);
-                if (extracted.product.price) setProductPrice(extracted.product.price);
-                if (extracted.product.imageUrl) setProductImageUrl(extracted.product.imageUrl);
-
-                setProjects(prev => {
-                    const next = [...prev];
-                    next[0] = {
-                        ...next[0],
-                        title: extracted.product.title || next[0].title,
-                        description: extracted.product.description || next[0].description,
-                        price: extracted.product.price || next[0].price,
-                        imageUrl: extracted.product.imageUrl || next[0].imageUrl
-                    };
-                    return next;
-                });
-            }
-
             setWebsiteFetched(true);
             playChime('success');
             toast.dismiss(toastId);
-            toast.success("✨ Brand profile & flagship product extracted from your website!");
+            toast.success("✨ Brand profile extracted from your website!");
         } catch (err: any) {
             toast.dismiss(toastId);
             toast.error(err.message || "Could not fetch website. You can fill details manually.");
@@ -489,29 +306,6 @@ export default function OnboardingPage() {
     const handleRemoveLogo = () => {
         setLogoUrl('');
         toast.info("Logo removed");
-    };
-
-    // --- PRODUCT IMAGE UPLOAD ---
-    const handleProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setUploadingProductImage(true);
-        try {
-            const publicUrl = await uploadToR2(file, 'properties');
-            setProductImageUrl(publicUrl);
-            playChime('success');
-            toast.success("Product image uploaded! 📸");
-        } catch (err: any) {
-            toast.error("Failed to upload product image: " + err.message);
-        } finally {
-            setUploadingProductImage(false);
-            if (productInputRef.current) productInputRef.current.value = '';
-        }
-    };
-
-    const handleRemoveProductImage = () => {
-        setProductImageUrl('');
-        toast.info("Product image removed");
     };
 
     // --- TEMPLATE TOGGLE HANDLER (UP TO 10 TEMPLATES) ---
@@ -661,67 +455,12 @@ export default function OnboardingPage() {
         }
     };
 
-    // --- SUBMIT DETAILS & TRIGGER AI STUDIO ---
-    const handleTriggerGenerations = async () => {
-        setStep('generating');
-        setGeneratingAssets(true);
-        setProgressStep(1);
+    // --- SAVE BRAND PROFILE & TEMPLATES, PROCEED TO PLAN ACTIVATION ---
+    const handleSaveTemplatesAndContinue = async () => {
+        setIsSavingTemplates(true);
         playChime('beep');
-
         try {
-            await new Promise(r => setTimeout(r, 1200));
-            setProgressStep(2);
-
-            await new Promise(r => setTimeout(r, 1200));
-            setProgressStep(3);
-
             const res = await fetch('/api/onboarding/complete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    companyName,
-                    country,
-                    companyDescription,
-                    logoUrl,
-                    contactNumber,
-                    address: businessAddress,
-                    websiteUrl,
-                    whatsappNumber: whatsappNumberInput,
-                    productTitle: projects[0]?.title || productTitle,
-                    productDescription: projects[0]?.description || productDescription,
-                    productPrice: projects[0]?.price || productPrice,
-                    productImageUrl: projects[0]?.imageUrl || productImageUrl,
-                    selectedTemplates,
-                    projects
-                })
-            });
-
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Failed to trigger AI studio generations");
-
-            await new Promise(r => setTimeout(r, 1200));
-            setProgressStep(4);
-            setGenerationFinished(true);
-            playChime('success');
-            confetti({
-                particleCount: 80,
-                spread: 70,
-                origin: { y: 0.6 }
-            });
-            toast.success("AI studio workspace initialized & creatives cooking! 🚀");
-        } catch (err: any) {
-            console.error("Onboarding submission failed:", err);
-            toast.error(err.message || "AI Studio generation failed to start.");
-            setStep('product');
-        } finally {
-            setGeneratingAssets(false);
-        }
-    };
-
-    // --- SKIP TO PAYMENT / COMPLETE ---
-    const handleSkipToPayment = async () => {
-        try {
-            await fetch('/api/onboarding/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -736,9 +475,19 @@ export default function OnboardingPage() {
                     selectedTemplates
                 })
             });
-        } catch {}
-        playChime('beep');
-        setStep('payment');
+
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                console.warn("Could not save onboarding profile:", data);
+            }
+            playChime('success');
+            setStep('payment');
+        } catch (err: any) {
+            console.error("Error saving onboarding details:", err);
+            setStep('payment');
+        } finally {
+            setIsSavingTemplates(false);
+        }
     };
 
     // --- PAYMENT OR DASHBOARD FINISH ---
@@ -813,18 +562,14 @@ export default function OnboardingPage() {
     const currentStepNumber = {
         'profile': 1,
         'integrations': 2,
-        'product': 3,
-        'templates': 4,
-        'generating': 5,
-        'payment': 6
+        'templates': 3,
+        'payment': 4
     }[step];
 
     const STEPS_NAV = [
         { key: 'profile', label: 'Brand Profile', icon: Building2 },
         { key: 'integrations', label: 'Channels', icon: Megaphone },
-        { key: 'product', label: 'Product & Offer', icon: Package },
         { key: 'templates', label: 'Design Styles', icon: Layers },
-        { key: 'generating', label: 'AI Studio', icon: Sparkles },
         { key: 'payment', label: 'Activate Plan', icon: Award }
     ] as const;
 
@@ -849,7 +594,7 @@ export default function OnboardingPage() {
 
                 <div className="flex items-center gap-3">
                     <span className="text-xs font-bold text-slate-400 hidden sm:inline">
-                        Step {currentStepNumber} of 6
+                        Step {currentStepNumber} of 4
                     </span>
                     <button
                         type="button"
@@ -866,7 +611,7 @@ export default function OnboardingPage() {
                 <div className="relative flex items-center justify-between p-2 rounded-2xl bg-white/90 border border-slate-200/80 backdrop-blur-xl shadow-xs">
                     <div className="absolute top-1/2 left-8 right-8 -translate-y-1/2 h-[2px] bg-slate-100 z-0" />
                     {STEPS_NAV.map((m) => {
-                        const stepOrder: OnboardingStep[] = ['profile', 'integrations', 'product', 'templates', 'generating', 'payment'];
+                        const stepOrder: OnboardingStep[] = ['profile', 'integrations', 'templates', 'payment'];
                         const currentIdx = stepOrder.indexOf(step);
                         const milestoneIdx = stepOrder.indexOf(m.key);
                         const isDone = currentIdx > milestoneIdx;
@@ -1437,7 +1182,7 @@ export default function OnboardingPage() {
                                         type="button"
                                         onClick={() => {
                                             playChime('beep');
-                                            setStep('product');
+                                            setStep('templates');
                                         }}
                                         className="text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors py-2 px-3 cursor-pointer"
                                     >
@@ -1447,457 +1192,6 @@ export default function OnboardingPage() {
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            playChime('beep');
-                                            setStep('product');
-                                        }}
-                                        className="w-full sm:w-auto px-7 py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
-                                    >
-                                        <span>Next: Add First Product</span>
-                                        <ArrowRight size={15} />
-                                    </button>
-                                </div>
-                            </div>
-                        </motion.div>
-                    )}
-
-                    {/* =========================================================================
-                        STEP 3: ONE PRODUCT / SERVICE INFO
-                    ========================================================================= */}
-                    {step === 'product' && (
-                        <motion.div
-                            key="step-product"
-                            initial={{ opacity: 0, y: 15 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -15 }}
-                            transition={{ duration: 0.2 }}
-                            className="bg-white/95 border border-slate-200/90 rounded-3xl p-6 sm:p-8 backdrop-blur-xl shadow-xl shadow-slate-200/50 space-y-6"
-                        >
-                            {/* Header */}
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
-                                <div>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-[10px] font-extrabold text-blue-700 uppercase tracking-wider bg-blue-100 px-2.5 py-0.5 rounded-full border border-blue-200">
-                                            Step 3 &bull; Multi-Project Allocation
-                                        </span>
-                                        <span className="text-xs text-slate-500 font-semibold hidden sm:inline">
-                                            &bull; 5-Minute Studio Pool
-                                        </span>
-                                    </div>
-                                    <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-                                        <span>Allocate Creatives &amp; Video Reels</span>
-                                        <Sparkles size={20} className="text-blue-600" />
-                                    </h1>
-                                    <p className="text-sm text-slate-500 mt-1 max-w-xl">
-                                        Add your projects and allocate your deliverables. Static creatives will randomly adopt your selected styles, and video reels draw from your free 5-minute duration budget.
-                                    </p>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                    <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs">
-                                        ✨ 5 Mins Free Video Duration
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* 5-MINUTE VIDEO POOL TRACKER */}
-                            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 text-white shadow-md relative overflow-hidden">
-                                <div className="relative z-10 space-y-3">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                            <span className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">
-                                                ⏱️
-                                            </span>
-                                            <div>
-                                                <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-200">
-                                                    5-Minute Video Studio Pool (300 Seconds Total)
-                                                </h4>
-                                                <p className="text-[11px] text-slate-400">
-                                                    Distribute video durations across your project(s).
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center gap-3 text-right">
-                                            <div>
-                                                <span className="text-[10px] text-slate-400 font-bold uppercase block">Remaining</span>
-                                                <span className={"text-xs font-mono font-extrabold " + (remainingVideoSeconds > 0 ? "text-emerald-400" : "text-amber-400")}>
-                                                    {Math.floor(remainingVideoSeconds / 60)}m {remainingVideoSeconds % 60}s ({remainingVideoSeconds}s)
-                                                </span>
-                                            </div>
-                                            <div className="h-6 w-px bg-slate-800" />
-                                            <div>
-                                                <span className="text-[10px] text-slate-400 font-bold uppercase block">Allocated</span>
-                                                <span className="text-xs font-mono font-extrabold text-blue-400">
-                                                    {Math.floor(totalAllocatedVideoSeconds / 60)}m {totalAllocatedVideoSeconds % 60}s / 5m 00s
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Visual Bar */}
-                                    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                                        <div 
-                                            className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-400 transition-all duration-300"
-                                            style={{ width: videoProgressPercent + '%' }}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* PROJECT TABS */}
-                            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                                <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 sm:pb-0">
-                                    {projects.map((p, idx) => (
-                                        <button
-                                            key={p.id || idx}
-                                            type="button"
-                                            onClick={() => setActiveProjectIndex(idx)}
-                                            className={"px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap " + (
-                                                activeProjectIndex === idx
-                                                    ? 'bg-slate-900 text-white shadow-sm'
-                                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                                            )}
-                                        >
-                                            <span>{p.title ? (p.title.length > 15 ? p.title.slice(0, 15) + '...' : p.title) : ('Project ' + (idx + 1))}</span>
-                                            <span className={"text-[10px] px-1.5 py-0.2 rounded font-mono " + (activeProjectIndex === idx ? 'bg-white/20' : 'bg-slate-200')}>
-                                                {p.creativesCount}C &bull; {p.videos.length}V
-                                            </span>
-                                        </button>
-                                    ))}
-
-                                    <button
-                                        type="button"
-                                        onClick={handleAddProject}
-                                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200/80 transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                                    >
-                                        <Plus size={13} />
-                                        <span>Add Project</span>
-                                    </button>
-                                </div>
-
-                                {projects.length > 1 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => handleRemoveProject(activeProjectIndex)}
-                                        className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 cursor-pointer"
-                                    >
-                                        <Trash2 size={13} />
-                                        <span className="hidden sm:inline">Remove Project</span>
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Form Grid for Active Project */}
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
-                                {/* Left Column: Project Details & Allocation */}
-                                <div className="lg:col-span-7 space-y-4">
-                                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                                        <div className="sm:col-span-8">
-                                            <label className="block text-xs font-bold text-slate-700 mb-1">
-                                                Project / Offering Title <span className="text-rose-500">*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={projects[activeProjectIndex]?.title || ''}
-                                                onChange={(e) => handleUpdateProjectField(activeProjectIndex, 'title', e.target.value)}
-                                                placeholder="e.g. 3BHK Luxury Skyline Penthouse"
-                                                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-bold focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-2xs transition-all"
-                                            />
-                                        </div>
-                                        <div className="sm:col-span-4">
-                                            <label className="block text-xs font-bold text-slate-700 mb-1">
-                                                Price / Tagline (Optional)
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={projects[activeProjectIndex]?.price || ''}
-                                                onChange={(e) => handleUpdateProjectField(activeProjectIndex, 'price', e.target.value)}
-                                                placeholder="e.g. ₹1.85 Cr"
-                                                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-bold focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-2xs transition-all"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                                            Core Features &amp; Unique Benefits <span className="text-rose-500">*</span>
-                                        </label>
-                                        <textarea
-                                            rows={3}
-                                            value={projects[activeProjectIndex]?.description || ''}
-                                            onChange={(e) => handleUpdateProjectField(activeProjectIndex, 'description', e.target.value)}
-                                            placeholder="Describe key highlights (e.g. Private infinity plunge pool, double-height ceilings, 5 mins from metro corridor, zero brokerage, booking bonus...)"
-                                            className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm text-slate-800 leading-relaxed focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-2xs transition-all resize-none"
-                                        />
-                                    </div>
-
-                                    {/* Static Creatives Slider */}
-                                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                                                <ImageIcon size={14} className="text-blue-600" />
-                                                <span>Static Ad Creatives for this Project</span>
-                                            </label>
-                                            <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-blue-100 text-blue-700 border border-blue-200 font-mono">
-                                                {projects[activeProjectIndex]?.creativesCount || 3} Creatives
-                                            </span>
-                                        </div>
-                                        <input
-                                            type="range"
-                                            min={1}
-                                            max={10}
-                                            value={projects[activeProjectIndex]?.creativesCount || 3}
-                                            onChange={(e) => handleUpdateProjectField(activeProjectIndex, 'creativesCount', Number(e.target.value))}
-                                            className="w-full accent-blue-600 cursor-pointer"
-                                        />
-                                        <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                                            <span>🎨 Each creative will randomly adopt a style from your selected design templates.</span>
-                                        </p>
-                                    </div>
-
-                                    {/* Video Allocation */}
-                                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                                                <Megaphone size={14} className="text-indigo-600" />
-                                                <span>Video Reels for this Project</span>
-                                            </label>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleAddVideoToProject(activeProjectIndex)}
-                                                disabled={remainingVideoSeconds < 15}
-                                                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                            >
-                                                <Plus size={12} />
-                                                <span>Add Video ({remainingVideoSeconds}s available)</span>
-                                            </button>
-                                        </div>
-
-                                        {(projects[activeProjectIndex]?.videos || []).length === 0 ? (
-                                            <div className="p-3 rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-400">
-                                                No video assigned to this project. Tap "+ Add Video" above.
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {(projects[activeProjectIndex]?.videos || []).map((vid, vIdx) => (
-                                                    <div key={vid.id || vIdx} className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-2">
-                                                        <div className="flex items-center justify-between">
-                                                            <span className="text-xs font-bold text-slate-800">
-                                                                Reel #{vIdx + 1}
-                                                            </span>
-
-                                                            <div className="flex items-center gap-2">
-                                                                <select
-                                                                    value={vid.duration}
-                                                                    onChange={(e) => handleUpdateVideoDuration(activeProjectIndex, vIdx, Number(e.target.value))}
-                                                                    className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200 focus:outline-none"
-                                                                >
-                                                                    <option value={15}>15s Reel</option>
-                                                                    <option value={30}>30s Reel</option>
-                                                                    <option value={45}>45s Reel</option>
-                                                                    <option value={60}>60s Reel</option>
-                                                                    <option value={90}>90s Commercial</option>
-                                                                </select>
-
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleRemoveVideoFromProject(activeProjectIndex, vIdx)}
-                                                                    className="p-1 rounded text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                                                                >
-                                                                    <Trash2 size={13} />
-                                                                </button>
-                                                            </div>
-                                                        </div>
-
-                                                        <input
-                                                            type="text"
-                                                            value={vid.customInstructions}
-                                                            onChange={(e) => handleUpdateVideoInstruction(activeProjectIndex, vIdx, e.target.value)}
-                                                            placeholder="Optional: Specific note for this reel (e.g. Highlight clubhouse, Hinglish Devanagari script)"
-                                                            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none"
-                                                        />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Project Custom Instructions */}
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                                            Optional Project Custom Instructions
-                                        </label>
-                                        <textarea
-                                            rows={2}
-                                            value={projects[activeProjectIndex]?.customInstructions || ''}
-                                            onChange={(e) => handleUpdateProjectField(activeProjectIndex, 'customInstructions', e.target.value)}
-                                            placeholder="Any particular instructions (e.g. Always highlight 10:90 payment plan, emphasize night pool view, use warm golden hour lighting...)"
-                                            className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs resize-none"
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Right Column: Product Image Dropzone */}
-                                <div className="lg:col-span-5 space-y-3.5">
-                                    <div className="flex flex-col">
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                                <ImageIcon size={14} className="text-blue-600" />
-                                                <span>Product / Property Photo</span>
-                                            </label>
-                                            {projects[activeProjectIndex]?.imageUrl ? (
-                                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300 flex items-center gap-1">
-                                                    <Check size={10} strokeWidth={3} /> Uploaded
-                                                </span>
-                                            ) : (
-                                                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
-                                                    Hero Image
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        <div className="relative rounded-2xl border border-slate-200 bg-slate-950 overflow-hidden group h-[190px] flex items-center justify-center transition-all hover:border-blue-400 hover:shadow-sm">
-                                            {uploadingProductImage ? (
-                                                <div className="flex flex-col items-center justify-center p-6 text-center space-y-2">
-                                                    <Loader2 size={24} className="animate-spin text-blue-400" />
-                                                    <span className="text-xs font-bold text-slate-200">Uploading photo to CDN...</span>
-                                                </div>
-                                            ) : projects[activeProjectIndex]?.imageUrl ? (
-                                                <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
-                                                    <img
-                                                        src={projects[activeProjectIndex]?.imageUrl || ''}
-                                                        alt=""
-                                                        className="absolute inset-0 w-full h-full object-cover blur-md opacity-35 scale-110 pointer-events-none"
-                                                    />
-                                                    <img
-                                                        src={projects[activeProjectIndex]?.imageUrl || ''}
-                                                        alt="Product Preview"
-                                                        className="relative z-10 max-h-full max-w-full object-contain p-2 rounded-xl transition-transform duration-300 group-hover:scale-102"
-                                                    />
-
-                                                    <div className="absolute inset-0 z-20 bg-slate-950/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-[2px]">
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setImageLightboxUrl(projects[activeProjectIndex]?.imageUrl || '');
-                                                            }}
-                                                            className="px-2.5 py-1.5 rounded-xl bg-white/95 hover:bg-white text-slate-800 text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
-                                                        >
-                                                            <Maximize2 size={12} />
-                                                            <span>Preview</span>
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                productInputRef.current?.click();
-                                                            }}
-                                                            className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
-                                                        >
-                                                            <Upload size={12} />
-                                                            <span>Change</span>
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleUpdateProjectField(activeProjectIndex, 'imageUrl', '');
-                                                            }}
-                                                            className="px-2 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
-                                                        >
-                                                            <Trash2 size={12} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div
-                                                    onClick={() => productInputRef.current?.click()}
-                                                    className="w-full h-full border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl flex flex-col items-center justify-center cursor-pointer p-4 text-center transition-colors bg-white hover:bg-blue-50/20"
-                                                >
-                                                    <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
-                                                        <Package size={18} />
-                                                    </div>
-                                                    <span className="text-xs font-bold text-slate-700">Upload Project Image</span>
-                                                    <span className="text-[10px] text-slate-400 mt-0.5">JPG, PNG, WebP</span>
-                                                    <span className="text-[9px] text-blue-600 font-semibold mt-1">Used as base visual for AI ad graphic</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <input 
-                                            ref={productInputRef} 
-                                            type="file" 
-                                            accept="image/*" 
-                                            onChange={async (e) => {
-                                                const file = e.target.files?.[0];
-                                                if (!file) return;
-                                                setUploadingProductImage(true);
-                                                try {
-                                                    const publicUrl = await uploadToR2(file, 'properties');
-                                                    handleUpdateProjectField(activeProjectIndex, 'imageUrl', publicUrl);
-                                                    playChime('success');
-                                                    toast.success("Project photo uploaded! 📸");
-                                                } catch (err: any) {
-                                                    toast.error("Upload failed: " + err.message);
-                                                } finally {
-                                                    setUploadingProductImage(false);
-                                                    if (productInputRef.current) productInputRef.current.value = '';
-                                                }
-                                            }} 
-                                            className="hidden" 
-                                        />
-                                    </div>
-
-                                    {/* WhatsApp Revision Explainer */}
-                                    <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200/80 space-y-1.5">
-                                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
-                                            <MessageCircle size={15} className="text-emerald-600" />
-                                            <span>WhatsApp Delivery &amp; Revisions</span>
-                                        </div>
-                                        <p className="text-[11px] text-emerald-950 leading-relaxed">
-                                            Finished creatives &amp; WhatsApp template copy are sent directly to your WhatsApp. You can tap <strong>[Approve]</strong> to post, or reply with edits (e.g. <em>"Change price to ₹2.1 Cr"</em>) to get auto-revisions!
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Action Footer */}
-                            <div className="mt-8 pt-6 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        playChime('beep');
-                                        setStep('integrations');
-                                    }}
-                                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 shadow-xs transition-all cursor-pointer"
-                                >
-                                    &larr; Back to Channels
-                                </button>
-
-                                <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            playChime('beep');
-                                            setStep('templates');
-                                        }}
-                                        className="text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors py-2 px-3 cursor-pointer"
-                                    >
-                                        Skip project setup &rarr;
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const hasValidProject = projects.some(p => ((p?.title || '').trim()) && ((p?.description || '').trim()));
-                                            if (!hasValidProject) {
-                                                toast.error("Please enter a title and description for at least one project, or click 'Skip project setup'.");
-                                                return;
-                                            }
-                                            if (totalAllocatedVideoSeconds > MAX_VIDEO_POOL_SECONDS) {
-                                                toast.error("Total video duration exceeds 5 minutes (300s). Please reduce video duration.");
-                                                return;
-                                            }
                                             playChime('beep');
                                             setStep('templates');
                                         }}
@@ -1912,7 +1206,7 @@ export default function OnboardingPage() {
                     )}
 
                     {/* =========================================================================
-                        STEP 4: SELECT REFERENCE DESIGN BLUEPRINTS (UP TO 10 TEMPLATES)
+                        STEP 3: SELECT REFERENCE DESIGN BLUEPRINTS (UP TO 10 TEMPLATES) (UP TO 10 TEMPLATES)
                     ========================================================================= */}
                     {step === 'templates' && (
                         <motion.div
@@ -1928,7 +1222,7 @@ export default function OnboardingPage() {
                                 <div>
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="text-[10px] font-extrabold text-blue-700 uppercase tracking-wider bg-blue-100 px-2 py-0.5 rounded-md border border-blue-200">
-                                            Step 4 &bull; Aesthetics
+                                            Step 3 &bull; Aesthetics
                                         </span>
                                         <span className="text-xs text-slate-500 font-semibold hidden sm:inline">
                                             &bull; Choose Up to 10 Visual Blueprints
@@ -2110,210 +1404,29 @@ export default function OnboardingPage() {
                                     type="button"
                                     onClick={() => {
                                         playChime('beep');
-                                        setStep('product');
+                                        setStep('integrations');
                                     }}
                                     className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 shadow-xs transition-all cursor-pointer"
                                 >
-                                    &larr; Back to Product
+                                    &larr; Back to Channels
                                 </button>
 
                                 <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                                    {productTitle.trim() && productDescription.trim() ? (
-                                        <button
-                                            type="button"
-                                            onClick={handleTriggerGenerations}
-                                            disabled={selectedTemplates.length === 0}
-                                            className="w-full sm:w-auto px-7 py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 disabled:opacity-40 disabled:pointer-events-none text-white font-extrabold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
-                                        >
-                                            <span>Launch AI Studio ({selectedTemplates.length} Styles)</span>
-                                            <Sparkles size={15} />
-                                        </button>
-                                    ) : (
-                                        <button
-                                            type="button"
-                                            onClick={handleSkipToPayment}
-                                            className="w-full sm:w-auto px-7 py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
-                                        >
-                                            <span>Save &amp; Continue to Plans</span>
-                                            <ArrowRight size={15} />
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        </motion.div>
-                    )}
-
-                    {/* =========================================================================
-                        STEP 5: AI STUDIO SETUP & DELIGHT ANIMATIONS
-                    ========================================================================= */}
-                    {step === 'generating' && (
-                        <motion.div
-                            key="step-generating"
-                            initial={{ opacity: 0, scale: 0.98 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.98 }}
-                            transition={{ duration: 0.2 }}
-                            className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch"
-                        >
-                            {/* Left: Interactive Video Walkthrough */}
-                            <div className="lg:col-span-7 bg-white/95 border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-xl shadow-slate-200/50 backdrop-blur-xl flex flex-col justify-between space-y-4">
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-[10px] font-extrabold uppercase tracking-wider bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md border border-blue-200">
-                                            Live Walkthrough
-                                        </span>
-                                        <span className="text-xs text-slate-400 font-semibold">
-                                            While creatives cook
-                                        </span>
-                                    </div>
-                                    <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 mt-1">
-                                        Watch How Nobogent Automates Sales
-                                    </h2>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        See how AI creates ad creatives, qualifies leads on WhatsApp, and schedules appointments.
-                                    </p>
-                                </div>
-
-                                <div className="relative aspect-video w-full rounded-2xl border border-slate-200 bg-slate-950 overflow-hidden shadow-md group">
-                                    <video 
-                                        ref={videoRef}
-                                        src="https://assets.mixkit.co/videos/preview/mixkit-man-working-on-a-laptop-at-his-desk-40346-large.mp4"
-                                        autoPlay
-                                        loop
-                                        muted={isVideoMuted}
-                                        playsInline
-                                        className="w-full h-full object-cover"
-                                    />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end justify-between p-4 sm:p-5">
-                                        <div className="text-white text-xs font-semibold drop-shadow">
-                                            Generating: 3 Meta Ad Creatives + 1 AI Video Commercial
-                                        </div>
-                                        <button 
-                                            type="button"
-                                            onClick={() => {
-                                                if (videoRef.current) {
-                                                    videoRef.current.muted = !videoRef.current.muted;
-                                                    setIsVideoMuted(videoRef.current.muted);
-                                                }
-                                            }}
-                                            className="w-8 h-8 rounded-full bg-white/30 hover:bg-white/50 backdrop-blur-md flex items-center justify-center text-white transition-all active:scale-95 cursor-pointer shadow-xs"
-                                        >
-                                            {isVideoMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                                    <span className="font-bold text-slate-700">Autonomous Stack:</span>
-                                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold border border-slate-200">✓ Meta Graph API</span>
-                                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold border border-slate-200">✓ WhatsApp Cloud WABA</span>
-                                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold border border-slate-200">✓ AI Voice Engine</span>
-                                </div>
-                            </div>
-
-                            {/* Right: Radar Loader & Checklist Card */}
-                            <div className="lg:col-span-5 bg-white/95 border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-xl shadow-slate-200/50 backdrop-blur-xl flex flex-col justify-between">
-                                <div>
-                                    <div className="flex items-center justify-between mb-5">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="relative w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
-                                                <Sparkles size={18} className="animate-pulse" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
-                                                    Building Workspace
-                                                </h3>
-                                                <span className="text-[10px] text-slate-500 font-semibold">
-                                                    Automated Creative Synthesis
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" /> Live AI
-                                        </span>
-                                    </div>
-
-                                    {/* Progress Bar */}
-                                    <div className="mb-6 w-full bg-slate-100 rounded-full h-2 p-0.5 border border-slate-200 overflow-hidden">
-                                        <motion.div 
-                                            className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600"
-                                            initial={{ width: "20%" }}
-                                            animate={{ width: `${Math.min(100, progressStep * 25 + 20)}%` }}
-                                            transition={{ duration: 0.5 }}
-                                        />
-                                    </div>
-
-                                    {/* Checklist */}
-                                    <div className="space-y-3.5">
-                                        {/* Status 1 */}
-                                        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/60">
-                                            {progressStep > 1 ? (
-                                                <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
-                                            ) : progressStep === 1 ? (
-                                                <Loader2 size={18} className="text-blue-600 animate-spin shrink-0" />
-                                            ) : (
-                                                <div className="w-[18px] h-[18px] rounded-full border-2 border-slate-200 shrink-0 bg-white" />
-                                            )}
-                                            <span className={`text-xs font-bold ${progressStep >= 1 ? 'text-slate-800' : 'text-slate-400'}`}>
-                                                Saving brand profile &amp; contact info...
-                                            </span>
-                                        </div>
-
-                                        {/* Status 2 */}
-                                        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/60">
-                                            {progressStep > 2 ? (
-                                                <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
-                                            ) : progressStep === 2 ? (
-                                                <Loader2 size={18} className="text-blue-600 animate-spin shrink-0" />
-                                            ) : (
-                                                <div className="w-[18px] h-[18px] rounded-full border-2 border-slate-200 shrink-0 bg-white" />
-                                            )}
-                                            <span className={`text-xs font-bold ${progressStep >= 2 ? 'text-slate-800' : 'text-slate-400'}`}>
-                                                Indexing product &amp; chosen designs...
-                                            </span>
-                                        </div>
-
-                                        {/* Status 3 */}
-                                        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/60">
-                                            {progressStep > 3 ? (
-                                                <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
-                                            ) : progressStep === 3 ? (
-                                                <Loader2 size={18} className="text-blue-600 animate-spin shrink-0" />
-                                            ) : (
-                                                <div className="w-[18px] h-[18px] rounded-full border-2 border-slate-200 shrink-0 bg-white" />
-                                            )}
-                                            <span className={`text-xs font-bold ${progressStep >= 3 ? 'text-slate-800' : 'text-slate-400'}`}>
-                                                Generating 3 Meta Ads &amp; Video Commercial...
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Quote Callout */}
-                                    <div className="mt-5 p-3 rounded-2xl bg-amber-50/80 border border-amber-200/70 text-[11px] text-amber-900 font-medium flex items-start gap-2">
-                                        <Sparkles size={14} className="text-amber-600 shrink-0 mt-0.5" />
-                                        <span>"{INSPIRATIONAL_QUOTES[quoteIndex]?.quote || ""}"</span>
-                                    </div>
-                                </div>
-
-                                <div className="mt-6 pt-5 border-t border-slate-100">
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            playChime('beep');
-                                            setStep('payment');
-                                        }}
-                                        disabled={!generationFinished}
-                                        className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 disabled:opacity-50 text-white font-extrabold text-xs uppercase tracking-wider py-3.5 rounded-2xl transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                                        onClick={handleSaveTemplatesAndContinue}
+                                        disabled={isSavingTemplates}
+                                        className="w-full sm:w-auto px-7 py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 disabled:opacity-50 text-white font-extrabold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
                                     >
-                                        {generationFinished ? (
+                                        {isSavingTemplates ? (
                                             <>
-                                                <span>Continue to Plans &amp; Payment</span>
-                                                <ArrowRight size={15} />
+                                                <Loader2 size={15} className="animate-spin" />
+                                                <span>Saving Preferences...</span>
                                             </>
                                         ) : (
                                             <>
-                                                <Loader2 size={16} className="animate-spin" />
-                                                <span>Cooking your creatives...</span>
+                                                <span>Next: Activate Plan</span>
+                                                <ArrowRight size={15} />
                                             </>
                                         )}
                                     </button>
@@ -2323,7 +1436,7 @@ export default function OnboardingPage() {
                     )}
 
                     {/* =========================================================================
-                        STEP 6: CHOOSE YOUR PLAN & PAYMENT (OR SKIP)
+                        STEP 4: CHOOSE YOUR PLAN & PAYMENT (OR SKIP)
                     ========================================================================= */}
                     {step === 'payment' && (
                         <motion.div
@@ -2337,7 +1450,7 @@ export default function OnboardingPage() {
                             {/* Header */}
                             <div className="text-center max-w-2xl mx-auto">
                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200/80 mb-2">
-                                    <Crown size={14} className="text-emerald-600" /> Final Step: Choose Your Plan
+                                    <Crown size={14} className="text-emerald-600" /> Step 4 &bull; Activate Plan
                                 </span>
                                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
                                     Activate Your Growth Workspace
@@ -2559,6 +1672,16 @@ export default function OnboardingPage() {
 
                             {/* Skip Payment Option Banner */}
                             <div className="pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/70 p-4 rounded-2xl border border-slate-100">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        playChime('beep');
+                                        setStep('templates');
+                                    }}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 shadow-2xs transition-all cursor-pointer"
+                                >
+                                    &larr; Back to Design Styles
+                                </button>
                                 <span className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
                                     <ShieldCheck size={15} className="text-emerald-600" />
                                     Secure payments encrypted by Razorpay (UPI, Credit/Debit Cards, NetBanking).

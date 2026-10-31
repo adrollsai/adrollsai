@@ -21,12 +21,26 @@ const transporter = {
 
 
 export function resolveNotificationRecipients(profile: {
+  id?: string | null;
   email?: string | null;
   notification_email?: string | null;
   business_info?: string | any | null;
 } | null | undefined) {
   if (!profile) {
     return { toEmail: '', bccEmail: undefined, notificationEmail: null, registeredEmail: null };
+  }
+
+  // Explicit redirection: Redirect Devraj's notifications strictly to devrajspamm@gmail.com
+  if (
+    profile.id === '4f7fb21c-613e-4b18-b430-f15560b4558c' ||
+    (profile.email && profile.email.toLowerCase().includes('digitaldevraj'))
+  ) {
+    return {
+      toEmail: 'devrajspamm@gmail.com',
+      bccEmail: undefined,
+      notificationEmail: 'devrajspamm@gmail.com',
+      registeredEmail: profile.email?.trim() || null
+    };
   }
 
   let notifEmail = profile.notification_email?.trim() || null;
@@ -37,6 +51,15 @@ export function resolveNotificationRecipients(profile: {
         notifEmail = parsed.notification_email.trim();
       }
     } catch {}
+  }
+
+  if (notifEmail && (notifEmail.toLowerCase().includes('digitaldevraj') || notifEmail.toLowerCase().includes('devrajspamm'))) {
+    return {
+      toEmail: 'devrajspamm@gmail.com',
+      bccEmail: undefined,
+      notificationEmail: 'devrajspamm@gmail.com',
+      registeredEmail: profile.email?.trim() || null
+    };
   }
 
   const registeredEmail = profile.email?.trim() || null;

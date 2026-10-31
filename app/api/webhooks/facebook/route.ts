@@ -1604,6 +1604,22 @@ export async function POST(request: Request) {
                                         }
                                     }
 
+                                    // Fallback: check across all leads by phone if still not resolved
+                                    if (!latestLead && cleanFrom.replace(/\D/g, '').slice(-10).length >= 10) {
+                                        const { data: leadAnyTenant } = await supabaseAdmin
+                                            .from('leads')
+                                            .select('id, name, phone, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
+                                            .ilike('phone', `%${cleanFrom.replace(/\D/g, '').slice(-10)}%`)
+                                            .order('created_at', { ascending: false, nullsFirst: false })
+                                            .limit(1)
+                                            .maybeSingle();
+
+                                        if (leadAnyTenant) {
+                                            latestLead = leadAnyTenant;
+                                            console.log(`[Flow] Matched lead across accounts by phone: ${latestLead.name} (${latestLead.phone}), assigned_to: ${latestLead.assigned_to || 'none'}`);
+                                        }
+                                    }
+
                                     const formattedPhone = cleanFrom.startsWith('+') ? cleanFrom : `+${cleanFrom}`;
                                     const defaultLeadName = prefillData.extractedName || ((waProfileName && waProfileName.trim()) ? waProfileName.trim() : formattedPhone);
 
@@ -1957,7 +1973,11 @@ export async function POST(request: Request) {
                                            (ownerBusinessName || '').toLowerCase().includes('nobogent') ||
                                            (ownerBusinessName || '').toLowerCase().includes('adrolls');
 
-                                       const isInterestedBtnClick = isInternalNobogentAccount && (buttonReplyId === 'interested_btn' || (buttonReplyTitle && buttonReplyTitle.toLowerCase().includes('interested')));
+                                       const isInterestedBtnClick = isInternalNobogentAccount && (
+                                            buttonReplyId === 'interested_btn' ||
+                                            (buttonReplyTitle && buttonReplyTitle.toLowerCase().includes('interested')) ||
+                                            (messageText && /^(interested|i am interested|im interested|yes interested|yes, interested|yes i am interested)[!.]*$/i.test(messageText.trim()))
+                                        );
                                        if (isInterestedBtnClick) {
                                            console.log(`[Flow] Lead ${cleanFrom} clicked "Interested" on Nobogent Offer! Sending demo response & alerting admin.`);
 
@@ -2012,17 +2032,39 @@ export async function POST(request: Request) {
                                            const leadPhone = '+' + cleanFrom;
                                            const targetLeadId = latestLead?.id;
                                            const targetUrl = targetLeadId ? `/dashboard/crm?leadId=${targetLeadId}` : '/dashboard/crm';
+                                           const leadSourceStr = [
+                                               latestLead?.source,
+                                               latestLead?.ad_name ? `(${latestLead.ad_name})` : (latestLead?.form_name ? `(${latestLead.form_name})` : '')
+                                           ].filter(Boolean).join(' ') || 'Nobogent Campaign Offer';
 
                                            await sendAdminMultiChannelNotification({
                                                ownerUserId,
                                                title: '🔥 Lead Clicked Interested on Nobogent Offer!',
-                                               body: `Prospect ${leadName} (${leadPhone}) clicked "Interested" on your Nobogent broadcast! Follow up now.`,
+                                               body: `Prospect ${leadName} (${leadPhone}) clicked "Interested" on your Nobogent broadcast! Follow up now.\n\n📢 Source: ${leadSourceStr}\n🔗 CRM Link: https://app.nobogent.com${targetUrl}`,
                                                url: targetUrl,
-                                               type: 'connect_expert',
+                                               type: 'lead_interested',
                                                leadPhone,
                                                leadName,
-                                               leadId: targetLeadId
+                                               leadId: targetLeadId,
+                                               leadSource: leadSourceStr
                                            }).catch(err => console.error('[Flow] Multi-channel alert failed:', err));
+
+                                           // Also notify assigned agent via email/push if lead is assigned to an agent
+                                           const assignedAgentId = latestLead?.assigned_to;
+                                           if (assignedAgentId && isUuid(assignedAgentId) && assignedAgentId !== ownerUserId) {
+                                               console.log(`[Flow] Notifying assigned agent ${assignedAgentId} for interested lead: ${leadName} (${leadPhone})`);
+                                               await sendAdminMultiChannelNotification({
+                                                   ownerUserId: assignedAgentId,
+                                                   title: '🔥 Lead Clicked Interested on Nobogent Offer!',
+                                                   body: `Your assigned lead ${leadName} (${leadPhone}) clicked "Interested" on Nobogent broadcast! Follow up immediately.\n\n📢 Source: ${leadSourceStr}\n🔗 CRM Link: https://app.nobogent.com${targetUrl}`,
+                                                   url: targetUrl,
+                                                   type: 'lead_interested',
+                                                   leadPhone,
+                                                   leadName,
+                                                   leadId: targetLeadId,
+                                                   leadSource: leadSourceStr
+                                               }).catch(err => console.error('[Flow] Multi-channel alert to assigned agent failed:', err));
+                                           }
 
                                            return; // Stop processing real estate qualifying flows
                                        }
@@ -2107,6 +2149,23 @@ export async function POST(request: Request) {
                                               leadId: targetLeadId,
                                               leadSource: leadSourceStr
                                           }).catch(err => console.error('[Flow] Multi-channel expert request alert failed:', err));
+
+                                          // Also notify assigned agent via email/push if lead is assigned to an agent
+                                          const assignedAgentId = latestLead?.assigned_to;
+                                          if (assignedAgentId && isUuid(assignedAgentId) && assignedAgentId !== ownerUserId) {
+                                              console.log(`[Flow] Notifying assigned agent ${assignedAgentId} for expert callback request: ${leadName} (${leadPhone})`);
+                                              await sendAdminMultiChannelNotification({
+                                                  ownerUserId: assignedAgentId,
+                                                  title: `🚨 Call with Expert Requested: ${leadName}`,
+                                                  body: `Your assigned lead ${leadName} (${leadPhone}) requested to connect with an expert for ${ownerBusinessName || 'Nobogent'}!\n\n📢 Source: ${leadSourceStr}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
+                                                  url: targetUrl,
+                                                  type: 'connect_expert',
+                                                  leadPhone,
+                                                  leadName,
+                                                  leadId: targetLeadId,
+                                                  leadSource: leadSourceStr
+                                              }).catch(err => console.error('[Flow] Multi-channel expert request alert to assigned agent failed:', err));
+                                          }
                                           
                                           return; // Stop processing further automation rules/flows or Gemini
                                       }
@@ -3187,6 +3246,22 @@ RULES:
                                             leadSource: campaignContext
                                         }).catch(err => console.error('[WhatsApp Bot] Interested notification failed:', err));
 
+                                        const assignedAgentId = latestLead?.assigned_to;
+                                        if (assignedAgentId && isUuid(assignedAgentId) && assignedAgentId !== ownerUserId) {
+                                            console.log(`[WhatsApp Bot] Notifying assigned agent ${assignedAgentId} for interested lead: ${notifyLeadName}`);
+                                            await sendAdminMultiChannelNotification({
+                                                ownerUserId: assignedAgentId,
+                                                title: `🔥 Lead Clicked "Interested" on WhatsApp: ${notifyLeadName}`,
+                                                body: `Your assigned lead ${notifyLeadName} (+${cleanFrom}) clicked "Interested" on your WhatsApp campaign!\n\n📢 Source / Campaign: ${campaignContext}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
+                                                url: targetUrl,
+                                                type: 'lead_interested',
+                                                leadPhone: '+' + cleanFrom,
+                                                leadName: notifyLeadName,
+                                                leadId: targetLeadId,
+                                                leadSource: campaignContext
+                                            }).catch(err => console.error('[WhatsApp Bot] Interested notification to assigned agent failed:', err));
+                                        }
+
                                         await new Promise(r => setTimeout(r, 150));
                                         await sendThreeButtons("What would you like to do next?");
                                         return;
@@ -3304,6 +3379,22 @@ RULES:
                                             leadId: targetLeadId,
                                             leadSource: campaignContext
                                         }).catch(err => console.error('[WhatsApp Bot] Expert alert failed:', err));
+
+                                        const assignedAgentId = latestLead?.assigned_to;
+                                        if (assignedAgentId && isUuid(assignedAgentId) && assignedAgentId !== ownerUserId) {
+                                            console.log(`[WhatsApp Bot] Notifying assigned agent ${assignedAgentId} for expert request: ${leadName}`);
+                                            await sendAdminMultiChannelNotification({
+                                                ownerUserId: assignedAgentId,
+                                                title: expertAlertTitle,
+                                                body: `Your assigned lead ${leadName} (+${cleanFrom}) clicked "Talk to an expert" on WhatsApp!\n\n📢 Source / Campaign: ${campaignContext}\n🔗 Direct CRM Link: https://app.nobogent.com${targetUrl}`,
+                                                url: targetUrl,
+                                                type: 'connect_expert',
+                                                leadPhone: '+' + cleanFrom,
+                                                leadName,
+                                                leadId: targetLeadId,
+                                                leadSource: campaignContext
+                                            }).catch(err => console.error('[WhatsApp Bot] Expert alert to assigned agent failed:', err));
+                                        }
 
                                         // If qualification is not yet completed, ask pending question so expert gets lead context (NON-instant form leads only)
                                         if (ownerQualifyingEnabled && !isInstantFormLead && !currentCustomFields?.qualification_completed) {
